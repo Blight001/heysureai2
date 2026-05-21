@@ -158,10 +158,11 @@ class ChatMessage(SQLModel, table=True):
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
     total_tokens: Optional[int] = None
+    cache_read_tokens: Optional[int] = None
     system_prompt: Optional[str] = None
     finish_reason: Optional[str] = None
     latency: Optional[float] = None # 延迟，单位秒
-    
+
     created_at: float = Field(default_factory=lambda: __import__("time").time())
 
 class ChatMessageCreate(SQLModel):
@@ -173,12 +174,13 @@ class ChatMessageCreate(SQLModel):
     session_name: Optional[str] = None
     think: Optional[str] = None
     tags: Optional[str] = ""
-    
+
     # 新增字段
     model: Optional[str] = None
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
     total_tokens: Optional[int] = None
+    cache_read_tokens: Optional[int] = None
     system_prompt: Optional[str] = None
     finish_reason: Optional[str] = None
     latency: Optional[float] = None
