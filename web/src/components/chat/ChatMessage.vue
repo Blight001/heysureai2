@@ -39,6 +39,40 @@ const isSystemNoticeMessage = computed(() => {
   return text.startsWith('[系统提示]')
 })
 
+const isTaskCompleteNotice = computed(() => {
+  if (!isSystemNoticeMessage.value) return false
+  const text = String(props.message.display_text || props.message.content || '').trim()
+  return text.includes('任务已通过 `task.complete` 标记为完成')
+    || text.includes('任务已通过 task.complete 标记为完成')
+    || text.includes('本任务对话已自动锁定')
+})
+
+const isRunErrorNotice = computed(() => {
+  const text = String(props.message.display_text || props.message.content || '').trim()
+  return props.message.role === 'system' && text.startsWith('[AI 对话出错]')
+})
+
+const isMcpToolMessage = computed(() => {
+  const text = String(props.message.display_text || props.message.content || '').trim()
+  return props.message.role === 'system' && text.startsWith('[MCP工具]')
+})
+
+const isPlainAssistantMessage = computed(() => {
+  return props.message.role === 'assistant'
+})
+
+const mcpToolSummary = computed(() => {
+  const text = String(props.message.display_text || props.message.content || '').trim()
+  const tool = String(text.match(/^工具[：:]\s*(.+)$/m)?.[1] || 'MCP 工具').trim()
+  const status = String(text.match(/^状态[：:]\s*(.+)$/m)?.[1] || '').trim()
+  return { tool, status }
+})
+
+const mcpToolDetails = computed(() => {
+  const text = String(props.message.display_text || props.message.content || '').trim()
+  return text.replace(/^\[MCP工具\]\s*/i, '').trim()
+})
+
 const normalizedInlineContent = computed<InlineContentType[]>(() => {
   if (Array.isArray(props.message.inlineContent) && props.message.inlineContent.length > 0) {
     return props.message.inlineContent
@@ -52,16 +86,19 @@ const normalizedInlineContent = computed<InlineContentType[]>(() => {
 <template>
   <div
     class="flex flex-col gap-1.5"
-    :class="isFrontPromptMessage ? 'items-center' : ((props.message.role === 'user' && !isSystemNoticeMessage) ? 'items-end' : 'items-start')"
+    :class="(isFrontPromptMessage || isTaskCompleteNotice) ? 'items-center' : ((props.message.role === 'user' && !isSystemNoticeMessage) ? 'items-end' : 'items-start')"
   >
-    <div class="group relative max-w-[95%] sm:max-w-[85%]">
+    <div
+      class="group relative max-w-[95%]"
+      :class="isPlainAssistantMessage ? 'sm:max-w-[92%]' : 'sm:max-w-[85%]'"
+    >
       <!-- Think Block -->
       <div v-if="props.message.think" class="mb-1.5">
-        <details class="bg-zinc-100/60 rounded-xl border border-zinc-200/80 dark:bg-zinc-800/60 dark:border-zinc-700/80 shadow-sm overflow-hidden transition-all">
-          <summary class="px-3 py-1.5 text-[11px] text-zinc-500 font-medium cursor-pointer hover:bg-zinc-200/50 dark:hover:bg-zinc-700/50 hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-400 transition-colors select-none flex items-center gap-1.5">
-            <span class="text-sm">🤔</span> 深度思考
+        <details class="transition-all">
+          <summary class="py-1 text-[11px] text-zinc-500 font-medium cursor-pointer hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-300 transition-colors select-none">
+            深度思考
           </summary>
-          <div class="p-3 text-xs text-zinc-600 leading-relaxed italic dark:text-zinc-400 whitespace-pre-wrap border-t border-zinc-200/50 dark:border-zinc-700/50 bg-white/30 dark:bg-zinc-900/30">
+          <div class="pt-1 text-[11px] text-zinc-500 leading-relaxed italic dark:text-zinc-400 whitespace-pre-wrap">
             {{ props.message.think }}
           </div>
         </details>
@@ -69,26 +106,34 @@ const normalizedInlineContent = computed<InlineContentType[]>(() => {
       
       <!-- Main Content -->
       <div
-        class="px-4 py-3 rounded-2xl border transition-all duration-300 hover:shadow-md"
+        class="transition-all duration-300"
         :class="[
-          (props.message.role === 'user' && !isSystemNoticeMessage)
+          isPlainAssistantMessage
+            ? 'px-0 py-1 border-0 bg-transparent text-zinc-800 shadow-none hover:shadow-none dark:text-zinc-200'
+          : (props.message.role === 'user' && !isSystemNoticeMessage)
             ? 'bg-indigo-600 border-indigo-500 text-white rounded-tr-sm shadow-indigo-200/50 dark:shadow-none'
+            : isTaskCompleteNotice
+              ? 'bg-violet-50 border-violet-300 text-violet-800 rounded-xl text-center dark:bg-violet-500/15 dark:border-violet-500/40 dark:text-violet-100'
             : isSystemNoticeMessage
               ? 'bg-emerald-50 border-emerald-300 text-emerald-800 rounded-tl-sm dark:bg-emerald-500/15 dark:border-emerald-500/40 dark:text-emerald-200'
             : isFrontPromptMessage
               ? 'bg-violet-50 border-violet-200 text-zinc-800 dark:bg-violet-500/15 dark:border-violet-500/40 dark:text-zinc-100'
-              : props.message.role === 'system'
+            : isRunErrorNotice
+              ? 'bg-rose-50 border-rose-300 text-rose-800 rounded-tl-sm dark:bg-rose-500/15 dark:border-rose-500/40 dark:text-rose-200'
+            : isMcpToolMessage
+              ? 'text-sky-700 dark:text-sky-300'
+            : props.message.role === 'system'
                 ? 'bg-zinc-100 border-zinc-200 text-zinc-700 font-mono text-xs dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300'
                 : 'bg-white border-zinc-200 text-zinc-800 rounded-tl-sm shadow-sm dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-200',
+          (isPlainAssistantMessage || isMcpToolMessage) ? '' : 'px-4 py-3 rounded-2xl border hover:shadow-md',
           isFrontPromptMessage ? 'front-prompt-bubble' : ''
         ]"
       >
         
         <!-- Delete & Recall Buttons (hover 显示) -->
-        <div v-if="!props.readonly && !isFrontPromptMessage" class="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div v-if="!props.readonly && props.message.role === 'user' && !isSystemNoticeMessage" class="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <!-- Recall Button (仅用户消息显示) -->
           <button 
-            v-if="props.message.role === 'user'"
             @click.stop="emit('recall', props.idx)"
             class="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-md hover:bg-amber-600 transition-colors"
             title="撤回此消息及之后所有对话"
@@ -110,6 +155,30 @@ const normalizedInlineContent = computed<InlineContentType[]>(() => {
         </div>
         
         <div
+          v-if="isMcpToolMessage"
+          class="text-[13px] leading-relaxed"
+        >
+          <details class="mcp-details">
+            <summary class="flex items-center gap-2 whitespace-nowrap cursor-pointer select-none list-none">
+              <span class="text-[12px] font-semibold text-sky-700 dark:text-sky-300">MCP 工具</span>
+              <span class="min-w-0 truncate font-mono text-[11px] text-sky-600 dark:text-sky-300">
+                {{ mcpToolSummary.tool }}
+              </span>
+              <span
+                class="shrink-0 text-[11px] font-medium"
+                :class="mcpToolSummary.status === '失败' ? 'text-rose-600 dark:text-rose-300' : 'text-emerald-600 dark:text-emerald-300'"
+              >
+                {{ mcpToolSummary.status || '已执行' }}
+              </span>
+              <span class="ml-auto shrink-0 text-[11px] text-zinc-500 hover:text-sky-700 dark:text-zinc-400 dark:hover:text-sky-300">详情</span>
+            </summary>
+            <div class="mt-2 max-h-72 overflow-y-auto rounded-lg bg-zinc-950 px-3 py-2 font-mono text-[11px] leading-5 text-zinc-100 whitespace-pre-wrap break-words">
+              {{ mcpToolDetails }}
+            </div>
+          </details>
+        </div>
+        <div
+          v-else
           class="whitespace-pre-wrap text-[13px] leading-relaxed"
           :class="[
             (props.message.role === 'user' && !isSystemNoticeMessage) ? 'text-white' : '',
@@ -142,5 +211,9 @@ const normalizedInlineContent = computed<InlineContentType[]>(() => {
 
 .front-prompt-content {
   min-height: 100%;
+}
+
+.mcp-details > summary::-webkit-details-marker {
+  display: none;
 }
 </style>

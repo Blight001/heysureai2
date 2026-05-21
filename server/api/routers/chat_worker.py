@@ -1,7 +1,9 @@
 IS_ROUTER_ENTRY = False
 
 import asyncio
+import copy
 import json
+import re
 import time
 from typing import Dict, List, Optional
 
@@ -49,6 +51,111 @@ from .chat_runtime_helpers import (
     _session_total_tokens,
 )
 from .chat_scheduler import _start_task_run
+
+
+def _format_upstream_error(response: requests.Response, max_body_len: int = 4000) -> str:
+    status = f"HTTP {response.status_code}"
+    reason = str(response.reason or "").strip()
+    if reason:
+        status = f"{status} {reason}"
+
+    body = str(response.text or "").strip()
+    if body:
+        try:
+            parsed = response.json()
+            if isinstance(parsed, dict):
+                error = parsed.get("error")
+                if isinstance(error, dict):
+                    message = str(error.get("message") or "").strip()
+                    code = str(error.get("code") or "").strip()
+                    error_type = str(error.get("type") or "").strip()
+                    parts = [part for part in [message, code, error_type] if part]
+                    if parts:
+                        body = " | ".join(parts)
+                elif isinstance(error, str) and error.strip():
+                    body = error.strip()
+        except Exception:
+            pass
+    if len(body) > max_body_len:
+        body = f"{body[:max_body_len]}\n...<truncated>"
+    return f"Upstream AI request failed: {status} for {response.url}\n{body}".strip()
+
+
+def _raise_for_upstream_error(response: requests.Response) -> None:
+    if response.ok:
+        return
+    raise RuntimeError(_format_upstream_error(response))
+
+
+def _to_native_tool_name(name: str) -> str:
+    safe = re.sub(r"[^a-zA-Z0-9_-]", "__", str(name or "").strip())
+    safe = safe.strip("_") or "tool"
+    return safe[:64]
+
+
+def _build_native_tools_payload(allowed_tools: Optional[set] = None) -> tuple[List[Dict], Dict[str, str]]:
+    tools = []
+    native_to_mcp: Dict[str, str] = {}
+    used_names = set()
+    for tool in registry.build_tools_payload(allowed_tools):
+        native_tool = copy.deepcopy(tool)
+        original_name = str(native_tool.get("function", {}).get("name") or "").strip()
+        native_name = _to_native_tool_name(original_name)
+        if native_name in used_names and native_to_mcp.get(native_name) != original_name:
+            suffix = 2
+            base = native_name[:58]
+            while f"{base}_{suffix}" in used_names:
+                suffix += 1
+            native_name = f"{base}_{suffix}"
+        native_tool["function"]["name"] = native_name
+        native_to_mcp[native_name] = original_name
+        used_names.add(native_name)
+        tools.append(native_tool)
+    return tools, native_to_mcp
+
+
+def _build_mcp_tool_bubble_content(tool: str, arguments: dict, result_text: str, failed: bool = False) -> str:
+    status = "失败" if failed else "成功"
+    return (
+        "[MCP工具]\n"
+        f"工具: {tool}\n"
+        f"状态: {status}\n\n"
+        "[参数]\n"
+        f"{_safe_json(arguments or {})}\n\n"
+        "[结果]\n"
+        f"{result_text}"
+    )
+
+
+def _save_mcp_tool_bubble(
+    bg: Session,
+    *,
+    user_id: int,
+    ai_config_id: Optional[int],
+    ai_kind: str,
+    session_id: str,
+    session_name: str,
+    model: str,
+    tool: str,
+    arguments: dict,
+    result_text: str,
+    failed: bool = False,
+) -> None:
+    _save_message(
+        bg,
+        user_id,
+        ChatMessageCreate(
+            role="system",
+            content=_build_mcp_tool_bubble_content(tool, arguments, result_text, failed),
+            tags="mcp_tool_call",
+            ai_config_id=ai_config_id,
+            ai_kind=ai_kind,
+            session_id=session_id,
+            session_name=session_name,
+            model=model,
+            total_tokens=0,
+        ),
+    )
 
 
 def _run_worker(
@@ -132,7 +239,10 @@ def _run_worker(
             convo = [{"role": "system", "content": system_prompt}]
             for m in history:
                 if m.role in ("user", "assistant"):
-                    convo.append({"role": m.role, "content": m.content})
+                    item = {"role": m.role, "content": m.content}
+                    if m.role == "assistant" and m.think:
+                        item["reasoning_content"] = m.think
+                    convo.append(item)
             if model_user_content:
                 for i in range(len(convo) - 1, -1, -1):
                     if convo[i].get("role") == "user":
@@ -145,7 +255,7 @@ def _run_worker(
 
             # Build native tool_use payload once (allowlist is fixed for this run).
             mcp_active = bool(cfg and cfg.mcp_enabled and effective_tool_allowlist)
-            step_tools = registry.build_tools_payload(effective_tool_allowlist) if mcp_active else []
+            step_tools, native_tool_name_map = _build_native_tools_payload(effective_tool_allowlist) if mcp_active else ([], {})
 
             for _ in range(max_steps):
                 if _run_should_stop(run_id):
@@ -163,8 +273,9 @@ def _run_worker(
                     payload["tool_choice"] = "auto"
                 start_at = time.time()
                 response = requests.post(base_url, headers=headers, json=payload, timeout=300, stream=True)
-                response.raise_for_status()
+                _raise_for_upstream_error(response)
                 assistant_text = ""
+                reasoning_content = ""
                 usage = {}
                 finish_reason = None
                 last_push_at = 0.0
@@ -207,6 +318,9 @@ def _run_worker(
                     if choices:
                         finish_reason = choices[0].get("finish_reason") or finish_reason
                         delta = choices[0].get("delta") or {}
+                        delta_reasoning = delta.get("reasoning_content")
+                        if isinstance(delta_reasoning, str):
+                            reasoning_content += delta_reasoning
 
                         # Native tool_calls streaming (OpenAI / DeepSeek compatible)
                         tc_list = delta.get("tool_calls")
@@ -255,7 +369,7 @@ def _run_worker(
                     ChatMessageCreate(
                         role="assistant",
                         content=assistant_text,
-                        think=None,
+                        think=reasoning_content or None,
                         ai_config_id=ai_config_id,
                         ai_kind=ai_kind,
                         session_id=session_id,
@@ -270,7 +384,7 @@ def _run_worker(
                     ),
                 )
                 if _has_native_tc and _tc_name:
-                    convo.append({
+                    assistant_item = {
                         "role": "assistant",
                         "content": assistant_text or None,
                         "tool_calls": [{
@@ -278,9 +392,15 @@ def _run_worker(
                             "type": "function",
                             "function": {"name": _tc_name, "arguments": _tc_args},
                         }],
-                    })
+                    }
+                    if reasoning_content:
+                        assistant_item["reasoning_content"] = reasoning_content
+                    convo.append(assistant_item)
                 else:
-                    convo.append({"role": "assistant", "content": assistant_text})
+                    assistant_item = {"role": "assistant", "content": assistant_text}
+                    if reasoning_content:
+                        assistant_item["reasoning_content"] = reasoning_content
+                    convo.append(assistant_item)
                 _set_run_live_text(run_id, "")
                 _set_run_live_usage(run_id, 0, 0, 0)
 
@@ -290,7 +410,7 @@ def _run_worker(
                         _tc_arguments = json.loads(_tc_args or "{}")
                     except Exception:
                         _tc_arguments = {}
-                    payload_call = {"tool": _tc_name, "arguments": _tc_arguments}
+                    payload_call = {"tool": native_tool_name_map.get(_tc_name, _tc_name), "arguments": _tc_arguments}
                 elif not payload_call:
                     payload_call = _extract_first_mcp_call(assistant_text)
                 payload_tool = str((payload_call or {}).get("tool") or "").strip()
@@ -398,6 +518,19 @@ def _run_worker(
                     saved.tags = _append_mcp_state_to_tags(saved.tags, tool, arguments, result_text)
                     bg.add(saved)
                     bg.commit()
+                    _save_mcp_tool_bubble(
+                        bg,
+                        user_id=user_id,
+                        ai_config_id=ai_config_id,
+                        ai_kind=ai_kind,
+                        session_id=session_id,
+                        session_name=session_name,
+                        model=model,
+                        tool=tool,
+                        arguments=arguments,
+                        result_text=result_text,
+                        failed=True,
+                    )
                     if _has_native_tc:
                         convo.append({
                             "role": "tool",
@@ -440,6 +573,19 @@ def _run_worker(
                 saved.tags = _append_mcp_state_to_tags(saved.tags, tool, arguments, result_text)
                 bg.add(saved)
                 bg.commit()
+                _save_mcp_tool_bubble(
+                    bg,
+                    user_id=user_id,
+                    ai_config_id=ai_config_id,
+                    ai_kind=ai_kind,
+                    session_id=session_id,
+                    session_name=session_name,
+                    model=model,
+                    tool=tool,
+                    arguments=arguments,
+                    result_text=result_text,
+                    failed=tool_failed,
+                )
 
                 if (not tool_failed) and tool == "task.inherit":
                     result_payload = tool_result.get("result", tool_result)

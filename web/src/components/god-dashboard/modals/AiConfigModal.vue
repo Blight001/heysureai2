@@ -1,5 +1,5 @@
 <script setup lang="ts">
-type SettingsSection = 'mcp' | 'workspace' | 'auto'
+type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'feishu'
 
 interface Props {
   show: boolean
@@ -110,6 +110,51 @@ defineProps<Props>()
                   />
                   <span class="font-mono">{{ tool }}</span>
                 </label>
+              </div>
+            </div>
+          </details>
+
+          <details :open="settingsSection === 'feishu'" class="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/40 mb-2">
+            <summary class="cursor-pointer select-none px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-200" @click.prevent="onToggleSettingsSection('feishu')">飞书机器人</summary>
+            <div class="px-3 pb-3 space-y-3">
+              <label class="flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-300 px-2 py-2 rounded border border-zinc-200 dark:border-zinc-700 bg-white/70 dark:bg-zinc-900/50">
+                <span>启用飞书机器人</span>
+                <input type="checkbox" v-model="form.feishu_enabled" />
+              </label>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="md:col-span-2">
+                  <label class="block text-[11px] text-zinc-500 mb-1">自定义群机器人 Webhook URL（仅主动通知）</label>
+                  <input v-model="form.feishu_webhook_url" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." />
+                </div>
+                <div>
+                  <label class="block text-[11px] text-zinc-500 mb-1">App ID</label>
+                  <input v-model="form.feishu_app_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="cli_xxx" />
+                </div>
+                <div>
+                  <label class="block text-[11px] text-zinc-500 mb-1">App Secret</label>
+                  <input v-model="form.feishu_app_secret" type="password" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
+                </div>
+                <div>
+                  <label class="block text-[11px] text-zinc-500 mb-1">Verification Token</label>
+                  <input v-model="form.feishu_verification_token" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
+                </div>
+                <div>
+                  <label class="block text-[11px] text-zinc-500 mb-1">默认接收 ID 类型</label>
+                  <select v-model="form.feishu_default_receive_id_type" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs">
+                    <option value="chat_id">chat_id</option>
+                    <option value="open_id">open_id</option>
+                    <option value="user_id">user_id</option>
+                    <option value="union_id">union_id</option>
+                    <option value="email">email</option>
+                  </select>
+                </div>
+                <div class="md:col-span-2">
+                  <label class="block text-[11px] text-zinc-500 mb-1">默认接收 ID（AI 主动通知时使用）</label>
+                  <input v-model="form.feishu_default_receive_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="群聊 chat_id 或用户 open_id" />
+                </div>
+              </div>
+              <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
+                Webhook URL 只能让 AI 主动发通知；飞书用户主动与 AI 对话需要配置自建应用 App ID / Secret，并在飞书开放平台的事件订阅里选择“使用长连接接收事件”。启用后请在 MCP 工具权限中勾选 <span class="font-mono">feishu.send_message</span>。
               </div>
             </div>
           </details>

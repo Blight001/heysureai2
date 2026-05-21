@@ -25,7 +25,7 @@ from .chat_prompt_utils import (
     _strip_runtime_injected_sections,
 )
 from .chat_runtime_helpers import _resolve_ai_runtime
-from .chat_worker import _run_worker
+from .chat_worker import _raise_for_upstream_error, _run_worker
 
 
 @router.post("/run/start")
@@ -532,7 +532,7 @@ async def stream_chat(
     def generate():
         try:
             response = requests.post(base_url, headers=headers, json=payload, stream=True)
-            response.raise_for_status()
+            _raise_for_upstream_error(response)
             assistant_text = ""
             for line in response.iter_lines():
                 if line:

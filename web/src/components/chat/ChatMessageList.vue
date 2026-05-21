@@ -39,7 +39,7 @@ const emit = defineEmits<{
       <span class="text-sm">开始一场智慧的碰撞吧...</span>
     </div>
     
-    <TransitionGroup name="fade" tag="div" class="space-y-5">
+    <TransitionGroup name="fade" tag="div" class="space-y-4">
       <ChatMessage 
         v-for="(msg, idx) in messages" 
         :key="msg.id !== undefined ? `msg-${msg.id}` : `tmp-${idx}`" 

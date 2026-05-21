@@ -96,6 +96,20 @@ def _ensure_legacy_columns():
             cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN workspace_root TEXT")
         if "database_uri" not in cfg_existing:
             cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN database_uri TEXT")
+        if "feishu_enabled" not in cfg_existing:
+            cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN feishu_enabled BOOLEAN DEFAULT 0")
+        if "feishu_webhook_url" not in cfg_existing:
+            cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN feishu_webhook_url TEXT DEFAULT ''")
+        if "feishu_app_id" not in cfg_existing:
+            cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN feishu_app_id TEXT DEFAULT ''")
+        if "feishu_app_secret" not in cfg_existing:
+            cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN feishu_app_secret TEXT DEFAULT ''")
+        if "feishu_verification_token" not in cfg_existing:
+            cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN feishu_verification_token TEXT DEFAULT ''")
+        if "feishu_default_receive_id" not in cfg_existing:
+            cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN feishu_default_receive_id TEXT DEFAULT ''")
+        if "feishu_default_receive_id_type" not in cfg_existing:
+            cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN feishu_default_receive_id_type TEXT DEFAULT 'chat_id'")
         if "project_id" not in cfg_existing:
             cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN project_id TEXT")
         if "project_name" not in cfg_existing:

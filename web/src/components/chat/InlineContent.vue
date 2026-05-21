@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { InlineContent as InlineContentType } from '../../utils/chatParser';
+import MarkdownText from './MarkdownText.vue';
 
 const props = withDefaults(defineProps<{
   content: InlineContentType[];
@@ -144,7 +145,7 @@ const isApplied = (block: any) => {
     <template v-for="(item, idx) in content" :key="idx">
       <template v-if="item.type === 'text'">
         <template v-for="(chunk, chunkIdx) in splitTextChunks(item.content || '')" :key="`txt-${idx}-${chunkIdx}`">
-          <span v-if="chunk.kind === 'plain'" class="whitespace-pre-wrap">{{ chunk.content }}</span>
+          <MarkdownText v-if="chunk.kind === 'plain'" :text="chunk.content" />
           <div v-else class="mcp-text-bubble">
             <div class="mcp-text-header">MCP 操作</div>
             <div class="mcp-text-content font-mono text-[11px] leading-5">
