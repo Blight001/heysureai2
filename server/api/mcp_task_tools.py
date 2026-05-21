@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from .database import engine
+from .governance import assert_can_manage_or_legacy
 from .models import AITaskJob, AssistantAIConfig, ChatMessage
 from .task_system import extract_task_payload
 
@@ -470,9 +471,14 @@ def _resolve_task_runtime_owner(
         return target_cfg
 
     if caller_role == "digital_member":
-        # A manager member may fan out subtasks to other members (orchestrator mode).
+        # A manager member may fan out subtasks to other members (orchestrator mode),
+        # but only to members it is authorized to manage (governance tree).
         if caller_member_role == "manager" and raw_target is not None:
-            return _resolve_target(raw_target)
+            target_cfg = _resolve_target(raw_target)
+            denial = assert_can_manage_or_legacy(session, user_id, caller_cfg, target_cfg)
+            if denial:
+                raise HTTPException(status_code=403, detail=denial)
+            return target_cfg
         return caller_cfg
 
     if caller_role != "assistant_admin":

@@ -206,6 +206,8 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
         currentTask: row.current_behavior || '等待指令...',
         projectId,
         projectName: getProjectName(projectId, row.project_name),
+        parentAiConfigId: Number.isFinite(Number(row.parent_ai_config_id)) ? Number(row.parent_ai_config_id) : null,
+        managementScope: row.management_scope || 'self',
         tokensUsed: row.token_used || 0,
         aiConfigId: configId,
         enabled: !!row.enabled,

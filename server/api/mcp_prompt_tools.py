@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from .database import engine
+from .governance import assert_can_manage_or_legacy
 from .models import AssistantAIConfig, User
 
 
@@ -244,6 +245,11 @@ def _prompt_write_ai(user_id: int, args: dict, ai_config_id: Optional[int] = Non
         raise HTTPException(status_code=400, detail="target_ai_config_id is required")
     with Session(engine) as session:
         cfg = _get_owned_ai_config(session, user_id, int(target_id))
+        if ai_config_id is not None and int(ai_config_id) != int(cfg.id or 0):
+            caller = _get_owned_ai_config(session, user_id, int(ai_config_id))
+            denial = assert_can_manage_or_legacy(session, user_id, caller, cfg)
+            if denial:
+                raise HTTPException(status_code=403, detail=denial)
         old_prompt = str(cfg.prompt or "")
         old_length = len(str(cfg.prompt or ""))
         new_prompt, edit_count = _apply_prompt_line_edits(old_prompt, args)

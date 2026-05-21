@@ -217,6 +217,9 @@ class AssistantAIConfig(SQLModel, table=True):
     feishu_default_receive_id_type: str = Field(default="chat_id")
     project_id: Optional[str] = Field(default=None, index=True)
     project_name: Optional[str] = None
+    parent_ai_config_id: Optional[int] = Field(default=None, index=True)  # 直属上级 AI
+    root_manager_ai_config_id: Optional[int] = Field(default=None, index=True)  # 治理树根节点
+    management_scope: str = Field(default="self")  # self / children / project / global
     sort_order: int = Field(default=100)
     enabled: bool = Field(default=True)
     mcp_enabled: bool = Field(default=True)
@@ -257,6 +260,9 @@ class AssistantAIConfigCreate(SQLModel):
     feishu_default_receive_id_type: Optional[str] = "chat_id"
     project_id: Optional[str] = None
     project_name: Optional[str] = None
+    parent_ai_config_id: Optional[int] = None
+    root_manager_ai_config_id: Optional[int] = None
+    management_scope: Optional[str] = "self"
     sort_order: Optional[int] = 100
     enabled: Optional[bool] = True
     mcp_enabled: Optional[bool] = True
@@ -290,6 +296,9 @@ class AssistantAIConfigUpdate(SQLModel):
     feishu_default_receive_id_type: Optional[str] = None
     project_id: Optional[str] = None
     project_name: Optional[str] = None
+    parent_ai_config_id: Optional[int] = None
+    root_manager_ai_config_id: Optional[int] = None
+    management_scope: Optional[str] = None
     sort_order: Optional[int] = None
     enabled: Optional[bool] = None
     mcp_enabled: Optional[bool] = None
