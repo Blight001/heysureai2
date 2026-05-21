@@ -1,6 +1,7 @@
 import { io } from 'socket.io-client';
 import os from 'os';
 import { AGENT_CAPABILITIES, DispatchedTask, TaskExecutor } from './executor';
+import { getPlatformInfo, getPlatformNote, IS_WINDOWS } from './platform';
 
 const SERVER_URL = process.env.SERVER_URL || 'http://localhost:3000';
 const socket = io(SERVER_URL);
@@ -40,13 +41,20 @@ function buildRegisterPayload() {
     id: AGENT_ID,
     name: AGENT_NAME,
     platform: os.platform(),
+    os: getPlatformInfo(),
     capabilities: AGENT_CAPABILITIES,
     version: '2.0.0',
     token: AGENT_TOKEN,
     workspaceRoot: WORKSPACE_ROOT,
     group: AGENT_GROUP,
     lifecycle,
+    platformNote: getPlatformNote(),
+    isWindowsDesktop: false,
   };
+}
+
+if (IS_WINDOWS) {
+  console.log('[agent] ' + getPlatformNote());
 }
 
 socket.on('connect', () => {
