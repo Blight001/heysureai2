@@ -1,0 +1,482 @@
+<script setup lang="ts">
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+
+interface AgentTaskSnapshot {
+  jobId: string
+  title: string
+  status: string
+  effectiveStatus: string
+  runStatus: string
+  triggerType: string
+  generationCount: number
+  latestGeneration: number
+  taskTokenUsed: number
+  taskTokenLimit: number
+  createdAt?: number
+  startedAt?: number
+  finishedAt?: number
+}
+
+interface AgentProps {
+  agent: {
+    id: string
+    name: string
+    role: 'admin' | 'worker'
+    tokensUsed: number
+    tokenLimit: number
+    generation: number
+    status: 'learning' | 'working' | 'reproducing' | 'dead'
+    platform: string
+    currentTask?: string
+    summary?: string // 遗言/总结
+    projectId?: string
+    projectName?: string
+    aiConfigId?: number
+    enabled?: boolean
+    mcpEnabled?: boolean
+    mcpTools?: string
+    runtimeStatus?: string
+    runtimeTool?: string
+    activeRunStatus?: string
+    activeRunPhase?: string
+    activeRunSessionId?: string
+    userChatActive?: boolean
+    aiRole?: 'assistant_admin' | 'digital_member' | 'admin' | 'worker'
+    digitalMemberRole?: 'manager' | 'member'
+    currentTaskTitle?: string
+    currentTaskStatus?: string
+    taskCurrentOrRecent?: AgentTaskSnapshot | null
+    taskRecentCompleted?: AgentTaskSnapshot | null
+    latestThinking?: string
+  }
+}
+
+const props = defineProps<AgentProps>()
+const emit = defineEmits<{
+  (e: 'context', payload: { agent: AgentProps['agent']; x: number; y: number }): void
+  (e: 'show-tools', agent: AgentProps['agent']): void
+  (e: 'show-context', agent: AgentProps['agent']): void
+  (e: 'chat', agent: AgentProps['agent']): void
+  (e: 'show-tasks', agent: AgentProps['agent']): void
+  (e: 'show-task-detail', payload: { agent: AgentProps['agent']; jobId: string }): void
+  (e: 'settings', agent: AgentProps['agent']): void
+}>()
+
+const isUnlimitedLife = computed(() => props.agent.tokenLimit <= 0)
+const syncedGeneration = computed(() => {
+  const base = Math.max(1, Number(props.agent.generation) || 1)
+  const fromCurrentTask = Math.max(1, Number(props.agent.taskCurrentOrRecent?.latestGeneration) || 1)
+  const fromCompletedTask = Math.max(1, Number(props.agent.taskRecentCompleted?.latestGeneration) || 1)
+  return Math.max(base, fromCurrentTask, fromCompletedTask)
+})
+
+const lifePercentage = computed(() => {
+  if (isUnlimitedLife.value) return 100
+  return Math.min((props.agent.tokensUsed / props.agent.tokenLimit) * 100, 100)
+})
+
+const lifeColorClass = computed(() => {
+  if (isUnlimitedLife.value) return 'bg-indigo-500'
+  if (lifePercentage.value > 90) return 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.6)]' // 濒死/繁衍前夕
+  if (lifePercentage.value > 75) return 'bg-orange-500'
+  return 'bg-emerald-500'
+})
+
+const statusDisplay = computed(() => {
+  const taskSuffix = props.agent.currentTaskTitle
+    ? ` · 任务: ${props.agent.currentTaskTitle}`
+    : ''
+  const runtimeSuffix = !props.agent.enabled
+    ? ' · 已停止'
+    : props.agent.runtimeStatus === 'running' && props.agent.runtimeTool
+      ? ` · 调用中: ${props.agent.runtimeTool}`
+      : props.agent.runtimeStatus === 'running'
+        ? ' · MCP 调用中'
+      : props.agent.runtimeStatus === 'error'
+        ? ' · MCP 调用失败'
+        : ''
+
+  const taskStatus = String(props.agent.currentTaskStatus || '').toLowerCase()
+  const isTaskRunning = taskStatus === 'running' || props.agent.runtimeStatus === 'running'
+  const isTaskWaiting = ['queued', 'paused', 'scheduled', 'next'].includes(taskStatus)
+  const isUserChatActive = !!props.agent.userChatActive
+
+  switch (props.agent.status) {
+    case 'learning': return { text: `学习中 (下载记忆)${runtimeSuffix}`, class: 'text-blue-600 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-500/10 dark:border-blue-500/30' }
+    case 'working':
+      if (isUserChatActive) return { text: `与用户沟通中${runtimeSuffix}`, class: 'text-cyan-700 bg-cyan-50 border-cyan-200 dark:text-cyan-300 dark:bg-cyan-500/10 dark:border-cyan-500/30' }
+      if (isTaskRunning) return { text: `工作中${taskSuffix}${runtimeSuffix}`, class: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-500/10 dark:border-emerald-500/30' }
+      if (isTaskWaiting) return { text: `等待中${taskSuffix}${runtimeSuffix}`, class: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-500/10 dark:border-amber-500/30' }
+      return { text: `空闲中${runtimeSuffix}`, class: 'text-zinc-600 bg-zinc-100 border-zinc-200 dark:text-zinc-300 dark:bg-zinc-800/80 dark:border-zinc-700' }
+    case 'reproducing': return { text: '传宗接代 (总结任务)', class: 'text-purple-600 bg-purple-50 border-purple-200 animate-pulse dark:text-purple-300 dark:bg-purple-500/10 dark:border-purple-500/30' }
+    case 'dead': return { text: '已枯竭 (进入英灵殿)', class: 'text-zinc-500 bg-zinc-100 border-zinc-200 dark:text-zinc-400 dark:bg-zinc-800 dark:border-zinc-700' }
+    default: return { text: '未知', class: 'text-gray-500' }
+  }
+})
+
+const cardBorderClass = computed(() => {
+  if (props.agent.role === 'admin') return 'border-amber-200 ring-1 ring-amber-100 dark:border-amber-500/40 dark:ring-amber-500/30'
+  if (props.agent.status === 'dead') return 'border-zinc-200 opacity-75 grayscale'
+  return 'border-zinc-200 hover:border-indigo-300'
+})
+
+const canControl = computed(() => typeof props.agent.aiConfigId === 'number')
+const showLifecycle = computed(() => props.agent.aiRole !== 'assistant_admin')
+const isAssistantAdmin = computed(() => props.agent.aiRole === 'assistant_admin')
+const isRealtimeWorking = computed(() => {
+  if (props.agent.status !== 'working') return false
+  if (props.agent.userChatActive) return true
+  const taskStatus = String(props.agent.currentTaskStatus || '').toLowerCase()
+  return taskStatus === 'running' || props.agent.runtimeStatus === 'running'
+})
+const scheduledTaskSnapshot = computed(() => {
+  const task = props.agent.taskCurrentOrRecent
+  if (!task) return null
+  if (String(task.triggerType || '').toLowerCase() !== 'schedule') return null
+  const effectiveStatus = String(task.effectiveStatus || task.status || '').toLowerCase()
+  return ['queued', 'paused', 'scheduled', 'next'].includes(effectiveStatus) ? task : null
+})
+const showTaskSnapshotBlock = computed(() => {
+  if (props.agent.aiRole !== 'digital_member') return false
+  return Boolean(scheduledTaskSnapshot.value || props.agent.taskRecentCompleted)
+})
+const showWorkspaceContextButton = computed(() => {
+  return props.agent.aiRole === 'digital_member' && props.agent.digitalMemberRole === 'manager'
+})
+
+const syncedMcpText = computed(() => {
+  if (!props.agent.enabled) return 'AI 已停止'
+  const activeCalling = props.agent.runtimeStatus === 'running'
+    || (props.agent.currentTaskStatus === 'running' && !!props.agent.runtimeTool)
+  if (activeCalling) {
+    return props.agent.runtimeTool ? `MCP 调用中: ${props.agent.runtimeTool}` : 'MCP 调用中: 等待返回'
+  }
+  if (props.agent.runtimeStatus === 'error') return 'MCP 调用失败'
+  return props.agent.runtimeTool ? `最近 MCP: ${props.agent.runtimeTool}` : '最近 MCP: 暂无调用'
+})
+
+const IDLE_THINKING_TEXT = '空闲中'
+const thinkingPreview = ref(IDLE_THINKING_TEXT)
+
+const thinkingViewportRef = ref<HTMLElement | null>(null)
+const thinkingTextRef = ref<HTMLElement | null>(null)
+let thinkingRaf = 0
+let thinkingOffset = 0
+let thinkingIdleTimer = 0
+let lastLiveThinking = ''
+
+const stopThinkingMotion = () => {
+  if (thinkingRaf) {
+    window.cancelAnimationFrame(thinkingRaf)
+    thinkingRaf = 0
+  }
+}
+
+const clearThinkingIdleTimer = () => {
+  if (thinkingIdleTimer) {
+    window.clearTimeout(thinkingIdleTimer)
+    thinkingIdleTimer = 0
+  }
+}
+
+const thinkingScrollSpeed = (textLength: number, maxScroll: number) => {
+  const lengthFactor = Math.min(3.0, Math.max(0, textLength / 220))
+  const distanceFactor = Math.min(3.5, Math.max(0, maxScroll / 180))
+  return 0.8 + lengthFactor + distanceFactor
+}
+
+const stepThinkingMotion = () => {
+  const viewport = thinkingViewportRef.value
+  const text = thinkingTextRef.value
+  if (!viewport || !text) return
+  const maxScroll = Math.max(0, text.scrollHeight - viewport.clientHeight)
+  if (maxScroll <= 1) {
+    thinkingOffset = 0
+    viewport.scrollTop = 0
+    return
+  }
+
+  const speed = thinkingScrollSpeed(thinkingPreview.value.length, maxScroll)
+  thinkingOffset = Math.min(maxScroll, thinkingOffset + speed)
+  viewport.scrollTop = thinkingOffset
+
+  if (thinkingOffset >= maxScroll - 0.5) {
+    stopThinkingMotion()
+    return
+  }
+
+  thinkingRaf = window.requestAnimationFrame(stepThinkingMotion)
+}
+
+const startThinkingMotion = (reset = true) => {
+  stopThinkingMotion()
+  const viewport = thinkingViewportRef.value
+  const text = thinkingTextRef.value
+  if (!viewport || !text) return
+
+  const maxScroll = Math.max(0, text.scrollHeight - viewport.clientHeight)
+  thinkingOffset = reset
+    ? 0
+    : Math.max(0, Math.min(viewport.scrollTop, maxScroll))
+  viewport.scrollTop = thinkingOffset
+  if (maxScroll <= 1) return
+  thinkingRaf = window.requestAnimationFrame(stepThinkingMotion)
+}
+
+const showIdleThinking = async () => {
+  thinkingPreview.value = IDLE_THINKING_TEXT
+  lastLiveThinking = ''
+  await nextTick()
+  stopThinkingMotion()
+  const viewport = thinkingViewportRef.value
+  thinkingOffset = 0
+  if (viewport) viewport.scrollTop = 0
+}
+
+const scheduleIdleThinking = () => {
+  clearThinkingIdleTimer()
+  thinkingIdleTimer = window.setTimeout(() => {
+    void showIdleThinking()
+  }, 5000)
+}
+
+const syncThinkingFromLive = async () => {
+  const liveThinking = String(props.agent.latestThinking || '').trim()
+  if (!liveThinking) {
+    scheduleIdleThinking()
+    return
+  }
+
+  clearThinkingIdleTimer()
+  const shouldContinue = !!lastLiveThinking
+    && liveThinking.length >= lastLiveThinking.length
+    && liveThinking.startsWith(lastLiveThinking)
+  thinkingPreview.value = liveThinking
+  await nextTick()
+  if (shouldContinue) {
+    const viewport = thinkingViewportRef.value
+    const text = thinkingTextRef.value
+    if (viewport && text) {
+      const maxScroll = Math.max(0, text.scrollHeight - viewport.clientHeight)
+      thinkingOffset = Math.max(0, Math.min(viewport.scrollTop, maxScroll))
+    }
+    if (!thinkingRaf) {
+      startThinkingMotion(false)
+    }
+  } else {
+    startThinkingMotion(true)
+  }
+  lastLiveThinking = liveThinking
+}
+
+watch(
+  () => props.agent.latestThinking,
+  () => {
+    void syncThinkingFromLive()
+  }
+)
+
+onMounted(async () => {
+  await nextTick()
+  await syncThinkingFromLive()
+})
+
+onUnmounted(() => {
+  stopThinkingMotion()
+  clearThinkingIdleTimer()
+})
+
+const taskStatusLabel = (raw?: string) => {
+  const status = String(raw || '').toLowerCase()
+  if (status === 'running') return '执行中'
+  if (status === 'queued' || status === 'paused') return '等待执行'
+  if (status === 'completed' || status === 'done' || status === 'finished') return '已完成'
+  if (status === 'error' || status === 'stopped' || status === 'cancelled') return '已终止'
+  return '待命'
+}
+
+const taskStatusClass = (raw?: string) => {
+  const status = String(raw || '').toLowerCase()
+  if (status === 'running') return 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/50 dark:bg-emerald-500/10 dark:text-emerald-300'
+  if (status === 'queued' || status === 'paused') return 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/50 dark:bg-amber-500/10 dark:text-amber-300'
+  if (status === 'completed' || status === 'done' || status === 'finished') return 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-500/50 dark:bg-blue-500/10 dark:text-blue-300'
+  if (status === 'error' || status === 'stopped' || status === 'cancelled') return 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-300'
+  return 'border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
+}
+
+const taskGenerationText = (task?: AgentTaskSnapshot | null) => {
+  if (!task) return '第1代 / 共1代'
+  const latest = Math.max(1, Number(task.latestGeneration) || 1)
+  const total = Math.max(1, Number(task.generationCount) || 1)
+  return `第${latest}代 / 共${total}代`
+}
+
+const taskTotalGenerations = (task?: AgentTaskSnapshot | null) => {
+  if (!task) return 1
+  return Math.max(1, Number(task.generationCount) || 1)
+}
+</script>
+
+<template>
+  <div 
+    class="relative bg-white rounded-xl p-4 transition-all duration-300 border shadow-sm hover:shadow-lg hover:-translate-y-1 w-full min-w-0 dark:bg-zinc-900/90 dark:border-zinc-700/50 backdrop-blur-sm group cursor-pointer"
+    :class="cardBorderClass"
+    @contextmenu.prevent="emit('context', { agent, x: $event.clientX, y: $event.clientY })"
+  >
+    <!-- 角色徽章 -->
+    <div v-if="agent.role === 'admin'" class="absolute top-2 right-12 bg-amber-100 text-amber-700 text-xs px-2 py-1 rounded-full border border-amber-200 shadow-sm flex items-center gap-1 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40 z-20">
+      <span>👑</span> 数字社会核心管理员
+    </div>
+
+    <!-- 头部信息 -->
+    <div class="flex justify-between items-start mb-3">
+      <div>
+        <h3 class="font-bold text-zinc-900 flex items-center gap-2 text-base dark:text-zinc-100 group-hover:text-indigo-600 transition-colors">
+          {{ agent.name }}
+          <span class="text-xs font-normal text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400">
+            第 {{ syncedGeneration }} 代
+          </span>
+        </h3>
+        <p class="text-xs text-zinc-500 mt-0.5 flex items-center gap-1 dark:text-zinc-400">
+          <span class="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse" title="在线"></span>
+          {{ agent.platform }}
+        </p>
+      </div>
+      <button
+        v-if="canControl"
+        class="w-7 h-7 rounded-full border border-zinc-200 text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300"
+        title="AI 设置"
+        @click.stop="emit('settings', agent)"
+      >
+        ⚙
+      </button>
+    </div>
+
+    <!-- 状态标签 -->
+    <div v-if="!isAssistantAdmin" class="mb-3 flex justify-between items-start gap-2 min-w-0">
+      <span 
+        class="px-2 py-1 rounded text-xs font-medium border break-words"
+        :class="statusDisplay.class"
+      >
+        {{ statusDisplay.text }}
+      </span>
+      <span class="text-xs font-mono text-zinc-400 dark:text-zinc-500 shrink-0">ID: {{ agent.id.slice(-4) }}</span>
+    </div>
+    <div v-else class="mb-3 flex justify-end items-start gap-2 min-w-0">
+      <span class="text-xs font-mono text-zinc-400 dark:text-zinc-500 shrink-0">ID: {{ agent.id.slice(-4) }}</span>
+    </div>
+
+    <!-- 生命条 / Token 消耗 -->
+    <div v-if="showLifecycle" class="mb-4">
+      <div class="flex justify-between text-xs text-zinc-600 mb-1.5 dark:text-zinc-300">
+        <span class="font-medium">{{ isUnlimitedLife ? '对话模式 (Token 不设上限)' : '生命周期 (Token)' }}</span>
+        <span class="font-mono">{{ isUnlimitedLife ? `${Math.floor(agent.tokensUsed)} / 无上限` : `${Math.floor(agent.tokensUsed)} / ${agent.tokenLimit}` }}</span>
+      </div>
+      <div class="w-full bg-zinc-100 rounded-full h-2 overflow-hidden border border-zinc-100 dark:bg-zinc-800 dark:border-zinc-700">
+        <div 
+          class="h-full rounded-full transition-all duration-700 ease-out" 
+          :class="lifeColorClass" 
+          :style="{ width: `${lifePercentage}%` }"
+        ></div>
+      </div>
+    </div>
+
+    <!-- 当前任务/行为 -->
+    <div class="bg-zinc-50/80 p-3 rounded-lg border border-zinc-100 text-xs text-zinc-700 min-h-[3.5rem] relative group dark:bg-zinc-800/80 dark:border-zinc-700 dark:text-zinc-300">
+      <div class="absolute top-0 left-0 w-1 h-full rounded-l-lg" 
+        :class="isRealtimeWorking ? 'bg-indigo-400' : 'bg-zinc-300'">
+      </div>
+      <span class="font-semibold block mb-1 text-zinc-900 pl-2 dark:text-zinc-100">实时状态:</span>
+      <p class="pl-2 leading-relaxed text-zinc-600 dark:text-zinc-400">
+        {{ syncedMcpText }}
+      </p>
+      <div
+        ref="thinkingViewportRef"
+        class="pl-2 leading-relaxed text-zinc-500 dark:text-zinc-400 mt-1 task-thinking-viewport"
+        :title="thinkingPreview"
+      >
+        <p ref="thinkingTextRef" class="task-thinking-content">
+          思考: {{ thinkingPreview }}
+        </p>
+      </div>
+      <div v-if="showTaskSnapshotBlock" class="mt-2 pl-2 space-y-1.5">
+        <div
+          v-if="scheduledTaskSnapshot"
+          class="rounded-md border border-zinc-200 dark:border-zinc-700 bg-white/80 dark:bg-zinc-900/50 p-2"
+        >
+          <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">等待中的定时任务</div>
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <div class="text-xs font-medium text-zinc-800 dark:text-zinc-100 truncate">{{ scheduledTaskSnapshot.title }}</div>
+              <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                代数: {{ taskGenerationText(scheduledTaskSnapshot) }}
+              </div>
+            </div>
+            <span
+              class="shrink-0 text-[10px] px-1.5 py-0.5 rounded border"
+              :class="taskStatusClass(scheduledTaskSnapshot.effectiveStatus || scheduledTaskSnapshot.status)"
+            >
+              {{ taskStatusLabel(scheduledTaskSnapshot.effectiveStatus || scheduledTaskSnapshot.status) }}
+            </span>
+          </div>
+        </div>
+
+        <div
+          v-if="agent.taskRecentCompleted"
+          class="rounded-md border border-zinc-200 dark:border-zinc-700 bg-white/80 dark:bg-zinc-900/50 p-2"
+        >
+          <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">最近任务</div>
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <div class="text-xs font-medium text-zinc-800 dark:text-zinc-100 truncate">{{ agent.taskRecentCompleted.title }}</div>
+              <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                总共代数: {{ taskTotalGenerations(agent.taskRecentCompleted) }}
+              </div>
+            </div>
+            <button
+              class="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors dark:border-indigo-500/40 dark:text-indigo-300 dark:hover:bg-indigo-500/10"
+              @click.stop="agent.taskRecentCompleted?.jobId
+                ? emit('show-task-detail', { agent, jobId: agent.taskRecentCompleted.jobId })
+                : emit('show-tasks', agent)"
+            >
+              对话详情
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部操作栏 (上帝干预) -->
+    <div v-if="canControl && agent.status !== 'dead'" class="flex justify-end gap-2 mt-3 pt-2 border-t border-zinc-50 opacity-0 group-hover:opacity-100 transition-opacity dark:border-zinc-800">
+      <button class="text-xs text-zinc-500 hover:text-indigo-600 px-2 py-1 hover:bg-zinc-50 rounded transition-colors dark:text-zinc-400 dark:hover:text-indigo-300 dark:hover:bg-zinc-800" @click.stop="emit('show-tools', agent)">
+        查看 MCP
+      </button>
+      <button
+        v-if="showWorkspaceContextButton"
+        class="text-xs text-zinc-500 hover:text-indigo-600 px-2 py-1 hover:bg-zinc-50 rounded transition-colors dark:text-zinc-400 dark:hover:text-indigo-300 dark:hover:bg-zinc-800"
+        @click.stop="emit('show-context', agent)"
+      >
+        读取目录
+      </button>
+      <button v-if="!isAssistantAdmin" class="text-xs text-zinc-500 hover:text-indigo-600 px-2 py-1 hover:bg-zinc-50 rounded transition-colors dark:text-zinc-400 dark:hover:text-indigo-300 dark:hover:bg-zinc-800" @click.stop="emit('show-tasks', agent)">
+        任务列表
+      </button>
+      <button class="text-xs text-red-400 hover:text-red-600 px-2 py-1 hover:bg-red-50 rounded transition-colors dark:text-red-300 dark:hover:text-red-200 dark:hover:bg-red-500/10" @click.stop="emit('chat', agent)">
+        与此 AI 对话
+      </button>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.task-thinking-viewport {
+  min-height: 4.25em;
+  max-height: 4.25em;
+  overflow: hidden;
+}
+
+.task-thinking-content {
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+</style>

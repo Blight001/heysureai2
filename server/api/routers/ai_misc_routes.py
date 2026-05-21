@@ -1,0 +1,362 @@
+IS_ROUTER_ENTRY = False
+
+import time
+from typing import Any, Dict, List, Optional
+
+from fastapi import Depends, Header, HTTPException
+from sqlmodel import Session, select
+
+from api.ai_service import ensure_default_ai_for_user, remove_switch_key
+from api.database import get_session
+from api.models import (
+    AITaskJob,
+    AIRuntimeStatus,
+    AssistantAIConfig,
+    ChatMessage,
+    ChatRun,
+    ChatSession,
+    ChatSessionCreate,
+    TokenUsageSnapshot,
+)
+from api.routers.auth import get_current_user
+from api.task_system import parse_generation_from_session_id
+from .ai_base import router
+
+
+@router.post("/configs/{config_id}/clear-tokens")
+async def clear_ai_token_usage(
+    config_id: int,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    cfg = session.get(AssistantAIConfig, config_id)
+    if not cfg or cfg.user_id != user.id:
+        raise HTTPException(status_code=404, detail="AI config not found")
+
+    rows = session.exec(
+        select(TokenUsageSnapshot).where(
+            TokenUsageSnapshot.user_id == user.id,
+            TokenUsageSnapshot.ai_kind == "assistant",
+            TokenUsageSnapshot.ai_config_id == config_id,
+        )
+    ).all()
+    deleted = len(rows)
+    for row in rows:
+        session.delete(row)
+    session.commit()
+    return {"success": True, "deleted": deleted}
+
+@router.delete("/configs/{config_id}")
+async def delete_ai_config(
+    config_id: int,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    cfg = session.get(AssistantAIConfig, config_id)
+    if not cfg or cfg.user_id != user.id:
+        raise HTTPException(status_code=404, detail="AI config not found")
+
+    status_rows = session.exec(
+        select(AIRuntimeStatus).where(
+            AIRuntimeStatus.user_id == user.id,
+            AIRuntimeStatus.ai_config_id == config_id,
+            AIRuntimeStatus.ai_kind == "assistant",
+        )
+    ).all()
+    for row in status_rows:
+        session.delete(row)
+
+    session_rows = session.exec(
+        select(ChatSession).where(
+            ChatSession.user_id == user.id,
+            ChatSession.ai_config_id == config_id,
+            ChatSession.ai_kind == "assistant",
+        )
+    ).all()
+    for row in session_rows:
+        session.delete(row)
+
+    session.delete(cfg)
+    session.commit()
+    remove_switch_key(user.id, cfg.switch_key)
+    return {"success": True}
+
+@router.get("/runtime-status")
+async def get_runtime_status(
+    ai_config_id: Optional[int] = None,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    statement = select(AIRuntimeStatus).where(AIRuntimeStatus.user_id == user.id)
+    if ai_config_id:
+        statement = statement.where(AIRuntimeStatus.ai_config_id == ai_config_id)
+    return session.exec(statement).all()
+
+@router.get("/token-snapshots")
+async def get_token_snapshots(
+    ai_kind: str = "assistant",
+    ai_config_id: Optional[int] = None,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    statement = select(TokenUsageSnapshot).where(
+        TokenUsageSnapshot.user_id == user.id,
+        TokenUsageSnapshot.ai_kind == ai_kind,
+    )
+    if ai_config_id:
+        statement = statement.where(TokenUsageSnapshot.ai_config_id == ai_config_id)
+    rows = session.exec(statement).all()
+    return rows
+
+@router.get("/cards")
+async def list_ai_cards(
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    ensure_default_ai_for_user(session, user.id)
+
+    cfgs = session.exec(
+        select(AssistantAIConfig)
+        .where(AssistantAIConfig.user_id == user.id)
+        .order_by(AssistantAIConfig.sort_order.asc(), AssistantAIConfig.created_at.asc())
+    ).all()
+    statuses = session.exec(
+        select(AIRuntimeStatus).where(
+            AIRuntimeStatus.user_id == user.id,
+            AIRuntimeStatus.ai_kind == "assistant",
+        )
+    ).all()
+    snapshots = session.exec(
+        select(TokenUsageSnapshot).where(
+            TokenUsageSnapshot.user_id == user.id,
+            TokenUsageSnapshot.ai_kind == "assistant",
+        )
+    ).all()
+
+    status_map = {row.ai_config_id: row for row in statuses if row.ai_config_id is not None}
+    token_totals = {}
+    for row in snapshots:
+        if row.ai_config_id is None:
+            continue
+        token_totals[row.ai_config_id] = token_totals.get(row.ai_config_id, 0) + (row.total_tokens or 0)
+
+    core_sessions = session.exec(
+        select(ChatSession).where(
+            ChatSession.user_id == user.id,
+            ChatSession.ai_kind == "core",
+        )
+    ).all()
+    latest_core_session_by_cfg: Dict[int, ChatSession] = {}
+    for row in core_sessions:
+        if row.ai_config_id is None:
+            continue
+        key = int(row.ai_config_id)
+        prev = latest_core_session_by_cfg.get(key)
+        if not prev or (row.updated_at or 0) > (prev.updated_at or 0):
+            latest_core_session_by_cfg[key] = row
+
+    core_messages = session.exec(
+        select(ChatMessage).where(
+            ChatMessage.user_id == user.id,
+            ChatMessage.ai_kind == "core",
+        )
+    ).all()
+    core_session_tokens: Dict[tuple[Optional[int], str], int] = {}
+    for msg in core_messages:
+        key = (msg.ai_config_id, msg.session_id)
+        core_session_tokens[key] = core_session_tokens.get(key, 0) + int(msg.total_tokens or 0)
+    core_task_tokens_by_prefix: Dict[tuple[int, str], int] = {}
+    for (cfg_id, sid), total in core_session_tokens.items():
+        if cfg_id is None:
+            continue
+        session_id = str(sid or "")
+        if not session_id.startswith("session_task_"):
+            continue
+        session_prefix = session_id.split("_g")[0] if "_g" in session_id else session_id
+        token_key = (int(cfg_id), session_prefix)
+        core_task_tokens_by_prefix[token_key] = core_task_tokens_by_prefix.get(token_key, 0) + int(total or 0)
+
+    active_runs = session.exec(
+        select(ChatRun).where(
+            ChatRun.user_id == user.id,
+            ChatRun.status.in_(["queued", "running"]),
+        ).order_by(ChatRun.updated_at.desc())
+    ).all()
+    active_run_map = {}
+    for row in active_runs:
+        key = (row.ai_config_id, row.ai_kind)
+        if key not in active_run_map:
+            active_run_map[key] = row
+
+    task_jobs = session.exec(
+        select(AITaskJob).where(
+            AITaskJob.user_id == user.id,
+        ).order_by(AITaskJob.created_at.desc())
+    ).all()
+    task_jobs_by_cfg: Dict[int, List[AITaskJob]] = {}
+    for row in task_jobs:
+        task_jobs_by_cfg.setdefault(int(row.ai_config_id), []).append(row)
+
+    task_runs = session.exec(
+        select(ChatRun).where(
+            ChatRun.user_id == user.id,
+            ChatRun.ai_kind == "core",
+            ChatRun.session_id.like("session_task_%"),
+        ).order_by(ChatRun.updated_at.desc())
+    ).all()
+    task_generations_by_prefix: Dict[str, set[int]] = {}
+    task_active_status_by_prefix: Dict[str, str] = {}
+    for row in task_runs:
+        sid = str(row.session_id or "").strip()
+        if not sid.startswith("session_task_"):
+            continue
+        session_prefix = sid.split("_g")[0] if "_g" in sid else sid
+        generation = parse_generation_from_session_id(sid, 1)
+        if generation <= 0:
+            generation = 1
+        if session_prefix not in task_generations_by_prefix:
+            task_generations_by_prefix[session_prefix] = set()
+        task_generations_by_prefix[session_prefix].add(generation)
+        if session_prefix not in task_active_status_by_prefix and str(row.status or "") in {"queued", "running"}:
+            task_active_status_by_prefix[session_prefix] = str(row.status or "")
+
+    try:
+        from api.routers.chat import _RUN_LIVE_STATE, _RUN_STATE_LOCK  # type: ignore
+        with _RUN_STATE_LOCK:
+            run_live_state = dict(_RUN_LIVE_STATE)
+    except Exception:
+        run_live_state = {}
+
+    def _build_task_summary(job: AITaskJob, token_limit: int) -> Dict[str, Any]:
+        session_prefix = f"session_task_{job.job_id}"
+        generation_set = task_generations_by_prefix.get(session_prefix) or set()
+        generation_count = len(generation_set)
+        latest_generation = max(generation_set) if generation_set else 1
+        run_status = str(task_active_status_by_prefix.get(session_prefix) or "")
+        effective_status = str(job.status or "")
+        if run_status in {"queued", "running"} and effective_status in {"queued", "running"}:
+            effective_status = "running" if run_status == "running" else "queued"
+        task_token_used = core_task_tokens_by_prefix.get((int(job.ai_config_id), session_prefix), 0)
+        return {
+            "job_id": job.job_id,
+            "title": job.title,
+            "status": job.status,
+            "effective_status": effective_status,
+            "run_status": run_status,
+            "trigger_type": job.trigger_type,
+            "generation_count": generation_count,
+            "latest_generation": latest_generation,
+            "task_token_used": int(task_token_used or 0),
+            "task_token_limit": int(token_limit or 0),
+            "created_at": job.created_at,
+            "started_at": job.started_at,
+            "finished_at": job.finished_at,
+        }
+
+    cards = []
+    for cfg in cfgs:
+        status = status_map.get(cfg.id)
+        token_used = token_totals.get(cfg.id, 0)
+        if cfg.ai_role == "digital_member":
+            latest_session = latest_core_session_by_cfg.get(int(cfg.id))
+            if latest_session:
+                token_used = core_session_tokens.get((cfg.id, latest_session.session_id), 0)
+            else:
+                token_used = 0
+        ai_kind = "assistant" if cfg.ai_role == "assistant_admin" else "core"
+        active_run = active_run_map.get((cfg.id, ai_kind))
+        run_live = run_live_state.get(active_run.run_id, {}) if active_run else {}
+        active_run_session_id = str(active_run.session_id or "") if active_run else ""
+        is_task_run_active = active_run_session_id.startswith("session_task_")
+        user_chat_active = bool(active_run and not is_task_run_active)
+        live_token_pending = int(run_live.get("pending_total_tokens") or 0)
+        token_used = int(token_used or 0) + live_token_pending
+        live_text = str(run_live.get("text") or "")
+        live_tool = str(run_live.get("current_tool") or "").strip()
+        cfg_task_jobs = task_jobs_by_cfg.get(int(cfg.id), [])
+        cfg_task_summaries = [_build_task_summary(job, int(cfg.token_limit or 0)) for job in cfg_task_jobs]
+        current_or_scheduled_task = next(
+            (
+                item for item in cfg_task_summaries
+                if str(item.get("effective_status") or "").lower() in {"running", "queued", "paused"}
+            ),
+            None,
+        )
+        if current_or_scheduled_task is None:
+            current_or_scheduled_task = next(
+                (item for item in cfg_task_summaries if str(item.get("trigger_type") or "").lower() == "schedule"),
+                None,
+            )
+        latest_completed_task = next(
+            (
+                item for item in cfg_task_summaries
+                if str(item.get("effective_status") or "").lower() in {"completed", "done", "finished"}
+            ),
+            None,
+        )
+        current_task_title = str(current_or_scheduled_task.get("title") or "") if current_or_scheduled_task else ""
+        current_task_status = str(current_or_scheduled_task.get("effective_status") or "idle") if current_or_scheduled_task else "idle"
+        cards.append(
+            {
+                "id": cfg.id,
+                "name": cfg.name,
+                "description": cfg.description,
+                "model": cfg.model,
+                "ai_role": cfg.ai_role,
+                "digital_member_role": cfg.digital_member_role,
+                "platform": cfg.platform,
+                "generation": cfg.generation,
+                "token_limit": cfg.token_limit,
+                "token_used": token_used,
+                "token_live_pending": live_token_pending,
+                "lifecycle_status": cfg.lifecycle_status,
+                "current_behavior": cfg.current_behavior,
+                "workspace_root": cfg.workspace_root,
+                "database_uri": cfg.database_uri,
+                "project_id": cfg.project_id,
+                "project_name": cfg.project_name,
+                "enabled": cfg.enabled,
+                "mcp_enabled": cfg.mcp_enabled,
+                "switch_key": cfg.switch_key,
+                "mcp_tools": cfg.mcp_tools,
+                "system_auto_control": cfg.system_auto_control,
+                "runtime_status": status.current_status if status else "idle",
+                "runtime_tool": status.current_mcp_tool if status else "",
+                "latest_mcp_tool": live_tool or (status.current_mcp_tool if status else ""),
+                "active_run_status": str(active_run.status or "") if active_run else "",
+                "active_run_phase": str(run_live.get("phase") or "idle") if active_run else "idle",
+                "active_run_session_id": active_run_session_id,
+                "user_chat_active": user_chat_active,
+                "current_task_title": current_task_title,
+                "current_task_status": current_task_status,
+                "task_current_or_recent": current_or_scheduled_task,
+                "task_recent_completed": latest_completed_task,
+                "latest_thinking": live_text,
+            }
+        )
+    return cards
+
+@router.post("/sessions")
+async def create_session(
+    body: ChatSessionCreate,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    new_id = f"session_{int(time.time() * 1000)}"
+    row = ChatSession(
+        user_id=user.id,
+        ai_config_id=body.ai_config_id,
+        ai_kind=body.ai_kind,
+        session_id=new_id,
+        session_name=body.session_name,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row

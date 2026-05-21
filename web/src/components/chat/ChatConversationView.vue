@@ -1,0 +1,304 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import ChatMessageList from './ChatMessageList.vue'
+import { parseChatResponseInline, type ActionBlock, type InlineContent as InlineContentType } from '../../utils/chatParser'
+
+interface ConversationInputMessage {
+  id?: number
+  role?: string
+  content: string
+  think?: string
+  display_text?: string
+  inlineContent?: InlineContentType[]
+  blocks?: ActionBlock[]
+  tags?: string
+  system_prompt?: string
+  created_at?: number
+}
+
+interface ConversationMessage extends ConversationInputMessage {
+  role: 'user' | 'assistant' | 'system'
+}
+
+const props = withDefaults(defineProps<{
+  baseMessages: ConversationInputMessage[]
+  sessionActive?: boolean
+  showFrontPrompt?: boolean
+  showFrontPromptPlaceholder?: boolean
+  frontPromptText?: string
+  frontPromptPlaceholder?: string
+  liveText?: string
+  isTyping?: boolean
+  readonly?: boolean
+  appliedEdits?: string[]
+  appliedSignatures?: string[]
+  actionResults?: Record<string, string>
+  actionResultsBySignature?: Record<string, string>
+  recoverActionStateFromTags?: boolean
+}>(), {
+  sessionActive: false,
+  showFrontPrompt: true,
+  showFrontPromptPlaceholder: true,
+  frontPromptText: '',
+  frontPromptPlaceholder: '（当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt）',
+  liveText: '',
+  isTyping: false,
+  readonly: false,
+  appliedEdits: () => [],
+  appliedSignatures: () => [],
+  actionResults: () => ({}),
+  actionResultsBySignature: () => ({}),
+  recoverActionStateFromTags: false,
+})
+
+const emit = defineEmits<{
+  (e: 'delete', renderIdx: number, message: ConversationMessage | null): void
+  (e: 'recall', renderIdx: number, message: ConversationMessage | null): void
+  (e: 'apply', renderIdx: number, blockIdx: number, message: ConversationMessage | null): void
+  (e: 'revert', renderIdx: number, blockIdx: number, message: ConversationMessage | null): void
+}>()
+
+const normalizeRole = (role?: string): 'user' | 'assistant' | 'system' => {
+  const normalized = String(role || '').toLowerCase()
+  if (normalized === 'user' || normalized === 'assistant' || normalized === 'system') return normalized
+  return 'assistant'
+}
+
+const normalizedMessages = computed<ConversationMessage[]>(() => {
+  return (props.baseMessages || []).map((raw) => {
+    const role = normalizeRole(raw?.role)
+    const content = String(raw?.content || '')
+    const hasParsed =
+      (Array.isArray(raw?.inlineContent) && raw.inlineContent.length > 0)
+      || typeof raw?.display_text === 'string'
+      || typeof raw?.think === 'string'
+    if (hasParsed) {
+      return {
+        ...raw,
+        role,
+      }
+    }
+    const parsed = parseChatResponseInline(content)
+    return {
+      ...raw,
+      role,
+      think: typeof raw?.think === 'string' ? raw.think : parsed.think,
+      display_text: typeof raw?.display_text === 'string' ? raw.display_text : (parsed.displayText || content),
+      blocks: Array.isArray(raw?.blocks) ? raw.blocks : parsed.blocks,
+      inlineContent: Array.isArray(raw?.inlineContent) ? raw.inlineContent : parsed.inlineContent,
+    }
+  })
+})
+
+const STATE_PREFIX = '__HS_MCP_STATE__='
+
+const splitTags = (raw?: string) => {
+  const text = String(raw || '')
+  const idx = text.indexOf(STATE_PREFIX)
+  if (idx < 0) return { base: text.trim(), encoded: '' }
+  const base = text.slice(0, idx).replace(/\s*\|\s*$/, '').trim()
+  const encoded = text.slice(idx + STATE_PREFIX.length).trim()
+  return { base, encoded }
+}
+
+const decodeStateFromTags = (raw?: string): Record<string, any> | null => {
+  const { encoded } = splitTags(raw)
+  if (!encoded) return null
+  try {
+    const decoded = decodeURIComponent(encoded)
+    const parsed = JSON.parse(decoded)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+const stableStringify = (value: any): string => {
+  if (value === null || value === undefined) return String(value)
+  if (typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+  const keys = Object.keys(value).sort()
+  return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`
+}
+
+const simpleHash = (input: string) => {
+  let hash = 5381
+  for (let i = 0; i < input.length; i += 1) {
+    hash = ((hash << 5) + hash) + input.charCodeAt(i)
+    hash |= 0
+  }
+  return String(hash >>> 0)
+}
+
+const blockSignature = (block: ActionBlock) => {
+  const raw = [
+    block?.type || '',
+    block?.tool || '',
+    block?.filename || '',
+    block?.command || '',
+    block?.search || '',
+    block?.replace || '',
+    block?.content || '',
+    stableStringify(block?.arguments || {}),
+  ].join('|')
+  return `sig_${simpleHash(raw)}`
+}
+
+const recoveredActionState = computed(() => {
+  if (!props.recoverActionStateFromTags) {
+    return {
+      appliedEdits: [] as string[],
+      appliedSignatures: [] as string[],
+      actionResults: {} as Record<string, string>,
+      actionResultsBySignature: {} as Record<string, string>,
+    }
+  }
+
+  const appliedEdits = new Set<string>()
+  const appliedSignatures = new Set<string>()
+  const actionResults: Record<string, string> = {}
+  const actionResultsBySignature: Record<string, string> = {}
+
+  for (const msg of normalizedMessages.value) {
+    const state = decodeStateFromTags(msg.tags)
+    const blockStates = (state?.blocks && typeof state.blocks === 'object') ? state.blocks : {}
+    const signatureStates = (state?.signatures && typeof state.signatures === 'object') ? state.signatures : {}
+
+    const msgBlockBySig: Record<string, string[]> = {}
+    for (const block of msg.blocks || []) {
+      const sig = blockSignature(block)
+      if (!msgBlockBySig[sig]) msgBlockBySig[sig] = []
+      msgBlockBySig[sig].push(String(block.id || ''))
+    }
+
+    for (const [blockId, blockStateRaw] of Object.entries(blockStates)) {
+      const blockState = (blockStateRaw && typeof blockStateRaw === 'object') ? blockStateRaw as Record<string, any> : {}
+      if (blockState.applied) appliedEdits.add(blockId)
+      if (typeof blockState.result === 'string' && blockState.result.trim()) {
+        actionResults[blockId] = blockState.result
+        appliedEdits.add(blockId)
+      }
+    }
+
+    for (const [sig, sigStateRaw] of Object.entries(signatureStates)) {
+      const sigState = (sigStateRaw && typeof sigStateRaw === 'object') ? sigStateRaw as Record<string, any> : {}
+      if (sigState.applied) appliedSignatures.add(sig)
+      if (typeof sigState.result === 'string' && sigState.result.trim()) {
+        actionResultsBySignature[sig] = sigState.result
+      }
+      const mappedIds = msgBlockBySig[sig] || []
+      for (const blockId of mappedIds) {
+        if (sigState.applied) appliedEdits.add(blockId)
+        if (typeof sigState.result === 'string' && sigState.result.trim()) {
+          actionResults[blockId] = sigState.result
+        }
+      }
+    }
+  }
+
+  return {
+    appliedEdits: Array.from(appliedEdits),
+    appliedSignatures: Array.from(appliedSignatures),
+    actionResults,
+    actionResultsBySignature,
+  }
+})
+
+const mergedAppliedEdits = computed(() => {
+  return Array.from(new Set([...props.appliedEdits, ...recoveredActionState.value.appliedEdits]))
+})
+
+const mergedAppliedSignatures = computed(() => {
+  return Array.from(new Set([...props.appliedSignatures, ...recoveredActionState.value.appliedSignatures]))
+})
+
+const mergedActionResults = computed(() => {
+  return {
+    ...recoveredActionState.value.actionResults,
+    ...props.actionResults,
+  }
+})
+
+const mergedActionResultsBySignature = computed(() => {
+  return {
+    ...recoveredActionState.value.actionResultsBySignature,
+    ...props.actionResultsBySignature,
+  }
+})
+
+const effectiveFrontPrompt = computed(() => {
+  const explicit = String(props.frontPromptText || '').trim()
+  if (explicit) return explicit
+  for (let i = normalizedMessages.value.length - 1; i >= 0; i -= 1) {
+    const prompt = String(normalizedMessages.value[i]?.system_prompt || '').trim()
+    if (prompt) return prompt
+  }
+  return ''
+})
+
+const frontPromptMessage = computed<ConversationMessage | null>(() => {
+  if (!props.showFrontPrompt || !props.sessionActive) return null
+  const prompt = effectiveFrontPrompt.value
+  if (!prompt && !props.showFrontPromptPlaceholder) return null
+  const content = prompt
+    ? `[前置 Prompt]\n${prompt}`
+    : `[前置 Prompt]\n${props.frontPromptPlaceholder}`
+  return {
+    id: -2,
+    role: 'system',
+    content,
+    display_text: content,
+  }
+})
+
+const liveAssistantMessage = computed<ConversationMessage | null>(() => {
+  const text = String(props.liveText || '')
+  if (!text.trim()) return null
+  return {
+    id: -1,
+    role: 'assistant',
+    content: text,
+    display_text: text,
+  }
+})
+
+const renderMessages = computed<ConversationMessage[]>(() => {
+  const base = [...normalizedMessages.value]
+  if (frontPromptMessage.value) base.unshift(frontPromptMessage.value)
+  if (liveAssistantMessage.value) base.push(liveAssistantMessage.value)
+  return base
+})
+
+const onDelete = (idx: number) => {
+  emit('delete', idx, renderMessages.value[idx] || null)
+}
+
+const onRecall = (idx: number) => {
+  emit('recall', idx, renderMessages.value[idx] || null)
+}
+
+const onApply = (msgIdx: number, blockIdx: number) => {
+  emit('apply', msgIdx, blockIdx, renderMessages.value[msgIdx] || null)
+}
+
+const onRevert = (msgIdx: number, blockIdx: number) => {
+  emit('revert', msgIdx, blockIdx, renderMessages.value[msgIdx] || null)
+}
+</script>
+
+<template>
+  <ChatMessageList
+    :messages="renderMessages"
+    :appliedEdits="mergedAppliedEdits"
+    :appliedSignatures="mergedAppliedSignatures"
+    :actionResults="mergedActionResults"
+    :actionResultsBySignature="mergedActionResultsBySignature"
+    :isTyping="isTyping"
+    :isEmpty="renderMessages.length === 0"
+    :readonly="readonly"
+    @delete="onDelete"
+    @recall="onRecall"
+    @apply="onApply"
+    @revert="onRevert"
+  />
+</template>

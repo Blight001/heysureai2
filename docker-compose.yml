@@ -1,0 +1,25 @@
+services:
+  server:
+    build: ./server
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./server/uploads:/app/uploads
+    environment:
+      - NODE_ENV=production
+
+  agent:
+    build: ./agent
+    depends_on:
+      - server
+    environment:
+      - SERVER_URL=http://server:3000
+
+  web:
+    build: ./web
+    ports:
+      - "5173:5173"
+    environment:
+      - SERVER_URL=http://server:3000
+    depends_on:
+      - server

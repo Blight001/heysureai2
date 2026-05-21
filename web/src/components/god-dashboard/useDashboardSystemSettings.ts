@@ -1,0 +1,185 @@
+import { ref, watch } from 'vue'
+import { normalizeSystemAutoControl as normalizeTaskSystemAutoControl } from '../../utils/taskSystem'
+import type { User } from './types'
+
+type ThemeMode = 'light' | 'dark'
+type FontSize = 'sm' | 'md' | 'lg'
+type MessageType = 'info' | 'success' | 'warning' | 'error'
+type AlertFn = (options: string | { message: string; type?: MessageType }) => Promise<void>
+
+interface UseDashboardSystemSettingsOptions {
+  getCurrentUser: () => User | null | undefined
+  alert: AlertFn
+  onRefreshUser: (user: User) => void
+}
+
+const clampIdleSeconds = (value: unknown) => {
+  const parsed = Number(value ?? 25)
+  if (!Number.isFinite(parsed)) return 25
+  return Math.max(5, Math.min(3600, Math.floor(parsed)))
+}
+
+export const useDashboardSystemSettings = (options: UseDashboardSystemSettingsOptions) => {
+  const themeMode = ref<ThemeMode>('dark')
+  const fontSize = ref<FontSize>('md')
+  const globalMcpCallMethod = ref(`When you want to call a tool, output one or more blocks using EXACTLY this format and do not wrap them in markdown code fences:
+<mcp-call>
+{"tool":"workspace.read_files","arguments":{"paths":["README.md"]}}
+</mcp-call>
+
+Available MCP tools include:
+{MCP}
+
+Rules:
+- Explain your intent in normal text first when helpful, then emit the MCP call block.
+- For workspace.write_file and workspace.edit_file, prefer structured arguments: target + content/edits + options.
+- Use workspace.edit_file for targeted edits to existing files.
+- Use workspace.write_file for new files or full rewrites.
+- Use admin.* tools when managing connected agents.
+- Only fall back to legacy File/Create File/Delete File/Run Command formats if MCP is unavailable.`)
+  const globalMcpFormatErrorHint = ref(`[系统提示] 检测到你正在尝试调用 MCP，但调用格式未通过校验，因此本次没有执行任何工具。
+
+请改用以下标准格式（任选其一）：
+1) JSON 方式（推荐）
+<mcp-call>
+{"tool":"workspace.read_files","arguments":{"paths":["README.md"]}}
+</mcp-call>
+
+2) XML-like 方式
+<mcp-call>
+<tool>workspace.read_files</tool>
+<arguments>{"paths":["README.md"]}</arguments>
+</mcp-call>
+
+注意：
+- <arguments> 标签内必须是 JSON 对象字符串。
+- 不要写成 <arguments><paths>...</paths></arguments> 这种嵌套标签格式。
+- 一次只调用一个工具，等待 MCP 返回后再继续。
+{details}`)
+  const defaultStartTaskPrompt = ref('你将收到一个任务，请先理解目标、约束与优先级，然后开始执行。')
+  const defaultResumeTaskPrompt = ref('请继续执行刚才被暂停的任务，先简要回顾当前进度，再继续推进直到可交付。')
+  const defaultSupervisionPrompt = ref('系统监督提醒：请确认当前任务是否已完成。若已完成请调用 task.complete 标记；若未完成请给出剩余步骤并继续执行。')
+  const defaultSupervisionIdleSeconds = ref(25)
+  const defaultInheritanceNotice = ref('当前思考量已达到阈值（{session_tokens}/{threshold}），建议立即开启传承流程，沉淀本轮结论与关键上下文。')
+
+  const applyTheme = (mode: ThemeMode) => {
+    const root = document.documentElement
+    if (mode === 'dark') root.classList.add('dark')
+    else root.classList.remove('dark')
+  }
+
+  const applyFontSize = (size: FontSize) => {
+    const map: Record<FontSize, string> = { sm: '13px', md: '14px', lg: '16px' }
+    document.documentElement.style.setProperty('--app-font-size', map[size])
+  }
+
+  const getSystemAutoControlDefaults = () => ({
+    start_task_prompt: defaultStartTaskPrompt.value,
+    resume_task_prompt: defaultResumeTaskPrompt.value,
+    supervision_prompt: defaultSupervisionPrompt.value,
+    inheritance_notice: defaultInheritanceNotice.value,
+  })
+
+  const normalizeSystemAutoControl = (raw: unknown) =>
+    normalizeTaskSystemAutoControl(raw, getSystemAutoControlDefaults())
+
+  const saveSystemSettings = async () => {
+    const currentUser = options.getCurrentUser()
+    if (!currentUser) return
+
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch('/api/auth/profile', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          mcp_call_method: globalMcpCallMethod.value,
+          mcp_format_error_hint: globalMcpFormatErrorHint.value,
+          default_start_task_prompt: defaultStartTaskPrompt.value,
+          default_resume_task_prompt: defaultResumeTaskPrompt.value,
+          default_supervision_prompt: defaultSupervisionPrompt.value,
+          default_supervision_idle_seconds: clampIdleSeconds(defaultSupervisionIdleSeconds.value),
+          default_inheritance_notice: defaultInheritanceNotice.value,
+          ui_theme_mode: themeMode.value,
+          ui_font_size: fontSize.value,
+        }),
+      })
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}))
+        void options.alert({ message: `保存失败: ${error.detail || '未知错误'}`, type: 'error' })
+        return
+      }
+
+      const updatedUser = await res.json()
+      void options.alert({ message: '系统设置已保存', type: 'success' })
+      options.onRefreshUser(updatedUser)
+    } catch (err) {
+      console.error('Failed to save settings:', err)
+      void options.alert({ message: '保存失败，请检查网络连接', type: 'error' })
+    }
+  }
+
+  watch(themeMode, value => {
+    applyTheme(value)
+  }, { immediate: true })
+
+  watch(fontSize, value => {
+    applyFontSize(value)
+  }, { immediate: true })
+
+  watch(
+    () => options.getCurrentUser(),
+    (user) => {
+      if (!user) return
+      const rawUser = user as any
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_theme_mode')) {
+        const rawTheme = String(rawUser.ui_theme_mode ?? '').toLowerCase()
+        themeMode.value = rawTheme === 'light' ? 'light' : 'dark'
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_font_size')) {
+        const rawFont = String(rawUser.ui_font_size ?? '').toLowerCase()
+        fontSize.value = rawFont === 'sm' || rawFont === 'lg' ? rawFont : 'md'
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'mcp_call_method')) {
+        globalMcpCallMethod.value = String(rawUser.mcp_call_method ?? '')
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'mcp_format_error_hint')) {
+        globalMcpFormatErrorHint.value = String(rawUser.mcp_format_error_hint ?? '')
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'default_start_task_prompt')) {
+        defaultStartTaskPrompt.value = String(rawUser.default_start_task_prompt ?? '')
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'default_resume_task_prompt')) {
+        defaultResumeTaskPrompt.value = String(rawUser.default_resume_task_prompt ?? '')
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'default_supervision_prompt')) {
+        defaultSupervisionPrompt.value = String(rawUser.default_supervision_prompt ?? '')
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'default_supervision_idle_seconds')) {
+        defaultSupervisionIdleSeconds.value = clampIdleSeconds(rawUser.default_supervision_idle_seconds)
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'default_inheritance_notice')) {
+        defaultInheritanceNotice.value = String(rawUser.default_inheritance_notice ?? '')
+      }
+    },
+    { immediate: true }
+  )
+
+  return {
+    themeMode,
+    fontSize,
+    globalMcpCallMethod,
+    globalMcpFormatErrorHint,
+    defaultStartTaskPrompt,
+    defaultResumeTaskPrompt,
+    defaultSupervisionPrompt,
+    defaultSupervisionIdleSeconds,
+    defaultInheritanceNotice,
+    normalizeSystemAutoControl,
+    saveSystemSettings,
+  }
+}

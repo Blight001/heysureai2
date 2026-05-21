@@ -1,0 +1,670 @@
+IS_ROUTER_ENTRY = False
+
+import json
+import re
+import time
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
+
+import requests
+from fastapi import HTTPException
+
+from api.mcp import registry
+from api.models import AssistantAIConfig, DEFAULT_MCP_FORMAT_ERROR_HINT
+from api.task_system import (
+    DEFAULT_SYSTEM_AUTO_CONTROL,
+    with_task_create_compat,
+    with_workspace_read_by_name_compat,
+)
+from .chat_base import (
+    STATE_PREFIX,
+    _AUTO_RUNTIME_SECTION_TITLES,
+    _RUN_LIVE_STATE,
+    _RUN_STATE_LOCK,
+    _TASK_CREATE_TOOL_NAMES,
+    _TASK_RUNTIME_SECTION_TITLES,
+)
+
+
+def _parse_mcp_payload(raw: str):
+    body = (raw or "").strip()
+    if not body:
+        return None
+
+    try:
+        payload = json.loads(body)
+        tool = str(payload.get("tool", "")).strip()
+        if not tool:
+            return None
+        args = payload.get("arguments", {})
+        if not isinstance(args, dict):
+            args = {}
+        return {"tool": tool, "arguments": args}
+    except Exception:
+        pass
+
+    tool_match = re.search(r"<tool>\s*([\s\S]*?)\s*</tool>", body, re.IGNORECASE)
+    if not tool_match:
+        return None
+    tool = str(tool_match.group(1) or "").strip()
+    if not tool:
+        return None
+
+    args_match = re.search(r"<arguments>\s*([\s\S]*?)\s*</arguments>", body, re.IGNORECASE)
+    if not args_match:
+        return {"tool": tool, "arguments": {}}
+    args_raw = str(args_match.group(1) or "").strip()
+    if not args_raw:
+        return {"tool": tool, "arguments": {}}
+    try:
+        args = json.loads(args_raw)
+        if isinstance(args, dict):
+            return {"tool": tool, "arguments": args}
+        return {"tool": tool, "arguments": {}}
+    except Exception:
+        return None
+
+def _strip_prompt_section(text: str, section_title: str) -> str:
+    src = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    pattern = re.compile(rf"\n*\[{re.escape(section_title)}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)")
+    return pattern.sub("", src)
+
+def _strip_prompt_sections(text: str, section_titles: tuple[str, ...]) -> str:
+    current = str(text or "")
+    for section_title in section_titles:
+        current = _strip_prompt_section(current, section_title)
+    return current.strip()
+
+def _append_prompt_section(text: str, section_title: str, section_body: str) -> str:
+    base = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    body = str(section_body or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not body:
+        return base
+    section = f"[{section_title}]\n{body}"
+    if not base:
+        return section
+    return f"{base}\n\n{section}"
+
+def _strip_runtime_injected_sections(text: str) -> str:
+    return _strip_prompt_sections(text, _AUTO_RUNTIME_SECTION_TITLES)
+
+def _strip_task_runtime_sections(text: str) -> str:
+    return _strip_prompt_sections(text, _TASK_RUNTIME_SECTION_TITLES)
+
+def _strip_legacy_global_mcp_block(text: str) -> str:
+    # Remove previously inlined global MCP method blocks to avoid duplicate prompt sections.
+    return _strip_prompt_section(text, "全局MCP调用方法").strip()
+
+def _looks_like_mcp_template(text: str) -> bool:
+    src = str(text or "").strip().lower()
+    if not src:
+        return False
+    has_tools_line = (
+        "available mcp tools include" in src
+        or "可用的 mcp 工具包括" in src
+        or "可用的mcp工具包括" in src
+    )
+    has_rules_line = ("rules:" in src or "规则" in src)
+    return ("<mcp-call>" in src and has_tools_line and has_rules_line)
+
+def _parse_allowed_tools_for_cfg(cfg: Optional[AssistantAIConfig]) -> set[str]:
+    if not cfg:
+        return set()
+    try:
+        parsed = json.loads(cfg.mcp_tools or "[]")
+        if not isinstance(parsed, list):
+            return set()
+        raw_tools = {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
+        raw_tools = with_task_create_compat(raw_tools)
+        return with_workspace_read_by_name_compat(raw_tools)
+    except Exception:
+        return set()
+
+def _schema_type_name(schema: Any) -> str:
+    if not isinstance(schema, dict):
+        return "any"
+    raw = schema.get("type")
+    if isinstance(raw, list):
+        vals = [str(v).strip() for v in raw if str(v).strip()]
+        return "|".join(vals) if vals else "any"
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    if isinstance(schema.get("enum"), list):
+        return "enum"
+    return "any"
+
+def _example_schedule_iso(hours_from_now: int = 2) -> str:
+    target = datetime.now().astimezone() + timedelta(hours=max(1, int(hours_from_now or 1)))
+    return target.replace(second=0, microsecond=0).isoformat()
+
+def _schema_placeholder(schema: Any, field_name: str = "") -> Any:
+    t = _schema_type_name(schema)
+    field = str(field_name or "").strip().lower()
+    if "|" in t:
+        candidates = [part.strip() for part in t.split("|") if part.strip()]
+        if "string" in candidates:
+            t = "string"
+        elif "number" in candidates:
+            t = "number"
+        elif "integer" in candidates:
+            t = "integer"
+        elif candidates:
+            t = candidates[0]
+
+    if t == "string":
+        if field in {"path", "name"}:
+            return "README.md"
+        if field == "command":
+            return "git status"
+        if field in {"job_id"}:
+            return "job_demo_001"
+        if field in {"project_id", "id"}:
+            return "project_demo_001"
+        if field == "title":
+            return "整理今日开发待办"
+        if field in {"instruction", "content"}:
+            return "先检查当前进度，再输出下一步执行清单。"
+        return "example"
+    if t == "integer":
+        if field in {"priority"}:
+            return 5
+        if field in {"target_ai_config_id", "target_config_id"}:
+            return 1
+        return 1
+    if t == "number":
+        return 1
+    if t == "boolean":
+        return True
+    if t == "array":
+        if field in {"paths", "names"}:
+            return ["README.md"]
+        if field in {"ai_member_ids"}:
+            return [1, 2]
+        return ["example"]
+    if t == "object":
+        if field == "flowdata":
+            return {"action": "ping"}
+        return {"note": "example"}
+    if t == "enum":
+        values = schema.get("enum") if isinstance(schema, dict) else None
+        if isinstance(values, list) and values:
+            return values[0]
+        return "example"
+    return "example"
+
+def _compact_fields(fields: List[str], limit: int = 6) -> str:
+    if not fields:
+        return "无"
+    if len(fields) <= limit:
+        return ", ".join(fields)
+    return ", ".join(fields[:limit]) + ", ..."
+
+def _render_mcp_tool_item(tool_info: Dict[str, Any]) -> str:
+    name = str(tool_info.get("name") or "").strip()
+    if not name:
+        return ""
+    schema = tool_info.get("inputSchema")
+    if not isinstance(schema, dict):
+        return f"- {name} (参数: 无)"
+
+    props = schema.get("properties")
+    if not isinstance(props, dict) or not props:
+        return f"- {name} (参数: 无)"
+
+    required_raw = schema.get("required")
+    required_names: List[str] = []
+    if isinstance(required_raw, list):
+        required_names = [str(v).strip() for v in required_raw if str(v).strip() in props]
+    optional_names = [k for k in props.keys() if k not in required_names]
+
+    required_desc = [f"{key}:{_schema_type_name(props.get(key))}" for key in required_names]
+    optional_desc = [f"{key}:{_schema_type_name(props.get(key))}" for key in optional_names]
+    field_limit = 100 if name in _TASK_CREATE_TOOL_NAMES else (30 if name.startswith("task.") else 6)
+
+    example_args: Dict[str, Any] = {}
+    if name == "workspace.write_file":
+        example_args = {
+            "target": {"path": "doc/notes/todo.md"},
+            "content": {"text": "# 今日待办\n- 修复 MCP 文件编辑策略\n- 回归验证"},
+            "options": {"create": True, "overwrite": True, "create_dirs": True},
+        }
+    elif name == "workspace.edit_file":
+        example_args = {
+            "target": {"path": "doc/notes/todo.md"},
+            "edits": [
+                {
+                    "op": "replace",
+                    "search": "修复 MCP 文件编辑策略",
+                    "replace": "修复 MCP 文件编辑策略（结构化模式）",
+                    "replace_all": False,
+                }
+            ],
+            "options": {"create_if_missing": False},
+        }
+    elif name == "task.create_immediate":
+        if "title" in props:
+            example_args["title"] = "整理今日待办并更新任务看板"
+        elif "name" in props:
+            example_args["name"] = "整理今日待办并更新任务看板"
+        if "instruction" in props:
+            example_args["instruction"] = "梳理当前分支未完成事项，按高/中/低优先级输出到 doc/daily-plan.md。"
+        elif "content" in props:
+            example_args["content"] = "梳理当前分支未完成事项，按高/中/低优先级输出到 doc/daily-plan.md。"
+        if "priority" in props:
+            example_args["priority"] = 7
+    elif name == "task.create_scheduled":
+        if "title" in props:
+            example_args["title"] = "两小时后执行代码健康巡检"
+        elif "name" in props:
+            example_args["name"] = "两小时后执行代码健康巡检"
+        if "instruction" in props:
+            example_args["instruction"] = "运行 python -m compileall server/api 与前端类型检查，记录失败项和修复建议到 doc/ops/health-check.md。"
+        elif "content" in props:
+            example_args["content"] = "运行 python -m compileall server/api 与前端类型检查，记录失败项和修复建议到 doc/ops/health-check.md。"
+        if "priority" in props:
+            example_args["priority"] = 6
+        if "schedule_at" in props:
+            example_args["schedule_at"] = _example_schedule_iso(2)
+        elif "schedule_duration_minutes" in props:
+            example_args["schedule_duration_minutes"] = 120
+    elif name == "task.create_recurring":
+        if "title" in props:
+            example_args["title"] = "每30分钟检查CI构建状态"
+        elif "name" in props:
+            example_args["name"] = "每30分钟检查CI构建状态"
+        if "instruction" in props:
+            example_args["instruction"] = "读取最新一次构建结果；若失败，整理失败任务与报错摘要到 doc/ops/ci-watch.md。"
+        elif "content" in props:
+            example_args["content"] = "读取最新一次构建结果；若失败，整理失败任务与报错摘要到 doc/ops/ci-watch.md。"
+        if "priority" in props:
+            example_args["priority"] = 5
+        if "schedule_duration_minutes" in props:
+            example_args["schedule_duration_minutes"] = 30
+        if "schedule_run_immediately" in props:
+            example_args["schedule_run_immediately"] = True
+    elif name == "task.create":
+        if "title" in props:
+            example_args["title"] = "兼容入口：今晚例行巡检"
+        elif "name" in props:
+            example_args["name"] = "兼容入口：今晚例行巡检"
+        if "instruction" in props:
+            example_args["instruction"] = "按巡检清单完成日志检查、错误归档与明日风险提示。"
+        elif "content" in props:
+            example_args["content"] = "按巡检清单完成日志检查、错误归档与明日风险提示。"
+        if "priority" in props:
+            example_args["priority"] = 6
+        if "schedule_enabled" in props:
+            example_args["schedule_enabled"] = True
+        if "schedule_at" in props:
+            example_args["schedule_at"] = _example_schedule_iso(3)
+    else:
+        seed_names = required_names[:3] if required_names else optional_names[:1]
+        for key in seed_names:
+            example_args[key] = _schema_placeholder(props.get(key), key)
+
+    example_payload = json.dumps(
+        {"tool": name, "arguments": example_args},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    format_hint = ""
+    if name in {"task.create_scheduled", "task.create"}:
+        format_hint = (
+            "\n"
+            "  时间格式: `schedule_at` 仅支持 Unix 秒或带时区 ISO-8601（必须包含 `+08:00` 或 `Z`），"
+            "不要使用无时区时间。"
+        )
+    elif name == "task.create_recurring":
+        format_hint = (
+            "\n"
+            "  时间格式: 循环任务不要传 `schedule_at`，仅使用 `schedule_duration_minutes`（分钟间隔）。"
+        )
+    elif name in {"workspace.write_file", "workspace.edit_file"}:
+        format_hint = (
+            "\n"
+            "  结构化模式: 建议优先使用 `target + content/edits + options`；旧字段（path/search/replace）仍兼容。"
+        )
+    return (
+        f"- {name} (必填: {_compact_fields(required_desc, field_limit)}; 可选: {_compact_fields(optional_desc, field_limit)})\n"
+        f"  示例: {example_payload}"
+        f"{format_hint}"
+    )
+
+def _render_mcp_tool_lines(cfg: Optional[AssistantAIConfig]) -> str:
+    all_tools = registry.list_tools()
+    allowed = _parse_allowed_tools_for_cfg(cfg)
+    if allowed:
+        tool_items = [item for item in all_tools if str(item.get("name") or "").strip() in allowed]
+    else:
+        tool_items = all_tools
+    if not tool_items:
+        return "- （空）"
+    lines: List[str] = []
+    for item in tool_items:
+        line = _render_mcp_tool_item(item)
+        if line:
+            lines.append(line)
+    return "\n".join(lines) if lines else "- （空）"
+
+def _inject_mcp_placeholder(template: str, cfg: Optional[AssistantAIConfig]) -> str:
+    text = str(template or "")
+    if "{MCP}" not in text:
+        return text
+    return text.replace("{MCP}", _render_mcp_tool_lines(cfg))
+
+def _merge_global_mcp_method(system_prompt: str, global_mcp_method: str, cfg: Optional[AssistantAIConfig]) -> str:
+    base = _strip_legacy_global_mcp_block(system_prompt)
+    method = _inject_mcp_placeholder(str(global_mcp_method or "").strip(), cfg)
+    method = str(method or "").replace("\r\n", "\n").replace("\r", "\n")
+    if not method:
+        return base
+    # Legacy bug compatibility: global MCP template was once persisted to admin_prompt directly.
+    if _looks_like_mcp_template(base) and method:
+        base = ""
+    if method in base:
+        return base
+    if base:
+        return f"{base}\n\n[全局MCP调用方法]\n{method}"
+    return f"[全局MCP调用方法]\n{method}"
+
+def _render_inheritance_notice(template: str, cfg: AssistantAIConfig, session_tokens: int, threshold: int) -> str:
+    text = template or DEFAULT_SYSTEM_AUTO_CONTROL["inheritance_notice"]
+    try:
+        return text.format(
+            session_tokens=session_tokens,
+            threshold=threshold,
+            ai_name=cfg.name,
+        )
+    except Exception:
+        return (
+            f"当前思考量已达到阈值（{session_tokens}/{threshold}），"
+            f"建议 {cfg.name} 在本轮结束后立即开启传承流程，沉淀关键结论。"
+        )
+
+def _render_mcp_warning_text(template: str, details: List[str], values: Dict[str, Any]) -> str:
+    details_bullets = "\n".join(f"- {line}" for line in details if str(line).strip())
+    if not details_bullets:
+        details_bullets = "- 未提供细节"
+
+    payload = dict(values)
+    payload["details"] = details_bullets
+    payload["details_bullets"] = details_bullets
+
+    def _replace_known_tokens(raw: str) -> str:
+        text = str(raw or "")
+        for key, value in payload.items():
+            text = text.replace("{" + str(key) + "}", str(value))
+        return text.strip()
+
+    rendered = _replace_known_tokens(str(template or "").strip() or DEFAULT_MCP_FORMAT_ERROR_HINT)
+    if rendered:
+        return rendered
+
+    return (
+        "[系统提示] 检测到 MCP 调用未成功。\n"
+        f"{details_bullets}\n"
+        "请使用标准格式: <mcp-call>{\"tool\":\"...\",\"arguments\":{...}}</mcp-call>"
+    )
+
+def _build_mcp_stream_warning(
+    assistant_text: str,
+    cfg: Optional[AssistantAIConfig],
+    warning_template: str = "",
+) -> Optional[str]:
+    mcp_pattern = re.compile(r"<mcp[-_]call>\s*([\s\S]*?)\s*</mcp[-_]call>", re.IGNORECASE)
+    matches = list(mcp_pattern.finditer(assistant_text or ""))
+    if not matches:
+        return None
+
+    parsed_calls = []
+    format_error_count = 0
+    xml_arguments_tag_count = 0
+    for m in matches:
+        raw_payload = str(m.group(1) or "")
+        payload = _parse_mcp_payload(raw_payload)
+        if payload:
+            parsed_calls.append(payload)
+        else:
+            format_error_count += 1
+            args_match = re.search(r"<arguments>\s*([\s\S]*?)\s*</arguments>", raw_payload, re.IGNORECASE)
+            args_raw = str(args_match.group(1) or "").strip() if args_match else ""
+            if args_raw and re.search(r"<\s*[a-zA-Z_][\w.\-]*\b[^>]*>", args_raw):
+                xml_arguments_tag_count += 1
+
+    known_tools = {item.get("name") for item in registry.list_tools() if item.get("name")}
+
+    unauthorized_tools = []
+    unknown_tools = []
+    if cfg and parsed_calls:
+        allowed_tools = set()
+        try:
+            parsed_allowed = json.loads(cfg.mcp_tools or "[]")
+            if isinstance(parsed_allowed, list):
+                allowed_tools = {str(v).strip() for v in parsed_allowed if isinstance(v, str) and str(v).strip()}
+                allowed_tools = with_task_create_compat(allowed_tools)
+                allowed_tools = with_workspace_read_by_name_compat(allowed_tools)
+        except Exception:
+            allowed_tools = set()
+
+        if not cfg.mcp_enabled:
+            unauthorized_tools = [call["tool"] for call in parsed_calls]
+        else:
+            for call in parsed_calls:
+                tool = call["tool"]
+                if tool not in known_tools:
+                    unknown_tools.append(tool)
+                elif tool not in allowed_tools:
+                    unauthorized_tools.append(tool)
+    else:
+        for call in parsed_calls:
+            tool = call["tool"]
+            if tool not in known_tools:
+                unknown_tools.append(tool)
+
+    if format_error_count == 0 and not unauthorized_tools and not unknown_tools:
+        return None
+
+    hints = []
+    if format_error_count > 0:
+        hints.append(f"检测到 {format_error_count} 个 mcp-call 块格式错误。")
+    if xml_arguments_tag_count > 0:
+        hints.append(
+            f"其中 {xml_arguments_tag_count} 个调用在 <arguments> 内使用了 XML 子标签；"
+            "该位置必须是 JSON 对象字符串。"
+        )
+    if unknown_tools:
+        hints.append(f"未注册工具: {', '.join(sorted(set(unknown_tools)))}")
+    if unauthorized_tools:
+        hints.append(f"无权限工具: {', '.join(sorted(set(unauthorized_tools)))}")
+    values = {
+        "format_error_count": format_error_count,
+        "xml_arguments_tag_count": xml_arguments_tag_count,
+        "unknown_tools": ", ".join(sorted(set(unknown_tools))),
+        "unauthorized_tools": ", ".join(sorted(set(unauthorized_tools))),
+        "mcp_call_count": len(matches),
+    }
+    return _render_mcp_warning_text(warning_template, hints, values)
+
+def _stable_stringify(value):
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, list):
+        return "[" + ",".join(_stable_stringify(v) for v in value) + "]"
+    if isinstance(value, dict):
+        keys = sorted(value.keys())
+        return "{" + ",".join(f"{json.dumps(str(k), ensure_ascii=False)}:{_stable_stringify(value[k])}" for k in keys) + "}"
+    return json.dumps(str(value), ensure_ascii=False)
+
+def _simple_hash(input_text: str) -> str:
+    h = 5381
+    for ch in input_text:
+        h = ((h << 5) + h) + ord(ch)
+        h &= 0xFFFFFFFF
+    return str(h)
+
+def _block_signature(tool: str, arguments: dict) -> str:
+    raw = "|".join([
+        "mcp",
+        tool or "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        _stable_stringify(arguments or {}),
+    ])
+    return f"sig_{_simple_hash(raw)}"
+
+def _safe_json(value, max_len: int = 12000) -> str:
+    try:
+        text = json.dumps(value, ensure_ascii=False, indent=2)
+    except Exception:
+        text = str(value)
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "\n...<truncated>"
+
+def _extract_mcp_error(exc: Exception) -> str:
+    if isinstance(exc, HTTPException):
+        detail = getattr(exc, "detail", "")
+        if isinstance(detail, (dict, list)):
+            return _safe_json(detail, 2000)
+        detail_text = str(detail or "").strip()
+        if detail_text:
+            return detail_text
+        return f"HTTP {getattr(exc, 'status_code', 500)}"
+    text = str(exc or "").strip()
+    return text or exc.__class__.__name__
+
+def _build_mcp_display_result(tool: str, data: dict, ok: bool = True, error_message: str = "") -> str:
+    result = data.get("result", data)
+    if ok:
+        return f"工具: {tool}\n状态: 成功\n\n{_safe_json(result)}"
+    return f"工具: {tool}\n状态: 失败\n错误: {error_message or '未知错误'}\n\n{_safe_json(result)}"
+
+def _extract_first_mcp_call(assistant_text: str):
+    payload, _ = _extract_first_complete_mcp_call(assistant_text)
+    return payload
+
+def _extract_first_complete_mcp_call(assistant_text: str):
+    pattern = re.compile(r"<mcp[-_]call>\s*([\s\S]*?)\s*</mcp[-_]call>", re.IGNORECASE)
+    m = pattern.search(assistant_text or "")
+    if m:
+        payload = _parse_mcp_payload(m.group(1))
+        if payload:
+            return payload, m
+
+    # Fallback: accept fenced JSON tool call format.
+    # Example:
+    # ```json
+    # {"tool":"task.get_current","arguments":{"job_id":"job_xxx"}}
+    # ```
+    fence_pattern = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
+    for fm in fence_pattern.finditer(assistant_text or ""):
+        payload = _parse_mcp_payload(fm.group(1))
+        if payload:
+            return payload, fm
+
+    return None, None
+
+def _extract_delta_text(delta) -> str:
+    if not delta:
+        return ""
+    content = delta.get("content") if isinstance(delta, dict) else None
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "".join(parts)
+    return ""
+
+def _set_run_live_text(run_id: str, text: str):
+    with _RUN_STATE_LOCK:
+        prev = _RUN_LIVE_STATE.get(run_id) or {}
+        _RUN_LIVE_STATE[run_id] = {
+            "text": text,
+            "phase": prev.get("phase", "generating"),
+            "current_tool": prev.get("current_tool", ""),
+            "pending_prompt_tokens": int(prev.get("pending_prompt_tokens") or 0),
+            "pending_completion_tokens": int(prev.get("pending_completion_tokens") or 0),
+            "pending_total_tokens": int(prev.get("pending_total_tokens") or 0),
+            "updated_at": time.time(),
+        }
+
+def _set_run_live_phase(run_id: str, phase: str, current_tool: str = ""):
+    with _RUN_STATE_LOCK:
+        prev = _RUN_LIVE_STATE.get(run_id) or {}
+        _RUN_LIVE_STATE[run_id] = {
+            "text": prev.get("text", ""),
+            "phase": phase,
+            "current_tool": current_tool,
+            "pending_prompt_tokens": int(prev.get("pending_prompt_tokens") or 0),
+            "pending_completion_tokens": int(prev.get("pending_completion_tokens") or 0),
+            "pending_total_tokens": int(prev.get("pending_total_tokens") or 0),
+            "updated_at": time.time(),
+        }
+
+def _set_run_live_usage(
+    run_id: str,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    total_tokens: int = 0,
+):
+    with _RUN_STATE_LOCK:
+        prev = _RUN_LIVE_STATE.get(run_id) or {}
+        _RUN_LIVE_STATE[run_id] = {
+            "text": prev.get("text", ""),
+            "phase": prev.get("phase", "generating"),
+            "current_tool": prev.get("current_tool", ""),
+            "pending_prompt_tokens": max(0, int(prompt_tokens or 0)),
+            "pending_completion_tokens": max(0, int(completion_tokens or 0)),
+            "pending_total_tokens": max(0, int(total_tokens or 0)),
+            "updated_at": time.time(),
+        }
+
+def _clear_run_live_text(run_id: str):
+    with _RUN_STATE_LOCK:
+        _RUN_LIVE_STATE.pop(run_id, None)
+
+def _split_tags(raw: Optional[str]) -> Tuple[str, str]:
+    text = str(raw or "")
+    idx = text.find(STATE_PREFIX)
+    if idx < 0:
+        return text.strip(), ""
+    base = text[:idx].rstrip().rstrip("|").strip()
+    encoded = text[idx + len(STATE_PREFIX):].strip()
+    return base, encoded
+
+def _encode_tags_with_state(base_tags: str, state: Optional[dict]) -> str:
+    base = (base_tags or "").strip()
+    if not state:
+        return base
+    encoded = requests.utils.quote(json.dumps(state, ensure_ascii=False))
+    return f"{base} | {STATE_PREFIX}{encoded}" if base else f"{STATE_PREFIX}{encoded}"
+
+def _append_mcp_state_to_tags(existing_tags: Optional[str], tool: str, arguments: dict, result_text: str) -> str:
+    state = {"signatures": {_block_signature(tool, arguments): {"applied": True, "result": result_text}}}
+    base, encoded = _split_tags(existing_tags)
+    if encoded:
+        try:
+            decoded = requests.utils.unquote(encoded)
+            existing = json.loads(decoded)
+            if isinstance(existing, dict):
+                signatures = existing.get("signatures")
+                if not isinstance(signatures, dict):
+                    signatures = {}
+                    existing["signatures"] = signatures
+                signatures.update(state["signatures"])
+                state = existing
+        except Exception:
+            pass
+    return _encode_tags_with_state(base, state)
