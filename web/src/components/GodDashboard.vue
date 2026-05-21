@@ -4,6 +4,7 @@ import { useMessage } from '../composables/useMessage'
 import logoUrl from '../assets/logo/HeySure.png'
 import SystemSettingsPanel from './SystemSettingsPanel.vue'
 import LeftSidebarPanel from './LeftSidebarPanel.vue'
+import ConnectedAgentsPanel from './ConnectedAgentsPanel.vue'
 import EvolutionArenaPanel from './EvolutionArenaPanel.vue'
 import ValhallaPanel from './ValhallaPanel.vue'
 import ChatInterface from './chat/ChatInterface.vue'
@@ -70,6 +71,7 @@ const {
 let resolveMcpAutoApprove = (_configId?: number) => false
 const {
   agents,
+  connectedAgents,
   knowledgeBase,
   projects,
   globalGeneration,
@@ -449,6 +451,9 @@ onUnmounted(() => {
             @settings="openAgentSettings"
             @create-ai="openCreateAiConfig('assistant_admin')"
           />
+          <div v-if="!leftCollapsed" class="mt-3">
+            <ConnectedAgentsPanel :agents="connectedAgents" />
+          </div>
         </div>
       </section>
 
