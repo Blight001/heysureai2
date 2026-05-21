@@ -27,6 +27,7 @@ from .chat_prompt_utils import (
     _extract_delta_text,
     _extract_first_complete_mcp_call,
     _set_run_live_phase,
+    _set_run_live_reasoning,
     _set_run_live_text,
     _set_run_live_usage,
 )
@@ -184,6 +185,7 @@ def stream_turn_openai_compat(
     last_push_at = 0.0
 
     _set_run_live_text(run_id, "")
+    _set_run_live_reasoning(run_id, "")
     _set_run_live_phase(run_id, "generating")
     _set_run_live_usage(run_id, 0, 0, 0)
 
@@ -225,6 +227,7 @@ def stream_turn_openai_compat(
         delta_reasoning = delta.get("reasoning_content")
         if isinstance(delta_reasoning, str):
             sr.reasoning_content += delta_reasoning
+            _set_run_live_reasoning(run_id, sr.reasoning_content)
 
         # Native tool_calls (OpenAI / DeepSeek compatible).
         tc_list = delta.get("tool_calls")
@@ -336,6 +339,7 @@ def stream_turn_anthropic(
     current_tool_args = ""
 
     _set_run_live_text(run_id, "")
+    _set_run_live_reasoning(run_id, "")
     _set_run_live_phase(run_id, "generating")
     _set_run_live_usage(run_id, 0, 0, 0)
 
@@ -390,6 +394,11 @@ def stream_turn_anthropic(
                         last_push_at = now
             elif dtype == "input_json_delta":
                 current_tool_args += delta.get("partial_json") or ""
+            elif dtype == "thinking_delta":
+                thinking = delta.get("thinking") or delta.get("text") or ""
+                if thinking:
+                    sr.reasoning_content += thinking
+                    _set_run_live_reasoning(run_id, sr.reasoning_content)
 
         elif etype == "content_block_stop":
             if current_block_type == "tool_use" and current_tool_name:

@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 
 from api.ai_service import ensure_default_ai_for_user, sync_switch_file
 from api.database import get_session
+from api.feishu_long_connection import start_feishu_long_connection_clients
 from api.models import (
     AIRuntimeStatus,
     AssistantAIConfig,
@@ -88,6 +89,11 @@ async def create_ai_config(
     session.commit()
     session.refresh(cfg)
     sync_switch_file(user.id, cfg.switch_key, cfg.enabled, cfg.mcp_enabled)
+    if cfg.feishu_enabled:
+        try:
+            start_feishu_long_connection_clients()
+        except Exception as exc:
+            print(f"[start_feishu_long_connection_clients] {exc}")
     return cfg
 
 @router.put("/configs/{config_id}")
@@ -121,6 +127,11 @@ async def update_ai_config(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
+    if cfg.feishu_enabled:
+        try:
+            start_feishu_long_connection_clients()
+        except Exception as exc:
+            print(f"[start_feishu_long_connection_clients] {exc}")
 
     status = session.exec(
         select(AIRuntimeStatus).where(

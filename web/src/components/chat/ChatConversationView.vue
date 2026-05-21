@@ -28,6 +28,7 @@ const props = withDefaults(defineProps<{
   frontPromptText?: string
   frontPromptPlaceholder?: string
   liveText?: string
+  liveThinking?: string
   isTyping?: boolean
   readonly?: boolean
   appliedEdits?: string[]
@@ -42,6 +43,7 @@ const props = withDefaults(defineProps<{
   frontPromptText: '',
   frontPromptPlaceholder: '（当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt）',
   liveText: '',
+  liveThinking: '',
   isTyping: false,
   readonly: false,
   appliedEdits: () => [],
@@ -317,6 +319,7 @@ const onRevert = (msgIdx: number, blockIdx: number) => {
     :actionResults="mergedActionResults"
     :actionResultsBySignature="mergedActionResultsBySignature"
     :isTyping="isTyping"
+    :thinkingText="liveThinking"
     :isEmpty="renderMessages.length === 0"
     :readonly="readonly"
     @delete="onDelete"

@@ -191,6 +191,11 @@ const defaultMcpTools = [
   'task.get_current',
   'task.inherit',
   'task.complete',
+  'prompt.list_targets',
+  'prompt.read_ai',
+  'prompt.write_ai',
+  'prompt.read_system',
+  'prompt.write_system',
   'feishu.send_message',
 ]
 

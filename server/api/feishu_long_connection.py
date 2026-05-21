@@ -11,6 +11,7 @@ from api.routers.feishu import handle_feishu_event_payload
 _LOCK = threading.Lock()
 _STARTED_CONFIG_IDS: Set[int] = set()
 _THREADS: Dict[int, threading.Thread] = {}
+_LAST_ERRORS: Dict[int, str] = {}
 
 
 def _run_feishu_ws_client(config_id: int, app_id: str, app_secret: str) -> None:
@@ -20,6 +21,7 @@ def _run_feishu_ws_client(config_id: int, app_id: str, app_secret: str) -> None:
         print(f"[feishu_long_connection] lark-oapi is not installed: {exc}")
         with _LOCK:
             _STARTED_CONFIG_IDS.discard(config_id)
+            _LAST_ERRORS[config_id] = f"lark-oapi is not installed: {exc}"
         return
 
     def do_p2_im_message_receive_v1(data) -> None:
@@ -55,6 +57,8 @@ def _run_feishu_ws_client(config_id: int, app_id: str, app_secret: str) -> None:
         client.start()
     except Exception as exc:
         print(f"[feishu_long_connection] stopped config_id={config_id}: {exc}")
+        with _LOCK:
+            _LAST_ERRORS[config_id] = str(exc)
     finally:
         with _LOCK:
             _STARTED_CONFIG_IDS.discard(config_id)
@@ -83,6 +87,7 @@ def start_feishu_long_connection_clients() -> int:
             if config_id in _STARTED_CONFIG_IDS and thread and thread.is_alive():
                 continue
             _STARTED_CONFIG_IDS.add(config_id)
+            _LAST_ERRORS.pop(config_id, None)
             thread = threading.Thread(
                 target=_run_feishu_ws_client,
                 args=(config_id, app_id, app_secret),
@@ -92,3 +97,15 @@ def start_feishu_long_connection_clients() -> int:
             thread.start()
             started += 1
     return started
+
+
+def get_feishu_long_connection_state(config_id: int) -> Dict[str, str]:
+    with _LOCK:
+        thread = _THREADS.get(config_id)
+        is_running = bool(config_id in _STARTED_CONFIG_IDS and thread and thread.is_alive())
+        error = _LAST_ERRORS.get(config_id, "")
+    if is_running:
+        return {"status": "success", "message": "长连接运行中"}
+    if error:
+        return {"status": "failed", "message": error}
+    return {"status": "failed", "message": "长连接未运行"}

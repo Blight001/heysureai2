@@ -72,6 +72,7 @@ const currentRunId = ref('')
 const currentRunStatus = ref<'idle' | 'queued' | 'running' | 'completed' | 'error' | 'stopped'>('idle')
 const currentRunPhase = ref<'idle' | 'generating' | 'waiting_mcp'>('idle')
 const currentMcpTool = ref('')
+const liveThinkingText = ref('')
 const liveAssistantText = ref('')
 const liveTargetText = ref('')
 const liveCursor = ref(0)
@@ -397,6 +398,7 @@ const updateLiveAssistantView = (text: string) => {
 
 const clearLiveAssistantView = () => {
   applyLiveAssistantText('')
+  liveThinkingText.value = ''
   liveTargetText.value = ''
   liveCursor.value = 0
   liveRenderLength = 0
@@ -736,6 +738,7 @@ const pollRunLive = async (epoch: number) => {
     currentRunStatus.value = run.status || 'running'
     currentRunPhase.value = (run.live_phase || 'generating')
     currentMcpTool.value = String(run.current_tool || '')
+    liveThinkingText.value = String(run.live_reasoning || '')
     const delta = String(run.live_delta || '')
     if (delta) {
       updateLiveAssistantView(liveTargetText.value + delta)
@@ -793,6 +796,7 @@ const checkActiveRun = async () => {
   currentRunStatus.value = data.run.status || 'running'
   currentRunPhase.value = (data.run.live_phase || 'generating')
   currentMcpTool.value = String(data.run.current_tool || '')
+  liveThinkingText.value = String(data.run.live_reasoning || '')
   updateLiveAssistantView(String(data.run.live_text || ''))
   liveCursor.value = Number(data.run.live_len || String(data.run.live_text || '').length || 0)
   isTyping.value = ['queued', 'running'].includes(currentRunStatus.value)
@@ -1154,6 +1158,7 @@ onBeforeUnmount(() => {
         :sessionActive="!!currentSessionId"
         :frontPromptPlaceholder="'（当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt）'"
         :liveText="liveAssistantText"
+        :liveThinking="liveThinkingText"
         :appliedEdits="appliedEditsArray"
         :appliedSignatures="appliedSignaturesArray"
         :actionResults="actionResults"

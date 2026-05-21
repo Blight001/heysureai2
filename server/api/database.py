@@ -40,6 +40,8 @@ def _ensure_legacy_columns():
             cursor.execute("ALTER TABLE chatmessage ADD COLUMN ai_config_id INTEGER")
         if "ai_kind" not in existing:
             cursor.execute("ALTER TABLE chatmessage ADD COLUMN ai_kind TEXT DEFAULT 'assistant'")
+        if "cache_read_tokens" not in existing:
+            cursor.execute("ALTER TABLE chatmessage ADD COLUMN cache_read_tokens INTEGER")
 
         cursor.execute("PRAGMA table_info(user)")
         user_existing = {row[1] for row in cursor.fetchall()}

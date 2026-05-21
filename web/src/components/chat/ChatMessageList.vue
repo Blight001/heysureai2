@@ -20,6 +20,7 @@ defineProps<{
   actionResults: Record<string, string>
   actionResultsBySignature: Record<string, string>
   isTyping: boolean
+  thinkingText?: string
   isEmpty: boolean
   readonly?: boolean
 }>()
@@ -57,6 +58,6 @@ const emit = defineEmits<{
       />
     </TransitionGroup>
 
-    <TypingIndicator :isTyping="isTyping" />
+    <TypingIndicator :isTyping="isTyping" :thinkingText="thinkingText" />
   </div>
 </template>

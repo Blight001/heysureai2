@@ -24,6 +24,11 @@ export const MCP_TOOL_ZH_META: Record<string, { label: string; description: stri
   'task.get_current': { label: '当前任务', description: '读取当前执行中的任务详情。', tag: '任务' },
   'task.inherit': { label: '提交传承', description: '提交任务传承摘要与上下文。', tag: '任务' },
   'task.complete': { label: '标记完成', description: '将当前任务标记为完成。', tag: '任务' },
+  'prompt.list_targets': { label: 'Prompt 目标', description: '列出当前 AI 基础 prompt 目标与全局/系统 prompt 模板键。', tag: 'Prompt' },
+  'prompt.read_ai': { label: '读取 AI Prompt', description: '读取指定 AI 实际使用的基础 prompt；未指定时读取当前 AI。', tag: 'Prompt' },
+  'prompt.write_ai': { label: '修改 AI Prompt', description: '按行修改指定 AI 的 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
+  'prompt.read_system': { label: '读取系统 Prompt', description: '读取全局注入模板/旧版兜底 prompt；当前 AI 基础 prompt 请用读取 AI Prompt。', tag: 'Prompt' },
+  'prompt.write_system': { label: '修改系统 Prompt', description: '按行修改全局注入模板/旧版兜底 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
 }
 
 export const normalizeMcpSchemaType = (rawType: unknown) => {
@@ -58,6 +63,7 @@ const getMcpToolFallbackTag = (name: string) => {
   if (name.startsWith('admin.')) return '管理'
   if (name.startsWith('project.')) return '项目'
   if (name.startsWith('task.')) return '任务'
+  if (name.startsWith('prompt.')) return 'Prompt'
   return '通用'
 }
 

@@ -358,6 +358,9 @@ def _merge_global_mcp_method(system_prompt: str, global_mcp_method: str, cfg: Op
     method = str(method or "").replace("\r\n", "\n").replace("\r", "\n")
     if not method:
         return base
+    one_tool_rule = "- Call exactly one tool per <mcp-call> block; never join two tool names into one name."
+    if "never join two tool names into one name" not in method:
+        method = f"{method.rstrip()}\n{one_tool_rule}"
     # Legacy bug compatibility: global MCP template was once persisted to admin_prompt directly.
     if _looks_like_mcp_template(base) and method:
         base = ""
@@ -592,6 +595,21 @@ def _set_run_live_text(run_id: str, text: str):
         prev = _RUN_LIVE_STATE.get(run_id) or {}
         _RUN_LIVE_STATE[run_id] = {
             "text": text,
+            "reasoning": prev.get("reasoning", ""),
+            "phase": prev.get("phase", "generating"),
+            "current_tool": prev.get("current_tool", ""),
+            "pending_prompt_tokens": int(prev.get("pending_prompt_tokens") or 0),
+            "pending_completion_tokens": int(prev.get("pending_completion_tokens") or 0),
+            "pending_total_tokens": int(prev.get("pending_total_tokens") or 0),
+            "updated_at": time.time(),
+        }
+
+def _set_run_live_reasoning(run_id: str, reasoning: str):
+    with _RUN_STATE_LOCK:
+        prev = _RUN_LIVE_STATE.get(run_id) or {}
+        _RUN_LIVE_STATE[run_id] = {
+            "text": prev.get("text", ""),
+            "reasoning": reasoning,
             "phase": prev.get("phase", "generating"),
             "current_tool": prev.get("current_tool", ""),
             "pending_prompt_tokens": int(prev.get("pending_prompt_tokens") or 0),
@@ -605,6 +623,7 @@ def _set_run_live_phase(run_id: str, phase: str, current_tool: str = ""):
         prev = _RUN_LIVE_STATE.get(run_id) or {}
         _RUN_LIVE_STATE[run_id] = {
             "text": prev.get("text", ""),
+            "reasoning": prev.get("reasoning", ""),
             "phase": phase,
             "current_tool": current_tool,
             "pending_prompt_tokens": int(prev.get("pending_prompt_tokens") or 0),
@@ -623,6 +642,7 @@ def _set_run_live_usage(
         prev = _RUN_LIVE_STATE.get(run_id) or {}
         _RUN_LIVE_STATE[run_id] = {
             "text": prev.get("text", ""),
+            "reasoning": prev.get("reasoning", ""),
             "phase": prev.get("phase", "generating"),
             "current_tool": prev.get("current_tool", ""),
             "pending_prompt_tokens": max(0, int(prompt_tokens or 0)),

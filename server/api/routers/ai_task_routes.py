@@ -563,6 +563,7 @@ async def get_task_job_generations(
                 prompt_text = _sanitize_task_generation_prompt(str(m.get("system_prompt") or ""))
                 break
         live = live_map.get(run.run_id) or {}
+        live_text = str(live.get("reasoning") or live.get("text") or "")
         generations.append(
             {
                 "generation": generation,
@@ -575,7 +576,8 @@ async def get_task_job_generations(
                 "system_prompt": prompt_text,
                 "messages": msgs,
                 "live": {
-                    "text": str(live.get("text") or ""),
+                    "text": live_text,
+                    "reasoning": str(live.get("reasoning") or ""),
                     "phase": str(live.get("phase") or "idle"),
                     "current_tool": str(live.get("current_tool") or ""),
                     "updated_at": live.get("updated_at"),

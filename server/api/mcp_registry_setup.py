@@ -31,6 +31,13 @@ from .mcp_task_tools import (
     _task_wait_all,
 )
 from .mcp_feishu_tools import _feishu_send_message
+from .mcp_prompt_tools import (
+    _prompt_list_targets,
+    _prompt_read_ai,
+    _prompt_read_system,
+    _prompt_write_ai,
+    _prompt_write_system,
+)
 from .agent_dispatch import _dispatch_task
 
 registry = MCPRegistry()
@@ -516,6 +523,133 @@ registry.register(MCPTool(
         "required": ["text"],
     },
     handler=_feishu_send_message,
+    destructive=True,
+))
+
+registry.register(MCPTool(
+    name="prompt.list_targets",
+    description="List current AI prompt targets and global/system prompt keys. Current AI base prompts live in AI config prompt, not user.admin_prompt.",
+    input_schema={"type": "object", "properties": {}},
+    handler=_prompt_list_targets,
+))
+registry.register(MCPTool(
+    name="prompt.read_ai",
+    description="Read the actual base prompt used by one AI config. Defaults to the current AI when target_ai_config_id is omitted.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "target_ai_config_id": {"type": "integer", "description": "Target AI config id. Defaults to current AI config."},
+            "ai_config_id": {"type": "integer", "description": "Alias of target_ai_config_id."},
+        },
+        "required": [],
+    },
+    handler=_prompt_read_ai,
+))
+registry.register(MCPTool(
+    name="prompt.write_ai",
+    description=(
+        "Edit one AI config prompt by line. Defaults to the current AI when target_ai_config_id is omitted. "
+        "Use mode replace_line/insert_before/insert_after/delete_line/append/prepend with line/text; "
+        "only use mode=replace_all for explicit full overwrite."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "target_ai_config_id": {"type": "integer", "description": "Target AI config id. Defaults to current AI config."},
+            "ai_config_id": {"type": "integer", "description": "Alias of target_ai_config_id."},
+            "mode": {
+                "type": "string",
+                "enum": ["replace_line", "insert_before", "insert_after", "delete_line", "append", "prepend", "replace_all"],
+                "description": "Line edit mode. Full overwrite requires explicit replace_all.",
+            },
+            "line": {"type": "integer", "description": "1-based target line number."},
+            "line_number": {"type": "integer", "description": "Alias of line."},
+            "start_line": {"type": "integer", "description": "1-based range start for replace/delete."},
+            "end_line": {"type": "integer", "description": "1-based range end for replace/delete."},
+            "text": {"type": "string", "description": "Line edit text. May contain multiple lines."},
+            "content": {"type": "string", "description": "Alias of text."},
+            "prompt": {"type": "string", "description": "Alias of text; used as full prompt only with mode=replace_all."},
+            "edits": {
+                "type": "array",
+                "description": "Batch line edits. Each item supports mode,line,start_line,end_line,text/content/prompt.",
+                "items": {"type": "object"},
+            },
+        },
+        "required": [],
+    },
+    handler=_prompt_write_ai,
+    destructive=True,
+))
+registry.register(MCPTool(
+    name="prompt.read_system",
+    description="Read global/system prompt templates for current user. These are mostly runtime injection templates or legacy fallbacks; use prompt.read_ai for current AI base prompt.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "key": {
+                "type": "string",
+                "enum": [
+                    "admin_prompt",
+                    "worker_prompt",
+                    "mcp_call_method",
+                    "mcp_format_error_hint",
+                    "default_start_task_prompt",
+                    "default_resume_task_prompt",
+                    "default_supervision_prompt",
+                    "default_inheritance_notice",
+                ],
+                "description": "System prompt key. Omit to read all.",
+            },
+        },
+        "required": [],
+    },
+    handler=_prompt_read_system,
+))
+registry.register(MCPTool(
+    name="prompt.write_system",
+    description=(
+        "Edit one global/system prompt template by line. These are mostly runtime injection templates or legacy fallbacks, "
+        "not the current AI base prompt. Use mode replace_line/insert_before/insert_after/delete_line/append/prepend "
+        "with line/text; only use mode=replace_all for explicit full overwrite."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "key": {
+                "type": "string",
+                "enum": [
+                    "admin_prompt",
+                    "worker_prompt",
+                    "mcp_call_method",
+                    "mcp_format_error_hint",
+                    "default_start_task_prompt",
+                    "default_resume_task_prompt",
+                    "default_supervision_prompt",
+                    "default_inheritance_notice",
+                ],
+                "description": "System prompt key to update.",
+            },
+            "mode": {
+                "type": "string",
+                "enum": ["replace_line", "insert_before", "insert_after", "delete_line", "append", "prepend", "replace_all"],
+                "description": "Line edit mode. Full overwrite requires explicit replace_all.",
+            },
+            "line": {"type": "integer", "description": "1-based target line number."},
+            "line_number": {"type": "integer", "description": "Alias of line."},
+            "start_line": {"type": "integer", "description": "1-based range start for replace/delete."},
+            "end_line": {"type": "integer", "description": "1-based range end for replace/delete."},
+            "text": {"type": "string", "description": "Line edit text. May contain multiple lines."},
+            "content": {"type": "string", "description": "Alias of text."},
+            "prompt": {"type": "string", "description": "Alias of text; used as full prompt only with mode=replace_all."},
+            "edits": {
+                "type": "array",
+                "description": "Batch line edits. Each item supports mode,line,start_line,end_line,text/content/prompt.",
+                "items": {"type": "object"},
+            },
+        },
+        "required": ["key"],
+    },
+    handler=_prompt_write_system,
     destructive=True,
 ))
 

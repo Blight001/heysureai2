@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 
 from api.ai_service import ensure_default_ai_for_user, remove_switch_key
 from api.database import get_session
+from api.feishu_long_connection import get_feishu_long_connection_state
 from api.models import (
     AITaskJob,
     AIRuntimeStatus,
@@ -193,6 +194,23 @@ async def list_ai_cards(
         if key not in active_run_map:
             active_run_map[key] = row
 
+    recent_user_chat_cutoff = time.time() - 60
+    recent_user_messages = session.exec(
+        select(ChatMessage).where(
+            ChatMessage.user_id == user.id,
+            ChatMessage.role == "user",
+            ChatMessage.created_at >= recent_user_chat_cutoff,
+        ).order_by(ChatMessage.created_at.desc())
+    ).all()
+    recent_user_chat_map: Dict[tuple[Optional[int], str], ChatMessage] = {}
+    for row in recent_user_messages:
+        session_id = str(row.session_id or "")
+        if session_id.startswith("session_task_"):
+            continue
+        key = (row.ai_config_id, row.ai_kind)
+        if key not in recent_user_chat_map:
+            recent_user_chat_map[key] = row
+
     task_jobs = session.exec(
         select(AITaskJob).where(
             AITaskJob.user_id == user.id,
@@ -258,6 +276,36 @@ async def list_ai_cards(
             "finished_at": job.finished_at,
         }
 
+    def _build_feishu_status(cfg: AssistantAIConfig) -> Dict[str, str]:
+        if not cfg.feishu_enabled:
+            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "飞书机器人未启用"}
+        app_id = str(cfg.feishu_app_id or "").strip()
+        app_secret = str(cfg.feishu_app_secret or "").strip()
+        webhook_url = str(cfg.feishu_webhook_url or "").strip()
+        if app_id or app_secret:
+            if not app_id or not app_secret:
+                return {
+                    "status": "failed",
+                    "mode": "long_connection",
+                    "label": "失败",
+                    "message": "App ID / Secret 配置不完整",
+                }
+            state = get_feishu_long_connection_state(int(cfg.id or 0))
+            return {
+                "status": state.get("status") or "failed",
+                "mode": "long_connection",
+                "label": "成功" if state.get("status") == "success" else "失败",
+                "message": state.get("message") or "",
+            }
+        if webhook_url:
+            return {
+                "status": "success",
+                "mode": "webhook",
+                "label": "成功",
+                "message": "Webhook 发送配置已完成",
+            }
+        return {"status": "failed", "mode": "none", "label": "失败", "message": "未配置 App ID/Secret 或 Webhook URL"}
+
     cards = []
     for cfg in cfgs:
         status = status_map.get(cfg.id)
@@ -270,13 +318,16 @@ async def list_ai_cards(
                 token_used = 0
         ai_kind = "assistant" if cfg.ai_role == "assistant_admin" else "core"
         active_run = active_run_map.get((cfg.id, ai_kind))
+        recent_user_chat = recent_user_chat_map.get((cfg.id, ai_kind))
         run_live = run_live_state.get(active_run.run_id, {}) if active_run else {}
         active_run_session_id = str(active_run.session_id or "") if active_run else ""
         is_task_run_active = active_run_session_id.startswith("session_task_")
         user_chat_active = bool(active_run and not is_task_run_active)
+        recent_user_chat_active = bool(recent_user_chat)
         live_token_pending = int(run_live.get("pending_total_tokens") or 0)
         token_used = int(token_used or 0) + live_token_pending
         live_text = str(run_live.get("text") or "")
+        live_reasoning = str(run_live.get("reasoning") or "")
         live_tool = str(run_live.get("current_tool") or "").strip()
         cfg_task_jobs = task_jobs_by_cfg.get(int(cfg.id), [])
         cfg_task_summaries = [_build_task_summary(job, int(cfg.token_limit or 0)) for job in cfg_task_jobs]
@@ -301,6 +352,7 @@ async def list_ai_cards(
         )
         current_task_title = str(current_or_scheduled_task.get("title") or "") if current_or_scheduled_task else ""
         current_task_status = str(current_or_scheduled_task.get("effective_status") or "idle") if current_or_scheduled_task else "idle"
+        feishu_status = _build_feishu_status(cfg)
         cards.append(
             {
                 "id": cfg.id,
@@ -322,6 +374,12 @@ async def list_ai_cards(
                 "project_name": cfg.project_name,
                 "enabled": cfg.enabled,
                 "mcp_enabled": cfg.mcp_enabled,
+                "feishu_enabled": cfg.feishu_enabled,
+                "feishu_webhook_url": cfg.feishu_webhook_url,
+                "feishu_app_id": cfg.feishu_app_id,
+                "feishu_default_receive_id": cfg.feishu_default_receive_id,
+                "feishu_default_receive_id_type": cfg.feishu_default_receive_id_type,
+                "feishu_status": feishu_status,
                 "switch_key": cfg.switch_key,
                 "mcp_tools": cfg.mcp_tools,
                 "system_auto_control": cfg.system_auto_control,
@@ -332,11 +390,13 @@ async def list_ai_cards(
                 "active_run_phase": str(run_live.get("phase") or "idle") if active_run else "idle",
                 "active_run_session_id": active_run_session_id,
                 "user_chat_active": user_chat_active,
+                "recent_user_chat_active": recent_user_chat_active,
+                "recent_user_chat_at": recent_user_chat.created_at if recent_user_chat else None,
                 "current_task_title": current_task_title,
                 "current_task_status": current_task_status,
                 "task_current_or_recent": current_or_scheduled_task,
                 "task_recent_completed": latest_completed_task,
-                "latest_thinking": live_text,
+                "latest_thinking": live_reasoning or live_text,
             }
         )
     return cards

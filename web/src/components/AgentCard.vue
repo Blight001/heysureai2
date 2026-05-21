@@ -35,12 +35,25 @@ interface AgentProps {
     enabled?: boolean
     mcpEnabled?: boolean
     mcpTools?: string
+    feishuEnabled?: boolean
+    feishuWebhookUrl?: string
+    feishuAppId?: string
+    feishuDefaultReceiveId?: string
+    feishuDefaultReceiveIdType?: string
+    feishuStatus?: {
+      status?: string
+      mode?: string
+      label?: string
+      message?: string
+    }
     runtimeStatus?: string
     runtimeTool?: string
     activeRunStatus?: string
     activeRunPhase?: string
     activeRunSessionId?: string
     userChatActive?: boolean
+    recentUserChatActive?: boolean
+    recentUserChatAt?: number
     aiRole?: 'assistant_admin' | 'digital_member' | 'admin' | 'worker'
     digitalMemberRole?: 'manager' | 'member'
     currentTaskTitle?: string
@@ -123,9 +136,10 @@ const cardBorderClass = computed(() => {
 const canControl = computed(() => typeof props.agent.aiConfigId === 'number')
 const showLifecycle = computed(() => props.agent.aiRole !== 'assistant_admin')
 const isAssistantAdmin = computed(() => props.agent.aiRole === 'assistant_admin')
+const showRecentUserChatBadge = computed(() => !!props.agent.recentUserChatActive)
 const isRealtimeWorking = computed(() => {
   if (props.agent.status !== 'working') return false
-  if (props.agent.userChatActive) return true
+  if (props.agent.userChatActive || props.agent.recentUserChatActive) return true
   const taskStatus = String(props.agent.currentTaskStatus || '').toLowerCase()
   return taskStatus === 'running' || props.agent.runtimeStatus === 'running'
 })
@@ -142,6 +156,27 @@ const showTaskSnapshotBlock = computed(() => {
 })
 const showWorkspaceContextButton = computed(() => {
   return props.agent.aiRole === 'digital_member' && props.agent.digitalMemberRole === 'manager'
+})
+
+const feishuConnection = computed(() => {
+  if (!props.agent.feishuEnabled) return null
+  const status = String(props.agent.feishuStatus?.status || '').trim()
+  const mode = String(props.agent.feishuStatus?.mode || '').trim()
+  const message = String(props.agent.feishuStatus?.message || '').trim()
+  const receiveId = String(props.agent.feishuDefaultReceiveId || '').trim()
+  const modeText = mode === 'long_connection' ? '长连接' : mode === 'webhook' ? 'Webhook' : '未配置'
+  if (status === 'success') {
+    return {
+      text: `飞书成功 · ${modeText}`,
+      class: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300',
+      title: [message || '飞书连接状态成功', receiveId ? `默认接收：${receiveId}` : ''].filter(Boolean).join('；'),
+    }
+  }
+  return {
+    text: `飞书失败 · ${modeText}`,
+    class: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300',
+    title: message || '飞书连接状态失败',
+  }
 })
 
 const syncedMcpText = computed(() => {
@@ -330,17 +365,27 @@ const taskTotalGenerations = (task?: AgentTaskSnapshot | null) => {
 
     <!-- 头部信息 -->
     <div class="flex justify-between items-start mb-3">
-      <div>
-        <h3 class="font-bold text-zinc-900 flex items-center gap-2 text-base dark:text-zinc-100 group-hover:text-indigo-600 transition-colors">
-          {{ agent.name }}
+      <div class="min-w-0 flex-1 pr-2">
+        <h3 class="font-bold text-zinc-900 flex items-center gap-2 text-base dark:text-zinc-100 group-hover:text-indigo-600 transition-colors min-w-0">
+          <span class="truncate">{{ agent.name }}</span>
           <span class="text-xs font-normal text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400">
             第 {{ syncedGeneration }} 代
           </span>
         </h3>
-        <p class="text-xs text-zinc-500 mt-0.5 flex items-center gap-1 dark:text-zinc-400">
-          <span class="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse" title="在线"></span>
-          {{ agent.platform }}
-        </p>
+        <div class="text-xs text-zinc-500 mt-0.5 flex items-center justify-between gap-2 dark:text-zinc-400">
+          <p class="min-w-0 flex items-center gap-1">
+            <span class="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" title="在线"></span>
+            <span class="truncate">{{ agent.platform }}</span>
+          </p>
+          <span
+            v-if="feishuConnection"
+            class="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-none"
+            :class="feishuConnection.class"
+            :title="feishuConnection.title"
+          >
+            {{ feishuConnection.text }}
+          </span>
+        </div>
       </div>
       <button
         v-if="canControl"
@@ -354,15 +399,31 @@ const taskTotalGenerations = (task?: AgentTaskSnapshot | null) => {
 
     <!-- 状态标签 -->
     <div v-if="!isAssistantAdmin" class="mb-3 flex justify-between items-start gap-2 min-w-0">
-      <span 
-        class="px-2 py-1 rounded text-xs font-medium border break-words"
-        :class="statusDisplay.class"
-      >
-        {{ statusDisplay.text }}
-      </span>
+      <div class="flex flex-wrap items-start gap-1.5 min-w-0">
+        <span
+          class="px-2 py-1 rounded text-xs font-medium border break-words"
+          :class="statusDisplay.class"
+        >
+          {{ statusDisplay.text }}
+        </span>
+        <span
+          v-if="showRecentUserChatBadge"
+          class="px-2 py-1 rounded text-xs font-medium border border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-500/40 dark:bg-cyan-500/10 dark:text-cyan-300"
+          title="最近 1 分钟内收到用户对话数据"
+        >
+          最近1分钟内用户沟通
+        </span>
+      </div>
       <span class="text-xs font-mono text-zinc-400 dark:text-zinc-500 shrink-0">ID: {{ agent.id.slice(-4) }}</span>
     </div>
     <div v-else class="mb-3 flex justify-end items-start gap-2 min-w-0">
+      <span
+        v-if="showRecentUserChatBadge"
+        class="px-2 py-1 rounded text-xs font-medium border border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-500/40 dark:bg-cyan-500/10 dark:text-cyan-300"
+        title="最近 1 分钟内收到用户对话数据"
+      >
+        最近1分钟内用户沟通
+      </span>
       <span class="text-xs font-mono text-zinc-400 dark:text-zinc-500 shrink-0">ID: {{ agent.id.slice(-4) }}</span>
     </div>
 

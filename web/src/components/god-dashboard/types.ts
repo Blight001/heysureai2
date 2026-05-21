@@ -47,12 +47,25 @@ export interface Agent {
   mcpEnabled?: boolean
   mcpTools?: string
   mcpAutoApprove?: boolean
+  feishuEnabled?: boolean
+  feishuWebhookUrl?: string
+  feishuAppId?: string
+  feishuDefaultReceiveId?: string
+  feishuDefaultReceiveIdType?: string
+  feishuStatus?: {
+    status?: string
+    mode?: string
+    label?: string
+    message?: string
+  }
   runtimeStatus?: string
   runtimeTool?: string
   activeRunStatus?: string
   activeRunPhase?: string
   activeRunSessionId?: string
   userChatActive?: boolean
+  recentUserChatActive?: boolean
+  recentUserChatAt?: number
   model?: string
   currentTaskTitle?: string
   currentTaskStatus?: string

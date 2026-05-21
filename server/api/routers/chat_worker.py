@@ -116,6 +116,22 @@ def _build_native_tools_payload(allowed_tools: Optional[set] = None) -> tuple[Li
     return tools, native_to_mcp
 
 
+def _split_concatenated_native_tool_name(name: str, native_tool_name_map: Dict[str, str]) -> List[str]:
+    """Return native tool names when a model accidentally joins multiple names."""
+    remaining = str(name or "").strip()
+    if not remaining or remaining in native_tool_name_map:
+        return []
+    native_names = sorted(native_tool_name_map.keys(), key=len, reverse=True)
+    parts: List[str] = []
+    while remaining:
+        matched = next((candidate for candidate in native_names if remaining.startswith(candidate)), "")
+        if not matched:
+            return []
+        parts.append(matched)
+        remaining = remaining[len(matched):]
+    return parts if len(parts) > 1 else []
+
+
 def _build_mcp_tool_bubble_content(tool: str, arguments: dict, result_text: str, failed: bool = False) -> str:
     status = "失败" if failed else "成功"
     return (
@@ -367,6 +383,14 @@ def _run_worker(
                 if not payload_call and not _has_native_tc:
                     payload_call = _extract_first_mcp_call(assistant_text)
                 payload_tool = str((payload_call or {}).get("tool") or "").strip()
+                if payload_call and payload_tool in native_tool_name_map:
+                    payload_tool = native_tool_name_map[payload_tool]
+                    payload_call["tool"] = payload_tool
+                joined_native_tools = (
+                    _split_concatenated_native_tool_name(payload_tool, native_tool_name_map)
+                    if payload_call
+                    else []
+                )
                 if is_task_runtime:
                     latest_task_job = _load_task_job_by_session(bg, user_id, ai_config_id, session_id)
                     if latest_task_job:
@@ -445,6 +469,180 @@ def _run_worker(
                             continue
                     _run_set_status(run_id, "completed", finished=True)
                     return
+                if joined_native_tools:
+                    joined_mcp_tools = [native_tool_name_map.get(item, item) for item in joined_native_tools]
+                    tool = payload_tool
+                    arguments = payload_call.get("arguments", {}) or {}
+                    if joined_mcp_tools and all(str(item).startswith("prompt.") for item in joined_mcp_tools):
+                        if cfg and not cfg.mcp_enabled:
+                            _run_set_status(run_id, "error", "MCP is disabled for this AI", finished=True)
+                            return
+                        disallowed_prompt_tools = [
+                            item for item in joined_mcp_tools if item not in effective_tool_allowlist
+                        ]
+                        if disallowed_prompt_tools:
+                            tool_failed = True
+                            tool_error = (
+                                "Tool not allowed for this task: "
+                                f"{', '.join(disallowed_prompt_tools)}"
+                            )
+                            tool_result = {
+                                "result": {
+                                    "success": False,
+                                    "error": tool_error,
+                                    "tools": joined_mcp_tools,
+                                }
+                            }
+                            result_text = _build_mcp_display_result(tool, tool_result, ok=False, error_message=tool_error)
+                            saved.tags = _append_mcp_state_to_tags(saved.tags, tool, arguments, result_text)
+                            bg.add(saved)
+                            bg.commit()
+                            _save_mcp_tool_bubble(
+                                bg,
+                                user_id=user_id,
+                                ai_config_id=ai_config_id,
+                                ai_kind=ai_kind,
+                                session_id=session_id,
+                                session_name=session_name,
+                                model=model,
+                                tool=tool,
+                                arguments=arguments,
+                                result_text=result_text,
+                                failed=True,
+                            )
+                            if _has_native_tc:
+                                convo.append({
+                                    "role": "tool",
+                                    "tool_call_id": _tc_id or "call_0",
+                                    "content": json.dumps(
+                                        {"error": tool_error, "tools": joined_mcp_tools},
+                                        ensure_ascii=False,
+                                    ),
+                                })
+                            else:
+                                convo.append({
+                                    "role": "user",
+                                    "content": (
+                                        "[MCP执行失败]\n"
+                                        f"工具未在当前任务允许范围内：{', '.join(disallowed_prompt_tools)}\n"
+                                        f"可用工具: {', '.join(sorted(effective_tool_allowlist)) or '（空）'}"
+                                    ),
+                                })
+                            continue
+
+                        compound_results = []
+                        compound_failed = False
+                        for prompt_tool in joined_mcp_tools:
+                            if _run_should_stop(run_id):
+                                _run_set_status(run_id, "stopped", finished=True)
+                                return
+                            _set_run_live_phase(run_id, "waiting_mcp", prompt_tool)
+                            item_failed = False
+                            item_error = ""
+                            try:
+                                item_result = asyncio.run(registry.call(prompt_tool, user_id, arguments, ai_config_id))
+                                item_result_text = _build_mcp_display_result(prompt_tool, item_result, ok=True)
+                            except Exception as mcp_exc:
+                                item_failed = True
+                                compound_failed = True
+                                item_error = _extract_mcp_error(mcp_exc)
+                                item_result = {"result": {"success": False, "error": item_error}}
+                                item_result_text = _build_mcp_display_result(
+                                    prompt_tool,
+                                    item_result,
+                                    ok=False,
+                                    error_message=item_error,
+                                )
+                            saved.tags = _append_mcp_state_to_tags(
+                                saved.tags,
+                                prompt_tool,
+                                arguments,
+                                item_result_text,
+                            )
+                            bg.add(saved)
+                            bg.commit()
+                            _save_mcp_tool_bubble(
+                                bg,
+                                user_id=user_id,
+                                ai_config_id=ai_config_id,
+                                ai_kind=ai_kind,
+                                session_id=session_id,
+                                session_name=session_name,
+                                model=model,
+                                tool=prompt_tool,
+                                arguments=arguments,
+                                result_text=item_result_text,
+                                failed=item_failed,
+                            )
+                            compound_results.append({
+                                "tool": prompt_tool,
+                                "failed": item_failed,
+                                "error": item_error,
+                                "result": item_result.get("result", item_result),
+                            })
+
+                        compound_payload = {
+                            "success": not compound_failed,
+                            "compat_mode": "split_concatenated_prompt_tools",
+                            "original_tool": tool,
+                            "tools": compound_results,
+                        }
+                        if _has_native_tc:
+                            convo.append({
+                                "role": "tool",
+                                "tool_call_id": _tc_id or "call_0",
+                                "content": _safe_json(compound_payload),
+                            })
+                        else:
+                            follow_up = (
+                                "[MCP兼容执行完成]\n"
+                                "系统检测到多个 prompt 工具名被拼接，已按顺序拆分执行。\n\n"
+                                "[工具执行结果]\n"
+                                f"{_safe_json(compound_payload)}\n\n"
+                                "请基于以上结果继续完成任务。"
+                            )
+                            convo.append({"role": "user", "content": follow_up})
+                        _set_run_live_phase(run_id, "generating")
+                        continue
+
+                    tool_failed = True
+                    tool_error = (
+                        "Malformed MCP tool call: multiple tool names were joined together. "
+                        f"Call exactly one tool per request: {', '.join(joined_mcp_tools)}"
+                    )
+                    tool_result = {"result": {"success": False, "error": tool_error, "tools": joined_mcp_tools}}
+                    result_text = _build_mcp_display_result(tool, tool_result, ok=False, error_message=tool_error)
+                    saved.tags = _append_mcp_state_to_tags(saved.tags, tool, arguments, result_text)
+                    bg.add(saved)
+                    bg.commit()
+                    _save_mcp_tool_bubble(
+                        bg,
+                        user_id=user_id,
+                        ai_config_id=ai_config_id,
+                        ai_kind=ai_kind,
+                        session_id=session_id,
+                        session_name=session_name,
+                        model=model,
+                        tool=tool,
+                        arguments=arguments,
+                        result_text=result_text,
+                        failed=True,
+                    )
+                    if _has_native_tc:
+                        convo.append({
+                            "role": "tool",
+                            "tool_call_id": _tc_id or "call_0",
+                            "content": json.dumps({"error": tool_error, "tools": joined_mcp_tools}, ensure_ascii=False),
+                        })
+                    else:
+                        follow_up = (
+                            "[MCP格式错误]\n"
+                            "你把多个工具名拼接成了一个工具名，导致无法执行。\n"
+                            f"检测到的工具: {', '.join(joined_mcp_tools)}\n"
+                            "请一次只调用一个 MCP 工具，并使用标准 <mcp-call> JSON 格式继续。"
+                        )
+                        convo.append({"role": "user", "content": follow_up})
+                    continue
                 if _run_should_stop(run_id):
                     _run_set_status(run_id, "stopped", finished=True)
                     return

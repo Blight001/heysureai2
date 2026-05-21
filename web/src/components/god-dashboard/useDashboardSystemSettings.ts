@@ -36,6 +36,7 @@ Rules:
 - Use workspace.edit_file for targeted edits to existing files.
 - Use workspace.write_file for new files or full rewrites.
 - Use admin.* tools when managing connected agents.
+- Call exactly one tool per <mcp-call> block; never join two tool names into one name.
 - Only fall back to legacy File/Create File/Delete File/Run Command formats if MCP is unavailable.`)
   const globalMcpFormatErrorHint = ref(`[系统提示] 检测到你正在尝试调用 MCP，但调用格式未通过校验，因此本次没有执行任何工具。
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import InlineContent from './InlineContent.vue'
 import type { InlineContent as InlineContentType } from '../../utils/chatParser'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 const emit = defineEmits<{
   (e: 'delete', idx: number): void
@@ -73,6 +73,38 @@ const mcpToolDetails = computed(() => {
   return text.replace(/^\[MCP工具\]\s*/i, '').trim()
 })
 
+const copiedTarget = ref('')
+
+const userMessageCopyText = computed(() => {
+  return String(props.message.display_text || props.message.content || '')
+})
+
+const copyText = async (text: string, target: string) => {
+  const value = String(text || '')
+  if (!value) return
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = value
+      textarea.setAttribute('readonly', 'true')
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    copiedTarget.value = target
+    window.setTimeout(() => {
+      if (copiedTarget.value === target) copiedTarget.value = ''
+    }, 1200)
+  } catch (error) {
+    console.warn('copy failed', error)
+  }
+}
+
 const normalizedInlineContent = computed<InlineContentType[]>(() => {
   if (Array.isArray(props.message.inlineContent) && props.message.inlineContent.length > 0) {
     return props.message.inlineContent
@@ -132,6 +164,20 @@ const normalizedInlineContent = computed<InlineContentType[]>(() => {
         
         <!-- Delete & Recall Buttons (hover 显示) -->
         <div v-if="!props.readonly && props.message.role === 'user' && !isSystemNoticeMessage" class="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <!-- Copy Button -->
+          <button
+            @click.stop="copyText(userMessageCopyText, `user-${props.idx}`)"
+            class="w-6 h-6 rounded-full bg-zinc-600 text-white flex items-center justify-center shadow-md hover:bg-zinc-700 transition-colors"
+            :title="copiedTarget === `user-${props.idx}` ? '已复制' : '复制用户消息'"
+          >
+            <svg v-if="copiedTarget !== `user-${props.idx}`" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 8h10v10H8z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 16H5a2 2 0 01-2-2V5a2 2 0 012-2h9a2 2 0 012 2v1" />
+            </svg>
+            <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+          </button>
           <!-- Recall Button (仅用户消息显示) -->
           <button 
             @click.stop="emit('recall', props.idx)"
@@ -172,7 +218,20 @@ const normalizedInlineContent = computed<InlineContentType[]>(() => {
               </span>
               <span class="ml-auto shrink-0 text-[11px] text-zinc-500 hover:text-sky-700 dark:text-zinc-400 dark:hover:text-sky-300">详情</span>
             </summary>
-            <div class="mt-2 max-h-72 overflow-y-auto rounded-lg bg-zinc-950 px-3 py-2 font-mono text-[11px] leading-5 text-zinc-100 whitespace-pre-wrap break-words">
+            <div class="relative mt-2 max-h-72 overflow-y-auto rounded-lg bg-zinc-950 px-3 py-2 pr-12 font-mono text-[11px] leading-5 text-zinc-100 whitespace-pre-wrap break-words">
+              <button
+                class="sticky top-0 float-right -mr-9 ml-2 w-7 h-7 rounded bg-zinc-800/90 text-zinc-200 border border-zinc-700 flex items-center justify-center hover:bg-zinc-700 hover:text-white transition-colors"
+                :title="copiedTarget === `mcp-${props.idx}` ? '已复制' : '复制全部 MCP 信息'"
+                @click.stop.prevent="copyText(mcpToolDetails, `mcp-${props.idx}`)"
+              >
+                <svg v-if="copiedTarget !== `mcp-${props.idx}`" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 8h10v10H8z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 16H5a2 2 0 01-2-2V5a2 2 0 012-2h9a2 2 0 012 2v1" />
+                </svg>
+                <svg v-else xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+              </button>
               {{ mcpToolDetails }}
             </div>
           </details>

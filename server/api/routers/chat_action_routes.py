@@ -125,6 +125,7 @@ async def get_chat_run(
     with _RUN_STATE_LOCK:
         live = _RUN_LIVE_STATE.get(run_id) or {}
     live_text = str(live.get("text") or "")
+    live_reasoning = str(live.get("reasoning") or "")
     live_delta = ""
     if after is not None and after >= 0 and after <= len(live_text):
         live_delta = live_text[after:]
@@ -140,6 +141,8 @@ async def get_chat_run(
         "live_text": live_text,
         "live_delta": live_delta,
         "live_len": len(live_text),
+        "live_reasoning": live_reasoning,
+        "live_reasoning_len": len(live_reasoning),
         "live_updated_at": live.get("updated_at"),
         "live_phase": str(live.get("phase") or "idle"),
         "current_tool": str(live.get("current_tool") or ""),
@@ -183,6 +186,8 @@ async def get_active_chat_run(
             "updated_at": row.updated_at,
             "live_text": str(live.get("text") or ""),
             "live_len": len(str(live.get("text") or "")),
+            "live_reasoning": str(live.get("reasoning") or ""),
+            "live_reasoning_len": len(str(live.get("reasoning") or "")),
             "live_updated_at": live.get("updated_at"),
             "live_phase": str(live.get("phase") or "idle"),
             "current_tool": str(live.get("current_tool") or ""),

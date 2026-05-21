@@ -65,7 +65,10 @@ def send_feishu_text_message(
     receive_id_type: str = "",
 ) -> Dict[str, Any]:
     cfg = _load_feishu_config(user_id, ai_config_id)
-    if cfg.feishu_webhook_url:
+    target_id = str(receive_id or cfg.feishu_default_receive_id or "").strip()
+    target_type = str(receive_id_type or cfg.feishu_default_receive_id_type or "chat_id").strip()
+    can_send_to_target = bool(target_id and cfg.feishu_app_id and cfg.feishu_app_secret)
+    if cfg.feishu_webhook_url and not can_send_to_target:
         res = requests.post(
             cfg.feishu_webhook_url,
             headers={"Content-Type": "application/json; charset=utf-8"},
@@ -78,8 +81,6 @@ def send_feishu_text_message(
             raise HTTPException(status_code=502, detail=f"Feishu webhook send failed: {data or res.text}")
         return {"success": True, "mode": "webhook", "raw": data}
 
-    target_id = str(receive_id or cfg.feishu_default_receive_id or "").strip()
-    target_type = str(receive_id_type or cfg.feishu_default_receive_id_type or "chat_id").strip()
     if not target_id:
         raise HTTPException(status_code=400, detail="Feishu receive_id is required")
     if target_type not in {"chat_id", "open_id", "user_id", "union_id", "email"}:
@@ -117,6 +118,10 @@ def parse_feishu_text_event(payload: Dict[str, Any]) -> Optional[Dict[str, str]]
     message = event.get("message") if isinstance(event.get("message"), dict) else {}
     if not message:
         return None
+    sender = event.get("sender") if isinstance(event.get("sender"), dict) else {}
+    sender_type = str(sender.get("sender_type") or "").strip()
+    if sender_type == "bot":
+        return None
     message_type = str(message.get("message_type") or "").strip()
     if message_type and message_type != "text":
         return None
@@ -127,9 +132,16 @@ def parse_feishu_text_event(payload: Dict[str, Any]) -> Optional[Dict[str, str]]
         text = str(content.get("text") or "").strip()
     except Exception:
         text = content_raw.strip()
+    mentions = message.get("mentions") if isinstance(message.get("mentions"), list) else []
+    for item in mentions:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip()
+        if key:
+            text = text.replace(key, "")
+    text = " ".join(text.split()).strip()
     if not text:
         return None
-    sender = event.get("sender") if isinstance(event.get("sender"), dict) else {}
     sender_id = sender.get("sender_id") if isinstance(sender.get("sender_id"), dict) else {}
     return {
         "text": text,
@@ -137,4 +149,6 @@ def parse_feishu_text_event(payload: Dict[str, Any]) -> Optional[Dict[str, str]]
         "message_id": str(message.get("message_id") or "").strip(),
         "open_id": str(sender_id.get("open_id") or "").strip(),
         "user_id": str(sender_id.get("user_id") or "").strip(),
+        "chat_type": str(message.get("chat_type") or "").strip(),
+        "sender_type": sender_type,
     }
