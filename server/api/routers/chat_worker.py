@@ -11,6 +11,7 @@ import requests
 from sqlmodel import Session, select
 
 from api.database import engine
+from api.agent_dispatch import set_run_session_context
 from api.mcp import registry, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.task_system import (
@@ -258,6 +259,18 @@ def _run_worker(
             mcp_active = bool(cfg and cfg.mcp_enabled and effective_tool_allowlist)
             step_tools, native_tool_name_map = _build_native_tools_payload(effective_tool_allowlist) if mcp_active else ([], {})
             provider = _detect_provider(base_url)
+
+            # Expose session context to MCP tools (e.g. admin.dispatch_task) so
+            # async desktop-agent results can be appended to this session. The
+            # worker runs in its own thread, so the contextvar is naturally scoped.
+            set_run_session_context({
+                "user_id": user_id,
+                "ai_config_id": ai_config_id,
+                "ai_kind": ai_kind,
+                "session_id": session_id,
+                "session_name": session_name,
+                "model": model,
+            })
 
             for _ in range(max_steps):
                 if _run_should_stop(run_id):

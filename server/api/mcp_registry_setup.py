@@ -30,6 +30,7 @@ from .mcp_task_tools import (
     _task_list,
 )
 from .mcp_feishu_tools import _feishu_send_message
+from .agent_dispatch import _dispatch_task
 
 registry = MCPRegistry()
 
@@ -234,6 +235,31 @@ registry.register(MCPTool(
         "required": ["agentId", "flowData"],
     },
     handler=_dispatch_flow,
+    destructive=True,
+))
+registry.register(MCPTool(
+    name="admin.dispatch_task",
+    description=(
+        "Dispatch a task to a connected desktop agent for local execution "
+        "(filesystem, shell, git). Provide agentId plus either a natural-language "
+        "instruction or a specific tool + args. The result arrives asynchronously "
+        "and is appended to this session."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "agentId": {"type": "string", "description": "Target connected agent id (from admin.list_agents)."},
+            "instruction": {"type": "string", "description": "Natural-language task description."},
+            "tool": {
+                "type": "string",
+                "description": "Optional specific local tool: fs.list / fs.read / fs.write / shell.run / git.diff.",
+            },
+            "args": {"type": "object", "description": "Arguments for the chosen tool."},
+            "allowedTools": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["agentId"],
+    },
+    handler=_dispatch_task,
     destructive=True,
 ))
 registry.register(MCPTool(
