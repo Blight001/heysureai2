@@ -64,8 +64,30 @@ const normalizeRole = (role?: string): 'user' | 'assistant' | 'system' => {
   return 'assistant'
 }
 
+const parseMcpToolNameFromMessage = (msg?: ConversationInputMessage | ConversationMessage | null) => {
+  const text = String(msg?.display_text || msg?.content || '').trim()
+  if (!text.startsWith('[MCP工具]')) return ''
+  const match = text.match(/^工具[：:]\s*(.+)$/m)
+  return String(match?.[1] || '').trim()
+}
+
+const hideExecutedMcpBlocks = (msg: ConversationMessage, nextMsg?: ConversationMessage) => {
+  if (msg.role !== 'assistant') return msg
+  const executedTool = parseMcpToolNameFromMessage(nextMsg)
+  if (!executedTool) return msg
+  const inlineContent = (msg.inlineContent || []).filter((item) => {
+    if (item.type !== 'block' || item.block?.type !== 'mcp') return true
+    return String(item.block.tool || '').trim() !== executedTool
+  })
+  const blocks = (msg.blocks || []).filter((block) => {
+    if (block.type !== 'mcp') return true
+    return String(block.tool || '').trim() !== executedTool
+  })
+  return { ...msg, inlineContent, blocks }
+}
+
 const normalizedMessages = computed<ConversationMessage[]>(() => {
-  return (props.baseMessages || []).map((raw) => {
+  const parsed = (props.baseMessages || []).map((raw) => {
     const role = normalizeRole(raw?.role)
     const content = String(raw?.content || '')
     const hasParsed =
@@ -88,6 +110,7 @@ const normalizedMessages = computed<ConversationMessage[]>(() => {
       inlineContent: Array.isArray(raw?.inlineContent) ? raw.inlineContent : parsed.inlineContent,
     }
   })
+  return parsed.map((msg, idx) => hideExecutedMcpBlocks(msg, parsed[idx + 1]))
 })
 
 const STATE_PREFIX = '__HS_MCP_STATE__='

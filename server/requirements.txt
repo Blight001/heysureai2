@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+lark-oapi>=1.4.23
 python-socketio
 sqlmodel
 passlib

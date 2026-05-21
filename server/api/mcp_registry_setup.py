@@ -29,6 +29,7 @@ from .mcp_task_tools import (
     _task_inherit,
     _task_list,
 )
+from .mcp_feishu_tools import _feishu_send_message
 
 registry = MCPRegistry()
 
@@ -446,6 +447,28 @@ registry.register(MCPTool(
         "required": [],
     },
     handler=_task_complete,
+    destructive=True,
+))
+
+registry.register(MCPTool(
+    name="feishu.send_message",
+    description="Send a text message through the Feishu bot bound to this AI. Use chat_id/open_id or the configured default receiver.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "text": {"type": "string", "description": "Message text to send."},
+            "receive_id": {"type": "string", "description": "Optional Feishu receiver id. Defaults to AI config default receiver."},
+            "receive_id_type": {
+                "type": "string",
+                "enum": ["chat_id", "open_id", "user_id", "union_id", "email"],
+                "description": "Receiver id type. Defaults to AI config default type.",
+            },
+            "chat_id": {"type": "string", "description": "Alias of receive_id for group/private chat id."},
+            "open_id": {"type": "string", "description": "Alias of receive_id for a user open_id."},
+        },
+        "required": ["text"],
+    },
+    handler=_feishu_send_message,
     destructive=True,
 ))
 

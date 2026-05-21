@@ -1,7 +1,7 @@
 import { ref, watch, type Ref } from 'vue'
 import type { Agent, McpToolDefinition } from './types'
 
-type SettingsSection = 'mcp' | 'workspace' | 'auto'
+type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'feishu'
 
 interface UseAiConfigManagementOptions {
   defaultMcpTools: string[]
@@ -84,6 +84,13 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     prompt: '',
     mcp_tools: [...defaultMcpTools],
     mcp_auto_approve: false,
+    feishu_enabled: false,
+    feishu_webhook_url: '',
+    feishu_app_id: '',
+    feishu_app_secret: '',
+    feishu_verification_token: '',
+    feishu_default_receive_id: '',
+    feishu_default_receive_id_type: 'chat_id',
     system_auto_control: normalizeSystemAutoControl({}),
   })
 
@@ -196,6 +203,13 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       enabled: !!cfg.enabled,
       mcp_tools: parsedTools,
       mcp_auto_approve: !!aiConfigForm.value.mcp_auto_approve,
+      feishu_enabled: !!cfg.feishu_enabled,
+      feishu_webhook_url: cfg.feishu_webhook_url || '',
+      feishu_app_id: cfg.feishu_app_id || '',
+      feishu_app_secret: cfg.feishu_app_secret || '',
+      feishu_verification_token: cfg.feishu_verification_token || '',
+      feishu_default_receive_id: cfg.feishu_default_receive_id || '',
+      feishu_default_receive_id_type: cfg.feishu_default_receive_id_type || 'chat_id',
       system_auto_control: normalizeSystemAutoControl((() => {
         try { return JSON.parse(cfg.system_auto_control || '{}') } catch { return {} }
       })()),
@@ -233,6 +247,13 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       enabled: !!agent.enabled,
       mcp_tools: parsedTools,
       mcp_auto_approve: !!agent.mcpAutoApprove,
+      feishu_enabled: false,
+      feishu_webhook_url: '',
+      feishu_app_id: '',
+      feishu_app_secret: '',
+      feishu_verification_token: '',
+      feishu_default_receive_id: '',
+      feishu_default_receive_id_type: 'chat_id',
       system_auto_control: normalizeSystemAutoControl({}),
     }
     void loadWorkspaceDirs()
@@ -273,6 +294,13 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       model: aiConfigForm.value.model,
       prompt: aiConfigForm.value.prompt,
       mcp_tools: JSON.stringify(aiConfigForm.value.mcp_tools || []),
+      feishu_enabled: !!aiConfigForm.value.feishu_enabled,
+      feishu_webhook_url: aiConfigForm.value.feishu_webhook_url || '',
+      feishu_app_id: aiConfigForm.value.feishu_app_id || '',
+      feishu_app_secret: aiConfigForm.value.feishu_app_secret || '',
+      feishu_verification_token: aiConfigForm.value.feishu_verification_token || '',
+      feishu_default_receive_id: aiConfigForm.value.feishu_default_receive_id || '',
+      feishu_default_receive_id_type: aiConfigForm.value.feishu_default_receive_id_type || 'chat_id',
       system_auto_control: JSON.stringify(
         normalizeSystemAutoControl(
           aiConfigForm.value.system_auto_control || {},

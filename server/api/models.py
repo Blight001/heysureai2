@@ -205,6 +205,13 @@ class AssistantAIConfig(SQLModel, table=True):
     current_behavior: str = Field(default="等待指令...")
     workspace_root: Optional[str] = Field(default=None)
     database_uri: Optional[str] = Field(default=None)
+    feishu_enabled: bool = Field(default=False)
+    feishu_webhook_url: str = Field(default="")
+    feishu_app_id: str = Field(default="")
+    feishu_app_secret: str = Field(default="")
+    feishu_verification_token: str = Field(default="")
+    feishu_default_receive_id: str = Field(default="")
+    feishu_default_receive_id_type: str = Field(default="chat_id")
     project_id: Optional[str] = Field(default=None, index=True)
     project_name: Optional[str] = None
     sort_order: int = Field(default=100)
@@ -238,6 +245,13 @@ class AssistantAIConfigCreate(SQLModel):
     current_behavior: Optional[str] = "等待指令..."
     workspace_root: Optional[str] = None
     database_uri: Optional[str] = None
+    feishu_enabled: Optional[bool] = False
+    feishu_webhook_url: Optional[str] = ""
+    feishu_app_id: Optional[str] = ""
+    feishu_app_secret: Optional[str] = ""
+    feishu_verification_token: Optional[str] = ""
+    feishu_default_receive_id: Optional[str] = ""
+    feishu_default_receive_id_type: Optional[str] = "chat_id"
     project_id: Optional[str] = None
     project_name: Optional[str] = None
     sort_order: Optional[int] = 100
@@ -264,6 +278,13 @@ class AssistantAIConfigUpdate(SQLModel):
     current_behavior: Optional[str] = None
     workspace_root: Optional[str] = None
     database_uri: Optional[str] = None
+    feishu_enabled: Optional[bool] = None
+    feishu_webhook_url: Optional[str] = None
+    feishu_app_id: Optional[str] = None
+    feishu_app_secret: Optional[str] = None
+    feishu_verification_token: Optional[str] = None
+    feishu_default_receive_id: Optional[str] = None
+    feishu_default_receive_id_type: Optional[str] = None
     project_id: Optional[str] = None
     project_name: Optional[str] = None
     sort_order: Optional[int] = None

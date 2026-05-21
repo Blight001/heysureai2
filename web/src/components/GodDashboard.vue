@@ -191,6 +191,7 @@ const defaultMcpTools = [
   'task.get_current',
   'task.inherit',
   'task.complete',
+  'feishu.send_message',
 ]
 
 const {

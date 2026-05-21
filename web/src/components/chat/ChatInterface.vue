@@ -75,6 +75,7 @@ const currentMcpTool = ref('')
 const liveAssistantText = ref('')
 const liveTargetText = ref('')
 const liveCursor = ref(0)
+const shownRunErrorIds = ref<Set<string>>(new Set())
 let runLivePollTimer: number | null = null
 let runHistoryPollTimer: number | null = null
 let liveTypingFrame: number | null = null
@@ -483,6 +484,66 @@ const appendLiveAssistantAsLocalMessage = async (text: string) => {
 
 const waitMs = (ms: number) => new Promise<void>(resolve => window.setTimeout(resolve, ms))
 
+const extractResponseError = async (res: Response, fallback: string) => {
+  const text = await res.text().catch(() => '')
+  if (!text) return fallback
+  try {
+    const data = JSON.parse(text)
+    if (typeof data?.detail === 'string' && data.detail.trim()) return data.detail
+    if (typeof data?.error === 'string' && data.error.trim()) return data.error
+    if (typeof data?.message === 'string' && data.message.trim()) return data.message
+    return text
+  } catch {
+    return text
+  }
+}
+
+const appendRunErrorNotice = async (runId: string, message: string) => {
+  const key = runId || `unknown_${Date.now()}`
+  if (shownRunErrorIds.value.has(key)) return
+  shownRunErrorIds.value.add(key)
+  const content = [
+    '[AI 对话出错]',
+    String(message || '').trim() || '后端运行失败，但没有返回具体错误信息。',
+  ].join('\n')
+  const fallbackMsg: ChatMessage = {
+    role: 'system',
+    content,
+    created_at: Date.now(),
+    display_text: content,
+  }
+  const localIndex = chatMessages.value.push(fallbackMsg) - 1
+  await scrollToBottom()
+
+  const token = localStorage.getItem('token')
+  if (!token || !currentSessionId.value) return
+  try {
+    const currentSessionName = sessionList.value.find(s => s.id === currentSessionId.value)?.name || '未命名会话'
+    const res = await fetch('/api/chat/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        role: 'system',
+        content,
+        tags: `run_error:${key}`,
+        ai_config_id: props.aiConfigId,
+        ai_kind: aiKindValue.value,
+        session_id: currentSessionId.value,
+        session_name: currentSessionName,
+        total_tokens: 0,
+      }),
+    })
+    if (!res.ok) return
+    const saved = await res.json()
+    chatMessages.value.splice(localIndex, 1, {
+      ...saved,
+      display_text: saved.content,
+    })
+  } catch (err) {
+    console.warn('persist run error notice failed', err)
+  }
+}
+
 const loadSessions = async () => {
   const token = localStorage.getItem('token')
   if (!token) return
@@ -664,9 +725,11 @@ const pollRunLive = async (epoch: number) => {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!runRes.ok) {
+      const errorText = await extractResponseError(runRes, `状态查询失败: HTTP ${runRes.status}`)
       currentRunStatus.value = 'error'
       isTyping.value = false
       clearLiveAssistantView()
+      await appendRunErrorNotice(currentRunId.value, errorText)
       return
     }
     const run = await runRes.json()
@@ -691,6 +754,9 @@ const pollRunLive = async (epoch: number) => {
       await pollRunHistory(epoch)
       await ensureFinalAssistantMessage(epoch)
       clearLiveAssistantView()
+      if (currentRunStatus.value === 'error') {
+        await appendRunErrorNotice(currentRunId.value, String(run.error_message || '后端运行失败，但没有返回具体错误信息。'))
+      }
       await loadTotalTokens()
       return
     }

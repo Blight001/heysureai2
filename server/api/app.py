@@ -14,6 +14,7 @@ from .sio import sio
 from .socket_events import register_socket_events
 from .database import create_db_and_tables
 from .ai_service import scan_and_sync_switch_files, align_token_snapshots_with_history
+from .feishu_long_connection import start_feishu_long_connection_clients
 from .routers.chat import process_task_scheduler
 
 @asynccontextmanager
@@ -33,6 +34,10 @@ async def lifespan(app: FastAPI):
 
     async def periodic_scan():
         while not stop_event.is_set():
+            try:
+                start_feishu_long_connection_clients()
+            except Exception as exc:
+                print(f"[start_feishu_long_connection_clients] {exc}")
             try:
                 scan_and_sync_switch_files()
             except Exception as exc:
