@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-const IGNORED = new Set(['.git', 'node_modules', '__pycache__', '.aider', 'dist']);
+const IGNORED = new Set(['.git', 'node_modules', '__pycache__', 'venv', '.venv', '.aider', 'dist']);
 
 function workspaceRoot(): string {
   return process.env.AGENT_WORKSPACE || process.cwd();

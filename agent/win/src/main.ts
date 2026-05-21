@@ -3,6 +3,7 @@ import * as path from 'path'
 import * as os from 'os'
 import * as fs from 'fs'
 import { store, AgentSettings } from './store'
+import { SCREENSHOT_TIMEOUT_MS } from './constants'
 import { HeySureAgent, AgentStatus } from './agent'
 import { registerCaptureFn } from './capture-bridge'
 
@@ -108,9 +109,9 @@ ipcRenderer.on('do-capture', async (event, opts) => {
       const idx = pending.findIndex(p => p.reject === reject)
       if (idx !== -1) {
         pending.splice(idx, 1)
-        reject(new Error('Screenshot timed out after 15s'))
+        reject(new Error(`Screenshot timed out after ${SCREENSHOT_TIMEOUT_MS / 1000}s`))
       }
-    }, 15000)
+    }, SCREENSHOT_TIMEOUT_MS)
   }))
 }
 
@@ -266,13 +267,15 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('connection:test', async () => {
-    const url = store.get('serverUrl') as string
-    if (!url) return { success: false, error: '未配置服务器 URL' }
+    const raw = String(store.get('serverUrl') || '').trim()
+    if (!raw) return { success: false, error: '未配置服务器 URL' }
+    let url: URL
+    try { url = new URL(raw) } catch { return { success: false, error: '服务器 URL 格式无效' } }
+    const base = url.href.replace(/\/$/, '')
     try {
       const start = Date.now()
-      const res = await net.fetch(`${url.replace(/\/$/, '')}/health`, {
-        signal: AbortSignal.timeout(5000),
-      }).catch(() => net.fetch(url.replace(/\/$/, ''), { signal: AbortSignal.timeout(5000) }))
+      const res = await net.fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) })
+        .catch(() => net.fetch(base, { signal: AbortSignal.timeout(5000) }))
       const ms = Date.now() - start
       return { success: true, status: res.status, ms }
     } catch (err: any) {
@@ -307,11 +310,7 @@ async function callAiApi(
     headers['Authorization'] = `Bearer ${apiKey}`
   }
 
-  const body = JSON.stringify(
-    isAnthropic
-      ? { model, max_tokens: 4096, messages }
-      : { model, max_tokens: 4096, messages },
-  )
+  const body = JSON.stringify({ model, max_tokens: 4096, messages })
 
   const res = await net.fetch(endpoint, { method: 'POST', headers, body })
   const data: any = await res.json()
