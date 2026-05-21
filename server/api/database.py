@@ -154,6 +154,8 @@ def _ensure_legacy_columns():
         task_existing = {row[1] for row in cursor.fetchall()}
         if "task_payload" not in task_existing:
             cursor.execute("ALTER TABLE aitaskjob ADD COLUMN task_payload TEXT")
+        if "created_by_ai_config_id" not in task_existing:
+            cursor.execute("ALTER TABLE aitaskjob ADD COLUMN created_by_ai_config_id INTEGER")
         conn.commit()
     finally:
         conn.close()

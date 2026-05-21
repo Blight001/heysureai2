@@ -225,7 +225,7 @@ class AssistantAIConfig(SQLModel, table=True):
     mcp_enabled: bool = Field(default=True)
     switch_key: str = Field(default="assistant_default")
     mcp_tools: str = Field(
-        default='["workspace.list_files","workspace.get_file_tree","workspace.read_files","workspace.read_file_by_name","workspace.write_file","workspace.edit_file","workspace.delete_path","workspace.run_command","workspace.git_diff","admin.list_agents","admin.get_overview","admin.dispatch_flow","project.list_projects","project.create_project","project.update_project","project.delete_project","task.create_immediate","task.create_scheduled","task.create_recurring","task.create","task.list","task.wait_all","task.get_current","task.inherit","task.complete","prompt.list_targets","prompt.read_ai","prompt.write_ai","prompt.read_system","prompt.write_system","memory.write","memory.search","memory.list","memory.update","memory.archive","evolution.input","evolution.list","evolution.review"]'
+        default='["workspace.list_files","workspace.get_file_tree","workspace.read_files","workspace.read_file_by_name","workspace.write_file","workspace.edit_file","workspace.delete_path","workspace.run_command","workspace.git_diff","admin.list_agents","admin.get_overview","admin.dispatch_flow","project.list_projects","project.create_project","project.update_project","project.delete_project","task.create_immediate","task.create_scheduled","task.create_recurring","task.create","task.list","task.wait_all","task.get_current","task.inherit","task.complete","human.ask","prompt.list_targets","prompt.read_ai","prompt.write_ai","prompt.read_system","prompt.write_system","memory.write","memory.search","memory.list","memory.update","memory.archive","evolution.input","evolution.list","evolution.review"]'
     )
     system_auto_control: str = Field(
         default='{"enabled":false,"start_task_prompt":"你将收到一个任务，请先理解目标、约束与优先级，然后开始执行。","resume_task_prompt":"请继续执行刚才被暂停的任务，先简要回顾当前进度，再继续推进直到可交付。","supervision_prompt":"系统监督提醒：请确认当前任务是否已完成。若已完成请调用 task.complete 标记；若未完成请给出剩余步骤并继续执行。","inheritance_notice":"当前思考量已达到阈值（{session_tokens}/{threshold}），建议立即开启传承流程，沉淀本轮结论与关键上下文。","tasks":[]}'
@@ -425,11 +425,28 @@ class EvolutionInput(SQLModel, table=True):
     updated_at: float = Field(default_factory=lambda: __import__("time").time())
 
 
+class HumanRequest(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    request_id: str = Field(index=True, unique=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    ai_config_id: Optional[int] = Field(default=None, index=True)
+    session_id: Optional[str] = Field(default=None, index=True)
+    job_id: Optional[str] = Field(default=None, index=True)
+    kind: str = Field(default="text")  # confirm / select / text
+    prompt: str = Field(default="")
+    options: str = Field(default="[]")  # JSON array for select/confirm
+    status: str = Field(default="pending", index=True)  # pending / answered / timeout / cancelled
+    answer: Optional[str] = Field(default=None)
+    created_at: float = Field(default_factory=lambda: __import__("time").time(), index=True)
+    answered_at: Optional[float] = None
+
+
 class AITaskJob(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     job_id: str = Field(index=True, unique=True)
     user_id: int = Field(foreign_key="user.id", index=True)
     ai_config_id: int = Field(foreign_key="assistantaiconfig.id", index=True)
+    created_by_ai_config_id: Optional[int] = Field(default=None, index=True)  # dispatcher's AI config id
     ai_kind: str = Field(default="core", index=True)
     template_id: Optional[str] = Field(default=None, index=True)
     title: str

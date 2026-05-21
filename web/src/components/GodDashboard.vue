@@ -12,6 +12,7 @@ import McpToolsModal from './god-dashboard/modals/McpToolsModal.vue'
 import WorkspaceContextModal from './god-dashboard/modals/WorkspaceContextModal.vue'
 import TaskManagementModal from './god-dashboard/modals/TaskManagementModal.vue'
 import AiConfigModal from './god-dashboard/modals/AiConfigModal.vue'
+import HumanAskModal from './god-dashboard/modals/HumanAskModal.vue'
 import { useMcpAndWorkspaceModal } from './god-dashboard/useMcpAndWorkspaceModal'
 import { useTaskManagement } from './god-dashboard/useTaskManagement'
 import { useAiConfigManagement } from './god-dashboard/useAiConfigManagement'
@@ -72,6 +73,8 @@ let resolveMcpAutoApprove = (_configId?: number) => false
 const {
   agents,
   connectedAgents,
+  humanAskQueue,
+  dismissHumanAsk,
   knowledgeBase,
   projects,
   globalGeneration,
@@ -645,6 +648,12 @@ onUnmounted(() => {
         </div>
       </div>
     </Transition>
+
+    <!-- Human-in-the-loop modal: shows the first pending AI question -->
+    <HumanAskModal
+      :event="humanAskQueue[0] ?? null"
+      :on-answered="dismissHumanAsk"
+    />
 
   </div>
 </template>

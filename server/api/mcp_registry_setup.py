@@ -49,6 +49,7 @@ from .mcp_memory_tools import (
     _memory_update,
     _memory_write,
 )
+from .mcp_human_tools import _human_ask
 
 registry = MCPRegistry()
 
@@ -660,6 +661,37 @@ registry.register(MCPTool(
     },
     handler=_evolution_review,
     destructive=True,
+))
+
+registry.register(MCPTool(
+    name="human.ask",
+    description=(
+        "Pause the current task and ask the human a question. "
+        "Use kind='confirm' for yes/no, kind='select' for multiple-choice (provide options), "
+        "kind='text' for free-form text input. Blocks until the human answers or timeout elapses."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "prompt": {"type": "string", "description": "The question or prompt to show the human."},
+            "kind": {
+                "type": "string",
+                "enum": ["confirm", "select", "text"],
+                "description": "Interaction type. Default: text.",
+            },
+            "options": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Choices for kind=select or custom labels for kind=confirm.",
+            },
+            "timeout_seconds": {"type": "integer", "description": "Max wait time in seconds (5-3600). Default 300."},
+            "session_id": {"type": "string", "description": "Optional session id for context."},
+            "job_id": {"type": "string", "description": "Optional job id for context."},
+        },
+        "required": ["prompt"],
+    },
+    handler=_human_ask,
+    destructive=False,
 ))
 
 registry.register(MCPTool(
