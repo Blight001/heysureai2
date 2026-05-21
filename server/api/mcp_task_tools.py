@@ -14,6 +14,10 @@ from .task_system import extract_task_payload
 
 _FINISHED_STATUSES = {"completed", "cancelled", "stopped", "error"}
 
+# Phase 5: concurrency caps (0 = unlimited)
+_MAX_ACTIVE_TASKS_PER_AI = 10
+_MAX_ACTIVE_SUBTASKS_PER_MANAGER = 20
+
 _SCHEDULE_AT_KEYS: tuple[str, ...] = (
     "schedule_at",
     "run_at",
@@ -343,10 +347,51 @@ def _task_create_impl(
     with Session(engine) as session:
         owner_cfg = _resolve_task_runtime_owner(session, user_id, ai_config_id, normalized_args)
 
+        is_fan_out = ai_config_id and int(owner_cfg.id) != int(ai_config_id)
+
+        # Per-AI concurrency cap
+        if _MAX_ACTIVE_TASKS_PER_AI > 0:
+            active_count = session.exec(
+                select(AITaskJob).where(
+                    AITaskJob.user_id == user_id,
+                    AITaskJob.ai_config_id == int(owner_cfg.id),
+                    AITaskJob.status.notin_(list(_FINISHED_STATUSES)),
+                )
+            ).all()
+            if len(active_count) >= _MAX_ACTIVE_TASKS_PER_AI:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"AI '{owner_cfg.name}' already has {len(active_count)} active tasks "
+                        f"(cap={_MAX_ACTIVE_TASKS_PER_AI}). "
+                        "Wait for existing tasks to complete before dispatching more."
+                    ),
+                )
+
+        # Per-manager fan-out subtask cap
+        if is_fan_out and _MAX_ACTIVE_SUBTASKS_PER_MANAGER > 0:
+            dispatched_count = session.exec(
+                select(AITaskJob).where(
+                    AITaskJob.user_id == user_id,
+                    AITaskJob.created_by_ai_config_id == int(ai_config_id),
+                    AITaskJob.status.notin_(list(_FINISHED_STATUSES)),
+                )
+            ).all()
+            if len(dispatched_count) >= _MAX_ACTIVE_SUBTASKS_PER_MANAGER:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"Manager AI has {len(dispatched_count)} active dispatched subtasks "
+                        f"(cap={_MAX_ACTIVE_SUBTASKS_PER_MANAGER}). "
+                        "Wait for subtasks to complete before dispatching more."
+                    ),
+                )
+
         row = AITaskJob(
             job_id=f"job_{uuid.uuid4().hex[:12]}",
             user_id=user_id,
             ai_config_id=int(owner_cfg.id),
+            created_by_ai_config_id=int(ai_config_id) if ai_config_id else None,
             ai_kind="core",
             template_id=template_id,
             title=title,
