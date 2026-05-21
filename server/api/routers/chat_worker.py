@@ -143,6 +143,10 @@ def _run_worker(
             last_rejected_tool_sig = ""
             rejected_repeat = 0
 
+            # Build native tool_use payload once (allowlist is fixed for this run).
+            mcp_active = bool(cfg and cfg.mcp_enabled and effective_tool_allowlist)
+            step_tools = registry.build_tools_payload(effective_tool_allowlist) if mcp_active else []
+
             for _ in range(max_steps):
                 if _run_should_stop(run_id):
                     _run_set_status(run_id, "stopped", finished=True)
@@ -154,6 +158,9 @@ def _run_worker(
                     "stream": True,
                     "stream_options": {"include_usage": True},
                 }
+                if step_tools:
+                    payload["tools"] = step_tools
+                    payload["tool_choice"] = "auto"
                 start_at = time.time()
                 response = requests.post(base_url, headers=headers, json=payload, timeout=300, stream=True)
                 response.raise_for_status()
@@ -162,6 +169,11 @@ def _run_worker(
                 finish_reason = None
                 last_push_at = 0.0
                 payload_call = None
+                # Native tool_calls accumulation (OpenAI-compatible streaming format)
+                _tc_id = ""
+                _tc_name = ""
+                _tc_args = ""
+                _has_native_tc = False
                 _set_run_live_text(run_id, assistant_text)
                 _set_run_live_phase(run_id, "generating")
                 _set_run_live_usage(run_id, 0, 0, 0)
@@ -195,19 +207,36 @@ def _run_worker(
                     if choices:
                         finish_reason = choices[0].get("finish_reason") or finish_reason
                         delta = choices[0].get("delta") or {}
+
+                        # Native tool_calls streaming (OpenAI / DeepSeek compatible)
+                        tc_list = delta.get("tool_calls")
+                        if tc_list:
+                            _has_native_tc = True
+                            for _tc in tc_list:
+                                if _tc.get("id"):
+                                    _tc_id = _tc["id"]
+                                _fn = _tc.get("function") or {}
+                                if _fn.get("name"):
+                                    _tc_name += _fn["name"]
+                                if _fn.get("arguments"):
+                                    _tc_args += _fn["arguments"]
+                            continue
+
                         delta_text = _extract_delta_text(delta)
                         if delta_text:
                             if payload_call:
                                 # Keep reading stream for usage/[DONE] after tool call is found.
                                 continue
                             assistant_text += delta_text
-                            parsed_call, mcp_match = _extract_first_complete_mcp_call(assistant_text)
-                            if parsed_call and mcp_match:
-                                assistant_text = assistant_text[:mcp_match.end()]
-                                payload_call = parsed_call
-                                _set_run_live_text(run_id, assistant_text)
-                                finish_reason = finish_reason or "mcp_wait"
-                                continue
+                            # Text-based fallback: only scan when no native tool call is accumulating.
+                            if not _has_native_tc:
+                                parsed_call, mcp_match = _extract_first_complete_mcp_call(assistant_text)
+                                if parsed_call and mcp_match:
+                                    assistant_text = assistant_text[:mcp_match.end()]
+                                    payload_call = parsed_call
+                                    _set_run_live_text(run_id, assistant_text)
+                                    finish_reason = finish_reason or "mcp_wait"
+                                    continue
                             now = time.time()
                             if (now - last_push_at) >= 0.05:
                                 _set_run_live_text(run_id, assistant_text)
@@ -240,11 +269,29 @@ def _run_worker(
                         latency=latency,
                     ),
                 )
-                convo.append({"role": "assistant", "content": assistant_text})
+                if _has_native_tc and _tc_name:
+                    convo.append({
+                        "role": "assistant",
+                        "content": assistant_text or None,
+                        "tool_calls": [{
+                            "id": _tc_id or "call_0",
+                            "type": "function",
+                            "function": {"name": _tc_name, "arguments": _tc_args},
+                        }],
+                    })
+                else:
+                    convo.append({"role": "assistant", "content": assistant_text})
                 _set_run_live_text(run_id, "")
                 _set_run_live_usage(run_id, 0, 0, 0)
 
-                if not payload_call:
+                # Resolve payload_call: prefer native tool_calls, fall back to text parsing.
+                if _has_native_tc and _tc_name:
+                    try:
+                        _tc_arguments = json.loads(_tc_args or "{}")
+                    except Exception:
+                        _tc_arguments = {}
+                    payload_call = {"tool": _tc_name, "arguments": _tc_arguments}
+                elif not payload_call:
                     payload_call = _extract_first_mcp_call(assistant_text)
                 payload_tool = str((payload_call or {}).get("tool") or "").strip()
                 if is_task_runtime:
@@ -302,25 +349,27 @@ def _run_worker(
                     # Force next turn to submit task.inherit via MCP instead of plain text summary.
                     continue
                 if not payload_call:
-                    warning = _build_mcp_stream_warning(assistant_text, cfg, mcp_warning_template)
-                    if warning:
-                        _save_message(
-                            bg,
-                            user_id,
-                            ChatMessageCreate(
-                                role="user",
-                                content=warning,
-                                tags="system_notice_mcp_format_invalid",
-                                ai_config_id=ai_config_id,
-                                ai_kind=ai_kind,
-                                session_id=session_id,
-                                session_name=session_name,
-                                model=model,
-                                total_tokens=0,
-                            ),
-                        )
-                        convo.append({"role": "user", "content": warning})
-                        continue
+                    # Only check for text-format MCP warnings when not using native tool_calls.
+                    if not _has_native_tc:
+                        warning = _build_mcp_stream_warning(assistant_text, cfg, mcp_warning_template)
+                        if warning:
+                            _save_message(
+                                bg,
+                                user_id,
+                                ChatMessageCreate(
+                                    role="user",
+                                    content=warning,
+                                    tags="system_notice_mcp_format_invalid",
+                                    ai_config_id=ai_config_id,
+                                    ai_kind=ai_kind,
+                                    session_id=session_id,
+                                    session_name=session_name,
+                                    model=model,
+                                    total_tokens=0,
+                                ),
+                            )
+                            convo.append({"role": "user", "content": warning})
+                            continue
                     _run_set_status(run_id, "completed", finished=True)
                     return
                 if _run_should_stop(run_id):
@@ -349,13 +398,20 @@ def _run_worker(
                     saved.tags = _append_mcp_state_to_tags(saved.tags, tool, arguments, result_text)
                     bg.add(saved)
                     bg.commit()
-                    follow_up = (
-                        "[MCP执行失败]\n"
-                        f"工具 `{tool}` 未在当前任务允许范围内。\n"
-                        f"可用工具: {', '.join(sorted(effective_tool_allowlist)) or '（空）'}\n"
-                        "请改用任务允许的 MCP 工具继续执行。"
-                    )
-                    convo.append({"role": "user", "content": follow_up})
+                    if _has_native_tc:
+                        convo.append({
+                            "role": "tool",
+                            "tool_call_id": _tc_id or "call_0",
+                            "content": json.dumps({"error": tool_error, "allowed_tools": sorted(effective_tool_allowlist)}, ensure_ascii=False),
+                        })
+                    else:
+                        follow_up = (
+                            "[MCP执行失败]\n"
+                            f"工具 `{tool}` 未在当前任务允许范围内。\n"
+                            f"可用工具: {', '.join(sorted(effective_tool_allowlist)) or '（空）'}\n"
+                            "请改用任务允许的 MCP 工具继续执行。"
+                        )
+                        convo.append({"role": "user", "content": follow_up})
                     if rejected_repeat >= 3:
                         _run_set_status(run_id, "error", f"Repeated disallowed MCP tool call: {tool}", finished=True)
                         return
@@ -512,17 +568,25 @@ def _run_worker(
                     _run_set_status(run_id, "completed", finished=True)
                     return
                 else:
-                    follow_up = (
-                        f"[MCP执行{'失败' if tool_failed else '确认'}]\n"
-                        f"系统已执行工具：{tool}\n"
-                        f"执行状态：{'失败' if tool_failed else '成功'}\n\n"
-                        "[工具参数]\n"
-                        f"{_safe_json(arguments)}\n\n"
-                        "[工具执行结果]\n"
-                        f"{_safe_json(tool_result.get('result', tool_result))}\n\n"
-                        "请基于以上结果继续完成任务。"
-                    )
-                    convo.append({"role": "user", "content": follow_up})
+                    if _has_native_tc:
+                        # Native path: use tool role so model sees structured result.
+                        convo.append({
+                            "role": "tool",
+                            "tool_call_id": _tc_id or "call_0",
+                            "content": _safe_json(tool_result.get("result", tool_result)),
+                        })
+                    else:
+                        follow_up = (
+                            f"[MCP执行{'失败' if tool_failed else '确认'}]\n"
+                            f"系统已执行工具：{tool}\n"
+                            f"执行状态：{'失败' if tool_failed else '成功'}\n\n"
+                            "[工具参数]\n"
+                            f"{_safe_json(arguments)}\n\n"
+                            "[工具执行结果]\n"
+                            f"{_safe_json(tool_result.get('result', tool_result))}\n\n"
+                            "请基于以上结果继续完成任务。"
+                        )
+                        convo.append({"role": "user", "content": follow_up})
                 _set_run_live_phase(run_id, "generating")
 
             _run_set_status(run_id, "error", f"Reached max steps ({max_steps})", finished=True)

@@ -128,6 +128,21 @@ class MCPRegistry:
             for tool in self._tools.values()
         ]
 
+    def build_tools_payload(self, allowed_tools: Optional[set] = None) -> List[Dict[str, Any]]:
+        tools = []
+        for tool in self._tools.values():
+            if allowed_tools is not None and tool.name not in allowed_tools:
+                continue
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.input_schema,
+                },
+            })
+        return tools
+
     def get(self, name: str) -> MCPTool:
         tool = self._tools.get(name)
         if not tool:
