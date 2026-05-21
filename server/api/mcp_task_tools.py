@@ -8,8 +8,10 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from .database import engine
-from .models import AITaskJob, AssistantAIConfig
+from .models import AITaskJob, AssistantAIConfig, ChatMessage
 from .task_system import extract_task_payload
+
+_FINISHED_STATUSES = {"completed", "cancelled", "stopped", "error"}
 
 _SCHEDULE_AT_KEYS: tuple[str, ...] = (
     "schedule_at",
@@ -444,19 +446,15 @@ def _resolve_task_runtime_owner(
         raise HTTPException(status_code=404, detail="AI config not found")
 
     caller_role = str(caller_cfg.ai_role or "").strip()
-    if caller_role == "digital_member":
-        return caller_cfg
-
-    if caller_role != "assistant_admin":
-        raise HTTPException(status_code=400, detail="Only digital_member or assistant_admin supports task scheduler")
+    caller_member_role = str(caller_cfg.digital_member_role or "").strip().lower()
 
     raw_target = args.get("target_ai_config_id")
     if raw_target is None:
         raw_target = args.get("target_config_id")
-    target_cfg = None
-    if raw_target is not None:
+
+    def _resolve_target(target_raw: Any) -> AssistantAIConfig:
         try:
-            target_id = int(raw_target)
+            target_id = int(target_raw)
         except Exception:
             raise HTTPException(status_code=400, detail="target_ai_config_id must be an integer")
         target_cfg = session.exec(
@@ -470,6 +468,18 @@ def _resolve_task_runtime_owner(
         if str(target_cfg.ai_role or "").strip() != "digital_member":
             raise HTTPException(status_code=400, detail="Target AI config must be digital_member")
         return target_cfg
+
+    if caller_role == "digital_member":
+        # A manager member may fan out subtasks to other members (orchestrator mode).
+        if caller_member_role == "manager" and raw_target is not None:
+            return _resolve_target(raw_target)
+        return caller_cfg
+
+    if caller_role != "assistant_admin":
+        raise HTTPException(status_code=400, detail="Only digital_member or assistant_admin supports task scheduler")
+
+    if raw_target is not None:
+        return _resolve_target(raw_target)
 
     candidates = session.exec(
         select(AssistantAIConfig).where(
@@ -657,6 +667,95 @@ def _task_inherit(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int
             "title": row.title,
             "summary": summary,
         }
+
+def _job_result_summary(session: Session, user_id: int, job: AITaskJob) -> str:
+    sid = str(job.session_id or "").strip()
+    if not sid:
+        return ""
+    msg = session.exec(
+        select(ChatMessage).where(
+            ChatMessage.user_id == user_id,
+            ChatMessage.ai_config_id == job.ai_config_id,
+            ChatMessage.ai_kind == "core",
+            ChatMessage.session_id == sid,
+            ChatMessage.role == "assistant",
+        ).order_by(ChatMessage.created_at.desc())
+    ).first()
+    if msg and msg.content:
+        return str(msg.content)[-1500:]
+    return ""
+
+def _task_wait_all(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    """Orchestrator primitive: block until all given subtasks finish (or timeout).
+
+    Intended for a manager that has fanned out subtasks to other digital_members
+    (each runs in parallel on its own AI config). Returns each task's final
+    status plus a short result summary.
+    """
+    raw_ids = args.get("job_ids")
+    if isinstance(raw_ids, str):
+        raw_ids = [piece.strip() for piece in raw_ids.split(",")]
+    if not isinstance(raw_ids, list) or not raw_ids:
+        raise HTTPException(status_code=400, detail="job_ids (non-empty list) is required for task.wait_all")
+    job_ids = [str(jid).strip() for jid in raw_ids if str(jid).strip()]
+    if not job_ids:
+        raise HTTPException(status_code=400, detail="job_ids must contain at least one valid id")
+
+    try:
+        timeout_seconds = int(args.get("timeout_seconds") or 300)
+    except Exception:
+        timeout_seconds = 300
+    timeout_seconds = max(5, min(1800, timeout_seconds))
+    try:
+        poll_interval = int(args.get("poll_interval_seconds") or 3)
+    except Exception:
+        poll_interval = 3
+    poll_interval = max(1, min(30, poll_interval))
+
+    start_ts = time.time()
+    deadline = start_ts + timeout_seconds
+    while True:
+        with Session(engine) as session:
+            rows = session.exec(
+                select(AITaskJob).where(
+                    AITaskJob.user_id == user_id,
+                    AITaskJob.job_id.in_(job_ids),
+                )
+            ).all()
+            found = {str(row.job_id): row for row in rows}
+            all_done = True
+            results: List[Dict[str, Any]] = []
+            for jid in job_ids:
+                row = found.get(jid)
+                if not row:
+                    results.append({"job_id": jid, "status": "not_found", "finished": True, "summary": ""})
+                    continue
+                status = str(row.status or "")
+                finished = status in _FINISHED_STATUSES
+                if not finished:
+                    all_done = False
+                results.append({
+                    "job_id": jid,
+                    "title": row.title,
+                    "status": status,
+                    "finished": finished,
+                    "summary": _job_result_summary(session, user_id, row) if finished else "",
+                })
+        if all_done:
+            return {
+                "all_done": True,
+                "timed_out": False,
+                "waited_seconds": round(time.time() - start_ts, 2),
+                "results": results,
+            }
+        if time.time() >= deadline:
+            return {
+                "all_done": False,
+                "timed_out": True,
+                "waited_seconds": round(time.time() - start_ts, 2),
+                "results": results,
+            }
+        time.sleep(poll_interval)
 
 def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     if not ai_config_id:

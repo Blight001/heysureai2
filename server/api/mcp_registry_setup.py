@@ -28,6 +28,7 @@ from .mcp_task_tools import (
     _task_get_current,
     _task_inherit,
     _task_list,
+    _task_wait_all,
 )
 from .mcp_feishu_tools import _feishu_send_message
 from .agent_dispatch import _dispatch_task
@@ -432,6 +433,26 @@ registry.register(MCPTool(
         },
     },
     handler=_task_list,
+))
+registry.register(MCPTool(
+    name="task.wait_all",
+    description=(
+        "Orchestrator primitive: block until all listed subtasks finish (or "
+        "timeout), then return each task's final status and result summary. Use "
+        "after fanning out subtasks to multiple digital_members (a manager can "
+        "create subtasks for other members via target_ai_config_id), which run "
+        "in parallel."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "job_ids": {"type": "array", "items": {"type": "string"}, "description": "Subtask job_ids to wait for."},
+            "timeout_seconds": {"type": "integer", "description": "Max wait, 5-1800 (default 300)."},
+            "poll_interval_seconds": {"type": "integer", "description": "Poll interval, 1-30 (default 3)."},
+        },
+        "required": ["job_ids"],
+    },
+    handler=_task_wait_all,
 ))
 registry.register(MCPTool(
     name="task.get_current",
