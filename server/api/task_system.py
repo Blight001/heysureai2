@@ -23,7 +23,7 @@ DEFAULT_SYSTEM_AUTO_CONTROL: Dict[str, Any] = {
     "tasks": [],
 }
 
-TASK_RUNTIME_REQUIRED_TOOLS = {"task.get_current", "task.complete", "task.inherit", "task.list"}
+TASK_RUNTIME_REQUIRED_TOOLS = {"task.get_current", "task.complete", "task.inherit", "task.list", "task.wait_all"}
 TASK_TOOLSET_FOR_CREATE_COMPAT = {"task.list", "task.get_current", "task.inherit", "task.complete"}
 TASK_CREATE_TOOLS = {"task.create", "task.create_immediate", "task.create_scheduled", "task.create_recurring"}
 WORKSPACE_TOOLSET_FOR_READ_BY_NAME_COMPAT = {"workspace.read_files"}

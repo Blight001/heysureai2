@@ -158,10 +158,11 @@ class ChatMessage(SQLModel, table=True):
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
     total_tokens: Optional[int] = None
+    cache_read_tokens: Optional[int] = None
     system_prompt: Optional[str] = None
     finish_reason: Optional[str] = None
     latency: Optional[float] = None # 延迟，单位秒
-    
+
     created_at: float = Field(default_factory=lambda: __import__("time").time())
 
 class ChatMessageCreate(SQLModel):
@@ -173,12 +174,13 @@ class ChatMessageCreate(SQLModel):
     session_name: Optional[str] = None
     think: Optional[str] = None
     tags: Optional[str] = ""
-    
+
     # 新增字段
     model: Optional[str] = None
     prompt_tokens: Optional[int] = None
     completion_tokens: Optional[int] = None
     total_tokens: Optional[int] = None
+    cache_read_tokens: Optional[int] = None
     system_prompt: Optional[str] = None
     finish_reason: Optional[str] = None
     latency: Optional[float] = None
@@ -219,7 +221,7 @@ class AssistantAIConfig(SQLModel, table=True):
     mcp_enabled: bool = Field(default=True)
     switch_key: str = Field(default="assistant_default")
     mcp_tools: str = Field(
-        default='["workspace.list_files","workspace.get_file_tree","workspace.read_files","workspace.read_file_by_name","workspace.write_file","workspace.edit_file","workspace.delete_path","workspace.run_command","workspace.git_diff","admin.list_agents","admin.get_overview","admin.dispatch_flow","project.list_projects","project.create_project","project.update_project","project.delete_project","task.create_immediate","task.create_scheduled","task.create_recurring","task.create","task.list","task.get_current","task.inherit","task.complete"]'
+        default='["workspace.list_files","workspace.get_file_tree","workspace.read_files","workspace.read_file_by_name","workspace.write_file","workspace.edit_file","workspace.delete_path","workspace.run_command","workspace.git_diff","admin.list_agents","admin.get_overview","admin.dispatch_flow","project.list_projects","project.create_project","project.update_project","project.delete_project","task.create_immediate","task.create_scheduled","task.create_recurring","task.create","task.list","task.wait_all","task.get_current","task.inherit","task.complete"]'
     )
     system_auto_control: str = Field(
         default='{"enabled":false,"start_task_prompt":"你将收到一个任务，请先理解目标、约束与优先级，然后开始执行。","resume_task_prompt":"请继续执行刚才被暂停的任务，先简要回顾当前进度，再继续推进直到可交付。","supervision_prompt":"系统监督提醒：请确认当前任务是否已完成。若已完成请调用 task.complete 标记；若未完成请给出剩余步骤并继续执行。","inheritance_notice":"当前思考量已达到阈值（{session_tokens}/{threshold}），建议立即开启传承流程，沉淀本轮结论与关键上下文。","tasks":[]}'

@@ -11,6 +11,7 @@ import requests
 from sqlmodel import Session, select
 
 from api.database import engine
+from api.agent_dispatch import set_run_session_context
 from api.mcp import registry, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.task_system import (
@@ -38,6 +39,7 @@ from .chat_prompt_utils import (
     _strip_task_runtime_sections,
 )
 from .chat_persistence import _save_message
+from .chat_stream import StreamResult, _detect_provider, stream_turn_anthropic, stream_turn_openai_compat
 from .chat_runtime_helpers import (
     _create_loop_scheduled_job,
     _is_task_finished_status,
@@ -256,111 +258,67 @@ def _run_worker(
             # Build native tool_use payload once (allowlist is fixed for this run).
             mcp_active = bool(cfg and cfg.mcp_enabled and effective_tool_allowlist)
             step_tools, native_tool_name_map = _build_native_tools_payload(effective_tool_allowlist) if mcp_active else ([], {})
+            provider = _detect_provider(base_url)
+
+            # Expose session context to MCP tools (e.g. admin.dispatch_task) so
+            # async desktop-agent results can be appended to this session. The
+            # worker runs in its own thread, so the contextvar is naturally scoped.
+            set_run_session_context({
+                "user_id": user_id,
+                "ai_config_id": ai_config_id,
+                "ai_kind": ai_kind,
+                "session_id": session_id,
+                "session_name": session_name,
+                "model": model,
+            })
 
             for _ in range(max_steps):
                 if _run_should_stop(run_id):
                     _run_set_status(run_id, "stopped", finished=True)
                     return
 
-                payload = {
-                    "model": model,
-                    "messages": convo,
-                    "stream": True,
-                    "stream_options": {"include_usage": True},
-                }
-                if step_tools:
-                    payload["tools"] = step_tools
-                    payload["tool_choice"] = "auto"
                 start_at = time.time()
-                response = requests.post(base_url, headers=headers, json=payload, timeout=300, stream=True)
-                _raise_for_upstream_error(response)
-                assistant_text = ""
-                reasoning_content = ""
-                usage = {}
-                finish_reason = None
-                last_push_at = 0.0
-                payload_call = None
-                # Native tool_calls accumulation (OpenAI-compatible streaming format)
-                _tc_id = ""
-                _tc_name = ""
-                _tc_args = ""
-                _has_native_tc = False
-                _set_run_live_text(run_id, assistant_text)
-                _set_run_live_phase(run_id, "generating")
-                _set_run_live_usage(run_id, 0, 0, 0)
-                for raw_line in response.iter_lines():
-                    if _run_should_stop(run_id):
-                        response.close()
-                        _set_run_live_text(run_id, "")
-                        _run_set_status(run_id, "stopped", finished=True)
-                        return
-                    if not raw_line:
-                        continue
-                    line = raw_line.decode("utf-8")
-                    if not line.startswith("data: "):
-                        continue
-                    payload_line = line[6:].strip()
-                    if payload_line == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(payload_line)
-                    except Exception:
-                        continue
-                    if isinstance(chunk.get("usage"), dict):
-                        usage = chunk["usage"]
-                        _set_run_live_usage(
-                            run_id,
-                            int(usage.get("prompt_tokens") or 0),
-                            int(usage.get("completion_tokens") or 0),
-                            int(usage.get("total_tokens") or 0),
-                        )
-                    choices = chunk.get("choices") or []
-                    if choices:
-                        finish_reason = choices[0].get("finish_reason") or finish_reason
-                        delta = choices[0].get("delta") or {}
-                        delta_reasoning = delta.get("reasoning_content")
-                        if isinstance(delta_reasoning, str):
-                            reasoning_content += delta_reasoning
+                if provider == "anthropic":
+                    sr = stream_turn_anthropic(
+                        run_id=run_id,
+                        base_url=base_url,
+                        api_key=api_key,
+                        model=model,
+                        convo=convo,
+                        step_tools=step_tools,
+                        native_tool_name_map=native_tool_name_map,
+                    )
+                else:
+                    oa_payload = {
+                        "model": model,
+                        "messages": convo,
+                        "stream": True,
+                        "stream_options": {"include_usage": True},
+                    }
+                    if step_tools:
+                        oa_payload["tools"] = step_tools
+                        oa_payload["tool_choice"] = "auto"
+                    response = requests.post(base_url, headers=headers, json=oa_payload, timeout=300, stream=True)
+                    _raise_for_upstream_error(response)
+                    sr = stream_turn_openai_compat(
+                        run_id=run_id,
+                        response=response,
+                        native_tool_name_map=native_tool_name_map,
+                    )
 
-                        # Native tool_calls streaming (OpenAI / DeepSeek compatible)
-                        tc_list = delta.get("tool_calls")
-                        if tc_list:
-                            _has_native_tc = True
-                            for _tc in tc_list:
-                                if _tc.get("id"):
-                                    _tc_id = _tc["id"]
-                                _fn = _tc.get("function") or {}
-                                if _fn.get("name"):
-                                    _tc_name += _fn["name"]
-                                if _fn.get("arguments"):
-                                    _tc_args += _fn["arguments"]
-                            continue
-
-                        delta_text = _extract_delta_text(delta)
-                        if delta_text:
-                            if payload_call:
-                                # Keep reading stream for usage/[DONE] after tool call is found.
-                                continue
-                            assistant_text += delta_text
-                            # Text-based fallback: only scan when no native tool call is accumulating.
-                            if not _has_native_tc:
-                                parsed_call, mcp_match = _extract_first_complete_mcp_call(assistant_text)
-                                if parsed_call and mcp_match:
-                                    assistant_text = assistant_text[:mcp_match.end()]
-                                    payload_call = parsed_call
-                                    _set_run_live_text(run_id, assistant_text)
-                                    finish_reason = finish_reason or "mcp_wait"
-                                    continue
-                            now = time.time()
-                            if (now - last_push_at) >= 0.05:
-                                _set_run_live_text(run_id, assistant_text)
-                                last_push_at = now
-                response.close()
-                if _run_should_stop(run_id):
-                    _set_run_live_text(run_id, "")
+                if sr.stopped:
                     _run_set_status(run_id, "stopped", finished=True)
                     return
-                _set_run_live_text(run_id, assistant_text)
+
+                assistant_text = sr.assistant_text
+                reasoning_content = sr.reasoning_content
+                usage = sr.usage
+                finish_reason = sr.finish_reason
+                payload_call = sr.payload_call
+                _has_native_tc = sr.has_native_tc
+                _tc_id = sr.tc_id
+                _tc_name = sr.tc_name
+                _tc_args = sr.tc_args
                 latency = time.time() - start_at
 
                 saved = _save_message(
@@ -378,6 +336,7 @@ def _run_worker(
                         prompt_tokens=int(usage.get("prompt_tokens") or 0),
                         completion_tokens=int(usage.get("completion_tokens") or 0),
                         total_tokens=int(usage.get("total_tokens") or 0),
+                        cache_read_tokens=int(usage.get("cache_read_input_tokens") or 0) or None,
                         system_prompt=system_prompt,
                         finish_reason=finish_reason,
                         latency=latency,
@@ -404,14 +363,8 @@ def _run_worker(
                 _set_run_live_text(run_id, "")
                 _set_run_live_usage(run_id, 0, 0, 0)
 
-                # Resolve payload_call: prefer native tool_calls, fall back to text parsing.
-                if _has_native_tc and _tc_name:
-                    try:
-                        _tc_arguments = json.loads(_tc_args or "{}")
-                    except Exception:
-                        _tc_arguments = {}
-                    payload_call = {"tool": native_tool_name_map.get(_tc_name, _tc_name), "arguments": _tc_arguments}
-                elif not payload_call:
+                # Text-based fallback: if no payload_call was detected during streaming.
+                if not payload_call and not _has_native_tc:
                     payload_call = _extract_first_mcp_call(assistant_text)
                 payload_tool = str((payload_call or {}).get("tool") or "").strip()
                 if is_task_runtime:
