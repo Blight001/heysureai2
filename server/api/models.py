@@ -225,7 +225,7 @@ class AssistantAIConfig(SQLModel, table=True):
     mcp_enabled: bool = Field(default=True)
     switch_key: str = Field(default="assistant_default")
     mcp_tools: str = Field(
-        default='["workspace.list_files","workspace.get_file_tree","workspace.read_files","workspace.read_file_by_name","workspace.write_file","workspace.edit_file","workspace.delete_path","workspace.run_command","workspace.git_diff","admin.list_agents","admin.get_overview","admin.dispatch_flow","project.list_projects","project.create_project","project.update_project","project.delete_project","task.create_immediate","task.create_scheduled","task.create_recurring","task.create","task.list","task.wait_all","task.get_current","task.inherit","task.complete","prompt.list_targets","prompt.read_ai","prompt.write_ai","prompt.read_system","prompt.write_system"]'
+        default='["workspace.list_files","workspace.get_file_tree","workspace.read_files","workspace.read_file_by_name","workspace.write_file","workspace.edit_file","workspace.delete_path","workspace.run_command","workspace.git_diff","admin.list_agents","admin.get_overview","admin.dispatch_flow","project.list_projects","project.create_project","project.update_project","project.delete_project","task.create_immediate","task.create_scheduled","task.create_recurring","task.create","task.list","task.wait_all","task.get_current","task.inherit","task.complete","prompt.list_targets","prompt.read_ai","prompt.write_ai","prompt.read_system","prompt.write_system","memory.write","memory.search","memory.list","memory.update","memory.archive","evolution.input","evolution.list","evolution.review"]'
     )
     system_auto_control: str = Field(
         default='{"enabled":false,"start_task_prompt":"你将收到一个任务，请先理解目标、约束与优先级，然后开始执行。","resume_task_prompt":"请继续执行刚才被暂停的任务，先简要回顾当前进度，再继续推进直到可交付。","supervision_prompt":"系统监督提醒：请确认当前任务是否已完成。若已完成请调用 task.complete 标记；若未完成请给出剩余步骤并继续执行。","inheritance_notice":"当前思考量已达到阈值（{session_tokens}/{threshold}），建议立即开启传承流程，沉淀本轮结论与关键上下文。","tasks":[]}'
@@ -388,6 +388,40 @@ class ChatRun(SQLModel, table=True):
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
     created_at: float = Field(default_factory=lambda: __import__("time").time())
+    updated_at: float = Field(default_factory=lambda: __import__("time").time())
+
+
+class Memory(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    memory_id: str = Field(index=True, unique=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    ai_config_id: Optional[int] = Field(default=None, index=True)
+    project_id: Optional[str] = Field(default=None, index=True)
+    job_id: Optional[str] = Field(default=None, index=True)
+    generation: int = Field(default=1)
+    kind: str = Field(default="fact", index=True)  # fact/decision/lesson/todo/risk/template
+    tags: str = Field(default="")  # comma-separated
+    content: str = Field(default="")
+    source: str = Field(default="{}")  # JSON: {chat_message_id, file_path,...}
+    confidence: float = Field(default=0.6)
+    archived: bool = Field(default=False, index=True)
+    created_at: float = Field(default_factory=lambda: __import__("time").time(), index=True)
+    updated_at: float = Field(default_factory=lambda: __import__("time").time())
+
+
+class EvolutionInput(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    evolution_input_id: str = Field(index=True, unique=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    source_ai_config_id: Optional[int] = Field(default=None, index=True)
+    type: str = Field(default="lesson", index=True)  # prompt_rule/tool_rule/workflow_rule/memory/failure_case/success_case
+    target_scope: str = Field(default="{}")  # JSON
+    evidence: str = Field(default="[]")  # JSON array
+    proposal: str = Field(default="")
+    risk: str = Field(default="")
+    review_status: str = Field(default="queued", index=True)  # queued/accepted/rejected/applied
+    applied_to: str = Field(default="")
+    created_at: float = Field(default_factory=lambda: __import__("time").time(), index=True)
     updated_at: float = Field(default_factory=lambda: __import__("time").time())
 
 

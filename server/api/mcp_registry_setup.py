@@ -39,6 +39,16 @@ from .mcp_prompt_tools import (
     _prompt_write_system,
 )
 from .agent_dispatch import _dispatch_task
+from .mcp_memory_tools import (
+    _evolution_input,
+    _evolution_list,
+    _evolution_review,
+    _memory_archive,
+    _memory_list,
+    _memory_search,
+    _memory_update,
+    _memory_write,
+)
 
 registry = MCPRegistry()
 
@@ -523,6 +533,132 @@ registry.register(MCPTool(
         "required": ["text"],
     },
     handler=_feishu_send_message,
+    destructive=True,
+))
+
+registry.register(MCPTool(
+    name="memory.write",
+    description="Persist a high-value structured memory (fact/decision/lesson/todo/risk/template) for later retrieval.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "content": {"type": "string", "description": "Memory content."},
+            "kind": {"type": "string", "enum": ["fact", "decision", "lesson", "todo", "risk", "template"]},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "project_id": {"type": "string"},
+            "job_id": {"type": "string"},
+            "generation": {"type": "integer"},
+            "confidence": {"type": "number", "description": "0.0-1.0 confidence."},
+            "source": {"type": "object", "description": "Provenance, e.g. {chat_message_id, file_path}."},
+        },
+        "required": ["content"],
+    },
+    handler=_memory_write,
+    destructive=True,
+))
+registry.register(MCPTool(
+    name="memory.search",
+    description="Search stored memories by free-text query, kind, project, or tags.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "kind": {"type": "string"},
+            "project_id": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "limit": {"type": "integer"},
+            "include_archived": {"type": "boolean"},
+        },
+    },
+    handler=_memory_search,
+))
+registry.register(MCPTool(
+    name="memory.list",
+    description="List stored memories (optionally filtered by kind/project).",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "kind": {"type": "string"},
+            "project_id": {"type": "string"},
+            "limit": {"type": "integer"},
+            "include_archived": {"type": "boolean"},
+        },
+    },
+    handler=_memory_list,
+))
+registry.register(MCPTool(
+    name="memory.update",
+    description="Update an existing memory's content/tags/kind/confidence.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "memory_id": {"type": "string"},
+            "content": {"type": "string"},
+            "tags": {"type": "array", "items": {"type": "string"}},
+            "kind": {"type": "string"},
+            "confidence": {"type": "number"},
+        },
+        "required": ["memory_id"],
+    },
+    handler=_memory_update,
+    destructive=True,
+))
+registry.register(MCPTool(
+    name="memory.archive",
+    description="Archive (soft-delete) a memory so it no longer surfaces in default searches.",
+    input_schema={
+        "type": "object",
+        "properties": {"memory_id": {"type": "string"}},
+        "required": ["memory_id"],
+    },
+    handler=_memory_archive,
+    destructive=True,
+))
+registry.register(MCPTool(
+    name="evolution.input",
+    description="Submit an evolution proposal (improvement to prompts/tools/workflows) for core-manager review.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "proposal": {"type": "string"},
+            "type": {
+                "type": "string",
+                "enum": ["prompt_rule", "tool_rule", "workflow_rule", "memory", "failure_case", "success_case"],
+            },
+            "risk": {"type": "string"},
+            "target_scope": {"type": "object"},
+            "evidence": {"type": "array", "items": {"type": "object"}},
+        },
+        "required": ["proposal"],
+    },
+    handler=_evolution_input,
+    destructive=True,
+))
+registry.register(MCPTool(
+    name="evolution.list",
+    description="List submitted evolution inputs, optionally filtered by review_status.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "review_status": {"type": "string", "enum": ["queued", "accepted", "rejected", "applied"]},
+            "limit": {"type": "integer"},
+        },
+    },
+    handler=_evolution_list,
+))
+registry.register(MCPTool(
+    name="evolution.review",
+    description="Review an evolution input: accept/reject/apply (core manager). Provide applied_to when applying.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "evolution_input_id": {"type": "string"},
+            "decision": {"type": "string", "enum": ["accept", "reject", "apply"]},
+            "applied_to": {"type": "string"},
+        },
+        "required": ["evolution_input_id", "decision"],
+    },
+    handler=_evolution_review,
     destructive=True,
 ))
 
