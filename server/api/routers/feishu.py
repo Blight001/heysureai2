@@ -1,5 +1,4 @@
 import threading
-import time
 import uuid
 from typing import Any, Dict
 
@@ -9,15 +8,14 @@ from sqlmodel import Session, select
 from api.database import engine
 from api.feishu_service import parse_feishu_text_event, send_feishu_text_message
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
-from api.routers.chat_base import _RUN_LIVE_STATE, _RUN_STATE_LOCK
 from api.routers.chat_persistence import _save_message
 from api.routers.chat_runtime_helpers import _resolve_ai_runtime
 from api.routers.chat_worker import _run_worker
 
 router = APIRouter()
 PREFIX = "/api/feishu"
-FEISHU_STREAM_POLL_SECONDS = 0.8
-FEISHU_STREAM_CHUNK_MAX_CHARS = 1800
+# Feishu text messages have a length cap; only split when the final reply exceeds it.
+FEISHU_TEXT_MAX_CHARS = 1800
 
 
 def _verify_token(cfg: AssistantAIConfig, payload: Dict[str, Any]) -> None:
@@ -45,7 +43,7 @@ def _build_feishu_runtime_prompt(base_prompt: str, event: Dict[str, str]) -> str
     )
 
 
-def _send_feishu_stream_text(
+def _send_feishu_text(
     *,
     user_id: int,
     ai_config_id: int,
@@ -57,8 +55,8 @@ def _send_feishu_stream_text(
     if not body:
         return False
     ok = False
-    for start in range(0, len(body), FEISHU_STREAM_CHUNK_MAX_CHARS):
-        chunk = body[start:start + FEISHU_STREAM_CHUNK_MAX_CHARS].strip()
+    for start in range(0, len(body), FEISHU_TEXT_MAX_CHARS):
+        chunk = body[start:start + FEISHU_TEXT_MAX_CHARS].strip()
         if not chunk:
             continue
         try:
@@ -71,82 +69,9 @@ def _send_feishu_stream_text(
             )
             ok = True
         except Exception as exc:
-            print(f"[feishu_stream] send failed config_id={ai_config_id}: {exc}")
+            print(f"[feishu_notify] send failed config_id={ai_config_id}: {exc}")
             return ok
     return ok
-
-
-def _run_status(run_id: str) -> tuple[str, str]:
-    with Session(engine) as session:
-        row = session.exec(select(ChatRun).where(ChatRun.run_id == run_id)).first()
-        if not row:
-            return "", ""
-        return str(row.status or ""), str(row.error_message or "")
-
-
-def _notify_feishu_during_run(
-    *,
-    run_id: str,
-    user_id: int,
-    ai_config_id: int,
-    ai_kind: str,
-    session_id: str,
-    after_message_id: int,
-    receive_id: str,
-    receive_id_type: str,
-    stream_state: Dict[str, Any],
-) -> None:
-    cursor = 0
-    pending = ""
-
-    while True:
-        with _RUN_STATE_LOCK:
-            live = dict(_RUN_LIVE_STATE.get(run_id) or {})
-        live_text = str(live.get("text") or "")
-
-        if cursor > len(live_text):
-            cursor = 0
-
-        new_text = live_text[cursor:]
-        if new_text:
-            pending += new_text
-            cursor = len(live_text)
-
-        status, _ = _run_status(run_id)
-        is_done = status not in {"queued", "running"}
-
-        to_send = ""
-        if is_done:
-            # Flush everything remaining when run finishes
-            to_send = pending
-            pending = ""
-        else:
-            # Send up to the last paragraph break if we have enough content
-            last_break = pending.rfind("\n\n")
-            if last_break >= 0:
-                to_send = pending[: last_break + 2]
-                pending = pending[last_break + 2 :]
-            elif len(pending) >= FEISHU_STREAM_CHUNK_MAX_CHARS:
-                # No paragraph break but buffer is large — send it all
-                to_send = pending
-                pending = ""
-
-        if to_send.strip():
-            if _send_feishu_stream_text(
-                user_id=user_id,
-                ai_config_id=ai_config_id,
-                receive_id=receive_id,
-                receive_id_type=receive_id_type,
-                text=to_send,
-            ):
-                stream_state["sent_any"] = True
-                stream_state["sent_content"] = True
-                stream_state["content_text"] = f"{stream_state.get('content_text') or ''}{to_send}"
-
-        if is_done:
-            return
-
-        time.sleep(FEISHU_STREAM_POLL_SECONDS)
 
 
 def _has_successful_feishu_send(
@@ -185,8 +110,6 @@ def _notify_feishu_after_run(
     after_message_id: int,
     receive_id: str,
     receive_id_type: str,
-    fallback_only: bool = False,
-    streamed_text: str = "",
 ) -> None:
     with Session(engine) as session:
         row = session.exec(select(ChatRun).where(ChatRun.run_id == run_id)).first()
@@ -220,55 +143,21 @@ def _notify_feishu_after_run(
 
         if not final_text:
             return
-        if fallback_only:
-            sent_text = " ".join(str(streamed_text or "").split())
-            clean_final = " ".join(final_text.split())
-            # Skip if the final text was already fully covered by what was streamed
-            if sent_text and (clean_final in sent_text or clean_final == sent_text):
-                return
-            # Extract only the unsent tail if final starts with what was streamed
-            orig_sent = str(streamed_text or "").strip()
-            orig_final = final_text.strip()
-            if orig_sent and orig_final.startswith(orig_sent):
-                final_text = orig_final[len(orig_sent):].lstrip()
-            elif sent_text and clean_final.startswith(sent_text):
-                # Whitespace-normalised match — strip the sent prefix
-                ratio = len(orig_sent) / max(len(sent_text), 1)
-                approx_len = int(len(sent_text) * ratio)
-                final_text = orig_final[approx_len:].lstrip()
-            if not final_text.strip():
-                return
 
-    try:
-        send_feishu_text_message(
-            user_id,
-            ai_config_id,
-            text=final_text,
-            receive_id=receive_id,
-            receive_id_type=receive_id_type,
-        )
-    except Exception as exc:
-        print(f"[feishu_notify] send failed run_id={run_id} config_id={ai_config_id}: {exc}")
-        # Event callbacks must not be retried just because the post-run notification failed.
-        return
+    _send_feishu_text(
+        user_id=user_id,
+        ai_config_id=ai_config_id,
+        receive_id=receive_id,
+        receive_id_type=receive_id_type,
+        text=final_text,
+    )
 
 
 def _run_feishu_worker_and_notify(worker_kwargs: Dict[str, Any], notify_kwargs: Dict[str, Any]) -> None:
-    stream_state: Dict[str, Any] = {}
-    stream_kwargs = dict(notify_kwargs)
-    stream_kwargs["stream_state"] = stream_state
-    notifier = threading.Thread(
-        target=_notify_feishu_during_run,
-        kwargs=stream_kwargs,
-        daemon=True,
-    )
-    notifier.start()
+    # Wait for the run to fully finish streaming before sending, so Feishu receives
+    # one complete reply instead of fragmented partial messages.
     _run_worker(**worker_kwargs)
-    notifier.join(timeout=10)
-    fallback_kwargs = dict(notify_kwargs)
-    fallback_kwargs["fallback_only"] = bool(stream_state.get("sent_content"))
-    fallback_kwargs["streamed_text"] = str(stream_state.get("content_text") or "")
-    _notify_feishu_after_run(**fallback_kwargs)
+    _notify_feishu_after_run(**notify_kwargs)
 
 
 @router.post("/events/{config_id}")
