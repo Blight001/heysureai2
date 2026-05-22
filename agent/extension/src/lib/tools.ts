@@ -91,12 +91,13 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   },
   {
     name: 'browser_scroll',
-    description: 'Scroll the current page.',
+    description: 'Scroll the current page. Returns the resulting scroll position (scrollY, percent, atTop/atBottom), how many pixels actually moved, and which section/headings are now in view — so you know where you landed and what changed.',
     input_schema: {
       type: 'object',
       properties: {
         direction: { type: 'string', enum: ['up', 'down', 'top', 'bottom'], description: 'Scroll direction' },
         amount:    { type: 'number', description: 'Pixels to scroll (default 400)' },
+        selector:  { type: 'string', description: 'Optional: scroll this element into view instead of by amount' },
       },
       required: ['direction'],
     },
@@ -240,6 +241,70 @@ export const BROWSER_TOOLS: AIToolDef[] = [
       type: 'object',
       properties: { selector: { type: 'string', description: 'CSS selector of element to hover' } },
       required: ['selector'],
+    },
+  },
+  {
+    name: 'browser_page_info',
+    description: 'Get where you currently are on the page: scroll position (scrollY, percent, atTop/atBottom), viewport size, full page height, the current section heading, all headings now visible in the viewport, and element counts. Call this to orient yourself before/after scrolling or interacting.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'browser_right_click',
+    description: 'Right-click (open the context menu) on an element by CSS selector, visible text, or coordinates.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector' },
+        text:     { type: 'string', description: 'Visible text of the element' },
+        x:        { type: 'number', description: 'X coordinate (px)' },
+        y:        { type: 'number', description: 'Y coordinate (px)' },
+      },
+    },
+  },
+  {
+    name: 'browser_double_click',
+    description: 'Double-click an element by CSS selector, visible text, or coordinates (e.g. to select a word or open an item).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector' },
+        text:     { type: 'string', description: 'Visible text of the element' },
+        x:        { type: 'number', description: 'X coordinate (px)' },
+        y:        { type: 'number', description: 'Y coordinate (px)' },
+      },
+    },
+  },
+  {
+    name: 'browser_drag',
+    description: 'Drag from a source element/point and drop onto a target element/point. Fires both HTML5 drag-and-drop and pointer events, so it works with most draggable UIs (sliders, sortable lists, file drop zones).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        selector:    { type: 'string', description: 'Source CSS selector' },
+        text:        { type: 'string', description: 'Source visible text' },
+        x:           { type: 'number', description: 'Source X coordinate (px)' },
+        y:           { type: 'number', description: 'Source Y coordinate (px)' },
+        to_selector: { type: 'string', description: 'Target CSS selector' },
+        to_text:     { type: 'string', description: 'Target visible text' },
+        to_x:        { type: 'number', description: 'Target X coordinate (px)' },
+        to_y:        { type: 'number', description: 'Target Y coordinate (px)' },
+      },
+    },
+  },
+  {
+    name: 'browser_press_key',
+    description: 'Press a keyboard key (optionally with modifiers) on the focused element or a given selector. Useful for Enter, Escape, Tab, Arrow keys, or shortcuts like Ctrl+A.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        key:      { type: 'string', description: 'Key name, e.g. "Enter", "Escape", "Tab", "ArrowDown", "a"' },
+        selector: { type: 'string', description: 'Optional CSS selector to focus before pressing' },
+        ctrl:     { type: 'boolean', description: 'Hold Ctrl' },
+        shift:    { type: 'boolean', description: 'Hold Shift' },
+        alt:      { type: 'boolean', description: 'Hold Alt' },
+        meta:     { type: 'boolean', description: 'Hold Meta/Cmd' },
+      },
+      required: ['key'],
     },
   },
 ]
@@ -420,6 +485,39 @@ async function toolHover(args: any): Promise<any> {
   return contentMsg(tab.id!, { action: 'hover', selector: args.selector })
 }
 
+async function toolPageInfo(): Promise<any> {
+  const tab = await getActiveTab()
+  return contentMsg(tab.id!, { action: 'page_info' })
+}
+
+async function toolRightClick(args: any): Promise<any> {
+  const tab = await getActiveTab()
+  return contentMsg(tab.id!, { action: 'right_click', selector: args.selector, text: args.text, x: args.x, y: args.y })
+}
+
+async function toolDoubleClick(args: any): Promise<any> {
+  const tab = await getActiveTab()
+  return contentMsg(tab.id!, { action: 'double_click', selector: args.selector, text: args.text, x: args.x, y: args.y })
+}
+
+async function toolDrag(args: any): Promise<any> {
+  const tab = await getActiveTab()
+  return contentMsg(tab.id!, {
+    action: 'drag',
+    selector: args.selector, text: args.text, x: args.x, y: args.y,
+    toSelector: args.to_selector, toText: args.to_text, toX: args.to_x, toY: args.to_y,
+  })
+}
+
+async function toolPressKey(args: any): Promise<any> {
+  const tab = await getActiveTab()
+  return contentMsg(tab.id!, {
+    action: 'press_key',
+    key: args.key, selector: args.selector,
+    ctrl: !!args.ctrl, shift: !!args.shift, alt: !!args.alt, meta: !!args.meta,
+  })
+}
+
 // ── Central tool router ───────────────────────────────────────────────────
 export async function executeBrowserTool(name: string, args: any): Promise<any> {
   switch (name) {
@@ -444,6 +542,11 @@ export async function executeBrowserTool(name: string, args: any): Promise<any> 
     case 'browser_clipboard_write':  return toolClipboardWrite(args)
     case 'browser_storage_get':      return toolStorageGet(args)
     case 'browser_hover':            return toolHover(args)
+    case 'browser_page_info':        return toolPageInfo()
+    case 'browser_right_click':      return toolRightClick(args)
+    case 'browser_double_click':     return toolDoubleClick(args)
+    case 'browser_drag':             return toolDrag(args)
+    case 'browser_press_key':        return toolPressKey(args)
     default:
       throw new Error(`Unknown browser tool: ${name}`)
   }
@@ -470,11 +573,12 @@ You can navigate pages, click, type, take screenshots, search the web, and extra
 
 When completing a task:
 1. Navigate to the relevant URL or search for it
-2. Use browser_screenshot to verify the current page state when uncertain
-3. Interact with elements systematically: click, type, fill forms
+2. Use browser_page_info to know where you are on the page (scroll position, current section, visible headings) and browser_screenshot when you need to see it
+3. Interact with elements systematically: click, double_click, right_click, type, fill forms, drag, press_key
 4. Extract or summarize the result
 
 Always:
+- After scrolling, read the returned position (scrollY, percent, atTop/atBottom, section, visible headings) so you know where you landed and what changed
 - Be methodical and verify each step
 - Respond in the same language as the user's message
 - Summarize what you accomplished at the end`

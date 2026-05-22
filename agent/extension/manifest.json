@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "HeySure Agent",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "HeySure 浏览器端：可登录软件端账号，管理 AI 成员、对话与安排任务，同时作为浏览器自动化 Agent 执行 MCP 工具",
   "permissions": [
     "activeTab",

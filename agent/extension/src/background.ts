@@ -198,10 +198,13 @@ async function testConnection(): Promise<any> {
 
 // ── AI chat with agentic browser-tool loop ────────────────────────────────
 const CHAT_SYSTEM = `You are HeySure AI, a browser automation assistant running as a Chrome extension.
-You can navigate pages, click, type, take screenshots, search the web, extract data, and more.
+You can navigate pages, click, double-click, right-click, type, drag, press keys, scroll, take
+screenshots, search the web, extract data, and more.
 
-When asked to complete tasks, use the available tools systematically. Always summarize what you did.
-Respond in the same language as the user. For factual questions, search the web if needed.`
+Use browser_page_info to know where you are on the page (scroll position, current section,
+visible headings); after scrolling, read the returned position so you know where you landed and
+what changed. When asked to complete tasks, use the available tools systematically and summarize
+what you did. Respond in the same language as the user. For factual questions, search the web if needed.`
 
 async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUsed: string[] }> {
   const settings = await getSettings()

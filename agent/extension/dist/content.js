@@ -8,6 +8,16 @@
     switch (msg.action) {
       case "click":
         return doClick(msg);
+      case "double_click":
+        return doDoubleClick(msg);
+      case "right_click":
+        return doRightClick(msg);
+      case "drag":
+        return doDrag(msg);
+      case "press_key":
+        return doPressKey(msg);
+      case "page_info":
+        return doPageInfo();
       case "type":
         return doType(msg);
       case "get_content":
@@ -80,6 +90,9 @@
       .${FX}-trail{width:4px;border-radius:4px;transform:translateX(-50%);opacity:0;
         background:linear-gradient(rgba(99,102,241,0),rgba(99,102,241,.55),rgba(99,102,241,0));
         animation:${FX}-trail .5s ease-out forwards;}
+      .${FX}-line{height:3px;border-radius:3px;transform-origin:0 50%;opacity:0;
+        background:linear-gradient(90deg,rgba(99,102,241,.15),rgba(99,102,241,.7));
+        animation:${FX}-trail .7s ease-out forwards;}
       @keyframes ${FX}-trail{0%{opacity:.7;}100%{opacity:0;}}`;
       document.documentElement.appendChild(style);
     }
@@ -129,14 +142,43 @@
     fxPlace(x, y, true);
     await fxSleep(300);
   }
-  function fxClickAt(x, y) {
+  function fxClickAt(x, y, variant = "left") {
     const cur = fxEnsure();
     if (!cur)
       return;
     cur.classList.add("press");
-    fxSpawn("ring", x, y, 640);
-    fxSpawn("dot", x, y, 480);
+    const ringColor = variant === "right" ? "rgba(245,158,11,.95)" : "rgba(99,102,241,.9)";
+    const dotColor = variant === "right" ? "rgba(245,158,11,.55)" : "rgba(99,102,241,.55)";
+    fxSpawn("ring", x, y, 640, (el) => {
+      el.style.borderColor = ringColor;
+    });
+    fxSpawn("dot", x, y, 480, (el) => {
+      el.style.background = dotColor;
+    });
+    if (variant === "double")
+      setTimeout(() => fxSpawn("ring", x, y, 640), 150);
     setTimeout(() => cur.classList.remove("press"), 160);
+    fxScheduleHide();
+  }
+  async function fxDragPath(sx, sy, ex, ey) {
+    const cur = fxEnsure();
+    if (!cur)
+      return;
+    cur.classList.add("show");
+    fxPlace(sx, sy, false);
+    void cur.offsetWidth;
+    cur.classList.add("grab", "press");
+    const dx = ex - sx, dy = ey - sy;
+    const dist = Math.hypot(dx, dy);
+    const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+    fxSpawn("line", sx, sy, 720, (el) => {
+      el.style.width = `${dist}px`;
+      el.style.transform = `rotate(${ang}deg)`;
+    });
+    fxSpawn("ring", sx, sy, 600);
+    await fxMoveTo(ex, ey);
+    fxSpawn("ring", ex, ey, 600);
+    setTimeout(() => cur.classList.remove("grab", "press"), 200);
     fxScheduleHide();
   }
   async function fxToElement(el) {
@@ -196,6 +238,87 @@
     }
     return null;
   }
+  function elCenter(el) {
+    const r = el.getBoundingClientRect();
+    return {
+      x: Math.min(Math.max(r.left + r.width / 2, 1), window.innerWidth - 1),
+      y: Math.min(Math.max(r.top + r.height / 2, 1), window.innerHeight - 1)
+    };
+  }
+  function resolveTarget(msg) {
+    if (msg.x !== void 0 && msg.y !== void 0) {
+      const el2 = document.elementFromPoint(Number(msg.x), Number(msg.y));
+      return { el: el2, x: Number(msg.x), y: Number(msg.y) };
+    }
+    const el = findEl(msg.selector, msg.text);
+    if (!el)
+      return { el: null, x: 0, y: 0 };
+    const c = elCenter(el);
+    return { el, x: c.x, y: c.y };
+  }
+  function viewportContext() {
+    const doc = document.documentElement;
+    const scrollY = Math.round(window.scrollY);
+    const scrollX = Math.round(window.scrollX);
+    const innerH = window.innerHeight;
+    const innerW = window.innerWidth;
+    const scrollHeight = Math.max(doc.scrollHeight, document.body ? document.body.scrollHeight : 0);
+    const maxScroll = Math.max(0, scrollHeight - innerH);
+    const scrollPercent = maxScroll > 0 ? Math.round(scrollY / maxScroll * 100) : 100;
+    const atTop = scrollY <= 2;
+    const atBottom = scrollY >= maxScroll - 2;
+    const heads = Array.from(document.querySelectorAll("h1,h2,h3,h4"));
+    const visibleHeadings = [];
+    let currentSection = "";
+    for (const h of heads) {
+      const r = h.getBoundingClientRect();
+      const txt = (h.innerText || "").trim().slice(0, 120);
+      if (!txt)
+        continue;
+      if (r.top <= 90)
+        currentSection = txt;
+      if (r.bottom > 0 && r.top < innerH && visibleHeadings.length < 10) {
+        visibleHeadings.push({ tag: h.tagName, text: txt, top: Math.round(r.top) });
+      }
+    }
+    return {
+      url: location.href,
+      title: document.title,
+      scrollX,
+      scrollY,
+      innerWidth: innerW,
+      innerHeight: innerH,
+      scrollHeight,
+      maxScroll,
+      scrollPercent,
+      atTop,
+      atBottom,
+      currentSection,
+      visibleHeadings,
+      counts: {
+        links: document.querySelectorAll("a[href]").length,
+        buttons: document.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]').length,
+        inputs: document.querySelectorAll("input, textarea, select").length
+      }
+    };
+  }
+  async function waitScrollSettle(timeout = 900) {
+    const start = Date.now();
+    let last = window.scrollY;
+    let stable = 0;
+    while (Date.now() - start < timeout) {
+      await fxSleep(80);
+      if (Math.abs(window.scrollY - last) < 1) {
+        if (++stable >= 2)
+          break;
+      } else
+        stable = 0;
+      last = window.scrollY;
+    }
+  }
+  function doPageInfo() {
+    return { success: true, ...viewportContext() };
+  }
   async function doClick(msg) {
     const { selector, text, x, y } = msg;
     let el = null;
@@ -216,7 +339,122 @@
     }
     ;
     el.click();
+    const ctx = viewportContext();
+    return {
+      success: true,
+      tag: el.tagName,
+      text: el.innerText?.slice(0, 100),
+      position: { scrollY: ctx.scrollY, scrollPercent: ctx.scrollPercent, currentSection: ctx.currentSection }
+    };
+  }
+  async function doDoubleClick(msg) {
+    const { el, x, y } = resolveTarget(msg);
+    if (!el)
+      throw new Error(`Element not found: selector=${msg.selector || ""} text=${msg.text || ""} coords=${msg.x},${msg.y}`);
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (fxEnabled) {
+      await fxSleep(220);
+      await fxToElement(el);
+      const c2 = elCenter(el);
+      fxClickAt(c2.x, c2.y, "double");
+      await fxSleep(120);
+    }
+    const c = elCenter(el);
+    const opts = { bubbles: true, cancelable: true, view: window, clientX: c.x, clientY: c.y };
+    el.dispatchEvent(new MouseEvent("mousedown", opts));
+    el.dispatchEvent(new MouseEvent("mouseup", opts));
+    el.dispatchEvent(new MouseEvent("click", { ...opts, detail: 1 }));
+    el.dispatchEvent(new MouseEvent("mousedown", opts));
+    el.dispatchEvent(new MouseEvent("mouseup", opts));
+    el.dispatchEvent(new MouseEvent("click", { ...opts, detail: 2 }));
+    el.dispatchEvent(new MouseEvent("dblclick", { ...opts, detail: 2 }));
     return { success: true, tag: el.tagName, text: el.innerText?.slice(0, 100) };
+  }
+  async function doRightClick(msg) {
+    const { el, x, y } = resolveTarget(msg);
+    if (!el)
+      throw new Error(`Element not found: selector=${msg.selector || ""} text=${msg.text || ""} coords=${msg.x},${msg.y}`);
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (fxEnabled) {
+      await fxSleep(220);
+      await fxToElement(el);
+      const c2 = elCenter(el);
+      fxClickAt(c2.x, c2.y, "right");
+      await fxSleep(120);
+    }
+    const c = elCenter(el);
+    const opts = { bubbles: true, cancelable: true, view: window, button: 2, buttons: 2, clientX: c.x, clientY: c.y };
+    el.dispatchEvent(new MouseEvent("mousedown", opts));
+    el.dispatchEvent(new MouseEvent("mouseup", opts));
+    el.dispatchEvent(new MouseEvent("contextmenu", opts));
+    return { success: true, tag: el.tagName, text: el.innerText?.slice(0, 100) };
+  }
+  async function doDrag(msg) {
+    const src = resolveTarget({ selector: msg.selector, text: msg.text, x: msg.x, y: msg.y });
+    const dst = resolveTarget({ selector: msg.toSelector, text: msg.toText, x: msg.toX, y: msg.toY });
+    if (!src.el && msg.x === void 0)
+      throw new Error("Drag source not found");
+    if (!dst.el && msg.toX === void 0)
+      throw new Error("Drag target not found");
+    if (src.el)
+      src.el.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (fxEnabled)
+      await fxSleep(200);
+    const s = src.el ? elCenter(src.el) : { x: src.x, y: src.y };
+    const d = dst.el ? elCenter(dst.el) : { x: dst.x, y: dst.y };
+    if (fxEnabled)
+      await fxDragPath(s.x, s.y, d.x, d.y);
+    const dt = (() => {
+      try {
+        return new DataTransfer();
+      } catch {
+        return null;
+      }
+    })();
+    const mk = (type, x, y, target) => {
+      if (!target)
+        return;
+      const init = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0 };
+      if (dt)
+        init.dataTransfer = dt;
+      const ev = type.startsWith("drag") || type === "drop" ? new DragEvent(type, init) : new MouseEvent(type, init);
+      target.dispatchEvent(ev);
+    };
+    mk("pointerdown", s.x, s.y, src.el);
+    mk("mousedown", s.x, s.y, src.el);
+    mk("dragstart", s.x, s.y, src.el);
+    mk("drag", s.x, s.y, src.el);
+    mk("mousemove", d.x, d.y, dst.el || src.el);
+    mk("dragenter", d.x, d.y, dst.el);
+    mk("dragover", d.x, d.y, dst.el);
+    mk("drop", d.x, d.y, dst.el);
+    mk("dragend", d.x, d.y, src.el);
+    mk("pointerup", d.x, d.y, dst.el || src.el);
+    mk("mouseup", d.x, d.y, dst.el || src.el);
+    return { success: true, from: { x: Math.round(s.x), y: Math.round(s.y) }, to: { x: Math.round(d.x), y: Math.round(d.y) } };
+  }
+  function doPressKey(msg) {
+    const key = String(msg.key || "");
+    if (!key)
+      throw new Error("key is required");
+    let el = msg.selector ? document.querySelector(msg.selector) : null;
+    if (!el)
+      el = document.activeElement && document.activeElement !== document.body ? document.activeElement : document.body;
+    el.focus?.();
+    const init = {
+      key,
+      code: /^[a-zA-Z]$/.test(key) ? `Key${key.toUpperCase()}` : key,
+      bubbles: true,
+      cancelable: true,
+      ctrlKey: !!msg.ctrl,
+      shiftKey: !!msg.shift,
+      altKey: !!msg.alt,
+      metaKey: !!msg.meta
+    };
+    el.dispatchEvent(new KeyboardEvent("keydown", init));
+    el.dispatchEvent(new KeyboardEvent("keypress", init));
+    el.dispatchEvent(new KeyboardEvent("keyup", init));
+    return { success: true, key, target: el.tagName };
   }
   async function doType(msg) {
     const selector = msg.selector || "input:focus, textarea:focus, [contenteditable]:focus";
@@ -270,26 +508,45 @@
       result.html = root.innerHTML?.slice(0, 1e5);
     return result;
   }
-  function doScroll(msg) {
+  async function doScroll(msg) {
     const amount = Number(msg.amount || 400);
-    switch (msg.direction) {
-      case "up":
-        window.scrollBy({ top: -amount, behavior: "smooth" });
-        break;
-      case "down":
-        window.scrollBy({ top: amount, behavior: "smooth" });
-        break;
-      case "top":
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        break;
-      case "bottom":
-        window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
-        break;
-      default:
-        throw new Error(`Unknown scroll direction: ${msg.direction}`);
+    const beforeY = Math.round(window.scrollY);
+    if (msg.selector) {
+      const el = document.querySelector(msg.selector);
+      if (!el)
+        throw new Error(`Element not found: ${msg.selector}`);
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+    } else {
+      switch (msg.direction) {
+        case "up":
+          window.scrollBy({ top: -amount, behavior: "smooth" });
+          break;
+        case "down":
+          window.scrollBy({ top: amount, behavior: "smooth" });
+          break;
+        case "top":
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          break;
+        case "bottom":
+          window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+          break;
+        default:
+          throw new Error(`Unknown scroll direction: ${msg.direction}`);
+      }
     }
     fxScrollDrag(msg.direction, amount);
-    return { success: true, direction: msg.direction, amount };
+    await waitScrollSettle();
+    const ctx = viewportContext();
+    const scrolledBy = ctx.scrollY - beforeY;
+    return {
+      success: true,
+      direction: msg.direction,
+      requestedAmount: amount,
+      scrolledBy,
+      // actual pixels moved (0 = nothing happened)
+      reachedEdge: ctx.atTop ? "top" : ctx.atBottom ? "bottom" : null,
+      ...ctx
+    };
   }
   async function doWait(msg) {
     if (msg.ms) {
