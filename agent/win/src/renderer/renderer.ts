@@ -25,7 +25,7 @@ interface Window {
 }
 
 // ── State ──────────────────────────────────────────────────────────────────
-type Screen = 'login' | 'ai-select' | 'main'
+type AppScreen = 'login' | 'ai-select' | 'main'
 let currentTheme: 'dark' | 'light' = 'dark'
 let totalTasks = 0, successTasks = 0, failedTasks = 0, runningTasks = 0
 let chatHistory: Array<{ role: string; content: string }> = []
@@ -34,7 +34,7 @@ let hasAiKey = false
 let activeTab: 'feed' | 'chat' = 'feed'
 
 // ── Screen navigation ──────────────────────────────────────────────────────
-function showScreen(screen: Screen) {
+function showScreen(screen: AppScreen) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
   document.getElementById(`screen-${screen}`)?.classList.add('active')
 }
