@@ -51,6 +51,8 @@ def _ensure_legacy_columns():
         if "mcp_format_error_hint" not in user_existing:
             escaped = DEFAULT_MCP_FORMAT_ERROR_HINT.replace("'", "''")
             cursor.execute(f"ALTER TABLE user ADD COLUMN mcp_format_error_hint TEXT DEFAULT '{escaped}'")
+        if "role_mcp_permissions" not in user_existing:
+            cursor.execute("ALTER TABLE user ADD COLUMN role_mcp_permissions TEXT DEFAULT ''")
         if "default_start_task_prompt" not in user_existing:
             escaped = DEFAULT_START_TASK_PROMPT.replace("'", "''")
             cursor.execute(f"ALTER TABLE user ADD COLUMN default_start_task_prompt TEXT DEFAULT '{escaped}'")

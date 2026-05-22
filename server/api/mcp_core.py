@@ -143,6 +143,9 @@ class MCPRegistry:
             })
         return tools
 
+    def has(self, name: str) -> bool:
+        return name in self._tools
+
     def get(self, name: str) -> MCPTool:
         tool = self._tools.get(name)
         if not tool:

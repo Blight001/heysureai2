@@ -62,6 +62,10 @@ class User(SQLModel, table=True):
     admin_prompt: str = Field(default="你是一个全能的管理员，负责管理和协调整个项目。")
     mcp_call_method: str = Field(default=DEFAULT_MCP_CALL_METHOD)
     mcp_format_error_hint: str = Field(default=DEFAULT_MCP_FORMAT_ERROR_HINT)
+    # Per-role MCP allow-list configured by the admin. JSON object mapping a role
+    # tier (assistant_admin / digital_member_manager / digital_member_member) to a
+    # list of allowed tool names. Empty string means "use the per-role default".
+    role_mcp_permissions: str = Field(default="")
     default_start_task_prompt: str = Field(default=DEFAULT_START_TASK_PROMPT)
     default_resume_task_prompt: str = Field(default=DEFAULT_RESUME_TASK_PROMPT)
     default_supervision_prompt: str = Field(default=DEFAULT_SUPERVISION_PROMPT)
@@ -100,6 +104,7 @@ class UserRead(SQLModel):
     admin_prompt: str
     mcp_call_method: str
     mcp_format_error_hint: str
+    role_mcp_permissions: str
     default_start_task_prompt: str
     default_resume_task_prompt: str
     default_supervision_prompt: str
@@ -125,6 +130,7 @@ class UserUpdate(SQLModel):
     admin_prompt: Optional[str] = None
     mcp_call_method: Optional[str] = None
     mcp_format_error_hint: Optional[str] = None
+    role_mcp_permissions: Optional[str] = None
     default_start_task_prompt: Optional[str] = None
     default_resume_task_prompt: Optional[str] = None
     default_supervision_prompt: Optional[str] = None

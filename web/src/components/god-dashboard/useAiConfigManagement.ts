@@ -1,21 +1,27 @@
-import { ref, watch, type Ref } from 'vue'
-import type { Agent, McpToolDefinition } from './types'
+import { computed, ref, watch, type Ref } from 'vue'
+import type { Agent, McpRoleMeta, McpToolDefinition } from './types'
 
 type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'feishu'
 
 interface UseAiConfigManagementOptions {
   defaultMcpTools: string[]
   mcpToolMetaByName: Ref<Record<string, McpToolDefinition>>
+  mcpRoleMeta: Ref<McpRoleMeta>
   normalizeSystemAutoControl: (raw: unknown) => any
   onToggleAiRunByConfigId: (configId?: number) => Promise<void>
   onReloadAgents: () => Promise<void>
   onPatchChatTargetAutoApprove?: (configId: number, enabled: boolean) => void
 }
 
+const ROLE_MEMBER = 'digital_member_member'
+const ROLE_MANAGER = 'digital_member_manager'
+const ROLE_ASSISTANT_ADMIN = 'assistant_admin'
+
 export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => {
   const {
     defaultMcpTools,
     mcpToolMetaByName,
+    mcpRoleMeta,
     normalizeSystemAutoControl,
     onToggleAiRunByConfigId,
     onReloadAgents,
@@ -68,6 +74,29 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
   const normalizeDigitalMemberRole = (value?: string): 'manager' | 'member' => {
     return value === 'manager' ? 'manager' : 'member'
   }
+
+  const tierFromForm = (): string => {
+    const group = aiConfigForm.value?.ai_role_group
+    if (group === 'assistant_admin') return ROLE_ASSISTANT_ADMIN
+    return aiConfigForm.value?.digital_member_role === 'manager' ? ROLE_MANAGER : ROLE_MEMBER
+  }
+
+  // Tools the current form's role tier is permitted to configure: the admin's
+  // per-role allow-list (or the role default) intersected with the role ceiling.
+  const configAvailableMcpTools = computed<string[]>(() => {
+    const meta = mcpRoleMeta.value
+    const tier = tierFromForm()
+    const ceiling = meta.defaults?.[tier]
+    if (!ceiling || ceiling.length === 0) {
+      return availableMcpTools.value
+    }
+    const ceilingSet = new Set(ceiling)
+    const configured = meta.permissions?.[tier]
+    const allowed = Array.isArray(configured) && configured.length > 0
+      ? configured.filter(tool => ceilingSet.has(tool))
+      : ceiling
+    return [...allowed].sort((a, b) => a.localeCompare(b))
+  })
 
   const buildAiForm = (role: 'assistant_admin' | 'worker' = 'assistant_admin') => ({
     id: undefined as number | undefined,
@@ -157,6 +186,24 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     mcpToolMetaByName.value = map
     const tools = rows.map(item => item.name)
     availableMcpTools.value = tools.length > 0 ? tools : [...defaultMcpTools]
+
+    const asStringArrayMap = (raw: unknown): Record<string, string[]> => {
+      const out: Record<string, string[]> = {}
+      if (raw && typeof raw === 'object') {
+        for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+          if (Array.isArray(value)) {
+            out[key] = value.map(item => String(item || '').trim()).filter(Boolean)
+          }
+        }
+      }
+      return out
+    }
+    mcpRoleMeta.value = {
+      order: Array.isArray(data.roleOrder) ? data.roleOrder.map((item: unknown) => String(item || '').trim()).filter(Boolean) : [],
+      labels: (data.roleLabels && typeof data.roleLabels === 'object') ? data.roleLabels as Record<string, string> : {},
+      defaults: asStringArrayMap(data.roleDefaults),
+      permissions: asStringArrayMap(data.rolePermissions),
+    }
   }
 
   const toggleAiConfigSettingsSection = (section: SettingsSection) => {
@@ -359,6 +406,15 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     toggleToolPermission(tool, !!target?.checked)
   }
 
+  // Whenever the role tier changes, narrow the selected tools to what the new
+  // tier is permitted to configure.
+  const clampFormToolsToRole = () => {
+    if (!aiConfigForm.value) return
+    const allowedSet = new Set(configAvailableMcpTools.value)
+    const current: string[] = Array.isArray(aiConfigForm.value.mcp_tools) ? aiConfigForm.value.mcp_tools : []
+    aiConfigForm.value.mcp_tools = current.filter(tool => allowedSet.has(tool))
+  }
+
   watch(
     () => aiConfigForm.value?.ai_role_group,
     (role, prevRole) => {
@@ -366,10 +422,21 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       if (role === 'assistant_admin') {
         aiConfigForm.value.token_limit = 0
         if (!aiConfigForm.value.workspace_root) aiConfigForm.value.workspace_root = '.'
-        aiConfigForm.value.mcp_tools = [...(availableMcpTools.value.length ? availableMcpTools.value : defaultMcpTools)]
-      } else if (!aiConfigForm.value.digital_member_role) {
-        aiConfigForm.value.digital_member_role = 'member'
+        aiConfigForm.value.mcp_tools = [...configAvailableMcpTools.value]
+      } else {
+        if (!aiConfigForm.value.digital_member_role) {
+          aiConfigForm.value.digital_member_role = 'member'
+        }
+        clampFormToolsToRole()
       }
+    }
+  )
+
+  watch(
+    () => aiConfigForm.value?.digital_member_role,
+    (role, prevRole) => {
+      if (!aiConfigForm.value || role === prevRole) return
+      if (aiConfigForm.value.ai_role_group === 'digital_member') clampFormToolsToRole()
     }
   )
 
@@ -380,6 +447,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     aiConfigMode,
     aiConfigForm,
     availableMcpTools,
+    configAvailableMcpTools,
     availableWorkspaceDirs,
     workspaceDirsLoading,
     workspaceDirsError,

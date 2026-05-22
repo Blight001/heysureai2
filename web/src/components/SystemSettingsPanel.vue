@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { getMcpToolZhLabel } from './god-dashboard/mcpTools'
+import type { McpRoleMeta } from './god-dashboard/types'
 
 interface Props {
   show: boolean
@@ -12,6 +14,8 @@ interface Props {
   defaultInheritanceNotice: string
   themeMode: 'light' | 'dark'
   fontSize: 'sm' | 'md' | 'lg'
+  mcpRoleMeta: McpRoleMeta
+  roleMcpPermissions: Record<string, string[]>
 }
 
 const props = defineProps<Props>()
@@ -27,8 +31,25 @@ const emit = defineEmits<{
   (e: 'update:themeMode', value: 'light' | 'dark'): void
   (e: 'update:fontSize', value: 'sm' | 'md' | 'lg'): void
   (e: 'viewAllMcp'): void
+  (e: 'toggleRoleTool', payload: { role: string; tool: string; checked: boolean }): void
+  (e: 'setRoleAllTools', payload: { role: string; checked: boolean }): void
+  (e: 'resetRoleMcpPermissions'): void
   (e: 'save'): void
 }>()
+
+const roleTiers = computed(() => props.mcpRoleMeta?.order || [])
+const roleLabel = (role: string) => props.mcpRoleMeta?.labels?.[role] || role
+const roleCeilingTools = (role: string) => props.mcpRoleMeta?.defaults?.[role] || []
+const isRoleToolChecked = (role: string, tool: string) =>
+  (props.roleMcpPermissions?.[role] || []).includes(tool)
+const roleAllChecked = (role: string) => {
+  const ceiling = roleCeilingTools(role)
+  return ceiling.length > 0 && ceiling.every(tool => isRoleToolChecked(role, tool))
+}
+const onRoleToolChange = (role: string, tool: string, event: Event) => {
+  const target = event.target as HTMLInputElement | null
+  emit('toggleRoleTool', { role, tool, checked: !!target?.checked })
+}
 
 const themeModeValue = computed({
   get: () => props.themeMode,
@@ -75,9 +96,9 @@ const defaultInheritanceNoticeValue = computed({
   set: value => emit('update:defaultInheritanceNotice', value)
 })
 
-const activeConfigSection = ref<'' | 'mcp' | 'task'>('')
+const activeConfigSection = ref<'' | 'mcp' | 'roles' | 'task'>('')
 
-const toggleConfigSection = (name: 'mcp' | 'task') => {
+const toggleConfigSection = (name: 'mcp' | 'roles' | 'task') => {
   activeConfigSection.value = activeConfigSection.value === name ? '' : name
 }
 </script>
@@ -156,6 +177,71 @@ const toggleConfigSection = (name: 'mcp' | 'task') => {
                     placeholder="当检测到 AI 试图调用 MCP 但格式错误时，自动回注的系统提示文案。可使用 {details}、{format_error_count} 等占位符。"
                   ></textarea>
                 </div>
+              </div>
+            </Transition>
+          </div>
+
+          <div class="p-4 bg-zinc-50 rounded-xl dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
+            <button
+              class="w-full flex items-center justify-between text-left"
+              @click="toggleConfigSection('roles')"
+            >
+              <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">🛡️ MCP 角色权限</h4>
+              <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ activeConfigSection === 'roles' ? '收起' : '展开' }}</span>
+            </button>
+            <Transition name="section-collapse">
+              <div v-show="activeConfigSection === 'roles'" class="mt-3 space-y-4 section-collapse-body">
+                <div class="flex items-center justify-between">
+                  <p class="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed pr-2">
+                    为每类角色设置可用的 MCP 工具范围。必要的高权限工具只对管理员 / 辅助管理员开放，下级角色只能在所属范围内进一步缩小。各 AI 成员保存配置时会自动收敛到所属角色允许的工具。
+                  </p>
+                  <button
+                    class="shrink-0 px-2 py-1 rounded-lg border border-zinc-200 text-zinc-500 bg-white text-[11px] hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                    @click="emit('resetRoleMcpPermissions')"
+                  >
+                    恢复默认
+                  </button>
+                </div>
+                <div v-if="roleTiers.length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">正在加载角色权限…</div>
+                <details
+                  v-for="role in roleTiers"
+                  :key="`role-${role}`"
+                  class="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white/70 dark:bg-zinc-900/50"
+                >
+                  <summary class="cursor-pointer select-none px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-200 flex items-center justify-between">
+                    <span>{{ roleLabel(role) }}</span>
+                    <span class="text-[10px] text-zinc-400 dark:text-zinc-500">{{ (roleMcpPermissions[role] || []).length }} / {{ roleCeilingTools(role).length }}</span>
+                  </summary>
+                  <div class="px-3 pb-3">
+                    <label class="mb-2 flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      <input
+                        type="checkbox"
+                        :checked="roleAllChecked(role)"
+                        @change="emit('setRoleAllTools', { role, checked: ($event.target as HTMLInputElement).checked })"
+                      />
+                      <span>全选 / 全不选</span>
+                    </label>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                      <label
+                        v-for="tool in roleCeilingTools(role)"
+                        :key="`${role}-${tool}`"
+                        class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2"
+                      >
+                        <input
+                          type="checkbox"
+                          class="mt-0.5"
+                          :checked="isRoleToolChecked(role, tool)"
+                          @change="onRoleToolChange(role, tool, $event)"
+                        />
+                        <span class="min-w-0">
+                          <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
+                          <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
+                        </span>
+                      </label>
+                      <div v-if="roleCeilingTools(role).length === 0" class="text-[11px] text-zinc-500 dark:text-zinc-400">该角色暂无可分配的工具</div>
+                    </div>
+                  </div>
+                </details>
               </div>
             </Transition>
           </div>

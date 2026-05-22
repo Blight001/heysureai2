@@ -21,6 +21,7 @@ import { useDashboardUi } from './god-dashboard/useDashboardUi'
 import { useDashboardSystemSettings } from './god-dashboard/useDashboardSystemSettings'
 import type {
   Agent,
+  McpRoleMeta,
   McpToolDefinition,
   User,
 } from './god-dashboard/types'
@@ -50,6 +51,7 @@ const DASHBOARD_REFRESH_NORMAL_MS = 8000
 const DASHBOARD_REFRESH_HIDDEN_MS = 30000
 
 const mcpToolMetaByName = ref<Record<string, McpToolDefinition>>({})
+const mcpRoleMeta = ref<McpRoleMeta>({ order: [], labels: {}, defaults: {}, permissions: {} })
 
 const {
   themeMode,
@@ -63,10 +65,15 @@ const {
   defaultInheritanceNotice,
   normalizeSystemAutoControl,
   saveSystemSettings,
+  roleMcpPermissions,
+  toggleRoleTool,
+  setRoleAllTools,
+  resetRoleMcpPermissions,
 } = useDashboardSystemSettings({
   getCurrentUser: () => props.currentUser,
   alert,
   onRefreshUser: user => emit('refreshUser', user),
+  mcpRoleMeta,
 })
 
 let resolveMcpAutoApprove = (_configId?: number) => false
@@ -212,6 +219,7 @@ const {
   aiConfigMode,
   aiConfigForm,
   availableMcpTools,
+  configAvailableMcpTools,
   availableWorkspaceDirs,
   workspaceDirsLoading,
   workspaceDirsError,
@@ -227,6 +235,7 @@ const {
 } = useAiConfigManagement({
   defaultMcpTools,
   mcpToolMetaByName,
+  mcpRoleMeta,
   normalizeSystemAutoControl,
   onToggleAiRunByConfigId: toggleAiRunByConfigId,
   onReloadAgents: loadAIAgents,
@@ -590,7 +599,7 @@ onUnmounted(() => {
       :form="aiConfigForm"
       :delete-confirm="aiConfigDeleteConfirm"
       :settings-section="aiConfigSettingsSection"
-      :available-mcp-tools="availableMcpTools"
+      :available-mcp-tools="configAvailableMcpTools"
       :available-workspace-dirs="availableWorkspaceDirs"
       :workspace-dirs-loading="workspaceDirsLoading"
       :workspace-dirs-error="workspaceDirsError"
@@ -613,7 +622,12 @@ onUnmounted(() => {
       v-model:defaultInheritanceNotice="defaultInheritanceNotice"
       v-model:themeMode="themeMode"
       v-model:fontSize="fontSize"
+      :mcp-role-meta="mcpRoleMeta"
+      :role-mcp-permissions="roleMcpPermissions"
       @view-all-mcp="openAllMcpToolsFromSystemSettings"
+      @toggle-role-tool="payload => toggleRoleTool(payload.role, payload.tool, payload.checked)"
+      @set-role-all-tools="payload => setRoleAllTools(payload.role, payload.checked)"
+      @reset-role-mcp-permissions="resetRoleMcpPermissions"
       @save="saveSystemSettings"
     />
 

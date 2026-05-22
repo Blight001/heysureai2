@@ -5,6 +5,7 @@ export interface User {
   avatar?: string
   ui_theme_mode?: 'light' | 'dark'
   ui_font_size?: 'sm' | 'md' | 'lg'
+  role_mcp_permissions?: string
 }
 
 export type AgentRole = 'admin' | 'worker'
@@ -120,9 +121,17 @@ export interface McpToolDefinition {
   description?: string
   inputSchema?: Record<string, any>
   destructive?: boolean
+  minRole?: string
   zhLabel?: string
   zhDescription?: string
   zhTags?: string[]
+}
+
+export interface McpRoleMeta {
+  order: string[]
+  labels: Record<string, string>
+  defaults: Record<string, string[]>
+  permissions: Record<string, string[]>
 }
 
 export interface McpToolParamRow {

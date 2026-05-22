@@ -8,6 +8,15 @@ from sqlmodel import Session, select
 from api.database import get_session
 from api.desktop_agent_tools import desktop_bridge_tools_for_config
 from api.mcp import registry
+from api.mcp_permissions import (
+    CONFIGURABLE_ROLES,
+    ROLE_LABELS_ZH,
+    config_role_tier,
+    default_role_permissions,
+    effective_allowed_for_config,
+    parse_role_permissions,
+    tool_min_role,
+)
 from api.models import AssistantAIConfig
 from api.routers.auth import get_current_user
 from api.task_system import with_task_create_compat, with_workspace_read_by_name_compat
@@ -28,7 +37,22 @@ async def list_mcp_tools(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    return {"tools": registry.list_tools(), "userId": user.id}
+    tools = registry.list_tools()
+    for tool in tools:
+        tool["minRole"] = tool_min_role(str(tool.get("name") or ""))
+    tool_names = {str(tool.get("name") or "") for tool in tools}
+    return {
+        "tools": tools,
+        "userId": user.id,
+        "roleOrder": CONFIGURABLE_ROLES,
+        "roleLabels": ROLE_LABELS_ZH,
+        # Per-role defaults (full ceiling) so the settings UI can render options
+        # and reset to defaults.
+        "roleDefaults": default_role_permissions(tool_names),
+        # The admin's currently configured per-role allow-list (may be empty,
+        # meaning "use defaults").
+        "rolePermissions": parse_role_permissions(user),
+    }
 
 
 @router.post("/call")
@@ -63,5 +87,13 @@ async def call_mcp_tool(
             raise HTTPException(status_code=400, detail="Invalid AI MCP tool config")
         if req.tool not in allowed_tools:
             raise HTTPException(status_code=403, detail=f"Tool not allowed for this AI: {req.tool}")
+        # Enforce the role ceiling: known registry tools must be within the set
+        # permitted for this AI's role tier, regardless of its saved allow-list.
+        role_allowed = effective_allowed_for_config(user, cfg)
+        if registry.has(req.tool) and req.tool not in role_allowed:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Tool not permitted for role {config_role_tier(cfg)}: {req.tool}",
+            )
 
     return await registry.call(req.tool, user.id, req.arguments, req.ai_config_id)
