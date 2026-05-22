@@ -97,6 +97,7 @@
     #content { flex:1; overflow:hidden; display:flex; flex-direction:column; }
     .pane { display:flex; flex-direction:column; flex:1; overflow:hidden; padding:12px 14px 14px; gap:8px; }
     .pane.hidden { display:none; }
+    .hidden { display:none !important; }
 
     /* ── Feed ── */
     .pane-header { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
@@ -248,6 +249,89 @@
       display:flex; gap:8px; padding:10px 14px;
       border-top:1px solid var(--border); background:var(--bg2); flex-shrink:0;
     }
+
+    /* ── User chip (logged-in account) ── */
+    .user-chip {
+      display:flex; align-items:center; gap:5px; padding:3px 8px; border-radius:20px;
+      background:var(--surface); border:1px solid var(--border); font-size:10px; font-weight:600;
+      max-width:120px; overflow:hidden;
+    }
+    .user-chip .ua { width:16px; height:16px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; font-size:9px; color:#fff; flex-shrink:0; }
+    .user-chip .un { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .user-chip.guest { color:var(--muted); }
+
+    /* ── Login form ── */
+    .login-box { display:flex; flex-direction:column; gap:8px; }
+    .login-hint { font-size:11px; color:var(--muted); text-align:center; margin-bottom:2px; }
+
+    /* ── Member list ── */
+    #members-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding-right:3px; }
+    #members-list::-webkit-scrollbar { width:3px; }
+    #members-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    .member-card {
+      display:flex; align-items:center; gap:8px; padding:8px 9px; cursor:pointer;
+      background:var(--surface); border:1px solid var(--border); border-radius:var(--r); transition:all var(--tr);
+    }
+    .member-card:hover { background:var(--surface-h); }
+    .member-card.selected { border-color:var(--accent); background:rgba(99,102,241,.12); }
+    .member-ava { width:28px; height:28px; border-radius:7px; background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; font-size:13px; color:#fff; flex-shrink:0; }
+    .member-info { flex:1; min-width:0; }
+    .member-name { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .member-meta { font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .role-badge { font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; flex-shrink:0; }
+    .role-badge.assistant_admin { background:rgba(139,92,246,.2); color:#c4b5fd; }
+    .role-badge.manager { background:rgba(56,189,248,.2); color:#7dd3fc; }
+    .role-badge.member  { background:rgba(99,102,241,.18); color:#a5b4fc; }
+    .dot-on  { width:7px; height:7px; border-radius:50%; background:var(--success); flex-shrink:0; }
+    .dot-off { width:7px; height:7px; border-radius:50%; background:var(--muted); flex-shrink:0; }
+
+    /* ── Target banner (chat & task) ── */
+    .target-banner {
+      display:flex; align-items:center; gap:6px; padding:6px 9px; border-radius:var(--r);
+      background:var(--surface); border:1px solid var(--border); font-size:11px; flex-shrink:0;
+    }
+    .target-banner .tb-name { font-weight:600; color:var(--accent); }
+    .target-banner.empty { color:var(--muted); }
+
+    /* ── Task form / jobs ── */
+    #task-pane { overflow-y:auto; }
+    #task-pane::-webkit-scrollbar { width:3px; }
+    #task-pane::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    textarea.ta {
+      width:100%; padding:6px 9px; background:var(--bg); border:1px solid var(--border);
+      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none; resize:vertical; min-height:46px;
+    }
+    textarea.ta:focus { border-color:var(--accent); }
+    input[type=number] {
+      width:100%; padding:6px 9px; background:var(--bg); border:1px solid var(--border);
+      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none;
+    }
+    input[type=datetime-local] {
+      width:100%; padding:5px 9px; background:var(--bg); border:1px solid var(--border);
+      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none;
+    }
+    .jobs-list { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+    .job-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:8px 9px; }
+    .job-top { display:flex; align-items:center; gap:6px; margin-bottom:3px; }
+    .job-title { font-size:12px; font-weight:600; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .job-status { font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; text-transform:uppercase; }
+    .job-status.queued { background:rgba(245,158,11,.2); color:#fcd34d; }
+    .job-status.running { background:rgba(99,102,241,.2); color:#a5b4fc; }
+    .job-status.paused { background:rgba(120,120,168,.2); color:var(--muted); }
+    .job-status.completed { background:rgba(34,197,94,.2); color:#86efac; }
+    .job-status.cancelled { background:rgba(239,68,68,.2); color:#fca5a5; }
+    .job-actions { display:flex; gap:5px; margin-top:5px; }
+    .mini-btn { font-size:10px; padding:3px 8px; border-radius:5px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; }
+    .mini-btn:hover { background:var(--surface-h); }
+    .mini-btn.danger { color:#f87171; border-color:rgba(239,68,68,.25); background:rgba(239,68,68,.1); }
+
+    /* ── Member settings view ── */
+    .kv { display:flex; justify-content:space-between; gap:8px; font-size:11px; padding:3px 0; }
+    .kv .k { color:var(--muted); }
+    .kv .v { color:var(--text); text-align:right; word-break:break-word; }
+    .tool-chips { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+    .tool-chip { font-size:10px; padding:2px 6px; border-radius:5px; background:var(--bg3); border:1px solid var(--border); color:var(--muted); }
+    .empty-note { font-size:11px; color:var(--muted); text-align:center; padding:18px 0; }
   </style>
 </head>
 <body class="dark">
@@ -261,7 +345,11 @@
       <span class="logo-sub">Browser</span>
     </div>
     <div class="spacer"></div>
-    <div class="status-pill">
+    <div class="user-chip guest" id="user-chip" title="登录状态">
+      <div class="ua" id="user-ava">·</div>
+      <span class="un" id="user-name">未登录</span>
+    </div>
+    <div class="status-pill" title="浏览器 Agent 连接状态">
       <div class="status-dot disconnected" id="status-dot"></div>
       <span id="status-label">未连接</span>
     </div>
@@ -271,7 +359,9 @@
   <!-- Tabs -->
   <div class="tab-bar">
     <button class="tab-btn active" id="tab-feed">■ 活动</button>
-    <button class="tab-btn" id="tab-chat">💬 AI 对话</button>
+    <button class="tab-btn" id="tab-members">👥 成员</button>
+    <button class="tab-btn" id="tab-chat">💬 对话</button>
+    <button class="tab-btn" id="tab-tasks">🗂 任务</button>
     <button class="tab-btn" id="tab-settings">⚙ 设置</button>
   </div>
 
@@ -292,8 +382,34 @@
       </div>
     </div>
 
+    <!-- Members pane -->
+    <div class="pane hidden" id="members-pane">
+      <!-- Login gate (shown when not logged in) -->
+      <div id="login-gate" class="card login-box">
+        <div class="card-title">🔐 登录软件端账号</div>
+        <div class="login-hint">使用与软件端相同的账号登录，登录后可查看 AI 成员、对话与安排任务。</div>
+        <div class="fg"><label>账号</label><input type="text" id="login-account" placeholder="你的账号" autocomplete="username"/></div>
+        <div class="fg"><label>密码</label><input type="password" id="login-password" placeholder="密码" autocomplete="current-password"/></div>
+        <button class="btn btn-primary" id="login-btn">登录</button>
+        <div class="save-feedback" id="login-feedback"></div>
+        <div class="login-hint" style="margin-top:4px;">服务器地址在“设置 → 服务器连接”中配置。</div>
+      </div>
+
+      <!-- Member list (shown when logged in) -->
+      <div id="members-view" class="hidden" style="display:flex;flex-direction:column;flex:1;gap:8px;overflow:hidden;">
+        <div class="pane-header">
+          <span class="pane-title">AI 成员</span>
+          <button id="members-refresh" style="font-size:10px;color:var(--muted);border:none;background:none;cursor:pointer;padding:2px 5px;border-radius:4px;">刷新</button>
+        </div>
+        <div id="members-list">
+          <div class="empty-note" id="members-empty">加载中…</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Chat pane -->
     <div class="pane hidden" id="chat-pane">
+      <div class="target-banner empty" id="chat-target">未选择 AI 成员（将使用本地 AI Key 直连）</div>
       <div class="chat-messages" id="chat-messages">
         <div id="chat-no-key">
           <div class="ki">🔑</div>
@@ -307,12 +423,73 @@
       </div>
     </div>
 
+    <!-- Tasks pane -->
+    <div class="pane hidden" id="task-pane">
+      <div class="target-banner empty" id="task-target">请先在“成员”中选择一个 AI 成员</div>
+
+      <div class="card" id="task-form" style="display:none;">
+        <div class="card-title">🗂 安排任务</div>
+        <div class="fg"><label>任务标题</label><input type="text" id="task-title" placeholder="例如：抓取页面数据"/></div>
+        <div class="fg"><label>任务指令</label><textarea class="ta" id="task-instruction" placeholder="详细描述任务目标、约束与交付要求"></textarea></div>
+        <div class="fg"><label>优先级 (1-10)</label><input type="number" id="task-priority" min="1" max="10" value="5"/></div>
+        <div class="fg check-row">
+          <input type="checkbox" id="task-schedule-enabled"/>
+          <label for="task-schedule-enabled" style="margin:0;text-transform:none;font-size:11px;">定时执行</label>
+        </div>
+        <div id="task-schedule-opts" style="display:none;">
+          <div class="fg check-row">
+            <input type="checkbox" id="task-loop-enabled"/>
+            <label for="task-loop-enabled" style="margin:0;text-transform:none;font-size:11px;">循环执行</label>
+          </div>
+          <div class="fg check-row">
+            <input type="checkbox" id="task-run-immediately"/>
+            <label for="task-run-immediately" style="margin:0;text-transform:none;font-size:11px;">首次立即执行</label>
+          </div>
+          <div class="fg"><label>循环间隔（分钟）</label><input type="number" id="task-duration" min="1" value="30"/></div>
+          <div class="fg" id="task-at-row"><label>执行时间（一次性，可留空用间隔）</label><input type="datetime-local" id="task-at"/></div>
+        </div>
+        <button class="btn btn-primary" id="task-submit">安排任务</button>
+        <div class="save-feedback" id="task-feedback"></div>
+      </div>
+
+      <div class="card" id="task-jobs-card" style="display:none;">
+        <div class="pane-header" style="margin-bottom:8px;">
+          <span class="pane-title">任务队列</span>
+          <button id="jobs-refresh" style="font-size:10px;color:var(--muted);border:none;background:none;cursor:pointer;padding:2px 5px;border-radius:4px;">刷新</button>
+        </div>
+        <div class="jobs-list" id="jobs-list">
+          <div class="empty-note" id="jobs-empty">暂无任务</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Settings pane -->
     <div class="pane hidden" id="settings-pane">
 
+      <!-- Account -->
+      <div class="card">
+        <div class="card-title">👤 软件端账号</div>
+        <div id="account-status" class="kv"><span class="k">状态</span><span class="v" id="account-status-v">未登录</span></div>
+        <div class="divider"></div>
+        <button class="btn btn-danger" id="logout-btn" style="display:none;">退出登录</button>
+        <button class="btn btn-secondary" id="goto-login-btn">前往登录</button>
+      </div>
+
+      <!-- Selected member config (read-only) -->
+      <div class="card" id="member-settings-card" style="display:none;">
+        <div class="card-title">🛡️ 成员配置（只读）</div>
+        <div id="member-settings-body"></div>
+      </div>
+
+      <!-- Role MCP permissions overview -->
+      <div class="card" id="role-perms-card" style="display:none;">
+        <div class="card-title">🔑 角色 MCP 权限范围</div>
+        <div id="role-perms-body"></div>
+      </div>
+
       <!-- AI Config -->
       <div class="card">
-        <div class="card-title">🤖 AI 配置</div>
+        <div class="card-title">🤖 本地 AI 配置（未选成员时直连）</div>
         <div class="fg"><label>AI Key</label><input type="password" id="cfg-ai-key" placeholder="sk-ant-... 或 sk-..."/></div>
         <div class="fg"><label>Base URL</label><input type="url" id="cfg-ai-base" placeholder="https://api.anthropic.com"/></div>
         <div class="fg"><label>模型</label><input type="text" id="cfg-ai-model" placeholder="claude-sonnet-4-5"/></div>

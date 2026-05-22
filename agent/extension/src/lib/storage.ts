@@ -31,3 +31,31 @@ export async function getActivity(): Promise<any[]> {
   const r = await chrome.storage.session.get(ACT_KEY).catch(() => ({}))
   return (r as any)[ACT_KEY] || []
 }
+
+// ── Software-end auth state (logged-in account mode) ─────────────────────────
+export interface AuthState {
+  token:    string
+  account:  string
+  userId:   number | null
+  userName: string
+}
+
+const AUTH_KEY = '_auth_state'
+const AUTH_DEFAULT: AuthState = { token: '', account: '', userId: null, userName: '' }
+
+export async function getAuth(): Promise<AuthState> {
+  const r = await chrome.storage.local.get(AUTH_KEY)
+  return { ...AUTH_DEFAULT, ...(r[AUTH_KEY] || {}) } as AuthState
+}
+
+export async function saveAuth(state: Partial<AuthState>): Promise<void> {
+  const current = await getAuth()
+  await chrome.storage.local.set({ [AUTH_KEY]: { ...current, ...state } })
+}
+
+export async function clearAuth(): Promise<void> {
+  const current = await getAuth()
+  // Keep the last account for convenience, drop the token.
+  await chrome.storage.local.set({ [AUTH_KEY]: { ...AUTH_DEFAULT, account: current.account } })
+}
+
