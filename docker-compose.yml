@@ -5,15 +5,10 @@ services:
       - "3000:3000"
     volumes:
       - ./server/uploads:/app/uploads
+      - ./server/data:/app/data
     environment:
       - NODE_ENV=production
-
-  agent:
-    build: ./agent
-    depends_on:
-      - server
-    environment:
-      - SERVER_URL=http://server:3000
+    restart: unless-stopped
 
   web:
     build: ./web
@@ -23,3 +18,4 @@ services:
       - SERVER_URL=http://server:3000
     depends_on:
       - server
+    restart: unless-stopped
