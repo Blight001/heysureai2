@@ -11,6 +11,7 @@
     aiModel: "claude-sonnet-4-5",
     autoConnect: false,
     offlineMode: false,
+    mouseFx: true,
     theme: "dark"
   };
 
@@ -212,6 +213,7 @@
   var cfgAutoConn = $("cfg-auto-connect");
   var cfgOfflineMode = $("cfg-offline-mode");
   var cfgAiProvider = $("cfg-ai-provider");
+  var cfgMouseFx = $("cfg-mouse-fx");
   var offlineBadge = $("offline-badge");
   var loginGate = $("login-gate");
   var membersView = $("members-view");
@@ -761,6 +763,7 @@
     cfgAutoConn.checked = !!s.autoConnect;
     offlineMode = !!s.offlineMode;
     cfgOfflineMode.checked = offlineMode;
+    cfgMouseFx.checked = s.mouseFx !== false;
     localModel = s.aiModel || "";
     hasAiKey = !!s.aiKey?.trim();
     updateOfflineUi();
@@ -786,6 +789,9 @@
     updateOfflineUi();
     port.postMessage({ type: "settings:save", payload: { offlineMode } });
   });
+  cfgMouseFx.addEventListener("change", () => {
+    port.postMessage({ type: "settings:save", payload: { mouseFx: cfgMouseFx.checked } });
+  });
   $("save-btn").addEventListener("click", () => {
     const payload = {
       serverUrl: cfgServer.value.trim(),
@@ -797,7 +803,8 @@
       aiBaseUrl: cfgAiBase.value.trim() || "https://api.anthropic.com",
       aiModel: cfgAiModel.value.trim() || "claude-sonnet-4-5",
       autoConnect: cfgAutoConn.checked,
-      offlineMode: cfgOfflineMode.checked
+      offlineMode: cfgOfflineMode.checked,
+      mouseFx: cfgMouseFx.checked
     };
     serverUrl = payload.serverUrl || "";
     offlineMode = !!payload.offlineMode;

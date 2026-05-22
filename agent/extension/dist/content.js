@@ -34,6 +34,151 @@
         throw new Error(`Unknown content action: ${msg.action}`);
     }
   }
+  var FX = "__hs_mouse_fx__";
+  var fxEnabled = true;
+  var fxCursor = null;
+  var fxX = 0;
+  var fxY = 0;
+  var fxHideTimer = null;
+  var fxSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  try {
+    chrome.storage?.local?.get("mouseFx").then((r) => {
+      if (r && typeof r.mouseFx === "boolean")
+        fxEnabled = r.mouseFx;
+    }).catch(() => {
+    });
+    chrome.storage?.onChanged?.addListener((changes, area) => {
+      if (area === "local" && changes.mouseFx)
+        fxEnabled = changes.mouseFx.newValue !== false;
+    });
+  } catch {
+  }
+  function fxEnsure() {
+    if (!fxEnabled || !document.body)
+      return null;
+    if (fxCursor && document.documentElement.contains(fxCursor))
+      return fxCursor;
+    if (!document.getElementById(FX + "_style")) {
+      const style = document.createElement("style");
+      style.id = FX + "_style";
+      style.textContent = `
+      .${FX}-cur{position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;opacity:0;
+        transition:transform .3s cubic-bezier(.22,1,.36,1),opacity .2s ease;will-change:transform;}
+      .${FX}-cur.show{opacity:1;}
+      .${FX}-cur-in{display:block;transform:scale(1);transition:transform .13s ease;
+        filter:drop-shadow(0 2px 3px rgba(0,0,0,.45));}
+      .${FX}-cur.press .${FX}-cur-in{transform:scale(.72);}
+      .${FX}-cur.grab .${FX}-cur-in{transform:scale(.88) rotate(-12deg);}
+      .${FX}-cur.noanim{transition:none;}
+      .${FX}-ring,.${FX}-dot,.${FX}-trail{position:fixed;left:0;top:0;z-index:2147483646;pointer-events:none;}
+      .${FX}-ring{width:16px;height:16px;border-radius:50%;border:2px solid rgba(99,102,241,.9);
+        transform:translate(-50%,-50%) scale(.4);opacity:.9;animation:${FX}-ring .62s ease-out forwards;}
+      @keyframes ${FX}-ring{to{transform:translate(-50%,-50%) scale(3.4);opacity:0;}}
+      .${FX}-dot{width:10px;height:10px;border-radius:50%;background:rgba(99,102,241,.55);
+        transform:translate(-50%,-50%) scale(1);opacity:.85;animation:${FX}-dot .46s ease-out forwards;}
+      @keyframes ${FX}-dot{to{transform:translate(-50%,-50%) scale(2.6);opacity:0;}}
+      .${FX}-trail{width:4px;border-radius:4px;transform:translateX(-50%);opacity:0;
+        background:linear-gradient(rgba(99,102,241,0),rgba(99,102,241,.55),rgba(99,102,241,0));
+        animation:${FX}-trail .5s ease-out forwards;}
+      @keyframes ${FX}-trail{0%{opacity:.7;}100%{opacity:0;}}`;
+      document.documentElement.appendChild(style);
+    }
+    const cur = document.createElement("div");
+    cur.className = `${FX}-cur noanim`;
+    cur.innerHTML = `<span class="${FX}-cur-in"><svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4 2.2 L4 19.6 L8.7 15.2 L11.8 21.9 L14.4 20.7 L11.3 14.1 L17.8 13.9 Z" fill="#fff" stroke="#111827" stroke-width="1.2" stroke-linejoin="round"/></svg></span>`;
+    document.body.appendChild(cur);
+    fxCursor = cur;
+    if (!fxX && !fxY) {
+      fxX = window.innerWidth / 2;
+      fxY = window.innerHeight / 2;
+    }
+    fxPlace(fxX, fxY, false);
+    return cur;
+  }
+  function fxPlace(x, y, animate) {
+    const cur = fxCursor;
+    if (!cur)
+      return;
+    fxX = x;
+    fxY = y;
+    cur.classList.toggle("noanim", !animate);
+    cur.style.transform = `translate(${x - 3}px, ${y - 2}px)`;
+  }
+  function fxScheduleHide() {
+    if (fxHideTimer)
+      clearTimeout(fxHideTimer);
+    fxHideTimer = setTimeout(() => fxCursor?.classList.remove("show"), 1600);
+  }
+  function fxSpawn(cls, x, y, life = 700, extra) {
+    if (!document.body)
+      return;
+    const el = document.createElement("div");
+    el.className = `${FX}-${cls}`;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    extra?.(el);
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), life);
+  }
+  async function fxMoveTo(x, y) {
+    const cur = fxEnsure();
+    if (!cur)
+      return;
+    cur.classList.add("show");
+    void cur.offsetWidth;
+    fxPlace(x, y, true);
+    await fxSleep(300);
+  }
+  function fxClickAt(x, y) {
+    const cur = fxEnsure();
+    if (!cur)
+      return;
+    cur.classList.add("press");
+    fxSpawn("ring", x, y, 640);
+    fxSpawn("dot", x, y, 480);
+    setTimeout(() => cur.classList.remove("press"), 160);
+    fxScheduleHide();
+  }
+  async function fxToElement(el) {
+    if (!fxEnabled)
+      return;
+    const r = el.getBoundingClientRect();
+    const x = Math.min(Math.max(r.left + r.width / 2, 4), window.innerWidth - 4);
+    const y = Math.min(Math.max(r.top + r.height / 2, 4), window.innerHeight - 4);
+    await fxMoveTo(x, y);
+  }
+  function fxScrollDrag(direction, amount) {
+    const cur = fxEnsure();
+    if (!cur)
+      return;
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2;
+    const len = Math.min(Math.max(amount || 0, 80), 220);
+    let startY = cy, endY = cy;
+    if (direction === "down") {
+      startY = cy + len / 2;
+      endY = cy - len / 2;
+    } else if (direction === "up") {
+      startY = cy - len / 2;
+      endY = cy + len / 2;
+    } else if (direction === "bottom") {
+      startY = cy + 110;
+      endY = cy - 110;
+    } else if (direction === "top") {
+      startY = cy - 110;
+      endY = cy + 110;
+    }
+    cur.classList.add("show");
+    fxPlace(cx, startY, false);
+    void cur.offsetWidth;
+    cur.classList.add("grab", "press");
+    fxSpawn("trail", cx, Math.min(startY, endY), 540, (el) => {
+      el.style.height = `${Math.abs(endY - startY)}px`;
+    });
+    fxPlace(cx, endY, true);
+    setTimeout(() => cur.classList.remove("grab", "press"), 320);
+    fxScheduleHide();
+  }
   function findEl(selector, text) {
     if (selector)
       return document.querySelector(selector);
@@ -51,7 +196,7 @@
     }
     return null;
   }
-  function doClick(msg) {
+  async function doClick(msg) {
     const { selector, text, x, y } = msg;
     let el = null;
     if (x !== void 0 && y !== void 0) {
@@ -62,10 +207,18 @@
     if (!el)
       throw new Error(`Element not found: selector=${selector || ""} text=${text || ""} coords=${x},${y}`);
     el.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (fxEnabled) {
+      await fxSleep(220);
+      await fxToElement(el);
+      const r = el.getBoundingClientRect();
+      fxClickAt(r.left + r.width / 2, r.top + r.height / 2);
+      await fxSleep(120);
+    }
+    ;
     el.click();
     return { success: true, tag: el.tagName, text: el.innerText?.slice(0, 100) };
   }
-  function doType(msg) {
+  async function doType(msg) {
     const selector = msg.selector || "input:focus, textarea:focus, [contenteditable]:focus";
     const text = String(msg.text ?? "");
     const clearFirst = msg.clearFirst !== false;
@@ -74,6 +227,10 @@
       el = document.activeElement;
     if (!el)
       throw new Error("No input element found \u2014 try providing a selector");
+    if (fxEnabled) {
+      await fxToElement(el);
+      fxClickAt(fxX, fxY);
+    }
     el.focus();
     if (el.isContentEditable) {
       if (clearFirst)
@@ -131,6 +288,7 @@
       default:
         throw new Error(`Unknown scroll direction: ${msg.direction}`);
     }
+    fxScrollDrag(msg.direction, amount);
     return { success: true, direction: msg.direction, amount };
   }
   async function doWait(msg) {
@@ -240,10 +398,12 @@
     const value = store.getItem(msg.key);
     return { success: true, key: msg.key, value, found: value !== null };
   }
-  function doHover(msg) {
+  async function doHover(msg) {
     const el = document.querySelector(msg.selector);
     if (!el)
       throw new Error(`Element not found: ${msg.selector}`);
+    if (fxEnabled)
+      await fxToElement(el);
     el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     el.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     return { success: true, selector: msg.selector };

@@ -82,6 +82,7 @@ const cfgAiModel   = $('cfg-ai-model') as HTMLInputElement
 const cfgAutoConn  = $('cfg-auto-connect') as HTMLInputElement
 const cfgOfflineMode = $('cfg-offline-mode') as HTMLInputElement
 const cfgAiProvider  = $('cfg-ai-provider') as HTMLSelectElement
+const cfgMouseFx     = $('cfg-mouse-fx') as HTMLInputElement
 const offlineBadge   = $('offline-badge')
 
 // Members
@@ -616,6 +617,7 @@ function loadSettings(s: AgentSettings) {
   cfgAutoConn.checked = !!s.autoConnect
   offlineMode = !!s.offlineMode
   cfgOfflineMode.checked = offlineMode
+  cfgMouseFx.checked = s.mouseFx !== false
   localModel = s.aiModel || ''
   hasAiKey = !!(s.aiKey?.trim())
   updateOfflineUi()
@@ -643,6 +645,11 @@ cfgOfflineMode.addEventListener('change', () => {
   port.postMessage({ type: 'settings:save', payload: { offlineMode } })
 })
 
+// Mouse-effect toggle persists immediately; content scripts react via storage.
+cfgMouseFx.addEventListener('change', () => {
+  port.postMessage({ type: 'settings:save', payload: { mouseFx: cfgMouseFx.checked } })
+})
+
 $('save-btn')!.addEventListener('click', () => {
   const payload: Partial<AgentSettings> = {
     serverUrl:   cfgServer.value.trim(),
@@ -655,6 +662,7 @@ $('save-btn')!.addEventListener('click', () => {
     aiModel:     cfgAiModel.value.trim() || 'claude-sonnet-4-5',
     autoConnect: cfgAutoConn.checked,
     offlineMode: cfgOfflineMode.checked,
+    mouseFx:     cfgMouseFx.checked,
   }
   serverUrl = payload.serverUrl || ''
   offlineMode = !!payload.offlineMode

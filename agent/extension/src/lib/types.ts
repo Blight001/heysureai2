@@ -11,6 +11,7 @@ export interface AgentSettings {
   aiModel:      string
   autoConnect:  boolean
   offlineMode:  boolean
+  mouseFx:      boolean
   theme:        'dark' | 'light'
 }
 
@@ -25,6 +26,7 @@ export const SETTING_DEFAULTS: AgentSettings = {
   aiModel:     'claude-sonnet-4-5',
   autoConnect: false,
   offlineMode: false,
+  mouseFx:     true,
   theme:       'dark',
 }
 
