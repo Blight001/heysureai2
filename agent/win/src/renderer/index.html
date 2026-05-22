@@ -23,6 +23,7 @@
       --error:        #ef4444;
       --warning:      #f59e0b;
       --info:         #38bdf8;
+      --gold:         #f59e0b;
       --radius-sm:    6px;
       --radius:       10px;
       --radius-lg:    14px;
@@ -54,27 +55,11 @@
       transition: background var(--transition), color var(--transition);
     }
 
-    /* ── Layout ───────────────────────────────────────────────── */
-    #app {
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-    }
+    /* ── Screens ──────────────────────────────────────────────── */
+    .screen { display: none; width: 100%; height: 100vh; }
+    .screen.active { display: flex; }
 
-    /* ── Header ───────────────────────────────────────────────── */
-    #header {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 0 20px;
-      height: 54px;
-      background: var(--bg2);
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-      -webkit-app-region: drag;
-    }
-    #header > * { -webkit-app-region: no-drag; }
-
+    /* ── Shared: Logo ─────────────────────────────────────────── */
     .logo {
       display: flex;
       align-items: center;
@@ -94,43 +79,120 @@
       font-size: 14px;
       flex-shrink: 0;
     }
-    .logo-text { color: var(--text); }
     .logo-sub {
       font-size: 11px;
       font-weight: 400;
       color: var(--text-muted);
-      margin-left: 2px;
     }
 
-    .header-spacer { flex: 1; }
+    /* ── Shared: Buttons ──────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      border: none;
+      font-family: var(--font);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--transition);
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+    }
+    .btn-primary:not(:disabled):hover { opacity: 0.88; transform: translateY(-1px); }
+    .btn-primary:not(:disabled):active { transform: none; }
+    .btn-danger {
+      background: rgba(239,68,68,0.15);
+      color: #f87171;
+      border: 1px solid rgba(239,68,68,0.2);
+    }
+    .btn-danger:not(:disabled):hover { background: rgba(239,68,68,0.25); }
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:not(:disabled):hover { background: var(--surface-h); }
+    .btn-ghost {
+      background: none;
+      color: var(--text-muted);
+      border: none;
+      padding: 6px 10px;
+    }
+    .btn-ghost:hover { color: var(--text); background: var(--surface); }
+    .btn-icon {
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+    }
+    .btn-row { display: flex; gap: 8px; }
+    .btn-row .btn { flex: 1; }
 
-    /* Status pill */
-    #status-pill {
+    /* ── Shared: Form ─────────────────────────────────────────── */
+    .form-group { margin-bottom: 10px; }
+    .form-group:last-child { margin-bottom: 0; }
+    .form-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .form-input {
+      width: 100%;
+      padding: 9px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      outline: none;
+      transition: border-color var(--transition);
+    }
+    .form-input:focus { border-color: var(--accent); }
+    .form-input::placeholder { color: var(--text-muted); }
+
+    /* ── Shared: Card ─────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 14px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    .card-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: 5px 12px;
-      border-radius: 20px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      font-size: 12px;
-      font-weight: 500;
-      transition: all var(--transition);
     }
-    #status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #787878;
-      transition: background var(--transition);
-      flex-shrink: 0;
-    }
-    #status-dot.disconnected { background: #787878; }
-    #status-dot.connecting   { background: var(--warning); animation: pulse 1.2s infinite; }
-    #status-dot.connected    { background: var(--accent); }
-    #status-dot.registered   { background: var(--success); animation: pulse-slow 3s infinite; }
-    #status-dot.error        { background: var(--error); }
 
+    /* ── Shared: Animations ───────────────────────────────────── */
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
     @keyframes pulse {
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.5; transform: scale(0.8); }
@@ -139,9 +201,148 @@
       0%, 100% { opacity: 1; }
       50% { opacity: 0.7; }
     }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
 
-    /* Theme toggle */
-    #theme-toggle {
+    /* ══════════════════════════════════════════════════════════
+       SCREEN 1: LOGIN
+    ══════════════════════════════════════════════════════════ */
+    #screen-login {
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .login-card {
+      width: 380px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 36px 32px 30px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      box-shadow: var(--shadow);
+      animation: fade-in 0.3s ease;
+    }
+
+    .login-header {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+    .login-logo-icon {
+      width: 52px;
+      height: 52px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      box-shadow: 0 4px 20px rgba(99,102,241,0.35);
+    }
+    .login-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -0.4px;
+    }
+    .login-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .login-divider {
+      height: 1px;
+      background: var(--border);
+    }
+
+    .login-form { display: flex; flex-direction: column; gap: 10px; }
+
+    .login-error {
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.2);
+      color: #f87171;
+      font-size: 12px;
+      display: none;
+      animation: slide-in 0.2s ease;
+    }
+    .login-error.visible { display: block; }
+
+    .login-btn {
+      width: 100%;
+      padding: 11px;
+      font-size: 13px;
+      margin-top: 4px;
+      border-radius: var(--radius);
+      position: relative;
+    }
+    .login-btn .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+    .login-btn.loading .spinner { display: block; }
+    .login-btn.loading .btn-text { display: none; }
+
+    .login-footer {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       SCREEN 2: AI MEMBER SELECT
+    ══════════════════════════════════════════════════════════ */
+    #screen-ai-select {
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .ai-select-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 20px;
+      height: 54px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      -webkit-app-region: drag;
+    }
+    .ai-select-header > * { -webkit-app-region: no-drag; }
+
+    .user-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .user-chip-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    .header-spacer { flex: 1; }
+
+    #theme-toggle, #theme-toggle2 {
       width: 32px;
       height: 32px;
       border: none;
@@ -155,23 +356,268 @@
       font-size: 15px;
       transition: all var(--transition);
     }
-    #theme-toggle:hover { background: var(--surface-h); color: var(--text); }
+    #theme-toggle:hover, #theme-toggle2:hover { background: var(--surface-h); color: var(--text); }
 
-    /* ── Body (columns) ───────────────────────────────────────── */
+    .ai-select-body {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px;
+      gap: 14px;
+    }
+
+    .ai-select-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .ai-select-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      flex: 1;
+    }
+    .ai-select-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .ai-grid-wrap {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .ai-grid-wrap::-webkit-scrollbar { width: 4px; }
+    .ai-grid-wrap::-webkit-scrollbar-track { background: transparent; }
+    .ai-grid-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .ai-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+      padding-right: 4px;
+    }
+
+    /* AI Member Card */
+    .ai-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: all var(--transition);
+      animation: slide-in 0.2s ease;
+      cursor: default;
+    }
+    .ai-card:hover {
+      border-color: rgba(99,102,241,0.35);
+      box-shadow: 0 4px 16px rgba(99,102,241,0.1);
+    }
+    .ai-card.manager-card {
+      border-color: rgba(245,158,11,0.25);
+    }
+    .ai-card.manager-card:hover {
+      border-color: rgba(245,158,11,0.45);
+      box-shadow: 0 4px 16px rgba(245,158,11,0.1);
+    }
+
+    .ai-card-top {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .ai-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .ai-avatar.manager { background: linear-gradient(135deg, #f59e0b, #d97706); }
+    .ai-avatar.member  { background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+
+    .ai-card-info { flex: 1; min-width: 0; }
+    .ai-card-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 3px;
+    }
+    .ai-card-project {
+      font-size: 11px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .ai-card-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .badge-manager  { background: rgba(245,158,11,0.15); color: #fbbf24; }
+    .badge-member   { background: rgba(99,102,241,0.15); color: #a5b4fc; }
+    .badge-working  { background: rgba(34,197,94,0.15); color: #4ade80; }
+    .badge-learning { background: rgba(56,189,248,0.15); color: #7dd3fc; }
+    .badge-reproducing { background: rgba(139,92,246,0.15); color: #c4b5fd; }
+    .badge-dead     { background: rgba(120,120,120,0.15); color: #9ca3af; }
+    .badge-enabled  { background: rgba(34,197,94,0.12); color: #86efac; }
+    .badge-disabled { background: rgba(120,120,120,0.12); color: #9ca3af; }
+
+    .ai-card-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 2px;
+    }
+    .ai-card-actions .btn-select {
+      flex: 1;
+      padding: 7px;
+      font-size: 12px;
+    }
+    .ai-card-actions .btn-clone {
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+
+    /* Loading / Empty states */
+    .ai-loading, .ai-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 60px 20px;
+      color: var(--text-muted);
+      grid-column: 1 / -1;
+    }
+    .ai-empty-icon { font-size: 40px; opacity: 0.25; }
+    .ai-empty p { font-size: 13px; }
+    .spinner-large {
+      width: 36px;
+      height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       SCREEN 3: MAIN DASHBOARD
+    ══════════════════════════════════════════════════════════ */
+    #screen-main {
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ───────────────────────────────────────────────── */
+    #header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 20px;
+      height: 54px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      -webkit-app-region: drag;
+    }
+    #header > * { -webkit-app-region: no-drag; }
+
+    .logo-text { color: var(--text); }
+    .logo-sub-txt {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--text-muted);
+      margin-left: 2px;
+    }
+
+    /* Status pill */
+    #status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 500;
+    }
+    #status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #787878;
+      flex-shrink: 0;
+      transition: background var(--transition);
+    }
+    #status-dot.disconnected { background: #787878; }
+    #status-dot.connecting   { background: var(--warning); animation: pulse 1.2s infinite; }
+    #status-dot.connected    { background: var(--accent); }
+    #status-dot.registered   { background: var(--success); animation: pulse-slow 3s infinite; }
+    #status-dot.error        { background: var(--error); }
+
+    /* AI chip in header */
+    .ai-header-chip {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      background: rgba(99,102,241,0.1);
+      border: 1px solid rgba(99,102,241,0.2);
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #a5b4fc;
+      max-width: 150px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .ai-header-chip.manager {
+      background: rgba(245,158,11,0.1);
+      border-color: rgba(245,158,11,0.2);
+      color: #fbbf24;
+    }
+
+    #switch-ai-btn {
+      padding: 5px 10px;
+      font-size: 11px;
+    }
+
+    /* ── Body ─────────────────────────────────────────────────── */
     #body {
       display: flex;
       flex: 1;
       overflow: hidden;
     }
 
-    /* ── Left column (tabbed) ─────────────────────────────────── */
+    /* ── Left column ─────────────────────────────────────────── */
     #feed-col {
       flex: 1;
       display: flex;
       flex-direction: column;
       overflow: hidden;
       padding: 14px 16px 16px 20px;
-      gap: 0;
     }
 
     /* ── Tab nav ──────────────────────────────────────────────── */
@@ -259,11 +705,6 @@
     }
     .entry:hover { border-color: rgba(99,102,241,0.3); }
 
-    @keyframes slide-in {
-      from { opacity: 0; transform: translateY(6px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
     .entry-icon {
       width: 28px;
       height: 28px;
@@ -283,7 +724,6 @@
     .entry-icon.system   { background: rgba(139,92,246,0.15); }
 
     .entry-body { flex: 1; min-width: 0; }
-
     .entry-top {
       display: flex;
       align-items: center;
@@ -310,13 +750,11 @@
       margin-left: auto;
       white-space: nowrap;
     }
-
     .entry-message {
       font-size: 13px;
       color: var(--text);
       word-break: break-word;
     }
-
     .entry-data-toggle {
       display: inline-flex;
       align-items: center;
@@ -334,7 +772,6 @@
     .entry-data-toggle:hover { color: var(--accent); background: rgba(99,102,241,0.1); }
     .entry-data-toggle .arrow { transition: transform 0.15s; display: inline-block; }
     .entry-data-toggle.open .arrow { transform: rotate(90deg); }
-
     .entry-data {
       display: none;
       margin-top: 6px;
@@ -347,13 +784,12 @@
     }
     .entry-data.visible { display: block; }
     .entry-data pre {
-      font-family: 'Cascadia Code', 'Consolas', 'Fira Code', monospace;
+      font-family: 'Cascadia Code', 'Consolas', monospace;
       font-size: 11px;
       color: var(--text-muted);
       white-space: pre-wrap;
       word-break: break-all;
     }
-
     .entry-status-badge {
       display: inline-flex;
       align-items: center;
@@ -410,24 +846,12 @@
       flex: 1;
       gap: 10px;
       color: var(--text-muted);
-      user-select: none;
     }
     .chat-no-key-icon { font-size: 38px; opacity: 0.3; }
 
-    .chat-msg {
-      display: flex;
-      gap: 10px;
-      animation: slide-in 0.2s ease;
-    }
-    .chat-msg.user {
-      flex-direction: row-reverse;
-      align-self: flex-end;
-      max-width: 88%;
-    }
-    .chat-msg.ai {
-      align-self: flex-start;
-      max-width: 94%;
-    }
+    .chat-msg { display: flex; gap: 10px; animation: slide-in 0.2s ease; }
+    .chat-msg.user { flex-direction: row-reverse; align-self: flex-end; max-width: 88%; }
+    .chat-msg.ai   { align-self: flex-start; max-width: 94%; }
 
     .chat-avatar {
       width: 28px;
@@ -440,14 +864,8 @@
       flex-shrink: 0;
       margin-top: 2px;
     }
-    .chat-msg.ai .chat-avatar {
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      color: #fff;
-    }
-    .chat-msg.user .chat-avatar {
-      background: rgba(99,102,241,0.2);
-      color: var(--accent);
-    }
+    .chat-msg.ai   .chat-avatar { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+    .chat-msg.user .chat-avatar { background: rgba(99,102,241,0.2); color: var(--accent); }
 
     .chat-bubble {
       padding: 10px 13px;
@@ -456,50 +874,12 @@
       line-height: 1.65;
       word-break: break-word;
     }
-    .chat-msg.ai .chat-bubble {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-top-left-radius: 4px;
-      color: var(--text);
-    }
-    .chat-msg.user .chat-bubble {
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      color: #fff;
-      border-top-right-radius: 4px;
-    }
-    .chat-bubble code {
-      font-family: 'Cascadia Code', 'Consolas', monospace;
-      font-size: 11px;
-      background: var(--bg3);
-      padding: 1px 5px;
-      border-radius: 3px;
-    }
-    .chat-bubble pre {
-      font-family: 'Cascadia Code', 'Consolas', monospace;
-      font-size: 11px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 8px 10px;
-      margin-top: 8px;
-      overflow-x: auto;
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
+    .chat-msg.ai   .chat-bubble { background: var(--surface); border: 1px solid var(--border); border-top-left-radius: 4px; color: var(--text); }
+    .chat-msg.user .chat-bubble { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border-top-right-radius: 4px; }
+    .chat-bubble code { font-family: 'Cascadia Code','Consolas',monospace; font-size: 11px; background: var(--bg3); padding: 1px 5px; border-radius: 3px; }
 
-    .chat-thinking {
-      display: flex;
-      gap: 4px;
-      align-items: center;
-      padding: 4px 0;
-    }
-    .chat-thinking-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--text-muted);
-      animation: thinking 1.4s infinite;
-    }
+    .chat-thinking { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+    .chat-thinking-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: thinking 1.4s infinite; }
     .chat-thinking-dot:nth-child(2) { animation-delay: 0.2s; }
     .chat-thinking-dot:nth-child(3) { animation-delay: 0.4s; }
     @keyframes thinking {
@@ -533,7 +913,6 @@
     }
     .chat-input:focus { border-color: var(--accent); }
     .chat-input::placeholder { color: var(--text-muted); }
-
     .chat-send-btn {
       width: 40px;
       height: 40px;
@@ -555,38 +934,17 @@
 
     /* ── Right sidebar ────────────────────────────────────────── */
     #sidebar {
-      width: 295px;
+      width: 285px;
       flex-shrink: 0;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
       padding: 14px 20px 16px 0;
       overflow-y: auto;
     }
     #sidebar::-webkit-scrollbar { width: 4px; }
     #sidebar::-webkit-scrollbar-track { background: transparent; }
     #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-
-    /* Card */
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 14px;
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-    }
-    .card-title {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.7px;
-      color: var(--text-muted);
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
 
     /* Info rows */
     .info-row {
@@ -603,7 +961,7 @@
       color: var(--text);
       font-weight: 500;
       text-align: right;
-      max-width: 155px;
+      max-width: 150px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -626,129 +984,137 @@
       padding: 10px;
       text-align: center;
     }
-    .stat-num {
-      font-size: 22px;
-      font-weight: 700;
-      color: var(--accent);
-      line-height: 1.2;
-    }
+    .stat-num { font-size: 22px; font-weight: 700; color: var(--accent); line-height: 1.2; }
     .stat-label { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
 
-    /* Form */
-    .form-group { margin-bottom: 10px; }
-    .form-group:last-child { margin-bottom: 0; }
-    .form-label {
-      display: block;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--text-muted);
-      margin-bottom: 4px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .form-input {
-      width: 100%;
-      padding: 7px 10px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      color: var(--text);
-      font-family: var(--font);
-      font-size: 12px;
-      outline: none;
-      transition: border-color var(--transition);
-    }
-    .form-input:focus { border-color: var(--accent); }
-    .form-input::placeholder { color: var(--text-muted); }
-
-    /* Buttons */
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      padding: 8px 14px;
-      border-radius: var(--radius-sm);
-      border: none;
-      font-family: var(--font);
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all var(--transition);
-      width: 100%;
-    }
-    .btn-primary {
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      color: #fff;
-    }
-    .btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
-    .btn-primary:active { transform: translateY(0); }
-    .btn-danger {
-      background: rgba(239,68,68,0.15);
-      color: #f87171;
-      border: 1px solid rgba(239,68,68,0.25);
-    }
-    .btn-danger:hover { background: rgba(239,68,68,0.25); }
-    .btn-secondary {
-      background: var(--surface);
-      color: var(--text);
-      border: 1px solid var(--border);
-    }
-    .btn-secondary:hover { background: var(--surface-h); }
-
-    .btn-row { display: flex; gap: 8px; }
-    .btn-row .btn { flex: 1; }
-
-    .save-feedback {
-      font-size: 11px;
-      color: var(--success);
-      text-align: center;
-      min-height: 16px;
-      margin-top: 4px;
-    }
+    .save-feedback { font-size: 11px; color: var(--success); text-align: center; min-height: 16px; margin-top: 4px; }
     .divider { height: 1px; background: var(--border); margin: 8px 0; }
 
-    /* Test connection result */
     .test-result {
       font-size: 11px;
       padding: 5px 8px;
       border-radius: var(--radius-sm);
       margin-top: 6px;
       min-height: 22px;
-      transition: all var(--transition);
     }
     .test-result.success { background: rgba(34,197,94,0.1); color: var(--success); }
     .test-result.error   { background: rgba(239,68,68,0.1); color: var(--error); }
   </style>
 </head>
 <body class="dark">
-<div id="app">
 
-  <!-- ── Header ── -->
+<!-- ═══════════════════════════════════════════════════════
+     SCREEN 1: LOGIN
+═══════════════════════════════════════════════════════ -->
+<div id="screen-login" class="screen">
+  <div class="login-card">
+    <div class="login-header">
+      <div class="login-logo-icon">&#x26A1;</div>
+      <div class="login-title">HeySure Agent</div>
+      <div class="login-subtitle">Windows 桌面端 — 请登录以继续</div>
+    </div>
+
+    <div class="login-divider"></div>
+
+    <div class="login-form" id="login-form">
+      <div class="form-group">
+        <label class="form-label" for="login-server">服务器地址</label>
+        <input class="form-input" id="login-server" type="text" placeholder="http://localhost:3000" autocomplete="off" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="login-account">账号</label>
+        <input class="form-input" id="login-account" type="text" placeholder="用户名 / 邮箱" autocomplete="username" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="login-password">密码</label>
+        <input class="form-input" id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+
+      <div class="login-error" id="login-error"></div>
+
+      <button class="btn btn-primary login-btn" id="login-btn">
+        <div class="spinner"></div>
+        <span class="btn-text">登 录</span>
+      </button>
+    </div>
+
+    <div class="login-footer">按 Enter 快速登录</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     SCREEN 2: AI MEMBER SELECT
+═══════════════════════════════════════════════════════ -->
+<div id="screen-ai-select" class="screen">
+
+  <header class="ai-select-header">
+    <div class="logo">
+      <div class="logo-icon">&#x26A1;</div>
+      <span class="logo-text">HeySure Agent</span>
+    </div>
+
+    <div class="user-chip" id="user-chip">
+      <div class="user-chip-dot"></div>
+      <span id="user-chip-text">已登录</span>
+    </div>
+
+    <div class="header-spacer"></div>
+
+    <button class="btn btn-secondary btn-icon" id="refresh-ai-btn" title="刷新">&#x21BB;</button>
+    <button id="theme-toggle2" title="切换主题">&#x1F319;</button>
+    <button class="btn btn-ghost" id="logout-btn" style="font-size:12px">退出登录</button>
+  </header>
+
+  <div class="ai-select-body">
+    <div class="ai-select-toolbar">
+      <div>
+        <div class="ai-select-title">选择 AI 成员</div>
+        <div class="ai-select-subtitle">选择一个 AI 成员进行连接，点击克隆可复制已有成员</div>
+      </div>
+    </div>
+
+    <div class="ai-grid-wrap">
+      <div class="ai-grid" id="ai-grid">
+        <div class="ai-loading">
+          <div class="spinner-large"></div>
+          <p>加载 AI 成员列表...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     SCREEN 3: MAIN DASHBOARD
+═══════════════════════════════════════════════════════ -->
+<div id="screen-main" class="screen">
+
+  <!-- Header -->
   <header id="header">
     <div class="logo">
       <div class="logo-icon">&#x26A1;</div>
       <span class="logo-text">HeySure Agent</span>
-      <span class="logo-sub">Windows</span>
+      <span class="logo-sub-txt">Windows</span>
     </div>
-
-    <div class="header-spacer"></div>
 
     <div id="status-pill">
       <div id="status-dot" class="disconnected"></div>
       <span id="status-label">未连接</span>
     </div>
 
+    <div id="ai-header-chip" class="ai-header-chip">AI 成员</div>
+
+    <div class="header-spacer"></div>
+
+    <button class="btn btn-ghost btn-icon" id="switch-ai-btn" title="切换 AI 成员">&#x21C6;</button>
     <button id="theme-toggle" title="切换主题">&#x1F319;</button>
   </header>
 
-  <!-- ── Body ── -->
+  <!-- Body -->
   <div id="body">
 
     <!-- Left: tabbed column -->
     <div id="feed-col">
-
-      <!-- Tab nav -->
       <div class="tab-nav">
         <button class="tab-btn active" id="tab-feed">&#x25A0; 活动流</button>
         <button class="tab-btn" id="tab-chat">&#x1F4AC; AI 对话</button>
@@ -788,16 +1154,36 @@
     <!-- Sidebar -->
     <aside id="sidebar">
 
-      <!-- Agent Status Card -->
-      <div class="card">
-        <div class="card-title">&#x1F4E1; Agent 状态</div>
+      <!-- AI Member Info Card -->
+      <div class="card" id="ai-member-card">
+        <div class="card-title">&#x1F916; AI 成员</div>
         <div class="info-row">
-          <span class="info-label">连接状态</span>
-          <span class="info-value disconnected" id="info-status">未连接</span>
+          <span class="info-label">名称</span>
+          <span class="info-value" id="ai-info-name">—</span>
         </div>
         <div class="info-row">
-          <span class="info-label">Agent 名称</span>
-          <span class="info-value" id="info-name">—</span>
+          <span class="info-label">角色</span>
+          <span class="info-value" id="ai-info-role">—</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">生命状态</span>
+          <span class="info-value" id="ai-info-lifecycle">—</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">项目</span>
+          <span class="info-value" id="ai-info-project">—</span>
+        </div>
+        <div style="margin-top:10px">
+          <button class="btn btn-secondary" id="switch-ai-btn2" style="width:100%;font-size:12px">&#x21C6; 切换 AI 成员</button>
+        </div>
+      </div>
+
+      <!-- Agent Status Card -->
+      <div class="card">
+        <div class="card-title">&#x1F4E1; 连接状态</div>
+        <div class="info-row">
+          <span class="info-label">状态</span>
+          <span class="info-value disconnected" id="info-status">未连接</span>
         </div>
         <div class="info-row">
           <span class="info-label">服务器</span>
@@ -806,6 +1192,10 @@
         <div class="info-row">
           <span class="info-label">工作区</span>
           <span class="info-value" id="info-workspace">—</span>
+        </div>
+        <div style="margin-top:10px" class="btn-row">
+          <button class="btn btn-primary" id="connect-btn" style="font-size:12px;padding:6px">连接</button>
+          <button class="btn btn-danger" id="disconnect-btn" style="font-size:12px;padding:6px">断开</button>
         </div>
       </div>
 
@@ -832,9 +1222,9 @@
         </div>
       </div>
 
-      <!-- AI Settings Card -->
+      <!-- AI Key Settings Card -->
       <div class="card">
-        <div class="card-title">&#x1F916; AI 配置</div>
+        <div class="card-title">&#x1F511; AI 密钥配置</div>
         <div class="form-group">
           <label class="form-label" for="cfg-ai-key">AI Key</label>
           <input class="form-input" id="cfg-ai-key" type="password" placeholder="sk-ant-... 或 sk-..." />
@@ -847,53 +1237,17 @@
           <label class="form-label" for="cfg-ai-model">模型</label>
           <input class="form-input" id="cfg-ai-model" type="text" placeholder="claude-sonnet-4-5" />
         </div>
-      </div>
-
-      <!-- Connection Settings Card -->
-      <div class="card">
-        <div class="card-title">&#x2699;&#xFE0F; 连接设置</div>
-
-        <div class="form-group">
-          <label class="form-label" for="cfg-server">服务器 URL</label>
-          <input class="form-input" id="cfg-server" type="text" placeholder="http://localhost:3000" />
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="cfg-token">Agent Token</label>
-          <input class="form-input" id="cfg-token" type="password" placeholder="留空则不验证" />
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="cfg-name">Agent 名称</label>
-          <input class="form-input" id="cfg-name" type="text" placeholder="Windows Agent" />
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="cfg-id">Agent ID</label>
-          <input class="form-input" id="cfg-id" type="text" placeholder="自动生成" />
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="cfg-group">分组</label>
-          <input class="form-input" id="cfg-group" type="text" placeholder="可选" />
-        </div>
         <div class="form-group">
           <label class="form-label" for="cfg-workspace">工作区目录</label>
-          <input class="form-input" id="cfg-workspace" type="text" placeholder="C:\Users\...\Documents\Workspace" />
+          <input class="form-input" id="cfg-workspace" type="text" placeholder="C:\Users\...\Workspace" />
         </div>
-
-        <div style="margin-top:12px">
-          <button class="btn btn-secondary" id="save-btn">保存所有设置</button>
-          <div class="save-feedback" id="save-feedback"></div>
-        </div>
+        <button class="btn btn-secondary" id="save-btn" style="width:100%;margin-top:8px">保存设置</button>
+        <div class="save-feedback" id="save-feedback"></div>
 
         <div class="divider"></div>
 
-        <button class="btn btn-secondary" id="test-conn-btn">&#x1F50C; 测试服务器连接</button>
+        <button class="btn btn-secondary" id="test-conn-btn" style="width:100%">&#x1F50C; 测试服务器连接</button>
         <div class="test-result" id="test-result"></div>
-
-        <div class="divider"></div>
-
-        <div class="btn-row">
-          <button class="btn btn-primary" id="connect-btn">连接</button>
-          <button class="btn btn-danger" id="disconnect-btn">断开</button>
-        </div>
       </div>
 
     </aside>

@@ -13,6 +13,16 @@ interface AgentSettings {
   aiKey: string
   aiBaseUrl: string
   aiModel: string
+  // Auth
+  userAccount: string
+  authToken: string
+  userId: number | null
+  // Selected AI Config
+  selectedAiConfigId: number | null
+  selectedAiConfigName: string
+  selectedAiConfigRole: string
+  selectedAiConfigLifecycle: string
+  selectedAiConfigProject: string
 }
 
 const defaults: AgentSettings = {
@@ -28,6 +38,14 @@ const defaults: AgentSettings = {
   aiKey: process.env.AI_KEY || '',
   aiBaseUrl: process.env.AI_BASE_URL || 'https://api.anthropic.com',
   aiModel: process.env.AI_MODEL || 'claude-sonnet-4-5',
+  userAccount: '',
+  authToken: '',
+  userId: null,
+  selectedAiConfigId: null,
+  selectedAiConfigName: '',
+  selectedAiConfigRole: 'member',
+  selectedAiConfigLifecycle: 'working',
+  selectedAiConfigProject: '',
 }
 
 export const store = new Store<AgentSettings>({ defaults })

@@ -288,6 +288,103 @@ function registerIpc(): void {
     if (!s.aiKey) throw new Error('未配置 AI Key')
     return callAiApi(s.aiBaseUrl || 'https://api.anthropic.com', s.aiKey, s.aiModel || 'claude-sonnet-4-5', messages)
   })
+
+  ipcMain.handle('auth:login', async (_event, params: { serverUrl: string; account: string; password: string }) => {
+    const { serverUrl, account, password } = params
+    if (!serverUrl) throw new Error('服务器 URL 不能为空')
+    let url: URL
+    try { url = new URL(serverUrl) } catch { throw new Error('服务器 URL 格式无效') }
+    const base = url.href.replace(/\/$/, '')
+    const res = await net.fetch(`${base}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account, password }),
+      signal: AbortSignal.timeout(10000),
+    })
+    const data: any = await res.json()
+    if (!res.ok) throw new Error(data?.detail || `登录失败 (${res.status})`)
+    store.set('serverUrl', base)
+    store.set('authToken', data.access_token)
+    store.set('userAccount', account)
+    if (data.user?.id) store.set('userId', data.user.id)
+    return { success: true, user: data.user }
+  })
+
+  ipcMain.handle('auth:logout', () => {
+    agent?.disconnect()
+    store.set('authToken', '')
+    store.set('userAccount', '')
+    store.set('userId', null)
+    store.set('selectedAiConfigId', null)
+    store.set('selectedAiConfigName', '')
+    store.set('selectedAiConfigRole', 'member')
+    store.set('selectedAiConfigLifecycle', 'working')
+    store.set('selectedAiConfigProject', '')
+    store.set('agentToken', '')
+    store.set('agentId', '')
+    store.set('agentName', 'Windows Agent')
+    return { success: true }
+  })
+
+  ipcMain.handle('ai-config:list', async () => {
+    const s = store.store
+    if (!s.serverUrl || !s.authToken) throw new Error('未登录')
+    const base = s.serverUrl.replace(/\/$/, '')
+    const res = await net.fetch(`${base}/api/ai/configs`, {
+      headers: { 'Authorization': `Bearer ${s.authToken}` },
+      signal: AbortSignal.timeout(10000),
+    })
+    const data: any = await res.json()
+    if (!res.ok) throw new Error(data?.detail || `获取 AI 列表失败 (${res.status})`)
+    return data
+  })
+
+  ipcMain.handle('ai-config:runtime-status', async () => {
+    const s = store.store
+    if (!s.serverUrl || !s.authToken) return []
+    const base = s.serverUrl.replace(/\/$/, '')
+    try {
+      const res = await net.fetch(`${base}/api/ai/runtime-status`, {
+        headers: { 'Authorization': `Bearer ${s.authToken}` },
+        signal: AbortSignal.timeout(10000),
+      })
+      if (!res.ok) return []
+      return await res.json()
+    } catch { return [] }
+  })
+
+  ipcMain.handle('ai-config:select', async (_event, cfg: any) => {
+    store.set('selectedAiConfigId', cfg.id)
+    store.set('selectedAiConfigName', cfg.name)
+    store.set('selectedAiConfigRole', cfg.digital_member_role || 'member')
+    store.set('selectedAiConfigLifecycle', cfg.lifecycle_status || 'working')
+    store.set('selectedAiConfigProject', cfg.project_name || '')
+    store.set('agentToken', store.get('authToken'))
+    store.set('agentId', `win-desktop-${cfg.id}`)
+    store.set('agentName', cfg.name)
+    store.set('agentGroup', cfg.project_name || '')
+    agent?.disconnect()
+    agent = createAgent(store.store)
+    agent.connect()
+    return { success: true }
+  })
+
+  ipcMain.handle('ai-config:clone', async (_event, configId: number) => {
+    const s = store.store
+    if (!s.serverUrl || !s.authToken) throw new Error('未登录')
+    const base = s.serverUrl.replace(/\/$/, '')
+    const res = await net.fetch(`${base}/api/ai/configs/${configId}/clone`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${s.authToken}`,
+        'Content-Type': 'application/json',
+      },
+      signal: AbortSignal.timeout(10000),
+    })
+    const data: any = await res.json()
+    if (!res.ok) throw new Error(data?.detail || `克隆失败 (${res.status})`)
+    return data
+  })
 }
 
 // ── AI API helper ─────────────────────────────────────────────────────────────
@@ -337,8 +434,10 @@ app.whenReady().then(async () => {
   createMainWindow()
   createTray()
 
-  // Auto-connect on startup
-  agent.connect()
+  // Auto-connect only if a user has already logged in and selected an AI
+  if (store.get('authToken') && store.get('selectedAiConfigId')) {
+    agent.connect()
+  }
 })
 
 // Keep running in tray even when all windows are closed

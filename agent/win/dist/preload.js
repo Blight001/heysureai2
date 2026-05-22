@@ -28,6 +28,14 @@ electron_1.contextBridge.exposeInMainWorld('heysureAPI', {
     testConnection: () => electron_1.ipcRenderer.invoke('connection:test'),
     // AI chat
     sendChat: (messages) => electron_1.ipcRenderer.invoke('chat:send', messages),
+    // Auth
+    login: (params) => electron_1.ipcRenderer.invoke('auth:login', params),
+    logout: () => electron_1.ipcRenderer.invoke('auth:logout'),
+    // AI Config
+    listAiConfigs: () => electron_1.ipcRenderer.invoke('ai-config:list'),
+    getAiRuntimeStatus: () => electron_1.ipcRenderer.invoke('ai-config:runtime-status'),
+    selectAiConfig: (cfg) => electron_1.ipcRenderer.invoke('ai-config:select', cfg),
+    cloneAiConfig: (configId) => electron_1.ipcRenderer.invoke('ai-config:clone', configId),
     // Version
     version: process.env.npm_package_version || '1.0.0',
 });

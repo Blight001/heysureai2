@@ -27,6 +27,15 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   testConnection: () => ipcRenderer.invoke('connection:test'),
   // AI chat
   sendChat: (messages: any[]) => ipcRenderer.invoke('chat:send', messages),
+  // Auth
+  login: (params: { serverUrl: string; account: string; password: string }) =>
+    ipcRenderer.invoke('auth:login', params),
+  logout: () => ipcRenderer.invoke('auth:logout'),
+  // AI Config
+  listAiConfigs: () => ipcRenderer.invoke('ai-config:list'),
+  getAiRuntimeStatus: () => ipcRenderer.invoke('ai-config:runtime-status'),
+  selectAiConfig: (cfg: any) => ipcRenderer.invoke('ai-config:select', cfg),
+  cloneAiConfig: (configId: number) => ipcRenderer.invoke('ai-config:clone', configId),
   // Version
   version: process.env.npm_package_version || '1.0.0',
 })

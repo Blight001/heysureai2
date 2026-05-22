@@ -306,6 +306,52 @@ async def get_governance_tree(
     return {"roots": roots, "count": len(rows)}
 
 
+@router.post("/configs/{config_id}/clone")
+async def clone_ai_config(
+    config_id: int,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    src = session.get(AssistantAIConfig, config_id)
+    if not src or src.user_id != user.id:
+        raise HTTPException(status_code=404, detail="AI config not found")
+    new_cfg = AssistantAIConfig(
+        user_id=user.id,
+        name=f"{src.name} (副本)",
+        description=src.description,
+        api_key=src.api_key,
+        base_url=src.base_url,
+        model=src.model,
+        prompt=src.prompt,
+        ai_role=src.ai_role,
+        digital_member_role=src.digital_member_role,
+        platform=src.platform,
+        generation=src.generation,
+        token_limit=src.token_limit,
+        lifecycle_status=src.lifecycle_status,
+        current_behavior="等待指令...",
+        workspace_root=src.workspace_root,
+        database_uri=src.database_uri,
+        feishu_enabled=False,
+        project_id=src.project_id,
+        project_name=src.project_name,
+        parent_ai_config_id=src.parent_ai_config_id,
+        management_scope=src.management_scope,
+        sort_order=(src.sort_order or 100) + 1,
+        enabled=False,
+        mcp_enabled=src.mcp_enabled,
+        switch_key=f"assistant_{int(time.time() * 1000)}",
+        mcp_tools=src.mcp_tools,
+        system_auto_control=src.system_auto_control,
+    )
+    session.add(new_cfg)
+    session.commit()
+    session.refresh(new_cfg)
+    sync_switch_file(user.id, new_cfg.switch_key, new_cfg.enabled, new_cfg.mcp_enabled)
+    return new_cfg
+
+
 @router.post("/configs/{config_id}/toggle-mcp")
 async def toggle_ai_mcp(
     config_id: int,

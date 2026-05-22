@@ -301,6 +301,108 @@ function registerIpc() {
             throw new Error('未配置 AI Key');
         return callAiApi(s.aiBaseUrl || 'https://api.anthropic.com', s.aiKey, s.aiModel || 'claude-sonnet-4-5', messages);
     });
+    electron_1.ipcMain.handle('auth:login', async (_event, params) => {
+        const { serverUrl, account, password } = params;
+        if (!serverUrl)
+            throw new Error('服务器 URL 不能为空');
+        let url;
+        try { url = new URL(serverUrl); }
+        catch { throw new Error('服务器 URL 格式无效'); }
+        const base = url.href.replace(/\/$/, '');
+        const res = await electron_1.net.fetch(`${base}/api/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account, password }),
+            signal: AbortSignal.timeout(10000),
+        });
+        const data = await res.json();
+        if (!res.ok)
+            throw new Error(data?.detail || `登录失败 (${res.status})`);
+        store_1.store.set('serverUrl', base);
+        store_1.store.set('authToken', data.access_token);
+        store_1.store.set('userAccount', account);
+        if (data.user?.id)
+            store_1.store.set('userId', data.user.id);
+        return { success: true, user: data.user };
+    });
+    electron_1.ipcMain.handle('auth:logout', () => {
+        agent?.disconnect();
+        store_1.store.set('authToken', '');
+        store_1.store.set('userAccount', '');
+        store_1.store.set('userId', null);
+        store_1.store.set('selectedAiConfigId', null);
+        store_1.store.set('selectedAiConfigName', '');
+        store_1.store.set('selectedAiConfigRole', 'member');
+        store_1.store.set('selectedAiConfigLifecycle', 'working');
+        store_1.store.set('selectedAiConfigProject', '');
+        store_1.store.set('agentToken', '');
+        store_1.store.set('agentId', '');
+        store_1.store.set('agentName', 'Windows Agent');
+        return { success: true };
+    });
+    electron_1.ipcMain.handle('ai-config:list', async () => {
+        const s = store_1.store.store;
+        if (!s.serverUrl || !s.authToken)
+            throw new Error('未登录');
+        const base = s.serverUrl.replace(/\/$/, '');
+        const res = await electron_1.net.fetch(`${base}/api/ai/configs`, {
+            headers: { 'Authorization': `Bearer ${s.authToken}` },
+            signal: AbortSignal.timeout(10000),
+        });
+        const data = await res.json();
+        if (!res.ok)
+            throw new Error(data?.detail || `获取 AI 列表失败 (${res.status})`);
+        return data;
+    });
+    electron_1.ipcMain.handle('ai-config:runtime-status', async () => {
+        const s = store_1.store.store;
+        if (!s.serverUrl || !s.authToken)
+            return [];
+        const base = s.serverUrl.replace(/\/$/, '');
+        try {
+            const res = await electron_1.net.fetch(`${base}/api/ai/runtime-status`, {
+                headers: { 'Authorization': `Bearer ${s.authToken}` },
+                signal: AbortSignal.timeout(10000),
+            });
+            if (!res.ok)
+                return [];
+            return await res.json();
+        }
+        catch { return []; }
+    });
+    electron_1.ipcMain.handle('ai-config:select', async (_event, cfg) => {
+        store_1.store.set('selectedAiConfigId', cfg.id);
+        store_1.store.set('selectedAiConfigName', cfg.name);
+        store_1.store.set('selectedAiConfigRole', cfg.digital_member_role || 'member');
+        store_1.store.set('selectedAiConfigLifecycle', cfg.lifecycle_status || 'working');
+        store_1.store.set('selectedAiConfigProject', cfg.project_name || '');
+        store_1.store.set('agentToken', store_1.store.get('authToken'));
+        store_1.store.set('agentId', `win-desktop-${cfg.id}`);
+        store_1.store.set('agentName', cfg.name);
+        store_1.store.set('agentGroup', cfg.project_name || '');
+        agent?.disconnect();
+        agent = createAgent(store_1.store.store);
+        agent.connect();
+        return { success: true };
+    });
+    electron_1.ipcMain.handle('ai-config:clone', async (_event, configId) => {
+        const s = store_1.store.store;
+        if (!s.serverUrl || !s.authToken)
+            throw new Error('未登录');
+        const base = s.serverUrl.replace(/\/$/, '');
+        const res = await electron_1.net.fetch(`${base}/api/ai/configs/${configId}/clone`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${s.authToken}`,
+                'Content-Type': 'application/json',
+            },
+            signal: AbortSignal.timeout(10000),
+        });
+        const data = await res.json();
+        if (!res.ok)
+            throw new Error(data?.detail || `克隆失败 (${res.status})`);
+        return data;
+    });
 }
 // ── AI API helper ─────────────────────────────────────────────────────────────
 async function callAiApi(baseUrl, apiKey, model, messages) {
@@ -337,8 +439,10 @@ electron_1.app.whenReady().then(async () => {
     registerIpc();
     createMainWindow();
     createTray();
-    // Auto-connect on startup
-    agent.connect();
+    // Auto-connect only if already logged in with AI selected
+    if (store_1.store.get('authToken') && store_1.store.get('selectedAiConfigId')) {
+        agent.connect();
+    }
 });
 // Keep running in tray even when all windows are closed
 electron_1.app.on('window-all-closed', (e) => {
