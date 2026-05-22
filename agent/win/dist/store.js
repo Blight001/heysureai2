@@ -18,5 +18,13 @@ const defaults = {
     aiKey: process.env.AI_KEY || '',
     aiBaseUrl: process.env.AI_BASE_URL || 'https://api.anthropic.com',
     aiModel: process.env.AI_MODEL || 'claude-sonnet-4-5',
+    userAccount: '',
+    authToken: '',
+    userId: null,
+    selectedAiConfigId: null,
+    selectedAiConfigName: '',
+    selectedAiConfigRole: 'member',
+    selectedAiConfigLifecycle: 'working',
+    selectedAiConfigProject: '',
 };
 exports.store = new electron_store_1.default({ defaults });
