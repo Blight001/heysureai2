@@ -25,11 +25,22 @@ export const MCP_TOOL_ZH_META: Record<string, { label: string; description: stri
   'task.get_current': { label: '当前任务', description: '读取当前执行中的任务详情。', tag: '任务' },
   'task.inherit': { label: '提交传承', description: '提交任务传承摘要与上下文。', tag: '任务' },
   'task.complete': { label: '标记完成', description: '将当前任务标记为完成。', tag: '任务' },
+  'task.wait_all': { label: '等待子任务', description: '阻塞等待指定子任务全部完成或超时后返回各自结果摘要，常用于并行编排。', tag: '任务' },
   'prompt.list_targets': { label: 'Prompt 目标', description: '列出当前 AI 基础 prompt 目标与全局/系统 prompt 模板键。', tag: 'Prompt' },
   'prompt.read_ai': { label: '读取 AI Prompt', description: '读取指定 AI 实际使用的基础 prompt；未指定时读取当前 AI。', tag: 'Prompt' },
   'prompt.write_ai': { label: '修改 AI Prompt', description: '按行修改指定 AI 的 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
   'prompt.read_system': { label: '读取系统 Prompt', description: '读取全局注入模板/旧版兜底 prompt；当前 AI 基础 prompt 请用读取 AI Prompt。', tag: 'Prompt' },
   'prompt.write_system': { label: '修改系统 Prompt', description: '按行修改全局注入模板/旧版兜底 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
+  'feishu.send_message': { label: '飞书发消息', description: '通过与该 AI 绑定的飞书机器人发送文本消息。', tag: '飞书' },
+  'memory.write': { label: '写入记忆', description: '沉淀高价值的结构化记忆（事实/决策/经验/待办/风险/模板）供后续检索。', tag: '记忆' },
+  'memory.search': { label: '检索记忆', description: '按关键词、类型、项目或标签搜索已存储的记忆。', tag: '记忆' },
+  'memory.list': { label: '记忆列表', description: '列出已存储的记忆，可按类型/项目过滤。', tag: '记忆' },
+  'memory.update': { label: '更新记忆', description: '更新已有记忆的内容/标签/类型/置信度。', tag: '记忆' },
+  'memory.archive': { label: '归档记忆', description: '归档（软删除）记忆，使其默认检索时不再出现。', tag: '记忆' },
+  'evolution.input': { label: '提交进化建议', description: '提交对提示词/工具/流程的改进建议，交由核心管理者评审。', tag: '进化' },
+  'evolution.list': { label: '进化建议列表', description: '列出已提交的进化建议，可按评审状态过滤。', tag: '进化' },
+  'evolution.review': { label: '评审进化建议', description: '评审进化建议：接受/拒绝/应用（核心管理者）。', tag: '进化' },
+  'human.ask': { label: '询问人类', description: '暂停当前任务并向人类提问（确认/选择/文本），阻塞直至回答或超时。', tag: '协作' },
 }
 
 export const normalizeMcpSchemaType = (rawType: unknown) => {
@@ -66,8 +77,16 @@ const getMcpToolFallbackTag = (name: string) => {
   if (name.startsWith('project.')) return '项目'
   if (name.startsWith('task.')) return '任务'
   if (name.startsWith('prompt.')) return 'Prompt'
+  if (name.startsWith('memory.')) return '记忆'
+  if (name.startsWith('evolution.')) return '进化'
+  if (name.startsWith('feishu.')) return '飞书'
+  if (name.startsWith('human.')) return '协作'
   return '通用'
 }
+
+// Chinese-first label for a tool: the Chinese name leads, the English call name
+// follows as a secondary reference.
+export const getMcpToolZhLabel = (name: string) => MCP_TOOL_ZH_META[name]?.label || name
 
 export const withMcpToolLocale = (tool: McpToolDefinition): McpToolDefinition => {
   const meta = MCP_TOOL_ZH_META[tool.name]

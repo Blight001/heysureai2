@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 from api.ai_service import ensure_default_ai_for_user, sync_switch_file
 from api.database import get_session
 from api.feishu_long_connection import start_feishu_long_connection_clients
+from api.mcp_permissions import clamp_tools_json, config_role_tier
 from api.models import (
     AIRuntimeStatus,
     AssistantAIConfig,
@@ -52,6 +53,11 @@ async def create_ai_config(
     workspace_root = normalize_workspace_root(body.workspace_root)
     if role == "assistant_admin" and workspace_root is None:
         workspace_root = "."
+    raw_mcp_tools = body.mcp_tools or AssistantAIConfig.model_fields["mcp_tools"].default
+    tier = config_role_tier(
+        AssistantAIConfig(ai_role=role, digital_member_role=member_role)
+    )
+    clamped_mcp_tools = clamp_tools_json(user, tier, raw_mcp_tools)
     cfg = AssistantAIConfig(
         user_id=user.id,
         name=body.name,
@@ -82,7 +88,7 @@ async def create_ai_config(
         enabled=body.enabled if body.enabled is not None else True,
         mcp_enabled=body.mcp_enabled if body.mcp_enabled is not None else True,
         switch_key=switch_key,
-        mcp_tools=body.mcp_tools or AssistantAIConfig.model_fields["mcp_tools"].default,
+        mcp_tools=clamped_mcp_tools,
         system_auto_control=body.system_auto_control or _default_system_auto_control_for_user(user),
     )
     session.add(cfg)
@@ -123,6 +129,8 @@ async def update_ai_config(
         if key == "workspace_root":
             value = normalize_workspace_root(value)
         setattr(cfg, key, value)
+    # Narrow the saved tool set to what this AI's role tier is permitted to use.
+    cfg.mcp_tools = clamp_tools_json(user, config_role_tier(cfg), cfg.mcp_tools)
     cfg.updated_at = time.time()
     session.add(cfg)
     session.commit()
@@ -342,7 +350,7 @@ async def clone_ai_config(
         enabled=False,
         mcp_enabled=src.mcp_enabled,
         switch_key=f"assistant_{int(time.time() * 1000)}",
-        mcp_tools=src.mcp_tools,
+        mcp_tools=clamp_tools_json(user, config_role_tier(src), src.mcp_tools),
         system_auto_control=src.system_auto_control,
     )
     session.add(new_cfg)

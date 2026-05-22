@@ -1,6 +1,6 @@
-import { ref, watch } from 'vue'
+import { ref, watch, type Ref } from 'vue'
 import { normalizeSystemAutoControl as normalizeTaskSystemAutoControl } from '../../utils/taskSystem'
-import type { User } from './types'
+import type { McpRoleMeta, User } from './types'
 
 type ThemeMode = 'light' | 'dark'
 type FontSize = 'sm' | 'md' | 'lg'
@@ -11,6 +11,7 @@ interface UseDashboardSystemSettingsOptions {
   getCurrentUser: () => User | null | undefined
   alert: AlertFn
   onRefreshUser: (user: User) => void
+  mcpRoleMeta: Ref<McpRoleMeta>
 }
 
 const clampIdleSeconds = (value: unknown) => {
@@ -57,6 +58,67 @@ Rules:
 - 不要写成 <arguments><paths>...</paths></arguments> 这种嵌套标签格式。
 - 一次只调用一个工具，等待 MCP 返回后再继续。
 {details}`)
+  // Per-role MCP allow-list working copy: { roleTier: [toolName, ...] }.
+  const roleMcpPermissions = ref<Record<string, string[]>>({})
+  let roleMcpPermissionsInitialized = false
+
+  const parseSavedRolePermissions = (raw: unknown): Record<string, string[]> => {
+    if (typeof raw !== 'string' || !raw.trim()) return {}
+    try {
+      const parsed = JSON.parse(raw)
+      if (!parsed || typeof parsed !== 'object') return {}
+      const out: Record<string, string[]> = {}
+      for (const [role, tools] of Object.entries(parsed as Record<string, unknown>)) {
+        if (Array.isArray(tools)) {
+          out[role] = tools.map(item => String(item || '').trim()).filter(Boolean)
+        }
+      }
+      return out
+    } catch {
+      return {}
+    }
+  }
+
+  // Initialise the editable copy from the saved user policy (falling back to the
+  // per-role default ceiling) once the role metadata is available.
+  const initRoleMcpPermissions = (force = false) => {
+    const meta = options.mcpRoleMeta.value
+    const roles = meta.order || []
+    if (roles.length === 0) return
+    if (roleMcpPermissionsInitialized && !force) return
+    const saved = parseSavedRolePermissions(options.getCurrentUser()?.role_mcp_permissions)
+    const next: Record<string, string[]> = {}
+    for (const role of roles) {
+      const ceiling = meta.defaults?.[role] || []
+      const ceilingSet = new Set(ceiling)
+      const savedForRole = saved[role]
+      next[role] = Array.isArray(savedForRole)
+        ? savedForRole.filter(tool => ceilingSet.has(tool))
+        : [...ceiling]
+    }
+    roleMcpPermissions.value = next
+    roleMcpPermissionsInitialized = true
+  }
+
+  const isRoleToolAllowed = (role: string, tool: string) =>
+    (roleMcpPermissions.value[role] || []).includes(tool)
+
+  const toggleRoleTool = (role: string, tool: string, checked: boolean) => {
+    const current = new Set(roleMcpPermissions.value[role] || [])
+    if (checked) current.add(tool)
+    else current.delete(tool)
+    roleMcpPermissions.value = { ...roleMcpPermissions.value, [role]: Array.from(current) }
+  }
+
+  const setRoleAllTools = (role: string, checked: boolean) => {
+    const ceiling = options.mcpRoleMeta.value.defaults?.[role] || []
+    roleMcpPermissions.value = { ...roleMcpPermissions.value, [role]: checked ? [...ceiling] : [] }
+  }
+
+  const resetRoleMcpPermissions = () => {
+    initRoleMcpPermissions(true)
+  }
+
   const defaultStartTaskPrompt = ref('你将收到一个任务，请先理解目标、约束与优先级，然后开始执行。')
   const defaultResumeTaskPrompt = ref('请继续执行刚才被暂停的任务，先简要回顾当前进度，再继续推进直到可交付。')
   const defaultSupervisionPrompt = ref('系统监督提醒：请确认当前任务是否已完成。若已完成请调用 task.complete 标记；若未完成请给出剩余步骤并继续执行。')
@@ -99,6 +161,9 @@ Rules:
         body: JSON.stringify({
           mcp_call_method: globalMcpCallMethod.value,
           mcp_format_error_hint: globalMcpFormatErrorHint.value,
+          role_mcp_permissions: roleMcpPermissionsInitialized
+            ? JSON.stringify(roleMcpPermissions.value)
+            : (options.getCurrentUser()?.role_mcp_permissions ?? ''),
           default_start_task_prompt: defaultStartTaskPrompt.value,
           default_resume_task_prompt: defaultResumeTaskPrompt.value,
           default_supervision_prompt: defaultSupervisionPrompt.value,
@@ -166,7 +231,14 @@ Rules:
       if (Object.prototype.hasOwnProperty.call(rawUser, 'default_inheritance_notice')) {
         defaultInheritanceNotice.value = String(rawUser.default_inheritance_notice ?? '')
       }
+      initRoleMcpPermissions()
     },
+    { immediate: true }
+  )
+
+  watch(
+    () => options.mcpRoleMeta.value.order,
+    () => initRoleMcpPermissions(),
     { immediate: true }
   )
 
@@ -182,5 +254,10 @@ Rules:
     defaultInheritanceNotice,
     normalizeSystemAutoControl,
     saveSystemSettings,
+    roleMcpPermissions,
+    isRoleToolAllowed,
+    toggleRoleTool,
+    setRoleAllTools,
+    resetRoleMcpPermissions,
   }
 }

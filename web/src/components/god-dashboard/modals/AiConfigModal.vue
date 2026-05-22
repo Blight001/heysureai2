@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { getMcpToolZhLabel } from '../mcpTools'
+
 type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'feishu'
 
 interface Props {
@@ -101,15 +103,23 @@ defineProps<Props>()
                 <span>MCP 调用无需确认</span>
                 <input type="checkbox" v-model="form.mcp_auto_approve" />
               </label>
+              <p class="mb-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                仅显示当前角色（{{ form.ai_role_group === 'assistant_admin' ? '辅助管理员' : (form.digital_member_role === 'manager' ? '数字成员·管理者' : '数字成员·普通成员') }}）允许的 MCP 工具，可在“系统设置 → MCP 角色权限”中调整各角色范围。
+              </p>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
-                <label v-for="tool in availableMcpTools" :key="tool" class="text-xs text-zinc-600 dark:text-zinc-300 flex items-center gap-2">
+                <label v-for="tool in availableMcpTools" :key="tool" class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2">
                   <input
                     type="checkbox"
+                    class="mt-0.5"
                     :checked="form.mcp_tools.includes(tool)"
                     @change="onToolCheckboxChange(tool, $event)"
                   />
-                  <span class="font-mono">{{ tool }}</span>
+                  <span class="min-w-0">
+                    <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
+                    <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
+                  </span>
                 </label>
+                <div v-if="availableMcpTools.length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">该角色暂无可配置的 MCP 工具</div>
               </div>
             </div>
           </details>
