@@ -18,25 +18,23 @@ let captureWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let agent: HeySureAgent | null = null
 
-// ── Icon generation ─────────────────────────────────────────────────────────
-function makeColorIcon(r: number, g: number, b: number, size = 16): Electron.NativeImage {
-  const buf = Buffer.alloc(size * size * 4)
-  for (let i = 0; i < size * size; i++) {
-    const o = i * 4
-    buf[o + 0] = b   // BGRA order
-    buf[o + 1] = g
-    buf[o + 2] = r
-    buf[o + 3] = 255
-  }
-  return nativeImage.createFromBitmap(buf, { width: size, height: size })
+const APP_ICON_PATH = path.join(__dirname, '../assets/icon.ico')
+const TRAY_ICON_PATHS: Record<AgentStatus, string> = {
+  disconnected: path.join(__dirname, '../assets/desktop.png'),
+  connecting: path.join(__dirname, '../assets/desktop_yellow.png'),
+  connected: path.join(__dirname, '../assets/desktop_green.png'),
+  registered: path.join(__dirname, '../assets/desktop_green.png'),
+  error: path.join(__dirname, '../assets/desktop_red.png'),
 }
 
-const ICONS = {
-  disconnected: makeColorIcon(120, 120, 120, 16),
-  connecting:   makeColorIcon(251, 191,  36, 16),
-  connected:    makeColorIcon( 99, 102, 241, 16),
-  registered:   makeColorIcon( 34, 197,  94, 16),
-  error:        makeColorIcon(239,  68,  68, 16),
+// ── Tray icons ───────────────────────────────────────────────────────────────
+function loadTrayIcon(status: AgentStatus): Electron.NativeImage {
+  const iconPath = TRAY_ICON_PATHS[status] || TRAY_ICON_PATHS.disconnected
+  const image = nativeImage.createFromPath(iconPath)
+  if (image.isEmpty()) {
+    return nativeImage.createFromPath(APP_ICON_PATH)
+  }
+  return image.resize({ width: 16, height: 16 })
 }
 
 const STATUS_LABELS: Record<AgentStatus, string> = {
@@ -126,7 +124,9 @@ function createMainWindow(): void {
     y: (bounds as any).y,
     minWidth: 700,
     minHeight: 500,
+    icon: APP_ICON_PATH,
     frame: true,
+    autoHideMenuBar: true,
     title: 'HeySure Agent',
     backgroundColor: store.get('theme') === 'light' ? '#f0f0ff' : '#0e0e1a',
     webPreferences: {
@@ -137,6 +137,7 @@ function createMainWindow(): void {
   })
 
   mainWindow.loadFile(path.join(__dirname, 'renderer/index.html'))
+  mainWindow.setMenuBarVisibility(false)
 
   mainWindow.on('close', (e) => {
     if (!(app as any).isQuitting) {
@@ -156,7 +157,7 @@ function saveBounds() {
 
 // ── Tray ──────────────────────────────────────────────────────────────────────
 function createTray(): void {
-  tray = new Tray(ICONS.disconnected)
+  tray = new Tray(loadTrayIcon('disconnected'))
   tray.setToolTip('HeySure Agent — 未连接')
   updateTrayMenu('disconnected')
   tray.on('click', () => {
@@ -171,7 +172,7 @@ function createTray(): void {
 
 function updateTrayMenu(status: AgentStatus): void {
   if (!tray) return
-  tray.setImage(ICONS[status] || ICONS.disconnected)
+  tray.setImage(loadTrayIcon(status))
   tray.setToolTip(`HeySure Agent — ${STATUS_LABELS[status]}`)
 
   const isActive = status === 'registered' || status === 'connected'
@@ -570,6 +571,7 @@ app.whenReady().then(async () => {
   agent = createAgent(settings)
 
   registerIpc()
+  Menu.setApplicationMenu(null)
   createMainWindow()
   createTray()
 

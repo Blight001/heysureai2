@@ -1,6 +1,6 @@
 import threading
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from fastapi import APIRouter, HTTPException, Request
 from sqlmodel import Session, select
@@ -14,7 +14,7 @@ from api.routers.chat_worker import _run_worker
 
 router = APIRouter()
 PREFIX = "/api/feishu"
-# Feishu text messages have a length cap; only split when the final reply exceeds it.
+# Feishu text messages have a length cap; split only inside one logical reply segment.
 FEISHU_TEXT_MAX_CHARS = 1800
 
 
@@ -100,9 +100,8 @@ def _has_successful_feishu_send(
     return False
 
 
-def _notify_feishu_after_run(
+def _send_new_feishu_reply_segments(
     *,
-    run_id: str,
     user_id: int,
     ai_config_id: int,
     ai_kind: str,
@@ -110,11 +109,8 @@ def _notify_feishu_after_run(
     after_message_id: int,
     receive_id: str,
     receive_id_type: str,
-) -> None:
+) -> Tuple[int, bool]:
     with Session(engine) as session:
-        row = session.exec(select(ChatRun).where(ChatRun.run_id == run_id)).first()
-        if not row:
-            return
         if _has_successful_feishu_send(
             session,
             user_id=user_id,
@@ -123,45 +119,103 @@ def _notify_feishu_after_run(
             session_id=session_id,
             after_message_id=after_message_id,
         ):
-            return
+            return after_message_id, False
+        assistant_msgs = session.exec(
+            select(ChatMessage).where(
+                ChatMessage.user_id == user_id,
+                ChatMessage.ai_config_id == ai_config_id,
+                ChatMessage.ai_kind == ai_kind,
+                ChatMessage.session_id == session_id,
+                ChatMessage.role == "assistant",
+                ChatMessage.id > after_message_id,
+            ).order_by(ChatMessage.id.asc())
+        ).all()
 
-        final_text = ""
-        if str(row.status or "") == "error":
-            final_text = f"飞书机器人处理失败：{row.error_message or '未知错误'}"
-        else:
-            # Collect every assistant text segment produced during the run, in order.
-            # `content` holds visible output only; deep-thinking (`think`) is stored in a
-            # separate column and MCP tool-call bubbles are role="system", so both are excluded.
-            assistant_msgs = session.exec(
-                select(ChatMessage).where(
-                    ChatMessage.user_id == user_id,
-                    ChatMessage.ai_config_id == ai_config_id,
-                    ChatMessage.ai_kind == ai_kind,
-                    ChatMessage.session_id == session_id,
-                    ChatMessage.role == "assistant",
-                    ChatMessage.id > after_message_id,
-                ).order_by(ChatMessage.id.asc())
-            ).all()
-            parts = [str(msg.content or "").strip() for msg in assistant_msgs]
-            final_text = "\n\n".join(part for part in parts if part)
+    last_message_id = after_message_id
+    sent_any = False
+    for msg in assistant_msgs:
+        msg_id = int(msg.id or 0)
+        segment = str(msg.content or "").strip()
+        if msg_id:
+            last_message_id = msg_id
+        if not segment:
+            continue
+        if not _send_feishu_text(
+            user_id=user_id,
+            ai_config_id=ai_config_id,
+            receive_id=receive_id,
+            receive_id_type=receive_id_type,
+            text=segment,
+        ):
+            return last_message_id, sent_any
+        sent_any = True
+    return last_message_id, sent_any
 
-        if not final_text:
+
+def _send_feishu_error_if_needed(
+    *,
+    run_id: str,
+    user_id: int,
+    ai_config_id: int,
+    receive_id: str,
+    receive_id_type: str,
+    sent_any: bool,
+) -> None:
+    with Session(engine) as session:
+        row = session.exec(select(ChatRun).where(ChatRun.run_id == run_id)).first()
+        if not row or str(row.status or "") != "error" or sent_any:
             return
+        error_text = f"飞书机器人处理失败：{row.error_message or '未知错误'}"
 
     _send_feishu_text(
         user_id=user_id,
         ai_config_id=ai_config_id,
         receive_id=receive_id,
         receive_id_type=receive_id_type,
-        text=final_text,
+        text=error_text,
     )
 
 
 def _run_feishu_worker_and_notify(worker_kwargs: Dict[str, Any], notify_kwargs: Dict[str, Any]) -> None:
-    # Wait for the run to fully finish streaming before sending, so Feishu receives
-    # one complete reply instead of fragmented partial messages.
-    _run_worker(**worker_kwargs)
-    _notify_feishu_after_run(**notify_kwargs)
+    worker = threading.Thread(target=_run_worker, kwargs=worker_kwargs, daemon=True)
+    worker.start()
+
+    last_sent_message_id = int(notify_kwargs["after_message_id"])
+    sent_any = False
+    send_kwargs = {
+        "user_id": int(notify_kwargs["user_id"]),
+        "ai_config_id": int(notify_kwargs["ai_config_id"]),
+        "ai_kind": str(notify_kwargs["ai_kind"]),
+        "session_id": str(notify_kwargs["session_id"]),
+        "receive_id": str(notify_kwargs["receive_id"]),
+        "receive_id_type": str(notify_kwargs["receive_id_type"]),
+    }
+    while worker.is_alive():
+        next_message_id, did_send = _send_new_feishu_reply_segments(
+            **send_kwargs,
+            after_message_id=last_sent_message_id,
+        )
+        if did_send:
+            sent_any = True
+        if next_message_id > last_sent_message_id:
+            last_sent_message_id = next_message_id
+        worker.join(timeout=0.5)
+
+    next_message_id, did_send = _send_new_feishu_reply_segments(
+        **send_kwargs,
+        after_message_id=last_sent_message_id,
+    )
+    if did_send:
+        sent_any = True
+
+    _send_feishu_error_if_needed(
+        run_id=str(notify_kwargs["run_id"]),
+        user_id=int(notify_kwargs["user_id"]),
+        ai_config_id=int(notify_kwargs["ai_config_id"]),
+        receive_id=str(notify_kwargs["receive_id"]),
+        receive_id_type=str(notify_kwargs["receive_id_type"]),
+        sent_any=sent_any,
+    )
 
 
 @router.post("/events/{config_id}")

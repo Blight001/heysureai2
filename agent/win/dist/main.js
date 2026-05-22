@@ -49,25 +49,23 @@ let mainWindow = null;
 let captureWindow = null;
 let tray = null;
 let agent = null;
-// ── Icon generation ─────────────────────────────────────────────────────────
-function makeColorIcon(r, g, b, size = 16) {
-    const buf = Buffer.alloc(size * size * 4);
-    for (let i = 0; i < size * size; i++) {
-        const o = i * 4;
-        buf[o + 0] = b; // BGRA order
-        buf[o + 1] = g;
-        buf[o + 2] = r;
-        buf[o + 3] = 255;
-    }
-    return electron_1.nativeImage.createFromBitmap(buf, { width: size, height: size });
-}
-const ICONS = {
-    disconnected: makeColorIcon(120, 120, 120, 16),
-    connecting: makeColorIcon(251, 191, 36, 16),
-    connected: makeColorIcon(99, 102, 241, 16),
-    registered: makeColorIcon(34, 197, 94, 16),
-    error: makeColorIcon(239, 68, 68, 16),
+const APP_ICON_PATH = path.join(__dirname, '../assets/icon.ico');
+const TRAY_ICON_PATHS = {
+    disconnected: path.join(__dirname, '../assets/desktop.png'),
+    connecting: path.join(__dirname, '../assets/desktop_yellow.png'),
+    connected: path.join(__dirname, '../assets/desktop_green.png'),
+    registered: path.join(__dirname, '../assets/desktop_green.png'),
+    error: path.join(__dirname, '../assets/desktop_red.png'),
 };
+// ── Tray icons ───────────────────────────────────────────────────────────────
+function loadTrayIcon(status) {
+    const iconPath = TRAY_ICON_PATHS[status] || TRAY_ICON_PATHS.disconnected;
+    const image = electron_1.nativeImage.createFromPath(iconPath);
+    if (image.isEmpty()) {
+        return electron_1.nativeImage.createFromPath(APP_ICON_PATH);
+    }
+    return image.resize({ width: 16, height: 16 });
+}
 const STATUS_LABELS = {
     disconnected: '未连接',
     connecting: '连接中...',
@@ -149,7 +147,9 @@ function createMainWindow() {
         y: bounds.y,
         minWidth: 700,
         minHeight: 500,
+        icon: APP_ICON_PATH,
         frame: true,
+        autoHideMenuBar: true,
         title: 'HeySure Agent',
         backgroundColor: store_1.store.get('theme') === 'light' ? '#f0f0ff' : '#0e0e1a',
         webPreferences: {
@@ -159,6 +159,7 @@ function createMainWindow() {
         },
     });
     mainWindow.loadFile(path.join(__dirname, 'renderer/index.html'));
+    mainWindow.setMenuBarVisibility(false);
     mainWindow.on('close', (e) => {
         if (!electron_1.app.isQuitting) {
             e.preventDefault();
@@ -175,7 +176,7 @@ function saveBounds() {
 }
 // ── Tray ──────────────────────────────────────────────────────────────────────
 function createTray() {
-    tray = new electron_1.Tray(ICONS.disconnected);
+    tray = new electron_1.Tray(loadTrayIcon('disconnected'));
     tray.setToolTip('HeySure Agent — 未连接');
     updateTrayMenu('disconnected');
     tray.on('click', () => {
@@ -191,7 +192,7 @@ function createTray() {
 function updateTrayMenu(status) {
     if (!tray)
         return;
-    tray.setImage(ICONS[status] || ICONS.disconnected);
+    tray.setImage(loadTrayIcon(status));
     tray.setToolTip(`HeySure Agent — ${STATUS_LABELS[status]}`);
     const isActive = status === 'registered' || status === 'connected';
     const menu = electron_1.Menu.buildFromTemplate([
@@ -602,6 +603,7 @@ electron_1.app.whenReady().then(async () => {
     const settings = store_1.store.store;
     agent = createAgent(settings);
     registerIpc();
+    electron_1.Menu.setApplicationMenu(null);
     createMainWindow();
     createTray();
     // Auto-connect only if a user has already logged in and selected an AI
