@@ -86,9 +86,9 @@
       border-bottom:1px solid var(--border); flex-shrink:0; background:var(--bg2);
     }
     .tab-btn {
-      padding:5px 12px; border:none; background:none; color:var(--muted);
-      font-family:var(--font); font-size:11px; font-weight:600; cursor:pointer;
-      border-radius:var(--r) var(--r) 0 0; transition:all var(--tr); letter-spacing:.2px;
+      padding:5px 8px; border:none; background:none; color:var(--muted);
+      font-family:var(--font); font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap;
+      border-radius:var(--r) var(--r) 0 0; transition:all var(--tr); letter-spacing:.1px;
     }
     .tab-btn:hover  { background:var(--surface); color:var(--text); }
     .tab-btn.active { background:rgba(99,102,241,.15); color:var(--accent); border-bottom:2px solid var(--accent); }
@@ -97,6 +97,7 @@
     #content { flex:1; overflow:hidden; display:flex; flex-direction:column; }
     .pane { display:flex; flex-direction:column; flex:1; overflow:hidden; padding:12px 14px 14px; gap:8px; }
     .pane.hidden { display:none; }
+    .hidden { display:none !important; }
 
     /* ── Feed ── */
     .pane-header { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
@@ -222,6 +223,17 @@
     }
     input[type=text]:focus,input[type=password]:focus,input[type=url]:focus { border-color:var(--accent); }
     input::placeholder { color:var(--muted); }
+    select {
+      width:100%; padding:6px 9px; background:var(--bg); border:1px solid var(--border);
+      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none;
+    }
+    select:focus { border-color:var(--accent); }
+    .offline-badge {
+      display:none; align-items:center; gap:4px; padding:3px 8px; border-radius:20px;
+      background:rgba(245,158,11,.15); border:1px solid rgba(245,158,11,.3); color:var(--warn);
+      font-size:10px; font-weight:700;
+    }
+    .offline-badge.on { display:flex; }
     .check-row { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
     .check-row input[type=checkbox] { accent-color:var(--accent); }
     .divider { height:1px; background:var(--border); margin:10px 0; }
@@ -248,6 +260,120 @@
       display:flex; gap:8px; padding:10px 14px;
       border-top:1px solid var(--border); background:var(--bg2); flex-shrink:0;
     }
+
+    /* ── User chip (logged-in account) ── */
+    .user-chip {
+      display:flex; align-items:center; gap:5px; padding:3px 8px; border-radius:20px;
+      background:var(--surface); border:1px solid var(--border); font-size:10px; font-weight:600;
+      max-width:120px; overflow:hidden;
+    }
+    .user-chip .ua { width:16px; height:16px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; font-size:9px; color:#fff; flex-shrink:0; }
+    .user-chip .un { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .user-chip.guest { color:var(--muted); }
+
+    /* ── Login form ── */
+    .login-box { display:flex; flex-direction:column; gap:8px; }
+    .login-hint { font-size:11px; color:var(--muted); text-align:center; margin-bottom:2px; }
+
+    /* ── Member list ── */
+    #members-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding-right:3px; }
+    #members-list::-webkit-scrollbar { width:3px; }
+    #members-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    .member-card {
+      display:flex; align-items:center; gap:8px; padding:8px 9px; cursor:pointer;
+      background:var(--surface); border:1px solid var(--border); border-radius:var(--r); transition:all var(--tr);
+    }
+    .member-card:hover { background:var(--surface-h); }
+    .member-card.selected { border-color:var(--accent); background:rgba(99,102,241,.12); }
+    .member-ava { width:28px; height:28px; border-radius:7px; background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; font-size:13px; color:#fff; flex-shrink:0; }
+    .member-info { flex:1; min-width:0; }
+    .member-name { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .member-meta { font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .role-badge { font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; flex-shrink:0; }
+    .role-badge.assistant_admin { background:rgba(139,92,246,.2); color:#c4b5fd; }
+    .role-badge.manager { background:rgba(56,189,248,.2); color:#7dd3fc; }
+    .role-badge.member  { background:rgba(99,102,241,.18); color:#a5b4fc; }
+    .dot-on  { width:7px; height:7px; border-radius:50%; background:var(--success); flex-shrink:0; }
+    .dot-off { width:7px; height:7px; border-radius:50%; background:var(--muted); flex-shrink:0; }
+
+    /* ── Target banner (chat & task) ── */
+    .target-banner {
+      display:flex; align-items:center; gap:6px; padding:6px 9px; border-radius:var(--r);
+      background:var(--surface); border:1px solid var(--border); font-size:11px; flex-shrink:0;
+    }
+    .target-banner .tb-name { font-weight:600; color:var(--accent); }
+    .target-banner.empty { color:var(--muted); }
+
+    /* ── Task form / jobs ── */
+    #task-pane { overflow-y:auto; }
+    #task-pane::-webkit-scrollbar { width:3px; }
+    #task-pane::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    textarea.ta {
+      width:100%; padding:6px 9px; background:var(--bg); border:1px solid var(--border);
+      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none; resize:vertical; min-height:46px;
+    }
+    textarea.ta:focus { border-color:var(--accent); }
+    input[type=number] {
+      width:100%; padding:6px 9px; background:var(--bg); border:1px solid var(--border);
+      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none;
+    }
+    input[type=datetime-local] {
+      width:100%; padding:5px 9px; background:var(--bg); border:1px solid var(--border);
+      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none;
+    }
+    .jobs-list { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+    .job-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:8px 9px; }
+    .job-top { display:flex; align-items:center; gap:6px; margin-bottom:3px; }
+    .job-title { font-size:12px; font-weight:600; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .job-status { font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; text-transform:uppercase; }
+    .job-status.queued { background:rgba(245,158,11,.2); color:#fcd34d; }
+    .job-status.running { background:rgba(99,102,241,.2); color:#a5b4fc; }
+    .job-status.paused { background:rgba(120,120,168,.2); color:var(--muted); }
+    .job-status.completed { background:rgba(34,197,94,.2); color:#86efac; }
+    .job-status.cancelled { background:rgba(239,68,68,.2); color:#fca5a5; }
+    .job-actions { display:flex; gap:5px; margin-top:5px; }
+    .mini-btn { font-size:10px; padding:3px 8px; border-radius:5px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; }
+    .mini-btn:hover { background:var(--surface-h); }
+    .mini-btn.danger { color:#f87171; border-color:rgba(239,68,68,.25); background:rgba(239,68,68,.1); }
+
+    /* ── Member settings view ── */
+    .kv { display:flex; justify-content:space-between; gap:8px; font-size:11px; padding:3px 0; }
+    .kv .k { color:var(--muted); }
+    .kv .v { color:var(--text); text-align:right; word-break:break-word; }
+    .tool-chips { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
+    .tool-chip { font-size:10px; padding:2px 6px; border-radius:5px; background:var(--bg3); border:1px solid var(--border); color:var(--muted); }
+    .empty-note { font-size:11px; color:var(--muted); text-align:center; padding:18px 0; }
+
+    /* ── Memory cards ── */
+    .entry-badge.card { background:rgba(139,92,246,.2); color:#c4b5fd; }
+    .link-btn { font-size:10px; color:var(--muted); border:none; background:none; cursor:pointer; padding:2px 6px; border-radius:4px; }
+    .link-btn:hover { background:var(--surface); color:var(--text); }
+    #cards-list::-webkit-scrollbar { width:3px; }
+    #cards-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    .card-item { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:9px 10px; }
+    .card-item.running { border-color:var(--accent); box-shadow:0 0 0 1px rgba(99,102,241,.3); }
+    .card-item-top { display:flex; align-items:center; gap:8px; }
+    .card-item-name { font-size:12px; font-weight:600; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .card-item-meta { font-size:10px; color:var(--muted); }
+    .card-item-desc { font-size:10px; color:var(--muted); margin-top:2px; word-break:break-word; }
+    .card-item-actions { display:flex; gap:5px; margin-top:7px; flex-wrap:wrap; }
+    .card-steps { margin-top:8px; border-top:1px dashed var(--border); padding-top:7px; display:flex; flex-direction:column; gap:5px; }
+    .step-row { display:flex; gap:7px; align-items:flex-start; font-size:11px; }
+    .step-idx { width:18px; height:18px; border-radius:5px; background:var(--bg3); color:var(--muted); display:flex; align-items:center; justify-content:center; font-size:9px; flex-shrink:0; margin-top:1px; }
+    .step-row.cur .step-idx { background:var(--accent); color:#fff; }
+    .step-row.ok .step-idx { background:rgba(34,197,94,.25); color:#86efac; }
+    .step-row.err .step-idx { background:rgba(239,68,68,.25); color:#fca5a5; }
+    .step-body { min-width:0; }
+    .step-note { color:var(--text); word-break:break-word; }
+    .step-tool { font-family:'Cascadia Code',Consolas,monospace; font-size:9px; color:var(--muted); }
+    #cards-run-status { font-size:11px; color:var(--accent); min-height:16px; flex-shrink:0; }
+
+    /* ── Card modal (merge prompt) ── */
+    .card-modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:50; }
+    .card-modal-box { background:var(--bg2); border:1px solid var(--border); border-radius:var(--r2); padding:16px; width:300px; }
+    .card-modal-title { font-size:13px; font-weight:700; margin-bottom:8px; }
+    .card-modal-msg { font-size:11px; color:var(--muted); margin-bottom:12px; word-break:break-word; }
+    .card-modal-actions { display:flex; flex-direction:column; gap:6px; }
   </style>
 </head>
 <body class="dark">
@@ -261,7 +387,12 @@
       <span class="logo-sub">Browser</span>
     </div>
     <div class="spacer"></div>
-    <div class="status-pill">
+    <div class="offline-badge" id="offline-badge" title="离线模式：使用自配模型直连">🛜 离线</div>
+    <div class="user-chip guest" id="user-chip" title="登录状态">
+      <div class="ua" id="user-ava">·</div>
+      <span class="un" id="user-name">未登录</span>
+    </div>
+    <div class="status-pill" title="浏览器 Agent 连接状态">
       <div class="status-dot disconnected" id="status-dot"></div>
       <span id="status-label">未连接</span>
     </div>
@@ -271,7 +402,10 @@
   <!-- Tabs -->
   <div class="tab-bar">
     <button class="tab-btn active" id="tab-feed">■ 活动</button>
-    <button class="tab-btn" id="tab-chat">💬 AI 对话</button>
+    <button class="tab-btn" id="tab-members">👥 成员</button>
+    <button class="tab-btn" id="tab-chat">💬 对话</button>
+    <button class="tab-btn" id="tab-tasks">🗂 任务</button>
+    <button class="tab-btn" id="tab-cards">🃏 卡片</button>
     <button class="tab-btn" id="tab-settings">⚙ 设置</button>
   </div>
 
@@ -292,8 +426,34 @@
       </div>
     </div>
 
+    <!-- Members pane -->
+    <div class="pane hidden" id="members-pane">
+      <!-- Login gate (shown when not logged in) -->
+      <div id="login-gate" class="card login-box">
+        <div class="card-title">🔐 登录软件端账号</div>
+        <div class="login-hint">使用与软件端相同的账号登录，登录后可查看 AI 成员、对话与安排任务。</div>
+        <div class="fg"><label>账号</label><input type="text" id="login-account" placeholder="你的账号" autocomplete="username"/></div>
+        <div class="fg"><label>密码</label><input type="password" id="login-password" placeholder="密码" autocomplete="current-password"/></div>
+        <button class="btn btn-primary" id="login-btn">登录</button>
+        <div class="save-feedback" id="login-feedback"></div>
+        <div class="login-hint" style="margin-top:4px;">服务器地址在“设置 → 服务器连接”中配置。</div>
+      </div>
+
+      <!-- Member list (shown when logged in) -->
+      <div id="members-view" class="hidden" style="display:flex;flex-direction:column;flex:1;gap:8px;overflow:hidden;">
+        <div class="pane-header">
+          <span class="pane-title">AI 成员</span>
+          <button id="members-refresh" style="font-size:10px;color:var(--muted);border:none;background:none;cursor:pointer;padding:2px 5px;border-radius:4px;">刷新</button>
+        </div>
+        <div id="members-list">
+          <div class="empty-note" id="members-empty">加载中…</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Chat pane -->
     <div class="pane hidden" id="chat-pane">
+      <div class="target-banner empty" id="chat-target">未选择 AI 成员（将使用本地 AI Key 直连）</div>
       <div class="chat-messages" id="chat-messages">
         <div id="chat-no-key">
           <div class="ki">🔑</div>
@@ -307,15 +467,129 @@
       </div>
     </div>
 
+    <!-- Tasks pane -->
+    <div class="pane hidden" id="task-pane">
+      <div class="target-banner empty" id="task-target">请先在“成员”中选择一个 AI 成员</div>
+
+      <div class="card" id="task-form" style="display:none;">
+        <div class="card-title">🗂 安排任务</div>
+        <div class="fg"><label>任务标题</label><input type="text" id="task-title" placeholder="例如：抓取页面数据"/></div>
+        <div class="fg"><label>任务指令</label><textarea class="ta" id="task-instruction" placeholder="详细描述任务目标、约束与交付要求"></textarea></div>
+        <div class="fg"><label>优先级 (1-10)</label><input type="number" id="task-priority" min="1" max="10" value="5"/></div>
+        <div class="fg check-row">
+          <input type="checkbox" id="task-schedule-enabled"/>
+          <label for="task-schedule-enabled" style="margin:0;text-transform:none;font-size:11px;">定时执行</label>
+        </div>
+        <div id="task-schedule-opts" style="display:none;">
+          <div class="fg check-row">
+            <input type="checkbox" id="task-loop-enabled"/>
+            <label for="task-loop-enabled" style="margin:0;text-transform:none;font-size:11px;">循环执行</label>
+          </div>
+          <div class="fg check-row">
+            <input type="checkbox" id="task-run-immediately"/>
+            <label for="task-run-immediately" style="margin:0;text-transform:none;font-size:11px;">首次立即执行</label>
+          </div>
+          <div class="fg"><label>循环间隔（分钟）</label><input type="number" id="task-duration" min="1" value="30"/></div>
+          <div class="fg" id="task-at-row"><label>执行时间（一次性，可留空用间隔）</label><input type="datetime-local" id="task-at"/></div>
+        </div>
+        <button class="btn btn-primary" id="task-submit">安排任务</button>
+        <div class="save-feedback" id="task-feedback"></div>
+      </div>
+
+      <div class="card" id="task-jobs-card" style="display:none;">
+        <div class="pane-header" style="margin-bottom:8px;">
+          <span class="pane-title">任务队列</span>
+          <button id="jobs-refresh" style="font-size:10px;color:var(--muted);border:none;background:none;cursor:pointer;padding:2px 5px;border-radius:4px;">刷新</button>
+        </div>
+        <div class="jobs-list" id="jobs-list">
+          <div class="empty-note" id="jobs-empty">暂无任务</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cards pane -->
+    <div class="pane hidden" id="cards-pane">
+      <div class="pane-header">
+        <span class="pane-title">记忆卡片自动化</span>
+        <div style="display:flex;gap:4px;">
+          <button class="link-btn" id="cards-import-btn">导入</button>
+          <button class="link-btn" id="cards-export-all-btn">导出全部</button>
+        </div>
+      </div>
+
+      <div id="cards-import-box" class="card hidden">
+        <div class="card-title">导入卡片（JSON）</div>
+        <textarea class="ta" id="cards-import-text" style="min-height:90px;" placeholder='粘贴卡片 JSON，例如：&#10;{"name":"登录流程","steps":[&#10;  {"tool":"browser_navigate","args":{"url":"https://example.com"},"note":"打开页面"},&#10;  {"tool":"browser_wait","args":{"selector":"#user"},"note":"等待输入框"},&#10;  {"tool":"browser_type","args":{"selector":"#user","text":"me"},"note":"输入账号"},&#10;  {"tool":"browser_click","args":{"selector":"#go"},"note":"点击登录"}&#10;]}'></textarea>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn btn-secondary" id="cards-import-file-btn">从文件选择</button>
+          <button class="btn btn-primary" id="cards-import-confirm">导入</button>
+        </div>
+        <input type="file" id="cards-import-file" accept=".json,application/json" style="display:none;"/>
+        <div class="save-feedback" id="cards-import-feedback"></div>
+      </div>
+
+      <div id="cards-run-status"></div>
+
+      <div id="cards-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:3px;">
+        <div class="empty-note" id="cards-empty">暂无卡片，点击“导入”添加</div>
+      </div>
+    </div>
+
     <!-- Settings pane -->
     <div class="pane hidden" id="settings-pane">
 
-      <!-- AI Config -->
+      <!-- Account -->
       <div class="card">
-        <div class="card-title">🤖 AI 配置</div>
+        <div class="card-title">👤 软件端账号</div>
+        <div id="account-status" class="kv"><span class="k">状态</span><span class="v" id="account-status-v">未登录</span></div>
+        <div class="divider"></div>
+        <button class="btn btn-danger" id="logout-btn" style="display:none;">退出登录</button>
+        <button class="btn btn-secondary" id="goto-login-btn">前往登录</button>
+      </div>
+
+      <!-- Selected member config (read-only) -->
+      <div class="card" id="member-settings-card" style="display:none;">
+        <div class="card-title">🛡️ 成员配置（只读）</div>
+        <div id="member-settings-body"></div>
+      </div>
+
+      <!-- Role MCP permissions overview -->
+      <div class="card" id="role-perms-card" style="display:none;">
+        <div class="card-title">🔑 角色 MCP 权限范围</div>
+        <div id="role-perms-body"></div>
+      </div>
+
+      <!-- Offline mode + local AI Config -->
+      <div class="card">
+        <div class="card-title">🤖 离线模式 / 自配模型</div>
+        <div class="fg check-row" style="margin-bottom:10px;">
+          <input type="checkbox" id="cfg-offline-mode"/>
+          <label for="cfg-offline-mode" style="margin:0;text-transform:none;font-size:11px;">启用离线模式（始终用自配模型直连，无需登录服务器）</label>
+        </div>
+        <div class="login-hint" style="text-align:left;margin-bottom:8px;">离线模式下对话直接调用你配置的模型并可驱动浏览器工具，不经过服务器；关闭后若已登录并选中成员则改用服务器对话。</div>
+        <div class="fg"><label>服务商预设</label>
+          <select id="cfg-ai-provider">
+            <option value="">自定义 / 不修改</option>
+            <option value="anthropic">Anthropic Claude</option>
+            <option value="openai">OpenAI</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="ollama">本地 Ollama</option>
+          </select>
+        </div>
         <div class="fg"><label>AI Key</label><input type="password" id="cfg-ai-key" placeholder="sk-ant-... 或 sk-..."/></div>
         <div class="fg"><label>Base URL</label><input type="url" id="cfg-ai-base" placeholder="https://api.anthropic.com"/></div>
         <div class="fg"><label>模型</label><input type="text" id="cfg-ai-model" placeholder="claude-sonnet-4-5"/></div>
+      </div>
+
+      <!-- Interaction effects -->
+      <div class="card">
+        <div class="card-title">🖱 模拟鼠标特效</div>
+        <div class="fg check-row">
+          <input type="checkbox" id="cfg-mouse-fx"/>
+          <label for="cfg-mouse-fx" style="margin:0;text-transform:none;font-size:11px;">AI 操作时显示虚拟鼠标（点击波纹、滚动拉拽特效）</label>
+        </div>
+        <div class="login-hint" style="text-align:left;margin-top:6px;">开启后，AI 点击会让虚拟光标滑向目标并弹出点击波纹，滚动时呈现“抓取拉动”的视觉反馈。</div>
       </div>
 
       <!-- Server Config -->
@@ -348,6 +622,19 @@
   <div id="footer">
     <button class="btn btn-primary" id="connect-btn">连接</button>
     <button class="btn btn-danger"  id="disconnect-btn">断开</button>
+  </div>
+
+  <!-- Card merge prompt modal -->
+  <div id="card-modal" class="card-modal-overlay hidden">
+    <div class="card-modal-box">
+      <div class="card-modal-title">卡片已存在</div>
+      <div class="card-modal-msg" id="card-modal-msg"></div>
+      <div class="card-modal-actions">
+        <button class="btn btn-primary" id="cm-merge">合并步骤</button>
+        <button class="btn btn-secondary" id="cm-replace">替换原卡片</button>
+        <button class="btn btn-secondary" id="cm-skip">跳过</button>
+      </div>
+    </div>
   </div>
 
 </div>

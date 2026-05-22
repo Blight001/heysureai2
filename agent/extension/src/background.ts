@@ -1,8 +1,8 @@
 // background.ts — HeySure Agent service worker
 // Manages: Socket.IO server connection, task dispatching, popup port communication
 import { io, Socket } from 'socket.io-client'
-import { getSettings, saveSettings, pushActivity, getActivity } from './lib/storage'
-import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS } from './lib/tools'
+import { getSettings, saveSettings, pushActivity, getActivity, getCard } from './lib/storage'
+import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS, runCardSteps, setCardProgress } from './lib/tools'
 import { callAI } from './lib/ai'
 import {
   AgentStatus, AgentSettings, DispatchedTask, ActivityEntry,
@@ -198,9 +198,18 @@ async function testConnection(): Promise<any> {
 
 // ── AI chat with agentic browser-tool loop ────────────────────────────────
 const CHAT_SYSTEM = `You are HeySure AI, a browser automation assistant running as a Chrome extension.
-You can navigate pages, click, type, take screenshots, search the web, extract data, and more.
+You can navigate pages, click, double-click, right-click, type, drag, press keys, scroll, take
+screenshots, search the web, extract data, and more.
 
-When asked to complete tasks, use the available tools systematically. Always summarize what you did.
+Use browser_page_info to know where you are on the page (scroll position, current section,
+visible headings); after scrolling, read the returned position so you know where you landed and
+what changed.
+
+Memory cards: when the user asks to save a sequence of actions, call card_save (steps are
+{tool,args,note}, where note is a 备注). Replay with card_run by name/id. If card_run returns a
+failedStep, diagnose it, fix that step with card_update_step, and run again until it works.
+
+When asked to complete tasks, use the available tools systematically and summarize what you did.
 Respond in the same language as the user. For factual questions, search the web if needed.`
 
 async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUsed: string[] }> {
@@ -247,6 +256,50 @@ async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUs
   return { text: '已达到最大迭代次数', toolsUsed }
 }
 
+// ── Memory card execution ─────────────────────────────────────────────────
+let cardRunning = false
+let cardStopRequested = false
+
+// Surface per-step progress (for both popup-triggered and AI-triggered runs)
+// to the activity feed and the cards UI.
+setCardProgress((cardId, index, total, note, tool, status, error) => {
+  broadcast({ type: 'card:progress', cardId, index, total, note, tool, status, error })
+  const label = `[${index + 1}/${total}] ${note}`
+  if (status === 'running')      log('card', 'running', label, { tool })
+  else if (status === 'success') log('card', 'success', `完成 ${label}`)
+  else if (status === 'error')   log('card', 'error', `失败 ${label} — ${error || ''}`)
+})
+
+async function runCard(cardId: string) {
+  if (cardRunning) {
+    log('card', 'warn', '已有卡片正在执行，请先停止')
+    return
+  }
+  const card = await getCard(cardId)
+  if (!card) {
+    broadcast({ type: 'card:done', cardId, success: false, reason: '卡片不存在' })
+    log('card', 'error', '卡片不存在')
+    return
+  }
+  cardRunning = true
+  cardStopRequested = false
+  log('card', 'info', `开始执行卡片「${card.name}」，共 ${card.steps.length} 步`)
+  try {
+    const res = await runCardSteps(card, { shouldStop: () => cardStopRequested })
+    if (res.stopped) {
+      log('card', 'warn', `已停止：${card.name}`)
+      broadcast({ type: 'card:done', cardId, success: false, reason: 'stopped' })
+    } else if (res.success) {
+      log('card', 'success', `卡片执行完成：${card.name}`)
+      broadcast({ type: 'card:done', cardId, success: true })
+    } else {
+      broadcast({ type: 'card:done', cardId, success: false, reason: res.failedStep?.error || '执行失败' })
+    }
+  } finally {
+    cardRunning = false
+  }
+}
+
 // ── Popup port management ─────────────────────────────────────────────────
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'popup') return
@@ -288,6 +341,15 @@ chrome.runtime.onConnect.addListener((port) => {
       case 'connection:test': {
         const result = await testConnection()
         port.postMessage({ type: 'connection:result', result })
+        break
+      }
+
+      case 'card:run': {
+        void runCard(msg.cardId)
+        break
+      }
+      case 'card:stop': {
+        if (cardRunning) { cardStopRequested = true; log('card', 'warn', '收到停止请求') }
         break
       }
     }

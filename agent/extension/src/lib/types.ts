@@ -10,6 +10,8 @@ export interface AgentSettings {
   aiBaseUrl:    string
   aiModel:      string
   autoConnect:  boolean
+  offlineMode:  boolean
+  mouseFx:      boolean
   theme:        'dark' | 'light'
 }
 
@@ -23,6 +25,8 @@ export const SETTING_DEFAULTS: AgentSettings = {
   aiBaseUrl:   'https://api.anthropic.com',
   aiModel:     'claude-sonnet-4-5',
   autoConnect: false,
+  offlineMode: false,
+  mouseFx:     true,
   theme:       'dark',
 }
 
@@ -53,6 +57,22 @@ export interface ActivityEntry {
   timestamp: number
 }
 
+// ── Memory cards (automation workflows) ─────────────────────────────────────
+export interface AutomationStep {
+  tool: string                 // a browser_* MCP tool name
+  args: Record<string, any>    // tool arguments
+  note: string                 // 备注 — human-readable description of this step
+}
+
+export interface MemoryCard {
+  id:          string
+  name:        string
+  description: string
+  steps:       AutomationStep[]
+  createdAt:   number
+  updatedAt:   number
+}
+
 // ── AI types ──────────────────────────────────────────────────────────────
 export interface ChatMessage {
   role:    'user' | 'assistant'
@@ -80,6 +100,8 @@ export type PopupMsg =
   | { type: 'settings:save'; payload: Partial<AgentSettings> }
   | { type: 'chat:send'; messages: ChatMessage[] }
   | { type: 'connection:test' }
+  | { type: 'card:run'; cardId: string }
+  | { type: 'card:stop' }
 
 export type BgMsg =
   | { type: 'agent:status';    status: AgentStatus; reason?: string }
@@ -90,3 +112,5 @@ export type BgMsg =
   | { type: 'chat:response';   text: string; toolsUsed?: string[] }
   | { type: 'chat:error';      error: string }
   | { type: 'connection:result'; result: any }
+  | { type: 'card:progress';   cardId: string; index: number; total: number; note: string; tool: string; status: string; error?: string }
+  | { type: 'card:done';       cardId: string; success: boolean; reason?: string }
