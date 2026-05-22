@@ -97,6 +97,7 @@ def _notify_feishu_during_run(
     stream_state: Dict[str, Any],
 ) -> None:
     cursor = 0
+    pending = ""
 
     while True:
         with _RUN_STATE_LOCK:
@@ -105,22 +106,44 @@ def _notify_feishu_during_run(
 
         if cursor > len(live_text):
             cursor = 0
-        delta = live_text[cursor:]
-        if delta.strip():
+
+        new_text = live_text[cursor:]
+        if new_text:
+            pending += new_text
+            cursor = len(live_text)
+
+        status, _ = _run_status(run_id)
+        is_done = status not in {"queued", "running"}
+
+        to_send = ""
+        if is_done:
+            # Flush everything remaining when run finishes
+            to_send = pending
+            pending = ""
+        else:
+            # Send up to the last paragraph break if we have enough content
+            last_break = pending.rfind("\n\n")
+            if last_break >= 0:
+                to_send = pending[: last_break + 2]
+                pending = pending[last_break + 2 :]
+            elif len(pending) >= FEISHU_STREAM_CHUNK_MAX_CHARS:
+                # No paragraph break but buffer is large — send it all
+                to_send = pending
+                pending = ""
+
+        if to_send.strip():
             if _send_feishu_stream_text(
                 user_id=user_id,
                 ai_config_id=ai_config_id,
                 receive_id=receive_id,
                 receive_id_type=receive_id_type,
-                text=delta,
+                text=to_send,
             ):
                 stream_state["sent_any"] = True
                 stream_state["sent_content"] = True
-                stream_state["content_text"] = f"{stream_state.get('content_text') or ''}{delta}"
-                cursor = len(live_text)
+                stream_state["content_text"] = f"{stream_state.get('content_text') or ''}{to_send}"
 
-        status, _ = _run_status(run_id)
-        if status not in {"queued", "running"}:
+        if is_done:
             return
 
         time.sleep(FEISHU_STREAM_POLL_SECONDS)
@@ -198,15 +221,22 @@ def _notify_feishu_after_run(
         if not final_text:
             return
         if fallback_only:
-            sent_text = str(streamed_text or "").strip()
-            clean_final = final_text.strip()
-            if sent_text and clean_final in sent_text:
+            sent_text = " ".join(str(streamed_text or "").split())
+            clean_final = " ".join(final_text.split())
+            # Skip if the final text was already fully covered by what was streamed
+            if sent_text and (clean_final in sent_text or clean_final == sent_text):
                 return
-            if sent_text and clean_final.startswith(sent_text):
-                final_text = clean_final[len(sent_text):].strip()
-            else:
-                final_text = f"最终回复补全：\n{clean_final}"
-            if not final_text:
+            # Extract only the unsent tail if final starts with what was streamed
+            orig_sent = str(streamed_text or "").strip()
+            orig_final = final_text.strip()
+            if orig_sent and orig_final.startswith(orig_sent):
+                final_text = orig_final[len(orig_sent):].lstrip()
+            elif sent_text and clean_final.startswith(sent_text):
+                # Whitespace-normalised match — strip the sent prefix
+                ratio = len(orig_sent) / max(len(sent_text), 1)
+                approx_len = int(len(sent_text) * ratio)
+                final_text = orig_final[approx_len:].lstrip()
+            if not final_text.strip():
                 return
 
     try:

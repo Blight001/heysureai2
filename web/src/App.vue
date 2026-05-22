@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import GodDashboard from './components/GodDashboard.vue'
+import HomePage from './components/HomePage.vue'
 import LoginModal from './components/LoginModal.vue'
 import ProfileModal from './components/ProfileModal.vue'
 import MessageDialog from './components/MessageDialog.vue'
@@ -58,19 +59,25 @@ onMounted(async () => {
 <template>
   <div class="min-h-screen bg-gradient-to-br from-zinc-50 via-white to-indigo-50 text-zinc-900 antialiased dark:from-zinc-950 dark:via-zinc-900 dark:to-slate-900 dark:text-zinc-100">
     <div class="min-h-screen">
-      <GodDashboard 
-        :current-user="user" 
-        @login="showLogin = true" 
-        @logout="handleLogout" 
+      <HomePage
+        v-if="!user"
+        @login="showLogin = true"
+        @register="showLogin = true"
+      />
+      <GodDashboard
+        v-else
+        :current-user="user"
+        @login="showLogin = true"
+        @logout="handleLogout"
         @update-profile="showProfile = true"
         @refresh-user="user = $event"
       />
     </div>
-    
-    <LoginModal 
-      :show="showLogin" 
-      @close="showLogin = false" 
-      @login-success="handleLoginSuccess" 
+
+    <LoginModal
+      :show="showLogin"
+      @close="showLogin = false"
+      @login-success="handleLoginSuccess"
     />
 
     <ProfileModal
