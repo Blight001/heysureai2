@@ -350,8 +350,11 @@ function renderAiGrid(configs, statuses) {
             : `<span class="badge ${isManager ? 'badge-manager' : 'badge-member'}">${isManager ? '组长' : '成员'}</span>`;
         const actionHtml = isAdmin
             ? '<div class="admin-note">&#x1F512; 管理员 AI 仅供查看，不可调用</div>'
-            : `<button class="btn btn-secondary btn-clone">&#x1F4CB; 克隆</button>
-               <button class="btn btn-primary btn-select">选择</button>`;
+            : isManager
+                ? `<button class="btn btn-secondary btn-clone">&#x1F4CB; 克隆</button>
+                   <div class="manager-note">组长不可直接调用</div>`
+                : `<button class="btn btn-secondary btn-clone">&#x1F4CB; 克隆</button>
+                   <button class="btn btn-primary btn-select">选择</button>`;
         card.innerHTML = `
       <div class="ai-card-top">
         <div class="ai-avatar ${avatarCls}">${avatarIcon}</div>
@@ -381,6 +384,8 @@ function renderAiGrid(configs, statuses) {
                     btn.disabled = false; btn.innerHTML = '&#x1F4CB; 克隆';
                 }
             });
+        }
+        if (!isAdmin && !isManager) {
             card.querySelector('.btn-select').addEventListener('click', async () => {
                 const btn = card.querySelector('.btn-select');
                 btn.disabled = true; btn.textContent = '连接中...';
