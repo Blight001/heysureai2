@@ -1,6 +1,8 @@
+import asyncio
 import json
 import threading
-from typing import Dict, Set
+from concurrent.futures import Future
+from typing import Any, Dict, Optional, Tuple
 
 from sqlmodel import Session, select
 
@@ -9,21 +11,38 @@ from api.models import AssistantAIConfig
 from api.routers.feishu import handle_feishu_event_payload
 
 _LOCK = threading.Lock()
-_STARTED_CONFIG_IDS: Set[int] = set()
-_THREADS: Dict[int, threading.Thread] = {}
+_CLIENTS: Dict[int, Any] = {}
+_PING_TASKS: Dict[int, asyncio.Task] = {}
+_SIGNATURES: Dict[int, Tuple[str, str]] = {}
+_STARTING_CONFIG_IDS: set[int] = set()
 _LAST_ERRORS: Dict[int, str] = {}
+_LOOP: Optional[asyncio.AbstractEventLoop] = None
+_LOOP_THREAD: Optional[threading.Thread] = None
 
 
-def _run_feishu_ws_client(config_id: int, app_id: str, app_secret: str) -> None:
-    try:
-        import lark_oapi as lark
-    except Exception as exc:
-        print(f"[feishu_long_connection] lark-oapi is not installed: {exc}")
-        with _LOCK:
-            _STARTED_CONFIG_IDS.discard(config_id)
-            _LAST_ERRORS[config_id] = f"lark-oapi is not installed: {exc}"
-        return
+def _ensure_lark_loop():
+    import lark_oapi.ws.client as lark_ws_client
 
+    global _LOOP, _LOOP_THREAD
+    loop = lark_ws_client.loop
+    if _LOOP_THREAD and _LOOP_THREAD.is_alive():
+        return loop
+
+    def run_loop() -> None:
+        asyncio.set_event_loop(loop)
+        loop.run_forever()
+
+    _LOOP = loop
+    _LOOP_THREAD = threading.Thread(
+        target=run_loop,
+        name="feishu-ws-loop",
+        daemon=True,
+    )
+    _LOOP_THREAD.start()
+    return loop
+
+
+def _build_event_handler(lark, config_id: int):
     def do_p2_im_message_receive_v1(data) -> None:
         try:
             raw = lark.JSON.marshal(data)
@@ -32,13 +51,17 @@ def _run_feishu_ws_client(config_id: int, app_id: str, app_secret: str) -> None:
         except Exception as exc:
             print(f"[feishu_long_connection] handle event failed config_id={config_id}: {exc}")
 
-    event_handler = (
+    return (
         lark.EventDispatcherHandler.builder("", "")
         .register_p2_im_message_receive_v1(do_p2_im_message_receive_v1)
         .build()
     )
+
+
+def _build_client(lark, config_id: int, app_id: str, app_secret: str):
+    event_handler = _build_event_handler(lark, config_id)
     try:
-        client = lark.ws.Client(
+        return lark.ws.Client(
             app_id,
             app_secret,
             event_handler=event_handler,
@@ -46,66 +69,139 @@ def _run_feishu_ws_client(config_id: int, app_id: str, app_secret: str) -> None:
             auto_reconnect=True,
         )
     except TypeError:
-        client = lark.ws.Client(
+        return lark.ws.Client(
             app_id,
             app_secret,
             event_handler=event_handler,
             log_level=lark.LogLevel.DEBUG,
         )
-    print(f"[feishu_long_connection] starting config_id={config_id}")
+
+
+async def _connect_client(config_id: int, client: Any) -> None:
     try:
-        client.start()
+        print(f"[feishu_long_connection] starting config_id={config_id}")
+        await client._connect()
+        ping_task = asyncio.create_task(client._ping_loop())
+        should_disconnect = False
+        with _LOCK:
+            if _CLIENTS.get(config_id) is client:
+                _PING_TASKS[config_id] = ping_task
+                _STARTING_CONFIG_IDS.discard(config_id)
+                _LAST_ERRORS.pop(config_id, None)
+            else:
+                should_disconnect = True
+        if should_disconnect:
+            ping_task.cancel()
+            client._auto_reconnect = False
+            await client._disconnect()
     except Exception as exc:
         print(f"[feishu_long_connection] stopped config_id={config_id}: {exc}")
         with _LOCK:
-            _LAST_ERRORS[config_id] = str(exc)
-    finally:
+            if _CLIENTS.get(config_id) is client:
+                _CLIENTS.pop(config_id, None)
+                _PING_TASKS.pop(config_id, None)
+                _SIGNATURES.pop(config_id, None)
+                _STARTING_CONFIG_IDS.discard(config_id)
+                _LAST_ERRORS[config_id] = str(exc)
+
+
+async def _disconnect_client(config_id: int, client: Any, ping_task: Optional[asyncio.Task]) -> None:
+    try:
+        client._auto_reconnect = False
+        if ping_task:
+            ping_task.cancel()
+        await client._disconnect()
+        print(f"[feishu_long_connection] disconnected config_id={config_id}")
+    except Exception as exc:
+        print(f"[feishu_long_connection] disconnect failed config_id={config_id}: {exc}")
         with _LOCK:
-            _STARTED_CONFIG_IDS.discard(config_id)
-            _THREADS.pop(config_id, None)
+            _LAST_ERRORS[config_id] = str(exc)
+
+
+def _schedule_disconnect_locked(config_id: int) -> Optional[Future]:
+    client = _CLIENTS.pop(config_id, None)
+    ping_task = _PING_TASKS.pop(config_id, None)
+    _SIGNATURES.pop(config_id, None)
+    _STARTING_CONFIG_IDS.discard(config_id)
+    _LAST_ERRORS.pop(config_id, None)
+    if client is None or _LOOP is None:
+        return None
+    return asyncio.run_coroutine_threadsafe(
+        _disconnect_client(config_id, client, ping_task),
+        _LOOP,
+    )
 
 
 def start_feishu_long_connection_clients() -> int:
-    started = 0
-    with Session(engine) as session:
-        configs = session.exec(
-            select(AssistantAIConfig).where(
-                AssistantAIConfig.feishu_enabled == True,
-                AssistantAIConfig.feishu_app_id != "",
-                AssistantAIConfig.feishu_app_secret != "",
-            )
-        ).all()
+    try:
+        import lark_oapi as lark
+    except Exception as exc:
+        print(f"[feishu_long_connection] lark-oapi is not installed: {exc}")
+        with _LOCK:
+            _LAST_ERRORS[0] = f"lark-oapi is not installed: {exc}"
+        return 0
 
+    loop = _ensure_lark_loop()
+    desired: Dict[int, Tuple[str, str]] = {}
+    with Session(engine) as session:
+        configs = session.exec(select(AssistantAIConfig)).all()
     for cfg in configs:
         config_id = int(cfg.id or 0)
         app_id = str(cfg.feishu_app_id or "").strip()
         app_secret = str(cfg.feishu_app_secret or "").strip()
-        if not config_id or not app_id or not app_secret:
-            continue
+        if config_id and cfg.feishu_enabled and app_id and app_secret:
+            desired[config_id] = (app_id, app_secret)
+
+    disconnects = []
+    with _LOCK:
+        active_ids = set(_CLIENTS.keys()) | set(_STARTING_CONFIG_IDS)
+        for config_id in active_ids:
+            if desired.get(config_id) != _SIGNATURES.get(config_id):
+                future = _schedule_disconnect_locked(config_id)
+                if future is not None:
+                    disconnects.append(future)
+
+    for future in disconnects:
+        try:
+            future.result(timeout=5)
+        except Exception as exc:
+            print(f"[feishu_long_connection] disconnect wait failed: {exc}")
+
+    started = 0
+    for config_id, (app_id, app_secret) in desired.items():
         with _LOCK:
-            thread = _THREADS.get(config_id)
-            if config_id in _STARTED_CONFIG_IDS and thread and thread.is_alive():
+            if config_id in _CLIENTS or config_id in _STARTING_CONFIG_IDS:
                 continue
-            _STARTED_CONFIG_IDS.add(config_id)
+            _STARTING_CONFIG_IDS.add(config_id)
+            _SIGNATURES[config_id] = (app_id, app_secret)
             _LAST_ERRORS.pop(config_id, None)
-            thread = threading.Thread(
-                target=_run_feishu_ws_client,
-                args=(config_id, app_id, app_secret),
-                daemon=True,
-            )
-            _THREADS[config_id] = thread
-            thread.start()
+        try:
+            client = _build_client(lark, config_id, app_id, app_secret)
+            with _LOCK:
+                _CLIENTS[config_id] = client
+            asyncio.run_coroutine_threadsafe(_connect_client(config_id, client), loop)
             started += 1
+        except Exception as exc:
+            print(f"[feishu_long_connection] start failed config_id={config_id}: {exc}")
+            with _LOCK:
+                _CLIENTS.pop(config_id, None)
+                _PING_TASKS.pop(config_id, None)
+                _SIGNATURES.pop(config_id, None)
+                _STARTING_CONFIG_IDS.discard(config_id)
+                _LAST_ERRORS[config_id] = str(exc)
     return started
 
 
 def get_feishu_long_connection_state(config_id: int) -> Dict[str, str]:
     with _LOCK:
-        thread = _THREADS.get(config_id)
-        is_running = bool(config_id in _STARTED_CONFIG_IDS and thread and thread.is_alive())
+        client = _CLIENTS.get(config_id)
+        is_starting = config_id in _STARTING_CONFIG_IDS
         error = _LAST_ERRORS.get(config_id, "")
-    if is_running:
+        is_connected = bool(client is not None and getattr(client, "_conn", None) is not None)
+    if is_connected:
         return {"status": "success", "message": "长连接运行中"}
+    if is_starting:
+        return {"status": "success", "message": "长连接启动中"}
     if error:
         return {"status": "failed", "message": error}
     return {"status": "failed", "message": "长连接未运行"}

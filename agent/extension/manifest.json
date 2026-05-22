@@ -1,41 +1,51 @@
 {
   "manifest_version": 3,
-  "name": "HeySure Agent",
-  "version": "1.0.0",
-  "description": "Browser automation agent: connects to HeySure server, AI-powered with MCP-style browser tools",
+  "name": "浏览器 AI 助手",
+  "description": "DOM-first AI browser control extension with semantic snapshots, guarded actions, and OpenAI-compatible chat APIs.",
+  "version": "0.2.0",
+  "icons": {
+    "16": "extension/logo/icon16.png",
+    "32": "extension/logo/icon32.png",
+    "48": "extension/logo/icon48.png",
+    "128": "extension/logo/icon128.png"
+  },
+  "action": {
+    "default_title": "打开 AI 助手",
+    "default_icon": {
+      "16": "extension/logo/icon16.png",
+      "32": "extension/logo/icon32.png",
+      "48": "extension/logo/icon48.png",
+      "128": "extension/logo/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "extension/background.js",
+    "type": "module"
+  },
   "permissions": [
     "activeTab",
-    "tabs",
-    "storage",
     "scripting",
-    "notifications",
-    "contextMenus",
-    "alarms",
-    "clipboardWrite"
+    "storage",
+    "tabs",
+    "windows"
   ],
-  "host_permissions": ["<all_urls>"],
-  "background": {
-    "service_worker": "dist/background.js"
-  },
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["dist/content.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "extension/content.js"
+      ],
+      "css": [
+        "extension/panel.css"
+      ],
       "run_at": "document_idle"
     }
-  ],
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "HeySure Agent",
-    "default_icon": {
-      "16":  "icons/icon16.png",
-      "48":  "icons/icon48.png",
-      "128": "icons/icon128.png"
-    }
-  },
-  "icons": {
-    "16":  "icons/icon16.png",
-    "48":  "icons/icon48.png",
-    "128": "icons/icon128.png"
-  }
+  ]
 }

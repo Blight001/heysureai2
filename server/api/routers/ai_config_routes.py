@@ -95,11 +95,10 @@ async def create_ai_config(
     session.commit()
     session.refresh(cfg)
     sync_switch_file(user.id, cfg.switch_key, cfg.enabled, cfg.mcp_enabled)
-    if cfg.feishu_enabled:
-        try:
-            start_feishu_long_connection_clients()
-        except Exception as exc:
-            print(f"[start_feishu_long_connection_clients] {exc}")
+    try:
+        start_feishu_long_connection_clients()
+    except Exception as exc:
+        print(f"[start_feishu_long_connection_clients] {exc}")
     return cfg
 
 @router.put("/configs/{config_id}")
@@ -135,11 +134,10 @@ async def update_ai_config(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
-    if cfg.feishu_enabled:
-        try:
-            start_feishu_long_connection_clients()
-        except Exception as exc:
-            print(f"[start_feishu_long_connection_clients] {exc}")
+    try:
+        start_feishu_long_connection_clients()
+    except Exception as exc:
+        print(f"[start_feishu_long_connection_clients] {exc}")
 
     status = session.exec(
         select(AIRuntimeStatus).where(
