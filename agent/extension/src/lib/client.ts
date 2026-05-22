@@ -35,6 +35,8 @@ export interface ChatRunStatus {
   error_message?: string | null
   live_text:   string
   live_len:    number
+  live_reasoning?: string
+  live_reasoning_len?: number
   live_phase:  string
   current_tool: string
 }

@@ -15,6 +15,7 @@ from api.mcp_permissions import (
     default_role_permissions,
     effective_allowed_for_config,
     parse_role_permissions,
+    role_tool_options,
     tool_min_role,
 )
 from api.models import AssistantAIConfig
@@ -46,9 +47,11 @@ async def list_mcp_tools(
         "userId": user.id,
         "roleOrder": CONFIGURABLE_ROLES,
         "roleLabels": ROLE_LABELS_ZH,
-        # Per-role defaults (full ceiling) so the settings UI can render options
-        # and reset to defaults.
+        # Per-role defaults for checked state and reset-to-default.
         "roleDefaults": default_role_permissions(tool_names),
+        # Per-role visible/configurable options. This may include tools that are
+        # not checked by default.
+        "roleOptions": role_tool_options(tool_names),
         # The admin's currently configured per-role allow-list (may be empty,
         # meaning "use defaults").
         "rolePermissions": parse_role_permissions(user),
@@ -90,7 +93,8 @@ async def call_mcp_tool(
         # Enforce the role ceiling: known registry tools must be within the set
         # permitted for this AI's role tier, regardless of its saved allow-list.
         role_allowed = effective_allowed_for_config(user, cfg)
-        if registry.has(req.tool) and req.tool not in role_allowed:
+        bridge_tools = desktop_bridge_tools_for_config(req.ai_config_id, user.id)
+        if registry.has(req.tool) and req.tool not in role_allowed and req.tool not in bridge_tools:
             raise HTTPException(
                 status_code=403,
                 detail=f"Tool not permitted for role {config_role_tier(cfg)}: {req.tool}",

@@ -51,7 +51,7 @@ const DASHBOARD_REFRESH_NORMAL_MS = 8000
 const DASHBOARD_REFRESH_HIDDEN_MS = 30000
 
 const mcpToolMetaByName = ref<Record<string, McpToolDefinition>>({})
-const mcpRoleMeta = ref<McpRoleMeta>({ order: [], labels: {}, defaults: {}, permissions: {} })
+const mcpRoleMeta = ref<McpRoleMeta>({ order: [], labels: {}, defaults: {}, options: {}, permissions: {} })
 
 const {
   themeMode,

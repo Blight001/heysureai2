@@ -13,6 +13,7 @@ export interface AgentSettings {
   offlineMode:  boolean
   mouseFx:      boolean
   theme:        'dark' | 'light'
+  selectedAiConfigId: number | null
 }
 
 export const SETTING_DEFAULTS: AgentSettings = {
@@ -28,6 +29,7 @@ export const SETTING_DEFAULTS: AgentSettings = {
   offlineMode: false,
   mouseFx:     true,
   theme:       'dark',
+  selectedAiConfigId: null,
 }
 
 export interface DispatchedTask {
@@ -98,6 +100,7 @@ export type PopupMsg =
   | { type: 'agent:disconnect' }
   | { type: 'settings:get' }
   | { type: 'settings:save'; payload: Partial<AgentSettings> }
+  | { type: 'agent:selected-ai'; aiConfigId: number | null }
   | { type: 'chat:send'; messages: ChatMessage[] }
   | { type: 'connection:test' }
   | { type: 'card:run'; cardId: string }

@@ -39,12 +39,13 @@ const emit = defineEmits<{
 
 const roleTiers = computed(() => props.mcpRoleMeta?.order || [])
 const roleLabel = (role: string) => props.mcpRoleMeta?.labels?.[role] || role
-const roleCeilingTools = (role: string) => props.mcpRoleMeta?.defaults?.[role] || []
+const roleOptionTools = (role: string) =>
+  props.mcpRoleMeta?.options?.[role] || props.mcpRoleMeta?.defaults?.[role] || []
 const isRoleToolChecked = (role: string, tool: string) =>
   (props.roleMcpPermissions?.[role] || []).includes(tool)
 const roleAllChecked = (role: string) => {
-  const ceiling = roleCeilingTools(role)
-  return ceiling.length > 0 && ceiling.every(tool => isRoleToolChecked(role, tool))
+  const options = roleOptionTools(role)
+  return options.length > 0 && options.every(tool => isRoleToolChecked(role, tool))
 }
 const onRoleToolChange = (role: string, tool: string, event: Event) => {
   const target = event.target as HTMLInputElement | null
@@ -193,7 +194,7 @@ const toggleConfigSection = (name: 'mcp' | 'roles' | 'task') => {
               <div v-show="activeConfigSection === 'roles'" class="mt-3 space-y-4 section-collapse-body">
                 <div class="flex items-center justify-between">
                   <p class="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed pr-2">
-                    为每类角色设置可用的 MCP 工具范围。必要的高权限工具只对管理员 / 辅助管理员开放，下级角色只能在所属范围内进一步缩小。各 AI 成员保存配置时会自动收敛到所属角色允许的工具。
+                    为每类角色设置可用的 MCP 工具范围。每个角色都可查看全部 MCP 工具，默认只勾选适合该角色的常用工具；各 AI 成员保存配置时会自动收敛到所属角色允许的工具。
                   </p>
                   <button
                     class="shrink-0 px-2 py-1 rounded-lg border border-zinc-200 text-zinc-500 bg-white text-[11px] hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
@@ -210,7 +211,7 @@ const toggleConfigSection = (name: 'mcp' | 'roles' | 'task') => {
                 >
                   <summary class="cursor-pointer select-none px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-200 flex items-center justify-between">
                     <span>{{ roleLabel(role) }}</span>
-                    <span class="text-[10px] text-zinc-400 dark:text-zinc-500">{{ (roleMcpPermissions[role] || []).length }} / {{ roleCeilingTools(role).length }}</span>
+                    <span class="text-[10px] text-zinc-400 dark:text-zinc-500">{{ (roleMcpPermissions[role] || []).length }} / {{ roleOptionTools(role).length }}</span>
                   </summary>
                   <div class="px-3 pb-3">
                     <label class="mb-2 flex items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
@@ -223,7 +224,7 @@ const toggleConfigSection = (name: 'mcp' | 'roles' | 'task') => {
                     </label>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
                       <label
-                        v-for="tool in roleCeilingTools(role)"
+                        v-for="tool in roleOptionTools(role)"
                         :key="`${role}-${tool}`"
                         class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2"
                       >
@@ -238,7 +239,7 @@ const toggleConfigSection = (name: 'mcp' | 'roles' | 'task') => {
                           <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
                         </span>
                       </label>
-                      <div v-if="roleCeilingTools(role).length === 0" class="text-[11px] text-zinc-500 dark:text-zinc-400">该角色暂无可分配的工具</div>
+                      <div v-if="roleOptionTools(role).length === 0" class="text-[11px] text-zinc-500 dark:text-zinc-400">该角色暂无可分配的工具</div>
                     </div>
                   </div>
                 </details>

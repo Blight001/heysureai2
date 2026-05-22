@@ -1,11 +1,9 @@
 """Role-based MCP permission scoping.
 
-Defines a hard ceiling of MCP tools per AI role tier and resolves the effective
-allow-set for an AI config. The ceiling guarantees that sensitive/governance
-tools can only ever be granted to higher tiers (管理员/辅助管理员). On top of the
-ceiling, the human admin (主脑) may configure a per-role allow-list in system
-settings; an individual member's MCP config can then only narrow within the set
-permitted for its role.
+Defines the default MCP tool set per AI role tier and resolves the effective
+allow-set for an AI config. The human admin (主脑) may configure a per-role
+allow-list in system settings; an individual member's MCP config can then only
+narrow within the set permitted for its role.
 
 Role tiers, from lowest to highest authority:
     digital_member_member   数字成员·普通成员
@@ -79,8 +77,8 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "prompt.write_ai": ROLE_MANAGER,
     "prompt.read_system": ROLE_MANAGER,
     "prompt.write_system": ROLE_ASSISTANT_ADMIN,
-    # Feishu outbound — manager+.
-    "feishu.send_message": ROLE_MANAGER,
+    # Feishu outbound — every tier by default.
+    "feishu.send_message": ROLE_MEMBER,
     # Admin / governance — assistant_admin only.
     "admin.list_agents": ROLE_ASSISTANT_ADMIN,
     "admin.get_overview": ROLE_ASSISTANT_ADMIN,
@@ -120,7 +118,12 @@ def config_role_tier(cfg) -> str:
 
 
 def role_ceiling_tools(tier: str, all_tool_names: Iterable[str]) -> Set[str]:
-    """Hard ceiling: all tools whose minimum tier is at or below ``tier``."""
+    """Configurable tools for a role. Admin settings may show every known tool."""
+    return set(all_tool_names)
+
+
+def role_default_tools(tier: str, all_tool_names: Iterable[str]) -> Set[str]:
+    """Default checked tools: all tools whose default minimum tier is at or below ``tier``."""
     rank = ROLE_RANK.get(tier, 0)
     return {
         name
@@ -152,13 +155,13 @@ def parse_role_permissions(user) -> Dict[str, List[str]]:
 
 
 def effective_allowed_for_tier(user, tier: str, all_tool_names: Iterable[str]) -> Set[str]:
-    """Tools a given role tier may use: admin policy intersected with the ceiling."""
+    """Tools a given role tier may use: saved admin policy or role defaults."""
     names = set(all_tool_names)
     ceiling = role_ceiling_tools(tier, names)
     policy = parse_role_permissions(user)
     if tier in policy:
         return {tool for tool in policy[tier] if tool in ceiling}
-    return ceiling
+    return role_default_tools(tier, names)
 
 
 def effective_allowed_for_config(user, cfg, all_tool_names: Optional[Iterable[str]] = None) -> Set[str]:
@@ -193,7 +196,16 @@ def clamp_tools_json(user, tier: str, mcp_tools_json: Optional[str]) -> str:
 
 
 def default_role_permissions(all_tool_names: Optional[Iterable[str]] = None) -> Dict[str, List[str]]:
-    """Default per-role allow-lists (each role's full ceiling), for settings UI."""
+    """Default per-role allow-lists, for settings UI checked state."""
+    names = set(all_tool_names) if all_tool_names is not None else all_registry_tool_names()
+    return {
+        role: sorted(role_default_tools(role, names))
+        for role in CONFIGURABLE_ROLES
+    }
+
+
+def role_tool_options(all_tool_names: Optional[Iterable[str]] = None) -> Dict[str, List[str]]:
+    """Per-role configurable tool options, for settings UI display."""
     names = set(all_tool_names) if all_tool_names is not None else all_registry_tool_names()
     return {
         role: sorted(role_ceiling_tools(role, names))

@@ -15,7 +15,7 @@ import {
 
 // ── State ──────────────────────────────────────────────────────────────────
 let currentTheme: 'dark' | 'light' = 'dark'
-type TabName = 'feed' | 'members' | 'chat' | 'tasks' | 'cards' | 'settings'
+type TabName = 'feed' | 'chat' | 'tasks' | 'cards' | 'settings'
 let activeTab: TabName = 'feed'
 let currentStatus: AgentStatus = 'disconnected'
 let chatHistory: ChatMessage[] = []
@@ -54,11 +54,11 @@ const userAva      = $('user-ava')
 const userName     = $('user-name')
 
 const tabs: Record<TabName, HTMLElement> = {
-  feed: $('tab-feed'), members: $('tab-members'), chat: $('tab-chat'),
+  feed: $('tab-feed'), chat: $('tab-chat'),
   tasks: $('tab-tasks'), cards: $('tab-cards'), settings: $('tab-settings'),
 }
 const panes: Record<TabName, HTMLElement> = {
-  feed: $('feed-pane'), members: $('members-pane'), chat: $('chat-pane'),
+  feed: $('feed-pane'), chat: $('chat-pane'),
   tasks: $('task-pane'), cards: $('cards-pane'), settings: $('settings-pane'),
 }
 
@@ -76,18 +76,14 @@ const testConnBtn  = $('test-conn-btn')
 const testResult   = $('test-result')
 const saveFeedback = $('save-feedback')
 const cfgServer    = $('cfg-server')  as HTMLInputElement
-const cfgToken     = $('cfg-token')   as HTMLInputElement
-const cfgName      = $('cfg-name')    as HTMLInputElement
-const cfgId        = $('cfg-id')      as HTMLInputElement
-const cfgGroup     = $('cfg-group')   as HTMLInputElement
 const cfgAiKey     = $('cfg-ai-key')  as HTMLInputElement
 const cfgAiBase    = $('cfg-ai-base') as HTMLInputElement
 const cfgAiModel   = $('cfg-ai-model') as HTMLInputElement
 const cfgAutoConn  = $('cfg-auto-connect') as HTMLInputElement
 const cfgOfflineMode = $('cfg-offline-mode') as HTMLInputElement
+const offlineModelConfig = $('offline-model-config')
 const cfgAiProvider  = $('cfg-ai-provider') as HTMLSelectElement
 const cfgMouseFx     = $('cfg-mouse-fx') as HTMLInputElement
-const offlineBadge   = $('offline-badge')
 
 // Members
 const loginGate    = $('login-gate')
@@ -122,7 +118,6 @@ const jobsEmpty    = $('jobs-empty')
 // Settings extra
 const accountStatusV = $('account-status-v')
 const logoutBtn    = $('logout-btn') as HTMLButtonElement
-const gotoLoginBtn = $('goto-login-btn') as HTMLButtonElement
 const memberSettingsCard = $('member-settings-card')
 const memberSettingsBody = $('member-settings-body')
 const rolePermsCard = $('role-perms-card')
@@ -171,17 +166,26 @@ function switchTab(tab: TabName) {
   panes[tab].classList.remove('hidden')
   tabs[tab].classList.add('active')
   if (tab === 'chat') chatMsgs.scrollTop = chatMsgs.scrollHeight
-  if (tab === 'members' && auth.token && members.length === 0) void loadMembers()
+  if (tab === 'settings' && auth.token && members.length === 0) void loadMembers()
   if (tab === 'tasks' && selectedMemberId && auth.token) void loadJobs()
   if (tab === 'cards') void renderCards()
 }
 ;(Object.keys(tabs) as TabName[]).forEach(k => tabs[k].addEventListener('click', () => switchTab(k)))
 
 // ── Status display ─────────────────────────────────────────────────────────
+function renderStatus() {
+  if (offlineMode) {
+    statusDot.className = 'status-dot offline'
+    statusLabel.textContent = '离线模式'
+    return
+  }
+  statusDot.className = `status-dot ${currentStatus}`
+  statusLabel.textContent = STATUS_LABELS[currentStatus] || currentStatus
+}
+
 function setStatus(status: AgentStatus) {
   currentStatus = status
-  statusDot.className     = `status-dot ${status}`
-  statusLabel.textContent = STATUS_LABELS[status] || status
+  renderStatus()
 }
 
 // ── Theme ──────────────────────────────────────────────────────────────────
@@ -239,7 +243,6 @@ function updateUserChip() {
   // Settings account card
   accountStatusV.textContent = auth.token ? `已登录：${auth.userName || auth.account}` : '未登录'
   logoutBtn.style.display = auth.token ? 'block' : 'none'
-  gotoLoginBtn.style.display = auth.token ? 'none' : 'block'
 }
 
 async function doLogin() {
@@ -272,6 +275,7 @@ loginPassword.addEventListener('keydown', e => { if ((e as KeyboardEvent).key ==
 
 async function doLogout() {
   await clearAuth()
+  port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
   auth = await getAuth()
   members = []
   selectedMemberId = null
@@ -280,10 +284,9 @@ async function doLogout() {
   renderMembers()
   updateTargetBanners()
   renderSettingsViews()
-  switchTab('members')
+  switchTab('settings')
 }
 logoutBtn.addEventListener('click', () => void doLogout())
-gotoLoginBtn.addEventListener('click', () => switchTab('members'))
 
 // ── Members ────────────────────────────────────────────────────────────────
 async function loadMembers() {
@@ -292,7 +295,10 @@ async function loadMembers() {
   membersEmpty.style.display = 'block'
   try {
     members = await listConfigs(serverUrl, auth.token)
-    if (selectedMemberId && !memberById(selectedMemberId)) selectedMemberId = null
+    if (selectedMemberId && !memberById(selectedMemberId)) {
+      selectedMemberId = null
+      port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
+    }
     renderMembers()
     updateTargetBanners()
     renderSettingsViews()
@@ -333,6 +339,7 @@ function renderMembers() {
 }
 function selectMember(id: number) {
   selectedMemberId = id
+  port.postMessage({ type: 'agent:selected-ai', aiConfigId: id })
   renderMembers()
   updateTargetBanners()
   renderSettingsViews()
@@ -351,7 +358,8 @@ function useServerChat(): boolean {
   return !!(!offlineMode && auth.token && selectedMemberId)
 }
 function updateOfflineUi() {
-  offlineBadge.classList.toggle('on', offlineMode)
+  offlineModelConfig.classList.toggle('hidden', !offlineMode)
+  renderStatus()
   updateTargetBanners()
 }
 function updateTargetBanners() {
@@ -390,14 +398,242 @@ function refreshChatAvailability() {
 }
 
 // ── Chat ───────────────────────────────────────────────────────────────────
-function mdToHtml(text: string): string {
-  return esc(text).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\n/g, '<br>')
+function inlineMd(text: string): string {
+  const placeholders: string[] = []
+  const stash = (html: string) => {
+    const key = `@@HTML_${placeholders.length}@@`
+    placeholders.push(html)
+    return key
+  }
+  let out = esc(text)
+  out = out.replace(/`([^`]+)`/g, (_, code) => stash(`<code>${esc(code)}</code>`))
+  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, label, url) =>
+    stash(`<a href="${esc(url)}" target="_blank" rel="noreferrer">${esc(label)}</a>`),
+  )
+  out = out.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, prefix, url) =>
+    `${prefix}${stash(`<a href="${esc(url)}" target="_blank" rel="noreferrer">${esc(url)}</a>`)}`,
+  )
+  out = out
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+    .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+    .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+  placeholders.forEach((html, idx) => {
+    out = out.replaceAll(`@@HTML_${idx}@@`, html)
+  })
+  return out
+}
+
+function isMarkdownTableStart(lines: string[], index: number): boolean {
+  const head = lines[index]?.trim() || ''
+  const sep = lines[index + 1]?.trim() || ''
+  return /^\|.+\|$/.test(head) && /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(sep)
+}
+
+function parseTableRow(line: string): string[] {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim())
+}
+
+function renderMarkdownTable(lines: string[], start: number): { html: string; next: number } {
+  const headers = parseTableRow(lines[start])
+  let idx = start + 2
+  const rows: string[][] = []
+  while (idx < lines.length && /^\|.+\|$/.test(lines[idx].trim())) {
+    rows.push(parseTableRow(lines[idx]))
+    idx++
+  }
+  const head = headers.map(cell => `<th>${inlineMd(cell)}</th>`).join('')
+  const body = rows.map(row => (
+    `<tr>${headers.map((_, i) => `<td>${inlineMd(row[i] || '')}</td>`).join('')}</tr>`
+  )).join('')
+  return {
+    html: `<div class="chat-table-wrap"><table class="chat-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`,
+    next: idx,
+  }
+}
+
+function renderMarkdown(text: string): string {
+  const src = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+  if (!src) return ''
+  const blocks: string[] = []
+  const parts = src.split(/(```[\s\S]*?```)/g)
+  for (const part of parts) {
+    if (!part) continue
+    const fence = part.match(/^```([\w-]*)\n?([\s\S]*?)```$/)
+    if (fence) {
+      const lang = fence[1] ? `<div class="chat-mcp-title">${esc(fence[1])}</div>` : ''
+      blocks.push(`${lang}<pre>${esc(fence[2].trim())}</pre>`)
+      continue
+    }
+
+    const lines = part.split('\n')
+    let para: string[] = []
+    let list: string[] = []
+    let ordered = false
+    const flushPara = () => {
+      if (para.length) {
+        blocks.push(`<p>${inlineMd(para.join('\n')).replace(/\n/g, '<br>')}</p>`)
+        para = []
+      }
+    }
+    const flushList = () => {
+      if (list.length) {
+        blocks.push(`<${ordered ? 'ol' : 'ul'}>${list.join('')}</${ordered ? 'ol' : 'ul'}>`)
+        list = []
+      }
+    }
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex]
+      const trimmed = line.trim()
+      if (!trimmed) {
+        flushPara()
+        flushList()
+        continue
+      }
+      if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+        flushPara()
+        flushList()
+        blocks.push('<hr>')
+        continue
+      }
+      if (isMarkdownTableStart(lines, lineIndex)) {
+        flushPara()
+        flushList()
+        const table = renderMarkdownTable(lines, lineIndex)
+        blocks.push(table.html)
+        lineIndex = table.next - 1
+        continue
+      }
+      const heading = trimmed.match(/^(#{1,3})\s+(.+)$/)
+      if (heading) {
+        flushPara()
+        flushList()
+        const level = Math.min(3, heading[1].length)
+        blocks.push(`<h${level}>${inlineMd(heading[2])}</h${level}>`)
+        continue
+      }
+      const quote = trimmed.match(/^>\s+(.+)$/)
+      if (quote) {
+        flushPara()
+        flushList()
+        blocks.push(`<blockquote>${inlineMd(quote[1])}</blockquote>`)
+        continue
+      }
+      const task = trimmed.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/)
+      const unordered = trimmed.match(/^[-*]\s+(.+)$/)
+      const orderedMatch = trimmed.match(/^\d+\.\s+(.+)$/)
+      if (task || unordered || orderedMatch) {
+        flushPara()
+        const nextOrdered = !!orderedMatch
+        if (list.length && ordered !== nextOrdered) flushList()
+        ordered = nextOrdered
+        if (task) {
+          const checked = task[1].trim().toLowerCase() === 'x'
+          list.push(`<li class="chat-task"><span class="chat-check">${checked ? '✓' : ''}</span>${inlineMd(task[2])}</li>`)
+        } else {
+          list.push(`<li>${inlineMd((unordered || orderedMatch)![1])}</li>`)
+        }
+        continue
+      }
+      flushList()
+      para.push(line)
+    }
+    flushPara()
+    flushList()
+  }
+  return `<div class="chat-md">${blocks.join('')}</div>`
+}
+
+function normalizeJsonText(raw: string): string {
+  const text = String(raw || '').trim()
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2)
+  } catch {
+    return text
+  }
+}
+
+const MCP_CALL_BLOCK_RE = /<mcp[-_]call>\s*([\s\S]*?)\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*invoke)\s*>/gi
+
+function extractSpecialBlocks(text: string): { body: string; reasoning: string[]; mcpCalls: string[] } {
+  let body = String(text || '')
+  const reasoning: string[] = []
+  const mcpCalls: string[] = []
+  body = body.replace(/<think>\s*([\s\S]*?)\s*<\/think>/gi, (_, inner) => {
+    reasoning.push(String(inner || '').trim())
+    return '\n'
+  })
+  body = body.replace(MCP_CALL_BLOCK_RE, (_, inner) => {
+    mcpCalls.push(normalizeJsonText(String(inner || '').trim()))
+    return '\n'
+  })
+  return { body: body.trim(), reasoning, mcpCalls }
+}
+
+type ChatLiveEvent = { key: string; label: string; detail?: string }
+
+function renderChatEvent(event: ChatLiveEvent): string {
+  return (
+    `<div class="chat-mcp-card">` +
+    `<div class="chat-mcp-title">${esc(event.label)}</div>` +
+    (event.detail ? `<pre class="chat-mcp-pre">${esc(event.detail)}</pre>` : '') +
+    `</div>`
+  )
+}
+
+function renderChatContent(text: string, opts: { reasoning?: string; currentTool?: string; loading?: boolean; toolsUsed?: string[] } = {}): string {
+  const extracted = extractSpecialBlocks(text)
+  const reasoningParts = [opts.reasoning, ...extracted.reasoning].map(v => String(v || '').trim()).filter(Boolean)
+  const chunks: string[] = []
+  if (opts.currentTool) {
+    chunks.push(`<div class="chat-tool-phase">⚙ ${esc(opts.currentTool)}</div>`)
+  }
+  if (opts.toolsUsed?.length) {
+    chunks.push(
+      `<div class="chat-mcp-card">` +
+      `<div class="chat-mcp-title">MCP 调用</div>` +
+      `<div class="tool-chips">${opts.toolsUsed.map(tool => `<span class="tool-chip">${esc(tool)}</span>`).join('')}</div>` +
+      `</div>`,
+    )
+  }
+  if (reasoningParts.length) {
+    chunks.push(
+      `<details class="chat-reasoning" ${opts.loading ? 'open' : ''}>` +
+      `<summary>深度思考</summary>` +
+      `<div class="chat-reasoning-body">${esc(reasoningParts.join('\n\n'))}</div>` +
+      `</details>`,
+    )
+  }
+  if (extracted.body) chunks.push(renderMarkdown(extracted.body))
+  for (const call of extracted.mcpCalls) {
+    chunks.push(
+      `<div class="chat-mcp-card">` +
+      `<div class="chat-mcp-title">MCP 调用</div>` +
+      `<pre class="chat-mcp-pre">${esc(call)}</pre>` +
+      `</div>`,
+    )
+  }
+  if (!chunks.length && opts.loading) {
+    chunks.push('<div class="chat-empty-live">思考中...</div><div class="thinking"><span></span><span></span><span></span></div>')
+  }
+  return chunks.join('')
+}
+
+function renderChatFrame(
+  text: string,
+  opts: { reasoning?: string; currentTool?: string; loading?: boolean; toolsUsed?: string[]; events?: ChatLiveEvent[] } = {},
+): string {
+  return [
+    ...(opts.events || []).map(renderChatEvent),
+    renderChatContent(text, opts),
+  ].filter(Boolean).join('')
 }
 function appendChatMsg(role: 'user'|'ai', content: string): HTMLElement {
   chatNoKey.style.display = 'none'
   const el = document.createElement('div')
   el.className = `chat-msg ${role}`
-  el.innerHTML = `<div class="chat-avatar">${role==='ai'?'✨':'👤'}</div><div class="chat-bubble">${mdToHtml(content)}</div>`
+  el.innerHTML = `<div class="chat-avatar">${role==='ai'?'✨':'👤'}</div><div class="chat-bubble">${renderChatContent(content)}</div>`
   chatMsgs.appendChild(el)
   chatMsgs.scrollTop = chatMsgs.scrollHeight
   return el
@@ -427,26 +663,56 @@ async function runServerChat(text: string, thinking: HTMLElement) {
   activeRunId = run_id
   let after = 0
   let lastText = ''
+  let lastReasoning = ''
+  let lastPhaseKey = ''
+  const liveEvents: ChatLiveEvent[] = []
   const MAX_POLLS = 600 // ~8 min at 800ms
   for (let i = 0; i < MAX_POLLS; i++) {
     await sleep(800)
     let st
-    try { st = await getChatRun(serverUrl, auth.token, run_id, after) } catch { continue }
+  try { st = await getChatRun(serverUrl, auth.token, run_id, after) } catch { continue }
+    lastReasoning = String(st.live_reasoning || lastReasoning || '')
+    const phase = String(st.live_phase || '')
+    const currentTool = String(st.current_tool || '')
+    if (currentTool && phase === 'waiting_mcp') {
+      const key = `${phase}:${currentTool}:${liveEvents.length}`
+      if (lastPhaseKey !== `${phase}:${currentTool}`) {
+        liveEvents.push({
+          key,
+          label: 'MCP 调用中',
+          detail: currentTool,
+        })
+        lastPhaseKey = `${phase}:${currentTool}`
+      }
+    } else if (phase && phase !== 'waiting_mcp') {
+      lastPhaseKey = `${phase}:${currentTool}`
+    }
     if (st.live_text && st.live_text !== lastText) {
       lastText = st.live_text
       after = st.live_len
-      const phase = st.current_tool ? `<div style="font-size:10px;color:var(--muted);margin-bottom:4px;">⚙ ${esc(st.current_tool)}</div>` : ''
-      setBubble(thinking, phase + mdToHtml(lastText))
+      setBubble(thinking, renderChatFrame(lastText, {
+        reasoning: lastReasoning,
+        currentTool,
+        loading: true,
+        events: liveEvents,
+      }))
+    } else if (lastReasoning || currentTool || liveEvents.length) {
+      setBubble(thinking, renderChatFrame(lastText, {
+        reasoning: lastReasoning,
+        currentTool,
+        loading: true,
+        events: liveEvents,
+      }))
     }
     if (['completed', 'error', 'stopped'].includes(st.status)) {
       activeRunId = null
-      if (st.status === 'error') return { text: `⚠ 错误: ${st.error_message || '执行失败'}`, ok: false }
-      if (st.status === 'stopped') return { text: lastText || '（已停止）', ok: true }
-      return { text: lastText || '完成', ok: true }
+      if (st.status === 'error') return { text: `⚠ 错误: ${st.error_message || '执行失败'}`, reasoning: lastReasoning, events: liveEvents, ok: false }
+      if (st.status === 'stopped') return { text: lastText || '（已停止）', reasoning: lastReasoning, events: liveEvents, ok: true }
+      return { text: lastText || '完成', reasoning: lastReasoning, events: liveEvents, ok: true }
     }
   }
   activeRunId = null
-  return { text: lastText || '（超时，未收到完整回复）', ok: false }
+  return { text: lastText || '（超时，未收到完整回复）', reasoning: lastReasoning, events: liveEvents, ok: false }
 }
 
 async function sendChat() {
@@ -464,10 +730,10 @@ async function sendChat() {
   if (useServerChat()) {
     try {
       const res = await runServerChat(text, thinking)
-      setBubble(thinking, mdToHtml(res.text))
+      setBubble(thinking, renderChatFrame(res.text, { reasoning: res.reasoning, events: res.events }))
       thinking.removeAttribute('id')
     } catch (err: any) {
-      setBubble(thinking, mdToHtml(`⚠ 错误: ${err?.message || err}`))
+      setBubble(thinking, renderChatContent(`⚠ 错误: ${err?.message || err}`))
       thinking.removeAttribute('id')
     } finally {
       setChatBusy(false)
@@ -777,11 +1043,8 @@ cardsExportAllBtn.addEventListener('click', async () => {
 // ── Settings (load + save) ─────────────────────────────────────────────────
 function loadSettings(s: AgentSettings) {
   serverUrl = s.serverUrl || ''
+  selectedMemberId = s.selectedAiConfigId || null
   cfgServer.value   = s.serverUrl   || ''
-  cfgToken.value    = s.agentToken  || ''
-  cfgName.value     = s.agentName   || ''
-  cfgId.value       = s.agentId     || ''
-  cfgGroup.value    = s.agentGroup  || ''
   cfgAiKey.value    = s.aiKey       || ''
   cfgAiBase.value   = s.aiBaseUrl   || ''
   cfgAiModel.value  = s.aiModel     || ''
@@ -792,6 +1055,7 @@ function loadSettings(s: AgentSettings) {
   localModel = s.aiModel || ''
   hasAiKey = !!(s.aiKey?.trim())
   updateOfflineUi()
+  renderMembers()
   applyTheme(s.theme || 'dark', false)
 }
 
@@ -824,10 +1088,6 @@ cfgMouseFx.addEventListener('change', () => {
 $('save-btn')!.addEventListener('click', () => {
   const payload: Partial<AgentSettings> = {
     serverUrl:   cfgServer.value.trim(),
-    agentToken:  cfgToken.value,
-    agentName:   cfgName.value.trim(),
-    agentId:     cfgId.value.trim(),
-    agentGroup:  cfgGroup.value.trim(),
     aiKey:       cfgAiKey.value.trim(),
     aiBaseUrl:   cfgAiBase.value.trim() || 'https://api.anthropic.com',
     aiModel:     cfgAiModel.value.trim() || 'claude-sonnet-4-5',
@@ -884,7 +1144,8 @@ function initPort() {
         setChatBusy(false)
         const reply = msg.text || '完成'
         chatHistory.push({ role: 'assistant', content: reply })
-        appendChatMsg('ai', reply)
+        const el = appendChatMsg('ai', '')
+        setBubble(el, renderChatContent(reply, { toolsUsed: msg.toolsUsed || [] }))
         if (msg.toolsUsed?.length) {
           addEntry({ id: Date.now().toString(), type: 'task', status: 'success', message: `AI 使用工具: ${msg.toolsUsed.join(', ')}`, timestamp: Date.now() })
         }
@@ -937,6 +1198,7 @@ async function init() {
   serverUrl = s.serverUrl || ''
   offlineMode = !!s.offlineMode
   localModel = s.aiModel || ''
+  selectedMemberId = s.selectedAiConfigId || null
   auth = await getAuth()
   loginAccount.value = auth.account || ''
   updateUserChip()

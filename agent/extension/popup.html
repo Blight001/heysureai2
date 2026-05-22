@@ -55,8 +55,7 @@
     .logo { display:flex; align-items:center; gap:7px; font-weight:700; font-size:14px; }
     .logo-icon {
       width:26px; height:26px; border-radius:7px;
-      background:linear-gradient(135deg,var(--accent),var(--accent2));
-      display:flex; align-items:center; justify-content:center; font-size:13px;
+      display:block; object-fit:cover;
     }
     .logo-sub { font-size:10px; color:var(--muted); font-weight:400; margin-left:1px; }
     .spacer { flex:1; }
@@ -70,6 +69,7 @@
     .status-dot.connected   { background:var(--accent); }
     .status-dot.registered  { background:var(--success); animation:pulse-s 3s infinite; }
     .status-dot.error       { background:var(--error); }
+    .status-dot.offline     { background:var(--info); }
     @keyframes pulse   { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
     @keyframes pulse-s { 0%,100%{opacity:1} 50%{opacity:.6} }
     #theme-toggle {
@@ -172,7 +172,43 @@
     .chat-bubble { padding:8px 11px; border-radius:10px; font-size:12px; line-height:1.6; word-break:break-word; }
     .chat-msg.ai   .chat-bubble { background:var(--surface); border:1px solid var(--border); border-top-left-radius:3px; }
     .chat-msg.user .chat-bubble { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; border-top-right-radius:3px; }
-    .chat-bubble code { font-family:'Cascadia Code',Consolas,monospace; font-size:10px; background:var(--bg3); padding:1px 4px; border-radius:3px; }
+    .chat-md { display:flex; flex-direction:column; gap:6px; }
+    .chat-md p { margin:0; }
+    .chat-md h1,.chat-md h2,.chat-md h3 { font-size:12px; line-height:1.35; margin:4px 0 1px; font-weight:700; }
+    .chat-md ul,.chat-md ol { margin:0; padding-left:18px; }
+    .chat-md li + li { margin-top:2px; }
+    .chat-md blockquote { margin:0; padding-left:8px; border-left:2px solid var(--border); color:var(--muted); }
+    .chat-md hr { width:100%; border:0; border-top:1px solid var(--border); margin:2px 0; }
+    .chat-md a { color:var(--info); text-decoration:none; }
+    .chat-md a:hover { text-decoration:underline; }
+    .chat-md del { color:var(--muted); }
+    .chat-task { list-style:none; margin-left:-18px; }
+    .chat-check { display:inline-flex; width:13px; height:13px; border-radius:3px; border:1px solid var(--border); align-items:center; justify-content:center; margin-right:5px; font-size:9px; color:var(--success); vertical-align:-1px; }
+    .chat-md code { font-family:'Cascadia Code',Consolas,monospace; font-size:10px; background:var(--bg3); padding:1px 4px; border-radius:3px; }
+    .chat-table-wrap { overflow:auto; border:1px solid var(--border); border-radius:6px; }
+    .chat-table { width:100%; border-collapse:collapse; font-size:10px; min-width:220px; }
+    .chat-table th,.chat-table td { padding:5px 6px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
+    .chat-table th { background:var(--bg3); font-weight:700; }
+    .chat-table tr:last-child td { border-bottom:0; }
+    .chat-md pre,.chat-mcp-pre {
+      margin:0; padding:7px; border-radius:6px; background:var(--bg); border:1px solid var(--border);
+      overflow:auto; max-height:180px; font-family:'Cascadia Code',Consolas,monospace; font-size:10px; line-height:1.45; white-space:pre-wrap;
+    }
+    .chat-mcp-card {
+      border:1px solid rgba(99,102,241,.28); background:rgba(99,102,241,.08);
+      border-radius:7px; padding:7px; display:flex; flex-direction:column; gap:5px;
+    }
+    .chat-mcp-title,.chat-tool-phase {
+      font-size:10px; font-weight:700; color:var(--accent); display:flex; align-items:center; gap:5px;
+    }
+    .chat-tool-phase { margin-bottom:6px; color:var(--muted); }
+    .chat-reasoning {
+      margin-bottom:7px; border:1px solid rgba(56,189,248,.22); background:rgba(56,189,248,.07);
+      border-radius:7px; overflow:hidden;
+    }
+    .chat-reasoning summary { cursor:pointer; padding:6px 7px; font-size:10px; font-weight:700; color:var(--info); user-select:none; }
+    .chat-reasoning-body { padding:0 7px 7px; color:var(--muted); font-size:11px; line-height:1.55; white-space:pre-wrap; }
+    .chat-empty-live { color:var(--muted); font-size:11px; }
     .thinking { display:flex; gap:3px; align-items:center; padding:2px 0; }
     .thinking span {
       width:5px; height:5px; border-radius:50%; background:var(--muted);
@@ -228,12 +264,6 @@
       border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none;
     }
     select:focus { border-color:var(--accent); }
-    .offline-badge {
-      display:none; align-items:center; gap:4px; padding:3px 8px; border-radius:20px;
-      background:rgba(245,158,11,.15); border:1px solid rgba(245,158,11,.3); color:var(--warn);
-      font-size:10px; font-weight:700;
-    }
-    .offline-badge.on { display:flex; }
     .check-row { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
     .check-row input[type=checkbox] { accent-color:var(--accent); }
     .divider { height:1px; background:var(--border); margin:10px 0; }
@@ -382,12 +412,11 @@
   <!-- Header -->
   <header id="header">
     <div class="logo">
-      <div class="logo-icon">⚡</div>
+      <img class="logo-icon" src="icons/icon48.png" alt="HeySure Agent"/>
       <span>HeySure Agent</span>
       <span class="logo-sub">Browser</span>
     </div>
     <div class="spacer"></div>
-    <div class="offline-badge" id="offline-badge" title="离线模式：使用自配模型直连">🛜 离线</div>
     <div class="user-chip guest" id="user-chip" title="登录状态">
       <div class="ua" id="user-ava">·</div>
       <span class="un" id="user-name">未登录</span>
@@ -402,7 +431,6 @@
   <!-- Tabs -->
   <div class="tab-bar">
     <button class="tab-btn active" id="tab-feed">■ 活动</button>
-    <button class="tab-btn" id="tab-members">👥 成员</button>
     <button class="tab-btn" id="tab-chat">💬 对话</button>
     <button class="tab-btn" id="tab-tasks">🗂 任务</button>
     <button class="tab-btn" id="tab-cards">🃏 卡片</button>
@@ -422,31 +450,6 @@
         <div id="feed-empty">
           <div class="ei">🤖</div>
           <p style="font-size:11px">连接后将在此显示实时活动</p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Members pane -->
-    <div class="pane hidden" id="members-pane">
-      <!-- Login gate (shown when not logged in) -->
-      <div id="login-gate" class="card login-box">
-        <div class="card-title">🔐 登录软件端账号</div>
-        <div class="login-hint">使用与软件端相同的账号登录，登录后可查看 AI 成员、对话与安排任务。</div>
-        <div class="fg"><label>账号</label><input type="text" id="login-account" placeholder="你的账号" autocomplete="username"/></div>
-        <div class="fg"><label>密码</label><input type="password" id="login-password" placeholder="密码" autocomplete="current-password"/></div>
-        <button class="btn btn-primary" id="login-btn">登录</button>
-        <div class="save-feedback" id="login-feedback"></div>
-        <div class="login-hint" style="margin-top:4px;">服务器地址在“设置 → 服务器连接”中配置。</div>
-      </div>
-
-      <!-- Member list (shown when logged in) -->
-      <div id="members-view" class="hidden" style="display:flex;flex-direction:column;flex:1;gap:8px;overflow:hidden;">
-        <div class="pane-header">
-          <span class="pane-title">AI 成员</span>
-          <button id="members-refresh" style="font-size:10px;color:var(--muted);border:none;background:none;cursor:pointer;padding:2px 5px;border-radius:4px;">刷新</button>
-        </div>
-        <div id="members-list">
-          <div class="empty-note" id="members-empty">加载中…</div>
         </div>
       </div>
     </div>
@@ -544,7 +547,26 @@
         <div id="account-status" class="kv"><span class="k">状态</span><span class="v" id="account-status-v">未登录</span></div>
         <div class="divider"></div>
         <button class="btn btn-danger" id="logout-btn" style="display:none;">退出登录</button>
-        <button class="btn btn-secondary" id="goto-login-btn">前往登录</button>
+      </div>
+
+      <div id="login-gate" class="card login-box">
+        <div class="card-title">🔐 登录软件端账号</div>
+        <div class="login-hint">使用与软件端相同的账号登录，登录后可查看 AI 成员、对话与安排任务。</div>
+        <div class="fg"><label>账号</label><input type="text" id="login-account" placeholder="你的账号" autocomplete="username"/></div>
+        <div class="fg"><label>密码</label><input type="password" id="login-password" placeholder="密码" autocomplete="current-password"/></div>
+        <button class="btn btn-primary" id="login-btn">登录</button>
+        <div class="save-feedback" id="login-feedback"></div>
+        <div class="login-hint" style="margin-top:4px;">服务器地址在“设置 → 服务器连接”中配置。</div>
+      </div>
+
+      <div id="members-view" class="card hidden">
+        <div class="pane-header" style="margin-bottom:8px;">
+          <span class="pane-title">AI 成员</span>
+          <button id="members-refresh" style="font-size:10px;color:var(--muted);border:none;background:none;cursor:pointer;padding:2px 5px;border-radius:4px;">刷新</button>
+        </div>
+        <div id="members-list" style="max-height:220px;">
+          <div class="empty-note" id="members-empty">加载中…</div>
+        </div>
       </div>
 
       <!-- Selected member config (read-only) -->
@@ -566,20 +588,22 @@
           <input type="checkbox" id="cfg-offline-mode"/>
           <label for="cfg-offline-mode" style="margin:0;text-transform:none;font-size:11px;">启用离线模式（始终用自配模型直连，无需登录服务器）</label>
         </div>
-        <div class="login-hint" style="text-align:left;margin-bottom:8px;">离线模式下对话直接调用你配置的模型并可驱动浏览器工具，不经过服务器；关闭后若已登录并选中成员则改用服务器对话。</div>
-        <div class="fg"><label>服务商预设</label>
-          <select id="cfg-ai-provider">
-            <option value="">自定义 / 不修改</option>
-            <option value="anthropic">Anthropic Claude</option>
-            <option value="openai">OpenAI</option>
-            <option value="deepseek">DeepSeek</option>
-            <option value="openrouter">OpenRouter</option>
-            <option value="ollama">本地 Ollama</option>
-          </select>
+        <div id="offline-model-config" class="hidden">
+          <div class="login-hint" style="text-align:left;margin-bottom:8px;">离线模式下对话直接调用你配置的模型并可驱动浏览器工具，不经过服务器；关闭后若已登录并选中成员则改用服务器对话。</div>
+          <div class="fg"><label>服务商预设</label>
+            <select id="cfg-ai-provider">
+              <option value="">自定义 / 不修改</option>
+              <option value="anthropic">Anthropic Claude</option>
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="openrouter">OpenRouter</option>
+              <option value="ollama">本地 Ollama</option>
+            </select>
+          </div>
+          <div class="fg"><label>AI Key</label><input type="password" id="cfg-ai-key" placeholder="sk-ant-... 或 sk-..."/></div>
+          <div class="fg"><label>Base URL</label><input type="url" id="cfg-ai-base" placeholder="https://api.anthropic.com"/></div>
+          <div class="fg"><label>模型</label><input type="text" id="cfg-ai-model" placeholder="claude-sonnet-4-5"/></div>
         </div>
-        <div class="fg"><label>AI Key</label><input type="password" id="cfg-ai-key" placeholder="sk-ant-... 或 sk-..."/></div>
-        <div class="fg"><label>Base URL</label><input type="url" id="cfg-ai-base" placeholder="https://api.anthropic.com"/></div>
-        <div class="fg"><label>模型</label><input type="text" id="cfg-ai-model" placeholder="claude-sonnet-4-5"/></div>
       </div>
 
       <!-- Interaction effects -->
@@ -596,10 +620,6 @@
       <div class="card">
         <div class="card-title">📡 服务器连接</div>
         <div class="fg"><label>服务器 URL</label><input type="url" id="cfg-server" placeholder="http://localhost:3000"/></div>
-        <div class="fg"><label>Agent Token</label><input type="password" id="cfg-token" placeholder="留空则不验证"/></div>
-        <div class="fg"><label>Agent 名称</label><input type="text" id="cfg-name" placeholder="Browser Agent"/></div>
-        <div class="fg"><label>Agent ID</label><input type="text" id="cfg-id" placeholder="自动生成"/></div>
-        <div class="fg"><label>分组</label><input type="text" id="cfg-group" placeholder="可选"/></div>
         <div class="fg check-row">
           <input type="checkbox" id="cfg-auto-connect"/>
           <label for="cfg-auto-connect" style="margin:0;text-transform:none;font-size:11px;">浏览器启动时自动连接</label>

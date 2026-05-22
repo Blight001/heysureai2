@@ -89,12 +89,13 @@ Rules:
     const saved = parseSavedRolePermissions(options.getCurrentUser()?.role_mcp_permissions)
     const next: Record<string, string[]> = {}
     for (const role of roles) {
-      const ceiling = meta.defaults?.[role] || []
-      const ceilingSet = new Set(ceiling)
+      const options = meta.options?.[role] || meta.defaults?.[role] || []
+      const optionSet = new Set(options)
+      const defaults = meta.defaults?.[role] || []
       const savedForRole = saved[role]
       next[role] = Array.isArray(savedForRole)
-        ? savedForRole.filter(tool => ceilingSet.has(tool))
-        : [...ceiling]
+        ? savedForRole.filter(tool => optionSet.has(tool))
+        : [...defaults]
     }
     roleMcpPermissions.value = next
     roleMcpPermissionsInitialized = true
@@ -111,8 +112,8 @@ Rules:
   }
 
   const setRoleAllTools = (role: string, checked: boolean) => {
-    const ceiling = options.mcpRoleMeta.value.defaults?.[role] || []
-    roleMcpPermissions.value = { ...roleMcpPermissions.value, [role]: checked ? [...ceiling] : [] }
+    const roleOptions = options.mcpRoleMeta.value.options?.[role] || options.mcpRoleMeta.value.defaults?.[role] || []
+    roleMcpPermissions.value = { ...roleMcpPermissions.value, [role]: checked ? [...roleOptions] : [] }
   }
 
   const resetRoleMcpPermissions = () => {

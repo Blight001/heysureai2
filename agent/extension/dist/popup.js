@@ -12,7 +12,8 @@
     autoConnect: false,
     offlineMode: false,
     mouseFx: true,
-    theme: "dark"
+    theme: "dark",
+    selectedAiConfigId: null
   };
 
   // src/lib/storage.ts
@@ -291,7 +292,6 @@
   var userName = $("user-name");
   var tabs = {
     feed: $("tab-feed"),
-    members: $("tab-members"),
     chat: $("tab-chat"),
     tasks: $("tab-tasks"),
     cards: $("tab-cards"),
@@ -299,7 +299,6 @@
   };
   var panes = {
     feed: $("feed-pane"),
-    members: $("members-pane"),
     chat: $("chat-pane"),
     tasks: $("task-pane"),
     cards: $("cards-pane"),
@@ -319,18 +318,14 @@
   var testResult = $("test-result");
   var saveFeedback = $("save-feedback");
   var cfgServer = $("cfg-server");
-  var cfgToken = $("cfg-token");
-  var cfgName = $("cfg-name");
-  var cfgId = $("cfg-id");
-  var cfgGroup = $("cfg-group");
   var cfgAiKey = $("cfg-ai-key");
   var cfgAiBase = $("cfg-ai-base");
   var cfgAiModel = $("cfg-ai-model");
   var cfgAutoConn = $("cfg-auto-connect");
   var cfgOfflineMode = $("cfg-offline-mode");
+  var offlineModelConfig = $("offline-model-config");
   var cfgAiProvider = $("cfg-ai-provider");
   var cfgMouseFx = $("cfg-mouse-fx");
-  var offlineBadge = $("offline-badge");
   var loginGate = $("login-gate");
   var membersView = $("members-view");
   var loginAccount = $("login-account");
@@ -359,7 +354,6 @@
   var jobsEmpty = $("jobs-empty");
   var accountStatusV = $("account-status-v");
   var logoutBtn = $("logout-btn");
-  var gotoLoginBtn = $("goto-login-btn");
   var memberSettingsCard = $("member-settings-card");
   var memberSettingsBody = $("member-settings-body");
   var rolePermsCard = $("role-perms-card");
@@ -411,7 +405,7 @@
     tabs[tab].classList.add("active");
     if (tab === "chat")
       chatMsgs.scrollTop = chatMsgs.scrollHeight;
-    if (tab === "members" && auth.token && members.length === 0)
+    if (tab === "settings" && auth.token && members.length === 0)
       void loadMembers();
     if (tab === "tasks" && selectedMemberId && auth.token)
       void loadJobs();
@@ -419,10 +413,18 @@
       void renderCards();
   }
   Object.keys(tabs).forEach((k) => tabs[k].addEventListener("click", () => switchTab(k)));
+  function renderStatus() {
+    if (offlineMode) {
+      statusDot.className = "status-dot offline";
+      statusLabel.textContent = "\u79BB\u7EBF\u6A21\u5F0F";
+      return;
+    }
+    statusDot.className = `status-dot ${currentStatus}`;
+    statusLabel.textContent = STATUS_LABELS[currentStatus] || currentStatus;
+  }
   function setStatus(status) {
     currentStatus = status;
-    statusDot.className = `status-dot ${status}`;
-    statusLabel.textContent = STATUS_LABELS[status] || status;
+    renderStatus();
   }
   function applyTheme(theme, persist = true) {
     currentTheme = theme;
@@ -478,7 +480,6 @@
     membersView.classList.toggle("hidden", !auth.token);
     accountStatusV.textContent = auth.token ? `\u5DF2\u767B\u5F55\uFF1A${auth.userName || auth.account}` : "\u672A\u767B\u5F55";
     logoutBtn.style.display = auth.token ? "block" : "none";
-    gotoLoginBtn.style.display = auth.token ? "none" : "block";
   }
   async function doLogin() {
     const account = loginAccount.value.trim();
@@ -520,6 +521,7 @@
   });
   async function doLogout() {
     await clearAuth();
+    port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
     auth = await getAuth();
     members = [];
     selectedMemberId = null;
@@ -528,10 +530,9 @@
     renderMembers();
     updateTargetBanners();
     renderSettingsViews();
-    switchTab("members");
+    switchTab("settings");
   }
   logoutBtn.addEventListener("click", () => void doLogout());
-  gotoLoginBtn.addEventListener("click", () => switchTab("members"));
   async function loadMembers() {
     if (!auth.token)
       return;
@@ -539,8 +540,10 @@
     membersEmpty.style.display = "block";
     try {
       members = await listConfigs(serverUrl, auth.token);
-      if (selectedMemberId && !memberById(selectedMemberId))
+      if (selectedMemberId && !memberById(selectedMemberId)) {
         selectedMemberId = null;
+        port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
+      }
       renderMembers();
       updateTargetBanners();
       renderSettingsViews();
@@ -580,6 +583,7 @@
   }
   function selectMember(id) {
     selectedMemberId = id;
+    port.postMessage({ type: "agent:selected-ai", aiConfigId: id });
     renderMembers();
     updateTargetBanners();
     renderSettingsViews();
@@ -600,7 +604,8 @@
     return !!(!offlineMode && auth.token && selectedMemberId);
   }
   function updateOfflineUi() {
-    offlineBadge.classList.toggle("on", offlineMode);
+    offlineModelConfig.classList.toggle("hidden", !offlineMode);
+    renderStatus();
     updateTargetBanners();
   }
   function updateTargetBanners() {
@@ -634,14 +639,211 @@
     chatInput.disabled = !enabled || chatBusy;
     chatSendBtn.disabled = !enabled || chatBusy;
   }
-  function mdToHtml(text) {
-    return esc(text).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\n/g, "<br>");
+  function inlineMd(text) {
+    const placeholders = [];
+    const stash = (html) => {
+      const key = `@@HTML_${placeholders.length}@@`;
+      placeholders.push(html);
+      return key;
+    };
+    let out = esc(text);
+    out = out.replace(/`([^`]+)`/g, (_, code) => stash(`<code>${esc(code)}</code>`));
+    out = out.replace(
+      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+      (_, label, url) => stash(`<a href="${esc(url)}" target="_blank" rel="noreferrer">${esc(label)}</a>`)
+    );
+    out = out.replace(
+      /(^|[\s(])(https?:\/\/[^\s<)]+)/g,
+      (_, prefix, url) => `${prefix}${stash(`<a href="${esc(url)}" target="_blank" rel="noreferrer">${esc(url)}</a>`)}`
+    );
+    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_]+)__/g, "<strong>$1</strong>").replace(/\*([^*\n]+)\*/g, "<em>$1</em>").replace(/_([^_\n]+)_/g, "<em>$1</em>").replace(/~~([^~]+)~~/g, "<del>$1</del>");
+    placeholders.forEach((html, idx) => {
+      out = out.replaceAll(`@@HTML_${idx}@@`, html);
+    });
+    return out;
+  }
+  function isMarkdownTableStart(lines, index) {
+    const head = lines[index]?.trim() || "";
+    const sep = lines[index + 1]?.trim() || "";
+    return /^\|.+\|$/.test(head) && /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(sep);
+  }
+  function parseTableRow(line) {
+    return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+  }
+  function renderMarkdownTable(lines, start) {
+    const headers = parseTableRow(lines[start]);
+    let idx = start + 2;
+    const rows = [];
+    while (idx < lines.length && /^\|.+\|$/.test(lines[idx].trim())) {
+      rows.push(parseTableRow(lines[idx]));
+      idx++;
+    }
+    const head = headers.map((cell) => `<th>${inlineMd(cell)}</th>`).join("");
+    const body = rows.map((row) => `<tr>${headers.map((_, i) => `<td>${inlineMd(row[i] || "")}</td>`).join("")}</tr>`).join("");
+    return {
+      html: `<div class="chat-table-wrap"><table class="chat-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`,
+      next: idx
+    };
+  }
+  function renderMarkdown(text) {
+    const src = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+    if (!src)
+      return "";
+    const blocks = [];
+    const parts = src.split(/(```[\s\S]*?```)/g);
+    for (const part of parts) {
+      if (!part)
+        continue;
+      const fence = part.match(/^```([\w-]*)\n?([\s\S]*?)```$/);
+      if (fence) {
+        const lang = fence[1] ? `<div class="chat-mcp-title">${esc(fence[1])}</div>` : "";
+        blocks.push(`${lang}<pre>${esc(fence[2].trim())}</pre>`);
+        continue;
+      }
+      const lines = part.split("\n");
+      let para = [];
+      let list = [];
+      let ordered = false;
+      const flushPara = () => {
+        if (para.length) {
+          blocks.push(`<p>${inlineMd(para.join("\n")).replace(/\n/g, "<br>")}</p>`);
+          para = [];
+        }
+      };
+      const flushList = () => {
+        if (list.length) {
+          blocks.push(`<${ordered ? "ol" : "ul"}>${list.join("")}</${ordered ? "ol" : "ul"}>`);
+          list = [];
+        }
+      };
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const line = lines[lineIndex];
+        const trimmed = line.trim();
+        if (!trimmed) {
+          flushPara();
+          flushList();
+          continue;
+        }
+        if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+          flushPara();
+          flushList();
+          blocks.push("<hr>");
+          continue;
+        }
+        if (isMarkdownTableStart(lines, lineIndex)) {
+          flushPara();
+          flushList();
+          const table = renderMarkdownTable(lines, lineIndex);
+          blocks.push(table.html);
+          lineIndex = table.next - 1;
+          continue;
+        }
+        const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+        if (heading) {
+          flushPara();
+          flushList();
+          const level = Math.min(3, heading[1].length);
+          blocks.push(`<h${level}>${inlineMd(heading[2])}</h${level}>`);
+          continue;
+        }
+        const quote = trimmed.match(/^>\s+(.+)$/);
+        if (quote) {
+          flushPara();
+          flushList();
+          blocks.push(`<blockquote>${inlineMd(quote[1])}</blockquote>`);
+          continue;
+        }
+        const task = trimmed.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/);
+        const unordered = trimmed.match(/^[-*]\s+(.+)$/);
+        const orderedMatch = trimmed.match(/^\d+\.\s+(.+)$/);
+        if (task || unordered || orderedMatch) {
+          flushPara();
+          const nextOrdered = !!orderedMatch;
+          if (list.length && ordered !== nextOrdered)
+            flushList();
+          ordered = nextOrdered;
+          if (task) {
+            const checked = task[1].trim().toLowerCase() === "x";
+            list.push(`<li class="chat-task"><span class="chat-check">${checked ? "\u2713" : ""}</span>${inlineMd(task[2])}</li>`);
+          } else {
+            list.push(`<li>${inlineMd((unordered || orderedMatch)[1])}</li>`);
+          }
+          continue;
+        }
+        flushList();
+        para.push(line);
+      }
+      flushPara();
+      flushList();
+    }
+    return `<div class="chat-md">${blocks.join("")}</div>`;
+  }
+  function normalizeJsonText(raw) {
+    const text = String(raw || "").trim();
+    try {
+      return JSON.stringify(JSON.parse(text), null, 2);
+    } catch {
+      return text;
+    }
+  }
+  var MCP_CALL_BLOCK_RE = /<mcp[-_]call>\s*([\s\S]*?)\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*invoke)\s*>/gi;
+  function extractSpecialBlocks(text) {
+    let body = String(text || "");
+    const reasoning = [];
+    const mcpCalls = [];
+    body = body.replace(/<think>\s*([\s\S]*?)\s*<\/think>/gi, (_, inner) => {
+      reasoning.push(String(inner || "").trim());
+      return "\n";
+    });
+    body = body.replace(MCP_CALL_BLOCK_RE, (_, inner) => {
+      mcpCalls.push(normalizeJsonText(String(inner || "").trim()));
+      return "\n";
+    });
+    return { body: body.trim(), reasoning, mcpCalls };
+  }
+  function renderChatEvent(event) {
+    return `<div class="chat-mcp-card"><div class="chat-mcp-title">${esc(event.label)}</div>` + (event.detail ? `<pre class="chat-mcp-pre">${esc(event.detail)}</pre>` : "") + `</div>`;
+  }
+  function renderChatContent(text, opts = {}) {
+    const extracted = extractSpecialBlocks(text);
+    const reasoningParts = [opts.reasoning, ...extracted.reasoning].map((v) => String(v || "").trim()).filter(Boolean);
+    const chunks = [];
+    if (opts.currentTool) {
+      chunks.push(`<div class="chat-tool-phase">\u2699 ${esc(opts.currentTool)}</div>`);
+    }
+    if (opts.toolsUsed?.length) {
+      chunks.push(
+        `<div class="chat-mcp-card"><div class="chat-mcp-title">MCP \u8C03\u7528</div><div class="tool-chips">${opts.toolsUsed.map((tool) => `<span class="tool-chip">${esc(tool)}</span>`).join("")}</div></div>`
+      );
+    }
+    if (reasoningParts.length) {
+      chunks.push(
+        `<details class="chat-reasoning" ${opts.loading ? "open" : ""}><summary>\u6DF1\u5EA6\u601D\u8003</summary><div class="chat-reasoning-body">${esc(reasoningParts.join("\n\n"))}</div></details>`
+      );
+    }
+    if (extracted.body)
+      chunks.push(renderMarkdown(extracted.body));
+    for (const call of extracted.mcpCalls) {
+      chunks.push(
+        `<div class="chat-mcp-card"><div class="chat-mcp-title">MCP \u8C03\u7528</div><pre class="chat-mcp-pre">${esc(call)}</pre></div>`
+      );
+    }
+    if (!chunks.length && opts.loading) {
+      chunks.push('<div class="chat-empty-live">\u601D\u8003\u4E2D...</div><div class="thinking"><span></span><span></span><span></span></div>');
+    }
+    return chunks.join("");
+  }
+  function renderChatFrame(text, opts = {}) {
+    return [
+      ...(opts.events || []).map(renderChatEvent),
+      renderChatContent(text, opts)
+    ].filter(Boolean).join("");
   }
   function appendChatMsg(role, content) {
     chatNoKey.style.display = "none";
     const el = document.createElement("div");
     el.className = `chat-msg ${role}`;
-    el.innerHTML = `<div class="chat-avatar">${role === "ai" ? "\u2728" : "\u{1F464}"}</div><div class="chat-bubble">${mdToHtml(content)}</div>`;
+    el.innerHTML = `<div class="chat-avatar">${role === "ai" ? "\u2728" : "\u{1F464}"}</div><div class="chat-bubble">${renderChatContent(content)}</div>`;
     chatMsgs.appendChild(el);
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
     return el;
@@ -671,6 +873,9 @@
     activeRunId = run_id;
     let after = 0;
     let lastText = "";
+    let lastReasoning = "";
+    let lastPhaseKey = "";
+    const liveEvents = [];
     const MAX_POLLS = 600;
     for (let i = 0; i < MAX_POLLS; i++) {
       await sleep(800);
@@ -680,23 +885,50 @@
       } catch {
         continue;
       }
+      lastReasoning = String(st.live_reasoning || lastReasoning || "");
+      const phase = String(st.live_phase || "");
+      const currentTool = String(st.current_tool || "");
+      if (currentTool && phase === "waiting_mcp") {
+        const key = `${phase}:${currentTool}:${liveEvents.length}`;
+        if (lastPhaseKey !== `${phase}:${currentTool}`) {
+          liveEvents.push({
+            key,
+            label: "MCP \u8C03\u7528\u4E2D",
+            detail: currentTool
+          });
+          lastPhaseKey = `${phase}:${currentTool}`;
+        }
+      } else if (phase && phase !== "waiting_mcp") {
+        lastPhaseKey = `${phase}:${currentTool}`;
+      }
       if (st.live_text && st.live_text !== lastText) {
         lastText = st.live_text;
         after = st.live_len;
-        const phase = st.current_tool ? `<div style="font-size:10px;color:var(--muted);margin-bottom:4px;">\u2699 ${esc(st.current_tool)}</div>` : "";
-        setBubble(thinking, phase + mdToHtml(lastText));
+        setBubble(thinking, renderChatFrame(lastText, {
+          reasoning: lastReasoning,
+          currentTool,
+          loading: true,
+          events: liveEvents
+        }));
+      } else if (lastReasoning || currentTool || liveEvents.length) {
+        setBubble(thinking, renderChatFrame(lastText, {
+          reasoning: lastReasoning,
+          currentTool,
+          loading: true,
+          events: liveEvents
+        }));
       }
       if (["completed", "error", "stopped"].includes(st.status)) {
         activeRunId = null;
         if (st.status === "error")
-          return { text: `\u26A0 \u9519\u8BEF: ${st.error_message || "\u6267\u884C\u5931\u8D25"}`, ok: false };
+          return { text: `\u26A0 \u9519\u8BEF: ${st.error_message || "\u6267\u884C\u5931\u8D25"}`, reasoning: lastReasoning, events: liveEvents, ok: false };
         if (st.status === "stopped")
-          return { text: lastText || "\uFF08\u5DF2\u505C\u6B62\uFF09", ok: true };
-        return { text: lastText || "\u5B8C\u6210", ok: true };
+          return { text: lastText || "\uFF08\u5DF2\u505C\u6B62\uFF09", reasoning: lastReasoning, events: liveEvents, ok: true };
+        return { text: lastText || "\u5B8C\u6210", reasoning: lastReasoning, events: liveEvents, ok: true };
       }
     }
     activeRunId = null;
-    return { text: lastText || "\uFF08\u8D85\u65F6\uFF0C\u672A\u6536\u5230\u5B8C\u6574\u56DE\u590D\uFF09", ok: false };
+    return { text: lastText || "\uFF08\u8D85\u65F6\uFF0C\u672A\u6536\u5230\u5B8C\u6574\u56DE\u590D\uFF09", reasoning: lastReasoning, events: liveEvents, ok: false };
   }
   async function sendChat() {
     const enabled = useServerChat() || hasAiKey;
@@ -713,10 +945,10 @@
     if (useServerChat()) {
       try {
         const res = await runServerChat(text, thinking);
-        setBubble(thinking, mdToHtml(res.text));
+        setBubble(thinking, renderChatFrame(res.text, { reasoning: res.reasoning, events: res.events }));
         thinking.removeAttribute("id");
       } catch (err) {
-        setBubble(thinking, mdToHtml(`\u26A0 \u9519\u8BEF: ${err?.message || err}`));
+        setBubble(thinking, renderChatContent(`\u26A0 \u9519\u8BEF: ${err?.message || err}`));
         thinking.removeAttribute("id");
       } finally {
         setChatBusy(false);
@@ -1060,11 +1292,8 @@
   });
   function loadSettings(s) {
     serverUrl = s.serverUrl || "";
+    selectedMemberId = s.selectedAiConfigId || null;
     cfgServer.value = s.serverUrl || "";
-    cfgToken.value = s.agentToken || "";
-    cfgName.value = s.agentName || "";
-    cfgId.value = s.agentId || "";
-    cfgGroup.value = s.agentGroup || "";
     cfgAiKey.value = s.aiKey || "";
     cfgAiBase.value = s.aiBaseUrl || "";
     cfgAiModel.value = s.aiModel || "";
@@ -1075,6 +1304,7 @@
     localModel = s.aiModel || "";
     hasAiKey = !!s.aiKey?.trim();
     updateOfflineUi();
+    renderMembers();
     applyTheme(s.theme || "dark", false);
   }
   var PROVIDER_PRESETS = {
@@ -1103,10 +1333,6 @@
   $("save-btn").addEventListener("click", () => {
     const payload = {
       serverUrl: cfgServer.value.trim(),
-      agentToken: cfgToken.value,
-      agentName: cfgName.value.trim(),
-      agentId: cfgId.value.trim(),
-      agentGroup: cfgGroup.value.trim(),
       aiKey: cfgAiKey.value.trim(),
       aiBaseUrl: cfgAiBase.value.trim() || "https://api.anthropic.com",
       aiModel: cfgAiModel.value.trim() || "claude-sonnet-4-5",
@@ -1158,7 +1384,8 @@
           setChatBusy(false);
           const reply = msg.text || "\u5B8C\u6210";
           chatHistory.push({ role: "assistant", content: reply });
-          appendChatMsg("ai", reply);
+          const el = appendChatMsg("ai", "");
+          setBubble(el, renderChatContent(reply, { toolsUsed: msg.toolsUsed || [] }));
           if (msg.toolsUsed?.length) {
             addEntry({ id: Date.now().toString(), type: "task", status: "success", message: `AI \u4F7F\u7528\u5DE5\u5177: ${msg.toolsUsed.join(", ")}`, timestamp: Date.now() });
           }
@@ -1205,6 +1432,7 @@
     serverUrl = s.serverUrl || "";
     offlineMode = !!s.offlineMode;
     localModel = s.aiModel || "";
+    selectedMemberId = s.selectedAiConfigId || null;
     auth = await getAuth();
     loginAccount.value = auth.account || "";
     updateUserChip();

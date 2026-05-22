@@ -113,8 +113,10 @@ async function connect() {
 
 async function register(settings: AgentSettings) {
   const id = settings.agentId || await getMachineId()
+  const selectedAiConfigId = settings.selectedAiConfigId || null
   socket?.emit('agent:register', {
     id,
+    aiConfigId: selectedAiConfigId,
     name:            settings.agentName || 'Browser Agent',
     group:           settings.agentGroup || '',
     platform:        `browser-extension (${navigator?.userAgent?.split(' ').pop() || 'chrome'})`,
@@ -325,6 +327,13 @@ chrome.runtime.onConnect.addListener((port) => {
       }
       case 'settings:save': {
         await saveSettings(msg.payload)
+        break
+      }
+      case 'agent:selected-ai': {
+        await saveSettings({ selectedAiConfigId: msg.aiConfigId })
+        if (socket?.connected) {
+          await register(await getSettings())
+        }
         break
       }
 

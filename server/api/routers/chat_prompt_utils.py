@@ -26,6 +26,11 @@ from .chat_base import (
     _TASK_RUNTIME_SECTION_TITLES,
 )
 
+MCP_CALL_BLOCK_RE = re.compile(
+    r"<mcp[-_]call>\s*([\s\S]*?)\s*</\s*(?:mcp[-_]call|[\uFF5C|]*\s*DSML\s*[\uFF5C|]*\s*invoke)\s*>",
+    re.IGNORECASE,
+)
+
 
 def _parse_mcp_payload(raw: str):
     body = (raw or "").strip()
@@ -417,8 +422,7 @@ def _build_mcp_stream_warning(
     cfg: Optional[AssistantAIConfig],
     warning_template: str = "",
 ) -> Optional[str]:
-    mcp_pattern = re.compile(r"<mcp[-_]call>\s*([\s\S]*?)\s*</mcp[-_]call>", re.IGNORECASE)
-    matches = list(mcp_pattern.finditer(assistant_text or ""))
+    matches = list(MCP_CALL_BLOCK_RE.finditer(assistant_text or ""))
     if not matches:
         return None
 
@@ -455,6 +459,7 @@ def _build_mcp_stream_warning(
         if not cfg.mcp_enabled:
             unauthorized_tools = [call["tool"] for call in parsed_calls]
         else:
+            allowed_tools.update(desktop_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
             for call in parsed_calls:
                 tool = call["tool"]
                 if tool not in known_tools:
@@ -559,8 +564,7 @@ def _extract_first_mcp_call(assistant_text: str):
     return payload
 
 def _extract_first_complete_mcp_call(assistant_text: str):
-    pattern = re.compile(r"<mcp[-_]call>\s*([\s\S]*?)\s*</mcp[-_]call>", re.IGNORECASE)
-    m = pattern.search(assistant_text or "")
+    m = MCP_CALL_BLOCK_RE.search(assistant_text or "")
     if m:
         payload = _parse_mcp_payload(m.group(1))
         if payload:

@@ -50,6 +50,9 @@ const parseMcpPayload = (raw: string): { tool: string; arguments: Record<string,
   return { tool, arguments: {} };
 };
 
+const mcpCallBlockPattern = () =>
+  /<mcp[-_]call>\s*([\s\S]*?)\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*invoke)\s*>/gi;
+
 export function parseChatResponse(text: string) {
   const thinkPattern = /<think>\s*([\s\S]*?)\s*<\/think>/gi;
   const legacyThinkPattern = /<\/think>([\s\S]*?)<\/think>/gi;
@@ -65,7 +68,7 @@ export function parseChatResponse(text: string) {
     return content.replace(/\n?={3,}$/, '').replace(/\n?>={3,}$/, '').trim();
   };
 
-  const mcpPattern = /<mcp[-_]call>\s*([\s\S]*?)\s*<\/mcp[-_]call>/gi;
+  const mcpPattern = mcpCallBlockPattern();
   let mcpMatch;
   while ((mcpMatch = mcpPattern.exec(cleanedText)) !== null) {
     const payload = parseMcpPayload(mcpMatch[1]);
@@ -180,7 +183,7 @@ export function parseChatResponseInline(text: string) {
   };
 
   const matches: { index: number; length: number; block: ActionBlock }[] = [];
-  const mcpPattern = /<mcp[-_]call>\s*([\s\S]*?)\s*<\/mcp[-_]call>/gi;
+  const mcpPattern = mcpCallBlockPattern();
 
   let mcpMatch;
   while ((mcpMatch = mcpPattern.exec(cleanedText)) !== null) {

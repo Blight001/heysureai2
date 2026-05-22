@@ -11,6 +11,7 @@ from api.models import AssistantAIConfig
 from api.routers.feishu import handle_feishu_event_payload
 
 _LOCK = threading.Lock()
+_LOOP_LOCK = threading.Lock()
 _CLIENTS: Dict[int, Any] = {}
 _PING_TASKS: Dict[int, asyncio.Task] = {}
 _SIGNATURES: Dict[int, Tuple[str, str]] = {}
@@ -25,20 +26,27 @@ def _ensure_lark_loop():
 
     global _LOOP, _LOOP_THREAD
     loop = lark_ws_client.loop
-    if _LOOP_THREAD and _LOOP_THREAD.is_alive():
-        return loop
+    with _LOOP_LOCK:
+        _LOOP = loop
+        if loop.is_running():
+            return loop
+        if _LOOP_THREAD and _LOOP_THREAD.is_alive():
+            return loop
 
-    def run_loop() -> None:
-        asyncio.set_event_loop(loop)
-        loop.run_forever()
+        def run_loop() -> None:
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_forever()
+            except RuntimeError as exc:
+                if "already running" not in str(exc):
+                    raise
 
-    _LOOP = loop
-    _LOOP_THREAD = threading.Thread(
-        target=run_loop,
-        name="feishu-ws-loop",
-        daemon=True,
-    )
-    _LOOP_THREAD.start()
+        _LOOP_THREAD = threading.Thread(
+            target=run_loop,
+            name="feishu-ws-loop",
+            daemon=True,
+        )
+        _LOOP_THREAD.start()
     return loop
 
 

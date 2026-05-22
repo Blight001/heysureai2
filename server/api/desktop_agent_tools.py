@@ -32,8 +32,10 @@ def get_connected_desktop_agent(ai_config_id: Optional[int], user_id: Optional[i
         agent_user_id = _parse_int(agent.get("userId") or agent.get("user_id"))
         if expected_user_id and agent_user_id and agent_user_id != expected_user_id:
             continue
-        is_desktop = bool(agent.get("isWindowsDesktop")) or "desktop" in str(agent.get("platform") or "").lower()
-        if is_desktop:
+        platform = str(agent.get("platform") or "").lower()
+        is_desktop = bool(agent.get("isWindowsDesktop")) or "desktop" in platform
+        is_browser = bool(agent.get("isBrowserExtension")) or "browser-extension" in platform
+        if is_desktop or is_browser:
             return agent
     return None
 

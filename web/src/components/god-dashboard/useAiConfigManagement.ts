@@ -86,15 +86,15 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
   const configAvailableMcpTools = computed<string[]>(() => {
     const meta = mcpRoleMeta.value
     const tier = tierFromForm()
-    const ceiling = meta.defaults?.[tier]
-    if (!ceiling || ceiling.length === 0) {
+    const optionsForRole = meta.options?.[tier] || meta.defaults?.[tier]
+    if (!optionsForRole || optionsForRole.length === 0) {
       return availableMcpTools.value
     }
-    const ceilingSet = new Set(ceiling)
+    const optionSet = new Set(optionsForRole)
     const configured = meta.permissions?.[tier]
     const allowed = Array.isArray(configured) && configured.length > 0
-      ? configured.filter(tool => ceilingSet.has(tool))
-      : ceiling
+      ? configured.filter(tool => optionSet.has(tool))
+      : (meta.defaults?.[tier] || [])
     return [...allowed].sort((a, b) => a.localeCompare(b))
   })
 
@@ -202,6 +202,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       order: Array.isArray(data.roleOrder) ? data.roleOrder.map((item: unknown) => String(item || '').trim()).filter(Boolean) : [],
       labels: (data.roleLabels && typeof data.roleLabels === 'object') ? data.roleLabels as Record<string, string> : {},
       defaults: asStringArrayMap(data.roleDefaults),
+      options: asStringArrayMap(data.roleOptions),
       permissions: asStringArrayMap(data.rolePermissions),
     }
   }

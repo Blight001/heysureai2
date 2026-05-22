@@ -3421,7 +3421,8 @@
     autoConnect: false,
     offlineMode: false,
     mouseFx: true,
-    theme: "dark"
+    theme: "dark",
+    selectedAiConfigId: null
   };
 
   // src/lib/storage.ts
@@ -4557,8 +4558,10 @@ Always:
   }
   async function register(settings) {
     const id = settings.agentId || await getMachineId();
+    const selectedAiConfigId = settings.selectedAiConfigId || null;
     socket?.emit("agent:register", {
       id,
+      aiConfigId: selectedAiConfigId,
       name: settings.agentName || "Browser Agent",
       group: settings.agentGroup || "",
       platform: `browser-extension (${navigator?.userAgent?.split(" ").pop() || "chrome"})`,
@@ -4758,6 +4761,13 @@ Respond in the same language as the user. For factual questions, search the web 
         }
         case "settings:save": {
           await saveSettings(msg.payload);
+          break;
+        }
+        case "agent:selected-ai": {
+          await saveSettings({ selectedAiConfigId: msg.aiConfigId });
+          if (socket?.connected) {
+            await register(await getSettings());
+          }
           break;
         }
         case "chat:send": {

@@ -259,8 +259,11 @@ registry.register(MCPTool(
 registry.register(MCPTool(
     name="admin.dispatch_task",
     description=(
-        "Dispatch a task to a connected desktop agent for local execution "
-        "(filesystem, shell, git, keyboard, mouse, screen, clipboard, window, process). "
+        "Dispatch a task to a connected desktop or browser agent for local execution. "
+        "Desktop agents can use filesystem, shell, git, keyboard, mouse, screen, clipboard, window, process tools. "
+        "Browser agents can inspect and control the active tab with browser_page_info, browser_get_content, "
+        "browser_screenshot, browser_click, browser_type, browser_scroll, browser_search, browser_navigate, "
+        "browser_extract, browser_find_text, browser_tab_list and related browser_* tools. "
         "Provide agentId plus either a natural-language "
         "instruction or a specific tool + args. The result arrives asynchronously "
         "and is appended to this session."
@@ -273,9 +276,12 @@ registry.register(MCPTool(
             "tool": {
                 "type": "string",
                 "description": (
-                    "Optional specific local tool: fs.list / fs.read / fs.write / shell.run / git.diff / "
-                    "keyboard.type / keyboard.press / mouse.click / mouse.move / screen.capture / "
-                    "clipboard.get / clipboard.set / window.list / window.focus / process.list / process.kill."
+                    "Optional specific local tool. Desktop examples: fs.list / fs.read / fs.write / shell.run / "
+                    "git.diff / keyboard.type / keyboard.press / mouse.click / mouse.move / screen.capture / "
+                    "clipboard.get / clipboard.set / window.list / window.focus / process.list / process.kill. "
+                    "Browser examples: browser_page_info / browser_get_content / browser_screenshot / "
+                    "browser_click / browser_type / browser_scroll / browser_search / browser_navigate / "
+                    "browser_extract / browser_find_text / browser_tab_list."
                 ),
             },
             "args": {"type": "object", "description": "Arguments for the chosen tool."},
