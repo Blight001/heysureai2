@@ -10,6 +10,34 @@ import type {
   ProjectItem,
 } from './types'
 
+export interface HumanAskEvent {
+  requestId: string
+  userId: number
+  aiConfigId?: number | null
+  sessionId?: string | null
+  jobId?: string | null
+  kind: 'confirm' | 'select' | 'text'
+  prompt: string
+  options: string[]
+  createdAt: number
+}
+
+export interface ConnectedAgent {
+  id: string
+  name: string
+  platform?: string
+  capabilities: string[]
+  version?: string
+  lifecycle?: string
+  group?: string
+  workspaceRoot?: string
+  lastTaskId?: string | null
+  lastTaskStatus?: string | null
+  lastTaskAt?: number | null
+  lastError?: string | null
+  connectedAt?: number
+}
+
 type MessageType = 'info' | 'success' | 'warning' | 'error'
 type AlertFn = (options: string | { message: string; type?: MessageType }) => Promise<void>
 type ConfirmFn = (options: string | { message: string; type?: MessageType }) => Promise<boolean>
@@ -30,6 +58,8 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
   const { unassignedProjectId, alert, confirm, getCurrentUserId, getMcpAutoApprove } = options
 
   const agents = ref<Agent[]>([])
+  const connectedAgents = ref<ConnectedAgent[]>([])
+  const humanAskQueue = ref<HumanAskEvent[]>([])
   const knowledgeBase = ref<KnowledgeItem[]>([])
   const projects = ref<ProjectItem[]>([])
   const globalGeneration = ref(1)
@@ -189,6 +219,8 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
         currentTask: row.current_behavior || '等待指令...',
         projectId,
         projectName: getProjectName(projectId, row.project_name),
+        parentAiConfigId: Number.isFinite(Number(row.parent_ai_config_id)) ? Number(row.parent_ai_config_id) : null,
+        managementScope: row.management_scope || 'self',
         tokensUsed: row.token_used || 0,
         aiConfigId: configId,
         enabled: !!row.enabled,
@@ -300,12 +332,48 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     if (tool) target.runtimeTool = tool
   }
 
+  const normalizeConnectedAgent = (raw: any): ConnectedAgent => ({
+    id: String(raw?.id ?? raw?.socketId ?? ''),
+    name: String(raw?.name ?? raw?.id ?? 'agent'),
+    platform: raw?.platform ? String(raw.platform) : undefined,
+    capabilities: Array.isArray(raw?.capabilities) ? raw.capabilities.map((c: any) => String(c)) : [],
+    version: raw?.version ? String(raw.version) : undefined,
+    lifecycle: raw?.lifecycle ? String(raw.lifecycle) : undefined,
+    group: raw?.group ? String(raw.group) : undefined,
+    workspaceRoot: raw?.workspaceRoot ? String(raw.workspaceRoot) : undefined,
+    lastTaskId: raw?.lastTaskId ?? null,
+    lastTaskStatus: raw?.lastTaskStatus ?? null,
+    lastTaskAt: Number.isFinite(Number(raw?.lastTaskAt)) ? Number(raw.lastTaskAt) : null,
+    lastError: raw?.lastError ?? null,
+    connectedAt: Number.isFinite(Number(raw?.connectedAt)) ? Number(raw.connectedAt) : undefined,
+  })
+
+  const applyConnectedAgents = (rows: any) => {
+    connectedAgents.value = (Array.isArray(rows) ? rows : []).map(normalizeConnectedAgent)
+  }
+
+  const loadConnectedAgents = async () => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+    try {
+      const res = await fetch('/api/agents/connected', { headers: { Authorization: `Bearer ${token}` } })
+      if (!res.ok) return
+      const data = await res.json()
+      applyConnectedAgents(data?.agents)
+    } catch (err) {
+      console.error('Failed to load connected agents:', err)
+    }
+  }
+
   const disconnectDashboardSocket = () => {
     if (!dashboardSocket) return
     dashboardSocket.off('connect')
     dashboardSocket.off('disconnect')
     dashboardSocket.off('connect_error')
     dashboardSocket.off('mcp:status')
+    dashboardSocket.off('agent:list')
+    dashboardSocket.off('human:ask')
+    dashboardSocket.off('human:resolved')
     dashboardSocket.disconnect()
     dashboardSocket = null
     dashboardSocketConnected.value = false
@@ -318,6 +386,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     dashboardSocket.on('connect', () => {
       dashboardSocketConnected.value = true
       dashboardSocket?.emit('ui:join', { userId })
+      void loadConnectedAgents()
     })
     dashboardSocket.on('disconnect', () => {
       dashboardSocketConnected.value = false
@@ -328,6 +397,21 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     dashboardSocket.on('mcp:status', (payload: McpStatusPayload) => {
       applyMcpStatusLive(payload)
     })
+    dashboardSocket.on('agent:list', (rows: any) => {
+      applyConnectedAgents(rows)
+    })
+    dashboardSocket.on('human:ask', (event: HumanAskEvent) => {
+      if (!humanAskQueue.value.find(e => e.requestId === event.requestId)) {
+        humanAskQueue.value.push(event)
+      }
+    })
+    dashboardSocket.on('human:resolved', (payload: { requestId: string }) => {
+      humanAskQueue.value = humanAskQueue.value.filter(e => e.requestId !== payload.requestId)
+    })
+  }
+
+  const dismissHumanAsk = (requestId: string) => {
+    humanAskQueue.value = humanAskQueue.value.filter(e => e.requestId !== requestId)
   }
 
   const refreshDashboardLive = async (onRefreshOpenTaskPanel: () => Promise<void>) => {
@@ -366,6 +450,9 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
 
   return {
     agents,
+    connectedAgents,
+    humanAskQueue,
+    dismissHumanAsk,
     knowledgeBase,
     projects,
     globalGeneration,
@@ -375,6 +462,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     loadProjectContext,
     loadProjects,
     loadAIAgents,
+    loadConnectedAgents,
     createProject,
     updateProject,
     deleteProject,

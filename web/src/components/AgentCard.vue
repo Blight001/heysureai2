@@ -56,6 +56,8 @@ interface AgentProps {
     recentUserChatAt?: number
     aiRole?: 'assistant_admin' | 'digital_member' | 'admin' | 'worker'
     digitalMemberRole?: 'manager' | 'member'
+    parentAiConfigId?: number | null
+    managementScope?: string
     currentTaskTitle?: string
     currentTaskStatus?: string
     taskCurrentOrRecent?: AgentTaskSnapshot | null
@@ -156,6 +158,18 @@ const showTaskSnapshotBlock = computed(() => {
 })
 const showWorkspaceContextButton = computed(() => {
   return props.agent.aiRole === 'digital_member' && props.agent.digitalMemberRole === 'manager'
+})
+
+const governanceBadge = computed(() => {
+  if (typeof props.agent.parentAiConfigId === 'number') {
+    return { text: '受管', title: `直属上级 AI #${props.agent.parentAiConfigId}` }
+  }
+  const scope = String(props.agent.managementScope || 'self')
+  if (props.agent.digitalMemberRole === 'manager' && scope !== 'self') {
+    const label = scope === 'project' ? '管辖·项目' : scope === 'global' ? '管辖·全局' : '管辖·下属'
+    return { text: label, title: `管理范围: ${scope}` }
+  }
+  return null
 })
 
 const feishuConnection = computed(() => {
@@ -384,6 +398,13 @@ const taskTotalGenerations = (task?: AgentTaskSnapshot | null) => {
             :title="feishuConnection.title"
           >
             {{ feishuConnection.text }}
+          </span>
+          <span
+            v-if="governanceBadge"
+            class="shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium leading-none text-violet-700 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-300"
+            :title="governanceBadge.title"
+          >
+            {{ governanceBadge.text }}
           </span>
         </div>
       </div>

@@ -42,6 +42,8 @@ export interface Agent {
   specialty?: string
   projectId?: string
   projectName?: string
+  parentAiConfigId?: number | null
+  managementScope?: string
   aiConfigId?: number
   enabled?: boolean
   mcpEnabled?: boolean

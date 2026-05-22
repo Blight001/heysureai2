@@ -39,6 +39,33 @@ _RUN_SESSION_CONTEXT: contextvars.ContextVar[Optional[Dict[str, Any]]] = context
 # taskId -> dispatch context (for routing results back to a session).
 _PENDING_DISPATCHES: Dict[str, Dict[str, Any]] = {}
 
+# Dispatches with no agent reply after this many seconds are considered lost and
+# are dropped so the in-memory map does not grow unbounded when an agent drops.
+_DISPATCH_TTL_SECONDS = 1800
+
+
+def purge_stale_dispatches(now: Optional[float] = None) -> int:
+    now = now if now is not None else time.time()
+    stale = [
+        task_id
+        for task_id, ctx in _PENDING_DISPATCHES.items()
+        if now - float(ctx.get("created_at") or 0) > _DISPATCH_TTL_SECONDS
+    ]
+    for task_id in stale:
+        _PENDING_DISPATCHES.pop(task_id, None)
+    return len(stale)
+
+
+def _update_agent_task_state(agent_id: str, *, status: str, task_id: str, error: Optional[str] = None) -> None:
+    for agent in agents.values():
+        if str(agent.get("id")) == str(agent_id):
+            agent["lastTaskId"] = task_id
+            agent["lastTaskStatus"] = status
+            agent["lastTaskAt"] = time.time()
+            agent["lastSeenAt"] = time.time()
+            agent["lastError"] = error
+            break
+
 
 def set_run_session_context(ctx: Optional[Dict[str, Any]]):
     return _RUN_SESSION_CONTEXT.set(ctx or None)
@@ -77,6 +104,7 @@ async def dispatch_task_to_agent(
     if not target_sid:
         return {"success": False, "error": f"Agent not connected: {agent_id}"}
 
+    purge_stale_dispatches()
     task_id = f"atask_{uuid.uuid4().hex[:12]}"
     payload = {
         "taskId": task_id,
@@ -188,6 +216,7 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
         f"[结果]\n{result_text}"
     )
     _save_agent_message(ctx, content, "agent_task_result")
+    _update_agent_task_state(agent_id, status="success" if success else "failed", task_id=task_id)
     await _emit_to_user(ctx, "agent:task_result", {
         "taskId": task_id,
         "agentId": agent_id,
@@ -212,6 +241,7 @@ async def handle_task_error(data: Dict[str, Any]) -> None:
         f"[错误]\n{error}"
     )
     _save_agent_message(ctx, content, "agent_task_error")
+    _update_agent_task_state(agent_id, status="error", task_id=task_id, error=error)
     await _emit_to_user(ctx, "agent:task_error", {
         "taskId": task_id,
         "agentId": agent_id,

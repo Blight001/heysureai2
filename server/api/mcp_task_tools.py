@@ -8,10 +8,15 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from .database import engine
+from .governance import assert_can_manage_or_legacy
 from .models import AITaskJob, AssistantAIConfig, ChatMessage
 from .task_system import extract_task_payload
 
 _FINISHED_STATUSES = {"completed", "cancelled", "stopped", "error"}
+
+# Phase 5: concurrency caps (0 = unlimited)
+_MAX_ACTIVE_TASKS_PER_AI = 10
+_MAX_ACTIVE_SUBTASKS_PER_MANAGER = 20
 
 _SCHEDULE_AT_KEYS: tuple[str, ...] = (
     "schedule_at",
@@ -342,10 +347,51 @@ def _task_create_impl(
     with Session(engine) as session:
         owner_cfg = _resolve_task_runtime_owner(session, user_id, ai_config_id, normalized_args)
 
+        is_fan_out = ai_config_id and int(owner_cfg.id) != int(ai_config_id)
+
+        # Per-AI concurrency cap
+        if _MAX_ACTIVE_TASKS_PER_AI > 0:
+            active_count = session.exec(
+                select(AITaskJob).where(
+                    AITaskJob.user_id == user_id,
+                    AITaskJob.ai_config_id == int(owner_cfg.id),
+                    AITaskJob.status.notin_(list(_FINISHED_STATUSES)),
+                )
+            ).all()
+            if len(active_count) >= _MAX_ACTIVE_TASKS_PER_AI:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"AI '{owner_cfg.name}' already has {len(active_count)} active tasks "
+                        f"(cap={_MAX_ACTIVE_TASKS_PER_AI}). "
+                        "Wait for existing tasks to complete before dispatching more."
+                    ),
+                )
+
+        # Per-manager fan-out subtask cap
+        if is_fan_out and _MAX_ACTIVE_SUBTASKS_PER_MANAGER > 0:
+            dispatched_count = session.exec(
+                select(AITaskJob).where(
+                    AITaskJob.user_id == user_id,
+                    AITaskJob.created_by_ai_config_id == int(ai_config_id),
+                    AITaskJob.status.notin_(list(_FINISHED_STATUSES)),
+                )
+            ).all()
+            if len(dispatched_count) >= _MAX_ACTIVE_SUBTASKS_PER_MANAGER:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"Manager AI has {len(dispatched_count)} active dispatched subtasks "
+                        f"(cap={_MAX_ACTIVE_SUBTASKS_PER_MANAGER}). "
+                        "Wait for subtasks to complete before dispatching more."
+                    ),
+                )
+
         row = AITaskJob(
             job_id=f"job_{uuid.uuid4().hex[:12]}",
             user_id=user_id,
             ai_config_id=int(owner_cfg.id),
+            created_by_ai_config_id=int(ai_config_id) if ai_config_id else None,
             ai_kind="core",
             template_id=template_id,
             title=title,
@@ -470,9 +516,14 @@ def _resolve_task_runtime_owner(
         return target_cfg
 
     if caller_role == "digital_member":
-        # A manager member may fan out subtasks to other members (orchestrator mode).
+        # A manager member may fan out subtasks to other members (orchestrator mode),
+        # but only to members it is authorized to manage (governance tree).
         if caller_member_role == "manager" and raw_target is not None:
-            return _resolve_target(raw_target)
+            target_cfg = _resolve_target(raw_target)
+            denial = assert_can_manage_or_legacy(session, user_id, caller_cfg, target_cfg)
+            if denial:
+                raise HTTPException(status_code=403, detail=denial)
+            return target_cfg
         return caller_cfg
 
     if caller_role != "assistant_admin":
@@ -792,4 +843,8 @@ def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[in
             "job_id": row.job_id,
             "title": row.title,
             "summary": summary,
+            "next_step_hint": (
+                "若本次产生了可复用经验，请用 memory.write 沉淀关键事实/教训；"
+                "若发现可改进系统 prompt/工具/流程的规律，请用 evolution.input 提交进化建议（附证据与风险）。"
+            ),
         }

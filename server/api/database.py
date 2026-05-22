@@ -130,6 +130,12 @@ def _ensure_legacy_columns():
             )
         if "auto_last_trigger_at" not in cfg_existing:
             cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN auto_last_trigger_at REAL")
+        if "parent_ai_config_id" not in cfg_existing:
+            cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN parent_ai_config_id INTEGER")
+        if "root_manager_ai_config_id" not in cfg_existing:
+            cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN root_manager_ai_config_id INTEGER")
+        if "management_scope" not in cfg_existing:
+            cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN management_scope TEXT DEFAULT 'self'")
         # ai_role normalization: old values admin/worker -> digital_member
         cursor.execute(
             "UPDATE assistantaiconfig SET ai_role = 'digital_member' "
@@ -148,6 +154,8 @@ def _ensure_legacy_columns():
         task_existing = {row[1] for row in cursor.fetchall()}
         if "task_payload" not in task_existing:
             cursor.execute("ALTER TABLE aitaskjob ADD COLUMN task_payload TEXT")
+        if "created_by_ai_config_id" not in task_existing:
+            cursor.execute("ALTER TABLE aitaskjob ADD COLUMN created_by_ai_config_id INTEGER")
         conn.commit()
     finally:
         conn.close()
