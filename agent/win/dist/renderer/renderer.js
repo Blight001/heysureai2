@@ -1,5 +1,4 @@
 // renderer.ts — HeySure Agent renderer process
-// ── State ──────────────────────────────────────────────────────────────────
 let currentTheme = 'dark';
 let totalTasks = 0, successTasks = 0, failedTasks = 0, runningTasks = 0;
 let chatHistory = [];
@@ -56,12 +55,13 @@ function applyTheme(theme, persist = true) {
     currentTheme = theme;
     document.body.className = theme;
     const icon = theme === 'dark' ? '&#x2600;&#xFE0F;' : '&#x1F319;';
-    [document.getElementById('theme-toggle'), document.getElementById('theme-toggle2')].forEach(el => { if (el) el.innerHTML = icon; });
-    if (persist) window.heysureAPI.setTheme(theme);
+    [document.getElementById('theme-toggle'), document.getElementById('theme-toggle2')].forEach(el => { if (el)
+        el.innerHTML = icon; });
+    if (persist)
+        window.heysureAPI.setTheme(theme);
 }
-;[document.getElementById('theme-toggle'), document.getElementById('theme-toggle2')].forEach(btn =>
-    btn?.addEventListener('click', () => applyTheme(currentTheme === 'dark' ? 'light' : 'dark'))
-);
+;
+[document.getElementById('theme-toggle'), document.getElementById('theme-toggle2')].forEach(btn => btn?.addEventListener('click', () => applyTheme(currentTheme === 'dark' ? 'light' : 'dark')));
 // ── Tab switching ──────────────────────────────────────────────────────────
 function switchTab(tab) {
     activeTab = tab;
@@ -69,7 +69,8 @@ function switchTab(tab) {
     tabChat.classList.toggle('active', tab === 'chat');
     feedPane.classList.toggle('hidden', tab !== 'feed');
     chatPane.classList.toggle('active', tab === 'chat');
-    if (tab === 'chat') chatMessages.scrollTop = chatMessages.scrollHeight;
+    if (tab === 'chat')
+        chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 tabFeed.addEventListener('click', () => switchTab('feed'));
 tabChat.addEventListener('click', () => switchTab('chat'));
@@ -96,7 +97,7 @@ function escapeHtml(str) {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 function lifecycleLabel(lc) {
-    return ({ learning: '学习中', working: '工作中', reproducing: '繁殖中', dead: '退役' })[lc] || lc;
+    return { learning: '学习中', working: '工作中', reproducing: '繁殖中', dead: '退役' }[lc] || lc;
 }
 // ── Activity feed ──────────────────────────────────────────────────────────
 function addEntry(entry) {
@@ -104,15 +105,20 @@ function addEntry(entry) {
     const el = document.createElement('div');
     el.className = 'entry';
     const iconCls = (() => {
-        if (entry.status === 'success') return 'success';
-        if (entry.status === 'error') return 'error';
-        if (entry.status === 'running') return 'running';
-        if (entry.status === 'warn') return 'warn';
-        if (entry.type === 'system') return 'system';
+        if (entry.status === 'success')
+            return 'success';
+        if (entry.status === 'error')
+            return 'error';
+        if (entry.status === 'running')
+            return 'running';
+        if (entry.status === 'warn')
+            return 'warn';
+        if (entry.type === 'system')
+            return 'system';
         return 'info';
     })();
-    const badgeCls = ({ task: 'task', system: 'system', error: 'error', warn: 'warn' })[entry.type] || 'info';
-    const icon = ({ success: '✓', error: '✗', running: '▶', warn: '⚠', system: '●' })[entry.status] || 'ℹ';
+    const badgeCls = { task: 'task', system: 'system', error: 'error', warn: 'warn' }[entry.type] || 'info';
+    const icon = { success: '✓', error: '✗', running: '▶', warn: '⚠', system: '●' }[entry.status] || 'ℹ';
     let dataHtml = '';
     if (entry.data !== undefined && entry.data !== null) {
         const s = typeof entry.data === 'string' ? entry.data : JSON.stringify(entry.data, null, 2);
@@ -133,6 +139,7 @@ function addEntry(entry) {
     feed.appendChild(el);
     feed.scrollTop = feed.scrollHeight;
 }
+;
 window.toggleData = function (btn) {
     btn.classList.toggle('open');
     btn.nextElementSibling?.classList.toggle('visible');
@@ -153,7 +160,8 @@ function appendChatMsg(role, content) {
 function appendThinking() {
     chatNoKey.style.display = 'none';
     const el = document.createElement('div');
-    el.className = 'chat-msg ai'; el.id = 'chat-thinking';
+    el.className = 'chat-msg ai';
+    el.id = 'chat-thinking';
     el.innerHTML = `<div class="chat-avatar">&#x2728;</div><div class="chat-bubble"><div class="chat-thinking"><div class="chat-thinking-dot"></div><div class="chat-thinking-dot"></div><div class="chat-thinking-dot"></div></div></div>`;
     chatMessages.appendChild(el);
     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -165,11 +173,15 @@ function updateChatKeyVisibility() {
     chatSendBtn.disabled = !hasAiKey;
 }
 async function sendChat() {
-    if (chatBusy || !hasAiKey) return;
+    if (chatBusy || !hasAiKey)
+        return;
     const text = chatInput.value.trim();
-    if (!text) return;
-    chatInput.value = ''; chatInput.style.height = 'auto';
-    chatBusy = true; chatSendBtn.disabled = true;
+    if (!text)
+        return;
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+    chatBusy = true;
+    chatSendBtn.disabled = true;
     chatHistory.push({ role: 'user', content: text });
     appendChatMsg('user', text);
     const thinkEl = appendThinking();
@@ -184,11 +196,16 @@ async function sendChat() {
         appendChatMsg('ai', `⚠ 错误: ${err.message || String(err)}`);
     }
     finally {
-        chatBusy = false; chatSendBtn.disabled = !hasAiKey; chatInput.focus();
+        chatBusy = false;
+        chatSendBtn.disabled = !hasAiKey;
+        chatInput.focus();
     }
 }
 chatSendBtn.addEventListener('click', sendChat);
-chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChat();
+} });
 chatInput.addEventListener('input', () => { chatInput.style.height = 'auto'; chatInput.style.height = Math.min(chatInput.scrollHeight, 110) + 'px'; });
 // ── Settings ───────────────────────────────────────────────────────────────
 async function loadMainSettings() {
@@ -201,7 +218,8 @@ async function loadMainSettings() {
     infoWorkspace.textContent = s.workspaceRoot ? (s.workspaceRoot.split(/[/\\]/).pop() || s.workspaceRoot) : '—';
     hasAiKey = !!(s.aiKey?.trim());
     updateChatKeyVisibility();
-    if (s.selectedAiConfigName) updateAiMemberDisplay(s);
+    if (s.selectedAiConfigName)
+        updateAiMemberDisplay(s);
     return s;
 }
 function updateAiMemberDisplay(s) {
@@ -226,17 +244,20 @@ async function saveSettings() {
         infoWorkspace.textContent = settings.workspaceRoot ? (settings.workspaceRoot.split(/[/\\]/).pop() || settings.workspaceRoot) : '—';
         hasAiKey = !!(settings.aiKey);
         updateChatKeyVisibility();
-        saveFeedback.style.color = ''; saveFeedback.textContent = '已保存 ✓';
+        saveFeedback.style.color = '';
+        saveFeedback.textContent = '已保存 ✓';
         setTimeout(() => { saveFeedback.textContent = ''; }, 2000);
     }
     catch {
-        saveFeedback.textContent = '保存失败'; saveFeedback.style.color = 'var(--error)';
+        saveFeedback.textContent = '保存失败';
+        saveFeedback.style.color = 'var(--error)';
         setTimeout(() => { saveFeedback.textContent = ''; saveFeedback.style.color = ''; }, 3000);
     }
 }
 saveBtn.addEventListener('click', saveSettings);
 testConnBtn.addEventListener('click', async () => {
-    testResult.textContent = '测试中...'; testResult.className = 'test-result';
+    testResult.textContent = '测试中...';
+    testResult.className = 'test-result';
     testConnBtn.setAttribute('disabled', 'true');
     try {
         const r = await window.heysureAPI.testConnection();
@@ -244,21 +265,30 @@ testConnBtn.addEventListener('click', async () => {
         testResult.className = `test-result ${r.success ? 'success' : 'error'}`;
     }
     catch (err) {
-        testResult.textContent = `✗ ${err.message}`; testResult.className = 'test-result error';
+        testResult.textContent = `✗ ${err.message}`;
+        testResult.className = 'test-result error';
     }
-    finally { testConnBtn.removeAttribute('disabled'); }
+    finally {
+        testConnBtn.removeAttribute('disabled');
+    }
 });
 connectBtn.addEventListener('click', () => window.heysureAPI.connect());
 disconnectBtn.addEventListener('click', () => window.heysureAPI.disconnect());
 clearBtn.addEventListener('click', () => {
     feed.querySelectorAll('.entry').forEach(e => e.remove());
     feedEmpty.style.display = 'flex';
-    totalTasks = 0; successTasks = 0; failedTasks = 0; runningTasks = 0; updateStats();
+    totalTasks = 0;
+    successTasks = 0;
+    failedTasks = 0;
+    runningTasks = 0;
+    updateStats();
 });
 window.heysureAPI.onStatusChange(setStatus);
 window.heysureAPI.onActivityLog(addEntry);
 window.heysureAPI.onTaskStart((data) => {
-    totalTasks++; runningTasks++; updateStats();
+    totalTasks++;
+    runningTasks++;
+    updateStats();
     addEntry({ id: data.taskId, type: 'task', status: 'running', message: `执行工具: ${data.tool}`, data: data.args && Object.keys(data.args).length > 0 ? data.args : undefined, timestamp: data.timestamp || Date.now() });
 });
 window.heysureAPI.onTaskResult((data) => {
@@ -282,10 +312,20 @@ async function doLogin() {
     const serverUrl = loginServerInput.value.trim();
     const account = loginAccountInput.value.trim();
     const password = loginPasswordInput.value;
-    if (!serverUrl) { showLoginError('请输入服务器地址'); return; }
-    if (!account) { showLoginError('请输入账号'); return; }
-    if (!password) { showLoginError('请输入密码'); return; }
-    loginBtn.classList.add('loading'); loginBtn.disabled = true;
+    if (!serverUrl) {
+        showLoginError('请输入服务器地址');
+        return;
+    }
+    if (!account) {
+        showLoginError('请输入账号');
+        return;
+    }
+    if (!password) {
+        showLoginError('请输入密码');
+        return;
+    }
+    loginBtn.classList.add('loading');
+    loginBtn.disabled = true;
     try {
         await window.heysureAPI.login({ serverUrl, account, password });
         const s = await window.heysureAPI.getSettings();
@@ -297,13 +337,13 @@ async function doLogin() {
         showLoginError(err.message || '登录失败');
     }
     finally {
-        loginBtn.classList.remove('loading'); loginBtn.disabled = false;
+        loginBtn.classList.remove('loading');
+        loginBtn.disabled = false;
     }
 }
 loginBtn.addEventListener('click', doLogin);
-[loginServerInput, loginAccountInput, loginPasswordInput].forEach(el =>
-    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); })
-);
+[loginServerInput, loginAccountInput, loginPasswordInput].forEach(el => el.addEventListener('keydown', (e) => { if (e.key === 'Enter')
+    doLogin(); }));
 // ══════════════════════════════════════════════════════
 // SCREEN 2: AI SELECT
 // ══════════════════════════════════════════════════════
@@ -312,7 +352,12 @@ const logoutBtn = document.getElementById('logout-btn');
 const refreshAiBtn = document.getElementById('refresh-ai-btn');
 const userChipText = document.getElementById('user-chip-text');
 function setUserChip(account, server) {
-    const host = (() => { try { return new URL(server).hostname; } catch { return server; } })();
+    const host = (() => { try {
+        return new URL(server).hostname;
+    }
+    catch {
+        return server;
+    } })();
     userChipText.textContent = `${account} @ ${host}`;
 }
 async function loadAiSelectScreen() {
@@ -399,16 +444,53 @@ function renderAiGrid(configs, statuses) {
                 }
             });
         }
+        card.querySelector('.btn-clone').addEventListener('click', async () => {
+            const btn = card.querySelector('.btn-clone');
+            btn.disabled = true;
+            btn.textContent = '克隆中...';
+            try {
+                await window.heysureAPI.cloneAiConfig(cfg.id);
+                await loadAiSelectScreen();
+            }
+            catch (err) {
+                alert('克隆失败: ' + (err.message || String(err)));
+                btn.disabled = false;
+                btn.innerHTML = '&#x1F4CB; 克隆';
+            }
+        });
+        card.querySelector('.btn-select').addEventListener('click', async () => {
+            const btn = card.querySelector('.btn-select');
+            btn.disabled = true;
+            btn.textContent = '连接中...';
+            try {
+                await window.heysureAPI.selectAiConfig(cfg);
+                const s = await window.heysureAPI.getSettings();
+                await loadMainSettings();
+                updateAiMemberDisplay(s);
+                const status = await window.heysureAPI.getStatus();
+                setStatus(status);
+                updateStats();
+                showScreen('main');
+            }
+            catch (err) {
+                alert('选择失败: ' + (err.message || String(err)));
+                btn.disabled = false;
+                btn.textContent = '选择';
+            }
+        });
         aiGrid.appendChild(card);
     });
 }
+;
 window.loadAiSelectScreen = loadAiSelectScreen;
 logoutBtn.addEventListener('click', async () => {
     await window.heysureAPI.logout();
     const s = await window.heysureAPI.getSettings();
     loginServerInput.value = s.serverUrl || '';
-    loginAccountInput.value = ''; loginPasswordInput.value = '';
-    clearLoginError(); showScreen('login');
+    loginAccountInput.value = '';
+    loginPasswordInput.value = '';
+    clearLoginError();
+    showScreen('login');
 });
 refreshAiBtn.addEventListener('click', () => loadAiSelectScreen());
 function goToAiSelect() {
@@ -426,7 +508,8 @@ async function init() {
     if (s.authToken && s.selectedAiConfigId) {
         await loadMainSettings();
         const status = await window.heysureAPI.getStatus();
-        setStatus(status); updateStats();
+        setStatus(status);
+        updateStats();
         showScreen('main');
         setUserChip(s.userAccount, s.serverUrl);
         loadAiSelectScreen().catch(() => { });

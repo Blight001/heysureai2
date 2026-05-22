@@ -306,8 +306,12 @@ function registerIpc() {
         if (!serverUrl)
             throw new Error('服务器 URL 不能为空');
         let url;
-        try { url = new URL(serverUrl); }
-        catch { throw new Error('服务器 URL 格式无效'); }
+        try {
+            url = new URL(serverUrl);
+        }
+        catch {
+            throw new Error('服务器 URL 格式无效');
+        }
         const base = url.href.replace(/\/$/, '');
         const res = await electron_1.net.fetch(`${base}/api/auth/login`, {
             method: 'POST',
@@ -368,7 +372,9 @@ function registerIpc() {
                 return [];
             return await res.json();
         }
-        catch { return []; }
+        catch {
+            return [];
+        }
     });
     electron_1.ipcMain.handle('ai-config:select', async (_event, cfg) => {
         store_1.store.set('selectedAiConfigId', cfg.id);
@@ -439,7 +445,7 @@ electron_1.app.whenReady().then(async () => {
     registerIpc();
     createMainWindow();
     createTray();
-    // Auto-connect only if already logged in with AI selected
+    // Auto-connect only if a user has already logged in and selected an AI
     if (store_1.store.get('authToken') && store_1.store.get('selectedAiConfigId')) {
         agent.connect();
     }
