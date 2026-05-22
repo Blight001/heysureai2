@@ -5,7 +5,7 @@ import { getSettings, saveSettings, pushActivity, getActivity, getCard } from '.
 import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS, runCardSteps, setCardProgress } from './lib/tools'
 import { callAI } from './lib/ai'
 import {
-  AgentStatus, AgentSettings, DispatchedTask, ActivityEntry,
+  AgentStatus, DispatchedTask, ActivityEntry,
   PopupMsg, BgMsg, ChatMessage,
 } from './lib/types'
 
@@ -82,7 +82,11 @@ async function connect() {
   socket.on('connect', async () => {
     setStatus('connected')
     log('system', 'info', '已连接到服务器')
-    await register(settings)
+    // Always read fresh settings here: socket.io auto-reconnects fire this
+    // handler again, and the selected AI member may have changed since connect()
+    // first ran. Using a captured `settings` would re-register with a stale
+    // (often null) aiConfigId and silently break the desktop-agent bridge.
+    await register()
   })
 
   socket.on('disconnect', (reason: string) => {
@@ -111,7 +115,8 @@ async function connect() {
   socket.on('human:ask', (data: any) => { broadcast({ type: 'activity:log', entry: mkEntry('human', 'warn', `AI提问: ${data.prompt}`, data) }) })
 }
 
-async function register(settings: AgentSettings) {
+async function register() {
+  const settings = await getSettings()
   const id = settings.agentId || await getMachineId()
   const selectedAiConfigId = settings.selectedAiConfigId || null
   socket?.emit('agent:register', {
@@ -332,7 +337,7 @@ chrome.runtime.onConnect.addListener((port) => {
       case 'agent:selected-ai': {
         await saveSettings({ selectedAiConfigId: msg.aiConfigId })
         if (socket?.connected) {
-          await register(await getSettings())
+          await register()
         }
         break
       }

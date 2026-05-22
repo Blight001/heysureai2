@@ -4531,7 +4531,7 @@ Always:
     socket.on("connect", async () => {
       setStatus("connected");
       log("system", "info", "\u5DF2\u8FDE\u63A5\u5230\u670D\u52A1\u5668");
-      await register(settings);
+      await register();
     });
     socket.on("disconnect", (reason) => {
       setStatus("disconnected", reason);
@@ -4556,7 +4556,8 @@ Always:
       broadcast({ type: "activity:log", entry: mkEntry("human", "warn", `AI\u63D0\u95EE: ${data.prompt}`, data) });
     });
   }
-  async function register(settings) {
+  async function register() {
+    const settings = await getSettings();
     const id = settings.agentId || await getMachineId();
     const selectedAiConfigId = settings.selectedAiConfigId || null;
     socket?.emit("agent:register", {
@@ -4766,7 +4767,7 @@ Respond in the same language as the user. For factual questions, search the web 
         case "agent:selected-ai": {
           await saveSettings({ selectedAiConfigId: msg.aiConfigId });
           if (socket?.connected) {
-            await register(await getSettings());
+            await register();
           }
           break;
         }
