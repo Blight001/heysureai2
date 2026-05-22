@@ -3419,6 +3419,7 @@
     aiBaseUrl: "https://api.anthropic.com",
     aiModel: "claude-sonnet-4-5",
     autoConnect: false,
+    offlineMode: false,
     theme: "dark"
   };
 

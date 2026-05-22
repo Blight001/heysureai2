@@ -223,6 +223,17 @@
     }
     input[type=text]:focus,input[type=password]:focus,input[type=url]:focus { border-color:var(--accent); }
     input::placeholder { color:var(--muted); }
+    select {
+      width:100%; padding:6px 9px; background:var(--bg); border:1px solid var(--border);
+      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none;
+    }
+    select:focus { border-color:var(--accent); }
+    .offline-badge {
+      display:none; align-items:center; gap:4px; padding:3px 8px; border-radius:20px;
+      background:rgba(245,158,11,.15); border:1px solid rgba(245,158,11,.3); color:var(--warn);
+      font-size:10px; font-weight:700;
+    }
+    .offline-badge.on { display:flex; }
     .check-row { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
     .check-row input[type=checkbox] { accent-color:var(--accent); }
     .divider { height:1px; background:var(--border); margin:10px 0; }
@@ -345,6 +356,7 @@
       <span class="logo-sub">Browser</span>
     </div>
     <div class="spacer"></div>
+    <div class="offline-badge" id="offline-badge" title="离线模式：使用自配模型直连">🛜 离线</div>
     <div class="user-chip guest" id="user-chip" title="登录状态">
       <div class="ua" id="user-ava">·</div>
       <span class="un" id="user-name">未登录</span>
@@ -487,9 +499,24 @@
         <div id="role-perms-body"></div>
       </div>
 
-      <!-- AI Config -->
+      <!-- Offline mode + local AI Config -->
       <div class="card">
-        <div class="card-title">🤖 本地 AI 配置（未选成员时直连）</div>
+        <div class="card-title">🤖 离线模式 / 自配模型</div>
+        <div class="fg check-row" style="margin-bottom:10px;">
+          <input type="checkbox" id="cfg-offline-mode"/>
+          <label for="cfg-offline-mode" style="margin:0;text-transform:none;font-size:11px;">启用离线模式（始终用自配模型直连，无需登录服务器）</label>
+        </div>
+        <div class="login-hint" style="text-align:left;margin-bottom:8px;">离线模式下对话直接调用你配置的模型并可驱动浏览器工具，不经过服务器；关闭后若已登录并选中成员则改用服务器对话。</div>
+        <div class="fg"><label>服务商预设</label>
+          <select id="cfg-ai-provider">
+            <option value="">自定义 / 不修改</option>
+            <option value="anthropic">Anthropic Claude</option>
+            <option value="openai">OpenAI</option>
+            <option value="deepseek">DeepSeek</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="ollama">本地 Ollama</option>
+          </select>
+        </div>
         <div class="fg"><label>AI Key</label><input type="password" id="cfg-ai-key" placeholder="sk-ant-... 或 sk-..."/></div>
         <div class="fg"><label>Base URL</label><input type="url" id="cfg-ai-base" placeholder="https://api.anthropic.com"/></div>
         <div class="fg"><label>模型</label><input type="text" id="cfg-ai-model" placeholder="claude-sonnet-4-5"/></div>

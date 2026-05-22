@@ -23,6 +23,8 @@ let hasAiKey = false
 let port: chrome.runtime.Port
 
 let serverUrl = ''
+let offlineMode = false
+let localModel = ''
 let auth: AuthState = { token: '', account: '', userId: null, userName: '' }
 let members: MemberConfig[] = []
 let selectedMemberId: number | null = null
@@ -78,6 +80,9 @@ const cfgAiKey     = $('cfg-ai-key')  as HTMLInputElement
 const cfgAiBase    = $('cfg-ai-base') as HTMLInputElement
 const cfgAiModel   = $('cfg-ai-model') as HTMLInputElement
 const cfgAutoConn  = $('cfg-auto-connect') as HTMLInputElement
+const cfgOfflineMode = $('cfg-offline-mode') as HTMLInputElement
+const cfgAiProvider  = $('cfg-ai-provider') as HTMLSelectElement
+const offlineBadge   = $('offline-badge')
 
 // Members
 const loginGate    = $('login-gate')
@@ -319,22 +324,35 @@ async function loadMcpTools() {
 
 // ── Target banners + chat availability ───────────────────────────────────────
 function useServerChat(): boolean {
-  return !!(auth.token && selectedMemberId)
+  return !!(!offlineMode && auth.token && selectedMemberId)
+}
+function updateOfflineUi() {
+  offlineBadge.classList.toggle('on', offlineMode)
+  updateTargetBanners()
 }
 function updateTargetBanners() {
   const m = memberById(selectedMemberId)
-  if (m) {
+  if (offlineMode) {
+    chatTarget.classList.remove('empty')
+    chatTarget.innerHTML = `🛜 离线模式 · 模型 <span class="tb-name">${esc(localModel || '未配置')}</span>`
+  } else if (m) {
     chatTarget.classList.remove('empty')
     chatTarget.innerHTML = `对话目标：<span class="tb-name">${esc(m.name)}</span>（${ROLE_LABELS[roleOf(m)] || ''}）`
+  } else {
+    chatTarget.classList.add('empty')
+    chatTarget.textContent = '未选择 AI 成员（将使用本地 AI Key 直连）'
+  }
+  // Task scheduling always needs the server (login + selected member).
+  if (m && !offlineMode) {
     taskTarget.classList.remove('empty')
     taskTarget.innerHTML = `任务目标：<span class="tb-name">${esc(m.name)}</span>`
     taskForm.style.display = 'block'
     taskJobsCard.style.display = 'block'
   } else {
-    chatTarget.classList.add('empty')
-    chatTarget.textContent = '未选择 AI 成员（将使用本地 AI Key 直连）'
     taskTarget.classList.add('empty')
-    taskTarget.textContent = auth.token ? '请先在“成员”中选择一个 AI 成员' : '请先登录并选择 AI 成员'
+    taskTarget.textContent = offlineMode
+      ? '离线模式下不可安排任务（任务需登录服务器）'
+      : (auth.token ? '请先在“成员”中选择一个 AI 成员' : '请先登录并选择 AI 成员')
     taskForm.style.display = 'none'
     taskJobsCard.style.display = 'none'
   }
@@ -596,10 +614,34 @@ function loadSettings(s: AgentSettings) {
   cfgAiBase.value   = s.aiBaseUrl   || ''
   cfgAiModel.value  = s.aiModel     || ''
   cfgAutoConn.checked = !!s.autoConnect
+  offlineMode = !!s.offlineMode
+  cfgOfflineMode.checked = offlineMode
+  localModel = s.aiModel || ''
   hasAiKey = !!(s.aiKey?.trim())
-  refreshChatAvailability()
+  updateOfflineUi()
   applyTheme(s.theme || 'dark', false)
 }
+
+// Provider quick-presets fill Base URL + a sensible default model.
+const PROVIDER_PRESETS: Record<string, { base: string; model: string }> = {
+  anthropic:  { base: 'https://api.anthropic.com', model: 'claude-sonnet-4-5' },
+  openai:     { base: 'https://api.openai.com',    model: 'gpt-4o' },
+  deepseek:   { base: 'https://api.deepseek.com',  model: 'deepseek-chat' },
+  openrouter: { base: 'https://openrouter.ai/api', model: 'anthropic/claude-3.5-sonnet' },
+  ollama:     { base: 'http://localhost:11434',    model: 'llama3.1' },
+}
+cfgAiProvider.addEventListener('change', () => {
+  const p = PROVIDER_PRESETS[cfgAiProvider.value]
+  if (p) { cfgAiBase.value = p.base; cfgAiModel.value = p.model }
+  cfgAiProvider.value = ''
+})
+
+// Offline toggle persists immediately and updates the UI without a full save.
+cfgOfflineMode.addEventListener('change', () => {
+  offlineMode = cfgOfflineMode.checked
+  updateOfflineUi()
+  port.postMessage({ type: 'settings:save', payload: { offlineMode } })
+})
 
 $('save-btn')!.addEventListener('click', () => {
   const payload: Partial<AgentSettings> = {
@@ -612,11 +654,14 @@ $('save-btn')!.addEventListener('click', () => {
     aiBaseUrl:   cfgAiBase.value.trim() || 'https://api.anthropic.com',
     aiModel:     cfgAiModel.value.trim() || 'claude-sonnet-4-5',
     autoConnect: cfgAutoConn.checked,
+    offlineMode: cfgOfflineMode.checked,
   }
   serverUrl = payload.serverUrl || ''
+  offlineMode = !!payload.offlineMode
+  localModel = payload.aiModel || ''
   port.postMessage({ type: 'settings:save', payload })
   hasAiKey = !!(payload.aiKey)
-  refreshChatAvailability()
+  updateOfflineUi()
   saveFeedback.textContent = '已保存 ✓'
   saveFeedback.style.color = 'var(--success)'
   setTimeout(() => { saveFeedback.textContent = '' }, 2000)
@@ -693,9 +738,12 @@ async function init() {
   // port's settings:data round-trip arrives.
   const s = await getSettings()
   serverUrl = s.serverUrl || ''
+  offlineMode = !!s.offlineMode
+  localModel = s.aiModel || ''
   auth = await getAuth()
   loginAccount.value = auth.account || ''
   updateUserChip()
+  updateOfflineUi()
   if (auth.token) {
     // Validate token in the background; refresh members + role info.
     void (async () => {

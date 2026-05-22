@@ -10,6 +10,7 @@
     aiBaseUrl: "https://api.anthropic.com",
     aiModel: "claude-sonnet-4-5",
     autoConnect: false,
+    offlineMode: false,
     theme: "dark"
   };
 
@@ -147,6 +148,8 @@
   var hasAiKey = false;
   var port;
   var serverUrl = "";
+  var offlineMode = false;
+  var localModel = "";
   var auth = { token: "", account: "", userId: null, userName: "" };
   var members = [];
   var selectedMemberId = null;
@@ -207,6 +210,9 @@
   var cfgAiBase = $("cfg-ai-base");
   var cfgAiModel = $("cfg-ai-model");
   var cfgAutoConn = $("cfg-auto-connect");
+  var cfgOfflineMode = $("cfg-offline-mode");
+  var cfgAiProvider = $("cfg-ai-provider");
+  var offlineBadge = $("offline-badge");
   var loginGate = $("login-gate");
   var membersView = $("members-view");
   var loginAccount = $("login-account");
@@ -455,22 +461,32 @@
     }
   }
   function useServerChat() {
-    return !!(auth.token && selectedMemberId);
+    return !!(!offlineMode && auth.token && selectedMemberId);
+  }
+  function updateOfflineUi() {
+    offlineBadge.classList.toggle("on", offlineMode);
+    updateTargetBanners();
   }
   function updateTargetBanners() {
     const m = memberById(selectedMemberId);
-    if (m) {
+    if (offlineMode) {
+      chatTarget.classList.remove("empty");
+      chatTarget.innerHTML = `\u{1F6DC} \u79BB\u7EBF\u6A21\u5F0F \xB7 \u6A21\u578B <span class="tb-name">${esc(localModel || "\u672A\u914D\u7F6E")}</span>`;
+    } else if (m) {
       chatTarget.classList.remove("empty");
       chatTarget.innerHTML = `\u5BF9\u8BDD\u76EE\u6807\uFF1A<span class="tb-name">${esc(m.name)}</span>\uFF08${ROLE_LABELS[roleOf(m)] || ""}\uFF09`;
+    } else {
+      chatTarget.classList.add("empty");
+      chatTarget.textContent = "\u672A\u9009\u62E9 AI \u6210\u5458\uFF08\u5C06\u4F7F\u7528\u672C\u5730 AI Key \u76F4\u8FDE\uFF09";
+    }
+    if (m && !offlineMode) {
       taskTarget.classList.remove("empty");
       taskTarget.innerHTML = `\u4EFB\u52A1\u76EE\u6807\uFF1A<span class="tb-name">${esc(m.name)}</span>`;
       taskForm.style.display = "block";
       taskJobsCard.style.display = "block";
     } else {
-      chatTarget.classList.add("empty");
-      chatTarget.textContent = "\u672A\u9009\u62E9 AI \u6210\u5458\uFF08\u5C06\u4F7F\u7528\u672C\u5730 AI Key \u76F4\u8FDE\uFF09";
       taskTarget.classList.add("empty");
-      taskTarget.textContent = auth.token ? "\u8BF7\u5148\u5728\u201C\u6210\u5458\u201D\u4E2D\u9009\u62E9\u4E00\u4E2A AI \u6210\u5458" : "\u8BF7\u5148\u767B\u5F55\u5E76\u9009\u62E9 AI \u6210\u5458";
+      taskTarget.textContent = offlineMode ? "\u79BB\u7EBF\u6A21\u5F0F\u4E0B\u4E0D\u53EF\u5B89\u6392\u4EFB\u52A1\uFF08\u4EFB\u52A1\u9700\u767B\u5F55\u670D\u52A1\u5668\uFF09" : auth.token ? "\u8BF7\u5148\u5728\u201C\u6210\u5458\u201D\u4E2D\u9009\u62E9\u4E00\u4E2A AI \u6210\u5458" : "\u8BF7\u5148\u767B\u5F55\u5E76\u9009\u62E9 AI \u6210\u5458";
       taskForm.style.display = "none";
       taskJobsCard.style.display = "none";
     }
@@ -743,10 +759,33 @@
     cfgAiBase.value = s.aiBaseUrl || "";
     cfgAiModel.value = s.aiModel || "";
     cfgAutoConn.checked = !!s.autoConnect;
+    offlineMode = !!s.offlineMode;
+    cfgOfflineMode.checked = offlineMode;
+    localModel = s.aiModel || "";
     hasAiKey = !!s.aiKey?.trim();
-    refreshChatAvailability();
+    updateOfflineUi();
     applyTheme(s.theme || "dark", false);
   }
+  var PROVIDER_PRESETS = {
+    anthropic: { base: "https://api.anthropic.com", model: "claude-sonnet-4-5" },
+    openai: { base: "https://api.openai.com", model: "gpt-4o" },
+    deepseek: { base: "https://api.deepseek.com", model: "deepseek-chat" },
+    openrouter: { base: "https://openrouter.ai/api", model: "anthropic/claude-3.5-sonnet" },
+    ollama: { base: "http://localhost:11434", model: "llama3.1" }
+  };
+  cfgAiProvider.addEventListener("change", () => {
+    const p = PROVIDER_PRESETS[cfgAiProvider.value];
+    if (p) {
+      cfgAiBase.value = p.base;
+      cfgAiModel.value = p.model;
+    }
+    cfgAiProvider.value = "";
+  });
+  cfgOfflineMode.addEventListener("change", () => {
+    offlineMode = cfgOfflineMode.checked;
+    updateOfflineUi();
+    port.postMessage({ type: "settings:save", payload: { offlineMode } });
+  });
   $("save-btn").addEventListener("click", () => {
     const payload = {
       serverUrl: cfgServer.value.trim(),
@@ -757,12 +796,15 @@
       aiKey: cfgAiKey.value.trim(),
       aiBaseUrl: cfgAiBase.value.trim() || "https://api.anthropic.com",
       aiModel: cfgAiModel.value.trim() || "claude-sonnet-4-5",
-      autoConnect: cfgAutoConn.checked
+      autoConnect: cfgAutoConn.checked,
+      offlineMode: cfgOfflineMode.checked
     };
     serverUrl = payload.serverUrl || "";
+    offlineMode = !!payload.offlineMode;
+    localModel = payload.aiModel || "";
     port.postMessage({ type: "settings:save", payload });
     hasAiKey = !!payload.aiKey;
-    refreshChatAvailability();
+    updateOfflineUi();
     saveFeedback.textContent = "\u5DF2\u4FDD\u5B58 \u2713";
     saveFeedback.style.color = "var(--success)";
     setTimeout(() => {
@@ -831,9 +873,12 @@
     initPort();
     const s = await getSettings();
     serverUrl = s.serverUrl || "";
+    offlineMode = !!s.offlineMode;
+    localModel = s.aiModel || "";
     auth = await getAuth();
     loginAccount.value = auth.account || "";
     updateUserChip();
+    updateOfflineUi();
     if (auth.token) {
       void (async () => {
         try {

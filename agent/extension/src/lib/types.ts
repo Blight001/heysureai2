@@ -10,6 +10,7 @@ export interface AgentSettings {
   aiBaseUrl:    string
   aiModel:      string
   autoConnect:  boolean
+  offlineMode:  boolean
   theme:        'dark' | 'light'
 }
 
@@ -23,6 +24,7 @@ export const SETTING_DEFAULTS: AgentSettings = {
   aiBaseUrl:   'https://api.anthropic.com',
   aiModel:     'claude-sonnet-4-5',
   autoConnect: false,
+  offlineMode: false,
   theme:       'dark',
 }
 
