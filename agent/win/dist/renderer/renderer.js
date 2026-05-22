@@ -382,28 +382,68 @@ function renderAiGrid(configs, statuses) {
     }
     aiGrid.innerHTML = '';
     configs.forEach(cfg => {
-        const isManager = cfg.digital_member_role === 'manager';
+        const isAdmin   = cfg.ai_role === 'assistant_admin';
+        const isManager = !isAdmin && cfg.digital_member_role === 'manager';
         const rs = statusMap.get(cfg.id);
         const isEnabled = rs?.running ?? cfg.enabled;
         const card = document.createElement('div');
-        card.className = `ai-card${isManager ? ' manager-card' : ''}`;
+        card.className = `ai-card${isAdmin ? ' admin-card' : isManager ? ' manager-card' : ''}`;
+        const avatarCls  = isAdmin ? 'admin' : isManager ? 'manager' : 'member';
+        const avatarIcon = isAdmin ? '&#x1F512;' : isManager ? '★' : '&#x1F916;';
+        const roleBadge  = isAdmin
+            ? '<span class="badge badge-admin">管理员</span>'
+            : `<span class="badge ${isManager ? 'badge-manager' : 'badge-member'}">${isManager ? '组长' : '成员'}</span>`;
+        const actionHtml = isAdmin
+            ? '<div class="admin-note">&#x1F512; 管理员 AI 仅供查看，不可调用</div>'
+            : `<button class="btn btn-secondary btn-clone">&#x1F4CB; 克隆</button>
+               <button class="btn btn-primary btn-select">选择</button>`;
         card.innerHTML = `
       <div class="ai-card-top">
-        <div class="ai-avatar ${isManager ? 'manager' : 'member'}">${isManager ? '★' : '&#x1F916;'}</div>
+        <div class="ai-avatar ${avatarCls}">${avatarIcon}</div>
         <div class="ai-card-info">
           <div class="ai-card-name">${escapeHtml(cfg.name)}</div>
           <div class="ai-card-project">${escapeHtml(cfg.project_name || cfg.description || '无项目')}</div>
         </div>
       </div>
       <div class="ai-card-badges">
-        <span class="badge ${isManager ? 'badge-manager' : 'badge-member'}">${isManager ? '组长' : '成员'}</span>
+        ${roleBadge}
         <span class="badge badge-${cfg.lifecycle_status || 'working'}">${lifecycleLabel(cfg.lifecycle_status)}</span>
         <span class="badge ${isEnabled ? 'badge-enabled' : 'badge-disabled'}">${isEnabled ? '● 已启用' : '○ 未启用'}</span>
       </div>
       <div class="ai-card-actions">
-        <button class="btn btn-secondary btn-clone">&#x1F4CB; 克隆</button>
-        <button class="btn btn-primary btn-select">选择</button>
+        ${actionHtml}
       </div>`;
+        if (!isAdmin) {
+            card.querySelector('.btn-clone').addEventListener('click', async () => {
+                const btn = card.querySelector('.btn-clone');
+                btn.disabled = true; btn.textContent = '克隆中...';
+                try {
+                    await window.heysureAPI.cloneAiConfig(cfg.id);
+                    await loadAiSelectScreen();
+                }
+                catch (err) {
+                    alert('克隆失败: ' + (err.message || String(err)));
+                    btn.disabled = false; btn.innerHTML = '&#x1F4CB; 克隆';
+                }
+            });
+            card.querySelector('.btn-select').addEventListener('click', async () => {
+                const btn = card.querySelector('.btn-select');
+                btn.disabled = true; btn.textContent = '连接中...';
+                try {
+                    await window.heysureAPI.selectAiConfig(cfg);
+                    const s = await window.heysureAPI.getSettings();
+                    await loadMainSettings();
+                    updateAiMemberDisplay(s);
+                    const status = await window.heysureAPI.getStatus();
+                    setStatus(status); updateStats();
+                    showScreen('main');
+                }
+                catch (err) {
+                    alert('选择失败: ' + (err.message || String(err)));
+                    btn.disabled = false; btn.textContent = '选择';
+                }
+            });
+        }
         card.querySelector('.btn-clone').addEventListener('click', async () => {
             const btn = card.querySelector('.btn-clone');
             btn.disabled = true;
