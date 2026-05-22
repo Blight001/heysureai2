@@ -1,6 +1,6 @@
 // renderer.ts — HeySure Agent renderer process
 
-declare const window: Window & {
+interface Window {
   heysureAPI: {
     getSettings: () => Promise<any>
     saveSettings: (s: any) => Promise<any>

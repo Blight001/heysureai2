@@ -135,7 +135,7 @@ function createMainWindow(): void {
     },
   })
 
-  mainWindow.loadFile(path.join(__dirname, '../src/renderer/index.html'))
+  mainWindow.loadFile(path.join(__dirname, 'renderer/index.html'))
 
   mainWindow.on('close', (e) => {
     if (!(app as any).isQuitting) {

@@ -38,7 +38,7 @@ def _build_feishu_runtime_prompt(base_prompt: str, event: Dict[str, str]) -> str
         f"{base_prompt}\n\n"
         "[飞书通知前置模板]\n"
         "本轮消息来自飞书事件回调。请直接生成要回复给飞书用户的内容，保持清晰、可直接发送。\n"
-        "服务端会把本轮运行状态、过程文本、MCP 工具调用状态和最终内容分段主动发回来源会话。\n"
+        "服务端只会把实际回复内容发回来源会话，不需要输出处理状态或工具调用状态。\n"
         "除非用户明确要求额外通知其他飞书会话，否则不要调用 MCP 工具 `feishu.send_message`，避免重复回复。\n"
         f"- 来源接收目标: {target_hint or '未识别'}\n"
         "- 默认回传策略: 优先使用 chat_id；chat_id 为空时使用 open_id 且 receive_id_type=open_id。"
@@ -84,62 +84,6 @@ def _run_status(run_id: str) -> tuple[str, str]:
         return str(row.status or ""), str(row.error_message or "")
 
 
-def _format_live_status(phase: str, tool: str) -> str:
-    normalized = str(phase or "").strip()
-    current_tool = str(tool or "").strip()
-    if normalized == "waiting_mcp":
-        if current_tool:
-            return f"正在调用 MCP 工具：{current_tool}"
-        return "状态：正在等待 MCP 工具返回"
-    if normalized == "generating":
-        return "状态：正在思考并生成回复"
-    if normalized == "idle":
-        return "状态：空闲"
-    return f"状态：{normalized or '运行中'}"
-
-
-def _format_mcp_result_notice(content: str) -> str:
-    text = str(content or "")
-    tool = ""
-    status = ""
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if line.startswith("工具:") or line.startswith("工具："):
-            tool = line.split(":", 1)[-1].strip() if ":" in line else line.split("：", 1)[-1].strip()
-        elif line.startswith("状态:") or line.startswith("状态："):
-            status = line.split(":", 1)[-1].strip() if ":" in line else line.split("：", 1)[-1].strip()
-    tool_label = tool or "未知工具"
-    status_label = status or "已完成"
-    if status_label == "成功":
-        return f"MCP 工具调用成功：{tool_label}"
-    if status_label == "失败":
-        return f"MCP 工具调用失败：{tool_label}"
-    return f"MCP 工具调用{status_label}：{tool_label}"
-
-
-def _load_new_mcp_messages(
-    session: Session,
-    *,
-    user_id: int,
-    ai_config_id: int,
-    ai_kind: str,
-    session_id: str,
-    after_message_id: int,
-    last_seen_id: int,
-) -> list[ChatMessage]:
-    min_id = max(int(after_message_id or 0), int(last_seen_id or 0))
-    return session.exec(
-        select(ChatMessage).where(
-            ChatMessage.user_id == user_id,
-            ChatMessage.ai_config_id == ai_config_id,
-            ChatMessage.ai_kind == ai_kind,
-            ChatMessage.session_id == session_id,
-            ChatMessage.id > min_id,
-            ChatMessage.tags == "mcp_tool_call",
-        ).order_by(ChatMessage.created_at.asc())
-    ).all()
-
-
 def _notify_feishu_during_run(
     *,
     run_id: str,
@@ -153,37 +97,11 @@ def _notify_feishu_during_run(
     stream_state: Dict[str, Any],
 ) -> None:
     cursor = 0
-    last_phase = ""
-    last_tool = ""
-    last_mcp_message_id = after_message_id
-
-    if _send_feishu_stream_text(
-        user_id=user_id,
-        ai_config_id=ai_config_id,
-        receive_id=receive_id,
-        receive_id_type=receive_id_type,
-        text="状态：已收到飞书消息，开始处理。",
-    ):
-        stream_state["sent_any"] = True
 
     while True:
         with _RUN_STATE_LOCK:
             live = dict(_RUN_LIVE_STATE.get(run_id) or {})
         live_text = str(live.get("text") or "")
-        phase = str(live.get("phase") or "")
-        current_tool = str(live.get("current_tool") or "")
-
-        if phase and (phase != last_phase or current_tool != last_tool):
-            if _send_feishu_stream_text(
-                user_id=user_id,
-                ai_config_id=ai_config_id,
-                receive_id=receive_id,
-                receive_id_type=receive_id_type,
-                text=_format_live_status(phase, current_tool),
-            ):
-                stream_state["sent_any"] = True
-            last_phase = phase
-            last_tool = current_tool
 
         if cursor > len(live_text):
             cursor = 0
@@ -201,50 +119,8 @@ def _notify_feishu_during_run(
                 stream_state["content_text"] = f"{stream_state.get('content_text') or ''}{delta}"
                 cursor = len(live_text)
 
-        with Session(engine) as session:
-            for msg in _load_new_mcp_messages(
-                session,
-                user_id=user_id,
-                ai_config_id=ai_config_id,
-                ai_kind=ai_kind,
-                session_id=session_id,
-                after_message_id=after_message_id,
-                last_seen_id=last_mcp_message_id,
-            ):
-                last_mcp_message_id = max(last_mcp_message_id, int(msg.id or 0))
-                content = str(msg.content or "").strip()
-                if not content:
-                    continue
-                notice = _format_mcp_result_notice(content)
-                if _send_feishu_stream_text(
-                    user_id=user_id,
-                    ai_config_id=ai_config_id,
-                    receive_id=receive_id,
-                    receive_id_type=receive_id_type,
-                    text=notice,
-                ):
-                    stream_state["sent_any"] = True
-
-        status, error_message = _run_status(run_id)
+        status, _ = _run_status(run_id)
         if status not in {"queued", "running"}:
-            if status == "error":
-                if _send_feishu_stream_text(
-                    user_id=user_id,
-                    ai_config_id=ai_config_id,
-                    receive_id=receive_id,
-                    receive_id_type=receive_id_type,
-                    text=f"状态：处理失败\n{error_message or '未知错误'}",
-                ):
-                    stream_state["sent_any"] = True
-            elif status:
-                if _send_feishu_stream_text(
-                    user_id=user_id,
-                    ai_config_id=ai_config_id,
-                    receive_id=receive_id,
-                    receive_id_type=receive_id_type,
-                    text="状态：处理完成。",
-                ):
-                    stream_state["sent_any"] = True
             return
 
         time.sleep(FEISHU_STREAM_POLL_SECONDS)
