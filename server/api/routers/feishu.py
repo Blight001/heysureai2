@@ -129,7 +129,10 @@ def _notify_feishu_after_run(
         if str(row.status or "") == "error":
             final_text = f"飞书机器人处理失败：{row.error_message or '未知错误'}"
         else:
-            final_msg = session.exec(
+            # Collect every assistant text segment produced during the run, in order.
+            # `content` holds visible output only; deep-thinking (`think`) is stored in a
+            # separate column and MCP tool-call bubbles are role="system", so both are excluded.
+            assistant_msgs = session.exec(
                 select(ChatMessage).where(
                     ChatMessage.user_id == user_id,
                     ChatMessage.ai_config_id == ai_config_id,
@@ -137,9 +140,10 @@ def _notify_feishu_after_run(
                     ChatMessage.session_id == session_id,
                     ChatMessage.role == "assistant",
                     ChatMessage.id > after_message_id,
-                ).order_by(ChatMessage.created_at.desc())
-            ).first()
-            final_text = str(final_msg.content or "").strip() if final_msg else ""
+                ).order_by(ChatMessage.id.asc())
+            ).all()
+            parts = [str(msg.content or "").strip() for msg in assistant_msgs]
+            final_text = "\n\n".join(part for part in parts if part)
 
         if not final_text:
             return
