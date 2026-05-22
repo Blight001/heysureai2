@@ -3,8 +3,22 @@ let currentTheme = 'dark';
 let totalTasks = 0, successTasks = 0, failedTasks = 0, runningTasks = 0;
 let chatHistory = [];
 let chatBusy = false;
-let hasAiKey = false;
 let activeTab = 'feed';
+let sidebarOpen = false;
+let taskTemplates = [];
+let taskJobs = [];
+let taskLoading = false;
+let selectedTaskFilter = 'all';
+let selectedTaskJobIds = [];
+let currentDetailJobId = '';
+let currentDetailGenerations = [];
+let selectedDetailGeneration = 0;
+let taskCreateOpen = false;
+let taskCreateSubmitting = false;
+let availableWorkspaceDirs = ['.'];
+let taskCreateSourceJobId = '';
+let taskLiveRefreshTimer = 0;
+let taskThinkingRafs = [];
 // ── Screen navigation ──────────────────────────────────────────────────────
 function showScreen(screen) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -13,14 +27,50 @@ function showScreen(screen) {
 // ── DOM refs (main screen) ─────────────────────────────────────────────────
 const feed = document.getElementById('feed');
 const feedEmpty = document.getElementById('feed-empty');
+const bodyEl = document.getElementById('body');
 const feedPane = document.getElementById('feed-pane');
 const chatPane = document.getElementById('chat-pane');
+const tasksPane = document.getElementById('tasks-pane');
 const chatMessages = document.getElementById('chat-messages');
 const chatNoKey = document.getElementById('chat-no-key');
 const chatInput = document.getElementById('chat-input');
 const chatSendBtn = document.getElementById('chat-send');
 const tabFeed = document.getElementById('tab-feed');
 const tabChat = document.getElementById('tab-chat');
+const tabTasks = document.getElementById('tab-tasks');
+const taskList = document.getElementById('task-list');
+const taskEmpty = document.getElementById('task-empty');
+const taskRefreshBtn = document.getElementById('task-refresh-btn');
+const taskCreateBtn = document.getElementById('task-create-btn');
+const taskBatchDeleteBtn = document.getElementById('task-batch-delete-btn');
+const taskFilterBar = document.getElementById('task-filter-bar');
+const taskCreatePanel = document.getElementById('task-create-panel');
+const taskCreateCard = document.getElementById('task-create-card');
+const taskCreateClose = document.getElementById('task-create-close');
+const taskDetailModal = document.getElementById('task-detail-modal');
+const taskDetailCard = document.getElementById('task-detail-card');
+const taskDetailContent = document.getElementById('task-detail-content');
+const taskDetailTitle = document.getElementById('task-detail-title');
+const taskDetailSubtitle = document.getElementById('task-detail-subtitle');
+const taskDetailClose = document.getElementById('task-detail-close');
+const taskFormTitle = document.getElementById('task-form-title');
+const taskFormPriority = document.getElementById('task-form-priority');
+const taskFormInstruction = document.getElementById('task-form-instruction');
+const taskFormSchedule = document.getElementById('task-form-schedule');
+const taskFormLoop = document.getElementById('task-form-loop');
+const taskFormRunNow = document.getElementById('task-form-run-now');
+const taskFormDuration = document.getElementById('task-form-duration');
+const taskFormDate = document.getElementById('task-form-date');
+const taskFormTokenEnabled = document.getElementById('task-form-token-enabled');
+const taskFormToken = document.getElementById('task-form-token');
+const taskFormMcpEnabled = document.getElementById('task-form-mcp-enabled');
+const taskFormMcp = document.getElementById('task-form-mcp');
+const taskFormWorkspaceEnabled = document.getElementById('task-form-workspace-enabled');
+const taskFormWorkspace = document.getElementById('task-form-workspace');
+const taskSubmitBtn = document.getElementById('task-submit-btn');
+const taskCancelBtn = document.getElementById('task-cancel-btn');
+const taskFormStatus = document.getElementById('task-form-status');
+const taskSummary = document.getElementById('task-summary');
 const statusDot = document.getElementById('status-dot');
 const statusLabel = document.getElementById('status-label');
 const infoStatus = document.getElementById('info-status');
@@ -30,15 +80,13 @@ const statTasks = document.getElementById('stat-tasks');
 const statSuccess = document.getElementById('stat-success');
 const statFailed = document.getElementById('stat-failed');
 const statRunning = document.getElementById('stat-running');
-const cfgAiKey = document.getElementById('cfg-ai-key');
-const cfgAiBaseUrl = document.getElementById('cfg-ai-base-url');
-const cfgAiModel = document.getElementById('cfg-ai-model');
 const cfgWorkspace = document.getElementById('cfg-workspace');
 const saveBtn = document.getElementById('save-btn');
 const saveFeedback = document.getElementById('save-feedback');
 const connectBtn = document.getElementById('connect-btn');
 const disconnectBtn = document.getElementById('disconnect-btn');
 const clearBtn = document.getElementById('clear-btn');
+const settingsToggle = document.getElementById('settings-toggle');
 const themeToggle = document.getElementById('theme-toggle');
 const testConnBtn = document.getElementById('test-conn-btn');
 const testResult = document.getElementById('test-result');
@@ -67,13 +115,19 @@ function switchTab(tab) {
     activeTab = tab;
     tabFeed.classList.toggle('active', tab === 'feed');
     tabChat.classList.toggle('active', tab === 'chat');
+    tabTasks.classList.toggle('active', tab === 'tasks');
     feedPane.classList.toggle('hidden', tab !== 'feed');
     chatPane.classList.toggle('active', tab === 'chat');
+    tasksPane.classList.toggle('active', tab === 'tasks');
     if (tab === 'chat')
         chatMessages.scrollTop = chatMessages.scrollHeight;
+    if (tab === 'tasks')
+        loadTasks().catch(err => showTaskError(err.message || String(err)));
+    syncTaskLiveRefresh();
 }
 tabFeed.addEventListener('click', () => switchTab('feed'));
 tabChat.addEventListener('click', () => switchTab('chat'));
+tabTasks.addEventListener('click', () => switchTab('tasks'));
 // ── Status display ─────────────────────────────────────────────────────────
 function setStatus(status) {
     const label = STATUS_LABELS[status] || status;
@@ -83,15 +137,99 @@ function setStatus(status) {
     infoStatus.className = `info-value ${status}`;
 }
 function updateStats() {
-    statTasks.textContent = String(totalTasks);
-    statSuccess.textContent = String(successTasks);
-    statFailed.textContent = String(failedTasks);
-    statRunning.textContent = String(runningTasks);
+    const completed = taskJobs.filter(isCompletedTaskJob).length;
+    const failed = taskJobs.filter(job => ['failed', 'error', 'cancelled', 'stopped'].includes(taskStatus(job))).length;
+    const running = taskJobs.filter(job => taskState(job) === 'running').length;
+    statTasks.textContent = String(taskJobs.length);
+    statSuccess.textContent = String(completed);
+    statFailed.textContent = String(failed);
+    statRunning.textContent = String(running);
+}
+function setSidebarOpen(open) {
+    sidebarOpen = open;
+    bodyEl.classList.toggle('sidebar-open', open);
+    settingsToggle.classList.toggle('active', open);
+}
+function formatTokenCount(value) {
+    const n = Math.max(0, Number(value) || 0);
+    if (n >= 1000000)
+        return `${(n / 1000000).toFixed(1)}M`;
+    if (n >= 1000)
+        return `${(n / 1000).toFixed(1)}K`;
+    return String(Math.floor(n));
+}
+function tokenPercent(job) {
+    const used = Math.max(0, Number(job.task_token_used) || 0);
+    const limit = Number(job.task_token_limit) || 0;
+    if (limit <= 0)
+        return 0;
+    return Math.max(0, Math.min(100, (used / limit) * 100));
+}
+function tokenBarClass(job) {
+    const pct = tokenPercent(job);
+    if (pct >= 90)
+        return 'danger';
+    if (pct >= 75)
+        return 'warn';
+    return '';
+}
+function tokenText(job) {
+    const used = formatTokenCount(job.task_token_used);
+    const limit = Number(job.task_token_limit) || 0;
+    return limit > 0 ? `${used} / ${formatTokenCount(limit)}` : `${used} / 无上限`;
+}
+function clearTaskThinkingMotion() {
+    for (const raf of taskThinkingRafs)
+        window.cancelAnimationFrame(raf);
+    taskThinkingRafs = [];
+}
+function startTaskThinkingMotion() {
+    clearTaskThinkingMotion();
+    taskList.querySelectorAll('.task-thinking-viewport').forEach(viewport => {
+        const text = viewport.querySelector('.task-thinking-content');
+        if (!text)
+            return;
+        const maxScroll = Math.max(0, text.scrollHeight - viewport.clientHeight);
+        viewport.scrollTop = 0;
+        if (maxScroll <= 1)
+            return;
+        let offset = 0;
+        const speed = 0.55 + Math.min(2.8, (text.textContent || '').length / 260);
+        const step = () => {
+            offset = Math.min(maxScroll, offset + speed);
+            viewport.scrollTop = offset;
+            if (offset < maxScroll - 0.5) {
+                const raf = window.requestAnimationFrame(step);
+                taskThinkingRafs.push(raf);
+            }
+        };
+        const raf = window.requestAnimationFrame(step);
+        taskThinkingRafs.push(raf);
+    });
+}
+function syncTaskLiveRefresh() {
+    if (taskLiveRefreshTimer) {
+        window.clearInterval(taskLiveRefreshTimer);
+        taskLiveRefreshTimer = 0;
+    }
+    const hasLiveJobs = taskJobs.some(job => ['running', 'queued'].includes(taskStatus(job)));
+    if (activeTab !== 'tasks' || !hasLiveJobs)
+        return;
+    taskLiveRefreshTimer = window.setInterval(() => {
+        if (activeTab === 'tasks')
+            loadTasks(true).catch(() => { });
+    }, 2500);
 }
 // ── Helpers ────────────────────────────────────────────────────────────────
 function formatTime(ts) {
     const d = new Date(ts);
     return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':');
+}
+function formatDateTime(sec) {
+    if (!sec)
+        return '—';
+    const d = new Date(sec * 1000);
+    return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
 }
 function escapeHtml(str) {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -99,6 +237,571 @@ function escapeHtml(str) {
 function lifecycleLabel(lc) {
     return { learning: '学习中', working: '工作中', reproducing: '繁殖中', dead: '退役' }[lc] || lc;
 }
+// ── Task list ──────────────────────────────────────────────────────────────
+function taskState(job) {
+    const st = String(job.effective_status || job.status || '').toLowerCase();
+    if (st === 'running')
+        return 'running';
+    if (st === 'queued' || st === 'paused')
+        return 'next';
+    if (['completed', 'done', 'finished'].includes(st))
+        return 'completed';
+    const schedule = job.task_payload?.schedule;
+    if (schedule && typeof schedule === 'object' && schedule.enabled)
+        return 'scheduled';
+    return 'idle';
+}
+function taskStateLabel(state) {
+    const normalized = String(state || 'idle').toLowerCase();
+    if (normalized === 'running')
+        return '执行中';
+    if (['next', 'queued', 'waiting', 'paused'].includes(normalized))
+        return '等待执行';
+    if (['scheduled', 'schedule'].includes(normalized))
+        return '定时任务';
+    if (['completed', 'done', 'finished'].includes(normalized))
+        return '已完成';
+    return '待命';
+}
+function taskStatus(job) {
+    return String(job.effective_status || job.status || '').toLowerCase();
+}
+function isCompletedTaskJob(job) {
+    return ['completed', 'done', 'finished'].includes(taskStatus(job));
+}
+function canPauseTaskJob(job) {
+    return ['running', 'queued'].includes(taskStatus(job));
+}
+function canResumeTaskJob(job) {
+    return taskStatus(job) === 'paused';
+}
+function taskRank(job) {
+    const state = taskState(job);
+    return { running: 0, next: 1, scheduled: 2, idle: 3, completed: 4 }[state];
+}
+function taskTags(payload) {
+    const src = payload && typeof payload === 'object' ? payload : {};
+    const out = [];
+    const schedule = src.schedule || {};
+    if (schedule.enabled) {
+        const duration = Number(schedule.duration_minutes) || 0;
+        const at = Number(schedule.schedule_at) || 0;
+        if (duration > 0)
+            out.push(`定时: ${duration} 分钟`);
+        if (at > 0)
+            out.push(`时间: ${formatDateTime(at)}`);
+        if (schedule.loop_enabled)
+            out.push('循环运行');
+        if (schedule.run_immediately)
+            out.push('首次立即执行');
+    }
+    const token = src.override_token_limit || {};
+    if (token.enabled)
+        out.push(`Token: ${Number(token.value) || 0}`);
+    const mcp = src.override_mcp_tools || {};
+    if (mcp.enabled)
+        out.push(`MCP: ${Array.isArray(mcp.tools) ? mcp.tools.length : 0} 项`);
+    const workspace = src.override_workspace_root || {};
+    if (workspace.enabled)
+        out.push(`目录: ${String(workspace.value || '.')}`);
+    return out;
+}
+function updateTaskSummary() {
+    const running = taskJobs.filter(job => taskState(job) === 'running').length;
+    const scheduled = taskJobs.filter(job => taskState(job) === 'scheduled').length;
+    const queued = taskJobs.filter(job => taskState(job) === 'next').length;
+    const completed = taskJobs.filter(isCompletedTaskJob).length;
+    taskSummary.textContent = `执行记录 ${taskJobs.length} 条 · 运行中 ${running} · 等待 ${queued} · 定时 ${scheduled} · 模板 ${taskTemplates.length}`;
+    taskBatchDeleteBtn.textContent = `批量删除 (${selectedTaskJobIds.length})`;
+    taskBatchDeleteBtn.disabled = selectedTaskJobIds.length === 0;
+    taskSummary.title = `已完成 ${completed} 条`;
+    updateStats();
+    syncTaskLiveRefresh();
+}
+function normalizeWorkspaceRoot(path) {
+    const normalized = String(path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    return normalized || '.';
+}
+function setTaskFormStatus(message, error = false) {
+    taskFormStatus.textContent = message;
+    taskFormStatus.className = `task-form-status${error ? ' error' : ''}`;
+}
+function resetTaskForm(job) {
+    const payload = job?.task_payload && typeof job.task_payload === 'object' ? job.task_payload : {};
+    const schedule = payload.schedule || {};
+    const token = payload.override_token_limit || {};
+    const mcp = payload.override_mcp_tools || {};
+    const workspace = payload.override_workspace_root || {};
+    taskCreateSourceJobId = job?.job_id || '';
+    taskFormTitle.value = job?.title || '';
+    taskFormPriority.value = String(Math.max(1, Math.min(10, Number(job?.priority) || 5)));
+    taskFormInstruction.value = job?.instruction || '';
+    taskFormSchedule.checked = !!schedule.enabled;
+    taskFormLoop.checked = !!schedule.loop_enabled;
+    taskFormRunNow.checked = !!schedule.run_immediately;
+    taskFormDuration.value = String(Math.max(1, Number(schedule.duration_minutes) || 30));
+    const at = Number(schedule.schedule_at) || 0;
+    taskFormDate.value = at > 0 ? new Date(at * 1000).toISOString().slice(0, 10) : '';
+    taskFormTokenEnabled.checked = !!token.enabled;
+    taskFormToken.value = String(Math.max(1, Number(token.value) || 10000));
+    taskFormMcpEnabled.checked = !!mcp.enabled;
+    taskFormMcp.value = Array.isArray(mcp.tools) ? mcp.tools.join(', ') : '';
+    taskFormWorkspaceEnabled.checked = !!workspace.enabled;
+    taskFormWorkspace.value = normalizeWorkspaceRoot(workspace.value || '.');
+    setTaskFormStatus(job ? '已从任务记录带入模板，可调整后重新提交。' : '');
+    syncTaskFormVisibility();
+}
+function syncTaskFormVisibility() {
+    taskCreatePanel.classList.toggle('visible', taskCreateOpen);
+    document.querySelectorAll('[data-task-schedule-field]').forEach(el => {
+        el.style.display = taskFormSchedule.checked ? '' : 'none';
+    });
+    document.querySelectorAll('[data-task-token-field]').forEach(el => {
+        el.style.display = taskFormTokenEnabled.checked ? '' : 'none';
+    });
+    document.querySelectorAll('[data-task-mcp-field]').forEach(el => {
+        el.style.display = taskFormMcpEnabled.checked ? '' : 'none';
+    });
+    document.querySelectorAll('[data-task-workspace-field]').forEach(el => {
+        el.style.display = taskFormWorkspaceEnabled.checked ? '' : 'none';
+    });
+    taskFormDate.disabled = taskFormLoop.checked;
+    taskFormRunNow.disabled = !taskFormLoop.checked;
+    taskSubmitBtn.disabled = taskCreateSubmitting;
+}
+function openTaskCreate(job) {
+    taskCreateOpen = true;
+    resetTaskForm(job);
+    loadWorkspaceDirs().catch(() => { });
+}
+function closeTaskCreate() {
+    taskCreateOpen = false;
+    taskCreateSubmitting = false;
+    taskCreateSourceJobId = '';
+    syncTaskFormVisibility();
+}
+function closeTaskDetail() {
+    taskDetailModal.classList.remove('visible');
+    taskDetailContent.innerHTML = '';
+    currentDetailJobId = '';
+    currentDetailGenerations = [];
+    selectedDetailGeneration = 0;
+}
+async function loadWorkspaceDirs() {
+    try {
+        const files = await window.heysureAPI.listWorkspaceFiles();
+        const dirs = new Set(['.']);
+        for (const raw of files) {
+            const path = String(raw || '').replace(/\\/g, '/');
+            if (!path)
+                continue;
+            if (path.endsWith('/'))
+                dirs.add(normalizeWorkspaceRoot(path));
+            else {
+                const idx = path.lastIndexOf('/');
+                if (idx > 0)
+                    dirs.add(normalizeWorkspaceRoot(path.slice(0, idx)));
+            }
+        }
+        dirs.add(normalizeWorkspaceRoot(taskFormWorkspace.value || '.'));
+        availableWorkspaceDirs = Array.from(dirs).sort((a, b) => a === '.' ? -1 : b === '.' ? 1 : a.localeCompare(b));
+    }
+    catch {
+        availableWorkspaceDirs = ['.'];
+    }
+    const selected = normalizeWorkspaceRoot(taskFormWorkspace.value || '.');
+    taskFormWorkspace.innerHTML = availableWorkspaceDirs.map(dir => `<option value="${escapeHtml(dir)}">${escapeHtml(dir === '.' ? '用户工作区根目录' : dir)}</option>`).join('');
+    taskFormWorkspace.value = availableWorkspaceDirs.includes(selected) ? selected : '.';
+}
+function showTaskError(message) {
+    taskList.innerHTML = '';
+    taskEmpty.style.display = 'flex';
+    taskEmpty.innerHTML = `<div class="empty-icon">&#x26A0;</div><p>${escapeHtml(message)}</p><p style="font-size:11px">请确认已登录并选择 AI 成员</p>`;
+    taskSummary.textContent = '任务列表加载失败';
+}
+async function loadTasks(force = false) {
+    if (taskLoading && !force)
+        return;
+    taskLoading = true;
+    taskRefreshBtn.disabled = true;
+    taskRefreshBtn.textContent = '刷新中...';
+    try {
+        const data = await window.heysureAPI.listTasks();
+        taskTemplates = Array.isArray(data.tasks) ? data.tasks : [];
+        taskJobs = Array.isArray(data.jobs) ? data.jobs : [];
+        const validSelected = new Set(taskJobs.filter(isCompletedTaskJob).map(job => job.job_id));
+        selectedTaskJobIds = selectedTaskJobIds.filter(id => validSelected.has(id));
+        renderTasks();
+    }
+    catch (err) {
+        showTaskError(err.message || String(err));
+        updateStats();
+    }
+    finally {
+        taskLoading = false;
+        taskRefreshBtn.disabled = false;
+        taskRefreshBtn.textContent = '刷新';
+    }
+}
+function renderTasks() {
+    updateTaskSummary();
+    taskList.innerHTML = '';
+    const sortedJobs = [...taskJobs].sort((a, b) => {
+        const rankDiff = taskRank(a) - taskRank(b);
+        if (rankDiff !== 0)
+            return rankDiff;
+        const priorityDiff = Number(b.priority || 0) - Number(a.priority || 0);
+        if (priorityDiff !== 0)
+            return priorityDiff;
+        return Number(b.created_at || 0) - Number(a.created_at || 0);
+    });
+    const filteredJobs = selectedTaskFilter === 'all'
+        ? sortedJobs
+        : sortedJobs.filter(job => taskState(job) === selectedTaskFilter);
+    taskFilterBar.querySelectorAll('[data-task-filter]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.taskFilter === selectedTaskFilter);
+    });
+    const templateHtml = taskTemplates.length > 0 ? `
+    <div class="task-template-block">
+      <div class="task-section-title">任务模板</div>
+      ${taskTemplates.map(task => `
+        <div class="task-template ${escapeHtml(task.runtime_state || 'idle')}">
+          <div class="task-template-row">
+            <div class="task-template-title">${escapeHtml(task.title)}</div>
+            <button class="task-mini-btn task-template-use" data-template-id="${escapeHtml(task.id)}">使用模板新建</button>
+          </div>
+          <div class="task-instruction">${escapeHtml(task.instruction || '暂无任务说明')}</div>
+          <div class="task-template-meta">
+            <span>P${Number(task.priority) || 0}</span>
+            <span>${taskStateLabel(task.runtime_state)}</span>
+            <span>定时: ${task.schedule_enabled ? `${Number(task.interval_minutes) || 0} 分钟` : '否'}</span>
+            <span>运行 ${Number(task.running_count) || 0}</span>
+            <span>排队 ${Number(task.queued_count) || 0}</span>
+          </div>
+        </div>`).join('')}
+    </div>` : '';
+    if (filteredJobs.length === 0 && taskTemplates.length === 0) {
+        taskEmpty.style.display = 'flex';
+        taskEmpty.innerHTML = '<div class="empty-icon">&#x1F4CB;</div><p>暂无任务记录</p><p style="font-size:11px">创建任务后会显示在这里</p>';
+        return;
+    }
+    taskEmpty.style.display = 'none';
+    const jobsHtml = filteredJobs.length === 0
+        ? '<div class="task-muted task-list-muted">当前筛选下暂无任务记录</div>'
+        : filteredJobs.map(job => {
+            const state = taskState(job);
+            const tags = taskTags(job.task_payload);
+            const checked = selectedTaskJobIds.includes(job.job_id) ? 'checked' : '';
+            const selectable = isCompletedTaskJob(job);
+            const thinking = String(job.latest_thinking || '').trim();
+            const liveTool = String(job.live_tool || '').trim();
+            const tokenPct = tokenPercent(job);
+            const tokenCls = tokenBarClass(job);
+            return `
+      <div class="task-card ${state}" data-job-id="${escapeHtml(job.job_id)}">
+        ${selectable ? `<label class="task-select"><input type="checkbox" class="task-select-box" data-job-id="${escapeHtml(job.job_id)}" ${checked} /></label>` : '<span class="task-select"></span>'}
+        <div class="task-card-main">
+          <div class="task-card-head">
+            <div class="task-title">${escapeHtml(job.title || '未命名任务')}</div>
+            <span class="task-state ${state}">${taskStateLabel(state)}</span>
+          </div>
+          <div class="task-instruction">${escapeHtml(job.instruction || '暂无任务说明')}</div>
+          <div class="task-meta">
+            <span>ID: ${escapeHtml(job.job_id)}</span>
+            <span>P${Number(job.priority) || 0}</span>
+            <span>${escapeHtml(job.trigger_type || 'manual')}</span>
+            <span>创建: ${formatDateTime(job.created_at)}</span>
+            <span>代际: ${Number(job.generation_count) || 0}</span>
+            ${job.run_status ? `<span>run: ${escapeHtml(job.run_status)}</span>` : ''}
+            ${liveTool ? `<span>工具: ${escapeHtml(liveTool)}</span>` : ''}
+          </div>
+          ${tags.length > 0 ? `<div class="task-tags">${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div>` : ''}
+          <div class="task-token-row" title="任务 Token 用量">
+            <div class="task-token-label">Token: ${escapeHtml(tokenText(job))}</div>
+            <div class="task-token-track">
+              <div class="task-token-bar ${tokenCls}" style="width:${tokenPct}%"></div>
+            </div>
+          </div>
+          <div class="task-thinking-box ${thinking ? 'live' : ''}" title="${escapeHtml(thinking || '空闲中')}">
+            <div class="task-thinking-label">思考</div>
+            <div class="task-thinking-viewport">
+              <div class="task-thinking-content">${escapeHtml(thinking || '空闲中')}</div>
+            </div>
+          </div>
+        </div>
+        <div class="task-actions">
+          <button class="task-detail-btn" data-job-id="${escapeHtml(job.job_id)}">详情</button>
+          <button class="task-mini-btn task-reuse-btn" data-job-id="${escapeHtml(job.job_id)}">复用</button>
+          ${canPauseTaskJob(job) ? `<button class="task-mini-btn task-pause-btn" data-job-id="${escapeHtml(job.job_id)}">暂停</button>` : ''}
+          ${canResumeTaskJob(job) ? `<button class="task-mini-btn task-resume-btn" data-job-id="${escapeHtml(job.job_id)}">恢复</button>` : ''}
+          <button class="task-mini-btn danger task-delete-btn" data-job-id="${escapeHtml(job.job_id)}">删除</button>
+        </div>
+      </div>`;
+        }).join('');
+    taskList.innerHTML = jobsHtml + templateHtml;
+    taskList.querySelectorAll('.task-detail-btn').forEach(btn => {
+        btn.addEventListener('click', () => toggleTaskDetail(btn.dataset.jobId || ''));
+    });
+    taskList.querySelectorAll('.task-select-box').forEach(input => {
+        input.addEventListener('change', () => toggleTaskSelection(input.dataset.jobId || '', input.checked));
+    });
+    taskList.querySelectorAll('.task-reuse-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const job = taskJobs.find(item => item.job_id === btn.dataset.jobId);
+            if (job)
+                openTaskCreate(job);
+        });
+    });
+    taskList.querySelectorAll('.task-pause-btn').forEach(btn => {
+        btn.addEventListener('click', () => pauseTask(btn.dataset.jobId || ''));
+    });
+    taskList.querySelectorAll('.task-resume-btn').forEach(btn => {
+        btn.addEventListener('click', () => resumeTask(btn.dataset.jobId || ''));
+    });
+    taskList.querySelectorAll('.task-delete-btn').forEach(btn => {
+        btn.addEventListener('click', () => deleteTask(btn.dataset.jobId || ''));
+    });
+    taskList.querySelectorAll('.task-template-use').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const template = taskTemplates.find(item => item.id === btn.dataset.templateId);
+            if (!template)
+                return;
+            openTaskCreate({
+                job_id: '',
+                title: template.title,
+                instruction: template.instruction,
+                priority: template.priority,
+                status: 'queued',
+                trigger_type: 'template',
+                generation_count: 0,
+                latest_generation: 0,
+                task_payload: {
+                    schedule: {
+                        enabled: template.schedule_enabled,
+                        duration_minutes: template.interval_minutes,
+                    },
+                },
+            });
+        });
+    });
+    startTaskThinkingMotion();
+}
+async function toggleTaskDetail(jobId) {
+    if (!jobId)
+        return;
+    const job = taskJobs.find(item => item.job_id === jobId);
+    currentDetailJobId = jobId;
+    taskDetailTitle.textContent = job?.title || '任务详情';
+    taskDetailSubtitle.textContent = job ? `任务ID: ${job.job_id}` : `任务ID: ${jobId}`;
+    taskDetailModal.classList.add('visible');
+    taskDetailContent.innerHTML = '<div class="task-detail-loading">正在加载任务详情...</div>';
+    try {
+        const generations = await window.heysureAPI.getTaskGenerations(jobId);
+        currentDetailGenerations = generations;
+        selectedDetailGeneration = selectedDetailGeneration && generations.some(item => item.generation === selectedDetailGeneration)
+            ? selectedDetailGeneration
+            : (generations[generations.length - 1]?.generation || 0);
+        renderTaskDetail(taskDetailContent, job);
+    }
+    catch (err) {
+        taskDetailContent.innerHTML = `<div class="task-detail-error">${escapeHtml(err.message || String(err))}</div>`;
+    }
+}
+function renderTaskDetail(target, job) {
+    const selected = currentDetailGenerations.find(item => item.generation === selectedDetailGeneration);
+    const latestMessages = (selected?.messages || []).slice(-8);
+    const generationOptions = currentDetailGenerations.map(item => `<option value="${item.generation}" ${item.generation === selectedDetailGeneration ? 'selected' : ''}>${escapeHtml(item.label || `第${item.generation}代`)} · ${escapeHtml(item.status || '')}</option>`).join('');
+    const stateLabel = job ? taskStateLabel(taskState(job)) : '—';
+    target.innerHTML = `
+    <div class="task-detail-grid">
+      <div><span>状态</span><strong>${stateLabel}</strong></div>
+      <div><span>开始</span><strong>${formatDateTime(job?.started_at)}</strong></div>
+      <div><span>结束</span><strong>${formatDateTime(job?.finished_at)}</strong></div>
+      <div><span>运行状态</span><strong>${escapeHtml(job?.run_status || job?.effective_status || job?.status || '—')}</strong></div>
+    </div>
+    <div class="task-detail-section">
+      <div class="task-section-title">任务说明</div>
+      <pre>${escapeHtml(job?.instruction || '暂无任务说明')}</pre>
+    </div>
+    <div class="task-detail-section">
+      <div class="task-section-title">任务参数</div>
+      <pre>${escapeHtml(JSON.stringify(job?.task_payload || {}, null, 2))}</pre>
+    </div>
+    <div class="task-detail-section">
+      <div class="task-detail-toolbar">
+        <div class="task-section-title">执行详情</div>
+        ${currentDetailGenerations.length > 0 ? `<select class="task-generation-select">${generationOptions}</select>` : ''}
+      </div>
+      ${selected ? `
+        <div class="task-run-line">第 ${selected.generation} 代 · ${escapeHtml(selected.status || 'unknown')} · run: ${escapeHtml(selected.run_id || '—')} · 工具: ${escapeHtml(selected.live?.current_tool || '—')}</div>
+        ${selected.live?.text ? `<pre>${escapeHtml(selected.live.text)}</pre>` : ''}
+        ${selected.system_prompt ? `<details class="task-prompt-detail"><summary>系统提示词</summary><pre>${escapeHtml(selected.system_prompt)}</pre></details>` : ''}
+        ${latestMessages.length > 0 ? latestMessages.map(msg => `
+          <div class="task-message">
+            <span>${escapeHtml(msg.role)}</span>
+            <p>${escapeHtml(msg.content || '').slice(0, 2000)}</p>
+          </div>`).join('') : '<div class="task-muted">暂无对话消息</div>'}
+      ` : '<div class="task-muted">暂无代际记录</div>'}
+    </div>`;
+    target.querySelector('.task-generation-select')?.addEventListener('change', (event) => {
+        const select = event.target;
+        selectedDetailGeneration = Number(select.value) || selectedDetailGeneration;
+        renderTaskDetail(target, job);
+    });
+}
+function toggleTaskSelection(jobId, checked) {
+    if (!jobId)
+        return;
+    const next = new Set(selectedTaskJobIds);
+    if (checked)
+        next.add(jobId);
+    else
+        next.delete(jobId);
+    selectedTaskJobIds = Array.from(next);
+    renderTasks();
+}
+async function submitTask() {
+    if (taskCreateSubmitting)
+        return;
+    const title = taskFormTitle.value.trim();
+    if (!title) {
+        setTaskFormStatus('请填写任务名称。', true);
+        return;
+    }
+    const mcpTools = taskFormMcp.value.split(',').map(item => item.trim()).filter(Boolean);
+    if (taskFormMcpEnabled.checked && mcpTools.length === 0) {
+        setTaskFormStatus('已启用 MCP 范围覆盖时，请至少填写一个工具。', true);
+        return;
+    }
+    let scheduleAt = null;
+    if (taskFormSchedule.checked && !taskFormLoop.checked && taskFormDate.value) {
+        const parsedMs = Date.parse(taskFormDate.value);
+        scheduleAt = Number.isFinite(parsedMs) && parsedMs > 0 ? Math.floor(parsedMs / 1000) : taskFormDate.value;
+    }
+    const payload = {
+        title,
+        instruction: taskFormInstruction.value.trim(),
+        priority: Math.max(1, Math.min(10, Number(taskFormPriority.value) || 5)),
+        schedule_enabled: taskFormSchedule.checked,
+        schedule_loop_enabled: taskFormSchedule.checked && taskFormLoop.checked,
+        schedule_run_immediately: taskFormSchedule.checked && taskFormLoop.checked && taskFormRunNow.checked,
+        schedule_duration_minutes: Math.max(1, Number(taskFormDuration.value) || 30),
+        schedule_at: scheduleAt,
+        override_token_limit_enabled: taskFormTokenEnabled.checked,
+        token_limit_override: Math.max(1, Number(taskFormToken.value) || 10000),
+        override_mcp_tools_enabled: taskFormMcpEnabled.checked,
+        mcp_tools_override: mcpTools,
+        override_workspace_root_enabled: taskFormWorkspaceEnabled.checked,
+        workspace_root_override: normalizeWorkspaceRoot(taskFormWorkspace.value || '.'),
+    };
+    taskCreateSubmitting = true;
+    syncTaskFormVisibility();
+    setTaskFormStatus('正在提交任务...');
+    try {
+        const result = await window.heysureAPI.triggerTask(payload);
+        setTaskFormStatus(`任务「${result?.title || title}」已创建并入队。`);
+        closeTaskCreate();
+        await loadTasks(true);
+    }
+    catch (err) {
+        setTaskFormStatus(err.message || String(err), true);
+    }
+    finally {
+        taskCreateSubmitting = false;
+        syncTaskFormVisibility();
+    }
+}
+async function pauseTask(jobId) {
+    const job = taskJobs.find(item => item.job_id === jobId);
+    if (!job || !canPauseTaskJob(job))
+        return;
+    try {
+        await window.heysureAPI.pauseTask(jobId);
+        await loadTasks(true);
+    }
+    catch (err) {
+        alert(err.message || String(err));
+    }
+}
+async function resumeTask(jobId) {
+    const job = taskJobs.find(item => item.job_id === jobId);
+    if (!job || !canResumeTaskJob(job))
+        return;
+    try {
+        await window.heysureAPI.resumeTask(jobId);
+        await loadTasks(true);
+    }
+    catch (err) {
+        alert(err.message || String(err));
+    }
+}
+async function deleteTask(jobId) {
+    const job = taskJobs.find(item => item.job_id === jobId);
+    if (!job)
+        return;
+    if (!confirm(`确认删除任务「${job.title}」？会停止当前思考并删除该任务对话记录。`))
+        return;
+    try {
+        await window.heysureAPI.deleteTask(jobId);
+        selectedTaskJobIds = selectedTaskJobIds.filter(id => id !== jobId);
+        if (currentDetailJobId === jobId) {
+            currentDetailJobId = '';
+            currentDetailGenerations = [];
+            selectedDetailGeneration = 0;
+        }
+        await loadTasks(true);
+    }
+    catch (err) {
+        alert(err.message || String(err));
+    }
+}
+async function batchDeleteTasks() {
+    const ids = [...selectedTaskJobIds];
+    if (ids.length === 0)
+        return;
+    if (!confirm(`确认批量删除 ${ids.length} 条已完成任务执行记录？`))
+        return;
+    let success = 0;
+    let failed = 0;
+    for (const id of ids) {
+        try {
+            await window.heysureAPI.deleteTask(id);
+            success += 1;
+        }
+        catch {
+            failed += 1;
+        }
+    }
+    selectedTaskJobIds = [];
+    await loadTasks(true);
+    alert(failed === 0 ? `已批量删除 ${success} 条任务。` : `批量删除完成：成功 ${success} 条，失败 ${failed} 条。`);
+}
+taskRefreshBtn.addEventListener('click', () => loadTasks(true));
+taskCreateBtn.addEventListener('click', () => taskCreateOpen ? closeTaskCreate() : openTaskCreate());
+taskBatchDeleteBtn.addEventListener('click', () => batchDeleteTasks());
+taskSubmitBtn.addEventListener('click', submitTask);
+taskCancelBtn.addEventListener('click', closeTaskCreate);
+taskCreateClose.addEventListener('click', closeTaskCreate);
+taskDetailClose.addEventListener('click', closeTaskDetail);
+taskCreatePanel.addEventListener('click', (event) => {
+    if (event.target === taskCreatePanel)
+        closeTaskCreate();
+});
+taskCreateCard.addEventListener('click', event => event.stopPropagation());
+taskDetailModal.addEventListener('click', (event) => {
+    if (event.target === taskDetailModal)
+        closeTaskDetail();
+});
+taskDetailCard.addEventListener('click', event => event.stopPropagation());
+taskFilterBar.querySelectorAll('[data-task-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        selectedTaskFilter = btn.dataset.taskFilter || 'all';
+        renderTasks();
+    });
+});
+[taskFormSchedule, taskFormLoop, taskFormTokenEnabled, taskFormMcpEnabled, taskFormWorkspaceEnabled].forEach(input => {
+    input.addEventListener('change', syncTaskFormVisibility);
+});
 // ── Activity feed ──────────────────────────────────────────────────────────
 function addEntry(entry) {
     feedEmpty.style.display = 'none';
@@ -167,13 +870,13 @@ function appendThinking() {
     chatMessages.scrollTop = chatMessages.scrollHeight;
     return el;
 }
-function updateChatKeyVisibility() {
-    chatNoKey.style.display = (!hasAiKey && chatHistory.length === 0) ? 'flex' : 'none';
-    chatInput.disabled = !hasAiKey;
-    chatSendBtn.disabled = !hasAiKey;
+function updateChatEmptyVisibility() {
+    chatNoKey.style.display = chatHistory.length === 0 ? 'flex' : 'none';
+    chatInput.disabled = false;
+    chatSendBtn.disabled = false;
 }
 async function sendChat() {
-    if (chatBusy || !hasAiKey)
+    if (chatBusy)
         return;
     const text = chatInput.value.trim();
     if (!text)
@@ -197,7 +900,7 @@ async function sendChat() {
     }
     finally {
         chatBusy = false;
-        chatSendBtn.disabled = !hasAiKey;
+        chatSendBtn.disabled = false;
         chatInput.focus();
     }
 }
@@ -207,17 +910,21 @@ chatInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shift
     sendChat();
 } });
 chatInput.addEventListener('input', () => { chatInput.style.height = 'auto'; chatInput.style.height = Math.min(chatInput.scrollHeight, 110) + 'px'; });
+document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape')
+        return;
+    if (taskDetailModal.classList.contains('visible'))
+        closeTaskDetail();
+    if (taskCreateOpen)
+        closeTaskCreate();
+});
 // ── Settings ───────────────────────────────────────────────────────────────
 async function loadMainSettings() {
     const s = await window.heysureAPI.getSettings();
-    cfgAiKey.value = s.aiKey || '';
-    cfgAiBaseUrl.value = s.aiBaseUrl || '';
-    cfgAiModel.value = s.aiModel || '';
     cfgWorkspace.value = s.workspaceRoot || '';
     infoServer.textContent = s.serverUrl || '—';
     infoWorkspace.textContent = s.workspaceRoot ? (s.workspaceRoot.split(/[/\\]/).pop() || s.workspaceRoot) : '—';
-    hasAiKey = !!(s.aiKey?.trim());
-    updateChatKeyVisibility();
+    updateChatEmptyVisibility();
     if (s.selectedAiConfigName)
         updateAiMemberDisplay(s);
     return s;
@@ -235,15 +942,11 @@ function updateAiMemberDisplay(s) {
 async function saveSettings() {
     const settings = {
         workspaceRoot: cfgWorkspace.value.trim(),
-        aiKey: cfgAiKey.value.trim(),
-        aiBaseUrl: cfgAiBaseUrl.value.trim() || 'https://api.anthropic.com',
-        aiModel: cfgAiModel.value.trim() || 'claude-sonnet-4-5',
     };
     try {
         await window.heysureAPI.saveSettings(settings);
         infoWorkspace.textContent = settings.workspaceRoot ? (settings.workspaceRoot.split(/[/\\]/).pop() || settings.workspaceRoot) : '—';
-        hasAiKey = !!(settings.aiKey);
-        updateChatKeyVisibility();
+        updateChatEmptyVisibility();
         saveFeedback.style.color = '';
         saveFeedback.textContent = '已保存 ✓';
         setTimeout(() => { saveFeedback.textContent = ''; }, 2000);
@@ -277,25 +980,21 @@ disconnectBtn.addEventListener('click', () => window.heysureAPI.disconnect());
 clearBtn.addEventListener('click', () => {
     feed.querySelectorAll('.entry').forEach(e => e.remove());
     feedEmpty.style.display = 'flex';
-    totalTasks = 0;
-    successTasks = 0;
-    failedTasks = 0;
-    runningTasks = 0;
-    updateStats();
 });
+settingsToggle.addEventListener('click', () => setSidebarOpen(!sidebarOpen));
 window.heysureAPI.onStatusChange(setStatus);
 window.heysureAPI.onActivityLog(addEntry);
 window.heysureAPI.onTaskStart((data) => {
     totalTasks++;
     runningTasks++;
-    updateStats();
     addEntry({ id: data.taskId, type: 'task', status: 'running', message: `执行工具: ${data.tool}`, data: data.args && Object.keys(data.args).length > 0 ? data.args : undefined, timestamp: data.timestamp || Date.now() });
+    loadTasks(true).catch(() => updateStats());
 });
 window.heysureAPI.onTaskResult((data) => {
     runningTasks = Math.max(0, runningTasks - 1);
     data.success ? successTasks++ : failedTasks++;
-    updateStats();
     addEntry({ id: data.taskId + '_result', type: 'task', status: data.success ? 'success' : 'error', message: `${data.success ? '完成' : '失败'}: ${data.tool}`, data: data.result ?? undefined, timestamp: data.timestamp || Date.now() });
+    loadTasks(true).catch(() => updateStats());
 });
 // ══════════════════════════════════════════════════════
 // SCREEN 1: LOGIN
@@ -382,24 +1081,24 @@ function renderAiGrid(configs, statuses) {
     }
     aiGrid.innerHTML = '';
     configs.forEach(cfg => {
-        const isAdmin   = cfg.ai_role === 'assistant_admin';
+        const isAdmin = cfg.ai_role === 'assistant_admin';
         const isManager = !isAdmin && cfg.digital_member_role === 'manager';
         const rs = statusMap.get(cfg.id);
         const isEnabled = rs?.running ?? cfg.enabled;
         const card = document.createElement('div');
         card.className = `ai-card${isAdmin ? ' admin-card' : isManager ? ' manager-card' : ''}`;
-        const avatarCls  = isAdmin ? 'admin' : isManager ? 'manager' : 'member';
+        const avatarCls = isAdmin ? 'admin' : isManager ? 'manager' : 'member';
         const avatarIcon = isAdmin ? '&#x1F512;' : isManager ? '★' : '&#x1F916;';
-        const roleBadge  = isAdmin
+        const roleBadge = isAdmin
             ? '<span class="badge badge-admin">管理员</span>'
             : `<span class="badge ${isManager ? 'badge-manager' : 'badge-member'}">${isManager ? '组长' : '成员'}</span>`;
         const actionHtml = isAdmin
             ? '<div class="admin-note">&#x1F512; 管理员 AI 仅供查看，不可调用</div>'
             : isManager
                 ? `<button class="btn btn-secondary btn-clone">&#x1F4CB; 克隆</button>
-                   <div class="manager-note">组长不可直接调用</div>`
+           <div class="manager-note">组长不可直接调用</div>`
                 : `<button class="btn btn-secondary btn-clone">&#x1F4CB; 克隆</button>
-                   <button class="btn btn-primary btn-select">选择</button>`;
+           <button class="btn btn-primary btn-select">选择</button>`;
         card.innerHTML = `
       <div class="ai-card-top">
         <div class="ai-avatar ${avatarCls}">${avatarIcon}</div>
@@ -419,70 +1118,41 @@ function renderAiGrid(configs, statuses) {
         if (!isAdmin) {
             card.querySelector('.btn-clone').addEventListener('click', async () => {
                 const btn = card.querySelector('.btn-clone');
-                btn.disabled = true; btn.textContent = '克隆中...';
+                btn.disabled = true;
+                btn.textContent = '克隆中...';
                 try {
                     await window.heysureAPI.cloneAiConfig(cfg.id);
                     await loadAiSelectScreen();
                 }
                 catch (err) {
                     alert('克隆失败: ' + (err.message || String(err)));
-                    btn.disabled = false; btn.innerHTML = '&#x1F4CB; 克隆';
+                    btn.disabled = false;
+                    btn.innerHTML = '&#x1F4CB; 克隆';
                 }
             });
         }
         if (!isAdmin && !isManager) {
             card.querySelector('.btn-select').addEventListener('click', async () => {
                 const btn = card.querySelector('.btn-select');
-                btn.disabled = true; btn.textContent = '连接中...';
+                btn.disabled = true;
+                btn.textContent = '连接中...';
                 try {
                     await window.heysureAPI.selectAiConfig(cfg);
                     const s = await window.heysureAPI.getSettings();
                     await loadMainSettings();
                     updateAiMemberDisplay(s);
                     const status = await window.heysureAPI.getStatus();
-                    setStatus(status); updateStats();
+                    setStatus(status);
+                    loadTasks(true).catch(() => { });
                     showScreen('main');
                 }
                 catch (err) {
                     alert('选择失败: ' + (err.message || String(err)));
-                    btn.disabled = false; btn.textContent = '选择';
+                    btn.disabled = false;
+                    btn.textContent = '选择';
                 }
             });
         }
-        card.querySelector('.btn-clone').addEventListener('click', async () => {
-            const btn = card.querySelector('.btn-clone');
-            btn.disabled = true;
-            btn.textContent = '克隆中...';
-            try {
-                await window.heysureAPI.cloneAiConfig(cfg.id);
-                await loadAiSelectScreen();
-            }
-            catch (err) {
-                alert('克隆失败: ' + (err.message || String(err)));
-                btn.disabled = false;
-                btn.innerHTML = '&#x1F4CB; 克隆';
-            }
-        });
-        card.querySelector('.btn-select').addEventListener('click', async () => {
-            const btn = card.querySelector('.btn-select');
-            btn.disabled = true;
-            btn.textContent = '连接中...';
-            try {
-                await window.heysureAPI.selectAiConfig(cfg);
-                const s = await window.heysureAPI.getSettings();
-                await loadMainSettings();
-                updateAiMemberDisplay(s);
-                const status = await window.heysureAPI.getStatus();
-                setStatus(status);
-                updateStats();
-                showScreen('main');
-            }
-            catch (err) {
-                alert('选择失败: ' + (err.message || String(err)));
-                btn.disabled = false;
-                btn.textContent = '选择';
-            }
-        });
         aiGrid.appendChild(card);
     });
 }
@@ -514,10 +1184,10 @@ async function init() {
         await loadMainSettings();
         const status = await window.heysureAPI.getStatus();
         setStatus(status);
-        updateStats();
         showScreen('main');
         setUserChip(s.userAccount, s.serverUrl);
         loadAiSelectScreen().catch(() => { });
+        loadTasks(true).catch(() => { });
     }
     else if (s.authToken) {
         setUserChip(s.userAccount, s.serverUrl);

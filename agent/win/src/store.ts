@@ -26,7 +26,7 @@ interface AgentSettings {
 }
 
 const defaults: AgentSettings = {
-  serverUrl: process.env.SERVER_URL || 'http://localhost:3000',
+  serverUrl: process.env.SERVER_URL || 'http://127.0.0.1:3000',
   agentToken: process.env.AGENT_TOKEN || '',
   agentId: process.env.AGENT_ID || '',
   agentName: process.env.AGENT_NAME || 'Windows Agent',

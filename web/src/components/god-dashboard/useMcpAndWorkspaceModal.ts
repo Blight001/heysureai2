@@ -42,6 +42,10 @@ export const useMcpAndWorkspaceModal = ({ mcpToolMetaByName }: UseMcpAndWorkspac
     } catch {
       // ignore parse error
     }
+    if (agent.desktopAgentConnected) {
+      allowedTools.add('admin.list_agents')
+      allowedTools.add('admin.dispatch_task')
+    }
     toolModalItems.value = buildToolItems(Array.from(allowedTools))
     toolModalOpen.value = true
   }

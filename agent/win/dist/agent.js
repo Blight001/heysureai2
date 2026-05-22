@@ -9,6 +9,7 @@ const os_1 = __importDefault(require("os"));
 const path_1 = __importDefault(require("path"));
 const executor_1 = require("./executor");
 const platform_1 = require("./platform");
+const server_url_1 = require("./server-url");
 class HeySureAgent {
     constructor(settings, events = {}) {
         this.socket = null;
@@ -30,8 +31,17 @@ class HeySureAgent {
         if (this.socket?.connected)
             return;
         this.setStatus('connecting');
-        this.log('info', `正在连接 ${this.settings.serverUrl}…`);
-        this.socket = (0, socket_io_client_1.io)(this.settings.serverUrl, {
+        let serverUrl;
+        try {
+            serverUrl = (0, server_url_1.normalizeServerUrl)(this.settings.serverUrl);
+        }
+        catch {
+            this.setStatus('error', '服务器 URL 格式无效');
+            this.log('error', '连接错误: 服务器 URL 格式无效');
+            return;
+        }
+        this.log('info', `正在连接 ${serverUrl}…`);
+        this.socket = (0, socket_io_client_1.io)(serverUrl, {
             transports: ['websocket', 'polling'],
             reconnectionDelay: 2000,
             reconnectionAttempts: Infinity,
@@ -81,6 +91,8 @@ class HeySureAgent {
             workspaceRoot: this.workspaceRoot,
             lifecycle: 'registered',
             isWindowsDesktop: true,
+            aiConfigId: this.settings.selectedAiConfigId,
+            userId: this.settings.userId,
         });
     }
     async handleTask(task) {

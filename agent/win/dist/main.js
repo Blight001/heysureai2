@@ -40,6 +40,7 @@ const store_1 = require("./store");
 const constants_1 = require("./constants");
 const agent_1 = require("./agent");
 const capture_bridge_1 = require("./capture-bridge");
+const server_url_1 = require("./server-url");
 electron_1.app.setName('HeySure Agent');
 if (process.platform === 'win32') {
     electron_1.app.setAppUserModelId('com.heysure.agent.win');
@@ -276,14 +277,13 @@ function registerIpc() {
         const raw = String(store_1.store.get('serverUrl') || '').trim();
         if (!raw)
             return { success: false, error: '未配置服务器 URL' };
-        let url;
+        let base;
         try {
-            url = new URL(raw);
+            base = (0, server_url_1.normalizeServerUrl)(raw);
         }
         catch {
             return { success: false, error: '服务器 URL 格式无效' };
         }
-        const base = url.href.replace(/\/$/, '');
         try {
             const start = Date.now();
             const res = await electron_1.net.fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) })
@@ -297,22 +297,19 @@ function registerIpc() {
     });
     electron_1.ipcMain.handle('chat:send', async (_event, messages) => {
         const s = store_1.store.store;
-        if (!s.aiKey)
-            throw new Error('未配置 AI Key');
-        return callAiApi(s.aiBaseUrl || 'https://api.anthropic.com', s.aiKey, s.aiModel || 'claude-sonnet-4-5', messages);
+        return callServerChat(s, messages);
     });
     electron_1.ipcMain.handle('auth:login', async (_event, params) => {
         const { serverUrl, account, password } = params;
         if (!serverUrl)
             throw new Error('服务器 URL 不能为空');
-        let url;
+        let base;
         try {
-            url = new URL(serverUrl);
+            base = (0, server_url_1.normalizeServerUrl)(serverUrl);
         }
         catch {
             throw new Error('服务器 URL 格式无效');
         }
-        const base = url.href.replace(/\/$/, '');
         const res = await electron_1.net.fetch(`${base}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -348,7 +345,7 @@ function registerIpc() {
         const s = store_1.store.store;
         if (!s.serverUrl || !s.authToken)
             throw new Error('未登录');
-        const base = s.serverUrl.replace(/\/$/, '');
+        const base = (0, server_url_1.normalizeServerUrl)(s.serverUrl);
         const res = await electron_1.net.fetch(`${base}/api/ai/configs`, {
             headers: { 'Authorization': `Bearer ${s.authToken}` },
             signal: AbortSignal.timeout(10000),
@@ -362,7 +359,7 @@ function registerIpc() {
         const s = store_1.store.store;
         if (!s.serverUrl || !s.authToken)
             return [];
-        const base = s.serverUrl.replace(/\/$/, '');
+        const base = (0, server_url_1.normalizeServerUrl)(s.serverUrl);
         try {
             const res = await electron_1.net.fetch(`${base}/api/ai/runtime-status`, {
                 headers: { 'Authorization': `Bearer ${s.authToken}` },
@@ -395,7 +392,7 @@ function registerIpc() {
         const s = store_1.store.store;
         if (!s.serverUrl || !s.authToken)
             throw new Error('未登录');
-        const base = s.serverUrl.replace(/\/$/, '');
+        const base = (0, server_url_1.normalizeServerUrl)(s.serverUrl);
         const res = await electron_1.net.fetch(`${base}/api/ai/configs/${configId}/clone`, {
             method: 'POST',
             headers: {
@@ -409,33 +406,195 @@ function registerIpc() {
             throw new Error(data?.detail || `克隆失败 (${res.status})`);
         return data;
     });
+    electron_1.ipcMain.handle('task:list', async () => {
+        const s = store_1.store.store;
+        if (!s.serverUrl || !s.authToken)
+            throw new Error('未登录');
+        if (!s.selectedAiConfigId)
+            throw new Error('未选择 AI 成员');
+        const base = (0, server_url_1.normalizeServerUrl)(s.serverUrl);
+        const headers = { 'Authorization': `Bearer ${s.authToken}` };
+        const [taskRes, jobRes] = await Promise.all([
+            electron_1.net.fetch(`${base}/api/ai/configs/${s.selectedAiConfigId}/task-list`, {
+                headers,
+                signal: AbortSignal.timeout(10000),
+            }),
+            electron_1.net.fetch(`${base}/api/ai/configs/${s.selectedAiConfigId}/task-jobs`, {
+                headers,
+                signal: AbortSignal.timeout(10000),
+            }),
+        ]);
+        const taskData = await taskRes.json();
+        const jobData = await jobRes.json();
+        if (!taskRes.ok)
+            throw new Error(taskData?.detail || `任务列表加载失败 (${taskRes.status})`);
+        if (!jobRes.ok)
+            throw new Error(jobData?.detail || `任务执行记录加载失败 (${jobRes.status})`);
+        return {
+            tasks: Array.isArray(taskData?.tasks) ? taskData.tasks : [],
+            jobs: Array.isArray(jobData?.jobs) ? jobData.jobs : [],
+        };
+    });
+    electron_1.ipcMain.handle('task:generations', async (_event, jobId) => {
+        const s = store_1.store.store;
+        if (!s.serverUrl || !s.authToken)
+            throw new Error('未登录');
+        if (!s.selectedAiConfigId)
+            throw new Error('未选择 AI 成员');
+        if (!jobId)
+            throw new Error('任务 ID 不能为空');
+        const base = (0, server_url_1.normalizeServerUrl)(s.serverUrl);
+        const res = await electron_1.net.fetch(`${base}/api/ai/configs/${s.selectedAiConfigId}/task-jobs/${encodeURIComponent(jobId)}/generations`, {
+            headers: { 'Authorization': `Bearer ${s.authToken}` },
+            signal: AbortSignal.timeout(10000),
+        });
+        const data = await res.json();
+        if (!res.ok)
+            throw new Error(data?.detail || `任务详情加载失败 (${res.status})`);
+        return Array.isArray(data?.generations) ? data.generations : [];
+    });
+    electron_1.ipcMain.handle('task:trigger', async (_event, payload) => {
+        const s = store_1.store.store;
+        if (!s.serverUrl || !s.authToken)
+            throw new Error('未登录');
+        if (!s.selectedAiConfigId)
+            throw new Error('未选择 AI 成员');
+        const base = (0, server_url_1.normalizeServerUrl)(s.serverUrl);
+        const res = await electron_1.net.fetch(`${base}/api/ai/configs/${s.selectedAiConfigId}/task-trigger`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${s.authToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(payload || {}),
+            signal: AbortSignal.timeout(10000),
+        });
+        const data = await res.json();
+        if (!res.ok)
+            throw new Error(data?.detail || `创建任务失败 (${res.status})`);
+        return data;
+    });
+    electron_1.ipcMain.handle('task:pause', async (_event, jobId) => callTaskJobAction(jobId, 'pause', '暂停任务失败'));
+    electron_1.ipcMain.handle('task:resume', async (_event, jobId) => callTaskJobAction(jobId, 'resume', '恢复任务失败'));
+    electron_1.ipcMain.handle('task:delete', async (_event, jobId) => {
+        const s = store_1.store.store;
+        if (!s.serverUrl || !s.authToken)
+            throw new Error('未登录');
+        if (!s.selectedAiConfigId)
+            throw new Error('未选择 AI 成员');
+        if (!jobId)
+            throw new Error('任务 ID 不能为空');
+        const base = (0, server_url_1.normalizeServerUrl)(s.serverUrl);
+        const res = await electron_1.net.fetch(`${base}/api/ai/configs/${s.selectedAiConfigId}/task-jobs/${encodeURIComponent(jobId)}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${s.authToken}` },
+            signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data?.detail || `删除任务失败 (${res.status})`);
+        }
+        return { success: true };
+    });
+    electron_1.ipcMain.handle('workspace:files', async () => {
+        const s = store_1.store.store;
+        if (!s.serverUrl || !s.authToken)
+            throw new Error('未登录');
+        const base = (0, server_url_1.normalizeServerUrl)(s.serverUrl);
+        const res = await electron_1.net.fetch(`${base}/api/chat/files`, {
+            headers: { 'Authorization': `Bearer ${s.authToken}` },
+            signal: AbortSignal.timeout(10000),
+        });
+        const data = await res.json();
+        if (!res.ok)
+            throw new Error(data?.detail || `工作区目录加载失败 (${res.status})`);
+        return Array.isArray(data) ? data : [];
+    });
 }
-// ── AI API helper ─────────────────────────────────────────────────────────────
-async function callAiApi(baseUrl, apiKey, model, messages) {
-    const isAnthropic = baseUrl.includes('anthropic.com');
-    const endpoint = isAnthropic
-        ? `${baseUrl.replace(/\/$/, '')}/v1/messages`
-        : `${baseUrl.replace(/\/$/, '')}/v1/chat/completions`;
-    const headers = { 'Content-Type': 'application/json' };
-    if (isAnthropic) {
-        headers['x-api-key'] = apiKey;
-        headers['anthropic-version'] = '2023-06-01';
-    }
-    else {
-        headers['Authorization'] = `Bearer ${apiKey}`;
-    }
-    const body = JSON.stringify({ model, max_tokens: 4096, messages });
-    const res = await electron_1.net.fetch(endpoint, { method: 'POST', headers, body });
-    const data = await res.json();
+async function callTaskJobAction(jobId, action, fallback) {
+    const s = store_1.store.store;
+    if (!s.serverUrl || !s.authToken)
+        throw new Error('未登录');
+    if (!s.selectedAiConfigId)
+        throw new Error('未选择 AI 成员');
+    if (!jobId)
+        throw new Error('任务 ID 不能为空');
+    const base = (0, server_url_1.normalizeServerUrl)(s.serverUrl);
+    const res = await electron_1.net.fetch(`${base}/api/ai/configs/${s.selectedAiConfigId}/task-jobs/${encodeURIComponent(jobId)}/${action}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${s.authToken}` },
+        signal: AbortSignal.timeout(10000),
+    });
     if (!res.ok) {
-        throw new Error(data?.error?.message || `API error ${res.status}`);
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.detail || `${fallback} (${res.status})`);
     }
-    if (isAnthropic) {
-        return data.content?.[0]?.text || '';
+    return { success: true };
+}
+// ── Server-side AI chat helper ────────────────────────────────────────────────
+async function callServerChat(settings, messages) {
+    if (!settings.serverUrl || !settings.authToken)
+        throw new Error('请先登录服务器');
+    const base = (0, server_url_1.normalizeServerUrl)(settings.serverUrl);
+    const normalizedMessages = messages.map(m => ({
+        role: m.role === 'ai' ? 'assistant' : m.role,
+        content: String(m.content || ''),
+    }));
+    const res = await electron_1.net.fetch(`${base}/api/chat/stream`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${settings.authToken}`,
+        },
+        body: JSON.stringify({
+            messages: normalizedMessages,
+            ai_kind: 'assistant',
+            ai_config_id: settings.selectedAiConfigId,
+        }),
+        signal: AbortSignal.timeout(120000),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+        try {
+            const data = JSON.parse(text);
+            throw new Error(data?.detail || `服务器聊天失败 (${res.status})`);
+        }
+        catch (err) {
+            if (err?.message && !err.message.startsWith('Unexpected'))
+                throw err;
+            throw new Error(text || `服务器聊天失败 (${res.status})`);
+        }
     }
-    else {
-        return data.choices?.[0]?.message?.content || '';
+    return extractChatStreamText(text) || text;
+}
+function extractChatStreamText(text) {
+    let reply = '';
+    for (const rawLine of text.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!line.startsWith('data:'))
+            continue;
+        const data = line.slice(5).trim();
+        if (!data || data === '[DONE]')
+            continue;
+        try {
+            const chunk = JSON.parse(data);
+            const delta = chunk?.choices?.[0]?.delta;
+            const content = delta?.content;
+            if (typeof content === 'string') {
+                reply += content;
+            }
+            else if (Array.isArray(content)) {
+                for (const part of content) {
+                    if (typeof part?.text === 'string')
+                        reply += part.text;
+                }
+            }
+        }
+        catch {
+            // Ignore non-JSON stream lines.
+        }
     }
+    return reply;
 }
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 electron_1.app.whenReady().then(async () => {

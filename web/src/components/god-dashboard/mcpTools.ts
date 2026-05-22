@@ -12,6 +12,7 @@ export const MCP_TOOL_ZH_META: Record<string, { label: string; description: stri
   'admin.list_agents': { label: '列出智能体', description: '查看系统中的 AI 成员列表。', tag: '管理' },
   'admin.get_overview': { label: '管理总览', description: '获取系统运行状态与关键统计。', tag: '管理' },
   'admin.dispatch_flow': { label: '分派流程', description: '向指定 AI 下发流程或任务。', tag: '管理' },
+  'admin.dispatch_task': { label: '控制桌面端', description: '通过已连接的 Windows 桌面 Agent 执行本地任务，可调用文件、Shell、Git、键盘、鼠标、屏幕、剪贴板、窗口和进程能力。', tag: '桌面端' },
   'project.list_projects': { label: '项目列表', description: '查看当前用户下的项目信息。', tag: '项目' },
   'project.create_project': { label: '创建项目', description: '创建新的项目记录。', tag: '项目' },
   'project.update_project': { label: '更新项目', description: '更新项目信息与成员绑定。', tag: '项目' },
@@ -61,6 +62,7 @@ export const normalizeMcpSchemaType = (rawType: unknown) => {
 const getMcpToolFallbackTag = (name: string) => {
   if (name.startsWith('workspace.')) return '工作区'
   if (name.startsWith('admin.')) return '管理'
+  if (name.startsWith('desktop.')) return '桌面端'
   if (name.startsWith('project.')) return '项目'
   if (name.startsWith('task.')) return '任务'
   if (name.startsWith('prompt.')) return 'Prompt'

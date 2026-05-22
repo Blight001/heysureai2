@@ -60,6 +60,11 @@ export interface Agent {
     label?: string
     message?: string
   }
+  desktopAgentConnected?: boolean
+  desktopAgentId?: string
+  desktopAgentName?: string
+  desktopAgentPlatform?: string
+  desktopAgentCapabilities?: string[]
   runtimeStatus?: string
   runtimeTool?: string
   activeRunStatus?: string

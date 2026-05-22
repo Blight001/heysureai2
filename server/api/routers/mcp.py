@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from api.database import get_session
+from api.desktop_agent_tools import desktop_bridge_tools_for_config
 from api.mcp import registry
 from api.models import AssistantAIConfig
 from api.routers.auth import get_current_user
@@ -57,6 +58,7 @@ async def call_mcp_tool(
             allowed_tools = {str(item).strip() for item in parsed_allowed if isinstance(item, str) and str(item).strip()}
             allowed_tools = with_task_create_compat(allowed_tools)
             allowed_tools = with_workspace_read_by_name_compat(allowed_tools)
+            allowed_tools.update(desktop_bridge_tools_for_config(req.ai_config_id, user.id))
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid AI MCP tool config")
         if req.tool not in allowed_tools:

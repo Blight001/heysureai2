@@ -6,6 +6,7 @@ import { store, AgentSettings } from './store'
 import { SCREENSHOT_TIMEOUT_MS } from './constants'
 import { HeySureAgent, AgentStatus } from './agent'
 import { registerCaptureFn } from './capture-bridge'
+import { normalizeServerUrl } from './server-url'
 
 app.setName('HeySure Agent')
 if (process.platform === 'win32') {
@@ -269,9 +270,8 @@ function registerIpc(): void {
   ipcMain.handle('connection:test', async () => {
     const raw = String(store.get('serverUrl') || '').trim()
     if (!raw) return { success: false, error: '未配置服务器 URL' }
-    let url: URL
-    try { url = new URL(raw) } catch { return { success: false, error: '服务器 URL 格式无效' } }
-    const base = url.href.replace(/\/$/, '')
+    let base: string
+    try { base = normalizeServerUrl(raw) } catch { return { success: false, error: '服务器 URL 格式无效' } }
     try {
       const start = Date.now()
       const res = await net.fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) })
@@ -285,16 +285,14 @@ function registerIpc(): void {
 
   ipcMain.handle('chat:send', async (_event, messages: any[]) => {
     const s = store.store
-    if (!s.aiKey) throw new Error('未配置 AI Key')
-    return callAiApi(s.aiBaseUrl || 'https://api.anthropic.com', s.aiKey, s.aiModel || 'claude-sonnet-4-5', messages)
+    return callServerChat(s, messages)
   })
 
   ipcMain.handle('auth:login', async (_event, params: { serverUrl: string; account: string; password: string }) => {
     const { serverUrl, account, password } = params
     if (!serverUrl) throw new Error('服务器 URL 不能为空')
-    let url: URL
-    try { url = new URL(serverUrl) } catch { throw new Error('服务器 URL 格式无效') }
-    const base = url.href.replace(/\/$/, '')
+    let base: string
+    try { base = normalizeServerUrl(serverUrl) } catch { throw new Error('服务器 URL 格式无效') }
     const res = await net.fetch(`${base}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -329,7 +327,7 @@ function registerIpc(): void {
   ipcMain.handle('ai-config:list', async () => {
     const s = store.store
     if (!s.serverUrl || !s.authToken) throw new Error('未登录')
-    const base = s.serverUrl.replace(/\/$/, '')
+    const base = normalizeServerUrl(s.serverUrl)
     const res = await net.fetch(`${base}/api/ai/configs`, {
       headers: { 'Authorization': `Bearer ${s.authToken}` },
       signal: AbortSignal.timeout(10000),
@@ -342,7 +340,7 @@ function registerIpc(): void {
   ipcMain.handle('ai-config:runtime-status', async () => {
     const s = store.store
     if (!s.serverUrl || !s.authToken) return []
-    const base = s.serverUrl.replace(/\/$/, '')
+    const base = normalizeServerUrl(s.serverUrl)
     try {
       const res = await net.fetch(`${base}/api/ai/runtime-status`, {
         headers: { 'Authorization': `Bearer ${s.authToken}` },
@@ -372,7 +370,7 @@ function registerIpc(): void {
   ipcMain.handle('ai-config:clone', async (_event, configId: number) => {
     const s = store.store
     if (!s.serverUrl || !s.authToken) throw new Error('未登录')
-    const base = s.serverUrl.replace(/\/$/, '')
+    const base = normalizeServerUrl(s.serverUrl)
     const res = await net.fetch(`${base}/api/ai/configs/${configId}/clone`, {
       method: 'POST',
       headers: {
@@ -385,42 +383,183 @@ function registerIpc(): void {
     if (!res.ok) throw new Error(data?.detail || `克隆失败 (${res.status})`)
     return data
   })
+
+  ipcMain.handle('task:list', async () => {
+    const s = store.store
+    if (!s.serverUrl || !s.authToken) throw new Error('未登录')
+    if (!s.selectedAiConfigId) throw new Error('未选择 AI 成员')
+    const base = normalizeServerUrl(s.serverUrl)
+    const headers = { 'Authorization': `Bearer ${s.authToken}` }
+    const [taskRes, jobRes] = await Promise.all([
+      net.fetch(`${base}/api/ai/configs/${s.selectedAiConfigId}/task-list`, {
+        headers,
+        signal: AbortSignal.timeout(10000),
+      }),
+      net.fetch(`${base}/api/ai/configs/${s.selectedAiConfigId}/task-jobs`, {
+        headers,
+        signal: AbortSignal.timeout(10000),
+      }),
+    ])
+    const taskData: any = await taskRes.json()
+    const jobData: any = await jobRes.json()
+    if (!taskRes.ok) throw new Error(taskData?.detail || `任务列表加载失败 (${taskRes.status})`)
+    if (!jobRes.ok) throw new Error(jobData?.detail || `任务执行记录加载失败 (${jobRes.status})`)
+    return {
+      tasks: Array.isArray(taskData?.tasks) ? taskData.tasks : [],
+      jobs: Array.isArray(jobData?.jobs) ? jobData.jobs : [],
+    }
+  })
+
+  ipcMain.handle('task:generations', async (_event, jobId: string) => {
+    const s = store.store
+    if (!s.serverUrl || !s.authToken) throw new Error('未登录')
+    if (!s.selectedAiConfigId) throw new Error('未选择 AI 成员')
+    if (!jobId) throw new Error('任务 ID 不能为空')
+    const base = normalizeServerUrl(s.serverUrl)
+    const res = await net.fetch(`${base}/api/ai/configs/${s.selectedAiConfigId}/task-jobs/${encodeURIComponent(jobId)}/generations`, {
+      headers: { 'Authorization': `Bearer ${s.authToken}` },
+      signal: AbortSignal.timeout(10000),
+    })
+    const data: any = await res.json()
+    if (!res.ok) throw new Error(data?.detail || `任务详情加载失败 (${res.status})`)
+    return Array.isArray(data?.generations) ? data.generations : []
+  })
+
+  ipcMain.handle('task:trigger', async (_event, payload: any) => {
+    const s = store.store
+    if (!s.serverUrl || !s.authToken) throw new Error('未登录')
+    if (!s.selectedAiConfigId) throw new Error('未选择 AI 成员')
+    const base = normalizeServerUrl(s.serverUrl)
+    const res = await net.fetch(`${base}/api/ai/configs/${s.selectedAiConfigId}/task-trigger`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${s.authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload || {}),
+      signal: AbortSignal.timeout(10000),
+    })
+    const data: any = await res.json()
+    if (!res.ok) throw new Error(data?.detail || `创建任务失败 (${res.status})`)
+    return data
+  })
+
+  ipcMain.handle('task:pause', async (_event, jobId: string) => callTaskJobAction(jobId, 'pause', '暂停任务失败'))
+  ipcMain.handle('task:resume', async (_event, jobId: string) => callTaskJobAction(jobId, 'resume', '恢复任务失败'))
+
+  ipcMain.handle('task:delete', async (_event, jobId: string) => {
+    const s = store.store
+    if (!s.serverUrl || !s.authToken) throw new Error('未登录')
+    if (!s.selectedAiConfigId) throw new Error('未选择 AI 成员')
+    if (!jobId) throw new Error('任务 ID 不能为空')
+    const base = normalizeServerUrl(s.serverUrl)
+    const res = await net.fetch(`${base}/api/ai/configs/${s.selectedAiConfigId}/task-jobs/${encodeURIComponent(jobId)}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${s.authToken}` },
+      signal: AbortSignal.timeout(10000),
+    })
+    if (!res.ok) {
+      const data: any = await res.json().catch(() => ({}))
+      throw new Error(data?.detail || `删除任务失败 (${res.status})`)
+    }
+    return { success: true }
+  })
+
+  ipcMain.handle('workspace:files', async () => {
+    const s = store.store
+    if (!s.serverUrl || !s.authToken) throw new Error('未登录')
+    const base = normalizeServerUrl(s.serverUrl)
+    const res = await net.fetch(`${base}/api/chat/files`, {
+      headers: { 'Authorization': `Bearer ${s.authToken}` },
+      signal: AbortSignal.timeout(10000),
+    })
+    const data: any = await res.json()
+    if (!res.ok) throw new Error(data?.detail || `工作区目录加载失败 (${res.status})`)
+    return Array.isArray(data) ? data : []
+  })
 }
 
-// ── AI API helper ─────────────────────────────────────────────────────────────
-async function callAiApi(
-  baseUrl: string,
-  apiKey: string,
-  model: string,
+async function callTaskJobAction(jobId: string, action: 'pause' | 'resume', fallback: string) {
+  const s = store.store
+  if (!s.serverUrl || !s.authToken) throw new Error('未登录')
+  if (!s.selectedAiConfigId) throw new Error('未选择 AI 成员')
+  if (!jobId) throw new Error('任务 ID 不能为空')
+  const base = normalizeServerUrl(s.serverUrl)
+  const res = await net.fetch(`${base}/api/ai/configs/${s.selectedAiConfigId}/task-jobs/${encodeURIComponent(jobId)}/${action}`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${s.authToken}` },
+    signal: AbortSignal.timeout(10000),
+  })
+  if (!res.ok) {
+    const data: any = await res.json().catch(() => ({}))
+    throw new Error(data?.detail || `${fallback} (${res.status})`)
+  }
+  return { success: true }
+}
+
+// ── Server-side AI chat helper ────────────────────────────────────────────────
+async function callServerChat(
+  settings: AgentSettings,
   messages: Array<{ role: string; content: string }>,
 ): Promise<string> {
-  const isAnthropic = baseUrl.includes('anthropic.com')
-  const endpoint = isAnthropic
-    ? `${baseUrl.replace(/\/$/, '')}/v1/messages`
-    : `${baseUrl.replace(/\/$/, '')}/v1/chat/completions`
+  if (!settings.serverUrl || !settings.authToken) throw new Error('请先登录服务器')
 
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (isAnthropic) {
-    headers['x-api-key'] = apiKey
-    headers['anthropic-version'] = '2023-06-01'
-  } else {
-    headers['Authorization'] = `Bearer ${apiKey}`
-  }
-
-  const body = JSON.stringify({ model, max_tokens: 4096, messages })
-
-  const res = await net.fetch(endpoint, { method: 'POST', headers, body })
-  const data: any = await res.json()
+  const base = normalizeServerUrl(settings.serverUrl)
+  const normalizedMessages = messages.map(m => ({
+    role: m.role === 'ai' ? 'assistant' : m.role,
+    content: String(m.content || ''),
+  }))
+  const res = await net.fetch(`${base}/api/chat/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${settings.authToken}`,
+    },
+    body: JSON.stringify({
+      messages: normalizedMessages,
+      ai_kind: 'assistant',
+      ai_config_id: settings.selectedAiConfigId,
+    }),
+    signal: AbortSignal.timeout(120000),
+  })
+  const text = await res.text()
 
   if (!res.ok) {
-    throw new Error(data?.error?.message || `API error ${res.status}`)
+    try {
+      const data = JSON.parse(text)
+      throw new Error(data?.detail || `服务器聊天失败 (${res.status})`)
+    } catch (err: any) {
+      if (err?.message && !err.message.startsWith('Unexpected')) throw err
+      throw new Error(text || `服务器聊天失败 (${res.status})`)
+    }
   }
 
-  if (isAnthropic) {
-    return data.content?.[0]?.text || ''
-  } else {
-    return data.choices?.[0]?.message?.content || ''
+  return extractChatStreamText(text) || text
+}
+
+function extractChatStreamText(text: string): string {
+  let reply = ''
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line.startsWith('data:')) continue
+    const data = line.slice(5).trim()
+    if (!data || data === '[DONE]') continue
+    try {
+      const chunk = JSON.parse(data)
+      const delta = chunk?.choices?.[0]?.delta
+      const content = delta?.content
+      if (typeof content === 'string') {
+        reply += content
+      } else if (Array.isArray(content)) {
+        for (const part of content) {
+          if (typeof part?.text === 'string') reply += part.text
+        }
+      }
+    } catch {
+      // Ignore non-JSON stream lines.
+    }
   }
+  return reply
 }
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────

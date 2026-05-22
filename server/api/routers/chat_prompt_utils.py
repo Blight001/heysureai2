@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from api.mcp import registry
 from api.models import AssistantAIConfig, DEFAULT_MCP_FORMAT_ERROR_HINT
+from api.desktop_agent_tools import desktop_bridge_tools_for_config
 from api.task_system import (
     DEFAULT_SYSTEM_AUTO_CONTROL,
     with_task_create_compat,
@@ -116,7 +117,9 @@ def _parse_allowed_tools_for_cfg(cfg: Optional[AssistantAIConfig]) -> set[str]:
             return set()
         raw_tools = {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
         raw_tools = with_task_create_compat(raw_tools)
-        return with_workspace_read_by_name_compat(raw_tools)
+        raw_tools = with_workspace_read_by_name_compat(raw_tools)
+        raw_tools.update(desktop_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
+        return raw_tools
     except Exception:
         return set()
 

@@ -185,6 +185,7 @@ const defaultMcpTools = [
   'admin.list_agents',
   'admin.get_overview',
   'admin.dispatch_flow',
+  'admin.dispatch_task',
   'project.list_projects',
   'project.create_project',
   'project.update_project',

@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.store = void 0;
 const electron_store_1 = __importDefault(require("electron-store"));
 const defaults = {
-    serverUrl: process.env.SERVER_URL || 'http://localhost:3000',
+    serverUrl: process.env.SERVER_URL || 'http://127.0.0.1:3000',
     agentToken: process.env.AGENT_TOKEN || '',
     agentId: process.env.AGENT_ID || '',
     agentName: process.env.AGENT_NAME || 'Windows Agent',

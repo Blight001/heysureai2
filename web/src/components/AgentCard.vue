@@ -46,6 +46,11 @@ interface AgentProps {
       label?: string
       message?: string
     }
+    desktopAgentConnected?: boolean
+    desktopAgentId?: string
+    desktopAgentName?: string
+    desktopAgentPlatform?: string
+    desktopAgentCapabilities?: string[]
     runtimeStatus?: string
     runtimeTool?: string
     activeRunStatus?: string
@@ -190,6 +195,18 @@ const feishuConnection = computed(() => {
     text: `飞书失败 · ${modeText}`,
     class: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300',
     title: message || '飞书连接状态失败',
+  }
+})
+
+const desktopConnection = computed(() => {
+  if (!props.agent.desktopAgentConnected) return null
+  const name = String(props.agent.desktopAgentName || props.agent.name || '').trim()
+  const platform = String(props.agent.desktopAgentPlatform || 'Windows Desktop').trim()
+  const id = String(props.agent.desktopAgentId || '').trim()
+  return {
+    text: '桌面已连接',
+    class: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-300',
+    title: [name ? `桌面 Agent：${name}` : '', platform ? `平台：${platform}` : '', id ? `ID：${id}` : ''].filter(Boolean).join('；') || '桌面 Agent 已连接',
   }
 })
 
@@ -398,6 +415,14 @@ const taskTotalGenerations = (task?: AgentTaskSnapshot | null) => {
             :title="feishuConnection.title"
           >
             {{ feishuConnection.text }}
+          </span>
+          <span
+            v-if="desktopConnection"
+            class="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-none"
+            :class="desktopConnection.class"
+            :title="desktopConnection.title"
+          >
+            {{ desktopConnection.text }}
           </span>
           <span
             v-if="governanceBadge"

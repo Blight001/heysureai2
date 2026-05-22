@@ -205,6 +205,7 @@ async def get_ai_task_jobs(
         ).order_by(ChatRun.created_at.asc())
     ).all()
     runs_by_prefix: dict[str, set[int]] = {}
+    latest_run_by_prefix: dict[str, ChatRun] = {}
     for run in runs:
         sid = str(run.session_id or "")
         if not sid.startswith("session_task_job_"):
@@ -216,6 +217,31 @@ async def get_ai_task_jobs(
         if prefix not in runs_by_prefix:
             runs_by_prefix[prefix] = set()
         runs_by_prefix[prefix].add(generation)
+        prev = latest_run_by_prefix.get(prefix)
+        if prev is None or float(run.updated_at or run.created_at or 0) >= float(prev.updated_at or prev.created_at or 0):
+            latest_run_by_prefix[prefix] = run
+
+    msg_rows = session.exec(
+        select(ChatMessage).where(
+            ChatMessage.user_id == user.id,
+            ChatMessage.ai_config_id == config_id,
+            ChatMessage.ai_kind == "core",
+        )
+    ).all()
+    task_tokens_by_prefix: dict[str, int] = {}
+    for msg in msg_rows:
+        sid = str(msg.session_id or "")
+        if not sid.startswith("session_task_"):
+            continue
+        prefix = sid.split("_g")[0] if "_g" in sid else sid
+        task_tokens_by_prefix[prefix] = task_tokens_by_prefix.get(prefix, 0) + int(msg.total_tokens or 0)
+
+    try:
+        from api.routers.chat import _RUN_LIVE_STATE, _RUN_STATE_LOCK  # type: ignore
+        with _RUN_STATE_LOCK:
+            live_map = dict(_RUN_LIVE_STATE)
+    except Exception:
+        live_map = {}
 
     out = []
     for job in jobs:
@@ -228,6 +254,17 @@ async def get_ai_task_jobs(
         effective_status = str(job.status or "")
         if run_status in {"queued", "running"} and effective_status in {"queued", "running"}:
             effective_status = "running" if run_status == "running" else "queued"
+        latest_run = active_run or latest_run_by_prefix.get(prefix)
+        live = live_map.get(latest_run.run_id) if latest_run else {}
+        live = live if isinstance(live, dict) else {}
+        task_payload = decode_task_payload(job.task_payload)
+        token_limit = int(cfg.token_limit or 0)
+        override_token = task_payload.get("override_token_limit") if isinstance(task_payload, dict) else {}
+        if isinstance(override_token, dict) and override_token.get("enabled"):
+            try:
+                token_limit = max(1, int(override_token.get("value") or token_limit or 1))
+            except Exception:
+                token_limit = int(cfg.token_limit or 0)
         out.append(
             {
                 "job_id": job.job_id,
@@ -238,7 +275,7 @@ async def get_ai_task_jobs(
                 "effective_status": effective_status,
                 "run_status": run_status,
                 "trigger_type": job.trigger_type,
-                "task_payload": decode_task_payload(job.task_payload),
+                "task_payload": task_payload,
                 "last_run_id": job.last_run_id,
                 "session_id": job.session_id,
                 "created_at": job.created_at,
@@ -246,6 +283,12 @@ async def get_ai_task_jobs(
                 "finished_at": job.finished_at,
                 "generation_count": generation_count,
                 "latest_generation": latest_generation,
+                "task_token_used": int(task_tokens_by_prefix.get(prefix, 0) or 0),
+                "task_token_limit": token_limit,
+                "latest_thinking": str(live.get("reasoning") or live.get("text") or ""),
+                "live_phase": str(live.get("phase") or "idle"),
+                "live_tool": str(live.get("current_tool") or ""),
+                "live_updated_at": live.get("updated_at"),
             }
         )
     return {"ai_config_id": config_id, "jobs": out}

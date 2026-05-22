@@ -4,6 +4,7 @@ import path from 'path'
 import { executeTask, getAvailableTools, DispatchedTask } from './executor'
 import { getPlatformInfo } from './platform'
 import { AgentSettings } from './store'
+import { normalizeServerUrl } from './server-url'
 
 export type AgentStatus = 'disconnected' | 'connecting' | 'connected' | 'registered' | 'error'
 
@@ -47,9 +48,17 @@ export class HeySureAgent {
   connect(): void {
     if (this.socket?.connected) return
     this.setStatus('connecting')
-    this.log('info', `正在连接 ${this.settings.serverUrl}…`)
+    let serverUrl: string
+    try {
+      serverUrl = normalizeServerUrl(this.settings.serverUrl)
+    } catch {
+      this.setStatus('error', '服务器 URL 格式无效')
+      this.log('error', '连接错误: 服务器 URL 格式无效')
+      return
+    }
+    this.log('info', `正在连接 ${serverUrl}…`)
 
-    this.socket = io(this.settings.serverUrl, {
+    this.socket = io(serverUrl, {
       transports: ['websocket', 'polling'],
       reconnectionDelay: 2000,
       reconnectionAttempts: Infinity,
@@ -107,6 +116,8 @@ export class HeySureAgent {
       workspaceRoot: this.workspaceRoot,
       lifecycle: 'registered',
       isWindowsDesktop: true,
+      aiConfigId: this.settings.selectedAiConfigId,
+      userId: this.settings.userId,
     })
   }
 

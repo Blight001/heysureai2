@@ -624,12 +624,19 @@
       padding: 5px 10px;
       font-size: 11px;
     }
+    #settings-toggle {
+      padding: 5px 10px;
+      font-size: 14px;
+    }
 
     /* ── Body ─────────────────────────────────────────────────── */
     #body {
       display: flex;
       flex: 1;
       overflow: hidden;
+    }
+    #body.sidebar-open #sidebar {
+      display: flex;
     }
 
     /* ── Left column ─────────────────────────────────────────── */
@@ -675,11 +682,26 @@
       gap: 8px;
     }
     #feed-pane.hidden { display: none; }
+    #tasks-pane {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+      overflow: hidden;
+      gap: 8px;
+    }
+    #tasks-pane.active { display: flex; }
 
     .feed-header {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .task-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
       flex-shrink: 0;
     }
     .feed-title {
@@ -688,6 +710,13 @@
       text-transform: uppercase;
       letter-spacing: 0.8px;
       color: var(--text-muted);
+    }
+    .task-summary {
+      font-size: 11px;
+      color: var(--text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     #clear-btn {
       font-size: 11px;
@@ -700,6 +729,153 @@
       transition: all var(--transition);
     }
     #clear-btn:hover { color: var(--text); background: var(--surface); }
+    #task-refresh-btn, #task-create-btn, #task-batch-delete-btn {
+      font-size: 11px;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+      padding: 3px 8px;
+      border-radius: 4px;
+      transition: all var(--transition);
+      flex-shrink: 0;
+    }
+    #task-refresh-btn:hover, #task-create-btn:hover, #task-batch-delete-btn:hover { color: var(--text); background: var(--surface-h); }
+    #task-batch-delete-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .task-toolbar-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .task-filter-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .task-filter-btn, .task-mini-btn {
+      font-size: 11px;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      transition: all var(--transition);
+    }
+    .task-filter-btn:hover, .task-filter-btn.active, .task-mini-btn:hover {
+      color: var(--text);
+      background: var(--surface-h);
+      border-color: rgba(99,102,241,0.35);
+    }
+    .task-mini-btn.danger {
+      color: #f87171;
+      border-color: rgba(239,68,68,0.24);
+    }
+    .task-mini-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .task-create-panel, .task-detail-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      background: rgba(0,0,0,0.45);
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+    }
+    .task-create-panel.visible, .task-detail-modal.visible { display: flex; }
+    .task-modal-card {
+      width: min(760px, 96vw);
+      max-height: 88vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+    .task-modal-card.wide { width: min(960px, 96vw); }
+    .task-modal-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .task-modal-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .task-modal-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .task-modal-close {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .task-modal-close:hover { color: var(--text); background: var(--surface-h); }
+    .task-form-grid {
+      display: grid;
+      grid-template-columns: 1.4fr 100px;
+      gap: 8px;
+    }
+    .task-form-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    .task-form-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 120px;
+      flex: 1;
+    }
+    .task-form-field label, .task-check {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .task-check {
+      display: inline-flex;
+      gap: 5px;
+      align-items: center;
+    }
+    .task-form-field input, .task-form-field textarea, .task-form-field select {
+      width: 100%;
+      padding: 7px 9px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 12px;
+      outline: none;
+    }
+    .task-form-field textarea {
+      min-height: 70px;
+      resize: vertical;
+    }
+    .task-form-status {
+      min-height: 16px;
+      font-size: 11px;
+      color: var(--success);
+    }
+    .task-form-status.error { color: var(--error); }
 
     #feed {
       flex: 1;
@@ -712,6 +888,299 @@
     #feed::-webkit-scrollbar { width: 4px; }
     #feed::-webkit-scrollbar-track { background: transparent; }
     #feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    #task-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding-right: 4px;
+    }
+    #task-list::-webkit-scrollbar { width: 4px; }
+    #task-list::-webkit-scrollbar-track { background: transparent; }
+    #task-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .task-card, .task-template-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      animation: slide-in 0.2s ease;
+    }
+    .task-card {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 10px;
+    }
+    .task-select {
+      width: 18px;
+      padding-top: 3px;
+      flex-shrink: 0;
+    }
+    .task-card.running { border-color: rgba(34,197,94,0.45); background: rgba(34,197,94,0.06); }
+    .task-card.next { border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.06); }
+    .task-card.scheduled { border-color: rgba(56,189,248,0.32); background: rgba(56,189,248,0.06); }
+    .task-card.completed { opacity: 0.76; }
+    .task-card-main { min-width: 0; }
+    .task-card-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .task-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .task-state {
+      padding: 2px 7px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .task-state.running { background: rgba(34,197,94,0.15); color: #4ade80; }
+    .task-state.next { background: rgba(245,158,11,0.16); color: #fbbf24; }
+    .task-state.scheduled { background: rgba(56,189,248,0.16); color: #7dd3fc; }
+    .task-state.completed { background: rgba(120,120,120,0.16); color: #a1a1aa; }
+    .task-state.idle { background: rgba(99,102,241,0.14); color: #a5b4fc; }
+    .task-instruction {
+      font-size: 12px;
+      color: var(--text-muted);
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      word-break: break-word;
+    }
+    .task-meta, .task-template-meta, .task-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 7px;
+    }
+    .task-meta span, .task-template-meta span, .task-tags span {
+      font-size: 10px;
+      color: var(--text-muted);
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2px 6px;
+    }
+    .task-token-row {
+      display: grid;
+      grid-template-columns: auto minmax(80px, 1fr);
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .task-token-label {
+      font-size: 10px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .task-token-track {
+      height: 6px;
+      border-radius: 999px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .task-token-bar {
+      height: 100%;
+      min-width: 2px;
+      border-radius: inherit;
+      background: var(--success);
+      transition: width var(--transition);
+    }
+    .task-token-bar.warn { background: var(--warning); }
+    .task-token-bar.danger { background: var(--error); }
+    .task-thinking-box {
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 7px;
+      margin-top: 8px;
+      padding: 7px 8px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg3);
+    }
+    .task-thinking-box.live {
+      border-color: rgba(99,102,241,0.28);
+      background: rgba(99,102,241,0.07);
+    }
+    .task-thinking-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1.4;
+    }
+    .task-thinking-viewport {
+      max-height: 38px;
+      overflow: hidden;
+      font-size: 11px;
+      line-height: 1.55;
+      color: var(--text-muted);
+      min-width: 0;
+    }
+    .task-thinking-content {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .task-detail-btn {
+      align-self: start;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text-muted);
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      padding: 5px 8px;
+      cursor: pointer;
+    }
+    .task-detail-btn:hover { color: var(--text); background: var(--surface-h); }
+    .task-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      align-items: stretch;
+    }
+    .task-detail {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .task-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .task-detail-grid div {
+      background: var(--bg3);
+      border-radius: var(--radius-sm);
+      padding: 7px;
+      min-width: 0;
+    }
+    .task-detail-grid span {
+      display: block;
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-bottom: 3px;
+    }
+    .task-detail-grid strong {
+      display: block;
+      font-size: 11px;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .task-detail-section pre {
+      margin-top: 6px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px;
+      color: var(--text-muted);
+      font-family: 'Cascadia Code','Consolas',monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 180px;
+      overflow: auto;
+    }
+    .task-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .task-template-block { display: flex; flex-direction: column; gap: 7px; }
+    .task-template-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+    .task-template {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px;
+      background: var(--bg3);
+    }
+    .task-template.running { border-color: rgba(34,197,94,0.45); }
+    .task-template.next { border-color: rgba(245,158,11,0.35); }
+    .task-template.scheduled { border-color: rgba(56,189,248,0.32); }
+    .task-template-title { font-size: 12px; font-weight: 700; color: var(--text); }
+    .task-run-line, .task-muted, .task-detail-loading, .task-detail-error {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .task-list-muted {
+      padding: 12px;
+      text-align: center;
+      border: 1px dashed var(--border);
+      border-radius: var(--radius);
+    }
+    .task-detail-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .task-generation-select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 11px;
+      padding: 4px 6px;
+    }
+    .task-prompt-detail summary {
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 11px;
+      margin-top: 6px;
+    }
+    .task-detail-error { color: var(--error); }
+    .task-message {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px;
+      background: var(--bg3);
+      margin-top: 6px;
+    }
+    .task-message span {
+      display: block;
+      font-size: 10px;
+      color: var(--accent);
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+    .task-message p {
+      font-size: 12px;
+      color: var(--text-muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 150px;
+      overflow: auto;
+    }
+    #task-empty {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      flex: 1;
+      color: var(--text-muted);
+      user-select: none;
+    }
+    #task-empty .empty-icon { font-size: 40px; opacity: 0.3; }
+    #task-empty p { font-size: 13px; }
 
     /* ── Activity entry cards ─────────────────────────────────── */
     .entry {
@@ -957,7 +1426,7 @@
     #sidebar {
       width: 285px;
       flex-shrink: 0;
-      display: flex;
+      display: none;
       flex-direction: column;
       gap: 10px;
       padding: 14px 20px 16px 0;
@@ -1007,6 +1476,12 @@
     }
     .stat-num { font-size: 22px; font-weight: 700; color: var(--accent); line-height: 1.2; }
     .stat-label { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+    .sidebar-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 8px;
+      text-align: center;
+    }
 
     .save-feedback { font-size: 11px; color: var(--success); text-align: center; min-height: 16px; margin-top: 4px; }
     .divider { height: 1px; background: var(--border); margin: 8px 0; }
@@ -1040,7 +1515,7 @@
     <div class="login-form" id="login-form">
       <div class="form-group">
         <label class="form-label" for="login-server">服务器地址</label>
-        <input class="form-input" id="login-server" type="text" placeholder="http://localhost:3000" autocomplete="off" />
+        <input class="form-input" id="login-server" type="text" placeholder="http://127.0.0.1:3000" autocomplete="off" />
       </div>
       <div class="form-group">
         <label class="form-label" for="login-account">账号</label>
@@ -1128,6 +1603,7 @@
     <div class="header-spacer"></div>
 
     <button class="btn btn-ghost btn-icon" id="switch-ai-btn" title="切换 AI 成员">&#x21C6;</button>
+    <button class="btn btn-ghost btn-icon" id="settings-toggle" title="设置">&#x2699;</button>
     <button id="theme-toggle" title="切换主题">&#x1F319;</button>
   </header>
 
@@ -1138,6 +1614,7 @@
     <div id="feed-col">
       <div class="tab-nav">
         <button class="tab-btn active" id="tab-feed">&#x25A0; 活动流</button>
+        <button class="tab-btn" id="tab-tasks">&#x1F4CB; 任务列表</button>
         <button class="tab-btn" id="tab-chat">&#x1F4AC; AI 对话</button>
       </div>
 
@@ -1156,13 +1633,118 @@
         </div>
       </div>
 
+      <!-- Task list pane -->
+      <div id="tasks-pane">
+        <div class="task-header">
+          <div>
+            <div class="feed-title">任务列表</div>
+            <div class="task-summary" id="task-summary">执行记录 0 条</div>
+          </div>
+          <div class="task-toolbar-actions">
+            <button id="task-create-btn">创建任务</button>
+            <button id="task-batch-delete-btn" disabled>批量删除 (0)</button>
+            <button id="task-refresh-btn">刷新</button>
+          </div>
+        </div>
+        <div class="task-filter-bar" id="task-filter-bar">
+          <button class="task-filter-btn active" data-task-filter="all">全部</button>
+          <button class="task-filter-btn" data-task-filter="running">执行中</button>
+          <button class="task-filter-btn" data-task-filter="next">等待执行</button>
+          <button class="task-filter-btn" data-task-filter="scheduled">定时任务</button>
+          <button class="task-filter-btn" data-task-filter="completed">已完成</button>
+        </div>
+        <div class="task-create-panel" id="task-create-panel">
+          <div class="task-modal-card" id="task-create-card">
+          <div class="task-modal-header">
+            <div>
+              <div class="task-modal-title">创建任务</div>
+              <div class="task-modal-subtitle">为当前 AI 创建即时、定时或循环任务</div>
+            </div>
+            <button class="task-modal-close" id="task-create-close" title="关闭">×</button>
+          </div>
+          <div class="task-form-grid">
+            <div class="task-form-field">
+              <label for="task-form-title">任务名称</label>
+              <input id="task-form-title" type="text" placeholder="例如：整理今日迭代计划" />
+            </div>
+            <div class="task-form-field">
+              <label for="task-form-priority">优先级</label>
+              <input id="task-form-priority" type="number" min="1" max="10" value="5" />
+            </div>
+          </div>
+          <div class="task-form-field">
+            <label for="task-form-instruction">任务具体内容</label>
+            <textarea id="task-form-instruction" placeholder="描述目标、验收标准、约束条件"></textarea>
+          </div>
+          <div class="task-form-row">
+            <label class="task-check"><input id="task-form-schedule" type="checkbox" /> 定时任务</label>
+            <label class="task-check" data-task-schedule-field><input id="task-form-loop" type="checkbox" /> 循环运行</label>
+            <label class="task-check" data-task-schedule-field><input id="task-form-run-now" type="checkbox" /> 首次立即执行</label>
+            <div class="task-form-field" data-task-schedule-field>
+              <label for="task-form-duration">定时时长（分钟）</label>
+              <input id="task-form-duration" type="number" min="1" value="30" />
+            </div>
+            <div class="task-form-field" data-task-schedule-field>
+              <label for="task-form-date">定时日期</label>
+              <input id="task-form-date" type="date" />
+            </div>
+          </div>
+          <div class="task-form-row">
+            <label class="task-check"><input id="task-form-token-enabled" type="checkbox" /> 修改默认 Token 范围</label>
+            <div class="task-form-field" data-task-token-field>
+              <label for="task-form-token">Token 范围</label>
+              <input id="task-form-token" type="number" min="1" value="10000" />
+            </div>
+          </div>
+          <div class="task-form-row">
+            <label class="task-check"><input id="task-form-mcp-enabled" type="checkbox" /> 修改默认 MCP 使用范围</label>
+            <div class="task-form-field" data-task-mcp-field>
+              <label for="task-form-mcp">MCP 工具（逗号分隔）</label>
+              <input id="task-form-mcp" type="text" placeholder="task.list, task.complete" />
+            </div>
+          </div>
+          <div class="task-form-row">
+            <label class="task-check"><input id="task-form-workspace-enabled" type="checkbox" /> 限制默认文件夹范围</label>
+            <div class="task-form-field" data-task-workspace-field>
+              <label for="task-form-workspace">工作区目录</label>
+              <select id="task-form-workspace"><option value=".">用户工作区根目录</option></select>
+            </div>
+          </div>
+          <div class="task-form-row">
+            <div class="task-form-status" id="task-form-status"></div>
+            <div class="header-spacer"></div>
+            <button class="task-mini-btn" id="task-cancel-btn">取消</button>
+            <button class="task-mini-btn" id="task-submit-btn">提交任务</button>
+          </div>
+          </div>
+        </div>
+        <div class="task-detail-modal" id="task-detail-modal">
+          <div class="task-modal-card wide" id="task-detail-card">
+            <div class="task-modal-header">
+              <div>
+                <div class="task-modal-title" id="task-detail-title">任务详情</div>
+                <div class="task-modal-subtitle" id="task-detail-subtitle">查看任务参数、代际和对话记录</div>
+              </div>
+              <button class="task-modal-close" id="task-detail-close" title="关闭">×</button>
+            </div>
+            <div class="task-detail" id="task-detail-content"></div>
+          </div>
+        </div>
+        <div id="task-list"></div>
+        <div id="task-empty">
+          <div class="empty-icon">&#x1F4CB;</div>
+          <p>暂无任务记录</p>
+          <p style="font-size:11px">网页端创建任务后会显示在这里</p>
+        </div>
+      </div>
+
       <!-- Chat pane -->
       <div id="chat-pane">
         <div class="chat-messages" id="chat-messages">
           <div id="chat-no-key" class="chat-no-key">
-            <div class="chat-no-key-icon">&#x1F511;</div>
-            <p>请在设置中配置 AI Key</p>
-            <p style="font-size:11px">支持 Anthropic Claude 和 OpenAI 兼容接口</p>
+            <div class="chat-no-key-icon">&#x1F4AC;</div>
+            <p>可以开始对话</p>
+            <p style="font-size:11px">模型和密钥使用服务器端配置</p>
           </div>
         </div>
         <div class="chat-input-row">
@@ -1230,34 +1812,23 @@
           </div>
           <div class="stat-box">
             <div class="stat-num" id="stat-success" style="color:var(--success)">0</div>
-            <div class="stat-label">成功</div>
+            <div class="stat-label">已完成</div>
           </div>
           <div class="stat-box">
             <div class="stat-num" id="stat-failed" style="color:var(--error)">0</div>
-            <div class="stat-label">失败</div>
+            <div class="stat-label">异常</div>
           </div>
           <div class="stat-box">
             <div class="stat-num" id="stat-running" style="color:var(--warning)">0</div>
             <div class="stat-label">运行中</div>
           </div>
         </div>
+        <div class="sidebar-hint">统计来自当前 AI 的任务执行记录</div>
       </div>
 
-      <!-- AI Key Settings Card -->
+      <!-- Local Settings Card -->
       <div class="card">
-        <div class="card-title">&#x1F511; AI 密钥配置</div>
-        <div class="form-group">
-          <label class="form-label" for="cfg-ai-key">AI Key</label>
-          <input class="form-input" id="cfg-ai-key" type="password" placeholder="sk-ant-... 或 sk-..." />
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="cfg-ai-base-url">Base URL</label>
-          <input class="form-input" id="cfg-ai-base-url" type="text" placeholder="https://api.anthropic.com" />
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="cfg-ai-model">模型</label>
-          <input class="form-input" id="cfg-ai-model" type="text" placeholder="claude-sonnet-4-5" />
-        </div>
+        <div class="card-title">&#x2699; 本地设置</div>
         <div class="form-group">
           <label class="form-label" for="cfg-workspace">工作区目录</label>
           <input class="form-input" id="cfg-workspace" type="text" placeholder="C:\Users\...\Workspace" />

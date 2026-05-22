@@ -26,6 +26,8 @@ export interface ConnectedAgent {
   id: string
   name: string
   platform?: string
+  aiConfigId?: number
+  isWindowsDesktop?: boolean
   capabilities: string[]
   version?: string
   lifecycle?: string
@@ -233,6 +235,11 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
         feishuDefaultReceiveId: row.feishu_default_receive_id || '',
         feishuDefaultReceiveIdType: row.feishu_default_receive_id_type || 'chat_id',
         feishuStatus: row.feishu_status || undefined,
+        desktopAgentConnected: false,
+        desktopAgentId: '',
+        desktopAgentName: '',
+        desktopAgentPlatform: '',
+        desktopAgentCapabilities: [],
         runtimeStatus: normalizeRuntimeStatus(row.runtime_status),
         runtimeTool,
         activeRunStatus: String(row.active_run_status || ''),
@@ -249,6 +256,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
         latestThinking: row.latest_thinking || '',
       })
     })
+    decorateAgentsWithDesktopConnections()
     const maxGeneration = agents.value.reduce((max, agent) => Math.max(max, Number(agent.generation) || 1), 1)
     globalGeneration.value = Math.max(1, maxGeneration)
   }
@@ -332,10 +340,43 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     if (tool) target.runtimeTool = tool
   }
 
+  const parseConnectedAiConfigId = (raw: any) => {
+    const direct = Number(raw?.aiConfigId ?? raw?.ai_config_id)
+    if (Number.isFinite(direct) && direct > 0) return direct
+    const id = String(raw?.id || raw?.agentId || '')
+    const match = id.match(/^win-desktop-(\d+)$/)
+    if (!match) return undefined
+    const parsed = Number(match[1])
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
+  }
+
+  const decorateAgentsWithDesktopConnections = () => {
+    const desktopByConfig = new Map<number, ConnectedAgent>()
+    for (const connected of connectedAgents.value) {
+      const configId = Number(connected.aiConfigId)
+      if (!Number.isFinite(configId) || configId <= 0) continue
+      const isDesktop = !!connected.isWindowsDesktop
+        || String(connected.id || '').startsWith('win-desktop-')
+        || String(connected.platform || '').toLowerCase().includes('desktop')
+      if (isDesktop) desktopByConfig.set(configId, connected)
+    }
+    for (const agent of agents.value) {
+      const configId = Number(agent.aiConfigId)
+      const desktop = Number.isFinite(configId) ? desktopByConfig.get(configId) : undefined
+      agent.desktopAgentConnected = !!desktop
+      agent.desktopAgentId = desktop?.id || ''
+      agent.desktopAgentName = desktop?.name || ''
+      agent.desktopAgentPlatform = desktop?.platform || ''
+      agent.desktopAgentCapabilities = desktop?.capabilities || []
+    }
+  }
+
   const normalizeConnectedAgent = (raw: any): ConnectedAgent => ({
     id: String(raw?.id ?? raw?.socketId ?? ''),
     name: String(raw?.name ?? raw?.id ?? 'agent'),
     platform: raw?.platform ? String(raw.platform) : undefined,
+    aiConfigId: parseConnectedAiConfigId(raw),
+    isWindowsDesktop: !!raw?.isWindowsDesktop,
     capabilities: Array.isArray(raw?.capabilities) ? raw.capabilities.map((c: any) => String(c)) : [],
     version: raw?.version ? String(raw.version) : undefined,
     lifecycle: raw?.lifecycle ? String(raw.lifecycle) : undefined,
@@ -350,6 +391,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
 
   const applyConnectedAgents = (rows: any) => {
     connectedAgents.value = (Array.isArray(rows) ? rows : []).map(normalizeConnectedAgent)
+    decorateAgentsWithDesktopConnections()
   }
 
   const loadConnectedAgents = async () => {

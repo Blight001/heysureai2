@@ -36,6 +36,13 @@ electron_1.contextBridge.exposeInMainWorld('heysureAPI', {
     getAiRuntimeStatus: () => electron_1.ipcRenderer.invoke('ai-config:runtime-status'),
     selectAiConfig: (cfg) => electron_1.ipcRenderer.invoke('ai-config:select', cfg),
     cloneAiConfig: (configId) => electron_1.ipcRenderer.invoke('ai-config:clone', configId),
+    listTasks: () => electron_1.ipcRenderer.invoke('task:list'),
+    getTaskGenerations: (jobId) => electron_1.ipcRenderer.invoke('task:generations', jobId),
+    triggerTask: (payload) => electron_1.ipcRenderer.invoke('task:trigger', payload),
+    pauseTask: (jobId) => electron_1.ipcRenderer.invoke('task:pause', jobId),
+    resumeTask: (jobId) => electron_1.ipcRenderer.invoke('task:resume', jobId),
+    deleteTask: (jobId) => electron_1.ipcRenderer.invoke('task:delete', jobId),
+    listWorkspaceFiles: () => electron_1.ipcRenderer.invoke('workspace:files'),
     // Version
     version: process.env.npm_package_version || '1.0.0',
 });

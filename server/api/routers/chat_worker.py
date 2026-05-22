@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 
 from api.database import engine
 from api.agent_dispatch import set_run_session_context
+from api.desktop_agent_tools import desktop_bridge_tools_for_config
 from api.mcp import registry, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.task_system import (
@@ -132,6 +133,76 @@ def _split_concatenated_native_tool_name(name: str, native_tool_name_map: Dict[s
     return parts if len(parts) > 1 else []
 
 
+def _missing_required_mcp_args(tool_name: str, arguments: dict) -> List[str]:
+    tool = registry.get(tool_name)
+    schema = tool.input_schema if isinstance(tool.input_schema, dict) else {}
+    required = schema.get("required") if isinstance(schema, dict) else []
+    if not isinstance(required, list):
+        return []
+    args = arguments if isinstance(arguments, dict) else {}
+    return [
+        str(name)
+        for name in required
+        if str(name) not in args or args.get(str(name)) in (None, "")
+    ]
+
+
+def _joined_tool_skip_reason(tool_name: str, arguments: dict, allowed_tools: set) -> str:
+    if tool_name not in allowed_tools:
+        return f"Tool not allowed for this task: {tool_name}"
+    tool = registry.get(tool_name)
+    missing = _missing_required_mcp_args(tool_name, arguments)
+    if missing:
+        return f"Missing required argument(s) for {tool_name}: {', '.join(missing)}"
+    if tool.destructive and not str(tool_name).startswith("prompt."):
+        return f"Cannot safely execute destructive tool from a joined MCP call: {tool_name}"
+    return ""
+
+
+def _append_missing_tool_responses(convo: List[Dict], error_text: str) -> List[str]:
+    """Repair OpenAI-style history so every pending tool_call_id has a tool message."""
+    if not convo:
+        return []
+    last_assistant_idx = -1
+    for idx in range(len(convo) - 1, -1, -1):
+        if convo[idx].get("role") == "assistant" and convo[idx].get("tool_calls"):
+            last_assistant_idx = idx
+            break
+    if last_assistant_idx < 0:
+        return []
+
+    tool_calls = convo[last_assistant_idx].get("tool_calls") or []
+    expected_ids = [
+        str(call.get("id") or "").strip()
+        for call in tool_calls
+        if isinstance(call, dict) and str(call.get("id") or "").strip()
+    ]
+    if not expected_ids:
+        return []
+
+    seen_ids = set()
+    for item in convo[last_assistant_idx + 1:]:
+        if item.get("role") == "tool":
+            tool_call_id = str(item.get("tool_call_id") or "").strip()
+            if tool_call_id:
+                seen_ids.add(tool_call_id)
+            continue
+        break
+
+    missing_ids = [tool_call_id for tool_call_id in expected_ids if tool_call_id not in seen_ids]
+    for tool_call_id in missing_ids:
+        convo.append({
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "content": _safe_json({
+                "success": False,
+                "error": error_text,
+                "recovered": True,
+            }),
+        })
+    return missing_ids
+
+
 def _build_mcp_tool_bubble_content(tool: str, arguments: dict, result_text: str, failed: bool = False) -> str:
     status = "失败" if failed else "成功"
     return (
@@ -205,6 +276,7 @@ def _run_worker(
             task_job = _load_task_job_by_session(bg, user_id, ai_config_id, session_id)
             is_task_runtime = bool(task_payload) or str(session_id or "").startswith("session_task_")
             effective_tool_allowlist = _parse_allowed_tools(cfg.mcp_tools if cfg else None)
+            effective_tool_allowlist.update(desktop_bridge_tools_for_config(ai_config_id, user_id))
             token_threshold_override = None
             workspace_root_override = None
             if task_payload:
@@ -217,6 +289,7 @@ def _run_worker(
                         }
                         effective_tool_allowlist = with_task_create_compat(effective_tool_allowlist)
                         effective_tool_allowlist = with_workspace_read_by_name_compat(effective_tool_allowlist)
+                        effective_tool_allowlist.update(desktop_bridge_tools_for_config(ai_config_id, user_id))
                 override_token = task_payload.get("override_token_limit")
                 if isinstance(override_token, dict) and bool(override_token.get("enabled")):
                     try:
@@ -270,6 +343,7 @@ def _run_worker(
             headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
             last_rejected_tool_sig = ""
             rejected_repeat = 0
+            consecutive_ai_errors = 0
 
             # Build native tool_use payload once (allowlist is fixed for this run).
             mcp_active = bool(cfg and cfg.mcp_enabled and effective_tool_allowlist)
@@ -294,33 +368,78 @@ def _run_worker(
                     return
 
                 start_at = time.time()
-                if provider == "anthropic":
-                    sr = stream_turn_anthropic(
-                        run_id=run_id,
-                        base_url=base_url,
-                        api_key=api_key,
-                        model=model,
-                        convo=convo,
-                        step_tools=step_tools,
-                        native_tool_name_map=native_tool_name_map,
+                try:
+                    if provider == "anthropic":
+                        sr = stream_turn_anthropic(
+                            run_id=run_id,
+                            base_url=base_url,
+                            api_key=api_key,
+                            model=model,
+                            convo=convo,
+                            step_tools=step_tools,
+                            native_tool_name_map=native_tool_name_map,
+                        )
+                    else:
+                        oa_payload = {
+                            "model": model,
+                            "messages": convo,
+                            "stream": True,
+                            "stream_options": {"include_usage": True},
+                        }
+                        if step_tools:
+                            oa_payload["tools"] = step_tools
+                            oa_payload["tool_choice"] = "auto"
+                        response = requests.post(base_url, headers=headers, json=oa_payload, timeout=300, stream=True)
+                        _raise_for_upstream_error(response)
+                        sr = stream_turn_openai_compat(
+                            run_id=run_id,
+                            response=response,
+                            native_tool_name_map=native_tool_name_map,
+                        )
+                    consecutive_ai_errors = 0
+                except Exception as ai_exc:
+                    consecutive_ai_errors += 1
+                    error_text = _extract_mcp_error(ai_exc)
+                    repaired_ids = _append_missing_tool_responses(convo, error_text)
+                    notice_lines = [
+                        "[AI 对话出错]",
+                        error_text,
+                        "",
+                        f"连续错误次数: {consecutive_ai_errors}/3",
+                    ]
+                    if repaired_ids:
+                        notice_lines.extend([
+                            "",
+                            "已自动补齐缺失的 tool 响应，避免上游接口因 tool_calls 上下文不完整而拒绝请求。",
+                            f"补齐 tool_call_id: {', '.join(repaired_ids)}",
+                        ])
+                    if consecutive_ai_errors < 3:
+                        notice_lines.extend([
+                            "",
+                            "请把以上错误当作上下文继续运行；如需要调用工具，请一次只调用一个 MCP 工具，并确保参数完整。",
+                        ])
+                    notice = "\n".join(notice_lines)
+                    _save_message(
+                        bg,
+                        user_id,
+                        ChatMessageCreate(
+                            role="user",
+                            content=notice,
+                            tags="system_notice_ai_error",
+                            ai_config_id=ai_config_id,
+                            ai_kind=ai_kind,
+                            session_id=session_id,
+                            session_name=session_name,
+                            model=model,
+                            total_tokens=0,
+                        ),
                     )
-                else:
-                    oa_payload = {
-                        "model": model,
-                        "messages": convo,
-                        "stream": True,
-                        "stream_options": {"include_usage": True},
-                    }
-                    if step_tools:
-                        oa_payload["tools"] = step_tools
-                        oa_payload["tool_choice"] = "auto"
-                    response = requests.post(base_url, headers=headers, json=oa_payload, timeout=300, stream=True)
-                    _raise_for_upstream_error(response)
-                    sr = stream_turn_openai_compat(
-                        run_id=run_id,
-                        response=response,
-                        native_tool_name_map=native_tool_name_map,
-                    )
+                    convo.append({"role": "user", "content": notice})
+                    _set_run_live_phase(run_id, "generating")
+                    if consecutive_ai_errors >= 3:
+                        _run_set_status(run_id, "error", f"AI request failed 3 times consecutively: {error_text}", finished=True)
+                        return
+                    continue
 
                 if sr.stopped:
                     _run_set_status(run_id, "stopped", finished=True)
@@ -473,175 +592,95 @@ def _run_worker(
                     joined_mcp_tools = [native_tool_name_map.get(item, item) for item in joined_native_tools]
                     tool = payload_tool
                     arguments = payload_call.get("arguments", {}) or {}
-                    if joined_mcp_tools and all(str(item).startswith("prompt.") for item in joined_mcp_tools):
-                        if cfg and not cfg.mcp_enabled:
-                            _run_set_status(run_id, "error", "MCP is disabled for this AI", finished=True)
-                            return
-                        disallowed_prompt_tools = [
-                            item for item in joined_mcp_tools if item not in effective_tool_allowlist
-                        ]
-                        if disallowed_prompt_tools:
-                            tool_failed = True
-                            tool_error = (
-                                "Tool not allowed for this task: "
-                                f"{', '.join(disallowed_prompt_tools)}"
-                            )
-                            tool_result = {
-                                "result": {
-                                    "success": False,
-                                    "error": tool_error,
-                                    "tools": joined_mcp_tools,
-                                }
-                            }
-                            result_text = _build_mcp_display_result(tool, tool_result, ok=False, error_message=tool_error)
-                            saved.tags = _append_mcp_state_to_tags(saved.tags, tool, arguments, result_text)
-                            bg.add(saved)
-                            bg.commit()
-                            _save_mcp_tool_bubble(
-                                bg,
-                                user_id=user_id,
-                                ai_config_id=ai_config_id,
-                                ai_kind=ai_kind,
-                                session_id=session_id,
-                                session_name=session_name,
-                                model=model,
-                                tool=tool,
-                                arguments=arguments,
-                                result_text=result_text,
-                                failed=True,
-                            )
-                            if _has_native_tc:
-                                convo.append({
-                                    "role": "tool",
-                                    "tool_call_id": _tc_id or "call_0",
-                                    "content": json.dumps(
-                                        {"error": tool_error, "tools": joined_mcp_tools},
-                                        ensure_ascii=False,
-                                    ),
-                                })
-                            else:
-                                convo.append({
-                                    "role": "user",
-                                    "content": (
-                                        "[MCP执行失败]\n"
-                                        f"工具未在当前任务允许范围内：{', '.join(disallowed_prompt_tools)}\n"
-                                        f"可用工具: {', '.join(sorted(effective_tool_allowlist)) or '（空）'}"
-                                    ),
-                                })
-                            continue
+                    if cfg and not cfg.mcp_enabled:
+                        _run_set_status(run_id, "error", "MCP is disabled for this AI", finished=True)
+                        return
 
-                        compound_results = []
-                        compound_failed = False
-                        for prompt_tool in joined_mcp_tools:
-                            if _run_should_stop(run_id):
-                                _run_set_status(run_id, "stopped", finished=True)
-                                return
-                            _set_run_live_phase(run_id, "waiting_mcp", prompt_tool)
-                            item_failed = False
-                            item_error = ""
+                    compound_results = []
+                    compound_failed = False
+                    for split_tool in joined_mcp_tools:
+                        if _run_should_stop(run_id):
+                            _run_set_status(run_id, "stopped", finished=True)
+                            return
+                        item_failed = False
+                        item_error = _joined_tool_skip_reason(split_tool, arguments, effective_tool_allowlist)
+                        if item_error:
+                            item_failed = True
+                            compound_failed = True
+                            item_result = {"result": {"success": False, "error": item_error}}
+                            item_result_text = _build_mcp_display_result(
+                                split_tool,
+                                item_result,
+                                ok=False,
+                                error_message=item_error,
+                            )
+                        else:
+                            _set_run_live_phase(run_id, "waiting_mcp", split_tool)
                             try:
-                                item_result = asyncio.run(registry.call(prompt_tool, user_id, arguments, ai_config_id))
-                                item_result_text = _build_mcp_display_result(prompt_tool, item_result, ok=True)
+                                item_result = asyncio.run(registry.call(split_tool, user_id, arguments, ai_config_id))
+                                item_result_text = _build_mcp_display_result(split_tool, item_result, ok=True)
                             except Exception as mcp_exc:
                                 item_failed = True
                                 compound_failed = True
                                 item_error = _extract_mcp_error(mcp_exc)
                                 item_result = {"result": {"success": False, "error": item_error}}
                                 item_result_text = _build_mcp_display_result(
-                                    prompt_tool,
+                                    split_tool,
                                     item_result,
                                     ok=False,
                                     error_message=item_error,
                                 )
-                            saved.tags = _append_mcp_state_to_tags(
-                                saved.tags,
-                                prompt_tool,
-                                arguments,
-                                item_result_text,
-                            )
-                            bg.add(saved)
-                            bg.commit()
-                            _save_mcp_tool_bubble(
-                                bg,
-                                user_id=user_id,
-                                ai_config_id=ai_config_id,
-                                ai_kind=ai_kind,
-                                session_id=session_id,
-                                session_name=session_name,
-                                model=model,
-                                tool=prompt_tool,
-                                arguments=arguments,
-                                result_text=item_result_text,
-                                failed=item_failed,
-                            )
-                            compound_results.append({
-                                "tool": prompt_tool,
-                                "failed": item_failed,
-                                "error": item_error,
-                                "result": item_result.get("result", item_result),
-                            })
+                        saved.tags = _append_mcp_state_to_tags(
+                            saved.tags,
+                            split_tool,
+                            arguments,
+                            item_result_text,
+                        )
+                        bg.add(saved)
+                        bg.commit()
+                        _save_mcp_tool_bubble(
+                            bg,
+                            user_id=user_id,
+                            ai_config_id=ai_config_id,
+                            ai_kind=ai_kind,
+                            session_id=session_id,
+                            session_name=session_name,
+                            model=model,
+                            tool=split_tool,
+                            arguments=arguments,
+                            result_text=item_result_text,
+                            failed=item_failed,
+                        )
+                        compound_results.append({
+                            "tool": split_tool,
+                            "failed": item_failed,
+                            "error": item_error,
+                            "result": item_result.get("result", item_result),
+                        })
 
-                        compound_payload = {
-                            "success": not compound_failed,
-                            "compat_mode": "split_concatenated_prompt_tools",
-                            "original_tool": tool,
-                            "tools": compound_results,
-                        }
-                        if _has_native_tc:
-                            convo.append({
-                                "role": "tool",
-                                "tool_call_id": _tc_id or "call_0",
-                                "content": _safe_json(compound_payload),
-                            })
-                        else:
-                            follow_up = (
-                                "[MCP兼容执行完成]\n"
-                                "系统检测到多个 prompt 工具名被拼接，已按顺序拆分执行。\n\n"
-                                "[工具执行结果]\n"
-                                f"{_safe_json(compound_payload)}\n\n"
-                                "请基于以上结果继续完成任务。"
-                            )
-                            convo.append({"role": "user", "content": follow_up})
-                        _set_run_live_phase(run_id, "generating")
-                        continue
-
-                    tool_failed = True
-                    tool_error = (
-                        "Malformed MCP tool call: multiple tool names were joined together. "
-                        f"Call exactly one tool per request: {', '.join(joined_mcp_tools)}"
-                    )
-                    tool_result = {"result": {"success": False, "error": tool_error, "tools": joined_mcp_tools}}
-                    result_text = _build_mcp_display_result(tool, tool_result, ok=False, error_message=tool_error)
-                    saved.tags = _append_mcp_state_to_tags(saved.tags, tool, arguments, result_text)
-                    bg.add(saved)
-                    bg.commit()
-                    _save_mcp_tool_bubble(
-                        bg,
-                        user_id=user_id,
-                        ai_config_id=ai_config_id,
-                        ai_kind=ai_kind,
-                        session_id=session_id,
-                        session_name=session_name,
-                        model=model,
-                        tool=tool,
-                        arguments=arguments,
-                        result_text=result_text,
-                        failed=True,
-                    )
+                    compound_payload = {
+                        "success": not compound_failed,
+                        "compat_mode": "split_concatenated_tool_names",
+                        "original_tool": tool,
+                        "tools": compound_results,
+                    }
                     if _has_native_tc:
                         convo.append({
                             "role": "tool",
                             "tool_call_id": _tc_id or "call_0",
-                            "content": json.dumps({"error": tool_error, "tools": joined_mcp_tools}, ensure_ascii=False),
+                            "content": _safe_json(compound_payload),
                         })
                     else:
                         follow_up = (
-                            "[MCP格式错误]\n"
-                            "你把多个工具名拼接成了一个工具名，导致无法执行。\n"
-                            f"检测到的工具: {', '.join(joined_mcp_tools)}\n"
-                            "请一次只调用一个 MCP 工具，并使用标准 <mcp-call> JSON 格式继续。"
+                            "[MCP兼容处理完成]\n"
+                            "系统检测到多个 MCP 工具名被拼接，已按顺序拆分处理。\n"
+                            "其中安全且参数完整的工具已执行；缺少参数或不适合从拼接调用执行的工具已逐项标记失败。\n\n"
+                            "[工具处理结果]\n"
+                            f"{_safe_json(compound_payload)}\n\n"
+                            "请基于以上结果继续；如仍需调用失败的工具，请按标准格式一次调用一个 MCP 工具并提供所需参数。"
                         )
                         convo.append({"role": "user", "content": follow_up})
+                    _set_run_live_phase(run_id, "generating")
                     continue
                 if _run_should_stop(run_id):
                     _run_set_status(run_id, "stopped", finished=True)
