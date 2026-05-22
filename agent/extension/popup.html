@@ -86,9 +86,9 @@
       border-bottom:1px solid var(--border); flex-shrink:0; background:var(--bg2);
     }
     .tab-btn {
-      padding:5px 12px; border:none; background:none; color:var(--muted);
-      font-family:var(--font); font-size:11px; font-weight:600; cursor:pointer;
-      border-radius:var(--r) var(--r) 0 0; transition:all var(--tr); letter-spacing:.2px;
+      padding:5px 8px; border:none; background:none; color:var(--muted);
+      font-family:var(--font); font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap;
+      border-radius:var(--r) var(--r) 0 0; transition:all var(--tr); letter-spacing:.1px;
     }
     .tab-btn:hover  { background:var(--surface); color:var(--text); }
     .tab-btn.active { background:rgba(99,102,241,.15); color:var(--accent); border-bottom:2px solid var(--accent); }
@@ -343,6 +343,37 @@
     .tool-chips { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
     .tool-chip { font-size:10px; padding:2px 6px; border-radius:5px; background:var(--bg3); border:1px solid var(--border); color:var(--muted); }
     .empty-note { font-size:11px; color:var(--muted); text-align:center; padding:18px 0; }
+
+    /* ── Memory cards ── */
+    .entry-badge.card { background:rgba(139,92,246,.2); color:#c4b5fd; }
+    .link-btn { font-size:10px; color:var(--muted); border:none; background:none; cursor:pointer; padding:2px 6px; border-radius:4px; }
+    .link-btn:hover { background:var(--surface); color:var(--text); }
+    #cards-list::-webkit-scrollbar { width:3px; }
+    #cards-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    .card-item { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:9px 10px; }
+    .card-item.running { border-color:var(--accent); box-shadow:0 0 0 1px rgba(99,102,241,.3); }
+    .card-item-top { display:flex; align-items:center; gap:8px; }
+    .card-item-name { font-size:12px; font-weight:600; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .card-item-meta { font-size:10px; color:var(--muted); }
+    .card-item-desc { font-size:10px; color:var(--muted); margin-top:2px; word-break:break-word; }
+    .card-item-actions { display:flex; gap:5px; margin-top:7px; flex-wrap:wrap; }
+    .card-steps { margin-top:8px; border-top:1px dashed var(--border); padding-top:7px; display:flex; flex-direction:column; gap:5px; }
+    .step-row { display:flex; gap:7px; align-items:flex-start; font-size:11px; }
+    .step-idx { width:18px; height:18px; border-radius:5px; background:var(--bg3); color:var(--muted); display:flex; align-items:center; justify-content:center; font-size:9px; flex-shrink:0; margin-top:1px; }
+    .step-row.cur .step-idx { background:var(--accent); color:#fff; }
+    .step-row.ok .step-idx { background:rgba(34,197,94,.25); color:#86efac; }
+    .step-row.err .step-idx { background:rgba(239,68,68,.25); color:#fca5a5; }
+    .step-body { min-width:0; }
+    .step-note { color:var(--text); word-break:break-word; }
+    .step-tool { font-family:'Cascadia Code',Consolas,monospace; font-size:9px; color:var(--muted); }
+    #cards-run-status { font-size:11px; color:var(--accent); min-height:16px; flex-shrink:0; }
+
+    /* ── Card modal (merge prompt) ── */
+    .card-modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:50; }
+    .card-modal-box { background:var(--bg2); border:1px solid var(--border); border-radius:var(--r2); padding:16px; width:300px; }
+    .card-modal-title { font-size:13px; font-weight:700; margin-bottom:8px; }
+    .card-modal-msg { font-size:11px; color:var(--muted); margin-bottom:12px; word-break:break-word; }
+    .card-modal-actions { display:flex; flex-direction:column; gap:6px; }
   </style>
 </head>
 <body class="dark">
@@ -374,6 +405,7 @@
     <button class="tab-btn" id="tab-members">👥 成员</button>
     <button class="tab-btn" id="tab-chat">💬 对话</button>
     <button class="tab-btn" id="tab-tasks">🗂 任务</button>
+    <button class="tab-btn" id="tab-cards">🃏 卡片</button>
     <button class="tab-btn" id="tab-settings">⚙ 设置</button>
   </div>
 
@@ -475,6 +507,34 @@
       </div>
     </div>
 
+    <!-- Cards pane -->
+    <div class="pane hidden" id="cards-pane">
+      <div class="pane-header">
+        <span class="pane-title">记忆卡片自动化</span>
+        <div style="display:flex;gap:4px;">
+          <button class="link-btn" id="cards-import-btn">导入</button>
+          <button class="link-btn" id="cards-export-all-btn">导出全部</button>
+        </div>
+      </div>
+
+      <div id="cards-import-box" class="card hidden">
+        <div class="card-title">导入卡片（JSON）</div>
+        <textarea class="ta" id="cards-import-text" style="min-height:90px;" placeholder='粘贴卡片 JSON，例如：&#10;{"name":"登录流程","steps":[&#10;  {"tool":"browser_navigate","args":{"url":"https://example.com"},"note":"打开页面"},&#10;  {"tool":"browser_wait","args":{"selector":"#user"},"note":"等待输入框"},&#10;  {"tool":"browser_type","args":{"selector":"#user","text":"me"},"note":"输入账号"},&#10;  {"tool":"browser_click","args":{"selector":"#go"},"note":"点击登录"}&#10;]}'></textarea>
+        <div class="btn-row" style="margin-top:8px;">
+          <button class="btn btn-secondary" id="cards-import-file-btn">从文件选择</button>
+          <button class="btn btn-primary" id="cards-import-confirm">导入</button>
+        </div>
+        <input type="file" id="cards-import-file" accept=".json,application/json" style="display:none;"/>
+        <div class="save-feedback" id="cards-import-feedback"></div>
+      </div>
+
+      <div id="cards-run-status"></div>
+
+      <div id="cards-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:3px;">
+        <div class="empty-note" id="cards-empty">暂无卡片，点击“导入”添加</div>
+      </div>
+    </div>
+
     <!-- Settings pane -->
     <div class="pane hidden" id="settings-pane">
 
@@ -562,6 +622,19 @@
   <div id="footer">
     <button class="btn btn-primary" id="connect-btn">连接</button>
     <button class="btn btn-danger"  id="disconnect-btn">断开</button>
+  </div>
+
+  <!-- Card merge prompt modal -->
+  <div id="card-modal" class="card-modal-overlay hidden">
+    <div class="card-modal-box">
+      <div class="card-modal-title">卡片已存在</div>
+      <div class="card-modal-msg" id="card-modal-msg"></div>
+      <div class="card-modal-actions">
+        <button class="btn btn-primary" id="cm-merge">合并步骤</button>
+        <button class="btn btn-secondary" id="cm-replace">替换原卡片</button>
+        <button class="btn btn-secondary" id="cm-skip">跳过</button>
+      </div>
+    </div>
   </div>
 
 </div>

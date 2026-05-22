@@ -3,8 +3,9 @@
 //   1. Browser-Agent: socket connection managed by the background worker.
 //   2. Software-end client: logged-in account → AI members, chat, task scheduling.
 
-import { AgentStatus, AgentSettings, ActivityEntry, ChatMessage, BgMsg } from './lib/types'
-import { getAuth, saveAuth, clearAuth, getSettings, AuthState } from './lib/storage'
+import { AgentStatus, AgentSettings, ActivityEntry, ChatMessage, BgMsg, MemoryCard } from './lib/types'
+import { getAuth, saveAuth, clearAuth, getSettings, getCards, setCards, deleteCard, AuthState } from './lib/storage'
+import { parseImport, mergeCards, exportCard } from './lib/cards'
 import {
   login as apiLogin, getMe, listConfigs, getMcpTools,
   startChatRun, getChatRun, stopChatRun,
@@ -14,7 +15,7 @@ import {
 
 // ── State ──────────────────────────────────────────────────────────────────
 let currentTheme: 'dark' | 'light' = 'dark'
-type TabName = 'feed' | 'members' | 'chat' | 'tasks' | 'settings'
+type TabName = 'feed' | 'members' | 'chat' | 'tasks' | 'cards' | 'settings'
 let activeTab: TabName = 'feed'
 let currentStatus: AgentStatus = 'disconnected'
 let chatHistory: ChatMessage[] = []
@@ -30,6 +31,9 @@ let members: MemberConfig[] = []
 let selectedMemberId: number | null = null
 let mcpRolePerms: McpRolePermissions | null = null
 let activeRunId: string | null = null
+let cards: MemoryCard[] = []
+let expandedCardId: string | null = null
+let runningCardId: string | null = null
 
 // ── Status labels ──────────────────────────────────────────────────────────
 const STATUS_LABELS: Record<string, string> = {
@@ -51,11 +55,11 @@ const userName     = $('user-name')
 
 const tabs: Record<TabName, HTMLElement> = {
   feed: $('tab-feed'), members: $('tab-members'), chat: $('tab-chat'),
-  tasks: $('tab-tasks'), settings: $('tab-settings'),
+  tasks: $('tab-tasks'), cards: $('tab-cards'), settings: $('tab-settings'),
 }
 const panes: Record<TabName, HTMLElement> = {
   feed: $('feed-pane'), members: $('members-pane'), chat: $('chat-pane'),
-  tasks: $('task-pane'), settings: $('settings-pane'),
+  tasks: $('task-pane'), cards: $('cards-pane'), settings: $('settings-pane'),
 }
 
 const feed         = $('feed')
@@ -124,6 +128,24 @@ const memberSettingsBody = $('member-settings-body')
 const rolePermsCard = $('role-perms-card')
 const rolePermsBody = $('role-perms-body')
 
+// Cards
+const cardsImportBtn    = $('cards-import-btn')
+const cardsExportAllBtn = $('cards-export-all-btn')
+const cardsImportBox    = $('cards-import-box')
+const cardsImportText   = $('cards-import-text') as HTMLTextAreaElement
+const cardsImportFileBtn = $('cards-import-file-btn')
+const cardsImportFile   = $('cards-import-file') as HTMLInputElement
+const cardsImportConfirm = $('cards-import-confirm')
+const cardsImportFeedback = $('cards-import-feedback')
+const cardsRunStatus    = $('cards-run-status')
+const cardsList         = $('cards-list')
+const cardsEmpty        = $('cards-empty')
+const cardModal         = $('card-modal')
+const cardModalMsg      = $('card-modal-msg')
+const cmMerge           = $('cm-merge')
+const cmReplace         = $('cm-replace')
+const cmSkip            = $('cm-skip')
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 function esc(s: string): string {
@@ -151,6 +173,7 @@ function switchTab(tab: TabName) {
   if (tab === 'chat') chatMsgs.scrollTop = chatMsgs.scrollHeight
   if (tab === 'members' && auth.token && members.length === 0) void loadMembers()
   if (tab === 'tasks' && selectedMemberId && auth.token) void loadJobs()
+  if (tab === 'cards') void renderCards()
 }
 ;(Object.keys(tabs) as TabName[]).forEach(k => tabs[k].addEventListener('click', () => switchTab(k)))
 
@@ -603,6 +626,154 @@ function renderSettingsViews() {
   }
 }
 
+// ── Memory cards (automation workflows) ──────────────────────────────────────
+function argSummary(args: any): string {
+  try { const s = JSON.stringify(args); return s && s !== '{}' ? s.slice(0, 90) : '' } catch { return '' }
+}
+function renderSteps(c: MemoryCard): string {
+  const rows = c.steps.map((s, i) => `
+    <div class="step-row" id="step-${c.id}-${i}">
+      <div class="step-idx">${i + 1}</div>
+      <div class="step-body">
+        <div class="step-note">${esc(s.note)}</div>
+        <div class="step-tool">${esc(s.tool)} ${esc(argSummary(s.args))}</div>
+      </div>
+    </div>`).join('')
+  return `<div class="card-steps">${rows}</div>`
+}
+async function renderCards() {
+  cards = await getCards()
+  cardsList.querySelectorAll('.card-item').forEach(e => e.remove())
+  if (!cards.length) { cardsEmpty.style.display = 'block'; return }
+  cardsEmpty.style.display = 'none'
+  for (const c of cards) {
+    const expanded = c.id === expandedCardId
+    const el = document.createElement('div')
+    el.className = 'card-item' + (c.id === runningCardId ? ' running' : '')
+    el.innerHTML = `
+      <div class="card-item-top">
+        <span class="card-item-name">${esc(c.name)}</span>
+        <span class="card-item-meta">${c.steps.length} 步</span>
+      </div>
+      ${c.description ? `<div class="card-item-desc">${esc(c.description)}</div>` : ''}
+      <div class="card-item-actions">
+        ${c.id === runningCardId
+          ? `<button class="mini-btn danger" data-act="stop">停止</button>`
+          : `<button class="mini-btn" data-act="run">▶ 执行</button>`}
+        <button class="mini-btn" data-act="view">${expanded ? '收起' : '查看'}</button>
+        <button class="mini-btn" data-act="export">导出</button>
+        <button class="mini-btn danger" data-act="delete">删除</button>
+      </div>
+      ${expanded ? renderSteps(c) : ''}`
+    el.querySelectorAll('button[data-act]').forEach(btn => {
+      btn.addEventListener('click', () => void onCardAction(c.id, (btn as HTMLElement).dataset.act!))
+    })
+    cardsList.appendChild(el)
+  }
+}
+async function onCardAction(id: string, act: string) {
+  const card = cards.find(c => c.id === id)
+  if (!card) return
+  switch (act) {
+    case 'run':
+      if (runningCardId) { cardsRunStatus.textContent = '已有卡片在执行，请先停止'; return }
+      runningCardId = id
+      expandedCardId = id
+      cardsRunStatus.textContent = `开始执行：${card.name}`
+      port.postMessage({ type: 'card:run', cardId: id })
+      await renderCards()
+      break
+    case 'stop':
+      port.postMessage({ type: 'card:stop' })
+      break
+    case 'view':
+      expandedCardId = expandedCardId === id ? null : id
+      await renderCards()
+      break
+    case 'export':
+      exportDownload(`${card.name || 'card'}.json`, exportCard(card))
+      break
+    case 'delete':
+      if (confirm(`确定删除卡片「${card.name}」？此操作不可恢复。`)) {
+        await deleteCard(id)
+        if (expandedCardId === id) expandedCardId = null
+        await renderCards()
+      }
+      break
+  }
+}
+function exportDownload(filename: string, data: any) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename.replace(/[^\w.\-一-龥]+/g, '_')
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+// Prompt the user how to handle a same-named card on import.
+function askMergeChoice(name: string): Promise<'merge' | 'replace' | 'skip'> {
+  return new Promise(resolve => {
+    cardModalMsg.textContent = `卡片「${name}」已存在，是否合并步骤？合并会把导入的步骤追加到现有卡片末尾。`
+    cardModal.classList.remove('hidden')
+    const done = (r: 'merge' | 'replace' | 'skip') => {
+      cardModal.classList.add('hidden')
+      cmMerge.onclick = cmReplace.onclick = cmSkip.onclick = null
+      resolve(r)
+    }
+    cmMerge.onclick = () => done('merge')
+    cmReplace.onclick = () => done('replace')
+    cmSkip.onclick = () => done('skip')
+  })
+}
+async function doImportText(text: string) {
+  if (!text) { cardsImportFeedback.textContent = '请粘贴卡片 JSON 或选择文件'; cardsImportFeedback.style.color = 'var(--error)'; return }
+  let incoming: MemoryCard[]
+  try { incoming = parseImport(text) } catch (e: any) {
+    cardsImportFeedback.textContent = `导入失败：${e?.message || e}`
+    cardsImportFeedback.style.color = 'var(--error)'
+    return
+  }
+  cards = await getCards()
+  let added = 0, merged = 0, replaced = 0, skipped = 0
+  for (const inc of incoming) {
+    const existing = cards.find(c => c.name === inc.name)
+    if (existing) {
+      const choice = await askMergeChoice(inc.name)
+      if (choice === 'skip') { skipped++; continue }
+      const idx = cards.findIndex(c => c.id === existing.id)
+      if (choice === 'merge') { cards[idx] = mergeCards(existing, inc); merged++ }
+      else { cards[idx] = { ...inc, id: existing.id, createdAt: existing.createdAt }; replaced++ }
+    } else {
+      cards.push(inc); added++
+    }
+  }
+  await setCards(cards)
+  cardsImportText.value = ''
+  cardsImportFeedback.textContent = `完成：新增 ${added}，合并 ${merged}，替换 ${replaced}，跳过 ${skipped}`
+  cardsImportFeedback.style.color = 'var(--success)'
+  await renderCards()
+}
+
+cardsImportBtn.addEventListener('click', () => cardsImportBox.classList.toggle('hidden'))
+cardsImportConfirm.addEventListener('click', () => void doImportText(cardsImportText.value.trim()))
+cardsImportFileBtn.addEventListener('click', () => cardsImportFile.click())
+cardsImportFile.addEventListener('change', async () => {
+  const f = cardsImportFile.files?.[0]
+  if (!f) return
+  const text = await f.text()
+  cardsImportFile.value = ''
+  cardsImportBox.classList.remove('hidden')
+  await doImportText(text)
+})
+cardsExportAllBtn.addEventListener('click', async () => {
+  cards = await getCards()
+  if (!cards.length) { cardsRunStatus.textContent = '没有可导出的卡片'; return }
+  exportDownload('heysure-cards.json', { cards: cards.map(exportCard) })
+})
+
 // ── Settings (load + save) ─────────────────────────────────────────────────
 function loadSettings(s: AgentSettings) {
   serverUrl = s.serverUrl || ''
@@ -730,6 +901,24 @@ function initPort() {
         const r = msg.result
         testResult.textContent = r.success ? `✓ ${r.status} · ${r.ms}ms` : `✗ ${r.error}`
         testResult.className   = `test-result ${r.success ? 'ok' : 'fail'}`
+        break
+      }
+      case 'card:progress': {
+        cardsRunStatus.textContent = `执行中 [${msg.index + 1}/${msg.total}] ${msg.note}`
+          + (msg.status === 'error' ? ` ✗ ${msg.error || ''}` : msg.status === 'success' ? ' ✓' : '')
+        const row = document.getElementById(`step-${msg.cardId}-${msg.index}`)
+        if (row) {
+          row.classList.remove('cur', 'ok', 'err')
+          row.classList.add(msg.status === 'success' ? 'ok' : msg.status === 'error' ? 'err' : 'cur')
+        }
+        break
+      }
+      case 'card:done': {
+        runningCardId = null
+        cardsRunStatus.textContent = msg.success
+          ? '✓ 卡片执行完成'
+          : (msg.reason === 'stopped' ? '已停止' : `✗ 执行失败：${msg.reason || ''}`)
+        void renderCards()
         break
       }
     }

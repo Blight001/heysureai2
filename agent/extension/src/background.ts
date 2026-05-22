@@ -1,7 +1,7 @@
 // background.ts — HeySure Agent service worker
 // Manages: Socket.IO server connection, task dispatching, popup port communication
 import { io, Socket } from 'socket.io-client'
-import { getSettings, saveSettings, pushActivity, getActivity } from './lib/storage'
+import { getSettings, saveSettings, pushActivity, getActivity, getCard } from './lib/storage'
 import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS } from './lib/tools'
 import { callAI } from './lib/ai'
 import {
@@ -250,6 +250,56 @@ async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUs
   return { text: '已达到最大迭代次数', toolsUsed }
 }
 
+// ── Memory card execution ─────────────────────────────────────────────────
+let cardRunning = false
+let cardStopRequested = false
+
+async function runCard(cardId: string) {
+  if (cardRunning) {
+    log('card', 'warn', '已有卡片正在执行，请先停止')
+    return
+  }
+  const card = await getCard(cardId)
+  if (!card) {
+    broadcast({ type: 'card:done', cardId, success: false, reason: '卡片不存在' })
+    log('card', 'error', '卡片不存在')
+    return
+  }
+  cardRunning = true
+  cardStopRequested = false
+  const total = card.steps.length
+  log('card', 'info', `开始执行卡片「${card.name}」，共 ${total} 步`)
+
+  try {
+    for (let i = 0; i < total; i++) {
+      if (cardStopRequested) {
+        log('card', 'warn', `已停止：${card.name}（第 ${i + 1}/${total} 步前）`)
+        broadcast({ type: 'card:done', cardId, success: false, reason: 'stopped' })
+        return
+      }
+      const step = card.steps[i]
+      const label = `[${i + 1}/${total}] ${step.note}`
+      broadcast({ type: 'card:progress', cardId, index: i, total, note: step.note, tool: step.tool, status: 'running' })
+      log('card', 'running', label, { tool: step.tool, args: step.args })
+      try {
+        const result = await executeBrowserTool(step.tool, step.args || {})
+        log('card', 'success', `完成 ${label}`, result)
+        broadcast({ type: 'card:progress', cardId, index: i, total, note: step.note, tool: step.tool, status: 'success' })
+      } catch (err: any) {
+        const errMsg = err?.message || String(err)
+        log('card', 'error', `失败 ${label} — ${errMsg}`)
+        broadcast({ type: 'card:progress', cardId, index: i, total, note: step.note, tool: step.tool, status: 'error', error: errMsg })
+        broadcast({ type: 'card:done', cardId, success: false, reason: errMsg })
+        return
+      }
+    }
+    log('card', 'success', `卡片执行完成：${card.name}`)
+    broadcast({ type: 'card:done', cardId, success: true })
+  } finally {
+    cardRunning = false
+  }
+}
+
 // ── Popup port management ─────────────────────────────────────────────────
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'popup') return
@@ -291,6 +341,15 @@ chrome.runtime.onConnect.addListener((port) => {
       case 'connection:test': {
         const result = await testConnection()
         port.postMessage({ type: 'connection:result', result })
+        break
+      }
+
+      case 'card:run': {
+        void runCard(msg.cardId)
+        break
+      }
+      case 'card:stop': {
+        if (cardRunning) { cardStopRequested = true; log('card', 'warn', '收到停止请求') }
         break
       }
     }

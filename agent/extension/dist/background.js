@@ -3448,6 +3448,15 @@
     const r = await chrome.storage.session.get(ACT_KEY).catch(() => ({}));
     return r[ACT_KEY] || [];
   }
+  var CARDS_KEY = "_memory_cards";
+  async function getCards() {
+    const r = await chrome.storage.local.get(CARDS_KEY);
+    const list = r[CARDS_KEY];
+    return Array.isArray(list) ? list : [];
+  }
+  async function getCard(id) {
+    return (await getCards()).find((c) => c.id === id);
+  }
 
   // src/lib/ai.ts
   async function callAI(baseUrl, apiKey, model, messages, tools, systemPrompt) {
@@ -4397,6 +4406,52 @@ what you did. Respond in the same language as the user. For factual questions, s
     }
     return { text: "\u5DF2\u8FBE\u5230\u6700\u5927\u8FED\u4EE3\u6B21\u6570", toolsUsed };
   }
+  var cardRunning = false;
+  var cardStopRequested = false;
+  async function runCard(cardId) {
+    if (cardRunning) {
+      log("card", "warn", "\u5DF2\u6709\u5361\u7247\u6B63\u5728\u6267\u884C\uFF0C\u8BF7\u5148\u505C\u6B62");
+      return;
+    }
+    const card = await getCard(cardId);
+    if (!card) {
+      broadcast({ type: "card:done", cardId, success: false, reason: "\u5361\u7247\u4E0D\u5B58\u5728" });
+      log("card", "error", "\u5361\u7247\u4E0D\u5B58\u5728");
+      return;
+    }
+    cardRunning = true;
+    cardStopRequested = false;
+    const total = card.steps.length;
+    log("card", "info", `\u5F00\u59CB\u6267\u884C\u5361\u7247\u300C${card.name}\u300D\uFF0C\u5171 ${total} \u6B65`);
+    try {
+      for (let i = 0; i < total; i++) {
+        if (cardStopRequested) {
+          log("card", "warn", `\u5DF2\u505C\u6B62\uFF1A${card.name}\uFF08\u7B2C ${i + 1}/${total} \u6B65\u524D\uFF09`);
+          broadcast({ type: "card:done", cardId, success: false, reason: "stopped" });
+          return;
+        }
+        const step = card.steps[i];
+        const label = `[${i + 1}/${total}] ${step.note}`;
+        broadcast({ type: "card:progress", cardId, index: i, total, note: step.note, tool: step.tool, status: "running" });
+        log("card", "running", label, { tool: step.tool, args: step.args });
+        try {
+          const result = await executeBrowserTool(step.tool, step.args || {});
+          log("card", "success", `\u5B8C\u6210 ${label}`, result);
+          broadcast({ type: "card:progress", cardId, index: i, total, note: step.note, tool: step.tool, status: "success" });
+        } catch (err) {
+          const errMsg = err?.message || String(err);
+          log("card", "error", `\u5931\u8D25 ${label} \u2014 ${errMsg}`);
+          broadcast({ type: "card:progress", cardId, index: i, total, note: step.note, tool: step.tool, status: "error", error: errMsg });
+          broadcast({ type: "card:done", cardId, success: false, reason: errMsg });
+          return;
+        }
+      }
+      log("card", "success", `\u5361\u7247\u6267\u884C\u5B8C\u6210\uFF1A${card.name}`);
+      broadcast({ type: "card:done", cardId, success: true });
+    } finally {
+      cardRunning = false;
+    }
+  }
   chrome.runtime.onConnect.addListener((port) => {
     if (port.name !== "popup")
       return;
@@ -4437,6 +4492,17 @@ what you did. Respond in the same language as the user. For factual questions, s
         case "connection:test": {
           const result = await testConnection();
           port.postMessage({ type: "connection:result", result });
+          break;
+        }
+        case "card:run": {
+          void runCard(msg.cardId);
+          break;
+        }
+        case "card:stop": {
+          if (cardRunning) {
+            cardStopRequested = true;
+            log("card", "warn", "\u6536\u5230\u505C\u6B62\u8BF7\u6C42");
+          }
           break;
         }
       }

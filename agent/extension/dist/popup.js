@@ -35,6 +35,117 @@
     const current = await getAuth();
     await chrome.storage.local.set({ [AUTH_KEY]: { ...AUTH_DEFAULT, account: current.account } });
   }
+  var CARDS_KEY = "_memory_cards";
+  async function getCards() {
+    const r = await chrome.storage.local.get(CARDS_KEY);
+    const list = r[CARDS_KEY];
+    return Array.isArray(list) ? list : [];
+  }
+  async function setCards(cards2) {
+    await chrome.storage.local.set({ [CARDS_KEY]: cards2 });
+  }
+  async function deleteCard(id) {
+    await setCards((await getCards()).filter((c) => c.id !== id));
+  }
+
+  // src/lib/cards.ts
+  var newId = () => "card_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+  function deriveNote(tool, args) {
+    const labels = {
+      browser_navigate: "\u8DF3\u8F6C\u9875\u9762",
+      browser_wait: "\u7B49\u5F85",
+      browser_click: "\u70B9\u51FB",
+      browser_double_click: "\u53CC\u51FB",
+      browser_right_click: "\u53F3\u952E",
+      browser_type: "\u8F93\u5165\u5185\u5BB9",
+      browser_scroll: "\u6EDA\u52A8",
+      browser_select: "\u9009\u62E9",
+      browser_press_key: "\u6309\u952E",
+      browser_drag: "\u62D6\u62FD",
+      browser_hover: "\u60AC\u505C",
+      browser_fill_form: "\u586B\u5199\u8868\u5355",
+      browser_search: "\u641C\u7D22",
+      browser_screenshot: "\u622A\u56FE",
+      browser_extract: "\u63D0\u53D6\u6570\u636E",
+      browser_get_content: "\u8BFB\u53D6\u5185\u5BB9",
+      browser_page_info: "\u67E5\u770B\u9875\u9762\u4F4D\u7F6E"
+    };
+    const base = labels[tool] || tool.replace(/^browser_/, "");
+    const hint = args?.url || args?.text || args?.selector || args?.query || (args?.direction ? `${args.direction}${args?.amount ? " " + args.amount : ""}` : "") || (args?.key ? `\u6309\u952E ${args.key}` : "") || (args?.ms ? `${args.ms}ms` : "");
+    return hint ? `${base}\uFF1A${String(hint).slice(0, 60)}` : base;
+  }
+  function normalizeStep(raw) {
+    if (!raw || typeof raw !== "object")
+      return null;
+    const tool = String(raw.tool || raw.name || "").trim();
+    if (!tool)
+      return null;
+    let args = raw.args ?? raw.arguments ?? raw.input ?? {};
+    if (typeof args === "string") {
+      try {
+        args = JSON.parse(args);
+      } catch {
+        args = {};
+      }
+    }
+    if (!args || typeof args !== "object")
+      args = {};
+    const note = String(raw.note ?? raw.remark ?? raw.comment ?? raw.\u5907\u6CE8 ?? "").trim() || deriveNote(tool, args);
+    return { tool, args, note };
+  }
+  function parseImport(text) {
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error("\u4E0D\u662F\u6709\u6548\u7684 JSON");
+    }
+    let rawCards;
+    if (Array.isArray(data))
+      rawCards = data;
+    else if (data && Array.isArray(data.cards))
+      rawCards = data.cards;
+    else if (data && (data.steps || data.name))
+      rawCards = [data];
+    else
+      throw new Error("\u672A\u627E\u5230\u5361\u7247\u6570\u636E");
+    const now = Date.now();
+    const out = [];
+    for (const rc of rawCards) {
+      if (!rc || typeof rc !== "object")
+        continue;
+      const rawSteps = Array.isArray(rc.steps) ? rc.steps : [];
+      const steps = rawSteps.map(normalizeStep).filter((s) => !!s);
+      if (steps.length === 0)
+        continue;
+      out.push({
+        id: newId(),
+        name: String(rc.name || "\u672A\u547D\u540D\u5361\u7247").trim().slice(0, 80),
+        description: String(rc.description || "").trim().slice(0, 300),
+        steps,
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+    if (out.length === 0)
+      throw new Error("\u5361\u7247\u4E2D\u6CA1\u6709\u53EF\u7528\u7684\u6B65\u9AA4");
+    return out;
+  }
+  function mergeCards(existing, incoming) {
+    return {
+      ...existing,
+      description: existing.description || incoming.description,
+      steps: [...existing.steps, ...incoming.steps],
+      updatedAt: Date.now()
+    };
+  }
+  function exportCard(card) {
+    return {
+      name: card.name,
+      description: card.description,
+      steps: card.steps.map((s) => ({ tool: s.tool, args: s.args, note: s.note }))
+    };
+  }
 
   // src/lib/client.ts
   var trimUrl = (u) => String(u || "").replace(/\/+$/, "");
@@ -156,6 +267,9 @@
   var selectedMemberId = null;
   var mcpRolePerms = null;
   var activeRunId = null;
+  var cards = [];
+  var expandedCardId = null;
+  var runningCardId = null;
   var STATUS_LABELS = {
     disconnected: "\u672A\u8FDE\u63A5",
     connecting: "\u8FDE\u63A5\u4E2D...",
@@ -180,6 +294,7 @@
     members: $("tab-members"),
     chat: $("tab-chat"),
     tasks: $("tab-tasks"),
+    cards: $("tab-cards"),
     settings: $("tab-settings")
   };
   var panes = {
@@ -187,6 +302,7 @@
     members: $("members-pane"),
     chat: $("chat-pane"),
     tasks: $("task-pane"),
+    cards: $("cards-pane"),
     settings: $("settings-pane")
   };
   var feed = $("feed");
@@ -248,6 +364,22 @@
   var memberSettingsBody = $("member-settings-body");
   var rolePermsCard = $("role-perms-card");
   var rolePermsBody = $("role-perms-body");
+  var cardsImportBtn = $("cards-import-btn");
+  var cardsExportAllBtn = $("cards-export-all-btn");
+  var cardsImportBox = $("cards-import-box");
+  var cardsImportText = $("cards-import-text");
+  var cardsImportFileBtn = $("cards-import-file-btn");
+  var cardsImportFile = $("cards-import-file");
+  var cardsImportConfirm = $("cards-import-confirm");
+  var cardsImportFeedback = $("cards-import-feedback");
+  var cardsRunStatus = $("cards-run-status");
+  var cardsList = $("cards-list");
+  var cardsEmpty = $("cards-empty");
+  var cardModal = $("card-modal");
+  var cardModalMsg = $("card-modal-msg");
+  var cmMerge = $("cm-merge");
+  var cmReplace = $("cm-replace");
+  var cmSkip = $("cm-skip");
   var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   function esc(s) {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -283,6 +415,8 @@
       void loadMembers();
     if (tab === "tasks" && selectedMemberId && auth.token)
       void loadJobs();
+    if (tab === "cards")
+      void renderCards();
   }
   Object.keys(tabs).forEach((k) => tabs[k].addEventListener("click", () => switchTab(k)));
   function setStatus(status) {
@@ -750,6 +884,180 @@
       rolePermsCard.style.display = "none";
     }
   }
+  function argSummary(args) {
+    try {
+      const s = JSON.stringify(args);
+      return s && s !== "{}" ? s.slice(0, 90) : "";
+    } catch {
+      return "";
+    }
+  }
+  function renderSteps(c) {
+    const rows = c.steps.map((s, i) => `
+    <div class="step-row" id="step-${c.id}-${i}">
+      <div class="step-idx">${i + 1}</div>
+      <div class="step-body">
+        <div class="step-note">${esc(s.note)}</div>
+        <div class="step-tool">${esc(s.tool)} ${esc(argSummary(s.args))}</div>
+      </div>
+    </div>`).join("");
+    return `<div class="card-steps">${rows}</div>`;
+  }
+  async function renderCards() {
+    cards = await getCards();
+    cardsList.querySelectorAll(".card-item").forEach((e) => e.remove());
+    if (!cards.length) {
+      cardsEmpty.style.display = "block";
+      return;
+    }
+    cardsEmpty.style.display = "none";
+    for (const c of cards) {
+      const expanded = c.id === expandedCardId;
+      const el = document.createElement("div");
+      el.className = "card-item" + (c.id === runningCardId ? " running" : "");
+      el.innerHTML = `
+      <div class="card-item-top">
+        <span class="card-item-name">${esc(c.name)}</span>
+        <span class="card-item-meta">${c.steps.length} \u6B65</span>
+      </div>
+      ${c.description ? `<div class="card-item-desc">${esc(c.description)}</div>` : ""}
+      <div class="card-item-actions">
+        ${c.id === runningCardId ? `<button class="mini-btn danger" data-act="stop">\u505C\u6B62</button>` : `<button class="mini-btn" data-act="run">\u25B6 \u6267\u884C</button>`}
+        <button class="mini-btn" data-act="view">${expanded ? "\u6536\u8D77" : "\u67E5\u770B"}</button>
+        <button class="mini-btn" data-act="export">\u5BFC\u51FA</button>
+        <button class="mini-btn danger" data-act="delete">\u5220\u9664</button>
+      </div>
+      ${expanded ? renderSteps(c) : ""}`;
+      el.querySelectorAll("button[data-act]").forEach((btn) => {
+        btn.addEventListener("click", () => void onCardAction(c.id, btn.dataset.act));
+      });
+      cardsList.appendChild(el);
+    }
+  }
+  async function onCardAction(id, act) {
+    const card = cards.find((c) => c.id === id);
+    if (!card)
+      return;
+    switch (act) {
+      case "run":
+        if (runningCardId) {
+          cardsRunStatus.textContent = "\u5DF2\u6709\u5361\u7247\u5728\u6267\u884C\uFF0C\u8BF7\u5148\u505C\u6B62";
+          return;
+        }
+        runningCardId = id;
+        expandedCardId = id;
+        cardsRunStatus.textContent = `\u5F00\u59CB\u6267\u884C\uFF1A${card.name}`;
+        port.postMessage({ type: "card:run", cardId: id });
+        await renderCards();
+        break;
+      case "stop":
+        port.postMessage({ type: "card:stop" });
+        break;
+      case "view":
+        expandedCardId = expandedCardId === id ? null : id;
+        await renderCards();
+        break;
+      case "export":
+        exportDownload(`${card.name || "card"}.json`, exportCard(card));
+        break;
+      case "delete":
+        if (confirm(`\u786E\u5B9A\u5220\u9664\u5361\u7247\u300C${card.name}\u300D\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\u3002`)) {
+          await deleteCard(id);
+          if (expandedCardId === id)
+            expandedCardId = null;
+          await renderCards();
+        }
+        break;
+    }
+  }
+  function exportDownload(filename, data) {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename.replace(/[^\w.\-一-龥]+/g, "_");
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1e3);
+  }
+  function askMergeChoice(name) {
+    return new Promise((resolve) => {
+      cardModalMsg.textContent = `\u5361\u7247\u300C${name}\u300D\u5DF2\u5B58\u5728\uFF0C\u662F\u5426\u5408\u5E76\u6B65\u9AA4\uFF1F\u5408\u5E76\u4F1A\u628A\u5BFC\u5165\u7684\u6B65\u9AA4\u8FFD\u52A0\u5230\u73B0\u6709\u5361\u7247\u672B\u5C3E\u3002`;
+      cardModal.classList.remove("hidden");
+      const done = (r) => {
+        cardModal.classList.add("hidden");
+        cmMerge.onclick = cmReplace.onclick = cmSkip.onclick = null;
+        resolve(r);
+      };
+      cmMerge.onclick = () => done("merge");
+      cmReplace.onclick = () => done("replace");
+      cmSkip.onclick = () => done("skip");
+    });
+  }
+  async function doImportText(text) {
+    if (!text) {
+      cardsImportFeedback.textContent = "\u8BF7\u7C98\u8D34\u5361\u7247 JSON \u6216\u9009\u62E9\u6587\u4EF6";
+      cardsImportFeedback.style.color = "var(--error)";
+      return;
+    }
+    let incoming;
+    try {
+      incoming = parseImport(text);
+    } catch (e) {
+      cardsImportFeedback.textContent = `\u5BFC\u5165\u5931\u8D25\uFF1A${e?.message || e}`;
+      cardsImportFeedback.style.color = "var(--error)";
+      return;
+    }
+    cards = await getCards();
+    let added = 0, merged = 0, replaced = 0, skipped = 0;
+    for (const inc of incoming) {
+      const existing = cards.find((c) => c.name === inc.name);
+      if (existing) {
+        const choice = await askMergeChoice(inc.name);
+        if (choice === "skip") {
+          skipped++;
+          continue;
+        }
+        const idx = cards.findIndex((c) => c.id === existing.id);
+        if (choice === "merge") {
+          cards[idx] = mergeCards(existing, inc);
+          merged++;
+        } else {
+          cards[idx] = { ...inc, id: existing.id, createdAt: existing.createdAt };
+          replaced++;
+        }
+      } else {
+        cards.push(inc);
+        added++;
+      }
+    }
+    await setCards(cards);
+    cardsImportText.value = "";
+    cardsImportFeedback.textContent = `\u5B8C\u6210\uFF1A\u65B0\u589E ${added}\uFF0C\u5408\u5E76 ${merged}\uFF0C\u66FF\u6362 ${replaced}\uFF0C\u8DF3\u8FC7 ${skipped}`;
+    cardsImportFeedback.style.color = "var(--success)";
+    await renderCards();
+  }
+  cardsImportBtn.addEventListener("click", () => cardsImportBox.classList.toggle("hidden"));
+  cardsImportConfirm.addEventListener("click", () => void doImportText(cardsImportText.value.trim()));
+  cardsImportFileBtn.addEventListener("click", () => cardsImportFile.click());
+  cardsImportFile.addEventListener("change", async () => {
+    const f = cardsImportFile.files?.[0];
+    if (!f)
+      return;
+    const text = await f.text();
+    cardsImportFile.value = "";
+    cardsImportBox.classList.remove("hidden");
+    await doImportText(text);
+  });
+  cardsExportAllBtn.addEventListener("click", async () => {
+    cards = await getCards();
+    if (!cards.length) {
+      cardsRunStatus.textContent = "\u6CA1\u6709\u53EF\u5BFC\u51FA\u7684\u5361\u7247";
+      return;
+    }
+    exportDownload("heysure-cards.json", { cards: cards.map(exportCard) });
+  });
   function loadSettings(s) {
     serverUrl = s.serverUrl || "";
     cfgServer.value = s.serverUrl || "";
@@ -867,6 +1175,21 @@
           const r = msg.result;
           testResult.textContent = r.success ? `\u2713 ${r.status} \xB7 ${r.ms}ms` : `\u2717 ${r.error}`;
           testResult.className = `test-result ${r.success ? "ok" : "fail"}`;
+          break;
+        }
+        case "card:progress": {
+          cardsRunStatus.textContent = `\u6267\u884C\u4E2D [${msg.index + 1}/${msg.total}] ${msg.note}` + (msg.status === "error" ? ` \u2717 ${msg.error || ""}` : msg.status === "success" ? " \u2713" : "");
+          const row = document.getElementById(`step-${msg.cardId}-${msg.index}`);
+          if (row) {
+            row.classList.remove("cur", "ok", "err");
+            row.classList.add(msg.status === "success" ? "ok" : msg.status === "error" ? "err" : "cur");
+          }
+          break;
+        }
+        case "card:done": {
+          runningCardId = null;
+          cardsRunStatus.textContent = msg.success ? "\u2713 \u5361\u7247\u6267\u884C\u5B8C\u6210" : msg.reason === "stopped" ? "\u5DF2\u505C\u6B62" : `\u2717 \u6267\u884C\u5931\u8D25\uFF1A${msg.reason || ""}`;
+          void renderCards();
           break;
         }
       }

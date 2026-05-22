@@ -1,4 +1,4 @@
-import { AgentSettings, SETTING_DEFAULTS } from './types'
+import { AgentSettings, SETTING_DEFAULTS, MemoryCard } from './types'
 
 export async function getSettings(): Promise<AgentSettings> {
   const keys = Object.keys(SETTING_DEFAULTS)
@@ -57,5 +57,34 @@ export async function clearAuth(): Promise<void> {
   const current = await getAuth()
   // Keep the last account for convenience, drop the token.
   await chrome.storage.local.set({ [AUTH_KEY]: { ...AUTH_DEFAULT, account: current.account } })
+}
+
+// ── Memory cards (automation workflows) ──────────────────────────────────────
+const CARDS_KEY = '_memory_cards'
+
+export async function getCards(): Promise<MemoryCard[]> {
+  const r = await chrome.storage.local.get(CARDS_KEY)
+  const list = (r as any)[CARDS_KEY]
+  return Array.isArray(list) ? list as MemoryCard[] : []
+}
+
+export async function setCards(cards: MemoryCard[]): Promise<void> {
+  await chrome.storage.local.set({ [CARDS_KEY]: cards })
+}
+
+export async function getCard(id: string): Promise<MemoryCard | undefined> {
+  return (await getCards()).find(c => c.id === id)
+}
+
+export async function upsertCard(card: MemoryCard): Promise<void> {
+  const cards = await getCards()
+  const idx = cards.findIndex(c => c.id === card.id)
+  if (idx >= 0) cards[idx] = card
+  else cards.push(card)
+  await setCards(cards)
+}
+
+export async function deleteCard(id: string): Promise<void> {
+  await setCards((await getCards()).filter(c => c.id !== id))
 }
 
