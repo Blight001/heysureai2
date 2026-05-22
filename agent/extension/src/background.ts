@@ -2,7 +2,7 @@
 // Manages: Socket.IO server connection, task dispatching, popup port communication
 import { io, Socket } from 'socket.io-client'
 import { getSettings, saveSettings, pushActivity, getActivity, getCard } from './lib/storage'
-import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS } from './lib/tools'
+import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS, runCardSteps, setCardProgress } from './lib/tools'
 import { callAI } from './lib/ai'
 import {
   AgentStatus, AgentSettings, DispatchedTask, ActivityEntry,
@@ -203,8 +203,14 @@ screenshots, search the web, extract data, and more.
 
 Use browser_page_info to know where you are on the page (scroll position, current section,
 visible headings); after scrolling, read the returned position so you know where you landed and
-what changed. When asked to complete tasks, use the available tools systematically and summarize
-what you did. Respond in the same language as the user. For factual questions, search the web if needed.`
+what changed.
+
+Memory cards: when the user asks to save a sequence of actions, call card_save (steps are
+{tool,args,note}, where note is a 备注). Replay with card_run by name/id. If card_run returns a
+failedStep, diagnose it, fix that step with card_update_step, and run again until it works.
+
+When asked to complete tasks, use the available tools systematically and summarize what you did.
+Respond in the same language as the user. For factual questions, search the web if needed.`
 
 async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUsed: string[] }> {
   const settings = await getSettings()
@@ -254,6 +260,16 @@ async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUs
 let cardRunning = false
 let cardStopRequested = false
 
+// Surface per-step progress (for both popup-triggered and AI-triggered runs)
+// to the activity feed and the cards UI.
+setCardProgress((cardId, index, total, note, tool, status, error) => {
+  broadcast({ type: 'card:progress', cardId, index, total, note, tool, status, error })
+  const label = `[${index + 1}/${total}] ${note}`
+  if (status === 'running')      log('card', 'running', label, { tool })
+  else if (status === 'success') log('card', 'success', `完成 ${label}`)
+  else if (status === 'error')   log('card', 'error', `失败 ${label} — ${error || ''}`)
+})
+
 async function runCard(cardId: string) {
   if (cardRunning) {
     log('card', 'warn', '已有卡片正在执行，请先停止')
@@ -267,34 +283,18 @@ async function runCard(cardId: string) {
   }
   cardRunning = true
   cardStopRequested = false
-  const total = card.steps.length
-  log('card', 'info', `开始执行卡片「${card.name}」，共 ${total} 步`)
-
+  log('card', 'info', `开始执行卡片「${card.name}」，共 ${card.steps.length} 步`)
   try {
-    for (let i = 0; i < total; i++) {
-      if (cardStopRequested) {
-        log('card', 'warn', `已停止：${card.name}（第 ${i + 1}/${total} 步前）`)
-        broadcast({ type: 'card:done', cardId, success: false, reason: 'stopped' })
-        return
-      }
-      const step = card.steps[i]
-      const label = `[${i + 1}/${total}] ${step.note}`
-      broadcast({ type: 'card:progress', cardId, index: i, total, note: step.note, tool: step.tool, status: 'running' })
-      log('card', 'running', label, { tool: step.tool, args: step.args })
-      try {
-        const result = await executeBrowserTool(step.tool, step.args || {})
-        log('card', 'success', `完成 ${label}`, result)
-        broadcast({ type: 'card:progress', cardId, index: i, total, note: step.note, tool: step.tool, status: 'success' })
-      } catch (err: any) {
-        const errMsg = err?.message || String(err)
-        log('card', 'error', `失败 ${label} — ${errMsg}`)
-        broadcast({ type: 'card:progress', cardId, index: i, total, note: step.note, tool: step.tool, status: 'error', error: errMsg })
-        broadcast({ type: 'card:done', cardId, success: false, reason: errMsg })
-        return
-      }
+    const res = await runCardSteps(card, { shouldStop: () => cardStopRequested })
+    if (res.stopped) {
+      log('card', 'warn', `已停止：${card.name}`)
+      broadcast({ type: 'card:done', cardId, success: false, reason: 'stopped' })
+    } else if (res.success) {
+      log('card', 'success', `卡片执行完成：${card.name}`)
+      broadcast({ type: 'card:done', cardId, success: true })
+    } else {
+      broadcast({ type: 'card:done', cardId, success: false, reason: res.failedStep?.error || '执行失败' })
     }
-    log('card', 'success', `卡片执行完成：${card.name}`)
-    broadcast({ type: 'card:done', cardId, success: true })
   } finally {
     cardRunning = false
   }

@@ -3454,6 +3454,9 @@
     const list = r[CARDS_KEY];
     return Array.isArray(list) ? list : [];
   }
+  async function setCards(cards) {
+    await chrome.storage.local.set({ [CARDS_KEY]: cards });
+  }
   async function getCard(id) {
     return (await getCards()).find((c) => c.id === id);
   }
@@ -3519,6 +3522,33 @@
       }
       return { text: choice?.message?.content || "", stopReason: choice?.finish_reason };
     }
+  }
+
+  // src/lib/cards.ts
+  var newId = () => "card_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+  function deriveNote(tool, args) {
+    const labels = {
+      browser_navigate: "\u8DF3\u8F6C\u9875\u9762",
+      browser_wait: "\u7B49\u5F85",
+      browser_click: "\u70B9\u51FB",
+      browser_double_click: "\u53CC\u51FB",
+      browser_right_click: "\u53F3\u952E",
+      browser_type: "\u8F93\u5165\u5185\u5BB9",
+      browser_scroll: "\u6EDA\u52A8",
+      browser_select: "\u9009\u62E9",
+      browser_press_key: "\u6309\u952E",
+      browser_drag: "\u62D6\u62FD",
+      browser_hover: "\u60AC\u505C",
+      browser_fill_form: "\u586B\u5199\u8868\u5355",
+      browser_search: "\u641C\u7D22",
+      browser_screenshot: "\u622A\u56FE",
+      browser_extract: "\u63D0\u53D6\u6570\u636E",
+      browser_get_content: "\u8BFB\u53D6\u5185\u5BB9",
+      browser_page_info: "\u67E5\u770B\u9875\u9762\u4F4D\u7F6E"
+    };
+    const base = labels[tool] || tool.replace(/^browser_/, "");
+    const hint = args?.url || args?.text || args?.selector || args?.query || (args?.direction ? `${args.direction}${args?.amount ? " " + args.amount : ""}` : "") || (args?.key ? `\u6309\u952E ${args.key}` : "") || (args?.ms ? `${args.ms}ms` : "");
+    return hint ? `${base}\uFF1A${String(hint).slice(0, 60)}` : base;
   }
 
   // src/lib/tools.ts
@@ -3824,6 +3854,86 @@
         },
         required: ["key"]
       }
+    },
+    {
+      name: "card_list",
+      description: "List saved memory cards (automation workflows). Returns each card id, name, description and step count.",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "card_get",
+      description: "Get the full steps of a saved card by id or name. Use this to inspect a card before running or fixing it.",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Card id" },
+          name: { type: "string", description: "Card name (used if id omitted)" }
+        }
+      }
+    },
+    {
+      name: "card_save",
+      description: "Save a sequence of browser steps as a reusable memory card. Each step is { tool, args, note } where note (\u5907\u6CE8) explains the step in plain language. If a card with the same name exists, mode controls behavior: replace (default), merge (append steps), or new (force a new card).",
+      input_schema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Card name" },
+          description: { type: "string", description: "What this workflow does" },
+          mode: { type: "string", enum: ["replace", "merge", "new"], description: "On name conflict (default replace)" },
+          steps: {
+            type: "array",
+            description: "Ordered steps to perform",
+            items: {
+              type: "object",
+              properties: {
+                tool: { type: "string", description: "A browser_* tool name, e.g. browser_navigate" },
+                args: { type: "object", description: "Arguments for that tool" },
+                note: { type: "string", description: "\u5907\u6CE8\uFF1Aplain-language description of this step" }
+              },
+              required: ["tool"]
+            }
+          }
+        },
+        required: ["name", "steps"]
+      }
+    },
+    {
+      name: "card_update_step",
+      description: "Fix one step of an existing card by index \u2014 change its tool, args, or note. Use this to repair a card after card_run reports a failed step.",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Card id" },
+          name: { type: "string", description: "Card name (used if id omitted)" },
+          index: { type: "number", description: "0-based index of the step to update" },
+          tool: { type: "string", description: "New tool name (optional)" },
+          args: { type: "object", description: "New arguments (optional)" },
+          note: { type: "string", description: "New \u5907\u6CE8 (optional)" }
+        },
+        required: ["index"]
+      }
+    },
+    {
+      name: "card_run",
+      description: "Run a saved card by id or name. Executes its steps in order and returns a per-step result list; on failure it returns failedStep with the index, note and error so you can diagnose and fix it (with card_update_step) then re-run.",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Card id" },
+          name: { type: "string", description: "Card name (used if id omitted)" }
+        }
+      }
+    },
+    {
+      name: "card_delete",
+      description: "Delete a saved card by id or name.",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Card id" },
+          name: { type: "string", description: "Card name (used if id omitted)" }
+        }
+      }
     }
   ];
   var BROWSER_CAPABILITIES = BROWSER_TOOLS.map((t) => t.name);
@@ -4018,6 +4128,158 @@
       meta: !!args.meta
     });
   }
+  var cardProgress = null;
+  function setCardProgress(fn) {
+    cardProgress = fn;
+  }
+  function byIdOrName(cards, args) {
+    if (args?.id)
+      return cards.find((c) => c.id === String(args.id));
+    if (args?.name)
+      return cards.find((c) => c.name === String(args.name));
+    return void 0;
+  }
+  function normalizeSteps(rawSteps) {
+    const out = [];
+    for (const rs of Array.isArray(rawSteps) ? rawSteps : []) {
+      if (!rs || typeof rs !== "object")
+        continue;
+      const tool = String(rs.tool || rs.name || "").trim();
+      if (!tool)
+        continue;
+      let a = rs.args ?? rs.arguments ?? rs.input ?? {};
+      if (typeof a === "string") {
+        try {
+          a = JSON.parse(a);
+        } catch {
+          a = {};
+        }
+      }
+      if (!a || typeof a !== "object")
+        a = {};
+      const note = String(rs.note ?? rs.remark ?? "").trim() || deriveNote(tool, a);
+      out.push({ tool, args: a, note });
+    }
+    return out;
+  }
+  async function runCardSteps(card, opts = {}) {
+    const total = card.steps.length;
+    const results = [];
+    for (let i = 0; i < total; i++) {
+      if (opts.shouldStop?.())
+        return { success: false, stopped: true, results };
+      const step = card.steps[i];
+      if (/^card[_.]/i.test(step.tool)) {
+        const r = { index: i, note: step.note, tool: step.tool, status: "error", error: "\u5361\u7247\u6B65\u9AA4\u4E0D\u5141\u8BB8\u8C03\u7528\u5361\u7247\u5DE5\u5177\uFF08\u907F\u514D\u9012\u5F52\uFF09" };
+        results.push(r);
+        cardProgress?.(card.id, i, total, step.note, step.tool, "error", r.error);
+        return { success: false, results, failedStep: r };
+      }
+      cardProgress?.(card.id, i, total, step.note, step.tool, "running");
+      try {
+        const result = await executeBrowserTool(step.tool, step.args || {});
+        let preview = "";
+        try {
+          preview = (typeof result === "string" ? result : JSON.stringify(result)).slice(0, 180);
+        } catch {
+        }
+        results.push({ index: i, note: step.note, tool: step.tool, status: "success", preview });
+        cardProgress?.(card.id, i, total, step.note, step.tool, "success");
+      } catch (err) {
+        const msg = err?.message || String(err);
+        const r = { index: i, note: step.note, tool: step.tool, status: "error", error: msg };
+        results.push(r);
+        cardProgress?.(card.id, i, total, step.note, step.tool, "error", msg);
+        return { success: false, results, failedStep: r };
+      }
+    }
+    return { success: true, results };
+  }
+  async function toolCardList() {
+    const cards = await getCards();
+    return { success: true, count: cards.length, cards: cards.map((c) => ({ id: c.id, name: c.name, description: c.description, steps: c.steps.length })) };
+  }
+  async function toolCardGet(args) {
+    const card = byIdOrName(await getCards(), args);
+    if (!card)
+      throw new Error("\u5361\u7247\u4E0D\u5B58\u5728");
+    return { success: true, card: { id: card.id, name: card.name, description: card.description, steps: card.steps } };
+  }
+  async function toolCardSave(args) {
+    const name = String(args.name || "").trim();
+    if (!name)
+      throw new Error("name \u5FC5\u586B");
+    const steps = normalizeSteps(args.steps);
+    if (!steps.length)
+      throw new Error("steps \u4E0D\u80FD\u4E3A\u7A7A");
+    const mode = ["replace", "merge", "new"].includes(args.mode) ? args.mode : "replace";
+    const cards = await getCards();
+    const now = Date.now();
+    const existing = cards.find((c) => c.name === name);
+    if (existing && mode !== "new") {
+      existing.steps = mode === "merge" ? [...existing.steps, ...steps] : steps;
+      if (args.description !== void 0)
+        existing.description = String(args.description || "");
+      existing.updatedAt = now;
+      await setCards(cards);
+      return { success: true, action: mode, id: existing.id, name, steps: existing.steps.length };
+    }
+    const card = { id: newId(), name, description: String(args.description || ""), steps, createdAt: now, updatedAt: now };
+    cards.push(card);
+    await setCards(cards);
+    return { success: true, action: "created", id: card.id, name, steps: steps.length };
+  }
+  async function toolCardUpdateStep(args) {
+    const cards = await getCards();
+    const card = byIdOrName(cards, args);
+    if (!card)
+      throw new Error("\u5361\u7247\u4E0D\u5B58\u5728");
+    const idx = Number(args.index);
+    if (!(idx >= 0 && idx < card.steps.length))
+      throw new Error(`index \u8D8A\u754C\uFF08\u5361\u7247\u6709 ${card.steps.length} \u6B65\uFF09`);
+    const step = card.steps[idx];
+    if (args.tool !== void 0)
+      step.tool = String(args.tool);
+    if (args.note !== void 0)
+      step.note = String(args.note);
+    if (args.args !== void 0) {
+      let a = args.args;
+      if (typeof a === "string") {
+        try {
+          a = JSON.parse(a);
+        } catch {
+        }
+      }
+      if (a && typeof a === "object")
+        step.args = a;
+    }
+    card.updatedAt = Date.now();
+    await setCards(cards);
+    return { success: true, id: card.id, index: idx, step };
+  }
+  async function toolCardDelete(args) {
+    const cards = await getCards();
+    const card = byIdOrName(cards, args);
+    if (!card)
+      throw new Error("\u5361\u7247\u4E0D\u5B58\u5728");
+    await setCards(cards.filter((c) => c.id !== card.id));
+    return { success: true, id: card.id, name: card.name };
+  }
+  async function toolCardRun(args) {
+    const card = byIdOrName(await getCards(), args);
+    if (!card)
+      throw new Error("\u5361\u7247\u4E0D\u5B58\u5728");
+    const res = await runCardSteps(card);
+    return {
+      success: res.success,
+      cardId: card.id,
+      name: card.name,
+      total: card.steps.length,
+      completed: res.results.filter((r) => r.status === "success").length,
+      failedStep: res.failedStep,
+      results: res.results
+    };
+  }
   async function executeBrowserTool(name, args) {
     switch (name) {
       case "browser_navigate":
@@ -4072,6 +4334,18 @@
         return toolDrag(args);
       case "browser_press_key":
         return toolPressKey(args);
+      case "card_list":
+        return toolCardList();
+      case "card_get":
+        return toolCardGet(args);
+      case "card_save":
+        return toolCardSave(args);
+      case "card_update_step":
+        return toolCardUpdateStep(args);
+      case "card_run":
+        return toolCardRun(args);
+      case "card_delete":
+        return toolCardDelete(args);
       default:
         throw new Error(`Unknown browser tool: ${name}`);
     }
@@ -4106,6 +4380,11 @@ When completing a task:
 2. Use browser_page_info to know where you are on the page (scroll position, current section, visible headings) and browser_screenshot when you need to see it
 3. Interact with elements systematically: click, double_click, right_click, type, fill forms, drag, press_key
 4. Extract or summarize the result
+
+Memory cards (automation workflows):
+- When the user asks to save/remember a sequence of actions as a card, call card_save with name + steps, where each step is { tool, args, note } and note (\u5907\u6CE8) explains the step.
+- To replay a workflow, call card_run by name or id.
+- If card_run reports a failedStep, diagnose the cause (inspect the page with browser_page_info/browser_get_content, re-check the selector), then fix that step with card_update_step and run the card again. Repeat until it succeeds or you can explain why it cannot.
 
 Always:
 - After scrolling, read the returned position (scrollY, percent, atTop/atBottom, section, visible headings) so you know where you landed and what changed
@@ -4365,8 +4644,14 @@ screenshots, search the web, extract data, and more.
 
 Use browser_page_info to know where you are on the page (scroll position, current section,
 visible headings); after scrolling, read the returned position so you know where you landed and
-what changed. When asked to complete tasks, use the available tools systematically and summarize
-what you did. Respond in the same language as the user. For factual questions, search the web if needed.`;
+what changed.
+
+Memory cards: when the user asks to save a sequence of actions, call card_save (steps are
+{tool,args,note}, where note is a \u5907\u6CE8). Replay with card_run by name/id. If card_run returns a
+failedStep, diagnose it, fix that step with card_update_step, and run again until it works.
+
+When asked to complete tasks, use the available tools systematically and summarize what you did.
+Respond in the same language as the user. For factual questions, search the web if needed.`;
   async function runChat(messages) {
     const settings = await getSettings();
     if (!settings.aiKey)
@@ -4408,6 +4693,16 @@ what you did. Respond in the same language as the user. For factual questions, s
   }
   var cardRunning = false;
   var cardStopRequested = false;
+  setCardProgress((cardId, index, total, note, tool, status, error) => {
+    broadcast({ type: "card:progress", cardId, index, total, note, tool, status, error });
+    const label = `[${index + 1}/${total}] ${note}`;
+    if (status === "running")
+      log("card", "running", label, { tool });
+    else if (status === "success")
+      log("card", "success", `\u5B8C\u6210 ${label}`);
+    else if (status === "error")
+      log("card", "error", `\u5931\u8D25 ${label} \u2014 ${error || ""}`);
+  });
   async function runCard(cardId) {
     if (cardRunning) {
       log("card", "warn", "\u5DF2\u6709\u5361\u7247\u6B63\u5728\u6267\u884C\uFF0C\u8BF7\u5148\u505C\u6B62");
@@ -4421,33 +4716,18 @@ what you did. Respond in the same language as the user. For factual questions, s
     }
     cardRunning = true;
     cardStopRequested = false;
-    const total = card.steps.length;
-    log("card", "info", `\u5F00\u59CB\u6267\u884C\u5361\u7247\u300C${card.name}\u300D\uFF0C\u5171 ${total} \u6B65`);
+    log("card", "info", `\u5F00\u59CB\u6267\u884C\u5361\u7247\u300C${card.name}\u300D\uFF0C\u5171 ${card.steps.length} \u6B65`);
     try {
-      for (let i = 0; i < total; i++) {
-        if (cardStopRequested) {
-          log("card", "warn", `\u5DF2\u505C\u6B62\uFF1A${card.name}\uFF08\u7B2C ${i + 1}/${total} \u6B65\u524D\uFF09`);
-          broadcast({ type: "card:done", cardId, success: false, reason: "stopped" });
-          return;
-        }
-        const step = card.steps[i];
-        const label = `[${i + 1}/${total}] ${step.note}`;
-        broadcast({ type: "card:progress", cardId, index: i, total, note: step.note, tool: step.tool, status: "running" });
-        log("card", "running", label, { tool: step.tool, args: step.args });
-        try {
-          const result = await executeBrowserTool(step.tool, step.args || {});
-          log("card", "success", `\u5B8C\u6210 ${label}`, result);
-          broadcast({ type: "card:progress", cardId, index: i, total, note: step.note, tool: step.tool, status: "success" });
-        } catch (err) {
-          const errMsg = err?.message || String(err);
-          log("card", "error", `\u5931\u8D25 ${label} \u2014 ${errMsg}`);
-          broadcast({ type: "card:progress", cardId, index: i, total, note: step.note, tool: step.tool, status: "error", error: errMsg });
-          broadcast({ type: "card:done", cardId, success: false, reason: errMsg });
-          return;
-        }
+      const res = await runCardSteps(card, { shouldStop: () => cardStopRequested });
+      if (res.stopped) {
+        log("card", "warn", `\u5DF2\u505C\u6B62\uFF1A${card.name}`);
+        broadcast({ type: "card:done", cardId, success: false, reason: "stopped" });
+      } else if (res.success) {
+        log("card", "success", `\u5361\u7247\u6267\u884C\u5B8C\u6210\uFF1A${card.name}`);
+        broadcast({ type: "card:done", cardId, success: true });
+      } else {
+        broadcast({ type: "card:done", cardId, success: false, reason: res.failedStep?.error || "\u6267\u884C\u5931\u8D25" });
       }
-      log("card", "success", `\u5361\u7247\u6267\u884C\u5B8C\u6210\uFF1A${card.name}`);
-      broadcast({ type: "card:done", cardId, success: true });
     } finally {
       cardRunning = false;
     }

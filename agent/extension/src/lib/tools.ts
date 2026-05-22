@@ -1,5 +1,7 @@
-import { AIToolDef, AgentSettings, DispatchedTask, TaskResult, ChatMessage, AIToolUse } from './types'
+import { AIToolDef, AgentSettings, DispatchedTask, TaskResult, ChatMessage, AIToolUse, MemoryCard, AutomationStep } from './types'
 import { callAI } from './ai'
+import { getCards, setCards } from './storage'
+import { newId, deriveNote } from './cards'
 
 // ── Search engine registry ────────────────────────────────────────────────
 export const SEARCH_ENGINES: Record<string, string> = {
@@ -307,6 +309,86 @@ export const BROWSER_TOOLS: AIToolDef[] = [
       required: ['key'],
     },
   },
+  {
+    name: 'card_list',
+    description: 'List saved memory cards (automation workflows). Returns each card id, name, description and step count.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'card_get',
+    description: 'Get the full steps of a saved card by id or name. Use this to inspect a card before running or fixing it.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id:   { type: 'string', description: 'Card id' },
+        name: { type: 'string', description: 'Card name (used if id omitted)' },
+      },
+    },
+  },
+  {
+    name: 'card_save',
+    description: 'Save a sequence of browser steps as a reusable memory card. Each step is { tool, args, note } where note (备注) explains the step in plain language. If a card with the same name exists, mode controls behavior: replace (default), merge (append steps), or new (force a new card).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name:        { type: 'string', description: 'Card name' },
+        description: { type: 'string', description: 'What this workflow does' },
+        mode:        { type: 'string', enum: ['replace', 'merge', 'new'], description: 'On name conflict (default replace)' },
+        steps: {
+          type: 'array',
+          description: 'Ordered steps to perform',
+          items: {
+            type: 'object',
+            properties: {
+              tool: { type: 'string', description: 'A browser_* tool name, e.g. browser_navigate' },
+              args: { type: 'object', description: 'Arguments for that tool' },
+              note: { type: 'string', description: '备注：plain-language description of this step' },
+            },
+            required: ['tool'],
+          },
+        },
+      },
+      required: ['name', 'steps'],
+    },
+  },
+  {
+    name: 'card_update_step',
+    description: 'Fix one step of an existing card by index — change its tool, args, or note. Use this to repair a card after card_run reports a failed step.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id:    { type: 'string', description: 'Card id' },
+        name:  { type: 'string', description: 'Card name (used if id omitted)' },
+        index: { type: 'number', description: '0-based index of the step to update' },
+        tool:  { type: 'string', description: 'New tool name (optional)' },
+        args:  { type: 'object', description: 'New arguments (optional)' },
+        note:  { type: 'string', description: 'New 备注 (optional)' },
+      },
+      required: ['index'],
+    },
+  },
+  {
+    name: 'card_run',
+    description: 'Run a saved card by id or name. Executes its steps in order and returns a per-step result list; on failure it returns failedStep with the index, note and error so you can diagnose and fix it (with card_update_step) then re-run.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id:   { type: 'string', description: 'Card id' },
+        name: { type: 'string', description: 'Card name (used if id omitted)' },
+      },
+    },
+  },
+  {
+    name: 'card_delete',
+    description: 'Delete a saved card by id or name.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id:   { type: 'string', description: 'Card id' },
+        name: { type: 'string', description: 'Card name (used if id omitted)' },
+      },
+    },
+  },
 ]
 
 export const BROWSER_CAPABILITIES = BROWSER_TOOLS.map(t => t.name)
@@ -518,6 +600,144 @@ async function toolPressKey(args: any): Promise<any> {
   })
 }
 
+// ── Memory card tools (AI-driven create / run / fix) ──────────────────────────
+export interface CardStepResult { index: number; note: string; tool: string; status: 'success' | 'error'; preview?: string; error?: string }
+
+// Background registers this so card_run progress shows in the activity feed/UI,
+// for both popup-triggered and AI-triggered runs.
+type CardProgressFn = (cardId: string, index: number, total: number, note: string, tool: string, status: string, error?: string) => void
+let cardProgress: CardProgressFn | null = null
+export function setCardProgress(fn: CardProgressFn) { cardProgress = fn }
+
+function byIdOrName(cards: MemoryCard[], args: any): MemoryCard | undefined {
+  if (args?.id) return cards.find(c => c.id === String(args.id))
+  if (args?.name) return cards.find(c => c.name === String(args.name))
+  return undefined
+}
+
+function normalizeSteps(rawSteps: any): AutomationStep[] {
+  const out: AutomationStep[] = []
+  for (const rs of (Array.isArray(rawSteps) ? rawSteps : [])) {
+    if (!rs || typeof rs !== 'object') continue
+    const tool = String(rs.tool || rs.name || '').trim()
+    if (!tool) continue
+    let a = rs.args ?? rs.arguments ?? rs.input ?? {}
+    if (typeof a === 'string') { try { a = JSON.parse(a) } catch { a = {} } }
+    if (!a || typeof a !== 'object') a = {}
+    const note = String(rs.note ?? rs.remark ?? '').trim() || deriveNote(tool, a)
+    out.push({ tool, args: a, note })
+  }
+  return out
+}
+
+export async function runCardSteps(
+  card: MemoryCard,
+  opts: { shouldStop?: () => boolean } = {},
+): Promise<{ success: boolean; stopped?: boolean; results: CardStepResult[]; failedStep?: CardStepResult }> {
+  const total = card.steps.length
+  const results: CardStepResult[] = []
+  for (let i = 0; i < total; i++) {
+    if (opts.shouldStop?.()) return { success: false, stopped: true, results }
+    const step = card.steps[i]
+    if (/^card[_.]/i.test(step.tool)) {
+      const r: CardStepResult = { index: i, note: step.note, tool: step.tool, status: 'error', error: '卡片步骤不允许调用卡片工具（避免递归）' }
+      results.push(r)
+      cardProgress?.(card.id, i, total, step.note, step.tool, 'error', r.error)
+      return { success: false, results, failedStep: r }
+    }
+    cardProgress?.(card.id, i, total, step.note, step.tool, 'running')
+    try {
+      const result = await executeBrowserTool(step.tool, step.args || {})
+      let preview = ''
+      try { preview = (typeof result === 'string' ? result : JSON.stringify(result)).slice(0, 180) } catch { /* ignore */ }
+      results.push({ index: i, note: step.note, tool: step.tool, status: 'success', preview })
+      cardProgress?.(card.id, i, total, step.note, step.tool, 'success')
+    } catch (err: any) {
+      const msg = err?.message || String(err)
+      const r: CardStepResult = { index: i, note: step.note, tool: step.tool, status: 'error', error: msg }
+      results.push(r)
+      cardProgress?.(card.id, i, total, step.note, step.tool, 'error', msg)
+      return { success: false, results, failedStep: r }
+    }
+  }
+  return { success: true, results }
+}
+
+async function toolCardList(): Promise<any> {
+  const cards = await getCards()
+  return { success: true, count: cards.length, cards: cards.map(c => ({ id: c.id, name: c.name, description: c.description, steps: c.steps.length })) }
+}
+
+async function toolCardGet(args: any): Promise<any> {
+  const card = byIdOrName(await getCards(), args)
+  if (!card) throw new Error('卡片不存在')
+  return { success: true, card: { id: card.id, name: card.name, description: card.description, steps: card.steps } }
+}
+
+async function toolCardSave(args: any): Promise<any> {
+  const name = String(args.name || '').trim()
+  if (!name) throw new Error('name 必填')
+  const steps = normalizeSteps(args.steps)
+  if (!steps.length) throw new Error('steps 不能为空')
+  const mode = ['replace', 'merge', 'new'].includes(args.mode) ? args.mode : 'replace'
+  const cards = await getCards()
+  const now = Date.now()
+  const existing = cards.find(c => c.name === name)
+  if (existing && mode !== 'new') {
+    existing.steps = mode === 'merge' ? [...existing.steps, ...steps] : steps
+    if (args.description !== undefined) existing.description = String(args.description || '')
+    existing.updatedAt = now
+    await setCards(cards)
+    return { success: true, action: mode, id: existing.id, name, steps: existing.steps.length }
+  }
+  const card: MemoryCard = { id: newId(), name, description: String(args.description || ''), steps, createdAt: now, updatedAt: now }
+  cards.push(card)
+  await setCards(cards)
+  return { success: true, action: 'created', id: card.id, name, steps: steps.length }
+}
+
+async function toolCardUpdateStep(args: any): Promise<any> {
+  const cards = await getCards()
+  const card = byIdOrName(cards, args)
+  if (!card) throw new Error('卡片不存在')
+  const idx = Number(args.index)
+  if (!(idx >= 0 && idx < card.steps.length)) throw new Error(`index 越界（卡片有 ${card.steps.length} 步）`)
+  const step = card.steps[idx]
+  if (args.tool !== undefined) step.tool = String(args.tool)
+  if (args.note !== undefined) step.note = String(args.note)
+  if (args.args !== undefined) {
+    let a = args.args
+    if (typeof a === 'string') { try { a = JSON.parse(a) } catch { /* keep */ } }
+    if (a && typeof a === 'object') step.args = a
+  }
+  card.updatedAt = Date.now()
+  await setCards(cards)
+  return { success: true, id: card.id, index: idx, step }
+}
+
+async function toolCardDelete(args: any): Promise<any> {
+  const cards = await getCards()
+  const card = byIdOrName(cards, args)
+  if (!card) throw new Error('卡片不存在')
+  await setCards(cards.filter(c => c.id !== card.id))
+  return { success: true, id: card.id, name: card.name }
+}
+
+async function toolCardRun(args: any): Promise<any> {
+  const card = byIdOrName(await getCards(), args)
+  if (!card) throw new Error('卡片不存在')
+  const res = await runCardSteps(card)
+  return {
+    success: res.success,
+    cardId: card.id,
+    name: card.name,
+    total: card.steps.length,
+    completed: res.results.filter(r => r.status === 'success').length,
+    failedStep: res.failedStep,
+    results: res.results,
+  }
+}
+
 // ── Central tool router ───────────────────────────────────────────────────
 export async function executeBrowserTool(name: string, args: any): Promise<any> {
   switch (name) {
@@ -547,6 +767,12 @@ export async function executeBrowserTool(name: string, args: any): Promise<any> 
     case 'browser_double_click':     return toolDoubleClick(args)
     case 'browser_drag':             return toolDrag(args)
     case 'browser_press_key':        return toolPressKey(args)
+    case 'card_list':                return toolCardList()
+    case 'card_get':                 return toolCardGet(args)
+    case 'card_save':                return toolCardSave(args)
+    case 'card_update_step':         return toolCardUpdateStep(args)
+    case 'card_run':                 return toolCardRun(args)
+    case 'card_delete':              return toolCardDelete(args)
     default:
       throw new Error(`Unknown browser tool: ${name}`)
   }
@@ -576,6 +802,11 @@ When completing a task:
 2. Use browser_page_info to know where you are on the page (scroll position, current section, visible headings) and browser_screenshot when you need to see it
 3. Interact with elements systematically: click, double_click, right_click, type, fill forms, drag, press_key
 4. Extract or summarize the result
+
+Memory cards (automation workflows):
+- When the user asks to save/remember a sequence of actions as a card, call card_save with name + steps, where each step is { tool, args, note } and note (备注) explains the step.
+- To replay a workflow, call card_run by name or id.
+- If card_run reports a failedStep, diagnose the cause (inspect the page with browser_page_info/browser_get_content, re-check the selector), then fix that step with card_update_step and run the card again. Repeat until it succeeds or you can explain why it cannot.
 
 Always:
 - After scrolling, read the returned position (scrollY, percent, atTop/atBottom, section, visible headings) so you know where you landed and what changed
