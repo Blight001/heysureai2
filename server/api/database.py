@@ -86,6 +86,8 @@ def _ensure_legacy_columns():
             cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN ai_role TEXT DEFAULT 'digital_member'")
         if "digital_member_role" not in cfg_existing:
             cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN digital_member_role TEXT DEFAULT 'member'")
+        if "is_librarian" not in cfg_existing:
+            cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN is_librarian BOOLEAN DEFAULT 0")
         if "platform" not in cfg_existing:
             cursor.execute("ALTER TABLE assistantaiconfig ADD COLUMN platform TEXT DEFAULT 'Server-Core'")
         if "generation" not in cfg_existing:

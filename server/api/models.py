@@ -207,6 +207,7 @@ class AssistantAIConfig(SQLModel, table=True):
     prompt: str = Field(default="")
     ai_role: str = Field(default="digital_member", index=True)  # assistant_admin / digital_member
     digital_member_role: str = Field(default="member")  # manager / member
+    is_librarian: bool = Field(default=False, index=True)  # 图书管理员标志（同 user 下最多 1 个）
     platform: str = Field(default="Server-Core")
     generation: int = Field(default=1)
     token_limit: int = Field(default=10000)
@@ -250,6 +251,7 @@ class AssistantAIConfigCreate(SQLModel):
     prompt: Optional[str] = ""
     ai_role: Optional[str] = "digital_member"
     digital_member_role: Optional[str] = "member"
+    is_librarian: Optional[bool] = False
     platform: Optional[str] = "Server-Core"
     generation: Optional[int] = 1
     token_limit: Optional[int] = 10000
@@ -286,6 +288,7 @@ class AssistantAIConfigUpdate(SQLModel):
     prompt: Optional[str] = None
     ai_role: Optional[str] = None
     digital_member_role: Optional[str] = None
+    is_librarian: Optional[bool] = None
     platform: Optional[str] = None
     generation: Optional[int] = None
     token_limit: Optional[int] = None
@@ -445,6 +448,28 @@ class HumanRequest(SQLModel, table=True):
     answer: Optional[str] = Field(default=None)
     created_at: float = Field(default_factory=lambda: __import__("time").time(), index=True)
     answered_at: Optional[float] = None
+
+
+class ValhallaEntry(SQLModel, table=True):
+    """英灵殿事件索引。真相在文件，DB 仅做检索加速；删表可从文件重建。"""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    ai_config_id: int = Field(foreign_key="assistantaiconfig.id", index=True)
+    ai_name: str = Field(default="")
+    job_id: str = Field(index=True)
+    job_title: str = Field(default="")
+    generation: int = Field(default=1)
+    kind: str = Field(default="inherit", index=True)  # inherit / complete / aborted
+    session_id: Optional[str] = Field(default=None, index=True)
+    file_path: str = Field(default="")  # 相对 Valhalla/ 根目录的 markdown 路径
+    summary_excerpt: str = Field(default="")  # 列表展示用，最多 ~280 字符
+    token_used: int = Field(default=0)
+    token_limit: int = Field(default=0)
+    artifacts_count: int = Field(default=0)
+    unfinished_count: int = Field(default=0)
+    reason: Optional[str] = Field(default=None)  # aborted 才填
+    created_at: float = Field(default_factory=lambda: __import__("time").time(), index=True)
 
 
 class AITaskJob(SQLModel, table=True):

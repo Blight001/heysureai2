@@ -90,6 +90,7 @@ const {
   syncChatTokensToAgents,
   loadProjectContext,
   loadAIAgents,
+  valhallaEntries,
   createProject,
   updateProject,
   deleteProject,
@@ -127,7 +128,6 @@ const {
   closeUserMenu,
   adminAgents,
   activeAgents,
-  deadAgents,
   centerGridClass,
   projectGridClass,
   projectGroups,
@@ -502,7 +502,7 @@ onUnmounted(() => {
           英灵殿
         </div>
         <div v-else class="flex flex-col gap-4 h-auto lg:h-full">
-          <ValhallaPanel :dead-agents="deadAgents" :active-agents="activeAgents" />
+          <ValhallaPanel :entries="valhallaEntries" :active-agents="activeAgents" />
         </div>
       </section>
 

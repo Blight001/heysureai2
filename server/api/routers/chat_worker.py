@@ -19,9 +19,11 @@ from api.task_system import (
     DEFAULT_SYSTEM_AUTO_CONTROL,
     TASK_RUNTIME_REQUIRED_TOOLS,
     normalize_system_auto_control,
+    parse_generation_from_session_id,
     with_task_create_compat,
     with_workspace_read_by_name_compat,
 )
+from api import valhalla_service
 from .chat_prompt_utils import (
     _append_mcp_state_to_tags,
     _append_prompt_section,
@@ -910,6 +912,21 @@ def _run_worker(
                         _run_set_status(run_id, "completed", finished=True)
                         return
 
+                    # 在 _start_task_run 重置 session_id 之前，落英灵殿（本代遗言）。
+                    prev_session_for_valhalla = str(task_job.session_id or session_id or "").strip()
+                    prev_generation_for_valhalla = parse_generation_from_session_id(prev_session_for_valhalla, 1) or 1
+                    try:
+                        valhalla_service.write_inherit(
+                            user_id=user_id,
+                            ai_config_id=ai_config_id,
+                            job_id=task_job.job_id,
+                            generation=prev_generation_for_valhalla,
+                            session_id=prev_session_for_valhalla,
+                            summary=inherited_summary,
+                        )
+                    except Exception as _vex:
+                        print(f"[chat_worker] valhalla write_inherit failed: {_vex}")
+
                     resume_prompt = str(auto_ctl.get("resume_task_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["resume_task_prompt"])
                     next_run_id = _start_task_run(
                         bg,
@@ -974,6 +991,20 @@ def _run_worker(
                         completed_job.finished_at = finished_at
                         completed_job.updated_at = finished_at
                         bg.add(completed_job)
+                        # 落英灵殿：本代 final_words
+                        try:
+                            comp_session_id = str(completed_job.session_id or session_id or "").strip()
+                            comp_generation = parse_generation_from_session_id(comp_session_id, 1) or 1
+                            valhalla_service.write_complete(
+                                user_id=user_id,
+                                ai_config_id=completed_job.ai_config_id,
+                                job_id=completed_job.job_id,
+                                generation=comp_generation,
+                                session_id=comp_session_id,
+                                summary=task_summary,
+                            )
+                        except Exception as _vex:
+                            print(f"[chat_worker] valhalla write_complete failed: {_vex}")
                     next_loop_job = _create_loop_scheduled_job(bg, completed_job, time.time())
                     completion_notice_lines = [
                         "[系统提示]",
