@@ -10,7 +10,9 @@ import {
   login as apiLogin, getMe, listConfigs,
   startChatRun, getChatRun, stopChatRun,
   triggerTask, listTaskJobs, taskJobAction,
-  MemberConfig, TaskJob,
+  listChatSessions, createChatSession, deleteChatSession,
+  fetchChatHistory, deleteServerChatMessage, recallServerChatMessage,
+  MemberConfig, TaskJob, ServerChatSession,
 } from './lib/client'
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -34,6 +36,12 @@ let activeRunId: string | null = null
 let cards: MemoryCard[] = []
 let expandedCardId: string | null = null
 let runningCardId: string | null = null
+
+// Server-backed chat history. Populated only when useServerChat() is true.
+let serverSessions: ServerChatSession[] = []
+let currentServerSessionId: string = ''
+let lastSyncedMessageId = 0
+let chatHistoryLoading = false
 
 // ── Status labels ──────────────────────────────────────────────────────────
 const STATUS_LABELS: Record<string, string> = {
@@ -71,6 +79,8 @@ const chatSendBtn  = $('chat-send') as HTMLButtonElement
 const chatTarget   = $('chat-target')
 const chatTargetText = $('chat-target-text')
 const chatClearBtn = $('chat-clear-btn') as HTMLButtonElement
+const chatSessionSelect = $('chat-session-select') as HTMLSelectElement
+const chatSessionDeleteBtn = $('chat-session-delete-btn') as HTMLButtonElement
 const connectBtn   = $('connect-btn')
 const disconnectBtn = $('disconnect-btn')
 const clearBtn     = $('clear-btn')
@@ -165,7 +175,10 @@ function switchTab(tab: TabName) {
   ;(Object.keys(tabs) as TabName[]).forEach(k => tabs[k].classList.remove('active'))
   panes[tab].classList.remove('hidden')
   tabs[tab].classList.add('active')
-  if (tab === 'chat') chatMsgs.scrollTop = chatMsgs.scrollHeight
+  if (tab === 'chat') {
+    chatMsgs.scrollTop = chatMsgs.scrollHeight
+    if (useServerChat()) void refreshServerSessionsAndHistory()
+  }
   if (tab === 'settings' && auth.token && members.length === 0) void loadMembers()
   if (tab === 'tasks' && selectedMemberId && auth.token) void loadJobs()
   if (tab === 'cards') void renderCards()
@@ -263,6 +276,7 @@ async function doLogin() {
     updateUserChip()
     await loadMembers()
     renderSettingsViews()
+    if (useServerChat()) await refreshServerSessionsAndHistory()
   } catch (err: any) {
     loginFeedback.textContent = `登录失败：${err?.message || err}`
     loginFeedback.style.color = 'var(--error)'
@@ -279,6 +293,12 @@ async function doLogout() {
   auth = await getAuth()
   members = []
   selectedMemberId = null
+  serverSessions = []
+  currentServerSessionId = ''
+  lastSyncedMessageId = 0
+  chatHistory = []
+  renderChatHistory()
+  updateChatSessionControls()
   updateUserChip()
   renderMembers()
   updateTargetBanners()
@@ -343,7 +363,12 @@ function selectMember(id: number) {
   updateTargetBanners()
   renderSettingsViews()
   chatHistory = []
+  serverSessions = []
+  currentServerSessionId = ''
+  lastSyncedMessageId = 0
   chatMsgs.querySelectorAll('.chat-msg').forEach(e => e.remove())
+  updateChatSessionControls()
+  if (useServerChat()) void refreshServerSessionsAndHistory()
 }
 membersRefresh.addEventListener('click', () => void loadMembers())
 
@@ -390,7 +415,14 @@ function refreshChatAvailability() {
   chatNoKey.style.display = (enabled || hasMessages) ? 'none' : 'flex'
   chatInput.disabled = !enabled || chatBusy
   chatSendBtn.disabled = !enabled || chatBusy
-  chatClearBtn.disabled = !hasMessages && !chatHistory.length && !chatBusy
+  // In server mode the clear button is "新建对话" — always available so users
+  // can start a fresh session even when the current view is empty.
+  if (useServerChat()) {
+    chatClearBtn.disabled = chatBusy
+  } else {
+    chatClearBtn.disabled = !hasMessages && !chatHistory.length && !chatBusy
+  }
+  updateChatSessionControls()
 }
 
 // ── Chat ───────────────────────────────────────────────────────────────────
@@ -551,20 +583,64 @@ function normalizeJsonText(raw: string): string {
 }
 
 const MCP_CALL_BLOCK_RE = /<mcp[-_]call>\s*([\s\S]*?)\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*invoke)\s*>/gi
+const MCP_HEADER_LINE_RE = /^(?:#{1,6}\s*)?(\[MCP执行[^\]]*\]|\[工具参数\]|\[工具执行结果\]|系统已执行工具[：:].*|工具(?:名称)?[：:].*|执行状态[：:].*|状态[：:].*|可用工具[：:].*)$/i
 
-function extractSpecialBlocks(text: string): { body: string; reasoning: string[]; mcpCalls: string[] } {
+interface InlinePart {
+  kind: 'text' | 'mcp-block' | 'mcp-snippet'
+  content: string
+}
+
+// Web-style inline parser: keeps MCP blocks in their natural position within
+// the assistant message body, and additionally splits free-text MCP header
+// chunks into highlighted bubbles (matching the web's "MCP 操作" treatment).
+function splitInlineContent(text: string): { reasoning: string[]; parts: InlinePart[] } {
   let body = String(text || '')
   const reasoning: string[] = []
-  const mcpCalls: string[] = []
   body = body.replace(/<think>\s*([\s\S]*?)\s*<\/think>/gi, (_, inner) => {
     reasoning.push(String(inner || '').trim())
-    return '\n'
+    return ''
   })
-  body = body.replace(MCP_CALL_BLOCK_RE, (_, inner) => {
-    mcpCalls.push(normalizeJsonText(String(inner || '').trim()))
-    return '\n'
-  })
-  return { body: body.trim(), reasoning, mcpCalls }
+
+  const parts: InlinePart[] = []
+  const matches: { index: number; length: number; payload: string }[] = []
+  for (const m of body.matchAll(MCP_CALL_BLOCK_RE)) {
+    matches.push({
+      index: m.index ?? 0,
+      length: m[0].length,
+      payload: normalizeJsonText(String(m[1] || '').trim()),
+    })
+  }
+
+  matches.sort((a, b) => a.index - b.index)
+  let cursor = 0
+  for (const m of matches) {
+    if (m.index > cursor) {
+      const slice = body.slice(cursor, m.index)
+      if (slice.trim()) parts.push({ kind: 'text', content: slice })
+    }
+    parts.push({ kind: 'mcp-block', content: m.payload })
+    cursor = m.index + m.length
+  }
+  if (cursor < body.length) {
+    const tail = body.slice(cursor)
+    if (tail.trim()) parts.push({ kind: 'text', content: tail })
+  }
+  if (!parts.length && body.trim()) parts.push({ kind: 'text', content: body })
+
+  // Within text segments, split off free-text MCP header chunks (no proper
+  // <mcp-call> wrapper but matching MCP_HEADER_LINE_RE) into their own bubble.
+  const refined: InlinePart[] = []
+  for (const part of parts) {
+    if (part.kind !== 'text') { refined.push(part); continue }
+    const lines = part.content.split('\n')
+    const headerIdx = lines.findIndex(line => MCP_HEADER_LINE_RE.test(line.trim()))
+    if (headerIdx < 0) { refined.push(part); continue }
+    const plain = lines.slice(0, headerIdx).join('\n').trimEnd()
+    const mcpText = lines.slice(headerIdx).join('\n').trim()
+    if (plain) refined.push({ kind: 'text', content: plain })
+    if (mcpText) refined.push({ kind: 'mcp-snippet', content: mcpText })
+  }
+  return { reasoning, parts: refined }
 }
 
 type ChatLiveEvent = { key: string; label: string; detail?: string }
@@ -578,21 +654,33 @@ function renderChatEvent(event: ChatLiveEvent): string {
   )
 }
 
-function renderChatContent(text: string, opts: { reasoning?: string; currentTool?: string; loading?: boolean; toolsUsed?: string[] } = {}): string {
-  const extracted = extractSpecialBlocks(text)
-  const reasoningParts = [opts.reasoning, ...extracted.reasoning].map(v => String(v || '').trim()).filter(Boolean)
+function renderMcpBlockHtml(payload: string): string {
+  return (
+    `<div class="chat-mcp-card">` +
+    `<div class="chat-mcp-title">🧰 MCP 调用</div>` +
+    `<pre class="chat-mcp-pre">${esc(payload)}</pre>` +
+    `</div>`
+  )
+}
+
+function renderMcpSnippetHtml(text: string): string {
+  return (
+    `<div class="chat-mcp-card">` +
+    `<div class="chat-mcp-title">MCP 操作</div>` +
+    `<pre class="chat-mcp-pre">${esc(text)}</pre>` +
+    `</div>`
+  )
+}
+
+function renderChatContent(
+  text: string,
+  opts: { reasoning?: string; currentTool?: string; loading?: boolean; toolsUsed?: string[] } = {},
+): string {
+  const { reasoning: inlineReasoning, parts } = splitInlineContent(text)
+  const reasoningParts = [opts.reasoning, ...inlineReasoning].map(v => String(v || '').trim()).filter(Boolean)
   const chunks: string[] = []
-  if (opts.currentTool) {
-    chunks.push(`<div class="chat-tool-phase">⚙ ${esc(opts.currentTool)}</div>`)
-  }
-  if (opts.toolsUsed?.length) {
-    chunks.push(
-      `<div class="chat-mcp-card">` +
-      `<div class="chat-mcp-title">MCP 调用</div>` +
-      `<div class="tool-chips">${opts.toolsUsed.map(tool => `<span class="tool-chip">${esc(tool)}</span>`).join('')}</div>` +
-      `</div>`,
-    )
-  }
+
+  // Deep-thinking block sits at the top (matches the web's <details> placement).
   if (reasoningParts.length) {
     chunks.push(
       `<details class="chat-reasoning" ${opts.loading ? 'open' : ''}>` +
@@ -601,15 +689,28 @@ function renderChatContent(text: string, opts: { reasoning?: string; currentTool
       `</details>`,
     )
   }
-  if (extracted.body) chunks.push(renderMarkdown(extracted.body))
-  for (const call of extracted.mcpCalls) {
+
+  // Live phase indicator: which MCP tool is being called right now.
+  if (opts.currentTool) {
+    chunks.push(`<div class="chat-tool-phase">⚙ 等待 MCP: ${esc(opts.currentTool)}</div>`)
+  }
+
+  for (const part of parts) {
+    if (part.kind === 'text') chunks.push(renderMarkdown(part.content))
+    else if (part.kind === 'mcp-block') chunks.push(renderMcpBlockHtml(part.content))
+    else chunks.push(renderMcpSnippetHtml(part.content))
+  }
+
+  // Compact summary of tools that ran in the local AI-key chat path.
+  if (opts.toolsUsed?.length) {
     chunks.push(
       `<div class="chat-mcp-card">` +
-      `<div class="chat-mcp-title">MCP 调用</div>` +
-      `<pre class="chat-mcp-pre">${esc(call)}</pre>` +
+      `<div class="chat-mcp-title">🧰 MCP 调用</div>` +
+      `<div class="tool-chips">${opts.toolsUsed.map(tool => `<span class="tool-chip">${esc(tool)}</span>`).join('')}</div>` +
       `</div>`,
     )
   }
+
   if (!chunks.length && opts.loading) {
     chunks.push('<div class="chat-empty-live">思考中...</div><div class="thinking"><span></span><span></span><span></span></div>')
   }
@@ -626,6 +727,8 @@ function renderChatFrame(
   ].filter(Boolean).join('')
 }
 function syncChatHistory(): Promise<void> {
+  // Local-only history is the fallback for the offline / no-server path.
+  if (useServerChat()) return Promise.resolve()
   return setChatHistory(chatHistory)
 }
 function clearChatMessages() {
@@ -637,21 +740,25 @@ function chatContentToText(content: ChatMessage['content']): string {
 function makeChatRequestId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
-function userActionsHtml(): string {
-  return [
-    '<div class="chat-user-actions" aria-label="用户消息操作">',
+function rowActionsHtml(role: 'user' | 'ai', supportsRecall: boolean): string {
+  const isUser = role === 'user'
+  const buttons: string[] = [
     '<button class="chat-action-btn" type="button" data-chat-action="copy" title="复制">复制</button>',
-    '<button class="chat-action-btn" type="button" data-chat-action="revoke" title="撤回">撤回</button>',
-    '<button class="chat-action-btn danger" type="button" data-chat-action="delete" title="删除">删除</button>',
-    '</div>',
-  ].join('')
+  ]
+  if (isUser && supportsRecall) {
+    buttons.push('<button class="chat-action-btn" type="button" data-chat-action="revoke" title="撤回此消息及之后所有对话">撤回</button>')
+  }
+  buttons.push('<button class="chat-action-btn danger" type="button" data-chat-action="delete" title="删除此消息">删除</button>')
+  return `<div class="chat-msg-actions" aria-label="消息操作">${buttons.join('')}</div>`
 }
-function appendChatMsg(role: 'user'|'ai', content: string, historyIndex?: number): HTMLElement {
+function appendChatMsg(role: 'user' | 'ai', content: string, historyIndex?: number): HTMLElement {
   chatNoKey.style.display = 'none'
   const el = document.createElement('div')
   el.className = `chat-msg ${role}`
   if (historyIndex !== undefined) el.dataset.historyIndex = String(historyIndex)
-  el.innerHTML = `<div class="chat-avatar">${role==='ai'?'✨':'👤'}</div><div class="chat-bubble">${role === 'user' ? userActionsHtml() : ''}${renderChatContent(content)}</div>`
+  const supportsRecall = role === 'user'
+  el.innerHTML = `<div class="chat-avatar">${role === 'ai' ? '✨' : '👤'}</div>`
+    + `<div class="chat-bubble">${rowActionsHtml(role, supportsRecall)}${renderChatContent(content)}</div>`
   chatMsgs.appendChild(el)
   chatMsgs.scrollTop = chatMsgs.scrollHeight
   return el
@@ -663,7 +770,9 @@ function renderChatHistory() {
     return
   }
   chatHistory.forEach((msg, index) => {
-    appendChatMsg(msg.role === 'assistant' ? 'ai' : 'user', chatContentToText(msg.content), index)
+    const role = msg.role === 'assistant' ? 'ai' : 'user'
+    const el = appendChatMsg(role, chatContentToText(msg.content), index)
+    if (msg.serverId !== undefined) el.dataset.serverId = String(msg.serverId)
   })
   refreshChatAvailability()
 }
@@ -692,15 +801,190 @@ async function recordChatMessage(role: 'user' | 'assistant', content: string) {
 }
 
 async function restoreChatHistory() {
+  // Only restore local history when no server backing is active. The server
+  // history fetch path will replace it once the user logs in + selects a member.
+  if (useServerChat()) return
   chatHistory = await getChatHistory()
   renderChatHistory()
 }
 
+function defaultSessionIdForMember(): string {
+  return `ext-${selectedMemberId}`
+}
+
+function isExtensionSession(name: string): boolean {
+  return /^浏览器插件(?:会话| 对话)/.test(String(name || '').trim())
+}
+
+function pickPreferredSessionId(items: ServerChatSession[]): string {
+  if (!items.length) return ''
+  const ext = items.find(item => isExtensionSession(item.name))
+  return (ext || items[0]).id
+}
+
+function updateChatSessionControls() {
+  if (!useServerChat()) {
+    chatSessionSelect.classList.add('hidden')
+    chatSessionDeleteBtn.style.display = 'none'
+    chatClearBtn.textContent = '清空'
+    chatClearBtn.title = '清空本地对话记录'
+    return
+  }
+  chatClearBtn.textContent = '新建对话'
+  chatClearBtn.title = '在服务器上新建一段对话（保留当前历史）'
+  if (serverSessions.length === 0) {
+    chatSessionSelect.classList.add('hidden')
+    chatSessionDeleteBtn.style.display = 'none'
+    return
+  }
+  // Re-render the select options.
+  chatSessionSelect.innerHTML = serverSessions
+    .map(s => `<option value="${esc(s.id)}"${s.id === currentServerSessionId ? ' selected' : ''}>${esc(s.name)}</option>`)
+    .join('')
+  chatSessionSelect.classList.remove('hidden')
+  chatSessionDeleteBtn.style.display = serverSessions.length > 1 ? 'block' : 'none'
+}
+
+function chatMessageFromServer(row: any): ChatMessage | null {
+  const role = String(row?.role || '')
+  if (role !== 'user' && role !== 'assistant' && role !== 'system') return null
+  const content = String(row?.content || '')
+  const think = String(row?.think || '')
+  const merged = think ? `<think>${think}</think>${content}` : content
+  return {
+    role: role as ChatMessage['role'],
+    content: merged,
+    serverId: typeof row?.id === 'number' ? row.id : undefined,
+    think: think || undefined,
+    createdAt: typeof row?.created_at === 'number' ? row.created_at : undefined,
+  }
+}
+
+async function loadServerChatHistory(sessionId: string): Promise<boolean> {
+  if (!useServerChat() || !sessionId) return false
+  if (chatHistoryLoading) return false
+  chatHistoryLoading = true
+  try {
+    const rows = await fetchChatHistory(serverUrl, auth.token, sessionId, selectedMemberId)
+    chatHistory = rows.map(chatMessageFromServer).filter((m): m is ChatMessage => m !== null)
+    lastSyncedMessageId = chatHistory.reduce(
+      (max, m) => (m.serverId && m.serverId > max ? m.serverId : max),
+      0,
+    )
+    renderChatHistory()
+    return true
+  } catch (err: any) {
+    if (/401|令牌|凭证|credential/i.test(String(err?.message))) {
+      await doLogout()
+      return false
+    }
+    console.warn('loadServerChatHistory failed', err)
+    return false
+  } finally {
+    chatHistoryLoading = false
+  }
+}
+
+async function refreshServerSessionsAndHistory(targetSessionId?: string): Promise<void> {
+  if (!useServerChat()) return
+  try {
+    serverSessions = await listChatSessions(serverUrl, auth.token, selectedMemberId)
+  } catch (err: any) {
+    if (/401|令牌|凭证|credential/i.test(String(err?.message))) {
+      await doLogout()
+      return
+    }
+    console.warn('listChatSessions failed', err)
+    serverSessions = []
+  }
+  // If no session yet for this member, create a default one so users always
+  // land on a real server session that will persist.
+  if (!serverSessions.length) {
+    try {
+      const created = await createChatSession(serverUrl, auth.token, '浏览器插件会话', selectedMemberId)
+      serverSessions = [created]
+    } catch (err) {
+      console.warn('createChatSession failed', err)
+    }
+  }
+  const preferred = targetSessionId && serverSessions.some(s => s.id === targetSessionId)
+    ? targetSessionId
+    : (currentServerSessionId && serverSessions.some(s => s.id === currentServerSessionId)
+        ? currentServerSessionId
+        : pickPreferredSessionId(serverSessions))
+  currentServerSessionId = preferred
+  updateChatSessionControls()
+  if (preferred) await loadServerChatHistory(preferred)
+  else { chatHistory = []; renderChatHistory() }
+}
+
+async function syncIncrementalServerHistory(): Promise<void> {
+  if (!useServerChat() || !currentServerSessionId) return
+  try {
+    const rows = await fetchChatHistory(serverUrl, auth.token, currentServerSessionId, selectedMemberId)
+    const incoming: ChatMessage[] = []
+    let maxId = lastSyncedMessageId
+    for (const row of rows) {
+      const msg = chatMessageFromServer(row)
+      if (!msg) continue
+      if (msg.serverId !== undefined && msg.serverId <= lastSyncedMessageId) continue
+      incoming.push(msg)
+      if (msg.serverId !== undefined && msg.serverId > maxId) maxId = msg.serverId
+    }
+    if (!incoming.length) return
+    // Drop any local-only assistant placeholder with matching content; replace
+    // with the server-backed message so the action buttons have a real id.
+    for (const msg of incoming) {
+      if (msg.role !== 'assistant') continue
+      const idx = chatHistory.findIndex(item =>
+        item.serverId === undefined
+        && item.role === 'assistant'
+        && chatContentToText(item.content).trim() === chatContentToText(msg.content).trim())
+      if (idx >= 0) chatHistory.splice(idx, 1)
+    }
+    chatHistory.push(...incoming)
+    lastSyncedMessageId = maxId
+    renderChatHistory()
+  } catch (err) {
+    console.warn('syncIncrementalServerHistory failed', err)
+  }
+}
+
 async function clearConversation() {
   if (chatBusy) stopPendingChatUi()
+  if (useServerChat()) {
+    // Server mode: "新建对话" creates a fresh session, leaving old history intact.
+    try {
+      const name = `浏览器插件会话 ${new Date().toLocaleString('zh-CN', { hour12: false })}`
+      const created = await createChatSession(serverUrl, auth.token, name, selectedMemberId)
+      chatHistory = []
+      lastSyncedMessageId = 0
+      renderChatHistory()
+      await refreshServerSessionsAndHistory(created.id)
+    } catch (err: any) {
+      console.warn('createChatSession failed', err)
+      alert(`新建对话失败：${err?.message || err}`)
+    }
+    return
+  }
   chatHistory = []
   await clearChatHistory()
   renderChatHistory()
+}
+
+async function deleteCurrentServerSession() {
+  if (!useServerChat() || !currentServerSessionId) return
+  if (serverSessions.length <= 1) return
+  const target = serverSessions.find(s => s.id === currentServerSessionId)
+  if (!target) return
+  if (!confirm(`确定删除会话「${target.name}」？此操作不可恢复。`)) return
+  try {
+    await deleteChatSession(serverUrl, auth.token, currentServerSessionId, selectedMemberId)
+    currentServerSessionId = ''
+    await refreshServerSessionsAndHistory()
+  } catch (err: any) {
+    alert(`删除会话失败：${err?.message || err}`)
+  }
 }
 
 async function writeClipboardText(text: string): Promise<void> {
@@ -733,9 +1017,19 @@ function stopPendingChatUi() {
 }
 
 async function deleteChatMessage(index: number) {
-  if (!chatHistory[index]) return
+  const msg = chatHistory[index]
+  if (!msg) return
   const lastUserIndex = chatHistory.map(m => m.role).lastIndexOf('user')
   if (chatBusy && index === lastUserIndex) stopPendingChatUi()
+  if (useServerChat() && msg.serverId !== undefined) {
+    if (!confirm('确定要删除这条消息吗？')) return
+    try {
+      await deleteServerChatMessage(serverUrl, auth.token, msg.serverId)
+    } catch (err: any) {
+      alert(`删除失败：${err?.message || err}`)
+      return
+    }
+  }
   chatHistory.splice(index, 1)
   await syncChatHistory()
   renderChatHistory()
@@ -746,10 +1040,27 @@ async function revokeChatMessage(index: number) {
   if (!msg || msg.role !== 'user') return
   const text = chatContentToText(msg.content)
   if (chatBusy) stopPendingChatUi()
-  chatHistory.splice(index)
+  if (useServerChat() && msg.serverId !== undefined) {
+    if (!confirm('确定撤回此消息？将删除它之后的对话。')) return
+    try {
+      const result = await recallServerChatMessage(serverUrl, auth.token, msg.serverId)
+      chatInput.value = result?.recall_content || text
+    } catch (err: any) {
+      alert(`撤回失败：${err?.message || err}`)
+      return
+    }
+    chatHistory.splice(index)
+    // Re-sync max id so we don't double-add anything.
+    lastSyncedMessageId = chatHistory.reduce(
+      (max, m) => (m.serverId && m.serverId > max ? m.serverId : max),
+      0,
+    )
+  } else {
+    chatHistory.splice(index)
+    chatInput.value = text
+  }
   await syncChatHistory()
   renderChatHistory()
-  chatInput.value = text
   chatInput.style.height = 'auto'
   chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px'
   refreshChatAvailability()
@@ -761,9 +1072,9 @@ chatMsgs.addEventListener('click', (e: MouseEvent) => {
   if (!btn) return
   e.preventDefault()
   e.stopPropagation()
-  const msgEl = btn.closest<HTMLElement>('.chat-msg.user')
+  const msgEl = btn.closest<HTMLElement>('.chat-msg')
   const index = Number(msgEl?.dataset.historyIndex)
-  if (!Number.isInteger(index) || chatHistory[index]?.role !== 'user') return
+  if (!Number.isInteger(index) || !chatHistory[index]) return
   const action = btn.dataset.chatAction
   if (action === 'copy') {
     const originalText = btn.textContent
@@ -779,10 +1090,22 @@ chatMsgs.addEventListener('click', (e: MouseEvent) => {
 })
 
 chatClearBtn.addEventListener('click', () => void clearConversation())
+chatSessionDeleteBtn.addEventListener('click', () => void deleteCurrentServerSession())
+chatSessionSelect.addEventListener('change', () => {
+  const next = chatSessionSelect.value
+  if (!next || next === currentServerSessionId) return
+  currentServerSessionId = next
+  lastSyncedMessageId = 0
+  void loadServerChatHistory(next)
+})
 
 async function runServerChat(text: string, thinking: HTMLElement) {
-  const sessionId = `ext-${selectedMemberId}`
-  const { run_id } = await startChatRun(serverUrl, auth.token, selectedMemberId!, sessionId, text)
+  if (!currentServerSessionId) {
+    await refreshServerSessionsAndHistory()
+  }
+  const sessionId = currentServerSessionId || defaultSessionIdForMember()
+  const sessionName = serverSessions.find(s => s.id === sessionId)?.name || '浏览器插件会话'
+  const { run_id } = await startChatRun(serverUrl, auth.token, selectedMemberId!, sessionId, text, sessionName)
   activeRunId = run_id
   let after = 0
   let lastText = ''
@@ -846,6 +1169,8 @@ async function sendChat() {
   chatInput.value = ''
   chatInput.style.height = 'auto'
 
+  // Optimistic local echo for the user's message. In server mode the
+  // authoritative copy (with server id) will arrive via the post-run sync.
   chatHistory.push({ role: 'user', content: text })
   appendChatMsg('user', text, chatHistory.length - 1)
   void syncChatHistory()
@@ -860,13 +1185,21 @@ async function sendChat() {
       if (activeChatRequestId !== requestId) return
       setBubble(thinking, renderChatFrame(res.text, { reasoning: res.reasoning, events: res.events }))
       thinking.removeAttribute('id')
-      await recordChatMessage('assistant', res.text)
+      // Replace the optimistic local pair with the server-backed history.
+      // Drop the trailing optimistic user message so the sync logic can
+      // overlay the server's persisted copies (with ids for delete/recall).
+      const lastIdx = chatHistory.length - 1
+      if (lastIdx >= 0 && chatHistory[lastIdx].serverId === undefined && chatHistory[lastIdx].role === 'user') {
+        chatHistory.splice(lastIdx, 1)
+      }
+      await syncIncrementalServerHistory()
     } catch (err: any) {
       if (activeChatRequestId !== requestId) return
       const errorText = `⚠ 错误: ${err?.message || err}`
       setBubble(thinking, renderChatContent(errorText))
       thinking.removeAttribute('id')
-      await recordChatMessage('assistant', errorText)
+      // Best-effort: pull whatever the server persisted (the user message at least).
+      await syncIncrementalServerHistory()
     } finally {
       if (activeChatRequestId === requestId) {
         activeChatRequestId = null
@@ -1266,9 +1599,10 @@ function initPort() {
         activeChatRequestId = null
         setChatBusy(false)
         const reply = msg.text || '完成'
-        const el = appendChatMsg('ai', '')
+        chatHistory.push({ role: 'assistant', content: reply })
+        const el = appendChatMsg('ai', '', chatHistory.length - 1)
         setBubble(el, renderChatContent(reply, { toolsUsed: msg.toolsUsed || [] }))
-        void recordChatMessage('assistant', reply)
+        void syncChatHistory()
         if (msg.toolsUsed?.length) {
           addEntry({ id: Date.now().toString(), type: 'task', status: 'success', message: `AI 使用工具: ${msg.toolsUsed.join(', ')}`, timestamp: Date.now() })
         }
@@ -1283,8 +1617,9 @@ function initPort() {
         activeChatRequestId = null
         setChatBusy(false)
         const errorText = `⚠ 错误: ${msg.error}`
-        appendChatMsg('ai', errorText)
-        void recordChatMessage('assistant', errorText)
+        chatHistory.push({ role: 'assistant', content: errorText })
+        appendChatMsg('ai', errorText, chatHistory.length - 1)
+        void syncChatHistory()
         break
       }
       case 'connection:result': {
@@ -1341,11 +1676,13 @@ async function init() {
         const me = await getMe(serverUrl, auth.token)
         if (me?.name) { auth.userName = me.name; await saveAuth({ userName: me.name }); updateUserChip() }
         await loadMembers()
+        if (useServerChat()) await refreshServerSessionsAndHistory()
       } catch {
         await doLogout()
       }
     })()
   }
+  updateChatSessionControls()
 }
 
 // Pending chat text from context menu

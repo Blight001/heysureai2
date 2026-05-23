@@ -208,7 +208,7 @@
     const rows = await requestJson(`${trimUrl(serverUrl2)}/api/ai/configs`, { headers: authHeaders(token) }, "AI \u6210\u5458\u5217\u8868\u52A0\u8F7D\u5931\u8D25");
     return Array.isArray(rows) ? rows : [];
   }
-  async function startChatRun(serverUrl2, token, aiConfigId, sessionId, content) {
+  async function startChatRun(serverUrl2, token, aiConfigId, sessionId, content, sessionName) {
     return requestJson(
       `${trimUrl(serverUrl2)}/api/chat/run/start`,
       {
@@ -218,7 +218,7 @@
           ai_config_id: aiConfigId,
           ai_kind: "assistant",
           session_id: sessionId,
-          session_name: "\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD",
+          session_name: sessionName || "\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD",
           visible_content: content,
           model_content: content
         })
@@ -241,6 +241,67 @@
       signal: AbortSignal.timeout(1e4)
     }).catch(() => {
     });
+  }
+  var chatQs = (aiConfigId, extra = {}) => {
+    const params = { ai_kind: "assistant", ...extra };
+    if (aiConfigId !== null && aiConfigId !== void 0)
+      params.ai_config_id = String(aiConfigId);
+    return new URLSearchParams(params).toString();
+  };
+  async function listChatSessions(serverUrl2, token, aiConfigId) {
+    const rows = await requestJson(
+      `${trimUrl(serverUrl2)}/api/chat/sessions?${chatQs(aiConfigId)}`,
+      { headers: authHeaders(token) },
+      "\u4F1A\u8BDD\u5217\u8868\u52A0\u8F7D\u5931\u8D25"
+    );
+    return (Array.isArray(rows) ? rows : []).map((row) => ({
+      id: String(row?.id || ""),
+      name: String(row?.name || "\u672A\u547D\u540D\u4F1A\u8BDD"),
+      total_tokens: Number(row?.total_tokens || 0)
+    }));
+  }
+  async function createChatSession(serverUrl2, token, name, aiConfigId) {
+    const row = await requestJson(
+      `${trimUrl(serverUrl2)}/api/chat/sessions`,
+      {
+        method: "POST",
+        headers: authHeaders(token, true),
+        body: JSON.stringify({ name, ai_config_id: aiConfigId, ai_kind: "assistant" })
+      },
+      "\u521B\u5EFA\u4F1A\u8BDD\u5931\u8D25"
+    );
+    return { id: String(row?.id || ""), name: String(row?.name || name || "\u672A\u547D\u540D\u4F1A\u8BDD") };
+  }
+  async function deleteChatSession(serverUrl2, token, sessionId, aiConfigId) {
+    const res = await fetch(
+      `${trimUrl(serverUrl2)}/api/chat/sessions/${encodeURIComponent(sessionId)}?${chatQs(aiConfigId)}`,
+      { method: "DELETE", headers: authHeaders(token), signal: AbortSignal.timeout(1e4) }
+    );
+    if (!res.ok)
+      throw new Error(await parseError(res, "\u5220\u9664\u4F1A\u8BDD\u5931\u8D25"));
+  }
+  async function fetchChatHistory(serverUrl2, token, sessionId, aiConfigId) {
+    const rows = await requestJson(
+      `${trimUrl(serverUrl2)}/api/chat/history?${chatQs(aiConfigId, { session_id: sessionId })}`,
+      { headers: authHeaders(token) },
+      "\u52A0\u8F7D\u5BF9\u8BDD\u8BB0\u5F55\u5931\u8D25"
+    );
+    return Array.isArray(rows) ? rows : [];
+  }
+  async function deleteServerChatMessage(serverUrl2, token, msgId) {
+    const res = await fetch(
+      `${trimUrl(serverUrl2)}/api/chat/${msgId}`,
+      { method: "DELETE", headers: authHeaders(token), signal: AbortSignal.timeout(1e4) }
+    );
+    if (!res.ok)
+      throw new Error(await parseError(res, "\u5220\u9664\u6D88\u606F\u5931\u8D25"));
+  }
+  async function recallServerChatMessage(serverUrl2, token, msgId) {
+    return requestJson(
+      `${trimUrl(serverUrl2)}/api/chat/recall/${msgId}`,
+      { method: "POST", headers: authHeaders(token) },
+      "\u64A4\u56DE\u5931\u8D25"
+    );
   }
   async function triggerTask(serverUrl2, token, configId, payload) {
     return requestJson(
@@ -289,6 +350,10 @@
   var cards = [];
   var expandedCardId = null;
   var runningCardId = null;
+  var serverSessions = [];
+  var currentServerSessionId = "";
+  var lastSyncedMessageId = 0;
+  var chatHistoryLoading = false;
   var STATUS_LABELS = {
     disconnected: "\u672A\u8FDE\u63A5",
     connecting: "\u8FDE\u63A5\u4E2D...",
@@ -331,6 +396,8 @@
   var chatTarget = $("chat-target");
   var chatTargetText = $("chat-target-text");
   var chatClearBtn = $("chat-clear-btn");
+  var chatSessionSelect = $("chat-session-select");
+  var chatSessionDeleteBtn = $("chat-session-delete-btn");
   var connectBtn = $("connect-btn");
   var disconnectBtn = $("disconnect-btn");
   var clearBtn = $("clear-btn");
@@ -421,8 +488,11 @@
     Object.keys(tabs).forEach((k) => tabs[k].classList.remove("active"));
     panes[tab].classList.remove("hidden");
     tabs[tab].classList.add("active");
-    if (tab === "chat")
+    if (tab === "chat") {
       chatMsgs.scrollTop = chatMsgs.scrollHeight;
+      if (useServerChat())
+        void refreshServerSessionsAndHistory();
+    }
     if (tab === "settings" && auth.token && members.length === 0)
       void loadMembers();
     if (tab === "tasks" && selectedMemberId && auth.token)
@@ -525,6 +595,8 @@
       updateUserChip();
       await loadMembers();
       renderSettingsViews();
+      if (useServerChat())
+        await refreshServerSessionsAndHistory();
     } catch (err) {
       loginFeedback.textContent = `\u767B\u5F55\u5931\u8D25\uFF1A${err?.message || err}`;
       loginFeedback.style.color = "var(--error)";
@@ -543,6 +615,12 @@
     auth = await getAuth();
     members = [];
     selectedMemberId = null;
+    serverSessions = [];
+    currentServerSessionId = "";
+    lastSyncedMessageId = 0;
+    chatHistory = [];
+    renderChatHistory();
+    updateChatSessionControls();
     updateUserChip();
     renderMembers();
     updateTargetBanners();
@@ -605,7 +683,13 @@
     updateTargetBanners();
     renderSettingsViews();
     chatHistory = [];
+    serverSessions = [];
+    currentServerSessionId = "";
+    lastSyncedMessageId = 0;
     chatMsgs.querySelectorAll(".chat-msg").forEach((e) => e.remove());
+    updateChatSessionControls();
+    if (useServerChat())
+      void refreshServerSessionsAndHistory();
   }
   membersRefresh.addEventListener("click", () => void loadMembers());
   function useServerChat() {
@@ -647,7 +731,12 @@
     chatNoKey.style.display = enabled || hasMessages ? "none" : "flex";
     chatInput.disabled = !enabled || chatBusy;
     chatSendBtn.disabled = !enabled || chatBusy;
-    chatClearBtn.disabled = !hasMessages && !chatHistory.length && !chatBusy;
+    if (useServerChat()) {
+      chatClearBtn.disabled = chatBusy;
+    } else {
+      chatClearBtn.disabled = !hasMessages && !chatHistory.length && !chatBusy;
+    }
+    updateChatSessionControls();
   }
   function inlineMd(text) {
     const placeholders = [];
@@ -797,45 +886,94 @@
     }
   }
   var MCP_CALL_BLOCK_RE = /<mcp[-_]call>\s*([\s\S]*?)\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*invoke)\s*>/gi;
-  function extractSpecialBlocks(text) {
+  var MCP_HEADER_LINE_RE = /^(?:#{1,6}\s*)?(\[MCP执行[^\]]*\]|\[工具参数\]|\[工具执行结果\]|系统已执行工具[：:].*|工具(?:名称)?[：:].*|执行状态[：:].*|状态[：:].*|可用工具[：:].*)$/i;
+  function splitInlineContent(text) {
     let body = String(text || "");
     const reasoning = [];
-    const mcpCalls = [];
     body = body.replace(/<think>\s*([\s\S]*?)\s*<\/think>/gi, (_, inner) => {
       reasoning.push(String(inner || "").trim());
-      return "\n";
+      return "";
     });
-    body = body.replace(MCP_CALL_BLOCK_RE, (_, inner) => {
-      mcpCalls.push(normalizeJsonText(String(inner || "").trim()));
-      return "\n";
-    });
-    return { body: body.trim(), reasoning, mcpCalls };
+    const parts = [];
+    const matches = [];
+    for (const m of body.matchAll(MCP_CALL_BLOCK_RE)) {
+      matches.push({
+        index: m.index ?? 0,
+        length: m[0].length,
+        payload: normalizeJsonText(String(m[1] || "").trim())
+      });
+    }
+    matches.sort((a, b) => a.index - b.index);
+    let cursor = 0;
+    for (const m of matches) {
+      if (m.index > cursor) {
+        const slice = body.slice(cursor, m.index);
+        if (slice.trim())
+          parts.push({ kind: "text", content: slice });
+      }
+      parts.push({ kind: "mcp-block", content: m.payload });
+      cursor = m.index + m.length;
+    }
+    if (cursor < body.length) {
+      const tail = body.slice(cursor);
+      if (tail.trim())
+        parts.push({ kind: "text", content: tail });
+    }
+    if (!parts.length && body.trim())
+      parts.push({ kind: "text", content: body });
+    const refined = [];
+    for (const part of parts) {
+      if (part.kind !== "text") {
+        refined.push(part);
+        continue;
+      }
+      const lines = part.content.split("\n");
+      const headerIdx = lines.findIndex((line) => MCP_HEADER_LINE_RE.test(line.trim()));
+      if (headerIdx < 0) {
+        refined.push(part);
+        continue;
+      }
+      const plain = lines.slice(0, headerIdx).join("\n").trimEnd();
+      const mcpText = lines.slice(headerIdx).join("\n").trim();
+      if (plain)
+        refined.push({ kind: "text", content: plain });
+      if (mcpText)
+        refined.push({ kind: "mcp-snippet", content: mcpText });
+    }
+    return { reasoning, parts: refined };
   }
   function renderChatEvent(event) {
     return `<div class="chat-mcp-card"><div class="chat-mcp-title">${esc(event.label)}</div>` + (event.detail ? `<pre class="chat-mcp-pre">${esc(event.detail)}</pre>` : "") + `</div>`;
   }
+  function renderMcpBlockHtml(payload) {
+    return `<div class="chat-mcp-card"><div class="chat-mcp-title">\u{1F9F0} MCP \u8C03\u7528</div><pre class="chat-mcp-pre">${esc(payload)}</pre></div>`;
+  }
+  function renderMcpSnippetHtml(text) {
+    return `<div class="chat-mcp-card"><div class="chat-mcp-title">MCP \u64CD\u4F5C</div><pre class="chat-mcp-pre">${esc(text)}</pre></div>`;
+  }
   function renderChatContent(text, opts = {}) {
-    const extracted = extractSpecialBlocks(text);
-    const reasoningParts = [opts.reasoning, ...extracted.reasoning].map((v) => String(v || "").trim()).filter(Boolean);
+    const { reasoning: inlineReasoning, parts } = splitInlineContent(text);
+    const reasoningParts = [opts.reasoning, ...inlineReasoning].map((v) => String(v || "").trim()).filter(Boolean);
     const chunks = [];
-    if (opts.currentTool) {
-      chunks.push(`<div class="chat-tool-phase">\u2699 ${esc(opts.currentTool)}</div>`);
-    }
-    if (opts.toolsUsed?.length) {
-      chunks.push(
-        `<div class="chat-mcp-card"><div class="chat-mcp-title">MCP \u8C03\u7528</div><div class="tool-chips">${opts.toolsUsed.map((tool) => `<span class="tool-chip">${esc(tool)}</span>`).join("")}</div></div>`
-      );
-    }
     if (reasoningParts.length) {
       chunks.push(
         `<details class="chat-reasoning" ${opts.loading ? "open" : ""}><summary>\u6DF1\u5EA6\u601D\u8003</summary><div class="chat-reasoning-body">${esc(reasoningParts.join("\n\n"))}</div></details>`
       );
     }
-    if (extracted.body)
-      chunks.push(renderMarkdown(extracted.body));
-    for (const call of extracted.mcpCalls) {
+    if (opts.currentTool) {
+      chunks.push(`<div class="chat-tool-phase">\u2699 \u7B49\u5F85 MCP: ${esc(opts.currentTool)}</div>`);
+    }
+    for (const part of parts) {
+      if (part.kind === "text")
+        chunks.push(renderMarkdown(part.content));
+      else if (part.kind === "mcp-block")
+        chunks.push(renderMcpBlockHtml(part.content));
+      else
+        chunks.push(renderMcpSnippetHtml(part.content));
+    }
+    if (opts.toolsUsed?.length) {
       chunks.push(
-        `<div class="chat-mcp-card"><div class="chat-mcp-title">MCP \u8C03\u7528</div><pre class="chat-mcp-pre">${esc(call)}</pre></div>`
+        `<div class="chat-mcp-card"><div class="chat-mcp-title">\u{1F9F0} MCP \u8C03\u7528</div><div class="tool-chips">${opts.toolsUsed.map((tool) => `<span class="tool-chip">${esc(tool)}</span>`).join("")}</div></div>`
       );
     }
     if (!chunks.length && opts.loading) {
@@ -850,6 +988,8 @@
     ].filter(Boolean).join("");
   }
   function syncChatHistory() {
+    if (useServerChat())
+      return Promise.resolve();
     return setChatHistory(chatHistory);
   }
   function clearChatMessages() {
@@ -861,14 +1001,16 @@
   function makeChatRequestId() {
     return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   }
-  function userActionsHtml() {
-    return [
-      '<div class="chat-user-actions" aria-label="\u7528\u6237\u6D88\u606F\u64CD\u4F5C">',
-      '<button class="chat-action-btn" type="button" data-chat-action="copy" title="\u590D\u5236">\u590D\u5236</button>',
-      '<button class="chat-action-btn" type="button" data-chat-action="revoke" title="\u64A4\u56DE">\u64A4\u56DE</button>',
-      '<button class="chat-action-btn danger" type="button" data-chat-action="delete" title="\u5220\u9664">\u5220\u9664</button>',
-      "</div>"
-    ].join("");
+  function rowActionsHtml(role, supportsRecall) {
+    const isUser = role === "user";
+    const buttons = [
+      '<button class="chat-action-btn" type="button" data-chat-action="copy" title="\u590D\u5236">\u590D\u5236</button>'
+    ];
+    if (isUser && supportsRecall) {
+      buttons.push('<button class="chat-action-btn" type="button" data-chat-action="revoke" title="\u64A4\u56DE\u6B64\u6D88\u606F\u53CA\u4E4B\u540E\u6240\u6709\u5BF9\u8BDD">\u64A4\u56DE</button>');
+    }
+    buttons.push('<button class="chat-action-btn danger" type="button" data-chat-action="delete" title="\u5220\u9664\u6B64\u6D88\u606F">\u5220\u9664</button>');
+    return `<div class="chat-msg-actions" aria-label="\u6D88\u606F\u64CD\u4F5C">${buttons.join("")}</div>`;
   }
   function appendChatMsg(role, content, historyIndex) {
     chatNoKey.style.display = "none";
@@ -876,7 +1018,8 @@
     el.className = `chat-msg ${role}`;
     if (historyIndex !== void 0)
       el.dataset.historyIndex = String(historyIndex);
-    el.innerHTML = `<div class="chat-avatar">${role === "ai" ? "\u2728" : "\u{1F464}"}</div><div class="chat-bubble">${role === "user" ? userActionsHtml() : ""}${renderChatContent(content)}</div>`;
+    const supportsRecall = role === "user";
+    el.innerHTML = `<div class="chat-avatar">${role === "ai" ? "\u2728" : "\u{1F464}"}</div><div class="chat-bubble">${rowActionsHtml(role, supportsRecall)}${renderChatContent(content)}</div>`;
     chatMsgs.appendChild(el);
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
     return el;
@@ -888,7 +1031,10 @@
       return;
     }
     chatHistory.forEach((msg, index) => {
-      appendChatMsg(msg.role === "assistant" ? "ai" : "user", chatContentToText(msg.content), index);
+      const role = msg.role === "assistant" ? "ai" : "user";
+      const el = appendChatMsg(role, chatContentToText(msg.content), index);
+      if (msg.serverId !== void 0)
+        el.dataset.serverId = String(msg.serverId);
     });
     refreshChatAvailability();
   }
@@ -911,20 +1057,186 @@
     chatBusy = busy;
     refreshChatAvailability();
   }
-  async function recordChatMessage(role, content) {
-    chatHistory.push({ role, content });
-    await syncChatHistory();
-  }
   async function restoreChatHistory() {
+    if (useServerChat())
+      return;
     chatHistory = await getChatHistory();
     renderChatHistory();
+  }
+  function defaultSessionIdForMember() {
+    return `ext-${selectedMemberId}`;
+  }
+  function isExtensionSession(name) {
+    return /^浏览器插件(?:会话| 对话)/.test(String(name || "").trim());
+  }
+  function pickPreferredSessionId(items) {
+    if (!items.length)
+      return "";
+    const ext = items.find((item) => isExtensionSession(item.name));
+    return (ext || items[0]).id;
+  }
+  function updateChatSessionControls() {
+    if (!useServerChat()) {
+      chatSessionSelect.classList.add("hidden");
+      chatSessionDeleteBtn.style.display = "none";
+      chatClearBtn.textContent = "\u6E05\u7A7A";
+      chatClearBtn.title = "\u6E05\u7A7A\u672C\u5730\u5BF9\u8BDD\u8BB0\u5F55";
+      return;
+    }
+    chatClearBtn.textContent = "\u65B0\u5EFA\u5BF9\u8BDD";
+    chatClearBtn.title = "\u5728\u670D\u52A1\u5668\u4E0A\u65B0\u5EFA\u4E00\u6BB5\u5BF9\u8BDD\uFF08\u4FDD\u7559\u5F53\u524D\u5386\u53F2\uFF09";
+    if (serverSessions.length === 0) {
+      chatSessionSelect.classList.add("hidden");
+      chatSessionDeleteBtn.style.display = "none";
+      return;
+    }
+    chatSessionSelect.innerHTML = serverSessions.map((s) => `<option value="${esc(s.id)}"${s.id === currentServerSessionId ? " selected" : ""}>${esc(s.name)}</option>`).join("");
+    chatSessionSelect.classList.remove("hidden");
+    chatSessionDeleteBtn.style.display = serverSessions.length > 1 ? "block" : "none";
+  }
+  function chatMessageFromServer(row) {
+    const role = String(row?.role || "");
+    if (role !== "user" && role !== "assistant" && role !== "system")
+      return null;
+    const content = String(row?.content || "");
+    const think = String(row?.think || "");
+    const merged = think ? `<think>${think}</think>${content}` : content;
+    return {
+      role,
+      content: merged,
+      serverId: typeof row?.id === "number" ? row.id : void 0,
+      think: think || void 0,
+      createdAt: typeof row?.created_at === "number" ? row.created_at : void 0
+    };
+  }
+  async function loadServerChatHistory(sessionId) {
+    if (!useServerChat() || !sessionId)
+      return false;
+    if (chatHistoryLoading)
+      return false;
+    chatHistoryLoading = true;
+    try {
+      const rows = await fetchChatHistory(serverUrl, auth.token, sessionId, selectedMemberId);
+      chatHistory = rows.map(chatMessageFromServer).filter((m) => m !== null);
+      lastSyncedMessageId = chatHistory.reduce(
+        (max, m) => m.serverId && m.serverId > max ? m.serverId : max,
+        0
+      );
+      renderChatHistory();
+      return true;
+    } catch (err) {
+      if (/401|令牌|凭证|credential/i.test(String(err?.message))) {
+        await doLogout();
+        return false;
+      }
+      console.warn("loadServerChatHistory failed", err);
+      return false;
+    } finally {
+      chatHistoryLoading = false;
+    }
+  }
+  async function refreshServerSessionsAndHistory(targetSessionId) {
+    if (!useServerChat())
+      return;
+    try {
+      serverSessions = await listChatSessions(serverUrl, auth.token, selectedMemberId);
+    } catch (err) {
+      if (/401|令牌|凭证|credential/i.test(String(err?.message))) {
+        await doLogout();
+        return;
+      }
+      console.warn("listChatSessions failed", err);
+      serverSessions = [];
+    }
+    if (!serverSessions.length) {
+      try {
+        const created = await createChatSession(serverUrl, auth.token, "\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD", selectedMemberId);
+        serverSessions = [created];
+      } catch (err) {
+        console.warn("createChatSession failed", err);
+      }
+    }
+    const preferred = targetSessionId && serverSessions.some((s) => s.id === targetSessionId) ? targetSessionId : currentServerSessionId && serverSessions.some((s) => s.id === currentServerSessionId) ? currentServerSessionId : pickPreferredSessionId(serverSessions);
+    currentServerSessionId = preferred;
+    updateChatSessionControls();
+    if (preferred)
+      await loadServerChatHistory(preferred);
+    else {
+      chatHistory = [];
+      renderChatHistory();
+    }
+  }
+  async function syncIncrementalServerHistory() {
+    if (!useServerChat() || !currentServerSessionId)
+      return;
+    try {
+      const rows = await fetchChatHistory(serverUrl, auth.token, currentServerSessionId, selectedMemberId);
+      const incoming = [];
+      let maxId = lastSyncedMessageId;
+      for (const row of rows) {
+        const msg = chatMessageFromServer(row);
+        if (!msg)
+          continue;
+        if (msg.serverId !== void 0 && msg.serverId <= lastSyncedMessageId)
+          continue;
+        incoming.push(msg);
+        if (msg.serverId !== void 0 && msg.serverId > maxId)
+          maxId = msg.serverId;
+      }
+      if (!incoming.length)
+        return;
+      for (const msg of incoming) {
+        if (msg.role !== "assistant")
+          continue;
+        const idx = chatHistory.findIndex((item) => item.serverId === void 0 && item.role === "assistant" && chatContentToText(item.content).trim() === chatContentToText(msg.content).trim());
+        if (idx >= 0)
+          chatHistory.splice(idx, 1);
+      }
+      chatHistory.push(...incoming);
+      lastSyncedMessageId = maxId;
+      renderChatHistory();
+    } catch (err) {
+      console.warn("syncIncrementalServerHistory failed", err);
+    }
   }
   async function clearConversation() {
     if (chatBusy)
       stopPendingChatUi();
+    if (useServerChat()) {
+      try {
+        const name = `\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD ${(/* @__PURE__ */ new Date()).toLocaleString("zh-CN", { hour12: false })}`;
+        const created = await createChatSession(serverUrl, auth.token, name, selectedMemberId);
+        chatHistory = [];
+        lastSyncedMessageId = 0;
+        renderChatHistory();
+        await refreshServerSessionsAndHistory(created.id);
+      } catch (err) {
+        console.warn("createChatSession failed", err);
+        alert(`\u65B0\u5EFA\u5BF9\u8BDD\u5931\u8D25\uFF1A${err?.message || err}`);
+      }
+      return;
+    }
     chatHistory = [];
     await clearChatHistory();
     renderChatHistory();
+  }
+  async function deleteCurrentServerSession() {
+    if (!useServerChat() || !currentServerSessionId)
+      return;
+    if (serverSessions.length <= 1)
+      return;
+    const target = serverSessions.find((s) => s.id === currentServerSessionId);
+    if (!target)
+      return;
+    if (!confirm(`\u786E\u5B9A\u5220\u9664\u4F1A\u8BDD\u300C${target.name}\u300D\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\u3002`))
+      return;
+    try {
+      await deleteChatSession(serverUrl, auth.token, currentServerSessionId, selectedMemberId);
+      currentServerSessionId = "";
+      await refreshServerSessionsAndHistory();
+    } catch (err) {
+      alert(`\u5220\u9664\u4F1A\u8BDD\u5931\u8D25\uFF1A${err?.message || err}`);
+    }
   }
   async function writeClipboardText(text) {
     if (navigator.clipboard?.writeText) {
@@ -955,11 +1267,22 @@
     setChatBusy(false);
   }
   async function deleteChatMessage(index) {
-    if (!chatHistory[index])
+    const msg = chatHistory[index];
+    if (!msg)
       return;
     const lastUserIndex = chatHistory.map((m) => m.role).lastIndexOf("user");
     if (chatBusy && index === lastUserIndex)
       stopPendingChatUi();
+    if (useServerChat() && msg.serverId !== void 0) {
+      if (!confirm("\u786E\u5B9A\u8981\u5220\u9664\u8FD9\u6761\u6D88\u606F\u5417\uFF1F"))
+        return;
+      try {
+        await deleteServerChatMessage(serverUrl, auth.token, msg.serverId);
+      } catch (err) {
+        alert(`\u5220\u9664\u5931\u8D25\uFF1A${err?.message || err}`);
+        return;
+      }
+    }
     chatHistory.splice(index, 1);
     await syncChatHistory();
     renderChatHistory();
@@ -971,10 +1294,27 @@
     const text = chatContentToText(msg.content);
     if (chatBusy)
       stopPendingChatUi();
-    chatHistory.splice(index);
+    if (useServerChat() && msg.serverId !== void 0) {
+      if (!confirm("\u786E\u5B9A\u64A4\u56DE\u6B64\u6D88\u606F\uFF1F\u5C06\u5220\u9664\u5B83\u4E4B\u540E\u7684\u5BF9\u8BDD\u3002"))
+        return;
+      try {
+        const result = await recallServerChatMessage(serverUrl, auth.token, msg.serverId);
+        chatInput.value = result?.recall_content || text;
+      } catch (err) {
+        alert(`\u64A4\u56DE\u5931\u8D25\uFF1A${err?.message || err}`);
+        return;
+      }
+      chatHistory.splice(index);
+      lastSyncedMessageId = chatHistory.reduce(
+        (max, m) => m.serverId && m.serverId > max ? m.serverId : max,
+        0
+      );
+    } else {
+      chatHistory.splice(index);
+      chatInput.value = text;
+    }
     await syncChatHistory();
     renderChatHistory();
-    chatInput.value = text;
     chatInput.style.height = "auto";
     chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
     refreshChatAvailability();
@@ -986,9 +1326,9 @@
       return;
     e.preventDefault();
     e.stopPropagation();
-    const msgEl = btn.closest(".chat-msg.user");
+    const msgEl = btn.closest(".chat-msg");
     const index = Number(msgEl?.dataset.historyIndex);
-    if (!Number.isInteger(index) || chatHistory[index]?.role !== "user")
+    if (!Number.isInteger(index) || !chatHistory[index])
       return;
     const action = btn.dataset.chatAction;
     if (action === "copy") {
@@ -1006,9 +1346,22 @@
     }
   });
   chatClearBtn.addEventListener("click", () => void clearConversation());
+  chatSessionDeleteBtn.addEventListener("click", () => void deleteCurrentServerSession());
+  chatSessionSelect.addEventListener("change", () => {
+    const next = chatSessionSelect.value;
+    if (!next || next === currentServerSessionId)
+      return;
+    currentServerSessionId = next;
+    lastSyncedMessageId = 0;
+    void loadServerChatHistory(next);
+  });
   async function runServerChat(text, thinking) {
-    const sessionId = `ext-${selectedMemberId}`;
-    const { run_id } = await startChatRun(serverUrl, auth.token, selectedMemberId, sessionId, text);
+    if (!currentServerSessionId) {
+      await refreshServerSessionsAndHistory();
+    }
+    const sessionId = currentServerSessionId || defaultSessionIdForMember();
+    const sessionName = serverSessions.find((s) => s.id === sessionId)?.name || "\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD";
+    const { run_id } = await startChatRun(serverUrl, auth.token, selectedMemberId, sessionId, text, sessionName);
     activeRunId = run_id;
     let after = 0;
     let lastText = "";
@@ -1092,14 +1445,18 @@
           return;
         setBubble(thinking, renderChatFrame(res.text, { reasoning: res.reasoning, events: res.events }));
         thinking.removeAttribute("id");
-        await recordChatMessage("assistant", res.text);
+        const lastIdx = chatHistory.length - 1;
+        if (lastIdx >= 0 && chatHistory[lastIdx].serverId === void 0 && chatHistory[lastIdx].role === "user") {
+          chatHistory.splice(lastIdx, 1);
+        }
+        await syncIncrementalServerHistory();
       } catch (err) {
         if (activeChatRequestId !== requestId)
           return;
         const errorText = `\u26A0 \u9519\u8BEF: ${err?.message || err}`;
         setBubble(thinking, renderChatContent(errorText));
         thinking.removeAttribute("id");
-        await recordChatMessage("assistant", errorText);
+        await syncIncrementalServerHistory();
       } finally {
         if (activeChatRequestId === requestId) {
           activeChatRequestId = null;
@@ -1533,9 +1890,10 @@
           activeChatRequestId = null;
           setChatBusy(false);
           const reply = msg.text || "\u5B8C\u6210";
-          const el = appendChatMsg("ai", "");
+          chatHistory.push({ role: "assistant", content: reply });
+          const el = appendChatMsg("ai", "", chatHistory.length - 1);
           setBubble(el, renderChatContent(reply, { toolsUsed: msg.toolsUsed || [] }));
-          void recordChatMessage("assistant", reply);
+          void syncChatHistory();
           if (msg.toolsUsed?.length) {
             addEntry({ id: Date.now().toString(), type: "task", status: "success", message: `AI \u4F7F\u7528\u5DE5\u5177: ${msg.toolsUsed.join(", ")}`, timestamp: Date.now() });
           }
@@ -1555,8 +1913,9 @@
           activeChatRequestId = null;
           setChatBusy(false);
           const errorText = `\u26A0 \u9519\u8BEF: ${msg.error}`;
-          appendChatMsg("ai", errorText);
-          void recordChatMessage("assistant", errorText);
+          chatHistory.push({ role: "assistant", content: errorText });
+          appendChatMsg("ai", errorText, chatHistory.length - 1);
+          void syncChatHistory();
           break;
         }
         case "connection:result": {
@@ -1610,11 +1969,14 @@
             updateUserChip();
           }
           await loadMembers();
+          if (useServerChat())
+            await refreshServerSessionsAndHistory();
         } catch {
           await doLogout();
         }
       })();
     }
+    updateChatSessionControls();
   }
   chrome.storage.session.get("_pendingChat").then((r) => {
     if (r._pendingChat) {
