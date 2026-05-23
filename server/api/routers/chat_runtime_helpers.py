@@ -124,6 +124,11 @@ def _build_task_mcp_rules(allowed_tools: set[str], workspace_root: str, include_
         "6. 禁止编造工具结果；必须基于真实 MCP 返回继续推理与执行。\n"
         "7. 创建定时任务时，`schedule_at` 仅允许 Unix 秒或带时区 ISO-8601（必须含 `+08:00` 或 `Z`）；"
         "循环任务禁止传 `schedule_at`。\n"
+        "8. 遇到不确定如何做的步骤时，优先调用 `librarian.consult({query})` 查询图书管理员"
+        "（传承知识库）中是否已有可复用流程；查询命中后据其步骤执行。\n"
+        "9. 用户在对话中明确说「以后记住」「以后这样做」「记录这个操作」之类的话时，请调用 "
+        "`librarian.propose({title, scenario, steps[], triggers[]})` 申请沉淀；该条目"
+        "会进入用户审批队列，审批通过后才会被未来的检索命中。不要在用户未明确表达时主动 propose。\n"
         "\n[任务运行时MCP工具白名单]\n"
         f"{allowlist}"
     )

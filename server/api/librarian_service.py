@@ -526,6 +526,68 @@ def list_topics(
         return out
 
 
+def brief(
+    *,
+    user_id: int,
+    ai_config_id: Optional[int],
+    task_title: str,
+    task_instruction: str,
+    k: int = 5,
+    max_chars: int = 1200,
+) -> str:
+    """生成"任务派发前的预先简报"。
+
+    算法：
+    1. 取所有 active 条目；按"任务文本 ↔ 触发词/标题"重叠度排序
+    2. 取 top-k；逐条压缩为 "- 【title】(memory_id)：summary"（最长 200 字符）
+    3. 总字符上限 max_chars；不超则拼接，超则截尾并加省略
+    4. 若全无命中返回空串（不强行注入空 Brief）
+    """
+    text_for_match = f"{task_title or ''} {task_instruction or ''}".strip()
+    if not text_for_match:
+        return ""
+    lower = text_for_match.lower()
+    q_tokens = _tokenize(text_for_match)
+
+    with Session(engine) as session:
+        rows = session.exec(
+            select(KnowledgeEntry).where(
+                KnowledgeEntry.user_id == user_id,
+                KnowledgeEntry.status == "active",
+            )
+        ).all()
+        scored: List[tuple[float, KnowledgeEntry]] = []
+        for r in rows:
+            if not _scope_match(r, None, ai_config_id):
+                continue
+            # brief 必须靠"声明式触发词命中"（类 Skills 风格），杜绝标题
+            # 子串误命中带来的假阳性；否则 consult 才走更宽的 token 匹配。
+            triggers = [t.lower() for t in _split_csv(r.triggers) if t.strip()]
+            trigger_hits = sum(1 for t in triggers if t and t in lower)
+            if trigger_hits <= 0:
+                continue
+            score = trigger_hits * 3.0
+            scored.append((score, r))
+        scored.sort(key=lambda x: (-x[0], -x[1].updated_at))
+        top = scored[: max(1, int(k))]
+        if not top:
+            return ""
+
+        lines: List[str] = []
+        used = 0
+        for _, r in top:
+            summary = (r.summary or "").replace("\n", " ").strip()
+            if len(summary) > 200:
+                summary = summary[:200] + "…"
+            line = f"- 【{r.title}】({r.memory_id})：{summary}"
+            if used + len(line) + 1 > max_chars:
+                lines.append("- …其余条目可调 `librarian.consult` 进一步查询")
+                break
+            lines.append(line)
+            used += len(line) + 1
+        return "\n".join(lines)
+
+
 def read(
     *,
     user_id: int,

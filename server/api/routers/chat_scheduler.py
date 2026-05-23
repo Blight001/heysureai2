@@ -12,8 +12,37 @@ from sqlmodel import Session, select
 from api.database import engine
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, ChatSession, User
 from api.task_system import DEFAULT_SYSTEM_AUTO_CONTROL, normalize_system_auto_control, parse_generation_from_session_id
+from api import librarian_service
 from .chat_base import MAX_AUTO_SUPERVISION_ROUNDS, _RUN_THREADS
 from .chat_persistence import _save_message
+
+
+def _load_previous_unfinished_block(user_id: int, ai_config_id: int, job_id: str, generation: int) -> str:
+    """从 Valhalla/<job_id>/g<N-1>/unfinished.json 读取上代未完成事项，
+    拼成结构化 prompt 块；无则返回空串。"""
+    if generation <= 1 or not job_id:
+        return ""
+    try:
+        from api.mcp_core import _resolve_ai_workspace, safe_join
+        import os, json
+        ws = _resolve_ai_workspace(user_id, ai_config_id)
+        rel = os.path.join("Valhalla", job_id, f"g{generation - 1}", "unfinished.json")
+        path = safe_join(ws, rel)
+        if not os.path.exists(path):
+            return ""
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        items = data.get("items") if isinstance(data, dict) else None
+        if not items or not isinstance(items, list):
+            return ""
+        items = [str(i).strip() for i in items if str(i).strip()][:20]
+        if not items:
+            return ""
+        lines = ["[上代未完成清单]"] + [f"{i + 1}. {it}" for i, it in enumerate(items)] + [""]
+        return "\n".join(lines) + "\n"
+    except Exception as exc:
+        print(f"[chat_scheduler] _load_previous_unfinished_block failed: {exc}")
+        return ""
 
 
 def _start_task_run(
@@ -119,6 +148,28 @@ def _start_task_run(
     if payload_lines:
         payload_block = "[任务附加约束]\n" + "\n".join(payload_lines) + "\n\n"
 
+    # 任务派发前的图书管理员预先简报（命中知识库 active 条目则注入）
+    briefing_block = ""
+    try:
+        brief_text = librarian_service.brief(
+            user_id=cfg.user_id,
+            ai_config_id=cfg.id,
+            task_title=str(job.title or ""),
+            task_instruction=str(job.instruction or ""),
+        )
+        if brief_text.strip():
+            briefing_block = (
+                "[图书管理员预先简报]\n"
+                "以下条目可能与本任务相关，建议优先参考其步骤；如需细节调 "
+                "`librarian.read(memory_id)` 查看全文。\n"
+                f"{brief_text}\n\n"
+            )
+    except Exception as _bex:
+        print(f"[chat_scheduler] librarian.brief failed: {_bex}")
+
+    # 上代未完成事项（从 Valhalla 文件读，结构化注入）
+    unfinished_block = _load_previous_unfinished_block(cfg.user_id, cfg.id, job.job_id, generation)
+
     content = (
         f"[系统提示]\n{task_prompt}\n\n"
         f"[任务系统下发]\n"
@@ -128,7 +179,9 @@ def _start_task_run(
         f"- 优先级: P{job.priority}\n"
         f"- 要求: {job.instruction}\n\n"
         + payload_block
+        + briefing_block
         + (f"[上代关键上下文]\n{previous_summary}\n\n" if previous_summary else "")
+        + unfinished_block
         + f"执行完成后请调用 MCP 工具 `task.complete`（参数包含 `job_id={job.job_id}`）标记任务完成。"
     )
     user_msg = _save_message(
