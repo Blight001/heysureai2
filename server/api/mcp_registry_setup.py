@@ -50,6 +50,13 @@ from .mcp_memory_tools import (
     _memory_write,
 )
 from .mcp_human_tools import _human_ask
+from .mcp_librarian_tools import (
+    _librarian_archive,
+    _librarian_consult,
+    _librarian_list_topics,
+    _librarian_propose,
+    _librarian_read,
+)
 
 registry = MCPRegistry()
 
@@ -829,6 +836,100 @@ registry.register(MCPTool(
         "required": ["key"],
     },
     handler=_prompt_write_system,
+    destructive=True,
+))
+
+# ---------- Librarian / 图书管理员 ----------
+registry.register(MCPTool(
+    name="librarian.propose",
+    description=(
+        "Propose a new procedure (how-to) to the Librarian's knowledge base. "
+        "Status starts as 'pending' and requires user approval before becoming searchable. "
+        "Use this when the user explicitly says 'remember this'/'next time do X'."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "Short procedure title."},
+            "scenario": {"type": "string", "description": "When this procedure applies."},
+            "steps": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Ordered steps to perform.",
+            },
+            "gotchas": {"type": "array", "items": {"type": "string"}},
+            "triggers": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Keywords used for auto-matching against future tasks.",
+            },
+            "scope": {"type": "string", "enum": ["global", "ai", "project"]},
+            "scope_target": {"type": "string"},
+            "evidence": {
+                "type": "object",
+                "description": "Provenance: {job_id, generation, message_id}",
+            },
+        },
+        "required": ["title", "steps"],
+    },
+    handler=_librarian_propose,
+    destructive=True,
+))
+registry.register(MCPTool(
+    name="librarian.consult",
+    description=(
+        "Ask the Librarian for relevant procedures by free-text query. "
+        "Returns at most k results with full steps. Use this when you're unsure how to proceed."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "What you want to know how to do."},
+            "k": {"type": "integer", "description": "Max number of results (default 5)."},
+            "scope": {"type": "string", "enum": ["global", "ai", "project"]},
+        },
+        "required": ["query"],
+    },
+    handler=_librarian_consult,
+))
+registry.register(MCPTool(
+    name="librarian.list_topics",
+    description=(
+        "List procedure titles + triggers only (progressive disclosure). "
+        "Use this to browse what the librarian knows before drilling in with librarian.read."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "scope": {"type": "string", "enum": ["global", "ai", "project"]},
+            "status": {
+                "type": "string",
+                "enum": ["pending", "active", "archived", "rejected", "all"],
+                "description": "Default is 'active'.",
+            },
+        },
+    },
+    handler=_librarian_list_topics,
+))
+registry.register(MCPTool(
+    name="librarian.read",
+    description="Read full markdown body of a procedure by memory_id.",
+    input_schema={
+        "type": "object",
+        "properties": {"memory_id": {"type": "string"}},
+        "required": ["memory_id"],
+    },
+    handler=_librarian_read,
+))
+registry.register(MCPTool(
+    name="librarian.archive",
+    description="Archive (soft-delete) a procedure. Restricted to librarian role.",
+    input_schema={
+        "type": "object",
+        "properties": {"memory_id": {"type": "string"}},
+        "required": ["memory_id"],
+    },
+    handler=_librarian_archive,
     destructive=True,
 ))
 

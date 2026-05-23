@@ -13,6 +13,7 @@ import WorkspaceContextModal from './god-dashboard/modals/WorkspaceContextModal.
 import TaskManagementModal from './god-dashboard/modals/TaskManagementModal.vue'
 import AiConfigModal from './god-dashboard/modals/AiConfigModal.vue'
 import HumanAskModal from './god-dashboard/modals/HumanAskModal.vue'
+import ProposalReviewModal from './librarian/ProposalReviewModal.vue'
 import { useMcpAndWorkspaceModal } from './god-dashboard/useMcpAndWorkspaceModal'
 import { useTaskManagement } from './god-dashboard/useTaskManagement'
 import { useAiConfigManagement } from './god-dashboard/useAiConfigManagement'
@@ -43,6 +44,7 @@ const unassignedProjectId = 'unassigned'
 const selectedFiles = ref<string[]>([])
 const chatModalOpen = ref(false)
 const chatTarget = ref<Agent | null>(null)
+const proposalReviewOpen = ref(false)
 let dashboardRefreshTimer: number | null = null
 let dashboardRefreshLoopActive = false
 const DASHBOARD_REFRESH_STREAM_MS = 600
@@ -91,6 +93,7 @@ const {
   loadProjectContext,
   loadAIAgents,
   valhallaEntries,
+  librarianPending,
   createProject,
   updateProject,
   deleteProject,
@@ -396,6 +399,17 @@ onUnmounted(() => {
            <span class="text-xs text-zinc-400 uppercase font-semibold">文明代数</span>
            <span class="text-lg font-bold text-emerald-600 leading-none">Gen {{ globalGeneration }}</span>
         </div>
+        <button
+          class="relative ml-2 w-8 h-8 md:w-9 md:h-9 rounded-full border border-zinc-200 bg-white text-zinc-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition-colors dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300 shadow-sm hover:shadow-md flex items-center justify-center"
+          title="图书管理员 · 沉淀审批"
+          @click.stop="proposalReviewOpen = true; closeContextMenu()"
+        >
+          <span class="block text-xs md:text-base">📚</span>
+          <span
+            v-if="librarianPending.length > 0"
+            class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] leading-[18px] text-center"
+          >{{ librarianPending.length }}</span>
+        </button>
         <button class="ml-2 w-8 h-8 md:w-9 md:h-9 rounded-full border border-zinc-200 bg-white text-zinc-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition-colors dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300 shadow-sm hover:shadow-md flex items-center justify-center" @click.stop="settingsOpen = true; closeContextMenu()">
           <span class="block hover:rotate-90 transition-transform duration-300 text-xs md:text-base">⚙️</span>
         </button>
@@ -668,6 +682,12 @@ onUnmounted(() => {
     <HumanAskModal
       :event="humanAskQueue[0] ?? null"
       :on-answered="dismissHumanAsk"
+    />
+
+    <!-- Librarian proposal review modal -->
+    <ProposalReviewModal
+      :show="proposalReviewOpen"
+      @close="proposalReviewOpen = false"
     />
 
   </div>

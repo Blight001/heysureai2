@@ -232,7 +232,7 @@ class AssistantAIConfig(SQLModel, table=True):
     mcp_enabled: bool = Field(default=True)
     switch_key: str = Field(default="assistant_default")
     mcp_tools: str = Field(
-        default='["workspace.list_files","workspace.get_file_tree","workspace.read_files","workspace.read_file_by_name","workspace.write_file","workspace.edit_file","workspace.delete_path","workspace.run_command","workspace.git_diff","admin.list_agents","admin.get_overview","admin.dispatch_flow","project.list_projects","project.create_project","project.update_project","project.delete_project","task.create_immediate","task.create_scheduled","task.create_recurring","task.create","task.list","task.wait_all","task.get_current","task.inherit","task.complete","human.ask","prompt.list_targets","prompt.read_ai","prompt.write_ai","prompt.read_system","prompt.write_system","memory.write","memory.search","memory.list","memory.update","memory.archive","evolution.input","evolution.list","evolution.review"]'
+        default='["workspace.list_files","workspace.get_file_tree","workspace.read_files","workspace.read_file_by_name","workspace.write_file","workspace.edit_file","workspace.delete_path","workspace.run_command","workspace.git_diff","admin.list_agents","admin.get_overview","admin.dispatch_flow","project.list_projects","project.create_project","project.update_project","project.delete_project","task.create_immediate","task.create_scheduled","task.create_recurring","task.create","task.list","task.wait_all","task.get_current","task.inherit","task.complete","human.ask","prompt.list_targets","prompt.read_ai","prompt.write_ai","prompt.read_system","prompt.write_system","memory.write","memory.search","memory.list","memory.update","memory.archive","evolution.input","evolution.list","evolution.review","librarian.propose","librarian.consult","librarian.list_topics","librarian.read","librarian.archive"]'
     )
     system_auto_control: str = Field(
         default='{"enabled":false,"start_task_prompt":"你将收到一个任务，请先理解目标、约束与优先级，然后开始执行。","resume_task_prompt":"请继续执行刚才被暂停的任务，先简要回顾当前进度，再继续推进直到可交付。","supervision_prompt":"系统监督提醒：请确认当前任务是否已完成。若已完成请调用 task.complete 标记；若未完成请给出剩余步骤并继续执行。","inheritance_notice":"当前思考量已达到阈值（{session_tokens}/{threshold}），建议立即开启传承流程，沉淀本轮结论与关键上下文。","tasks":[]}'
@@ -448,6 +448,36 @@ class HumanRequest(SQLModel, table=True):
     answer: Optional[str] = Field(default=None)
     created_at: float = Field(default_factory=lambda: __import__("time").time(), index=True)
     answered_at: Optional[float] = None
+
+
+class KnowledgeEntry(SQLModel, table=True):
+    """传承知识库索引。真相在文件（KnowledgeBase/topics/<slug>.md），
+    DB 仅做检索加速。
+
+    与 Memory 表的关系：KnowledgeEntry 是面向"程序性记忆（怎么做某事）"
+    的 superset。Memory 表保留兼容旧 memory.* MCP 调用，不在此重建。
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    memory_id: str = Field(index=True, unique=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    title: str = Field(default="")
+    triggers: str = Field(default="")  # 逗号分隔的触发关键词
+    scope: str = Field(default="global", index=True)  # global / ai:<id> / project:<id>
+    scope_target: Optional[str] = Field(default=None)
+    file_path: str = Field(default="")  # 相对 KnowledgeBase/ 根目录
+    summary: str = Field(default="")  # 检索摘要，1-2 句
+    status: str = Field(default="pending", index=True)  # pending / active / archived / rejected
+    confidence: float = Field(default=0.6)
+    use_count: int = Field(default=0)
+    last_used_at: Optional[float] = Field(default=None)
+    source_job_id: Optional[str] = Field(default=None, index=True)
+    source_generation: Optional[int] = Field(default=None)
+    source_ai_config_id: Optional[int] = Field(default=None, index=True)
+    source_message_id: Optional[int] = Field(default=None)
+    librarian_ai_config_id: Optional[int] = Field(default=None, index=True)  # 由哪个图书管理员负责
+    created_at: float = Field(default_factory=lambda: __import__("time").time(), index=True)
+    updated_at: float = Field(default_factory=lambda: __import__("time").time())
 
 
 class ValhallaEntry(SQLModel, table=True):
