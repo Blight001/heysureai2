@@ -12,6 +12,9 @@ interface Props {
   defaultSupervisionPrompt: string
   defaultSupervisionIdleSeconds: number
   defaultInheritanceNotice: string
+  promptAiMessageInbound: string
+  promptAiMessageReplySuccess: string
+  promptUserMessageNotice: string
   themeMode: 'light' | 'dark'
   fontSize: 'sm' | 'md' | 'lg'
   mcpRoleMeta: McpRoleMeta
@@ -28,6 +31,9 @@ const emit = defineEmits<{
   (e: 'update:defaultSupervisionPrompt', value: string): void
   (e: 'update:defaultSupervisionIdleSeconds', value: number): void
   (e: 'update:defaultInheritanceNotice', value: string): void
+  (e: 'update:promptAiMessageInbound', value: string): void
+  (e: 'update:promptAiMessageReplySuccess', value: string): void
+  (e: 'update:promptUserMessageNotice', value: string): void
   (e: 'update:themeMode', value: 'light' | 'dark'): void
   (e: 'update:fontSize', value: 'sm' | 'md' | 'lg'): void
   (e: 'viewAllMcp'): void
@@ -112,9 +118,24 @@ const defaultInheritanceNoticeValue = computed({
   set: value => emit('update:defaultInheritanceNotice', value)
 })
 
-const activeConfigSection = ref<'' | 'mcp' | 'roles' | 'task'>('')
+const promptAiMessageInboundValue = computed({
+  get: () => props.promptAiMessageInbound,
+  set: value => emit('update:promptAiMessageInbound', value)
+})
 
-const toggleConfigSection = (name: 'mcp' | 'roles' | 'task') => {
+const promptAiMessageReplySuccessValue = computed({
+  get: () => props.promptAiMessageReplySuccess,
+  set: value => emit('update:promptAiMessageReplySuccess', value)
+})
+
+const promptUserMessageNoticeValue = computed({
+  get: () => props.promptUserMessageNotice,
+  set: value => emit('update:promptUserMessageNotice', value)
+})
+
+const activeConfigSection = ref<'' | 'mcp' | 'roles' | 'task' | 'comm'>('')
+
+const toggleConfigSection = (name: 'mcp' | 'roles' | 'task' | 'comm') => {
   activeConfigSection.value = activeConfigSection.value === name ? '' : name
 }
 </script>
@@ -365,6 +386,54 @@ const toggleConfigSection = (name: 'mcp' | 'roles' | 'task') => {
                   <textarea
                     v-model="defaultInheritanceNoticeValue"
                     rows="2"
+                    class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
+                  ></textarea>
+                </div>
+              </div>
+            </Transition>
+          </div>
+
+          <div class="p-4 bg-zinc-50 rounded-xl dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
+            <button
+              class="w-full flex items-center justify-between text-left"
+              @click="toggleConfigSection('comm')"
+            >
+              <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">💬 AI 通信提示词</h4>
+              <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ activeConfigSection === 'comm' ? '收起' : '展开' }}</span>
+            </button>
+            <Transition name="section-collapse">
+              <div v-show="activeConfigSection === 'comm'" class="mt-3 space-y-3 section-collapse-body">
+                <div>
+                  <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
+                    AI 收到来自其它 AI 消息时的中断提示（占位符：<code>{from_ai_name}</code>、<code>{from_ai_config_id}</code>、<code>{message_id}</code>、<code>{content}</code>）
+                  </div>
+                  <textarea
+                    v-model="promptAiMessageInboundValue"
+                    rows="6"
+                    class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"
+                  ></textarea>
+                  <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                    ai.send_message 触发后，目标 AI 在下一轮工作循环顶部会强行收到这段提示，
+                    在没调 ai.reply_message 之前不应执行其它 MCP 工具。
+                  </p>
+                </div>
+                <div>
+                  <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
+                    AI 成功回复消息后的恢复提示（占位符：<code>{message_id}</code>）
+                  </div>
+                  <textarea
+                    v-model="promptAiMessageReplySuccessValue"
+                    rows="2"
+                    class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
+                  ></textarea>
+                </div>
+                <div>
+                  <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
+                    AI 调用 user.send_message 后的回执提示（占位符：<code>{channel}</code>）
+                  </div>
+                  <textarea
+                    v-model="promptUserMessageNoticeValue"
+                    rows="3"
                     class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
                   ></textarea>
                 </div>

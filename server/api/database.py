@@ -4,6 +4,9 @@ from fastapi import Depends
 import os
 import sqlite3
 from api.models import (
+    DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE,
+    DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
+    DEFAULT_USER_MESSAGE_NOTICE,
     DEFAULT_INHERITANCE_NOTICE,
     DEFAULT_UI_FONT_SIZE,
     DEFAULT_UI_THEME_MODE,
@@ -67,6 +70,15 @@ def _ensure_legacy_columns():
         if "default_inheritance_notice" not in user_existing:
             escaped = DEFAULT_INHERITANCE_NOTICE.replace("'", "''")
             cursor.execute(f"ALTER TABLE user ADD COLUMN default_inheritance_notice TEXT DEFAULT '{escaped}'")
+        if "prompt_ai_message_inbound" not in user_existing:
+            escaped = DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE.replace("'", "''")
+            cursor.execute(f"ALTER TABLE user ADD COLUMN prompt_ai_message_inbound TEXT DEFAULT '{escaped}'")
+        if "prompt_ai_message_reply_success" not in user_existing:
+            escaped = DEFAULT_AI_MESSAGE_REPLY_SUCCESS.replace("'", "''")
+            cursor.execute(f"ALTER TABLE user ADD COLUMN prompt_ai_message_reply_success TEXT DEFAULT '{escaped}'")
+        if "prompt_user_message_notice" not in user_existing:
+            escaped = DEFAULT_USER_MESSAGE_NOTICE.replace("'", "''")
+            cursor.execute(f"ALTER TABLE user ADD COLUMN prompt_user_message_notice TEXT DEFAULT '{escaped}'")
         if "ui_theme_mode" not in user_existing:
             cursor.execute(f"ALTER TABLE user ADD COLUMN ui_theme_mode TEXT DEFAULT '{DEFAULT_UI_THEME_MODE}'")
         if "ui_font_size" not in user_existing:

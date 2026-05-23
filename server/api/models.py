@@ -23,6 +23,24 @@ Rules:
 - Use admin.* tools when managing connected agents.
 - Call exactly one tool per <mcp-call> block; never join two tool names into one name.
 - Only fall back to legacy File/Create File/Delete File/Run Command formats if MCP is unavailable."""
+DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE = """[系统中断 · AI 间通信]
+你刚才的工作被一条来自其它 AI 的消息打断了。请优先处理此消息。
+
+- 发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）
+- 消息编号: {message_id}
+- 消息内容:
+{content}
+
+阅读后，请立即调用 MCP 工具 `ai.reply_message` 回复：
+  arguments: {{"message_id": "{message_id}", "content": "<你的回复>"}}
+回复成功后，系统会让你继续刚才的工作。在你回复之前，不要执行任何其它 MCP 工具。"""
+
+DEFAULT_AI_MESSAGE_REPLY_SUCCESS = """[系统提示] 你对消息 {message_id} 的回复已送达。
+现在请继续你刚才被打断的任务。"""
+
+DEFAULT_USER_MESSAGE_NOTICE = """[系统提示] 你已向用户发出一条消息（{channel}）。
+用户的回复（如有）会通过 human.ask 工具或正常对话渠道返回，请不要重复发送。"""
+
 DEFAULT_MCP_FORMAT_ERROR_HINT = """[系统提示] 检测到你正在尝试调用 MCP，但调用格式未通过校验，因此本次没有执行任何工具。
 
 请改用以下标准格式（任选其一）：
@@ -71,6 +89,9 @@ class User(SQLModel, table=True):
     default_supervision_prompt: str = Field(default=DEFAULT_SUPERVISION_PROMPT)
     default_supervision_idle_seconds: int = Field(default=25)
     default_inheritance_notice: str = Field(default=DEFAULT_INHERITANCE_NOTICE)
+    prompt_ai_message_inbound: str = Field(default=DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE)
+    prompt_ai_message_reply_success: str = Field(default=DEFAULT_AI_MESSAGE_REPLY_SUCCESS)
+    prompt_user_message_notice: str = Field(default=DEFAULT_USER_MESSAGE_NOTICE)
     ui_theme_mode: str = Field(default=DEFAULT_UI_THEME_MODE)
     ui_font_size: str = Field(default=DEFAULT_UI_FONT_SIZE)
     
@@ -110,6 +131,9 @@ class UserRead(SQLModel):
     default_supervision_prompt: str
     default_supervision_idle_seconds: int
     default_inheritance_notice: str
+    prompt_ai_message_inbound: str
+    prompt_ai_message_reply_success: str
+    prompt_user_message_notice: str
     ui_theme_mode: str
     ui_font_size: str
     worker_api_key: str
@@ -136,6 +160,9 @@ class UserUpdate(SQLModel):
     default_supervision_prompt: Optional[str] = None
     default_supervision_idle_seconds: Optional[int] = None
     default_inheritance_notice: Optional[str] = None
+    prompt_ai_message_inbound: Optional[str] = None
+    prompt_ai_message_reply_success: Optional[str] = None
+    prompt_user_message_notice: Optional[str] = None
     ui_theme_mode: Optional[str] = None
     ui_font_size: Optional[str] = None
     worker_api_key: Optional[str] = None
@@ -232,7 +259,7 @@ class AssistantAIConfig(SQLModel, table=True):
     mcp_enabled: bool = Field(default=True)
     switch_key: str = Field(default="assistant_default")
     mcp_tools: str = Field(
-        default='["workspace.list_files","workspace.get_file_tree","workspace.read_files","workspace.read_file_by_name","workspace.write_file","workspace.edit_file","workspace.delete_path","workspace.run_command","workspace.git_diff","admin.list_agents","admin.get_overview","admin.dispatch_flow","project.list_projects","project.create_project","project.update_project","project.delete_project","task.create_immediate","task.create_scheduled","task.create_recurring","task.create","task.list","task.wait_all","task.get_current","task.inherit","task.complete","human.ask","prompt.list_targets","prompt.read_ai","prompt.write_ai","prompt.read_system","prompt.write_system","memory.write","memory.search","memory.list","memory.update","memory.archive","evolution.input","evolution.list","evolution.review","librarian.propose","librarian.consult","librarian.list_topics","librarian.read","librarian.archive"]'
+        default='["workspace.list_files","workspace.get_file_tree","workspace.read_files","workspace.read_file_by_name","workspace.write_file","workspace.edit_file","workspace.delete_path","workspace.run_command","workspace.git_diff","admin.list_agents","admin.get_overview","admin.dispatch_flow","project.list_projects","project.create_project","project.update_project","project.delete_project","task.create_immediate","task.create_scheduled","task.create_recurring","task.create","task.list","task.wait_all","task.get_current","task.inherit","task.complete","human.ask","prompt.list_targets","prompt.read_ai","prompt.write_ai","prompt.read_system","prompt.write_system","memory.write","memory.search","memory.list","memory.update","memory.archive","evolution.input","evolution.list","evolution.review","librarian.propose","librarian.consult","librarian.list_topics","librarian.read","librarian.archive","user.send_message","ai.send_message","ai.reply_message","ai.list_inbox"]'
     )
     system_auto_control: str = Field(
         default='{"enabled":false,"start_task_prompt":"你将收到一个任务，请先理解目标、约束与优先级，然后开始执行。","resume_task_prompt":"请继续执行刚才被暂停的任务，先简要回顾当前进度，再继续推进直到可交付。","supervision_prompt":"系统监督提醒：请确认当前任务是否已完成。若已完成请调用 task.complete 标记；若未完成请给出剩余步骤并继续执行。","inheritance_notice":"当前思考量已达到阈值（{session_tokens}/{threshold}），建议立即开启传承流程，沉淀本轮结论与关键上下文。","tasks":[]}'
@@ -499,6 +526,33 @@ class ValhallaEntry(SQLModel, table=True):
     artifacts_count: int = Field(default=0)
     unfinished_count: int = Field(default=0)
     reason: Optional[str] = Field(default=None)  # aborted 才填
+    created_at: float = Field(default_factory=lambda: __import__("time").time(), index=True)
+
+
+class AIMessage(SQLModel, table=True):
+    """AI 之间的同步消息（带回复语义）。
+
+    生命周期：
+      pending  → 已入库等待目标 AI 工作循环捕获
+      delivered → 已注入到目标 AI 的 convo，等待 ai.reply_message
+      replied   → 目标 AI 已回复，发送方可拿到结果
+      timeout   → 超时未回复
+      failed    → 目标不存在/不可达
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    message_id: str = Field(index=True, unique=True)  # mai_<uuid>
+    user_id: int = Field(foreign_key="user.id", index=True)
+    from_ai_config_id: int = Field(foreign_key="assistantaiconfig.id", index=True)
+    to_ai_config_id: int = Field(foreign_key="assistantaiconfig.id", index=True)
+    content: str = Field(default="")
+    status: str = Field(default="pending", index=True)
+    reply_content: Optional[str] = Field(default=None)
+    require_reply: bool = Field(default=True)
+    timeout_seconds: int = Field(default=120)
+    delivered_at: Optional[float] = Field(default=None)
+    replied_at: Optional[float] = Field(default=None)
+    failure_reason: Optional[str] = Field(default=None)
     created_at: float = Field(default_factory=lambda: __import__("time").time(), index=True)
 
 

@@ -65,6 +65,9 @@ const {
   defaultSupervisionPrompt,
   defaultSupervisionIdleSeconds,
   defaultInheritanceNotice,
+  promptAiMessageInbound,
+  promptAiMessageReplySuccess,
+  promptUserMessageNotice,
   normalizeSystemAutoControl,
   saveSystemSettings,
   roleMcpPermissions,
@@ -634,6 +637,9 @@ onUnmounted(() => {
       v-model:defaultSupervisionPrompt="defaultSupervisionPrompt"
       v-model:defaultSupervisionIdleSeconds="defaultSupervisionIdleSeconds"
       v-model:defaultInheritanceNotice="defaultInheritanceNotice"
+      v-model:promptAiMessageInbound="promptAiMessageInbound"
+      v-model:promptAiMessageReplySuccess="promptAiMessageReplySuccess"
+      v-model:promptUserMessageNotice="promptUserMessageNotice"
       v-model:themeMode="themeMode"
       v-model:fontSize="fontSize"
       :mcp-role-meta="mcpRoleMeta"
