@@ -238,7 +238,11 @@ Rules:
   )
 
   watch(
-    () => options.mcpRoleMeta.value.order,
+    () => JSON.stringify({
+      order: options.mcpRoleMeta.value.order,
+      options: options.mcpRoleMeta.value.options,
+      defaults: options.mcpRoleMeta.value.defaults,
+    }),
     () => initRoleMcpPermissions(),
     { immediate: true }
   )

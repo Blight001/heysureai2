@@ -63,8 +63,15 @@ def _resolve_ai_runtime(session: Session, user: User, ai_kind: str, ai_config_id
         raise HTTPException(status_code=400, detail="Base URL not configured")
     if not model:
         raise HTTPException(status_code=400, detail="Model not configured")
-    global_mcp_method = str(getattr(user, "mcp_call_method", "") or "").strip()
-    system_prompt = _merge_global_mcp_method(system_prompt, global_mcp_method, cfg)
+    if cfg and not cfg.mcp_enabled:
+        system_prompt = _append_prompt_section(
+            system_prompt,
+            "MCP状态",
+            "当前 AI 的 MCP 功能未启用。不要调用 MCP 工具；如果任务必须使用 MCP，请说明需要先在该 AI 配置中开启 MCP。",
+        )
+    else:
+        global_mcp_method = str(getattr(user, "mcp_call_method", "") or "").strip()
+        system_prompt = _merge_global_mcp_method(system_prompt, global_mcp_method, cfg)
     return cfg, api_key, base_url, model, system_prompt
 
 def _parse_allowed_tools(raw: Optional[str]) -> set[str]:

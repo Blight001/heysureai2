@@ -28,6 +28,7 @@ export interface ConnectedAgent {
   platform?: string
   aiConfigId?: number
   isWindowsDesktop?: boolean
+  isBrowserExtension?: boolean
   capabilities: string[]
   version?: string
   lifecycle?: string
@@ -240,6 +241,11 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
         desktopAgentName: '',
         desktopAgentPlatform: '',
         desktopAgentCapabilities: [],
+        browserAgentConnected: false,
+        browserAgentId: '',
+        browserAgentName: '',
+        browserAgentPlatform: '',
+        browserAgentCapabilities: [],
         runtimeStatus: normalizeRuntimeStatus(row.runtime_status),
         runtimeTool,
         activeRunStatus: String(row.active_run_status || ''),
@@ -256,7 +262,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
         latestThinking: row.latest_thinking || '',
       })
     })
-    decorateAgentsWithDesktopConnections()
+    decorateAgentsWithEndpointConnections()
     const maxGeneration = agents.value.reduce((max, agent) => Math.max(max, Number(agent.generation) || 1), 1)
     globalGeneration.value = Math.max(1, maxGeneration)
   }
@@ -350,24 +356,36 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
   }
 
-  const decorateAgentsWithDesktopConnections = () => {
+  const decorateAgentsWithEndpointConnections = () => {
     const desktopByConfig = new Map<number, ConnectedAgent>()
+    const browserByConfig = new Map<number, ConnectedAgent>()
     for (const connected of connectedAgents.value) {
       const configId = Number(connected.aiConfigId)
       if (!Number.isFinite(configId) || configId <= 0) continue
+      const platform = String(connected.platform || '').toLowerCase()
       const isDesktop = !!connected.isWindowsDesktop
         || String(connected.id || '').startsWith('win-desktop-')
-        || String(connected.platform || '').toLowerCase().includes('desktop')
+        || platform.includes('desktop')
+      const isBrowser = !!connected.isBrowserExtension
+        || platform.includes('browser-extension')
+        || platform.includes('browser')
       if (isDesktop) desktopByConfig.set(configId, connected)
+      if (isBrowser) browserByConfig.set(configId, connected)
     }
     for (const agent of agents.value) {
       const configId = Number(agent.aiConfigId)
       const desktop = Number.isFinite(configId) ? desktopByConfig.get(configId) : undefined
+      const browser = Number.isFinite(configId) ? browserByConfig.get(configId) : undefined
       agent.desktopAgentConnected = !!desktop
       agent.desktopAgentId = desktop?.id || ''
       agent.desktopAgentName = desktop?.name || ''
       agent.desktopAgentPlatform = desktop?.platform || ''
       agent.desktopAgentCapabilities = desktop?.capabilities || []
+      agent.browserAgentConnected = !!browser
+      agent.browserAgentId = browser?.id || ''
+      agent.browserAgentName = browser?.name || ''
+      agent.browserAgentPlatform = browser?.platform || ''
+      agent.browserAgentCapabilities = browser?.capabilities || []
     }
   }
 
@@ -377,6 +395,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     platform: raw?.platform ? String(raw.platform) : undefined,
     aiConfigId: parseConnectedAiConfigId(raw),
     isWindowsDesktop: !!raw?.isWindowsDesktop,
+    isBrowserExtension: !!raw?.isBrowserExtension,
     capabilities: Array.isArray(raw?.capabilities) ? raw.capabilities.map((c: any) => String(c)) : [],
     version: raw?.version ? String(raw.version) : undefined,
     lifecycle: raw?.lifecycle ? String(raw.lifecycle) : undefined,
@@ -391,7 +410,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
 
   const applyConnectedAgents = (rows: any) => {
     connectedAgents.value = (Array.isArray(rows) ? rows : []).map(normalizeConnectedAgent)
-    decorateAgentsWithDesktopConnections()
+    decorateAgentsWithEndpointConnections()
   }
 
   const loadConnectedAgents = async () => {

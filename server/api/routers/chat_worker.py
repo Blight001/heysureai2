@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 
 from api.database import engine
 from api.agent_dispatch import set_run_session_context
-from api.desktop_agent_tools import desktop_bridge_tools_for_config
+from api.desktop_agent_tools import endpoint_bridge_tools_for_config
 from api.mcp import registry, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.task_system import (
@@ -247,6 +247,65 @@ def _save_mcp_tool_bubble(
     )
 
 
+def _append_mcp_disabled_feedback(
+    *,
+    bg: Session,
+    convo: List[Dict],
+    user_id: int,
+    ai_config_id: Optional[int],
+    ai_kind: str,
+    session_id: str,
+    session_name: str,
+    model: str,
+    tool: str,
+    arguments: dict,
+    native_tool_call_id: str = "",
+) -> None:
+    tool_name = str(tool or "").strip() or "unknown"
+    payload = {
+        "success": False,
+        "error": "MCP is disabled for this AI",
+        "tool": tool_name,
+        "arguments": arguments or {},
+        "instruction": (
+            "The requested MCP call was not executed because MCP is disabled or not effective "
+            "for this AI. Do not wait for a tool result. Continue by explaining the limitation "
+            "to the user, asking them to enable MCP if tool execution is required, or completing "
+            "the task without MCP when possible."
+        ),
+    }
+    notice = (
+        "[系统提示] 检测到 MCP 调用未生效。\n"
+        f"- 工具: {tool_name}\n"
+        "- 原因: 当前 AI 的 MCP 开关关闭或 MCP 未生效，系统没有执行该工具。\n\n"
+        "请不要停在等待 MCP 结果的状态；请继续回复用户，说明无法执行该 MCP，"
+        "必要时请用户开启 MCP 或改用无需 MCP 的方式完成。"
+    )
+    _save_message(
+        bg,
+        user_id,
+        ChatMessageCreate(
+            role="user",
+            content=notice,
+            tags="system_notice_mcp_disabled",
+            ai_config_id=ai_config_id,
+            ai_kind=ai_kind,
+            session_id=session_id,
+            session_name=session_name,
+            model=model,
+            total_tokens=0,
+        ),
+    )
+    if native_tool_call_id:
+        convo.append({
+            "role": "tool",
+            "tool_call_id": native_tool_call_id,
+            "content": _safe_json(payload),
+        })
+    else:
+        convo.append({"role": "user", "content": f"{notice}\n\n[工具检查结果]\n{_safe_json(payload)}"})
+
+
 def _run_worker(
     *,
     run_id: str,
@@ -276,7 +335,7 @@ def _run_worker(
             task_job = _load_task_job_by_session(bg, user_id, ai_config_id, session_id)
             is_task_runtime = bool(task_payload) or str(session_id or "").startswith("session_task_")
             effective_tool_allowlist = _parse_allowed_tools(cfg.mcp_tools if cfg else None)
-            effective_tool_allowlist.update(desktop_bridge_tools_for_config(ai_config_id, user_id))
+            effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user_id))
             token_threshold_override = None
             workspace_root_override = None
             if task_payload:
@@ -289,7 +348,7 @@ def _run_worker(
                         }
                         effective_tool_allowlist = with_task_create_compat(effective_tool_allowlist)
                         effective_tool_allowlist = with_workspace_read_by_name_compat(effective_tool_allowlist)
-                        effective_tool_allowlist.update(desktop_bridge_tools_for_config(ai_config_id, user_id))
+                        effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user_id))
                 override_token = task_payload.get("override_token_limit")
                 if isinstance(override_token, dict) and bool(override_token.get("enabled")):
                     try:
@@ -593,8 +652,30 @@ def _run_worker(
                     tool = payload_tool
                     arguments = payload_call.get("arguments", {}) or {}
                     if cfg and not cfg.mcp_enabled:
-                        _run_set_status(run_id, "error", "MCP is disabled for this AI", finished=True)
-                        return
+                        denied_sig = f"mcp_disabled|{tool}|{json.dumps(arguments, ensure_ascii=False, sort_keys=True)}"
+                        if denied_sig == last_rejected_tool_sig:
+                            rejected_repeat += 1
+                        else:
+                            last_rejected_tool_sig = denied_sig
+                            rejected_repeat = 1
+                        _append_mcp_disabled_feedback(
+                            bg=bg,
+                            convo=convo,
+                            user_id=user_id,
+                            ai_config_id=ai_config_id,
+                            ai_kind=ai_kind,
+                            session_id=session_id,
+                            session_name=session_name,
+                            model=model,
+                            tool=tool,
+                            arguments=arguments,
+                            native_tool_call_id=_tc_id or "call_0" if _has_native_tc else "",
+                        )
+                        if rejected_repeat >= 3:
+                            _run_set_status(run_id, "error", "Repeated MCP call while MCP is disabled", finished=True)
+                            return
+                        _set_run_live_phase(run_id, "generating")
+                        continue
 
                     compound_results = []
                     compound_failed = False
@@ -686,8 +767,32 @@ def _run_worker(
                     _run_set_status(run_id, "stopped", finished=True)
                     return
                 if cfg and not cfg.mcp_enabled:
-                    _run_set_status(run_id, "error", "MCP is disabled for this AI", finished=True)
-                    return
+                    tool = payload_call.get("tool", "")
+                    arguments = payload_call.get("arguments", {}) or {}
+                    denied_sig = f"mcp_disabled|{tool}|{json.dumps(arguments, ensure_ascii=False, sort_keys=True)}"
+                    if denied_sig == last_rejected_tool_sig:
+                        rejected_repeat += 1
+                    else:
+                        last_rejected_tool_sig = denied_sig
+                        rejected_repeat = 1
+                    _append_mcp_disabled_feedback(
+                        bg=bg,
+                        convo=convo,
+                        user_id=user_id,
+                        ai_config_id=ai_config_id,
+                        ai_kind=ai_kind,
+                        session_id=session_id,
+                        session_name=session_name,
+                        model=model,
+                        tool=tool,
+                        arguments=arguments,
+                        native_tool_call_id=_tc_id or "call_0" if _has_native_tc else "",
+                    )
+                    if rejected_repeat >= 3:
+                        _run_set_status(run_id, "error", "Repeated MCP call while MCP is disabled", finished=True)
+                        return
+                    _set_run_live_phase(run_id, "generating")
+                    continue
 
                 tool = payload_call.get("tool", "")
                 arguments = payload_call.get("arguments", {}) or {}

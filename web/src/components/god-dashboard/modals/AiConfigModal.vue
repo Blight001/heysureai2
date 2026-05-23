@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { getMcpToolZhLabel, groupMcpToolsByZhTag } from '../mcpTools'
+import { getMcpToolZhLabel, groupMcpToolsBySource } from '../mcpTools'
 
 type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'feishu'
 
@@ -41,7 +41,17 @@ const closeSettingsSection = () => {
   props.onToggleSettingsSection(props.settingsSection)
 }
 
-const groupedAvailableMcpTools = computed(() => groupMcpToolsByZhTag(props.availableMcpTools))
+const groupedAvailableMcpTools = computed(() => groupMcpToolsBySource(props.availableMcpTools))
+const isToolSelected = (tool: string) => Array.isArray(props.form?.mcp_tools) && props.form.mcp_tools.includes(tool)
+const toolsAllSelected = (tools: string[]) => tools.length > 0 && tools.every(tool => isToolSelected(tool))
+const emitToolSelection = (tool: string, checked: boolean) => {
+  props.onToolCheckboxChange(tool, { target: { checked } } as unknown as Event)
+}
+const onToolGroupChange = (tools: string[], event: Event) => {
+  const target = event.target as HTMLInputElement | null
+  const checked = !!target?.checked
+  tools.forEach(tool => emitToolSelection(tool, checked))
+}
 </script>
 
 <template>
@@ -216,26 +226,66 @@ const groupedAvailableMcpTools = computed(() => groupMcpToolsByZhTag(props.avail
                   仅显示当前角色（{{ form.ai_role_group === 'assistant_admin' ? '辅助管理员' : (form.digital_member_role === 'manager' ? '数字成员·管理者' : '数字成员·普通成员') }}）允许的 MCP 工具，可在“系统设置 → MCP 角色权限”中调整各角色范围。
                 </p>
                 <div class="space-y-3 max-h-[46vh] overflow-y-auto pr-1">
-                  <details v-for="group in groupedAvailableMcpTools" :key="`ai-config-mcp-${group.tag}`" class="rounded-lg border border-zinc-200 bg-zinc-50/70 dark:border-zinc-700 dark:bg-zinc-800/40">
-                    <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between">
-                      <span>{{ group.tag }}</span>
-                      <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
-                        {{ group.tools.filter(tool => form.mcp_tools.includes(tool)).length }} / {{ group.tools.length }}
+                  <details
+                    v-for="source in groupedAvailableMcpTools"
+                    :key="`ai-config-mcp-source-${source.source}`"
+                    class="rounded-lg border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/60"
+                  >
+                    <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
+                      <span>{{ source.title }}</span>
+                      <span class="flex items-center gap-3">
+                        <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
+                          {{ source.tools.filter(tool => form.mcp_tools.includes(tool)).length }} / {{ source.tools.length }}
+                        </span>
+                        <span class="flex items-center gap-1 text-[10px] font-normal text-zinc-500 dark:text-zinc-400" @click.stop>
+                          <input
+                            type="checkbox"
+                            :checked="toolsAllSelected(source.tools)"
+                            @click.stop
+                            @change.stop="onToolGroupChange(source.tools, $event)"
+                          />
+                          <span>全选</span>
+                        </span>
                       </span>
                     </summary>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2 px-2 pb-2">
-                      <label v-for="tool in group.tools" :key="tool" class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2 px-2 py-1.5 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-                        <input
-                          type="checkbox"
-                          class="mt-0.5"
-                          :checked="form.mcp_tools.includes(tool)"
-                          @change="onToolCheckboxChange(tool, $event)"
-                        />
-                        <span class="min-w-0">
-                          <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
-                          <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
-                        </span>
-                      </label>
+                    <div class="px-2 pb-2">
+                      <details
+                        v-for="group in source.groups"
+                        :key="`ai-config-mcp-${source.source}-${group.tag}`"
+                        class="mb-2 rounded-lg border border-zinc-200 bg-zinc-50/70 last:mb-0 dark:border-zinc-700 dark:bg-zinc-800/40"
+                      >
+                        <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
+                          <span>{{ group.tag }}</span>
+                          <span class="flex items-center gap-3">
+                            <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
+                              {{ group.tools.filter(tool => form.mcp_tools.includes(tool)).length }} / {{ group.tools.length }}
+                            </span>
+                            <span class="flex items-center gap-1 text-[10px] font-normal text-zinc-500 dark:text-zinc-400" @click.stop>
+                              <input
+                                type="checkbox"
+                                :checked="toolsAllSelected(group.tools)"
+                                @click.stop
+                                @change.stop="onToolGroupChange(group.tools, $event)"
+                              />
+                              <span>全选</span>
+                            </span>
+                          </span>
+                        </summary>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 px-2 pb-2">
+                          <label v-for="tool in group.tools" :key="tool" class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2 px-2 py-1.5 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+                            <input
+                              type="checkbox"
+                              class="mt-0.5"
+                              :checked="form.mcp_tools.includes(tool)"
+                              @change="onToolCheckboxChange(tool, $event)"
+                            />
+                            <span class="min-w-0">
+                              <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
+                              <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
+                            </span>
+                          </label>
+                        </div>
+                      </details>
                     </div>
                   </details>
                   <div v-if="availableMcpTools.length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">该角色暂无可配置的 MCP 工具</div>

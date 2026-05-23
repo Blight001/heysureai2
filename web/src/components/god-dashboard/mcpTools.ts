@@ -5,6 +5,79 @@ export interface McpToolGroup {
   tools: string[]
 }
 
+export interface McpToolSourceGroup {
+  source: 'server' | 'desktop' | 'browser'
+  title: string
+  groups: McpToolGroup[]
+  tools: string[]
+}
+
+export const DESKTOP_AGENT_MCP_TOOLS = [
+  'fs.list',
+  'fs.read',
+  'fs.write',
+  'shell.run',
+  'git.diff',
+  'keyboard.type',
+  'keyboard.press',
+  'mouse.move',
+  'mouse.click',
+  'mouse.double_click',
+  'mouse.right_click',
+  'mouse.scroll',
+  'mouse.drag',
+  'screen.capture',
+  'screen.capture_region',
+  'screen.info',
+  'clipboard.get',
+  'clipboard.set',
+  'window.list',
+  'window.focus',
+  'window.close',
+  'process.list',
+  'process.kill',
+]
+
+export const BROWSER_AGENT_MCP_TOOLS = [
+  'browser_navigate',
+  'browser_screenshot',
+  'browser_click',
+  'browser_type',
+  'browser_get_content',
+  'browser_search',
+  'browser_scroll',
+  'browser_wait',
+  'browser_evaluate',
+  'browser_extract',
+  'browser_find_text',
+  'browser_fill_form',
+  'browser_select',
+  'browser_tab_list',
+  'browser_tab_open',
+  'browser_tab_close',
+  'browser_history_back',
+  'browser_history_forward',
+  'browser_clipboard_write',
+  'browser_storage_get',
+  'browser_hover',
+  'browser_page_info',
+  'browser_right_click',
+  'browser_double_click',
+  'browser_drag',
+  'browser_press_key',
+  'card_list',
+  'card_get',
+  'card_save',
+  'card_update_step',
+  'card_run',
+  'card_delete',
+]
+
+export const ENDPOINT_AGENT_MCP_TOOLS = [
+  ...DESKTOP_AGENT_MCP_TOOLS,
+  ...BROWSER_AGENT_MCP_TOOLS,
+]
+
 export const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag: string }> = {
   'workspace.list_files': { label: '列出文件', description: '查看当前工作目录下可访问的文件与目录。', tag: '工作区' },
   'workspace.get_file_tree': { label: '目录树', description: '获取目录树结构，便于快速理解工程层级。', tag: '工作区' },
@@ -17,7 +90,7 @@ export const MCP_TOOL_ZH_META: Record<string, { label: string; description: stri
   'admin.list_agents': { label: '列出智能体', description: '查看系统中的 AI 成员列表。', tag: '管理' },
   'admin.get_overview': { label: '管理总览', description: '获取系统运行状态与关键统计。', tag: '管理' },
   'admin.dispatch_flow': { label: '分派流程', description: '向指定 AI 下发流程或任务。', tag: '管理' },
-  'admin.dispatch_task': { label: '控制桌面端', description: '通过已连接的 Windows 桌面 Agent 执行本地任务，可调用文件、Shell、Git、键盘、鼠标、屏幕、剪贴板、窗口和进程能力。', tag: '桌面端' },
+  'admin.dispatch_task': { label: '分派端侧任务', description: '通过已连接的端侧 Agent 执行任务；具体目标由桌面端 MCP 或浏览器 MCP 来源决定。', tag: '管理' },
   'project.list_projects': { label: '项目列表', description: '查看当前用户下的项目信息。', tag: '项目' },
   'project.create_project': { label: '创建项目', description: '创建新的项目记录。', tag: '项目' },
   'project.update_project': { label: '更新项目', description: '更新项目信息与成员绑定。', tag: '项目' },
@@ -75,14 +148,17 @@ export const normalizeMcpSchemaType = (rawType: unknown) => {
   return toZh(text || 'any')
 }
 
-const MCP_TOOL_TAG_ORDER = ['工作区', '管理', '桌面端', '项目', '任务', 'Prompt', '飞书', '记忆', '进化', '协作', '通用']
+const MCP_TOOL_TAG_ORDER = ['工作区', '管理', '桌面端MCP', '浏览器MCP', '项目', '任务', 'Prompt', '飞书', '记忆', '进化', '协作', '通用']
 
 const hasMcpPrefix = (name: string, prefix: string) => name.startsWith(`${prefix}.`) || name.startsWith(`${prefix}_`)
 
 const getMcpToolFallbackTag = (name: string) => {
   if (hasMcpPrefix(name, 'workspace')) return '工作区'
   if (hasMcpPrefix(name, 'admin')) return '管理'
-  if (hasMcpPrefix(name, 'desktop')) return '桌面端'
+  if (hasMcpPrefix(name, 'browser')) return '浏览器MCP'
+  if (hasMcpPrefix(name, 'card')) return '浏览器MCP'
+  if (hasMcpPrefix(name, 'desktop')) return '桌面端MCP'
+  if (['fs', 'shell', 'git', 'keyboard', 'mouse', 'screen', 'clipboard', 'window', 'process'].some(prefix => hasMcpPrefix(name, prefix))) return '桌面端MCP'
   if (hasMcpPrefix(name, 'project')) return '项目'
   if (hasMcpPrefix(name, 'task')) return '任务'
   if (hasMcpPrefix(name, 'prompt')) return 'Prompt'
@@ -91,6 +167,22 @@ const getMcpToolFallbackTag = (name: string) => {
   if (hasMcpPrefix(name, 'feishu')) return '飞书'
   if (hasMcpPrefix(name, 'human')) return '协作'
   return '通用'
+}
+
+const getSourceTag = (source?: McpToolDefinition['mcpSource']) => {
+  if (source === 'desktop') return '桌面端MCP'
+  if (source === 'browser') return '浏览器MCP'
+  return ''
+}
+
+export const getMcpToolSource = (name: string): 'server' | 'desktop' | 'browser' => {
+  const normalized = String(name || '').trim()
+  if (!normalized) return 'server'
+  if (BROWSER_AGENT_MCP_TOOLS.includes(normalized) || hasMcpPrefix(normalized, 'browser') || hasMcpPrefix(normalized, 'card')) {
+    return 'browser'
+  }
+  if (DESKTOP_AGENT_MCP_TOOLS.includes(normalized)) return 'desktop'
+  return 'server'
 }
 
 // Chinese-first label for a tool: the Chinese name leads, the English call name
@@ -122,15 +214,66 @@ export const groupMcpToolsByZhTag = (tools: string[]): McpToolGroup[] => {
     })
 }
 
+export const groupMcpToolsBySource = (tools: string[]): McpToolSourceGroup[] => {
+  const sourceTitles: Record<McpToolSourceGroup['source'], string> = {
+    server: '服务端 MCP',
+    desktop: '桌面端 MCP',
+    browser: '浏览器 MCP',
+  }
+  const buckets: Record<McpToolSourceGroup['source'], string[]> = {
+    server: [],
+    desktop: [],
+    browser: [],
+  }
+  for (const rawTool of tools) {
+    const tool = String(rawTool || '').trim()
+    if (!tool) continue
+    buckets[getMcpToolSource(tool)].push(tool)
+  }
+  return (['server', 'desktop', 'browser'] as const)
+    .map(source => {
+      const sourceTools = Array.from(new Set(buckets[source])).sort((a, b) => getMcpToolZhLabel(a).localeCompare(getMcpToolZhLabel(b), 'zh-Hans-CN'))
+      return {
+        source,
+        title: sourceTitles[source],
+        tools: sourceTools,
+        groups: groupMcpToolsByZhTag(sourceTools),
+      }
+    })
+    .filter(section => section.tools.length > 0)
+}
+
 export const withMcpToolLocale = (tool: McpToolDefinition): McpToolDefinition => {
   const meta = MCP_TOOL_ZH_META[tool.name]
+  const sourceTag = getSourceTag(tool.mcpSource)
+  const isDesktopCapability = tool.mcpSource === 'desktop'
+  const isBrowserCapability = tool.mcpSource === 'browser' || hasMcpPrefix(tool.name, 'browser') || hasMcpPrefix(tool.name, 'card')
   const rawDescription = String(tool.description || '').trim()
-  const zhDescription = meta?.description || rawDescription || '暂无中文说明'
-  const tags = [getMcpToolZhTag(tool.name)]
+  const sourceSpecificDescription = (() => {
+    if (tool.name === 'admin.dispatch_task' && tool.mcpSource === 'desktop') {
+      return '通过已连接的桌面端 Agent 分派任务，可进一步调用 fs.*、shell.*、git.*、keyboard.*、mouse.*、screen.*、clipboard.*、window.*、process.* 等桌面能力。'
+    }
+    if (tool.name === 'admin.dispatch_task' && tool.mcpSource === 'browser') {
+      return '通过已连接的浏览器插件分派任务，可进一步调用 browser_* 与 card_* 浏览器自动化能力。'
+    }
+    if (isDesktopCapability) return '桌面端 Agent 上报的执行能力。服务端 AI 需要通过 admin.dispatch_task 下发到已连接桌面端执行。'
+    if (isBrowserCapability) return '浏览器插件上报的执行能力。服务端 AI 需要通过 admin.dispatch_task 下发到已连接插件执行。'
+    return ''
+  })()
+  const zhDescription = sourceSpecificDescription
+    || meta?.description
+    || rawDescription
+    || '暂无中文说明'
+  const tags = sourceTag ? [sourceTag] : [getMcpToolZhTag(tool.name)]
   if (tool.destructive) tags.push('高风险')
+  const sourceSpecificLabel = (() => {
+    if (tool.name === 'admin.dispatch_task' && tool.mcpSource === 'desktop') return '分派到桌面端'
+    if (tool.name === 'admin.dispatch_task' && tool.mcpSource === 'browser') return '分派到浏览器插件'
+    return ''
+  })()
   return {
     ...tool,
-    zhLabel: meta?.label || tool.name,
+    zhLabel: sourceSpecificLabel || meta?.label || tool.name,
     zhDescription,
     zhTags: tags,
   }

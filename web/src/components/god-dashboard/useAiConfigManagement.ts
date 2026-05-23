@@ -1,5 +1,6 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import type { Agent, McpRoleMeta, McpToolDefinition } from './types'
+import { BROWSER_AGENT_MCP_TOOLS, DESKTOP_AGENT_MCP_TOOLS, ENDPOINT_AGENT_MCP_TOOLS } from './mcpTools'
 
 type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'feishu'
 
@@ -176,6 +177,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
           description: String(item?.description || '').trim(),
           inputSchema: item?.inputSchema && typeof item.inputSchema === 'object' ? item.inputSchema : { type: 'object', properties: {} },
           destructive: !!item?.destructive,
+          mcpSource: 'server' as const,
         }))
         .filter((item: McpToolDefinition) => !!item.name)
       : []
@@ -183,8 +185,26 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     for (const row of rows) {
       map[row.name] = row
     }
+    for (const name of DESKTOP_AGENT_MCP_TOOLS) {
+      map[name] = {
+        name,
+        description: '桌面端 Agent 上报的执行能力，通过 admin.dispatch_task 分派到已连接桌面端执行。',
+        inputSchema: { type: 'object', properties: {} },
+        destructive: false,
+        mcpSource: 'desktop',
+      }
+    }
+    for (const name of BROWSER_AGENT_MCP_TOOLS) {
+      map[name] = {
+        name,
+        description: '浏览器插件上报的执行能力，通过 admin.dispatch_task 分派到已连接浏览器插件执行。',
+        inputSchema: { type: 'object', properties: {} },
+        destructive: false,
+        mcpSource: 'browser',
+      }
+    }
     mcpToolMetaByName.value = map
-    const tools = rows.map(item => item.name)
+    const tools = Array.from(new Set([...rows.map(item => item.name), ...ENDPOINT_AGENT_MCP_TOOLS]))
     availableMcpTools.value = tools.length > 0 ? tools : [...defaultMcpTools]
 
     const asStringArrayMap = (raw: unknown): Record<string, string[]> => {
@@ -198,11 +218,21 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       }
       return out
     }
+    const mergeUnique = (base: string[] = [], extra: string[] = []) => Array.from(new Set([...base, ...extra])).filter(Boolean).sort((a, b) => a.localeCompare(b))
+    const roleOptions = asStringArrayMap(data.roleOptions)
+    const roleDefaults = asStringArrayMap(data.roleDefaults)
+    const roleOrder = Array.isArray(data.roleOrder) ? data.roleOrder.map((item: unknown) => String(item || '').trim()).filter(Boolean) : []
+    for (const role of roleOrder) {
+      roleOptions[role] = mergeUnique(roleOptions[role], ENDPOINT_AGENT_MCP_TOOLS)
+      if (role === ROLE_ASSISTANT_ADMIN) {
+        roleDefaults[role] = mergeUnique(roleDefaults[role], ENDPOINT_AGENT_MCP_TOOLS)
+      }
+    }
     mcpRoleMeta.value = {
-      order: Array.isArray(data.roleOrder) ? data.roleOrder.map((item: unknown) => String(item || '').trim()).filter(Boolean) : [],
+      order: roleOrder,
       labels: (data.roleLabels && typeof data.roleLabels === 'object') ? data.roleLabels as Record<string, string> : {},
-      defaults: asStringArrayMap(data.roleDefaults),
-      options: asStringArrayMap(data.roleOptions),
+      defaults: roleDefaults,
+      options: roleOptions,
       permissions: asStringArrayMap(data.rolePermissions),
     }
   }

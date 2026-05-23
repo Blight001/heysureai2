@@ -39,6 +39,9 @@
   async function setChatHistory(messages) {
     await chrome.storage.local.set({ [CHAT_KEY]: normalizeChatHistory(messages) });
   }
+  async function clearChatHistory() {
+    await chrome.storage.local.remove(CHAT_KEY);
+  }
   var AUTH_KEY = "_auth_state";
   var AUTH_DEFAULT = { token: "", account: "", userId: null, userName: "" };
   async function getAuth() {
@@ -326,6 +329,8 @@
   var chatInput = $("chat-input");
   var chatSendBtn = $("chat-send");
   var chatTarget = $("chat-target");
+  var chatTargetText = $("chat-target-text");
+  var chatClearBtn = $("chat-clear-btn");
   var connectBtn = $("connect-btn");
   var disconnectBtn = $("disconnect-btn");
   var clearBtn = $("clear-btn");
@@ -615,13 +620,13 @@
     const m = memberById(selectedMemberId);
     if (offlineMode) {
       chatTarget.classList.remove("empty");
-      chatTarget.innerHTML = `\u{1F6DC} \u79BB\u7EBF\u6A21\u5F0F \xB7 \u6A21\u578B <span class="tb-name">${esc(localModel || "\u672A\u914D\u7F6E")}</span>`;
+      chatTargetText.innerHTML = `\u{1F6DC} \u79BB\u7EBF\u6A21\u5F0F \xB7 \u6A21\u578B <span class="tb-name">${esc(localModel || "\u672A\u914D\u7F6E")}</span>`;
     } else if (m) {
       chatTarget.classList.remove("empty");
-      chatTarget.innerHTML = `\u5BF9\u8BDD\u76EE\u6807\uFF1A<span class="tb-name">${esc(m.name)}</span>\uFF08${ROLE_LABELS[roleOf(m)] || ""}\uFF09`;
+      chatTargetText.innerHTML = `\u5BF9\u8BDD\u76EE\u6807\uFF1A<span class="tb-name">${esc(m.name)}</span>\uFF08${ROLE_LABELS[roleOf(m)] || ""}\uFF09`;
     } else {
       chatTarget.classList.add("empty");
-      chatTarget.textContent = "\u672A\u9009\u62E9 AI \u6210\u5458\uFF08\u5C06\u4F7F\u7528\u672C\u5730 AI Key \u76F4\u8FDE\uFF09";
+      chatTargetText.textContent = "\u672A\u9009\u62E9 AI \u6210\u5458\uFF08\u5C06\u4F7F\u7528\u672C\u5730 AI Key \u76F4\u8FDE\uFF09";
     }
     if (m && !offlineMode) {
       taskTarget.classList.remove("empty");
@@ -642,6 +647,7 @@
     chatNoKey.style.display = enabled || hasMessages ? "none" : "flex";
     chatInput.disabled = !enabled || chatBusy;
     chatSendBtn.disabled = !enabled || chatBusy;
+    chatClearBtn.disabled = !hasMessages && !chatHistory.length && !chatBusy;
   }
   function inlineMd(text) {
     const placeholders = [];
@@ -913,6 +919,13 @@
     chatHistory = await getChatHistory();
     renderChatHistory();
   }
+  async function clearConversation() {
+    if (chatBusy)
+      stopPendingChatUi();
+    chatHistory = [];
+    await clearChatHistory();
+    renderChatHistory();
+  }
   async function writeClipboardText(text) {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
@@ -992,6 +1005,7 @@
       void deleteChatMessage(index);
     }
   });
+  chatClearBtn.addEventListener("click", () => void clearConversation());
   async function runServerChat(text, thinking) {
     const sessionId = `ext-${selectedMemberId}`;
     const { run_id } = await startChatRun(serverUrl, auth.token, selectedMemberId, sessionId, text);

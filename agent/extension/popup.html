@@ -346,8 +346,15 @@
       display:flex; align-items:center; gap:6px; padding:6px 9px; border-radius:var(--r);
       background:var(--surface); border:1px solid var(--border); font-size:11px; flex-shrink:0;
     }
+    .target-banner .target-text { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .target-banner .tb-name { font-weight:600; color:var(--accent); }
     .target-banner.empty { color:var(--muted); }
+    .target-clear-btn {
+      flex-shrink:0; font-size:10px; color:var(--muted); border:none; background:none;
+      cursor:pointer; padding:2px 6px; border-radius:4px;
+    }
+    .target-clear-btn:hover { background:var(--surface-h); color:var(--text); }
+    .target-clear-btn:disabled { opacity:.45; cursor:not-allowed; }
 
     /* ── Task form / jobs ── */
     #task-pane { overflow-y:auto; }
@@ -457,7 +464,10 @@
 
     <!-- Chat pane -->
     <div class="pane hidden" id="chat-pane">
-      <div class="target-banner empty" id="chat-target">未选择 AI 成员（将使用本地 AI Key 直连）</div>
+      <div class="target-banner empty" id="chat-target">
+        <span class="target-text" id="chat-target-text">未选择 AI 成员（将使用本地 AI Key 直连）</span>
+        <button class="target-clear-btn" id="chat-clear-btn" type="button" title="清空对话">清空</button>
+      </div>
       <div class="chat-messages" id="chat-messages">
         <div id="chat-no-key">
           <div class="ki">🔑</div>

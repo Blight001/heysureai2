@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from api.mcp import registry
 from api.models import AssistantAIConfig, DEFAULT_MCP_FORMAT_ERROR_HINT
-from api.desktop_agent_tools import desktop_bridge_tools_for_config
+from api.desktop_agent_tools import endpoint_bridge_tools_for_config
 from api.task_system import (
     DEFAULT_SYSTEM_AUTO_CONTROL,
     with_task_create_compat,
@@ -123,7 +123,7 @@ def _parse_allowed_tools_for_cfg(cfg: Optional[AssistantAIConfig]) -> set[str]:
         raw_tools = {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
         raw_tools = with_task_create_compat(raw_tools)
         raw_tools = with_workspace_read_by_name_compat(raw_tools)
-        raw_tools.update(desktop_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
+        raw_tools.update(endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
         return raw_tools
     except Exception:
         return set()
@@ -341,7 +341,11 @@ def _render_mcp_tool_item(tool_info: Dict[str, Any]) -> str:
 def _render_mcp_tool_lines(cfg: Optional[AssistantAIConfig]) -> str:
     all_tools = registry.list_tools()
     allowed = _parse_allowed_tools_for_cfg(cfg)
-    if allowed:
+    if cfg is not None:
+        if not getattr(cfg, "mcp_enabled", True):
+            return "- （MCP 未启用）"
+        if not allowed:
+            return "- （空）"
         tool_items = [item for item in all_tools if str(item.get("name") or "").strip() in allowed]
     else:
         tool_items = all_tools
@@ -459,7 +463,7 @@ def _build_mcp_stream_warning(
         if not cfg.mcp_enabled:
             unauthorized_tools = [call["tool"] for call in parsed_calls]
         else:
-            allowed_tools.update(desktop_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
+            allowed_tools.update(endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
             for call in parsed_calls:
                 tool = call["tool"]
                 if tool not in known_tools:

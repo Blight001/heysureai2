@@ -20,33 +20,53 @@ export const useMcpAndWorkspaceModal = ({ mcpToolMetaByName }: UseMcpAndWorkspac
   const workspaceContextModalChanged = ref<string[]>([])
   const workspaceContextModalTarget = ref<Agent | null>(null)
 
-  const buildToolItems = (toolNames: string[]) => {
+  const buildToolItems = (toolNames: string[], source: McpToolDefinition['mcpSource'] = 'server') => {
     return toolNames.map((name) => {
       const meta = mcpToolMetaByName.value[name]
-      const base = meta ? { ...meta } : { name, description: '', inputSchema: { type: 'object', properties: {} }, destructive: false }
+      const base = meta
+        ? { ...meta, mcpSource: source }
+        : { name, description: '', inputSchema: { type: 'object', properties: {} }, destructive: false, mcpSource: source }
       return withMcpToolLocale(base)
     })
   }
 
   const showAgentTools = (agent: Agent) => {
     toolModalTitle.value = agent.name
-    const allowedTools = new Set<string>()
+    const serverTools = new Set<string>()
     try {
       const parsed = JSON.parse(agent.mcpTools || '[]')
       if (Array.isArray(parsed)) {
         parsed
           .map(item => String(item || '').trim())
           .filter(Boolean)
-          .forEach(tool => allowedTools.add(tool))
+          .forEach(tool => serverTools.add(tool))
       }
     } catch {
       // ignore parse error
     }
-    if (agent.desktopAgentConnected) {
-      allowedTools.add('admin.list_agents')
-      allowedTools.add('admin.dispatch_task')
+    if (agent.desktopAgentConnected || agent.browserAgentConnected) {
+      serverTools.add('admin.list_agents')
     }
-    toolModalItems.value = buildToolItems(Array.from(allowedTools))
+    const items = buildToolItems(Array.from(serverTools), 'server')
+    if (agent.desktopAgentConnected) {
+      const desktopTools = new Set<string>(['admin.dispatch_task'])
+      const desktopCapabilities = agent.desktopAgentCapabilities || []
+      desktopCapabilities
+        .map(item => String(item || '').trim())
+        .filter(Boolean)
+        .forEach(tool => desktopTools.add(tool))
+      items.push(...buildToolItems(Array.from(desktopTools), 'desktop'))
+    }
+    if (agent.browserAgentConnected) {
+      const browserTools = new Set<string>(['admin.dispatch_task'])
+      const browserCapabilities = agent.browserAgentCapabilities || []
+      browserCapabilities
+        .map(item => String(item || '').trim())
+        .filter(Boolean)
+        .forEach(tool => browserTools.add(tool))
+      items.push(...buildToolItems(Array.from(browserTools), 'browser'))
+    }
+    toolModalItems.value = items
     toolModalOpen.value = true
   }
 
@@ -56,7 +76,7 @@ export const useMcpAndWorkspaceModal = ({ mcpToolMetaByName }: UseMcpAndWorkspac
       .map(item => String(item || '').trim())
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b))
-    toolModalItems.value = buildToolItems(toolNames)
+    toolModalItems.value = buildToolItems(toolNames, 'server')
     toolModalOpen.value = true
   }
 

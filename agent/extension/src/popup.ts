@@ -4,7 +4,7 @@
 //   2. Software-end client: logged-in account → AI members, chat, task scheduling.
 
 import { AgentStatus, AgentSettings, ActivityEntry, ChatMessage, BgMsg, MemoryCard } from './lib/types'
-import { getAuth, saveAuth, clearAuth, getSettings, getCards, setCards, deleteCard, getChatHistory, setChatHistory, AuthState } from './lib/storage'
+import { getAuth, saveAuth, clearAuth, getSettings, getCards, setCards, deleteCard, getChatHistory, setChatHistory, clearChatHistory, AuthState } from './lib/storage'
 import { parseImport, mergeCards, exportCard } from './lib/cards'
 import {
   login as apiLogin, getMe, listConfigs,
@@ -69,6 +69,8 @@ const chatNoKey    = $('chat-no-key')
 const chatInput    = $('chat-input') as HTMLTextAreaElement
 const chatSendBtn  = $('chat-send') as HTMLButtonElement
 const chatTarget   = $('chat-target')
+const chatTargetText = $('chat-target-text')
+const chatClearBtn = $('chat-clear-btn') as HTMLButtonElement
 const connectBtn   = $('connect-btn')
 const disconnectBtn = $('disconnect-btn')
 const clearBtn     = $('clear-btn')
@@ -358,13 +360,13 @@ function updateTargetBanners() {
   const m = memberById(selectedMemberId)
   if (offlineMode) {
     chatTarget.classList.remove('empty')
-    chatTarget.innerHTML = `🛜 离线模式 · 模型 <span class="tb-name">${esc(localModel || '未配置')}</span>`
+    chatTargetText.innerHTML = `🛜 离线模式 · 模型 <span class="tb-name">${esc(localModel || '未配置')}</span>`
   } else if (m) {
     chatTarget.classList.remove('empty')
-    chatTarget.innerHTML = `对话目标：<span class="tb-name">${esc(m.name)}</span>（${ROLE_LABELS[roleOf(m)] || ''}）`
+    chatTargetText.innerHTML = `对话目标：<span class="tb-name">${esc(m.name)}</span>（${ROLE_LABELS[roleOf(m)] || ''}）`
   } else {
     chatTarget.classList.add('empty')
-    chatTarget.textContent = '未选择 AI 成员（将使用本地 AI Key 直连）'
+    chatTargetText.textContent = '未选择 AI 成员（将使用本地 AI Key 直连）'
   }
   // Task scheduling always needs the server (login + selected member).
   if (m && !offlineMode) {
@@ -388,6 +390,7 @@ function refreshChatAvailability() {
   chatNoKey.style.display = (enabled || hasMessages) ? 'none' : 'flex'
   chatInput.disabled = !enabled || chatBusy
   chatSendBtn.disabled = !enabled || chatBusy
+  chatClearBtn.disabled = !hasMessages && !chatHistory.length && !chatBusy
 }
 
 // ── Chat ───────────────────────────────────────────────────────────────────
@@ -693,6 +696,13 @@ async function restoreChatHistory() {
   renderChatHistory()
 }
 
+async function clearConversation() {
+  if (chatBusy) stopPendingChatUi()
+  chatHistory = []
+  await clearChatHistory()
+  renderChatHistory()
+}
+
 async function writeClipboardText(text: string): Promise<void> {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text)
@@ -767,6 +777,8 @@ chatMsgs.addEventListener('click', (e: MouseEvent) => {
     void deleteChatMessage(index)
   }
 })
+
+chatClearBtn.addEventListener('click', () => void clearConversation())
 
 async function runServerChat(text: string, thinking: HTMLElement) {
   const sessionId = `ext-${selectedMemberId}`

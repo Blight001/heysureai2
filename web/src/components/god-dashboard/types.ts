@@ -66,6 +66,11 @@ export interface Agent {
   desktopAgentName?: string
   desktopAgentPlatform?: string
   desktopAgentCapabilities?: string[]
+  browserAgentConnected?: boolean
+  browserAgentId?: string
+  browserAgentName?: string
+  browserAgentPlatform?: string
+  browserAgentCapabilities?: string[]
   runtimeStatus?: string
   runtimeTool?: string
   activeRunStatus?: string
@@ -122,6 +127,7 @@ export interface McpToolDefinition {
   inputSchema?: Record<string, any>
   destructive?: boolean
   minRole?: string
+  mcpSource?: 'server' | 'desktop' | 'browser'
   zhLabel?: string
   zhDescription?: string
   zhTags?: string[]

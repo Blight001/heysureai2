@@ -86,6 +86,19 @@ def _find_agent_sid(agent_id: str) -> Optional[str]:
     return None
 
 
+def _agent_kind_label(agent_id: str) -> str:
+    for agent in agents.values():
+        if str(agent.get("id")) != str(agent_id):
+            continue
+        platform = str(agent.get("platform") or "").lower()
+        if bool(agent.get("isBrowserExtension")) or "browser-extension" in platform:
+            return "浏览器Agent"
+        if bool(agent.get("isWindowsDesktop")) or "desktop" in platform:
+            return "桌面端Agent"
+        return "端侧Agent"
+    return "端侧Agent"
+
+
 async def dispatch_task_to_agent(
     *,
     agent_id: str,
@@ -133,7 +146,7 @@ async def dispatch_task_to_agent(
         "success": True,
         "taskId": task_id,
         "agentId": agent_id,
-        "note": "Task dispatched to desktop agent. Result will arrive asynchronously and be appended to this session.",
+        "note": f"Task dispatched to {_agent_kind_label(agent_id)}. Result will arrive asynchronously and be appended to this session.",
     }
 
 
@@ -207,8 +220,9 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
 
     status = "成功" if success else "失败"
     result_text = result if isinstance(result, str) else _safe_dump(result)
+    agent_label = _agent_kind_label(agent_id)
     content = (
-        "[桌面Agent执行结果]\n"
+        f"[{agent_label}执行结果]\n"
         f"Agent: {agent_id}\n"
         f"工具: {tool or '(综合任务)'}\n"
         f"状态: {status}\n\n"
@@ -234,8 +248,9 @@ async def handle_task_error(data: Dict[str, Any]) -> None:
     task_id = str(data.get("taskId") or "")
     agent_id = str(ctx.get("agent_id") or data.get("agentId") or "unknown")
     error = str(data.get("error") or "Unknown agent error")
+    agent_label = _agent_kind_label(agent_id)
     content = (
-        "[桌面Agent执行失败]\n"
+        f"[{agent_label}执行失败]\n"
         f"Agent: {agent_id}\n"
         f"工具: {ctx.get('tool') or '(综合任务)'}\n\n"
         f"[错误]\n{error}"
@@ -260,7 +275,7 @@ def _safe_dump(value: Any) -> str:
 
 
 async def _dispatch_task(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    """MCP tool handler: dispatch a task to a connected desktop agent."""
+    """MCP tool handler: dispatch a task to a connected desktop or browser agent."""
     agent_id = str(args.get("agentId") or "").strip()
     instruction = str(args.get("instruction") or "").strip()
     tool = str(args.get("tool") or "").strip()
