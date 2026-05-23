@@ -19,9 +19,12 @@ from api.task_system import (
     DEFAULT_SYSTEM_AUTO_CONTROL,
     TASK_RUNTIME_REQUIRED_TOOLS,
     normalize_system_auto_control,
+    parse_generation_from_session_id,
     with_task_create_compat,
     with_workspace_read_by_name_compat,
 )
+from api import valhalla_service
+from api import ai_message_service
 from .chat_prompt_utils import (
     _append_mcp_state_to_tags,
     _append_prompt_section,
@@ -54,6 +57,24 @@ from .chat_runtime_helpers import (
     _session_total_tokens,
 )
 from .chat_scheduler import _start_task_run
+
+DEFAULT_AI_MSG_INBOUND_FALLBACK = (
+    "[系统中断 · AI 间通信]\n"
+    "来自 {from_ai_name}（ai_config_id={from_ai_config_id}）：\n{content}\n\n"
+    "请调用 ai.reply_message(message_id=\"{message_id}\", content=...) 回复后再继续。"
+)
+
+
+def _resolve_ai_name_safe(session: Session, ai_config_id: Optional[int]) -> str:
+    if not ai_config_id:
+        return ""
+    try:
+        row = session.exec(
+            select(AssistantAIConfig).where(AssistantAIConfig.id == int(ai_config_id))
+        ).first()
+        return str(row.name or "") if row else ""
+    except Exception:
+        return ""
 
 
 def _format_upstream_error(response: requests.Response, max_body_len: int = 4000) -> str:
@@ -425,6 +446,46 @@ def _run_worker(
                 if _run_should_stop(run_id):
                     _run_set_status(run_id, "stopped", finished=True)
                     return
+
+                # 抢占式钩子：若收件箱有 pending 的 AI 间消息，在下一次 LLM
+                # 调用前把它注入到 convo 强制 AI 优先回复。
+                if ai_config_id is not None:
+                    try:
+                        _inbound = ai_message_service.pop_pending_for(user_id, int(ai_config_id))
+                    except Exception as _iex:
+                        _inbound = None
+                        print(f"[chat_worker] inbox poll failed: {_iex}")
+                    if _inbound is not None:
+                        _from_name = _resolve_ai_name_safe(bg, _inbound.from_ai_config_id) or f"AI-{_inbound.from_ai_config_id}"
+                        _tpl = str(getattr(user, "prompt_ai_message_inbound", "") or DEFAULT_AI_MSG_INBOUND_FALLBACK)
+                        try:
+                            _injected = _tpl.format(
+                                from_ai_name=_from_name,
+                                from_ai_config_id=_inbound.from_ai_config_id,
+                                message_id=_inbound.message_id,
+                                content=_inbound.content,
+                            )
+                        except Exception:
+                            _injected = (
+                                f"[AI 间通信] 来自 {_from_name}：{_inbound.content}\n"
+                                f"请调用 ai.reply_message(message_id=\"{_inbound.message_id}\", content=...) 回复。"
+                            )
+                        _save_message(
+                            bg,
+                            user_id,
+                            ChatMessageCreate(
+                                role="user",
+                                content=_injected,
+                                tags=f"ai_message_inbound:{_inbound.message_id}",
+                                ai_config_id=ai_config_id,
+                                ai_kind=ai_kind,
+                                session_id=session_id,
+                                session_name=session_name,
+                                model=model,
+                                total_tokens=0,
+                            ),
+                        )
+                        convo.append({"role": "user", "content": _injected})
 
                 start_at = time.time()
                 try:
@@ -910,6 +971,21 @@ def _run_worker(
                         _run_set_status(run_id, "completed", finished=True)
                         return
 
+                    # 在 _start_task_run 重置 session_id 之前，落英灵殿（本代遗言）。
+                    prev_session_for_valhalla = str(task_job.session_id or session_id or "").strip()
+                    prev_generation_for_valhalla = parse_generation_from_session_id(prev_session_for_valhalla, 1) or 1
+                    try:
+                        valhalla_service.write_inherit(
+                            user_id=user_id,
+                            ai_config_id=ai_config_id,
+                            job_id=task_job.job_id,
+                            generation=prev_generation_for_valhalla,
+                            session_id=prev_session_for_valhalla,
+                            summary=inherited_summary,
+                        )
+                    except Exception as _vex:
+                        print(f"[chat_worker] valhalla write_inherit failed: {_vex}")
+
                     resume_prompt = str(auto_ctl.get("resume_task_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["resume_task_prompt"])
                     next_run_id = _start_task_run(
                         bg,
@@ -974,6 +1050,20 @@ def _run_worker(
                         completed_job.finished_at = finished_at
                         completed_job.updated_at = finished_at
                         bg.add(completed_job)
+                        # 落英灵殿：本代 final_words
+                        try:
+                            comp_session_id = str(completed_job.session_id or session_id or "").strip()
+                            comp_generation = parse_generation_from_session_id(comp_session_id, 1) or 1
+                            valhalla_service.write_complete(
+                                user_id=user_id,
+                                ai_config_id=completed_job.ai_config_id,
+                                job_id=completed_job.job_id,
+                                generation=comp_generation,
+                                session_id=comp_session_id,
+                                summary=task_summary,
+                            )
+                        except Exception as _vex:
+                            print(f"[chat_worker] valhalla write_complete failed: {_vex}")
                     next_loop_job = _create_loop_scheduled_job(bg, completed_job, time.time())
                     completion_notice_lines = [
                         "[系统提示]",
@@ -1028,6 +1118,31 @@ def _run_worker(
                             "请基于以上结果继续完成任务。"
                         )
                         convo.append({"role": "user", "content": follow_up})
+                    # 特殊：ai.reply_message 成功 → 追加"可以继续刚才的工作"提示
+                    if (not tool_failed) and tool == "ai.reply_message":
+                        try:
+                            _replied_id = str((arguments or {}).get("message_id") or "").strip()
+                            _tpl = str(getattr(user, "prompt_ai_message_reply_success", "") or "")
+                            if _tpl and _replied_id:
+                                _resume = _tpl.format(message_id=_replied_id)
+                                _save_message(
+                                    bg,
+                                    user_id,
+                                    ChatMessageCreate(
+                                        role="user",
+                                        content=_resume,
+                                        tags=f"ai_message_reply_ok:{_replied_id}",
+                                        ai_config_id=ai_config_id,
+                                        ai_kind=ai_kind,
+                                        session_id=session_id,
+                                        session_name=session_name,
+                                        model=model,
+                                        total_tokens=0,
+                                    ),
+                                )
+                                convo.append({"role": "user", "content": _resume})
+                        except Exception as _rex:
+                            print(f"[chat_worker] ai.reply_message resume notice failed: {_rex}")
                 _set_run_live_phase(run_id, "generating")
 
             _run_set_status(run_id, "error", f"Reached max steps ({max_steps})", finished=True)

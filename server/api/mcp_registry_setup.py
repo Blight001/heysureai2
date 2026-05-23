@@ -30,7 +30,6 @@ from .mcp_task_tools import (
     _task_list,
     _task_wait_all,
 )
-from .mcp_feishu_tools import _feishu_send_message
 from .mcp_prompt_tools import (
     _prompt_list_targets,
     _prompt_read_ai,
@@ -50,6 +49,19 @@ from .mcp_memory_tools import (
     _memory_write,
 )
 from .mcp_human_tools import _human_ask
+from .mcp_communication_tools import (
+    _ai_list_inbox,
+    _ai_reply_message,
+    _ai_send_message,
+    _user_send_message,
+)
+from .mcp_librarian_tools import (
+    _librarian_archive,
+    _librarian_consult,
+    _librarian_list_topics,
+    _librarian_propose,
+    _librarian_read,
+)
 
 registry = MCPRegistry()
 
@@ -526,26 +538,120 @@ registry.register(MCPTool(
     destructive=True,
 ))
 
+# 与用户通信：把"飞书发消息"业务语义化为"与用户沟通"。底层渠道默认走飞书，
+# 未来可扩展 socket 推送 / 邮件等；feishu.send_message 作为旧别名保留兼容。
 registry.register(MCPTool(
-    name="feishu.send_message",
-    description="Send a text message through the Feishu bot bound to this AI. Use chat_id/open_id or the configured default receiver.",
+    name="user.send_message",
+    description=(
+        "Send a text message to the human user (currently via the bound Feishu bot). "
+        "Use this for proactive notifications, status updates, or asking the user to take action "
+        "asynchronously. For inline synchronous Q&A prefer human.ask instead."
+    ),
     input_schema={
         "type": "object",
         "properties": {
-            "text": {"type": "string", "description": "Message text to send."},
-            "receive_id": {"type": "string", "description": "Optional Feishu receiver id. Defaults to AI config default receiver."},
+            "text": {"type": "string", "description": "Message text to send to the user."},
+            "channel": {
+                "type": "string",
+                "enum": ["feishu"],
+                "description": "Delivery channel. Defaults to 'feishu'.",
+            },
+            "receive_id": {"type": "string", "description": "Optional receiver id; defaults to AI config default."},
             "receive_id_type": {
                 "type": "string",
                 "enum": ["chat_id", "open_id", "user_id", "union_id", "email"],
-                "description": "Receiver id type. Defaults to AI config default type.",
+                "description": "Receiver id type; defaults to AI config default.",
             },
-            "chat_id": {"type": "string", "description": "Alias of receive_id for group/private chat id."},
-            "open_id": {"type": "string", "description": "Alias of receive_id for a user open_id."},
+            "chat_id": {"type": "string", "description": "Alias of receive_id."},
+            "open_id": {"type": "string", "description": "Alias of receive_id."},
         },
         "required": ["text"],
     },
-    handler=_feishu_send_message,
+    handler=_user_send_message,
     destructive=True,
+))
+# 旧别名：feishu.send_message — 行为与 user.send_message 一致，建议新提示词改用 user.*
+registry.register(MCPTool(
+    name="feishu.send_message",
+    description="[deprecated alias] Same as user.send_message. Prefer user.send_message in new prompts.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "text": {"type": "string"},
+            "receive_id": {"type": "string"},
+            "receive_id_type": {
+                "type": "string",
+                "enum": ["chat_id", "open_id", "user_id", "union_id", "email"],
+            },
+            "chat_id": {"type": "string"},
+            "open_id": {"type": "string"},
+        },
+        "required": ["text"],
+    },
+    handler=_user_send_message,
+    destructive=True,
+))
+
+# ---------- AI 间通信 ----------
+registry.register(MCPTool(
+    name="ai.send_message",
+    description=(
+        "Send a message to another AI in the same digital society and (by default) block until it "
+        "replies. The target AI's work loop will be interrupted at the next iteration top and "
+        "forced to handle this message before resuming its current task. Use this for targeted "
+        "AI↔AI coordination (e.g. asking the librarian to confirm something, asking another worker "
+        "to pause/abort, sharing context)."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "to_ai_config_id": {"type": "integer", "description": "Target AI's ai_config_id."},
+            "content": {"type": "string", "description": "Message body."},
+            "require_reply": {
+                "type": "boolean",
+                "description": "If true (default) wait synchronously for the target's reply.",
+            },
+            "timeout_seconds": {
+                "type": "integer",
+                "description": "Max seconds to wait for reply (default 120).",
+            },
+        },
+        "required": ["to_ai_config_id", "content"],
+    },
+    handler=_ai_send_message,
+    destructive=True,
+))
+registry.register(MCPTool(
+    name="ai.reply_message",
+    description=(
+        "Reply to an incoming AI message. Must be called by the receiver, with the message_id "
+        "carried in the inbound notice. After a successful reply, the system will let you resume "
+        "your previously interrupted work."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "message_id": {"type": "string"},
+            "content": {"type": "string"},
+        },
+        "required": ["message_id", "content"],
+    },
+    handler=_ai_reply_message,
+    destructive=True,
+))
+registry.register(MCPTool(
+    name="ai.list_inbox",
+    description=(
+        "List unresolved messages addressed to the current AI. Usually unnecessary — the worker "
+        "automatically injects pending messages at the next loop iteration."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "include_resolved": {"type": "boolean"},
+        },
+    },
+    handler=_ai_list_inbox,
 ))
 
 registry.register(MCPTool(
@@ -829,6 +935,100 @@ registry.register(MCPTool(
         "required": ["key"],
     },
     handler=_prompt_write_system,
+    destructive=True,
+))
+
+# ---------- Librarian / 图书管理员 ----------
+registry.register(MCPTool(
+    name="librarian.propose",
+    description=(
+        "Propose a new procedure (how-to) to the Librarian's knowledge base. "
+        "Status starts as 'pending' and requires user approval before becoming searchable. "
+        "Use this when the user explicitly says 'remember this'/'next time do X'."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "title": {"type": "string", "description": "Short procedure title."},
+            "scenario": {"type": "string", "description": "When this procedure applies."},
+            "steps": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Ordered steps to perform.",
+            },
+            "gotchas": {"type": "array", "items": {"type": "string"}},
+            "triggers": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Keywords used for auto-matching against future tasks.",
+            },
+            "scope": {"type": "string", "enum": ["global", "ai", "project"]},
+            "scope_target": {"type": "string"},
+            "evidence": {
+                "type": "object",
+                "description": "Provenance: {job_id, generation, message_id}",
+            },
+        },
+        "required": ["title", "steps"],
+    },
+    handler=_librarian_propose,
+    destructive=True,
+))
+registry.register(MCPTool(
+    name="librarian.consult",
+    description=(
+        "Ask the Librarian for relevant procedures by free-text query. "
+        "Returns at most k results with full steps. Use this when you're unsure how to proceed."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "What you want to know how to do."},
+            "k": {"type": "integer", "description": "Max number of results (default 5)."},
+            "scope": {"type": "string", "enum": ["global", "ai", "project"]},
+        },
+        "required": ["query"],
+    },
+    handler=_librarian_consult,
+))
+registry.register(MCPTool(
+    name="librarian.list_topics",
+    description=(
+        "List procedure titles + triggers only (progressive disclosure). "
+        "Use this to browse what the librarian knows before drilling in with librarian.read."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "scope": {"type": "string", "enum": ["global", "ai", "project"]},
+            "status": {
+                "type": "string",
+                "enum": ["pending", "active", "archived", "rejected", "all"],
+                "description": "Default is 'active'.",
+            },
+        },
+    },
+    handler=_librarian_list_topics,
+))
+registry.register(MCPTool(
+    name="librarian.read",
+    description="Read full markdown body of a procedure by memory_id.",
+    input_schema={
+        "type": "object",
+        "properties": {"memory_id": {"type": "string"}},
+        "required": ["memory_id"],
+    },
+    handler=_librarian_read,
+))
+registry.register(MCPTool(
+    name="librarian.archive",
+    description="Archive (soft-delete) a procedure. Restricted to librarian role.",
+    input_schema={
+        "type": "object",
+        "properties": {"memory_id": {"type": "string"}},
+        "required": ["memory_id"],
+    },
+    handler=_librarian_archive,
     destructive=True,
 ))
 

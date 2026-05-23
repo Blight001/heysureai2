@@ -9,6 +9,8 @@ import type {
   McpStatusPayload,
   ProjectItem,
 } from './types'
+import { listValhallaEntries, type ValhallaEntry } from '../../services/valhallaApi'
+import { listProposals, type KnowledgeEntryItem } from '../../services/librarianApi'
 
 export interface HumanAskEvent {
   requestId: string
@@ -69,6 +71,8 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
   const allFiles = ref<string[]>([])
   const totalChatTokens = ref(0)
   const dashboardSocketConnected = ref(false)
+  const valhallaEntries = ref<ValhallaEntry[]>([])
+  const librarianPending = ref<KnowledgeEntryItem[]>([])
 
   let dashboardRefreshing = false
   let dashboardSocket: Socket | null = null
@@ -469,10 +473,38 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     dashboardSocket.on('human:resolved', (payload: { requestId: string }) => {
       humanAskQueue.value = humanAskQueue.value.filter(e => e.requestId !== payload.requestId)
     })
+    dashboardSocket.on('librarian:proposal_new', () => {
+      loadLibrarianPending()
+    })
+    dashboardSocket.on('librarian:proposal_resolved', () => {
+      loadLibrarianPending()
+    })
   }
 
   const dismissHumanAsk = (requestId: string) => {
     humanAskQueue.value = humanAskQueue.value.filter(e => e.requestId !== requestId)
+  }
+
+  const loadValhallaEntries = async () => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+    try {
+      const data = await listValhallaEntries(token, { limit: 200 })
+      valhallaEntries.value = data.items || []
+    } catch {
+      // best-effort：英灵殿加载失败不阻塞主面板
+    }
+  }
+
+  const loadLibrarianPending = async () => {
+    const token = localStorage.getItem('token')
+    if (!token) return
+    try {
+      const data = await listProposals(token)
+      librarianPending.value = data.items || []
+    } catch {
+      // best-effort
+    }
   }
 
   const refreshDashboardLive = async (onRefreshOpenTaskPanel: () => Promise<void>) => {
@@ -480,6 +512,8 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     dashboardRefreshing = true
     try {
       await loadAIAgents()
+      await loadValhallaEntries()
+      await loadLibrarianPending()
       await onRefreshOpenTaskPanel()
     } finally {
       dashboardRefreshing = false
@@ -489,6 +523,8 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
   const createSeedData = async () => {
     await loadProjects()
     await loadAIAgents()
+    await loadValhallaEntries()
+    await loadLibrarianPending()
     knowledgeBase.value = [
       { id: 'k1', title: '学习总结数据库规范 v1.0', author: '主脑·阿尔法', time: '2026-03-01', tags: ['记忆', '规范'] },
       { id: 'k2', title: '多 Agent 端接入与行为准则', author: '主脑·阿尔法', time: '2026-03-05', tags: ['接入', '治理'] },
@@ -523,6 +559,10 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     loadProjectContext,
     loadProjects,
     loadAIAgents,
+    loadValhallaEntries,
+    valhallaEntries,
+    loadLibrarianPending,
+    librarianPending,
     loadConnectedAgents,
     createProject,
     updateProject,
