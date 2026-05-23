@@ -4772,11 +4772,12 @@ Respond in the same language as the user. For factual questions, search the web 
           break;
         }
         case "chat:send": {
+          const requestId = msg.requestId;
           try {
             const result = await runChat(msg.messages);
-            port.postMessage({ type: "chat:response", text: result.text, toolsUsed: result.toolsUsed });
+            port.postMessage({ type: "chat:response", text: result.text, toolsUsed: result.toolsUsed, requestId });
           } catch (err) {
-            port.postMessage({ type: "chat:error", error: err.message });
+            port.postMessage({ type: "chat:error", error: err.message, requestId });
           }
           break;
         }

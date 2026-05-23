@@ -343,11 +343,12 @@ chrome.runtime.onConnect.addListener((port) => {
       }
 
       case 'chat:send': {
+        const requestId = msg.requestId
         try {
           const result = await runChat(msg.messages)
-          port.postMessage({ type: 'chat:response', text: result.text, toolsUsed: result.toolsUsed })
+          port.postMessage({ type: 'chat:response', text: result.text, toolsUsed: result.toolsUsed, requestId })
         } catch (err: any) {
-          port.postMessage({ type: 'chat:error', error: err.message })
+          port.postMessage({ type: 'chat:error', error: err.message, requestId })
         }
         break
       }

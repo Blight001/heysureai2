@@ -22,6 +22,23 @@
     const stored = await chrome.storage.local.get(keys);
     return { ...SETTING_DEFAULTS, ...stored };
   }
+  var CHAT_KEY = "_chat_history";
+  var MAX_CHAT = 120;
+  function normalizeChatHistory(raw) {
+    if (!Array.isArray(raw))
+      return [];
+    return raw.filter((item) => item && (item.role === "user" || item.role === "assistant")).map((item) => ({
+      role: item.role,
+      content: item.content
+    })).slice(-MAX_CHAT);
+  }
+  async function getChatHistory() {
+    const r = await chrome.storage.local.get(CHAT_KEY);
+    return normalizeChatHistory(r[CHAT_KEY]);
+  }
+  async function setChatHistory(messages) {
+    await chrome.storage.local.set({ [CHAT_KEY]: normalizeChatHistory(messages) });
+  }
   var AUTH_KEY = "_auth_state";
   var AUTH_DEFAULT = { token: "", account: "", userId: null, userName: "" };
   async function getAuth() {
@@ -188,16 +205,6 @@
     const rows = await requestJson(`${trimUrl(serverUrl2)}/api/ai/configs`, { headers: authHeaders(token) }, "AI \u6210\u5458\u5217\u8868\u52A0\u8F7D\u5931\u8D25");
     return Array.isArray(rows) ? rows : [];
   }
-  async function getMcpTools(serverUrl2, token) {
-    const data = await requestJson(`${trimUrl(serverUrl2)}/api/mcp/tools`, { headers: authHeaders(token) }, "MCP \u5DE5\u5177\u4FE1\u606F\u52A0\u8F7D\u5931\u8D25");
-    return {
-      roleOrder: Array.isArray(data?.roleOrder) ? data.roleOrder : [],
-      roleLabels: data?.roleLabels && typeof data.roleLabels === "object" ? data.roleLabels : {},
-      roleDefaults: data?.roleDefaults && typeof data.roleDefaults === "object" ? data.roleDefaults : {},
-      rolePermissions: data?.rolePermissions && typeof data.rolePermissions === "object" ? data.rolePermissions : {},
-      tools: Array.isArray(data?.tools) ? data.tools : []
-    };
-  }
   async function startChatRun(serverUrl2, token, aiConfigId, sessionId, content) {
     return requestJson(
       `${trimUrl(serverUrl2)}/api/chat/run/start`,
@@ -223,6 +230,14 @@
       { headers: authHeaders(token) },
       "\u83B7\u53D6\u5BF9\u8BDD\u72B6\u6001\u5931\u8D25"
     );
+  }
+  async function stopChatRun(serverUrl2, token, runId) {
+    await fetch(`${trimUrl(serverUrl2)}/api/chat/run/${encodeURIComponent(runId)}/stop`, {
+      method: "POST",
+      headers: authHeaders(token),
+      signal: AbortSignal.timeout(1e4)
+    }).catch(() => {
+    });
   }
   async function triggerTask(serverUrl2, token, configId, payload) {
     return requestJson(
@@ -254,19 +269,19 @@
 
   // src/popup.ts
   var currentTheme = "dark";
-  var activeTab = "feed";
+  var activeTab = "chat";
   var currentStatus = "disconnected";
   var chatHistory = [];
   var chatBusy = false;
   var hasAiKey = false;
   var port;
+  var activeChatRequestId = null;
   var serverUrl = "";
   var offlineMode = false;
   var localModel = "";
   var auth = { token: "", account: "", userId: null, userName: "" };
   var members = [];
   var selectedMemberId = null;
-  var mcpRolePerms = null;
   var activeRunId = null;
   var cards = [];
   var expandedCardId = null;
@@ -356,8 +371,6 @@
   var logoutBtn = $("logout-btn");
   var memberSettingsCard = $("member-settings-card");
   var memberSettingsBody = $("member-settings-body");
-  var rolePermsCard = $("role-perms-card");
-  var rolePermsBody = $("role-perms-body");
   var cardsImportBtn = $("cards-import-btn");
   var cardsExportAllBtn = $("cards-export-all-btn");
   var cardsImportBox = $("cards-import-box");
@@ -505,7 +518,7 @@
       loginFeedback.textContent = "\u767B\u5F55\u6210\u529F \u2713";
       loginFeedback.style.color = "var(--success)";
       updateUserChip();
-      await Promise.all([loadMembers(), loadMcpTools()]);
+      await loadMembers();
       renderSettingsViews();
     } catch (err) {
       loginFeedback.textContent = `\u767B\u5F55\u5931\u8D25\uFF1A${err?.message || err}`;
@@ -525,7 +538,6 @@
     auth = await getAuth();
     members = [];
     selectedMemberId = null;
-    mcpRolePerms = null;
     updateUserChip();
     renderMembers();
     updateTargetBanners();
@@ -591,15 +603,6 @@
     chatMsgs.querySelectorAll(".chat-msg").forEach((e) => e.remove());
   }
   membersRefresh.addEventListener("click", () => void loadMembers());
-  async function loadMcpTools() {
-    if (!auth.token)
-      return;
-    try {
-      mcpRolePerms = await getMcpTools(serverUrl, auth.token);
-      renderSettingsViews();
-    } catch {
-    }
-  }
   function useServerChat() {
     return !!(!offlineMode && auth.token && selectedMemberId);
   }
@@ -635,7 +638,8 @@
   }
   function refreshChatAvailability() {
     const enabled = useServerChat() || hasAiKey;
-    chatNoKey.style.display = enabled ? "none" : "flex";
+    const hasMessages = chatMsgs.querySelectorAll(".chat-msg").length > 0;
+    chatNoKey.style.display = enabled || hasMessages ? "none" : "flex";
     chatInput.disabled = !enabled || chatBusy;
     chatSendBtn.disabled = !enabled || chatBusy;
   }
@@ -839,14 +843,48 @@
       renderChatContent(text, opts)
     ].filter(Boolean).join("");
   }
-  function appendChatMsg(role, content) {
+  function syncChatHistory() {
+    return setChatHistory(chatHistory);
+  }
+  function clearChatMessages() {
+    chatMsgs.querySelectorAll(".chat-msg").forEach((e) => e.remove());
+  }
+  function chatContentToText(content) {
+    return typeof content === "string" ? content : JSON.stringify(content);
+  }
+  function makeChatRequestId() {
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+  function userActionsHtml() {
+    return [
+      '<div class="chat-user-actions" aria-label="\u7528\u6237\u6D88\u606F\u64CD\u4F5C">',
+      '<button class="chat-action-btn" type="button" data-chat-action="copy" title="\u590D\u5236">\u590D\u5236</button>',
+      '<button class="chat-action-btn" type="button" data-chat-action="revoke" title="\u64A4\u56DE">\u64A4\u56DE</button>',
+      '<button class="chat-action-btn danger" type="button" data-chat-action="delete" title="\u5220\u9664">\u5220\u9664</button>',
+      "</div>"
+    ].join("");
+  }
+  function appendChatMsg(role, content, historyIndex) {
     chatNoKey.style.display = "none";
     const el = document.createElement("div");
     el.className = `chat-msg ${role}`;
-    el.innerHTML = `<div class="chat-avatar">${role === "ai" ? "\u2728" : "\u{1F464}"}</div><div class="chat-bubble">${renderChatContent(content)}</div>`;
+    if (historyIndex !== void 0)
+      el.dataset.historyIndex = String(historyIndex);
+    el.innerHTML = `<div class="chat-avatar">${role === "ai" ? "\u2728" : "\u{1F464}"}</div><div class="chat-bubble">${role === "user" ? userActionsHtml() : ""}${renderChatContent(content)}</div>`;
     chatMsgs.appendChild(el);
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
     return el;
+  }
+  function renderChatHistory() {
+    clearChatMessages();
+    if (!chatHistory.length) {
+      refreshChatAvailability();
+      return;
+    }
+    chatHistory.forEach((msg, index) => {
+      appendChatMsg(msg.role === "assistant" ? "ai" : "user", chatContentToText(msg.content), index);
+    });
+    refreshChatAvailability();
   }
   function showThinking() {
     const el = document.createElement("div");
@@ -867,6 +905,93 @@
     chatBusy = busy;
     refreshChatAvailability();
   }
+  async function recordChatMessage(role, content) {
+    chatHistory.push({ role, content });
+    await syncChatHistory();
+  }
+  async function restoreChatHistory() {
+    chatHistory = await getChatHistory();
+    renderChatHistory();
+  }
+  async function writeClipboardText(text) {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+  function stopPendingChatUi() {
+    activeChatRequestId = null;
+    const thinking = window._chatThinking;
+    thinking?.remove();
+    window._chatThinking = null;
+    const liveThinking = document.getElementById("thinking");
+    liveThinking?.remove();
+    if (activeRunId && auth.token) {
+      void stopChatRun(serverUrl, auth.token, activeRunId).catch(() => {
+      });
+    }
+    activeRunId = null;
+    setChatBusy(false);
+  }
+  async function deleteChatMessage(index) {
+    if (!chatHistory[index])
+      return;
+    const lastUserIndex = chatHistory.map((m) => m.role).lastIndexOf("user");
+    if (chatBusy && index === lastUserIndex)
+      stopPendingChatUi();
+    chatHistory.splice(index, 1);
+    await syncChatHistory();
+    renderChatHistory();
+  }
+  async function revokeChatMessage(index) {
+    const msg = chatHistory[index];
+    if (!msg || msg.role !== "user")
+      return;
+    const text = chatContentToText(msg.content);
+    if (chatBusy)
+      stopPendingChatUi();
+    chatHistory.splice(index);
+    await syncChatHistory();
+    renderChatHistory();
+    chatInput.value = text;
+    chatInput.style.height = "auto";
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
+    refreshChatAvailability();
+    chatInput.focus();
+  }
+  chatMsgs.addEventListener("click", (e) => {
+    const btn = e.target.closest(".chat-action-btn");
+    if (!btn)
+      return;
+    e.preventDefault();
+    e.stopPropagation();
+    const msgEl = btn.closest(".chat-msg.user");
+    const index = Number(msgEl?.dataset.historyIndex);
+    if (!Number.isInteger(index) || chatHistory[index]?.role !== "user")
+      return;
+    const action = btn.dataset.chatAction;
+    if (action === "copy") {
+      const originalText = btn.textContent;
+      void writeClipboardText(chatContentToText(chatHistory[index].content)).then(() => {
+        btn.textContent = "\u5DF2\u590D\u5236";
+        setTimeout(() => {
+          btn.textContent = originalText || "\u590D\u5236";
+        }, 900);
+      });
+    } else if (action === "revoke") {
+      void revokeChatMessage(index);
+    } else if (action === "delete") {
+      void deleteChatMessage(index);
+    }
+  });
   async function runServerChat(text, thinking) {
     const sessionId = `ext-${selectedMemberId}`;
     const { run_id } = await startChatRun(serverUrl, auth.token, selectedMemberId, sessionId, text);
@@ -939,24 +1064,38 @@
       return;
     chatInput.value = "";
     chatInput.style.height = "auto";
-    appendChatMsg("user", text);
+    chatHistory.push({ role: "user", content: text });
+    appendChatMsg("user", text, chatHistory.length - 1);
+    void syncChatHistory();
     const thinking = showThinking();
+    const requestId = makeChatRequestId();
+    activeChatRequestId = requestId;
     setChatBusy(true);
     if (useServerChat()) {
       try {
         const res = await runServerChat(text, thinking);
+        if (activeChatRequestId !== requestId)
+          return;
         setBubble(thinking, renderChatFrame(res.text, { reasoning: res.reasoning, events: res.events }));
         thinking.removeAttribute("id");
+        await recordChatMessage("assistant", res.text);
       } catch (err) {
-        setBubble(thinking, renderChatContent(`\u26A0 \u9519\u8BEF: ${err?.message || err}`));
+        if (activeChatRequestId !== requestId)
+          return;
+        const errorText = `\u26A0 \u9519\u8BEF: ${err?.message || err}`;
+        setBubble(thinking, renderChatContent(errorText));
         thinking.removeAttribute("id");
+        await recordChatMessage("assistant", errorText);
       } finally {
-        setChatBusy(false);
+        if (activeChatRequestId === requestId) {
+          activeChatRequestId = null;
+          setChatBusy(false);
+        }
       }
     } else {
-      chatHistory.push({ role: "user", content: text });
+      ;
       window._chatThinking = thinking;
-      port.postMessage({ type: "chat:send", messages: chatHistory });
+      port.postMessage({ type: "chat:send", messages: chatHistory, requestId });
     }
   }
   chatSendBtn.addEventListener("click", () => void sendChat());
@@ -1102,18 +1241,6 @@
       ${chips}`;
     } else {
       memberSettingsCard.style.display = "none";
-    }
-    if (mcpRolePerms && mcpRolePerms.roleOrder.length) {
-      rolePermsCard.style.display = "block";
-      const rows = mcpRolePerms.roleOrder.map((role) => {
-        const label = mcpRolePerms.roleLabels[role] || role;
-        const allowed = mcpRolePerms.rolePermissions[role] && mcpRolePerms.rolePermissions[role].length ? mcpRolePerms.rolePermissions[role] : mcpRolePerms.roleDefaults[role] || [];
-        const ceiling = (mcpRolePerms.roleDefaults[role] || []).length;
-        return `<div class="kv"><span class="k">${esc(label)}</span><span class="v">${allowed.length} / ${ceiling} \u9879</span></div>`;
-      }).join("");
-      rolePermsBody.innerHTML = rows + `<div class="login-hint" style="margin-top:6px;text-align:left;">\u5728\u8F6F\u4EF6\u7AEF\u201C\u7CFB\u7EDF\u8BBE\u7F6E \u2192 MCP \u89D2\u8272\u6743\u9650\u201D\u4E2D\u8C03\u6574\u8303\u56F4\u3002</div>`;
-    } else {
-      rolePermsCard.style.display = "none";
     }
   }
   function argSummary(args) {
@@ -1379,23 +1506,43 @@
           loadSettings(msg.settings);
           break;
         case "chat:response": {
+          if (msg.requestId !== activeChatRequestId)
+            break;
           const thinking = window._chatThinking;
+          if (!thinking) {
+            activeChatRequestId = null;
+            setChatBusy(false);
+            break;
+          }
           thinking?.remove();
+          window._chatThinking = null;
+          activeChatRequestId = null;
           setChatBusy(false);
           const reply = msg.text || "\u5B8C\u6210";
-          chatHistory.push({ role: "assistant", content: reply });
           const el = appendChatMsg("ai", "");
           setBubble(el, renderChatContent(reply, { toolsUsed: msg.toolsUsed || [] }));
+          void recordChatMessage("assistant", reply);
           if (msg.toolsUsed?.length) {
             addEntry({ id: Date.now().toString(), type: "task", status: "success", message: `AI \u4F7F\u7528\u5DE5\u5177: ${msg.toolsUsed.join(", ")}`, timestamp: Date.now() });
           }
           break;
         }
         case "chat:error": {
+          if (msg.requestId !== activeChatRequestId)
+            break;
           const thinking = window._chatThinking;
+          if (!thinking) {
+            activeChatRequestId = null;
+            setChatBusy(false);
+            break;
+          }
           thinking?.remove();
+          window._chatThinking = null;
+          activeChatRequestId = null;
           setChatBusy(false);
-          appendChatMsg("ai", `\u26A0 \u9519\u8BEF: ${msg.error}`);
+          const errorText = `\u26A0 \u9519\u8BEF: ${msg.error}`;
+          appendChatMsg("ai", errorText);
+          void recordChatMessage("assistant", errorText);
           break;
         }
         case "connection:result": {
@@ -1428,6 +1575,7 @@
   }
   async function init() {
     initPort();
+    switchTab("chat");
     const s = await getSettings();
     serverUrl = s.serverUrl || "";
     offlineMode = !!s.offlineMode;
@@ -1437,6 +1585,7 @@
     loginAccount.value = auth.account || "";
     updateUserChip();
     updateOfflineUi();
+    void restoreChatHistory();
     if (auth.token) {
       void (async () => {
         try {
@@ -1446,7 +1595,7 @@
             await saveAuth({ userName: me.name });
             updateUserChip();
           }
-          await Promise.all([loadMembers(), loadMcpTools()]);
+          await loadMembers();
         } catch {
           await doLogout();
         }

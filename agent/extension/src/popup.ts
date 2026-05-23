@@ -4,24 +4,25 @@
 //   2. Software-end client: logged-in account → AI members, chat, task scheduling.
 
 import { AgentStatus, AgentSettings, ActivityEntry, ChatMessage, BgMsg, MemoryCard } from './lib/types'
-import { getAuth, saveAuth, clearAuth, getSettings, getCards, setCards, deleteCard, AuthState } from './lib/storage'
+import { getAuth, saveAuth, clearAuth, getSettings, getCards, setCards, deleteCard, getChatHistory, setChatHistory, AuthState } from './lib/storage'
 import { parseImport, mergeCards, exportCard } from './lib/cards'
 import {
-  login as apiLogin, getMe, listConfigs, getMcpTools,
+  login as apiLogin, getMe, listConfigs,
   startChatRun, getChatRun, stopChatRun,
   triggerTask, listTaskJobs, taskJobAction,
-  MemberConfig, McpRolePermissions, TaskJob,
+  MemberConfig, TaskJob,
 } from './lib/client'
 
 // ── State ──────────────────────────────────────────────────────────────────
 let currentTheme: 'dark' | 'light' = 'dark'
 type TabName = 'feed' | 'chat' | 'tasks' | 'cards' | 'settings'
-let activeTab: TabName = 'feed'
+let activeTab: TabName = 'chat'
 let currentStatus: AgentStatus = 'disconnected'
 let chatHistory: ChatMessage[] = []
 let chatBusy = false
 let hasAiKey = false
 let port: chrome.runtime.Port
+let activeChatRequestId: string | null = null
 
 let serverUrl = ''
 let offlineMode = false
@@ -29,7 +30,6 @@ let localModel = ''
 let auth: AuthState = { token: '', account: '', userId: null, userName: '' }
 let members: MemberConfig[] = []
 let selectedMemberId: number | null = null
-let mcpRolePerms: McpRolePermissions | null = null
 let activeRunId: string | null = null
 let cards: MemoryCard[] = []
 let expandedCardId: string | null = null
@@ -120,8 +120,6 @@ const accountStatusV = $('account-status-v')
 const logoutBtn    = $('logout-btn') as HTMLButtonElement
 const memberSettingsCard = $('member-settings-card')
 const memberSettingsBody = $('member-settings-body')
-const rolePermsCard = $('role-perms-card')
-const rolePermsBody = $('role-perms-body')
 
 // Cards
 const cardsImportBtn    = $('cards-import-btn')
@@ -261,7 +259,7 @@ async function doLogin() {
     loginFeedback.textContent = '登录成功 ✓'
     loginFeedback.style.color = 'var(--success)'
     updateUserChip()
-    await Promise.all([loadMembers(), loadMcpTools()])
+    await loadMembers()
     renderSettingsViews()
   } catch (err: any) {
     loginFeedback.textContent = `登录失败：${err?.message || err}`
@@ -279,7 +277,6 @@ async function doLogout() {
   auth = await getAuth()
   members = []
   selectedMemberId = null
-  mcpRolePerms = null
   updateUserChip()
   renderMembers()
   updateTargetBanners()
@@ -348,11 +345,6 @@ function selectMember(id: number) {
 }
 membersRefresh.addEventListener('click', () => void loadMembers())
 
-async function loadMcpTools() {
-  if (!auth.token) return
-  try { mcpRolePerms = await getMcpTools(serverUrl, auth.token); renderSettingsViews() } catch { /* ignore */ }
-}
-
 // ── Target banners + chat availability ───────────────────────────────────────
 function useServerChat(): boolean {
   return !!(!offlineMode && auth.token && selectedMemberId)
@@ -392,7 +384,8 @@ function updateTargetBanners() {
 }
 function refreshChatAvailability() {
   const enabled = useServerChat() || hasAiKey
-  chatNoKey.style.display = enabled ? 'none' : 'flex'
+  const hasMessages = chatMsgs.querySelectorAll('.chat-msg').length > 0
+  chatNoKey.style.display = (enabled || hasMessages) ? 'none' : 'flex'
   chatInput.disabled = !enabled || chatBusy
   chatSendBtn.disabled = !enabled || chatBusy
 }
@@ -629,14 +622,47 @@ function renderChatFrame(
     renderChatContent(text, opts),
   ].filter(Boolean).join('')
 }
-function appendChatMsg(role: 'user'|'ai', content: string): HTMLElement {
+function syncChatHistory(): Promise<void> {
+  return setChatHistory(chatHistory)
+}
+function clearChatMessages() {
+  chatMsgs.querySelectorAll('.chat-msg').forEach(e => e.remove())
+}
+function chatContentToText(content: ChatMessage['content']): string {
+  return typeof content === 'string' ? content : JSON.stringify(content)
+}
+function makeChatRequestId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+function userActionsHtml(): string {
+  return [
+    '<div class="chat-user-actions" aria-label="用户消息操作">',
+    '<button class="chat-action-btn" type="button" data-chat-action="copy" title="复制">复制</button>',
+    '<button class="chat-action-btn" type="button" data-chat-action="revoke" title="撤回">撤回</button>',
+    '<button class="chat-action-btn danger" type="button" data-chat-action="delete" title="删除">删除</button>',
+    '</div>',
+  ].join('')
+}
+function appendChatMsg(role: 'user'|'ai', content: string, historyIndex?: number): HTMLElement {
   chatNoKey.style.display = 'none'
   const el = document.createElement('div')
   el.className = `chat-msg ${role}`
-  el.innerHTML = `<div class="chat-avatar">${role==='ai'?'✨':'👤'}</div><div class="chat-bubble">${renderChatContent(content)}</div>`
+  if (historyIndex !== undefined) el.dataset.historyIndex = String(historyIndex)
+  el.innerHTML = `<div class="chat-avatar">${role==='ai'?'✨':'👤'}</div><div class="chat-bubble">${role === 'user' ? userActionsHtml() : ''}${renderChatContent(content)}</div>`
   chatMsgs.appendChild(el)
   chatMsgs.scrollTop = chatMsgs.scrollHeight
   return el
+}
+function renderChatHistory() {
+  clearChatMessages()
+  if (!chatHistory.length) {
+    refreshChatAvailability()
+    return
+  }
+  chatHistory.forEach((msg, index) => {
+    appendChatMsg(msg.role === 'assistant' ? 'ai' : 'user', chatContentToText(msg.content), index)
+  })
+  refreshChatAvailability()
 }
 function showThinking(): HTMLElement {
   const el = document.createElement('div')
@@ -656,6 +682,91 @@ function setChatBusy(busy: boolean) {
   chatBusy = busy
   refreshChatAvailability()
 }
+
+async function recordChatMessage(role: 'user' | 'assistant', content: string) {
+  chatHistory.push({ role, content })
+  await syncChatHistory()
+}
+
+async function restoreChatHistory() {
+  chatHistory = await getChatHistory()
+  renderChatHistory()
+}
+
+async function writeClipboardText(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text)
+    return
+  }
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  document.execCommand('copy')
+  ta.remove()
+}
+
+function stopPendingChatUi() {
+  activeChatRequestId = null
+  const thinking = (window as any)._chatThinking as HTMLElement | undefined
+  thinking?.remove()
+  ;(window as any)._chatThinking = null
+  const liveThinking = document.getElementById('thinking')
+  liveThinking?.remove()
+  if (activeRunId && auth.token) {
+    void stopChatRun(serverUrl, auth.token, activeRunId).catch(() => {})
+  }
+  activeRunId = null
+  setChatBusy(false)
+}
+
+async function deleteChatMessage(index: number) {
+  if (!chatHistory[index]) return
+  const lastUserIndex = chatHistory.map(m => m.role).lastIndexOf('user')
+  if (chatBusy && index === lastUserIndex) stopPendingChatUi()
+  chatHistory.splice(index, 1)
+  await syncChatHistory()
+  renderChatHistory()
+}
+
+async function revokeChatMessage(index: number) {
+  const msg = chatHistory[index]
+  if (!msg || msg.role !== 'user') return
+  const text = chatContentToText(msg.content)
+  if (chatBusy) stopPendingChatUi()
+  chatHistory.splice(index)
+  await syncChatHistory()
+  renderChatHistory()
+  chatInput.value = text
+  chatInput.style.height = 'auto'
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px'
+  refreshChatAvailability()
+  chatInput.focus()
+}
+
+chatMsgs.addEventListener('click', (e: MouseEvent) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.chat-action-btn')
+  if (!btn) return
+  e.preventDefault()
+  e.stopPropagation()
+  const msgEl = btn.closest<HTMLElement>('.chat-msg.user')
+  const index = Number(msgEl?.dataset.historyIndex)
+  if (!Number.isInteger(index) || chatHistory[index]?.role !== 'user') return
+  const action = btn.dataset.chatAction
+  if (action === 'copy') {
+    const originalText = btn.textContent
+    void writeClipboardText(chatContentToText(chatHistory[index].content)).then(() => {
+      btn.textContent = '已复制'
+      setTimeout(() => { btn.textContent = originalText || '复制' }, 900)
+    })
+  } else if (action === 'revoke') {
+    void revokeChatMessage(index)
+  } else if (action === 'delete') {
+    void deleteChatMessage(index)
+  }
+})
 
 async function runServerChat(text: string, thinking: HTMLElement) {
   const sessionId = `ext-${selectedMemberId}`
@@ -723,26 +834,37 @@ async function sendChat() {
   chatInput.value = ''
   chatInput.style.height = 'auto'
 
-  appendChatMsg('user', text)
+  chatHistory.push({ role: 'user', content: text })
+  appendChatMsg('user', text, chatHistory.length - 1)
+  void syncChatHistory()
   const thinking = showThinking()
+  const requestId = makeChatRequestId()
+  activeChatRequestId = requestId
   setChatBusy(true)
 
   if (useServerChat()) {
     try {
       const res = await runServerChat(text, thinking)
+      if (activeChatRequestId !== requestId) return
       setBubble(thinking, renderChatFrame(res.text, { reasoning: res.reasoning, events: res.events }))
       thinking.removeAttribute('id')
+      await recordChatMessage('assistant', res.text)
     } catch (err: any) {
-      setBubble(thinking, renderChatContent(`⚠ 错误: ${err?.message || err}`))
+      if (activeChatRequestId !== requestId) return
+      const errorText = `⚠ 错误: ${err?.message || err}`
+      setBubble(thinking, renderChatContent(errorText))
       thinking.removeAttribute('id')
+      await recordChatMessage('assistant', errorText)
     } finally {
-      setChatBusy(false)
+      if (activeChatRequestId === requestId) {
+        activeChatRequestId = null
+        setChatBusy(false)
+      }
     }
   } else {
     // Local AI-key chat via background worker
-    chatHistory.push({ role: 'user', content: text })
     ;(window as any)._chatThinking = thinking
-    port.postMessage({ type: 'chat:send', messages: chatHistory })
+    port.postMessage({ type: 'chat:send', messages: chatHistory, requestId })
   }
 }
 chatSendBtn.addEventListener('click', () => void sendChat())
@@ -874,21 +996,6 @@ function renderSettingsViews() {
       ${chips}`
   } else {
     memberSettingsCard.style.display = 'none'
-  }
-  // Role permissions card
-  if (mcpRolePerms && mcpRolePerms.roleOrder.length) {
-    rolePermsCard.style.display = 'block'
-    const rows = mcpRolePerms.roleOrder.map(role => {
-      const label = mcpRolePerms!.roleLabels[role] || role
-      const allowed = (mcpRolePerms!.rolePermissions[role] && mcpRolePerms!.rolePermissions[role].length)
-        ? mcpRolePerms!.rolePermissions[role]
-        : (mcpRolePerms!.roleDefaults[role] || [])
-      const ceiling = (mcpRolePerms!.roleDefaults[role] || []).length
-      return `<div class="kv"><span class="k">${esc(label)}</span><span class="v">${allowed.length} / ${ceiling} 项</span></div>`
-    }).join('')
-    rolePermsBody.innerHTML = rows + `<div class="login-hint" style="margin-top:6px;text-align:left;">在软件端“系统设置 → MCP 角色权限”中调整范围。</div>`
-  } else {
-    rolePermsCard.style.display = 'none'
   }
 }
 
@@ -1139,23 +1246,33 @@ function initPort() {
         loadSettings(msg.settings)
         break
       case 'chat:response': {
+        if (msg.requestId !== activeChatRequestId) break
         const thinking = (window as any)._chatThinking as HTMLElement | undefined
+        if (!thinking) { activeChatRequestId = null; setChatBusy(false); break }
         thinking?.remove()
+        ;(window as any)._chatThinking = null
+        activeChatRequestId = null
         setChatBusy(false)
         const reply = msg.text || '完成'
-        chatHistory.push({ role: 'assistant', content: reply })
         const el = appendChatMsg('ai', '')
         setBubble(el, renderChatContent(reply, { toolsUsed: msg.toolsUsed || [] }))
+        void recordChatMessage('assistant', reply)
         if (msg.toolsUsed?.length) {
           addEntry({ id: Date.now().toString(), type: 'task', status: 'success', message: `AI 使用工具: ${msg.toolsUsed.join(', ')}`, timestamp: Date.now() })
         }
         break
       }
       case 'chat:error': {
+        if (msg.requestId !== activeChatRequestId) break
         const thinking = (window as any)._chatThinking as HTMLElement | undefined
+        if (!thinking) { activeChatRequestId = null; setChatBusy(false); break }
         thinking?.remove()
+        ;(window as any)._chatThinking = null
+        activeChatRequestId = null
         setChatBusy(false)
-        appendChatMsg('ai', `⚠ 错误: ${msg.error}`)
+        const errorText = `⚠ 错误: ${msg.error}`
+        appendChatMsg('ai', errorText)
+        void recordChatMessage('assistant', errorText)
         break
       }
       case 'connection:result': {
@@ -1192,6 +1309,7 @@ function initPort() {
 // ── Init ───────────────────────────────────────────────────────────────────
 async function init() {
   initPort()
+  switchTab('chat')
   // Load server URL up front so auth-dependent calls have a base before the
   // port's settings:data round-trip arrives.
   const s = await getSettings()
@@ -1203,13 +1321,14 @@ async function init() {
   loginAccount.value = auth.account || ''
   updateUserChip()
   updateOfflineUi()
+  void restoreChatHistory()
   if (auth.token) {
-    // Validate token in the background; refresh members + role info.
+    // Validate token in the background and refresh members.
     void (async () => {
       try {
         const me = await getMe(serverUrl, auth.token)
         if (me?.name) { auth.userName = me.name; await saveAuth({ userName: me.name }); updateUserChip() }
-        await Promise.all([loadMembers(), loadMcpTools()])
+        await loadMembers()
       } catch {
         await doLogout()
       }

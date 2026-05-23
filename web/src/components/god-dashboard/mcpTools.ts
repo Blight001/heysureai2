@@ -1,5 +1,10 @@
 import type { McpToolDefinition, McpToolParamRow } from './types'
 
+export interface McpToolGroup {
+  tag: string
+  tools: string[]
+}
+
 export const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag: string }> = {
   'workspace.list_files': { label: '列出文件', description: '查看当前工作目录下可访问的文件与目录。', tag: '工作区' },
   'workspace.get_file_tree': { label: '目录树', description: '获取目录树结构，便于快速理解工程层级。', tag: '工作区' },
@@ -70,17 +75,21 @@ export const normalizeMcpSchemaType = (rawType: unknown) => {
   return toZh(text || 'any')
 }
 
+const MCP_TOOL_TAG_ORDER = ['工作区', '管理', '桌面端', '项目', '任务', 'Prompt', '飞书', '记忆', '进化', '协作', '通用']
+
+const hasMcpPrefix = (name: string, prefix: string) => name.startsWith(`${prefix}.`) || name.startsWith(`${prefix}_`)
+
 const getMcpToolFallbackTag = (name: string) => {
-  if (name.startsWith('workspace.')) return '工作区'
-  if (name.startsWith('admin.')) return '管理'
-  if (name.startsWith('desktop.')) return '桌面端'
-  if (name.startsWith('project.')) return '项目'
-  if (name.startsWith('task.')) return '任务'
-  if (name.startsWith('prompt.')) return 'Prompt'
-  if (name.startsWith('memory.')) return '记忆'
-  if (name.startsWith('evolution.')) return '进化'
-  if (name.startsWith('feishu.')) return '飞书'
-  if (name.startsWith('human.')) return '协作'
+  if (hasMcpPrefix(name, 'workspace')) return '工作区'
+  if (hasMcpPrefix(name, 'admin')) return '管理'
+  if (hasMcpPrefix(name, 'desktop')) return '桌面端'
+  if (hasMcpPrefix(name, 'project')) return '项目'
+  if (hasMcpPrefix(name, 'task')) return '任务'
+  if (hasMcpPrefix(name, 'prompt')) return 'Prompt'
+  if (hasMcpPrefix(name, 'memory')) return '记忆'
+  if (hasMcpPrefix(name, 'evolution')) return '进化'
+  if (hasMcpPrefix(name, 'feishu')) return '飞书'
+  if (hasMcpPrefix(name, 'human')) return '协作'
   return '通用'
 }
 
@@ -88,11 +97,36 @@ const getMcpToolFallbackTag = (name: string) => {
 // follows as a secondary reference.
 export const getMcpToolZhLabel = (name: string) => MCP_TOOL_ZH_META[name]?.label || name
 
+export const getMcpToolZhTag = (name: string) => MCP_TOOL_ZH_META[name]?.tag || getMcpToolFallbackTag(name)
+
+export const groupMcpToolsByZhTag = (tools: string[]): McpToolGroup[] => {
+  const groups = new Map<string, string[]>()
+  for (const tool of tools) {
+    const name = String(tool || '').trim()
+    if (!name) continue
+    const tag = getMcpToolZhTag(name)
+    const rows = groups.get(tag) || []
+    rows.push(name)
+    groups.set(tag, rows)
+  }
+  return Array.from(groups.entries())
+    .map(([tag, rows]) => ({
+      tag,
+      tools: rows.sort((a, b) => getMcpToolZhLabel(a).localeCompare(getMcpToolZhLabel(b), 'zh-Hans-CN')),
+    }))
+    .sort((a, b) => {
+      const aRank = MCP_TOOL_TAG_ORDER.includes(a.tag) ? MCP_TOOL_TAG_ORDER.indexOf(a.tag) : MCP_TOOL_TAG_ORDER.length
+      const bRank = MCP_TOOL_TAG_ORDER.includes(b.tag) ? MCP_TOOL_TAG_ORDER.indexOf(b.tag) : MCP_TOOL_TAG_ORDER.length
+      if (aRank !== bRank) return aRank - bRank
+      return a.tag.localeCompare(b.tag, 'zh-Hans-CN')
+    })
+}
+
 export const withMcpToolLocale = (tool: McpToolDefinition): McpToolDefinition => {
   const meta = MCP_TOOL_ZH_META[tool.name]
   const rawDescription = String(tool.description || '').trim()
   const zhDescription = meta?.description || rawDescription || '暂无中文说明'
-  const tags = [meta?.tag || getMcpToolFallbackTag(tool.name)]
+  const tags = [getMcpToolZhTag(tool.name)]
   if (tool.destructive) tags.push('高风险')
   return {
     ...tool,

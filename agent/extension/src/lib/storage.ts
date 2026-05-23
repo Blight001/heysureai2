@@ -1,4 +1,4 @@
-import { AgentSettings, SETTING_DEFAULTS, MemoryCard } from './types'
+import { AgentSettings, SETTING_DEFAULTS, MemoryCard, ChatMessage } from './types'
 
 export async function getSettings(): Promise<AgentSettings> {
   const keys = Object.keys(SETTING_DEFAULTS)
@@ -13,6 +13,34 @@ export async function saveSettings(partial: Partial<AgentSettings>): Promise<voi
 export async function getSetting<K extends keyof AgentSettings>(key: K): Promise<AgentSettings[K]> {
   const r = await chrome.storage.local.get(key as string)
   return (r[key] ?? SETTING_DEFAULTS[key]) as AgentSettings[K]
+}
+
+// Persist chat history so the popup can restore the last conversation.
+const CHAT_KEY = '_chat_history'
+const MAX_CHAT = 120
+
+function normalizeChatHistory(raw: any): ChatMessage[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter(item => item && (item.role === 'user' || item.role === 'assistant'))
+    .map(item => ({
+      role: item.role,
+      content: item.content,
+    }))
+    .slice(-MAX_CHAT)
+}
+
+export async function getChatHistory(): Promise<ChatMessage[]> {
+  const r = await chrome.storage.local.get(CHAT_KEY)
+  return normalizeChatHistory((r as any)[CHAT_KEY])
+}
+
+export async function setChatHistory(messages: ChatMessage[]): Promise<void> {
+  await chrome.storage.local.set({ [CHAT_KEY]: normalizeChatHistory(messages) })
+}
+
+export async function clearChatHistory(): Promise<void> {
+  await chrome.storage.local.remove(CHAT_KEY)
 }
 
 // Persist a small buffer of recent activity so the popup shows history on open

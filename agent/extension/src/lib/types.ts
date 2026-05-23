@@ -101,7 +101,7 @@ export type PopupMsg =
   | { type: 'settings:get' }
   | { type: 'settings:save'; payload: Partial<AgentSettings> }
   | { type: 'agent:selected-ai'; aiConfigId: number | null }
-  | { type: 'chat:send'; messages: ChatMessage[] }
+  | { type: 'chat:send'; messages: ChatMessage[]; requestId?: string }
   | { type: 'connection:test' }
   | { type: 'card:run'; cardId: string }
   | { type: 'card:stop' }
@@ -112,8 +112,8 @@ export type BgMsg =
   | { type: 'task:start';      data: any }
   | { type: 'task:result';     data: any }
   | { type: 'settings:data';   settings: AgentSettings }
-  | { type: 'chat:response';   text: string; toolsUsed?: string[] }
-  | { type: 'chat:error';      error: string }
+  | { type: 'chat:response';   text: string; toolsUsed?: string[]; requestId?: string }
+  | { type: 'chat:error';      error: string; requestId?: string }
   | { type: 'connection:result'; result: any }
   | { type: 'card:progress';   cardId: string; index: number; total: number; note: string; tool: string; status: string; error?: string }
   | { type: 'card:done';       cardId: string; success: boolean; reason?: string }

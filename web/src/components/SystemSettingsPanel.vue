@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { getMcpToolZhLabel } from './god-dashboard/mcpTools'
+import { getMcpToolZhLabel, groupMcpToolsByZhTag } from './god-dashboard/mcpTools'
 import type { McpRoleMeta } from './god-dashboard/types'
 
 interface Props {
@@ -41,6 +41,7 @@ const roleTiers = computed(() => props.mcpRoleMeta?.order || [])
 const roleLabel = (role: string) => props.mcpRoleMeta?.labels?.[role] || role
 const roleOptionTools = (role: string) =>
   props.mcpRoleMeta?.options?.[role] || props.mcpRoleMeta?.defaults?.[role] || []
+const roleGroupedTools = (role: string) => groupMcpToolsByZhTag(roleOptionTools(role))
 const isRoleToolChecked = (role: string, tool: string) =>
   (props.roleMcpPermissions?.[role] || []).includes(tool)
 const roleAllChecked = (role: string) => {
@@ -222,23 +223,37 @@ const toggleConfigSection = (name: 'mcp' | 'roles' | 'task') => {
                       />
                       <span>全选 / 全不选</span>
                     </label>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
-                      <label
-                        v-for="tool in roleOptionTools(role)"
-                        :key="`${role}-${tool}`"
-                        class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2"
+                    <div class="space-y-3 max-h-56 overflow-y-auto pr-1">
+                      <details
+                        v-for="group in roleGroupedTools(role)"
+                        :key="`${role}-mcp-group-${group.tag}`"
+                        class="rounded-lg border border-zinc-200 bg-zinc-50/70 dark:border-zinc-700 dark:bg-zinc-800/40"
                       >
-                        <input
-                          type="checkbox"
-                          class="mt-0.5"
-                          :checked="isRoleToolChecked(role, tool)"
-                          @change="onRoleToolChange(role, tool, $event)"
-                        />
-                        <span class="min-w-0">
-                          <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
-                          <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
-                        </span>
-                      </label>
+                        <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between">
+                          <span>{{ group.tag }}</span>
+                          <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
+                            {{ group.tools.filter(tool => isRoleToolChecked(role, tool)).length }} / {{ group.tools.length }}
+                          </span>
+                        </summary>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 px-2 pb-2">
+                          <label
+                            v-for="tool in group.tools"
+                            :key="`${role}-${tool}`"
+                            class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2"
+                          >
+                            <input
+                              type="checkbox"
+                              class="mt-0.5"
+                              :checked="isRoleToolChecked(role, tool)"
+                              @change="onRoleToolChange(role, tool, $event)"
+                            />
+                            <span class="min-w-0">
+                              <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
+                              <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
+                            </span>
+                          </label>
+                        </div>
+                      </details>
                       <div v-if="roleOptionTools(role).length === 0" class="text-[11px] text-zinc-500 dark:text-zinc-400">该角色暂无可分配的工具</div>
                     </div>
                   </div>
