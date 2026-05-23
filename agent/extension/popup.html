@@ -355,6 +355,31 @@
     }
     .target-clear-btn:hover { background:var(--surface-h); color:var(--text); }
     .target-clear-btn:disabled { opacity:.45; cursor:not-allowed; }
+    .chat-session-select {
+      flex-shrink:0; max-width:140px; padding:2px 4px; border-radius:5px;
+      background:var(--bg); border:1px solid var(--border); color:var(--text);
+      font-family:var(--font); font-size:10px; outline:none;
+    }
+    .chat-session-select:focus { border-color:var(--accent); }
+    .chat-session-select.hidden { display:none !important; }
+
+    /* Message-level action buttons (assistant & user). Web-style hover affordance. */
+    .chat-msg-actions {
+      position:absolute; top:-8px; display:flex; gap:3px;
+      opacity:0; pointer-events:none; transition:opacity var(--tr);
+    }
+    .chat-msg.user .chat-msg-actions  { right:-2px; }
+    .chat-msg.ai   .chat-msg-actions  { left:36px; }
+    .chat-msg:hover .chat-msg-actions { opacity:1; pointer-events:auto; }
+    .chat-msg-actions .chat-action-btn {
+      background:var(--surface); border-color:var(--border); color:var(--muted);
+      font-size:9px; line-height:16px; padding:0 6px;
+    }
+    .chat-msg-actions .chat-action-btn:hover { color:var(--text); border-color:var(--accent); }
+    .chat-msg-actions .chat-action-btn.danger {
+      color:#f87171; border-color:rgba(239,68,68,.3); background:rgba(239,68,68,.08);
+    }
+    .chat-msg-actions .chat-action-btn.danger:hover { background:rgba(239,68,68,.18); }
 
     /* ── Task form / jobs ── */
     #task-pane { overflow-y:auto; }
@@ -466,7 +491,9 @@
     <div class="pane hidden" id="chat-pane">
       <div class="target-banner empty" id="chat-target">
         <span class="target-text" id="chat-target-text">未选择 AI 成员（将使用本地 AI Key 直连）</span>
-        <button class="target-clear-btn" id="chat-clear-btn" type="button" title="清空对话">清空</button>
+        <select id="chat-session-select" class="chat-session-select hidden" title="切换会话"></select>
+        <button class="target-clear-btn" id="chat-session-delete-btn" type="button" title="删除当前会话" style="display:none;">🗑</button>
+        <button class="target-clear-btn" id="chat-clear-btn" type="button" title="新建一段对话（保留历史）">新建对话</button>
       </div>
       <div class="chat-messages" id="chat-messages">
         <div id="chat-no-key">

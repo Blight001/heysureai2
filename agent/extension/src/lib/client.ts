@@ -139,8 +139,9 @@ export async function startChatRun(
   aiConfigId: number,
   sessionId: string,
   content: string,
-): Promise<{ run_id: string }> {
-  return requestJson<{ run_id: string }>(
+  sessionName?: string,
+): Promise<{ run_id: string; user_message_id?: number }> {
+  return requestJson<{ run_id: string; user_message_id?: number }>(
     `${trimUrl(serverUrl)}/api/chat/run/start`,
     {
       method: 'POST',
@@ -149,7 +150,7 @@ export async function startChatRun(
         ai_config_id: aiConfigId,
         ai_kind: 'assistant',
         session_id: sessionId,
-        session_name: '浏览器插件会话',
+        session_name: sessionName || '浏览器插件会话',
         visible_content: content,
         model_content: content,
       }),
@@ -173,6 +174,111 @@ export async function stopChatRun(serverUrl: string, token: string, runId: strin
     headers: authHeaders(token),
     signal: AbortSignal.timeout(10000),
   }).catch(() => {})
+}
+
+// ── Chat sessions & history (server-backed) ────────────────────────────────
+export interface ServerChatSession {
+  id:           string
+  name:         string
+  total_tokens?: number
+}
+
+export interface ServerChatMessage {
+  id:            number
+  role:          'user' | 'assistant' | 'system'
+  content:       string
+  think?:        string | null
+  tags?:         string | null
+  created_at?:   number
+  session_id?:   string
+  session_name?: string
+  ai_config_id?: number | null
+  ai_kind?:      string
+  total_tokens?: number
+}
+
+const chatQs = (aiConfigId: number | null, extra: Record<string, string> = {}) => {
+  const params: Record<string, string> = { ai_kind: 'assistant', ...extra }
+  if (aiConfigId !== null && aiConfigId !== undefined) params.ai_config_id = String(aiConfigId)
+  return new URLSearchParams(params).toString()
+}
+
+export async function listChatSessions(serverUrl: string, token: string, aiConfigId: number | null): Promise<ServerChatSession[]> {
+  const rows = await requestJson<any[]>(
+    `${trimUrl(serverUrl)}/api/chat/sessions?${chatQs(aiConfigId)}`,
+    { headers: authHeaders(token) },
+    '会话列表加载失败',
+  )
+  return (Array.isArray(rows) ? rows : []).map(row => ({
+    id:           String(row?.id || ''),
+    name:         String(row?.name || '未命名会话'),
+    total_tokens: Number(row?.total_tokens || 0),
+  }))
+}
+
+export async function createChatSession(
+  serverUrl: string,
+  token: string,
+  name: string,
+  aiConfigId: number | null,
+): Promise<ServerChatSession> {
+  const row = await requestJson<any>(
+    `${trimUrl(serverUrl)}/api/chat/sessions`,
+    {
+      method: 'POST',
+      headers: authHeaders(token, true),
+      body: JSON.stringify({ name, ai_config_id: aiConfigId, ai_kind: 'assistant' }),
+    },
+    '创建会话失败',
+  )
+  return { id: String(row?.id || ''), name: String(row?.name || name || '未命名会话') }
+}
+
+export async function deleteChatSession(
+  serverUrl: string,
+  token: string,
+  sessionId: string,
+  aiConfigId: number | null,
+): Promise<void> {
+  const res = await fetch(
+    `${trimUrl(serverUrl)}/api/chat/sessions/${encodeURIComponent(sessionId)}?${chatQs(aiConfigId)}`,
+    { method: 'DELETE', headers: authHeaders(token), signal: AbortSignal.timeout(10000) },
+  )
+  if (!res.ok) throw new Error(await parseError(res, '删除会话失败'))
+}
+
+export async function fetchChatHistory(
+  serverUrl: string,
+  token: string,
+  sessionId: string,
+  aiConfigId: number | null,
+): Promise<ServerChatMessage[]> {
+  const rows = await requestJson<any[]>(
+    `${trimUrl(serverUrl)}/api/chat/history?${chatQs(aiConfigId, { session_id: sessionId })}`,
+    { headers: authHeaders(token) },
+    '加载对话记录失败',
+  )
+  return Array.isArray(rows) ? rows as ServerChatMessage[] : []
+}
+
+export async function deleteServerChatMessage(serverUrl: string, token: string, msgId: number): Promise<void> {
+  const res = await fetch(
+    `${trimUrl(serverUrl)}/api/chat/${msgId}`,
+    { method: 'DELETE', headers: authHeaders(token), signal: AbortSignal.timeout(10000) },
+  )
+  if (!res.ok) throw new Error(await parseError(res, '删除消息失败'))
+}
+
+export async function recallServerChatMessage(
+  serverUrl: string,
+  token: string,
+  msgId: number,
+): Promise<{ recall_content: string }> {
+  return requestJson<{ recall_content: string }>(
+    `${trimUrl(serverUrl)}/api/chat/recall/${msgId}`,
+    { method: 'POST', headers: authHeaders(token) },
+    '撤回失败',
+  )
 }
 
 // ── Task scheduling ───────────────────────────────────────────────────────────

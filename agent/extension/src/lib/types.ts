@@ -77,8 +77,12 @@ export interface MemoryCard {
 
 // ── AI types ──────────────────────────────────────────────────────────────
 export interface ChatMessage {
-  role:    'user' | 'assistant'
+  role:    'user' | 'assistant' | 'system'
   content: string | any[]  // string for simple text, array for tool-use/tool-result blocks
+  // Optional fields populated when the message lives on the server.
+  serverId?:   number
+  think?:      string
+  createdAt?:  number
 }
 
 export interface AIToolDef {
