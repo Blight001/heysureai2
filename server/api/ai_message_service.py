@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 import uuid
 from typing import Any, Dict, List, Optional
@@ -18,7 +19,7 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 
 from .database import engine
-from .models import AIMessage, AssistantAIConfig
+from .models import AIMessage, AssistantAIConfig, ChatRun, ChatSession
 
 
 def _new_message_id() -> str:
@@ -217,7 +218,6 @@ async def wait_for_reply(
 
 def target_has_active_run(user_id: int, to_ai_config_id: int) -> bool:
     """判断目标 AI 是否有正在进行的 run（用于 send 前的提示，非强制）。"""
-    from .models import ChatRun
     with Session(engine) as session:
         row = session.exec(
             select(ChatRun).where(
@@ -227,3 +227,114 @@ def target_has_active_run(user_id: int, to_ai_config_id: int) -> bool:
             )
         ).first()
         return row is not None
+
+
+def wake_idle_target_for_message(
+    *,
+    message_id: str,
+    user_id: int,
+    max_steps: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Start a fresh target-AI conversation when an AI message would otherwise
+    sit in the inbox with no worker polling it.
+    """
+    with Session(engine) as session:
+        msg = session.exec(
+            select(AIMessage).where(
+                AIMessage.user_id == user_id,
+                AIMessage.message_id == message_id,
+            )
+        ).first()
+        if not msg:
+            raise ValueError("message not found")
+
+        target_id = int(msg.to_ai_config_id)
+        active = session.exec(
+            select(ChatRun).where(
+                ChatRun.user_id == user_id,
+                ChatRun.ai_config_id == target_id,
+                ChatRun.status.in_(["queued", "running"]),
+            ).order_by(ChatRun.updated_at.desc())
+        ).first()
+        if active:
+            return {
+                "started": False,
+                "reason": "target already has an active run",
+                "run_id": active.run_id,
+                "session_id": active.session_id,
+                "ai_kind": active.ai_kind,
+            }
+
+        target_cfg = session.exec(
+            select(AssistantAIConfig).where(
+                AssistantAIConfig.user_id == user_id,
+                AssistantAIConfig.id == target_id,
+            )
+        ).first()
+        from_cfg = session.exec(
+            select(AssistantAIConfig).where(
+                AssistantAIConfig.user_id == user_id,
+                AssistantAIConfig.id == int(msg.from_ai_config_id),
+            )
+        ).first()
+        if not target_cfg:
+            raise ValueError("target AI config not found")
+
+        ai_kind = "assistant" if target_cfg.ai_role == "assistant_admin" else "core"
+        from_name = str(from_cfg.name or "").strip() if from_cfg else f"AI-{msg.from_ai_config_id}"
+        target_name = str(target_cfg.name or "").strip() or f"AI-{target_id}"
+        session_id = f"ai_message_{message_id}"
+        session_name = f"AI通信：来自 {from_name}"
+
+        chat_session = ChatSession(
+            user_id=user_id,
+            ai_config_id=target_id,
+            ai_kind=ai_kind,
+            session_id=session_id,
+            session_name=session_name,
+        )
+        session.add(chat_session)
+
+        run_id = f"run_{uuid.uuid4().hex}"
+        row = ChatRun(
+            run_id=run_id,
+            user_id=user_id,
+            ai_config_id=target_id,
+            ai_kind=ai_kind,
+            session_id=session_id,
+            session_name=session_name,
+            status="queued",
+            stop_requested=False,
+        )
+        session.add(row)
+        session.commit()
+
+    from api.routers.chat_base import _RUN_THREADS
+    from api.routers.chat_worker import _run_worker
+
+    worker = threading.Thread(
+        target=_run_worker,
+        kwargs={
+            "run_id": run_id,
+            "user_id": user_id,
+            "ai_config_id": target_id,
+            "ai_kind": ai_kind,
+            "session_id": session_id,
+            "session_name": session_name,
+            "model_user_content": None,
+            "merged_system_prompt": None,
+            "max_steps": max_steps,
+        },
+        daemon=True,
+    )
+    worker.start()
+    _RUN_THREADS[run_id] = worker
+    return {
+        "started": True,
+        "run_id": run_id,
+        "session_id": session_id,
+        "session_name": session_name,
+        "ai_kind": ai_kind,
+        "to_ai_config_id": target_id,
+        "to_ai_name": target_name,
+    }

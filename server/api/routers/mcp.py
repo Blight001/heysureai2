@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from api.database import get_session
-from api.desktop_agent_tools import endpoint_bridge_tools_for_config
+from api.agent_dispatch import dispatch_endpoint_tool_and_wait
+from api.desktop_agent_tools import endpoint_bridge_tools_for_config, is_endpoint_agent_tool
 from api.mcp import registry
 from api.mcp_permissions import (
     CONFIGURABLE_ROLES,
@@ -99,5 +100,17 @@ async def call_mcp_tool(
                 status_code=403,
                 detail=f"Tool not permitted for role {config_role_tier(cfg)}: {req.tool}",
             )
+
+    if is_endpoint_agent_tool(req.tool):
+        return {
+            "tool": req.tool,
+            "destructive": True,
+            "result": await dispatch_endpoint_tool_and_wait(
+                user_id=user.id,
+                ai_config_id=req.ai_config_id,
+                tool=req.tool,
+                args=req.arguments or {},
+            ),
+        }
 
     return await registry.call(req.tool, user.id, req.arguments, req.ai_config_id)

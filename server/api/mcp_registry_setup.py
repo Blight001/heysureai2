@@ -275,7 +275,7 @@ registry.register(MCPTool(
         "Desktop agents can use filesystem, shell, git, keyboard, mouse, screen, clipboard, window, process tools. "
         "Browser agents can inspect and control the active tab with browser_page_info, browser_get_content, "
         "browser_screenshot, browser_click, browser_type, browser_scroll, browser_search, browser_navigate, "
-        "browser_extract, browser_find_text, browser_tab_list and related browser_* tools. "
+        "browser_extract, browser_find_text, browser_find_popups, browser_close_popup, browser_tab_list and related browser_* tools. "
         "Provide agentId plus either a natural-language "
         "instruction or a specific tool + args. The result arrives asynchronously "
         "and is appended to this session."
@@ -293,7 +293,7 @@ registry.register(MCPTool(
                     "clipboard.get / clipboard.set / window.list / window.focus / process.list / process.kill. "
                     "Browser examples: browser_page_info / browser_get_content / browser_screenshot / "
                     "browser_click / browser_type / browser_scroll / browser_search / browser_navigate / "
-                    "browser_extract / browser_find_text / browser_tab_list."
+                    "browser_extract / browser_find_text / browser_find_popups / browser_close_popup / browser_tab_list."
                 ),
             },
             "args": {"type": "object", "description": "Arguments for the chosen tool."},
@@ -598,7 +598,8 @@ registry.register(MCPTool(
     description=(
         "Send a message to another AI in the same digital society and (by default) block until it "
         "replies. The target AI's work loop will be interrupted at the next iteration top and "
-        "forced to handle this message before resuming its current task. Use this for targeted "
+        "forced to handle this message before resuming its current task; if the target is idle, "
+        "the server starts a fresh conversation for it. Use this for targeted "
         "AI↔AI coordination (e.g. asking the librarian to confirm something, asking another worker "
         "to pause/abort, sharing context)."
     ),

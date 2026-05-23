@@ -17,6 +17,7 @@ interface Props {
   promptUserMessageNotice: string
   themeMode: 'light' | 'dark'
   fontSize: 'sm' | 'md' | 'lg'
+  mcpMaxSteps: number
   mcpRoleMeta: McpRoleMeta
   roleMcpPermissions: Record<string, string[]>
 }
@@ -36,6 +37,7 @@ const emit = defineEmits<{
   (e: 'update:promptUserMessageNotice', value: string): void
   (e: 'update:themeMode', value: 'light' | 'dark'): void
   (e: 'update:fontSize', value: 'sm' | 'md' | 'lg'): void
+  (e: 'update:mcpMaxSteps', value: number): void
   (e: 'viewAllMcp'): void
   (e: 'toggleRoleTool', payload: { role: string; tool: string; checked: boolean }): void
   (e: 'setRoleAllTools', payload: { role: string; checked: boolean }): void
@@ -81,6 +83,11 @@ const themeModeValue = computed({
 const fontSizeValue = computed({
   get: () => props.fontSize,
   set: value => emit('update:fontSize', value)
+})
+
+const mcpMaxStepsValue = computed({
+  get: () => Number(props.mcpMaxSteps || 48),
+  set: value => emit('update:mcpMaxSteps', Math.max(1, Math.min(999, Math.floor(Number(value) || 48))))
 })
 
 const globalMcpCallMethodValue = computed({
@@ -175,6 +182,21 @@ const toggleConfigSection = (name: 'mcp' | 'roles' | 'task' | 'comm') => {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div class="p-4 bg-zinc-50 rounded-xl dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
+            <h4 class="text-sm font-semibold text-zinc-800 mb-3 dark:text-zinc-100 flex items-center gap-2">MCP 运行限制</h4>
+            <div>
+              <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">单次运行最多步骤 / MCP 续跑次数</div>
+              <input
+                v-model.number="mcpMaxStepsValue"
+                type="number"
+                min="1"
+                max="999"
+                class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
+              />
+              <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">范围 1-999。连续调用 MCP 工具时，每次模型生成和工具返回后的继续执行都会消耗一步。</p>
             </div>
           </div>
 

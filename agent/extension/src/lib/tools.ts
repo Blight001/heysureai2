@@ -152,6 +152,30 @@ export const BROWSER_TOOLS: AIToolDef[] = [
     },
   },
   {
+    name: 'browser_find_popups',
+    description: 'Detect visible popups, modals, dialogs, drawers, overlays, and their likely close buttons on the current page.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Maximum popups to return (default 10)' },
+      },
+    },
+  },
+  {
+    name: 'browser_close_popup',
+    description: 'Close a visible popup/modal/dialog. Uses detected close buttons first, then Escape/backdrop fallback. Call browser_find_popups first when you need to inspect candidates.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        selector:     { type: 'string', description: 'Optional CSS selector of the popup to close' },
+        text:         { type: 'string', description: 'Optional text contained by the popup to identify it' },
+        index:        { type: 'number', description: 'Popup index from browser_find_popups (default 0)' },
+        strategy:     { type: 'string', enum: ['auto', 'close_button', 'escape', 'backdrop'], description: 'Close strategy (default auto)' },
+        force_remove: { type: 'boolean', description: 'If true, remove the popup DOM node as a last resort' },
+      },
+    },
+  },
+  {
     name: 'browser_fill_form',
     description: 'Fill multiple form fields in one call.',
     input_schema: {
@@ -402,7 +426,9 @@ async function getActiveTab(): Promise<chrome.tabs.Tab> {
 
 async function contentMsg(tabId: number, msg: any): Promise<any> {
   try {
-    return await chrome.tabs.sendMessage(tabId, msg)
+    const res = await chrome.tabs.sendMessage(tabId, msg)
+    if (res?.error) throw new Error(res.error)
+    return res
   } catch (err: any) {
     if (err.message?.includes('Could not establish connection')) {
       throw new Error('Content script unavailable on this page (try a normal web page, not chrome://).')
@@ -545,6 +571,25 @@ async function toolExtract(args: any): Promise<any> {
 async function toolFindText(args: any): Promise<any> {
   const tab = await getActiveTab()
   return contentMsg(tab.id!, { action: 'find_text', text: args.text, exact: !!args.exact })
+}
+
+async function toolFindPopups(args: any): Promise<any> {
+  const tab = await getActiveTab()
+  return contentMsg(tab.id!, { action: 'find_popups', limit: args.limit || 10 })
+}
+
+async function toolClosePopup(args: any): Promise<any> {
+  const tab = await getActiveTab()
+  const result = await contentMsg(tab.id!, {
+    action: 'close_popup',
+    selector: args.selector,
+    text: args.text,
+    index: args.index,
+    strategy: args.strategy || 'auto',
+    force_remove: !!args.force_remove,
+  })
+  if (result?.success === false) throw new Error(result.reason || 'Popup close failed')
+  return result
 }
 
 async function toolFillForm(args: any): Promise<any> {
@@ -752,6 +797,8 @@ export async function executeBrowserTool(name: string, args: any): Promise<any> 
     case 'browser_evaluate':         return toolEvaluate(args)
     case 'browser_extract':          return toolExtract(args)
     case 'browser_find_text':        return toolFindText(args)
+    case 'browser_find_popups':      return toolFindPopups(args)
+    case 'browser_close_popup':      return toolClosePopup(args)
     case 'browser_fill_form':        return toolFillForm(args)
     case 'browser_select':           return toolSelect(args)
     case 'browser_tab_list':         return toolTabList()
@@ -782,6 +829,7 @@ export async function executeBrowserTool(name: string, args: any): Promise<any> 
 function inferTool(instruction: string): string {
   const t = instruction.toLowerCase()
   if (/截图|screenshot/.test(t))                                    return 'browser_screenshot'
+  if (/弹窗|关闭弹窗|popup|modal|dialog/.test(t))                     return 'browser_close_popup'
   if (/搜索|search|查找|找/.test(t))                                 return 'browser_search'
   if (/点击|click/.test(t))                                          return 'browser_click'
   if (/输入|type|填写/.test(t))                                      return 'browser_type'
@@ -795,13 +843,14 @@ function inferTool(instruction: string): string {
 
 // ── Task executor (server-dispatched tasks) ───────────────────────────────
 const SYSTEM_PROMPT = `You are HeySure AI, a browser automation assistant running as a Chrome extension.
-You can navigate pages, click, type, take screenshots, search the web, and extract information.
+You can navigate pages, click, type, take screenshots, search the web, close popups/modals/dialogs, and extract information.
 
 When completing a task:
 1. Navigate to the relevant URL or search for it
 2. Use browser_page_info to know where you are on the page (scroll position, current section, visible headings) and browser_screenshot when you need to see it
 3. Interact with elements systematically: click, double_click, right_click, type, fill forms, drag, press_key
-4. Extract or summarize the result
+4. If a popup/modal/dialog blocks the page, use browser_find_popups to inspect it and browser_close_popup to close it
+5. Extract or summarize the result
 
 Memory cards (automation workflows):
 - When the user asks to save/remember a sequence of actions as a card, call card_save with name + steps, where each step is { tool, args, note } and note (备注) explains the step.

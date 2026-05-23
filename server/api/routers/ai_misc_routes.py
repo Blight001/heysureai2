@@ -272,9 +272,20 @@ async def list_ai_cards(
             "task_token_used": int(task_token_used or 0),
             "task_token_limit": int(token_limit or 0),
             "created_at": job.created_at,
+            "updated_at": job.updated_at,
             "started_at": job.started_at,
             "finished_at": job.finished_at,
         }
+
+    def _task_activity_ts(item: Dict[str, Any]) -> float:
+        for key in ("finished_at", "updated_at", "started_at", "created_at"):
+            try:
+                value = float(item.get(key) or 0)
+            except Exception:
+                value = 0.0
+            if value > 0:
+                return value
+        return 0.0
 
     def _build_feishu_status(cfg: AssistantAIConfig) -> Dict[str, str]:
         if not cfg.feishu_enabled:
@@ -331,21 +342,29 @@ async def list_ai_cards(
         live_tool = str(run_live.get("current_tool") or "").strip()
         cfg_task_jobs = task_jobs_by_cfg.get(int(cfg.id), [])
         cfg_task_summaries = [_build_task_summary(job, int(cfg.token_limit or 0)) for job in cfg_task_jobs]
+        cfg_task_summaries_by_activity = sorted(
+            cfg_task_summaries,
+            key=_task_activity_ts,
+            reverse=True,
+        )
         current_or_scheduled_task = next(
             (
-                item for item in cfg_task_summaries
+                item for item in cfg_task_summaries_by_activity
                 if str(item.get("effective_status") or "").lower() in {"running", "queued", "paused"}
             ),
             None,
         )
         if current_or_scheduled_task is None:
             current_or_scheduled_task = next(
-                (item for item in cfg_task_summaries if str(item.get("trigger_type") or "").lower() == "schedule"),
+                (
+                    item for item in cfg_task_summaries_by_activity
+                    if str(item.get("trigger_type") or "").lower() == "schedule"
+                ),
                 None,
             )
         latest_completed_task = next(
             (
-                item for item in cfg_task_summaries
+                item for item in cfg_task_summaries_by_activity
                 if str(item.get("effective_status") or "").lower() in {"completed", "done", "finished"}
             ),
             None,

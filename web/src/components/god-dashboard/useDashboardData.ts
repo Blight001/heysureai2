@@ -139,6 +139,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
       taskTokenUsed: Math.max(0, Number(raw.task_token_used) || 0),
       taskTokenLimit: Number(raw.task_token_limit) || 0,
       createdAt: Number.isFinite(Number(raw.created_at)) ? Number(raw.created_at) : undefined,
+      updatedAt: Number.isFinite(Number(raw.updated_at)) ? Number(raw.updated_at) : undefined,
       startedAt: Number.isFinite(Number(raw.started_at)) ? Number(raw.started_at) : undefined,
       finishedAt: Number.isFinite(Number(raw.finished_at)) ? Number(raw.finished_at) : undefined,
     }

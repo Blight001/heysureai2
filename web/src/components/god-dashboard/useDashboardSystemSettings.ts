@@ -20,9 +20,16 @@ const clampIdleSeconds = (value: unknown) => {
   return Math.max(5, Math.min(3600, Math.floor(parsed)))
 }
 
+const clampMcpMaxSteps = (value: unknown) => {
+  const parsed = Number(value ?? 48)
+  if (!Number.isFinite(parsed)) return 48
+  return Math.max(1, Math.min(999, Math.floor(parsed)))
+}
+
 export const useDashboardSystemSettings = (options: UseDashboardSystemSettingsOptions) => {
   const themeMode = ref<ThemeMode>('dark')
   const fontSize = ref<FontSize>('md')
+  const mcpMaxSteps = ref(48)
   const globalMcpCallMethod = ref(`When you want to call a tool, output one or more blocks using EXACTLY this format and do not wrap them in markdown code fences:
 <mcp-call>
 {"tool":"workspace.read_files","arguments":{"paths":["README.md"]}}
@@ -175,6 +182,7 @@ Rules:
         body: JSON.stringify({
           mcp_call_method: globalMcpCallMethod.value,
           mcp_format_error_hint: globalMcpFormatErrorHint.value,
+          mcp_max_steps: clampMcpMaxSteps(mcpMaxSteps.value),
           role_mcp_permissions: roleMcpPermissionsInitialized
             ? JSON.stringify(roleMcpPermissions.value)
             : (options.getCurrentUser()?.role_mcp_permissions ?? ''),
@@ -233,6 +241,9 @@ Rules:
       if (Object.prototype.hasOwnProperty.call(rawUser, 'mcp_format_error_hint')) {
         globalMcpFormatErrorHint.value = String(rawUser.mcp_format_error_hint ?? '')
       }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'mcp_max_steps')) {
+        mcpMaxSteps.value = clampMcpMaxSteps(rawUser.mcp_max_steps)
+      }
       if (Object.prototype.hasOwnProperty.call(rawUser, 'default_start_task_prompt')) {
         defaultStartTaskPrompt.value = String(rawUser.default_start_task_prompt ?? '')
       }
@@ -277,6 +288,7 @@ Rules:
     fontSize,
     globalMcpCallMethod,
     globalMcpFormatErrorHint,
+    mcpMaxSteps,
     defaultStartTaskPrompt,
     defaultResumeTaskPrompt,
     defaultSupervisionPrompt,

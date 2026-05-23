@@ -3545,7 +3545,9 @@
       browser_screenshot: "\u622A\u56FE",
       browser_extract: "\u63D0\u53D6\u6570\u636E",
       browser_get_content: "\u8BFB\u53D6\u5185\u5BB9",
-      browser_page_info: "\u67E5\u770B\u9875\u9762\u4F4D\u7F6E"
+      browser_page_info: "\u67E5\u770B\u9875\u9762\u4F4D\u7F6E",
+      browser_find_popups: "\u67E5\u627E\u5F39\u7A97",
+      browser_close_popup: "\u5173\u95ED\u5F39\u7A97"
     };
     const base = labels[tool] || tool.replace(/^browser_/, "");
     const hint = args?.url || args?.text || args?.selector || args?.query || (args?.direction ? `${args.direction}${args?.amount ? " " + args.amount : ""}` : "") || (args?.key ? `\u6309\u952E ${args.key}` : "") || (args?.ms ? `${args.ms}ms` : "");
@@ -3696,6 +3698,30 @@
           exact: { type: "boolean", description: "Exact match only" }
         },
         required: ["text"]
+      }
+    },
+    {
+      name: "browser_find_popups",
+      description: "Detect visible popups, modals, dialogs, drawers, overlays, and their likely close buttons on the current page.",
+      input_schema: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "Maximum popups to return (default 10)" }
+        }
+      }
+    },
+    {
+      name: "browser_close_popup",
+      description: "Close a visible popup/modal/dialog. Uses detected close buttons first, then Escape/backdrop fallback. Call browser_find_popups first when you need to inspect candidates.",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "Optional CSS selector of the popup to close" },
+          text: { type: "string", description: "Optional text contained by the popup to identify it" },
+          index: { type: "number", description: "Popup index from browser_find_popups (default 0)" },
+          strategy: { type: "string", enum: ["auto", "close_button", "escape", "backdrop"], description: "Close strategy (default auto)" },
+          force_remove: { type: "boolean", description: "If true, remove the popup DOM node as a last resort" }
+        }
       }
     },
     {
@@ -3946,7 +3972,10 @@
   }
   async function contentMsg(tabId, msg) {
     try {
-      return await chrome.tabs.sendMessage(tabId, msg);
+      const res = await chrome.tabs.sendMessage(tabId, msg);
+      if (res?.error)
+        throw new Error(res.error);
+      return res;
     } catch (err) {
       if (err.message?.includes("Could not establish connection")) {
         throw new Error("Content script unavailable on this page (try a normal web page, not chrome://).");
@@ -4074,6 +4103,24 @@
   async function toolFindText(args) {
     const tab = await getActiveTab();
     return contentMsg(tab.id, { action: "find_text", text: args.text, exact: !!args.exact });
+  }
+  async function toolFindPopups(args) {
+    const tab = await getActiveTab();
+    return contentMsg(tab.id, { action: "find_popups", limit: args.limit || 10 });
+  }
+  async function toolClosePopup(args) {
+    const tab = await getActiveTab();
+    const result = await contentMsg(tab.id, {
+      action: "close_popup",
+      selector: args.selector,
+      text: args.text,
+      index: args.index,
+      strategy: args.strategy || "auto",
+      force_remove: !!args.force_remove
+    });
+    if (result?.success === false)
+      throw new Error(result.reason || "Popup close failed");
+    return result;
   }
   async function toolFillForm(args) {
     const tab = await getActiveTab();
@@ -4305,6 +4352,10 @@
         return toolExtract(args);
       case "browser_find_text":
         return toolFindText(args);
+      case "browser_find_popups":
+        return toolFindPopups(args);
+      case "browser_close_popup":
+        return toolClosePopup(args);
       case "browser_fill_form":
         return toolFillForm(args);
       case "browser_select":
@@ -4355,6 +4406,8 @@
     const t = instruction.toLowerCase();
     if (/截图|screenshot/.test(t))
       return "browser_screenshot";
+    if (/弹窗|关闭弹窗|popup|modal|dialog/.test(t))
+      return "browser_close_popup";
     if (/搜索|search|查找|找/.test(t))
       return "browser_search";
     if (/点击|click/.test(t))
@@ -4374,13 +4427,14 @@
     return "browser_get_content";
   }
   var SYSTEM_PROMPT = `You are HeySure AI, a browser automation assistant running as a Chrome extension.
-You can navigate pages, click, type, take screenshots, search the web, and extract information.
+You can navigate pages, click, type, take screenshots, search the web, close popups/modals/dialogs, and extract information.
 
 When completing a task:
 1. Navigate to the relevant URL or search for it
 2. Use browser_page_info to know where you are on the page (scroll position, current section, visible headings) and browser_screenshot when you need to see it
 3. Interact with elements systematically: click, double_click, right_click, type, fill forms, drag, press_key
-4. Extract or summarize the result
+4. If a popup/modal/dialog blocks the page, use browser_find_popups to inspect it and browser_close_popup to close it
+5. Extract or summarize the result
 
 Memory cards (automation workflows):
 - When the user asks to save/remember a sequence of actions as a card, call card_save with name + steps, where each step is { tool, args, note } and note (\u5907\u6CE8) explains the step.
@@ -4644,11 +4698,14 @@ Always:
   }
   var CHAT_SYSTEM = `You are HeySure AI, a browser automation assistant running as a Chrome extension.
 You can navigate pages, click, double-click, right-click, type, drag, press keys, scroll, take
-screenshots, search the web, extract data, and more.
+screenshots, search the web, detect and close popups/modals/dialogs, extract data, and more.
 
 Use browser_page_info to know where you are on the page (scroll position, current section,
 visible headings); after scrolling, read the returned position so you know where you landed and
 what changed.
+
+If a popup/modal/dialog blocks the page, call browser_find_popups to inspect detected dialogs and
+browser_close_popup to close the matching one before continuing.
 
 Memory cards: when the user asks to save a sequence of actions, call card_save (steps are
 {tool,args,note}, where note is a \u5907\u6CE8). Replay with card_run by name/id. If card_run returns a

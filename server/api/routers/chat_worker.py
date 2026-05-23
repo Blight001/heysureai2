@@ -3,6 +3,7 @@ IS_ROUTER_ENTRY = False
 import asyncio
 import copy
 import json
+import os
 import re
 import time
 from typing import Dict, List, Optional
@@ -11,8 +12,9 @@ import requests
 from sqlmodel import Session, select
 
 from api.database import engine
-from api.agent_dispatch import set_run_session_context
+from api.agent_dispatch import dispatch_endpoint_tool_and_wait, set_run_session_context
 from api.desktop_agent_tools import endpoint_bridge_tools_for_config
+from api.desktop_agent_tools import build_endpoint_tools_payload, is_endpoint_agent_tool
 from api.mcp import registry, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.task_system import (
@@ -63,6 +65,16 @@ DEFAULT_AI_MSG_INBOUND_FALLBACK = (
     "来自 {from_ai_name}（ai_config_id={from_ai_config_id}）：\n{content}\n\n"
     "请调用 ai.reply_message(message_id=\"{message_id}\", content=...) 回复后再继续。"
 )
+
+def _coerce_max_steps(value: object, default: int = 48) -> int:
+    try:
+        return max(1, min(999, int(value or default)))
+    except Exception:
+        return max(1, min(999, int(default)))
+
+
+DEFAULT_CHAT_MAX_STEPS = _coerce_max_steps(os.getenv("HEYSURE_CHAT_MAX_STEPS"), 48)
+DEFAULT_TASK_MAX_STEPS = _coerce_max_steps(os.getenv("HEYSURE_TASK_MAX_STEPS"), DEFAULT_CHAT_MAX_STEPS)
 
 
 def _resolve_ai_name_safe(session: Session, ai_config_id: Optional[int]) -> str:
@@ -121,7 +133,9 @@ def _build_native_tools_payload(allowed_tools: Optional[set] = None) -> tuple[Li
     tools = []
     native_to_mcp: Dict[str, str] = {}
     used_names = set()
-    for tool in registry.build_tools_payload(allowed_tools):
+    tool_payloads = registry.build_tools_payload(allowed_tools)
+    tool_payloads.extend(build_endpoint_tools_payload(allowed_tools))
+    for tool in tool_payloads:
         native_tool = copy.deepcopy(tool)
         original_name = str(native_tool.get("function", {}).get("name") or "").strip()
         native_name = _to_native_tool_name(original_name)
@@ -171,6 +185,8 @@ def _missing_required_mcp_args(tool_name: str, arguments: dict) -> List[str]:
 def _joined_tool_skip_reason(tool_name: str, arguments: dict, allowed_tools: set) -> str:
     if tool_name not in allowed_tools:
         return f"Tool not allowed for this task: {tool_name}"
+    if is_endpoint_agent_tool(tool_name):
+        return ""
     tool = registry.get(tool_name)
     missing = _missing_required_mcp_args(tool_name, arguments)
     if missing:
@@ -180,48 +196,91 @@ def _joined_tool_skip_reason(tool_name: str, arguments: dict, allowed_tools: set
     return ""
 
 
+async def _call_mcp_or_endpoint_tool(
+    tool: str,
+    user_id: int,
+    arguments: dict,
+    ai_config_id: Optional[int],
+) -> Dict[str, object]:
+    if is_endpoint_agent_tool(tool):
+        return {
+            "tool": tool,
+            "destructive": True,
+            "result": await dispatch_endpoint_tool_and_wait(
+                user_id=user_id,
+                ai_config_id=ai_config_id,
+                tool=tool,
+                args=arguments,
+            ),
+        }
+    return await registry.call(tool, user_id, arguments, ai_config_id)
+
+
+def _tool_result_failed(tool_result: Dict[str, object]) -> tuple[bool, str]:
+    result = tool_result.get("result") if isinstance(tool_result, dict) else None
+    if isinstance(result, dict) and result.get("success") is False:
+        return True, str(result.get("error") or result.get("summary") or "Tool returned success=false")
+    return False, ""
+
+
 def _append_missing_tool_responses(convo: List[Dict], error_text: str) -> List[str]:
-    """Repair OpenAI-style history so every pending tool_call_id has a tool message."""
-    if not convo:
-        return []
-    last_assistant_idx = -1
-    for idx in range(len(convo) - 1, -1, -1):
-        if convo[idx].get("role") == "assistant" and convo[idx].get("tool_calls"):
-            last_assistant_idx = idx
-            break
-    if last_assistant_idx < 0:
-        return []
+    """Repair OpenAI-style history in-place.
 
-    tool_calls = convo[last_assistant_idx].get("tool_calls") or []
-    expected_ids = [
-        str(call.get("id") or "").strip()
-        for call in tool_calls
-        if isinstance(call, dict) and str(call.get("id") or "").strip()
-    ]
-    if not expected_ids:
-        return []
-
-    seen_ids = set()
-    for item in convo[last_assistant_idx + 1:]:
-        if item.get("role") == "tool":
-            tool_call_id = str(item.get("tool_call_id") or "").strip()
-            if tool_call_id:
-                seen_ids.add(tool_call_id)
+    OpenAI-compatible providers require every assistant message with tool_calls
+    to be followed immediately by tool messages for each tool_call_id. Appending
+    synthetic tool responses to the end is still invalid if a user/system message
+    already sits between the assistant tool_calls and the tool response, so the
+    repair inserts missing tool messages at the exact required position.
+    """
+    repaired_ids: List[str] = []
+    idx = 0
+    while idx < len(convo):
+        item = convo[idx]
+        if item.get("role") != "assistant" or not item.get("tool_calls"):
+            if item.get("role") == "tool":
+                # Orphan tool messages are invalid in OpenAI-compatible payloads.
+                # They can appear after an older failed repair appended a tool
+                # response behind a user notice. Drop them from the outgoing
+                # in-memory request; persisted user/assistant history is untouched.
+                convo.pop(idx)
+                continue
+            idx += 1
             continue
-        break
 
-    missing_ids = [tool_call_id for tool_call_id in expected_ids if tool_call_id not in seen_ids]
-    for tool_call_id in missing_ids:
-        convo.append({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "content": _safe_json({
-                "success": False,
-                "error": error_text,
-                "recovered": True,
-            }),
-        })
-    return missing_ids
+        tool_calls = item.get("tool_calls") or []
+        expected_ids = [
+            str(call.get("id") or "").strip()
+            for call in tool_calls
+            if isinstance(call, dict) and str(call.get("id") or "").strip()
+        ]
+        if not expected_ids:
+            idx += 1
+            continue
+
+        seen_ids = set()
+        insert_at = idx + 1
+        while insert_at < len(convo) and convo[insert_at].get("role") == "tool":
+            tool_call_id = str(convo[insert_at].get("tool_call_id") or "").strip()
+            if tool_call_id in expected_ids and tool_call_id not in seen_ids:
+                seen_ids.add(tool_call_id)
+                insert_at += 1
+                continue
+            convo.pop(insert_at)
+
+        missing_ids = [tool_call_id for tool_call_id in expected_ids if tool_call_id not in seen_ids]
+        for offset, tool_call_id in enumerate(missing_ids):
+            convo.insert(insert_at + offset, {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": _safe_json({
+                    "success": False,
+                    "error": error_text,
+                    "recovered": True,
+                }),
+            })
+        repaired_ids.extend(missing_ids)
+        idx = insert_at + len(missing_ids)
+    return repaired_ids
 
 
 def _build_mcp_tool_bubble_content(tool: str, arguments: dict, result_text: str, failed: bool = False) -> str:
@@ -337,7 +396,7 @@ def _run_worker(
     session_name: str,
     model_user_content: Optional[str] = None,
     merged_system_prompt: Optional[str] = None,
-    max_steps: int = 12,
+    max_steps: Optional[int] = None,
 ):
     if _run_should_stop(run_id):
         _run_set_status(run_id, "stopped", finished=True)
@@ -348,6 +407,10 @@ def _run_worker(
             user = bg.get(User, user_id)
             if not user:
                 raise RuntimeError("User not found")
+            max_steps = _coerce_max_steps(
+                max_steps,
+                _coerce_max_steps(getattr(user, "mcp_max_steps", DEFAULT_CHAT_MAX_STEPS), DEFAULT_CHAT_MAX_STEPS),
+            )
             mcp_warning_template = str(getattr(user, "mcp_format_error_hint", "") or "").strip()
             cfg, api_key, base_url, model, system_prompt = _resolve_ai_runtime(bg, user, ai_kind, ai_config_id)
             auto_ctl = normalize_system_auto_control(cfg.system_auto_control if cfg else None)
@@ -357,6 +420,10 @@ def _run_worker(
             is_task_runtime = bool(task_payload) or str(session_id or "").startswith("session_task_")
             effective_tool_allowlist = _parse_allowed_tools(cfg.mcp_tools if cfg else None)
             effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user_id))
+            if ai_config_id is not None:
+                # System-injected AI-to-AI messages must remain replyable even
+                # when a task or config narrows the general MCP tool allowlist.
+                effective_tool_allowlist.add("ai.reply_message")
             token_threshold_override = None
             workspace_root_override = None
             if task_payload:
@@ -370,6 +437,8 @@ def _run_worker(
                         effective_tool_allowlist = with_task_create_compat(effective_tool_allowlist)
                         effective_tool_allowlist = with_workspace_read_by_name_compat(effective_tool_allowlist)
                         effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user_id))
+                        if ai_config_id is not None:
+                            effective_tool_allowlist.add("ai.reply_message")
                 override_token = task_payload.get("override_token_limit")
                 if isinstance(override_token, dict) and bool(override_token.get("enabled")):
                     try:
@@ -409,6 +478,9 @@ def _run_worker(
             history = bg.exec(msg_stmt).all()
             convo = [{"role": "system", "content": system_prompt}]
             for m in history:
+                tags = str(getattr(m, "tags", "") or "")
+                if "system_notice_ai_error" in tags or "system_notice_ai_context_repaired" in tags:
+                    continue
                 if m.role in ("user", "assistant"):
                     item = {"role": m.role, "content": m.content}
                     if m.role == "assistant" and m.think:
@@ -487,6 +559,10 @@ def _run_worker(
                         )
                         convo.append({"role": "user", "content": _injected})
 
+                _append_missing_tool_responses(
+                    convo,
+                    "Synthetic tool result inserted before request because the previous tool call did not receive a tool response.",
+                )
                 start_at = time.time()
                 try:
                     if provider == "anthropic":
@@ -509,7 +585,24 @@ def _run_worker(
                         if step_tools:
                             oa_payload["tools"] = step_tools
                             oa_payload["tool_choice"] = "auto"
+                            # The worker executes one MCP action at a time. If
+                            # an OpenAI-compatible model emits parallel tool
+                            # calls, some providers reject the next request
+                            # unless every call id is answered. Ask the model
+                            # for sequential calls at the protocol level too.
+                            oa_payload["parallel_tool_calls"] = False
                         response = requests.post(base_url, headers=headers, json=oa_payload, timeout=300, stream=True)
+                        if not response.ok and "parallel_tool_calls" in oa_payload:
+                            unsupported_hint = str(response.text or "").lower()
+                            if "parallel_tool_calls" in unsupported_hint and (
+                                "unsupported" in unsupported_hint
+                                or "unknown" in unsupported_hint
+                                or "invalid" in unsupported_hint
+                                or "extra" in unsupported_hint
+                            ):
+                                oa_payload.pop("parallel_tool_calls", None)
+                                response.close()
+                                response = requests.post(base_url, headers=headers, json=oa_payload, timeout=300, stream=True)
                         _raise_for_upstream_error(response)
                         sr = stream_turn_openai_compat(
                             run_id=run_id,
@@ -521,29 +614,46 @@ def _run_worker(
                     consecutive_ai_errors += 1
                     error_text = _extract_mcp_error(ai_exc)
                     repaired_ids = _append_missing_tool_responses(convo, error_text)
+                    if repaired_ids:
+                        consecutive_ai_errors = 0
+                        _save_message(
+                            bg,
+                            user_id,
+                            ChatMessageCreate(
+                                role="system",
+                                content="\n".join([
+                                    "[AI 对话上下文已修复]",
+                                    "已补齐缺失的 tool 响应，避免上游接口因 tool_calls 上下文不完整而拒绝请求。",
+                                    f"补齐 tool_call_id: {', '.join(repaired_ids)}",
+                                ]),
+                                tags="system_notice_ai_context_repaired",
+                                ai_config_id=ai_config_id,
+                                ai_kind=ai_kind,
+                                session_id=session_id,
+                                session_name=session_name,
+                                model=model,
+                                total_tokens=0,
+                            ),
+                        )
+                        _set_run_live_phase(run_id, "generating")
+                        continue
                     notice_lines = [
                         "[AI 对话出错]",
                         error_text,
                         "",
                         f"连续错误次数: {consecutive_ai_errors}/3",
                     ]
-                    if repaired_ids:
-                        notice_lines.extend([
-                            "",
-                            "已自动补齐缺失的 tool 响应，避免上游接口因 tool_calls 上下文不完整而拒绝请求。",
-                            f"补齐 tool_call_id: {', '.join(repaired_ids)}",
-                        ])
                     if consecutive_ai_errors < 3:
                         notice_lines.extend([
                             "",
-                            "请把以上错误当作上下文继续运行；如需要调用工具，请一次只调用一个 MCP 工具，并确保参数完整。",
+                            "系统将重试上游请求；该错误不会作为 user 消息发送给 AI。",
                         ])
                     notice = "\n".join(notice_lines)
                     _save_message(
                         bg,
                         user_id,
                         ChatMessageCreate(
-                            role="user",
+                            role="system",
                             content=notice,
                             tags="system_notice_ai_error",
                             ai_config_id=ai_config_id,
@@ -554,7 +664,6 @@ def _run_worker(
                             total_tokens=0,
                         ),
                     )
-                    convo.append({"role": "user", "content": notice})
                     _set_run_live_phase(run_id, "generating")
                     if consecutive_ai_errors >= 3:
                         _run_set_status(run_id, "error", f"AI request failed 3 times consecutively: {error_text}", finished=True)
@@ -759,7 +868,10 @@ def _run_worker(
                         else:
                             _set_run_live_phase(run_id, "waiting_mcp", split_tool)
                             try:
-                                item_result = asyncio.run(registry.call(split_tool, user_id, arguments, ai_config_id))
+                                item_result = asyncio.run(_call_mcp_or_endpoint_tool(split_tool, user_id, arguments, ai_config_id))
+                                endpoint_failed, endpoint_error = _tool_result_failed(item_result)
+                                if endpoint_failed:
+                                    raise RuntimeError(endpoint_error)
                                 item_result_text = _build_mcp_display_result(split_tool, item_result, ok=True)
                             except Exception as mcp_exc:
                                 item_failed = True
@@ -916,7 +1028,10 @@ def _run_worker(
                         "workspace_root": workspace_root_override,
                     })
                 try:
-                    tool_result = asyncio.run(registry.call(tool, user_id, arguments, ai_config_id))
+                    tool_result = asyncio.run(_call_mcp_or_endpoint_tool(tool, user_id, arguments, ai_config_id))
+                    endpoint_failed, endpoint_error = _tool_result_failed(tool_result)
+                    if endpoint_failed:
+                        raise RuntimeError(endpoint_error)
                     result_text = _build_mcp_display_result(tool, tool_result, ok=True)
                 except Exception as mcp_exc:
                     tool_failed = True
@@ -1145,6 +1260,11 @@ def _run_worker(
                             print(f"[chat_worker] ai.reply_message resume notice failed: {_rex}")
                 _set_run_live_phase(run_id, "generating")
 
-            _run_set_status(run_id, "error", f"Reached max steps ({max_steps})", finished=True)
+            _run_set_status(
+                run_id,
+                "error",
+                f"Reached max steps ({max_steps}); increase HEYSURE_CHAT_MAX_STEPS or pass max_steps for longer MCP runs",
+                finished=True,
+            )
     except Exception as exc:
         _run_set_status(run_id, "error", str(exc), finished=True)

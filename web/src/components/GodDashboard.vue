@@ -58,6 +58,7 @@ const mcpRoleMeta = ref<McpRoleMeta>({ order: [], labels: {}, defaults: {}, opti
 const {
   themeMode,
   fontSize,
+  mcpMaxSteps,
   globalMcpCallMethod,
   globalMcpFormatErrorHint,
   defaultStartTaskPrompt,
@@ -642,6 +643,7 @@ onUnmounted(() => {
       v-model:promptUserMessageNotice="promptUserMessageNotice"
       v-model:themeMode="themeMode"
       v-model:fontSize="fontSize"
+      v-model:mcpMaxSteps="mcpMaxSteps"
       :mcp-role-meta="mcpRoleMeta"
       :role-mcp-permissions="roleMcpPermissions"
       @view-all-mcp="openAllMcpToolsFromSystemSettings"

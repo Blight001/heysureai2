@@ -183,6 +183,7 @@ def stream_turn_openai_compat(
     """
     sr = StreamResult()
     last_push_at = 0.0
+    tool_call_parts: Dict[int, Dict[str, str]] = {}
 
     _set_run_live_text(run_id, "")
     _set_run_live_reasoning(run_id, "")
@@ -234,13 +235,18 @@ def stream_turn_openai_compat(
         if tc_list:
             sr.has_native_tc = True
             for _tc in tc_list:
+                try:
+                    tc_index = int(_tc.get("index") or 0)
+                except Exception:
+                    tc_index = len(tool_call_parts)
+                part = tool_call_parts.setdefault(tc_index, {"id": "", "name": "", "arguments": ""})
                 if _tc.get("id"):
-                    sr.tc_id = _tc["id"]
+                    part["id"] = _tc["id"]
                 _fn = _tc.get("function") or {}
                 if _fn.get("name"):
-                    sr.tc_name += _fn["name"]
+                    part["name"] += _fn["name"]
                 if _fn.get("arguments"):
-                    sr.tc_args += _fn["arguments"]
+                    part["arguments"] += _fn["arguments"]
             continue
 
         delta_text = _extract_delta_text(delta)
@@ -265,7 +271,24 @@ def stream_turn_openai_compat(
     response.close()
     _set_run_live_text(run_id, sr.assistant_text)
 
-    # Resolve native tool call into a payload_call.
+    # Resolve native tool calls into the first sequential payload. The worker
+    # intentionally performs one MCP call per turn; if a provider still streams
+    # multiple tool calls, keep the first one and let the model continue after
+    # the tool result instead of concatenating names/JSON fragments.
+    if sr.has_native_tc and tool_call_parts and not sr.tc_name:
+        first = next(
+            (
+                item
+                for _, item in sorted(tool_call_parts.items(), key=lambda kv: kv[0])
+                if item.get("name")
+            ),
+            None,
+        )
+        if first:
+            sr.tc_id = first.get("id") or "call_0"
+            sr.tc_name = first.get("name") or ""
+            sr.tc_args = first.get("arguments") or "{}"
+
     if sr.has_native_tc and sr.tc_name and not sr.payload_call:
         try:
             tc_arguments = json.loads(sr.tc_args or "{}")
@@ -337,6 +360,7 @@ def stream_turn_anthropic(
     current_tool_id = ""
     current_tool_name = ""
     current_tool_args = ""
+    anthropic_tool_calls: List[Dict[str, str]] = []
 
     _set_run_live_text(run_id, "")
     _set_run_live_reasoning(run_id, "")
@@ -402,9 +426,11 @@ def stream_turn_anthropic(
 
         elif etype == "content_block_stop":
             if current_block_type == "tool_use" and current_tool_name:
-                sr.tc_id = current_tool_id
-                sr.tc_name = current_tool_name
-                sr.tc_args = current_tool_args
+                anthropic_tool_calls.append({
+                    "id": current_tool_id,
+                    "name": current_tool_name,
+                    "arguments": current_tool_args,
+                })
             current_block_type = ""
 
         elif etype == "message_delta":
@@ -428,7 +454,13 @@ def stream_turn_anthropic(
     response.close()
     _set_run_live_text(run_id, sr.assistant_text)
 
-    # Resolve tool call into payload_call.
+    # Resolve the first tool call. The chat worker executes MCP sequentially.
+    if sr.has_native_tc and anthropic_tool_calls and not sr.tc_name:
+        first = anthropic_tool_calls[0]
+        sr.tc_id = first.get("id") or "call_0"
+        sr.tc_name = first.get("name") or ""
+        sr.tc_args = first.get("arguments") or "{}"
+
     if sr.has_native_tc and sr.tc_name:
         try:
             tc_arguments = json.loads(sr.tc_args or "{}")

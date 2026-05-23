@@ -16,6 +16,7 @@ user's UI room so the frontend updates live.
 """
 
 import contextvars
+import asyncio
 import time
 import uuid
 from typing import Any, Dict, List, Optional
@@ -23,6 +24,13 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session
 
 from .database import engine
+from .desktop_agent_tools import (
+    get_connected_browser_agent,
+    get_connected_desktop_agent,
+    is_browser_tool,
+    is_desktop_tool,
+    is_endpoint_agent_tool,
+)
 from .models import ChatMessageCreate
 from .sio import agents, sio
 from .routers.chat_persistence import _save_message
@@ -38,6 +46,7 @@ _RUN_SESSION_CONTEXT: contextvars.ContextVar[Optional[Dict[str, Any]]] = context
 
 # taskId -> dispatch context (for routing results back to a session).
 _PENDING_DISPATCHES: Dict[str, Dict[str, Any]] = {}
+_PENDING_DISPATCH_WAITERS: Dict[str, Dict[str, Any]] = {}
 
 # Dispatches with no agent reply after this many seconds are considered lost and
 # are dropped so the in-memory map does not grow unbounded when an agent drops.
@@ -112,6 +121,9 @@ async def dispatch_task_to_agent(
     tool: str = "",
     args: Optional[Dict[str, Any]] = None,
     allowed_tools: Optional[List[str]] = None,
+    wait_for_result: bool = False,
+    timeout_seconds: int = 120,
+    suppress_session_message: bool = False,
 ) -> Dict[str, Any]:
     target_sid = _find_agent_sid(agent_id)
     if not target_sid:
@@ -140,8 +152,29 @@ async def dispatch_task_to_agent(
         "instruction": instruction,
         "tool": tool or "",
         "created_at": time.time(),
+        "suppress_session_message": bool(suppress_session_message),
     }
+    waiter = None
+    if wait_for_result:
+        loop = asyncio.get_running_loop()
+        waiter = {"loop": loop, "future": loop.create_future()}
+        _PENDING_DISPATCH_WAITERS[task_id] = waiter
     await sio.emit("task:dispatch", payload, to=target_sid)
+    if wait_for_result and waiter:
+        future = waiter["future"]
+        try:
+            return await asyncio.wait_for(future, timeout=max(1, int(timeout_seconds or 120)))
+        except asyncio.TimeoutError:
+            _PENDING_DISPATCHES.pop(task_id, None)
+            return {
+                "success": False,
+                "taskId": task_id,
+                "agentId": agent_id,
+                "tool": tool or "",
+                "error": f"Endpoint agent result timeout after {timeout_seconds}s",
+            }
+        finally:
+            _PENDING_DISPATCH_WAITERS.pop(task_id, None)
     return {
         "success": True,
         "taskId": task_id,
@@ -229,8 +262,23 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
         f"[摘要]\n{summary or '(无摘要)'}\n\n"
         f"[结果]\n{result_text}"
     )
-    _save_agent_message(ctx, content, "agent_task_result")
+    if not bool(ctx.get("suppress_session_message")):
+        _save_agent_message(ctx, content, "agent_task_result")
     _update_agent_task_state(agent_id, status="success" if success else "failed", task_id=task_id)
+    waiter = _PENDING_DISPATCH_WAITERS.get(task_id)
+    waiter_payload = {
+        "success": success,
+        "taskId": task_id,
+        "agentId": agent_id,
+        "tool": tool,
+        "summary": summary,
+        "result": result,
+    }
+    if waiter:
+        loop = waiter.get("loop")
+        future = waiter.get("future")
+        if loop and future and not future.done():
+            loop.call_soon_threadsafe(future.set_result, waiter_payload)
     await _emit_to_user(ctx, "agent:task_result", {
         "taskId": task_id,
         "agentId": agent_id,
@@ -255,8 +303,22 @@ async def handle_task_error(data: Dict[str, Any]) -> None:
         f"工具: {ctx.get('tool') or '(综合任务)'}\n\n"
         f"[错误]\n{error}"
     )
-    _save_agent_message(ctx, content, "agent_task_error")
+    if not bool(ctx.get("suppress_session_message")):
+        _save_agent_message(ctx, content, "agent_task_error")
     _update_agent_task_state(agent_id, status="error", task_id=task_id, error=error)
+    waiter = _PENDING_DISPATCH_WAITERS.get(task_id)
+    if waiter:
+        loop = waiter.get("loop")
+        future = waiter.get("future")
+        if loop and future and not future.done():
+            loop.call_soon_threadsafe(future.set_result, {
+                "success": False,
+                "taskId": task_id,
+                "agentId": agent_id,
+                "tool": str(ctx.get("tool") or ""),
+                "error": error,
+                "result": None,
+            })
     await _emit_to_user(ctx, "agent:task_error", {
         "taskId": task_id,
         "agentId": agent_id,
@@ -272,6 +334,52 @@ def _safe_dump(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False, indent=2)
     except Exception:
         return str(value)
+
+
+async def dispatch_endpoint_tool_and_wait(
+    *,
+    user_id: int,
+    ai_config_id: Optional[int],
+    tool: str,
+    args: Optional[Dict[str, Any]] = None,
+    timeout_seconds: int = 120,
+) -> Dict[str, Any]:
+    tool_name = str(tool or "").strip()
+    if not is_endpoint_agent_tool(tool_name):
+        return {"success": False, "error": f"Not an endpoint agent tool: {tool_name}"}
+    if not ai_config_id:
+        return {"success": False, "error": "ai_config_id is required for endpoint MCP tools"}
+
+    agent = None
+    if is_browser_tool(tool_name):
+        agent = get_connected_browser_agent(ai_config_id, user_id)
+    elif is_desktop_tool(tool_name):
+        agent = get_connected_desktop_agent(ai_config_id, user_id)
+    if not agent:
+        kind = "browser" if is_browser_tool(tool_name) else "desktop"
+        return {"success": False, "error": f"No connected {kind} agent bound to ai_config_id={ai_config_id}"}
+
+    agent_id = str(agent.get("id") or "").strip()
+    if not agent_id:
+        return {"success": False, "error": "Connected endpoint agent has no id"}
+
+    run_ctx = get_run_session_context() or {}
+    return await dispatch_task_to_agent(
+        agent_id=agent_id,
+        user_id=user_id,
+        ai_config_id=ai_config_id,
+        ai_kind=str(run_ctx.get("ai_kind") or "assistant"),
+        session_id=str(run_ctx.get("session_id") or ""),
+        session_name=run_ctx.get("session_name"),
+        model=run_ctx.get("model"),
+        instruction=f"Run endpoint MCP tool {tool_name}",
+        tool=tool_name,
+        args=args or {},
+        allowed_tools=[tool_name],
+        wait_for_result=True,
+        timeout_seconds=timeout_seconds,
+        suppress_session_message=True,
+    )
 
 
 async def _dispatch_task(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:

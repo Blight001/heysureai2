@@ -229,7 +229,7 @@ def _start_task_run(
             "session_name": sname,
             "model_user_content": user_msg.content,
             "merged_system_prompt": None,
-            "max_steps": 12,
+            "max_steps": None,
         },
         daemon=True,
     )

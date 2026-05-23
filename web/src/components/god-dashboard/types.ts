@@ -5,6 +5,7 @@ export interface User {
   avatar?: string
   ui_theme_mode?: 'light' | 'dark'
   ui_font_size?: 'sm' | 'md' | 'lg'
+  mcp_max_steps?: number
   role_mcp_permissions?: string
 }
 
@@ -23,6 +24,7 @@ export interface AgentTaskSnapshot {
   taskTokenUsed: number
   taskTokenLimit: number
   createdAt?: number
+  updatedAt?: number
   startedAt?: number
   finishedAt?: number
 }

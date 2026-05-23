@@ -13,6 +13,7 @@ interface AgentTaskSnapshot {
   taskTokenUsed: number
   taskTokenLimit: number
   createdAt?: number
+  updatedAt?: number
   startedAt?: number
   finishedAt?: number
 }

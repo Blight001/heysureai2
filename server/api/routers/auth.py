@@ -154,6 +154,11 @@ async def update_profile(
     if "ui_font_size" in update_data:
         raw_font = str(update_data.get("ui_font_size") or "").lower()
         update_data["ui_font_size"] = raw_font if raw_font in {"sm", "md", "lg"} else "md"
+    if "mcp_max_steps" in update_data:
+        try:
+            update_data["mcp_max_steps"] = max(1, min(999, int(update_data.get("mcp_max_steps") or 48)))
+        except Exception:
+            update_data["mcp_max_steps"] = 48
     
     if "password" in update_data:
         password = update_data.pop("password")

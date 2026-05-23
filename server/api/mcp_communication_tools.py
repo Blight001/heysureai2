@@ -99,6 +99,16 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         raise HTTPException(status_code=400, detail=str(exc))
 
     target_active = ai_message_service.target_has_active_run(user_id, to_id)
+    wakeup = None
+    if not target_active:
+        try:
+            wakeup = ai_message_service.wake_idle_target_for_message(
+                message_id=msg.message_id,
+                user_id=user_id,
+            )
+            target_active = bool(wakeup.get("started") or wakeup.get("run_id"))
+        except Exception as exc:
+            wakeup = {"started": False, "error": str(exc)}
     out = {
         "message_id": msg.message_id,
         "queued": True,
@@ -108,12 +118,15 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         "require_reply": require_reply,
         "timeout_seconds": timeout_seconds,
     }
+    if wakeup is not None:
+        out["target_wakeup"] = wakeup
     if not require_reply:
-        out["note"] = (
-            "已入队，不等待回复；目标 AI 工作循环到下一轮顶部会捕获并处理本消息。"
-            if target_active
-            else "已入队，但目标 AI 当前没有进行中的 run；它要等被唤起执行任务时才能看到。"
-        )
+        if wakeup and wakeup.get("started"):
+            out["note"] = "已入队，不等待回复；目标 AI 原本空闲，系统已创建新对话并唤醒处理本消息。"
+        elif target_active:
+            out["note"] = "已入队，不等待回复；目标 AI 工作循环到下一轮顶部会捕获并处理本消息。"
+        else:
+            out["note"] = "已入队，但目标 AI 唤醒失败；它要等被唤起执行任务时才能看到。"
         return out
 
     # 阻塞等待回复

@@ -101,7 +101,7 @@ async def start_chat_run(
             "session_name": session_name,
             "model_user_content": model_content,
             "merged_system_prompt": merged_system_prompt,
-            "max_steps": int(req.get("max_steps") or 12),
+            "max_steps": req.get("max_steps"),
         },
         daemon=True,
     )

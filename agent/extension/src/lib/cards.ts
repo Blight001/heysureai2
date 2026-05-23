@@ -16,6 +16,7 @@ export function deriveNote(tool: string, args: Record<string, any>): string {
     browser_drag: '拖拽', browser_hover: '悬停', browser_fill_form: '填写表单',
     browser_search: '搜索', browser_screenshot: '截图', browser_extract: '提取数据',
     browser_get_content: '读取内容', browser_page_info: '查看页面位置',
+    browser_find_popups: '查找弹窗', browser_close_popup: '关闭弹窗',
   }
   const base = labels[tool] || tool.replace(/^browser_/, '')
   const hint = args?.url || args?.text || args?.selector || args?.query

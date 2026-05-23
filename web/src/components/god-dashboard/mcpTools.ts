@@ -50,6 +50,8 @@ export const BROWSER_AGENT_MCP_TOOLS = [
   'browser_evaluate',
   'browser_extract',
   'browser_find_text',
+  'browser_find_popups',
+  'browser_close_popup',
   'browser_fill_form',
   'browser_select',
   'browser_tab_list',
@@ -119,6 +121,8 @@ export const MCP_TOOL_ZH_META: Record<string, { label: string; description: stri
   'evolution.list': { label: '进化建议列表', description: '列出已提交的进化建议，可按评审状态过滤。', tag: '进化' },
   'evolution.review': { label: '评审进化建议', description: '评审进化建议：接受/拒绝/应用（核心管理者）。', tag: '进化' },
   'human.ask': { label: '询问人类', description: '暂停当前任务并向人类提问（确认/选择/文本），阻塞直至回答或超时。', tag: '协作' },
+  'browser_find_popups': { label: '查找弹窗', description: '检测当前页面可见的弹窗、模态框、抽屉、遮罩，并返回可能的关闭按钮。', tag: '浏览器MCP' },
+  'browser_close_popup': { label: '关闭弹窗', description: '关闭当前页面弹窗；优先点击关闭按钮，必要时使用 Escape 或遮罩点击兜底。', tag: '浏览器MCP' },
 }
 
 export const normalizeMcpSchemaType = (rawType: unknown) => {

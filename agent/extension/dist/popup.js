@@ -89,7 +89,9 @@
       browser_screenshot: "\u622A\u56FE",
       browser_extract: "\u63D0\u53D6\u6570\u636E",
       browser_get_content: "\u8BFB\u53D6\u5185\u5BB9",
-      browser_page_info: "\u67E5\u770B\u9875\u9762\u4F4D\u7F6E"
+      browser_page_info: "\u67E5\u770B\u9875\u9762\u4F4D\u7F6E",
+      browser_find_popups: "\u67E5\u627E\u5F39\u7A97",
+      browser_close_popup: "\u5173\u95ED\u5F39\u7A97"
     };
     const base = labels[tool] || tool.replace(/^browser_/, "");
     const hint = args?.url || args?.text || args?.selector || args?.query || (args?.direction ? `${args.direction}${args?.amount ? " " + args.amount : ""}` : "") || (args?.key ? `\u6309\u952E ${args.key}` : "") || (args?.ms ? `${args.ms}ms` : "");
