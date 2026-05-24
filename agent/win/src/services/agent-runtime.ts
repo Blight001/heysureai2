@@ -1,0 +1,82 @@
+// Glue around the HeySureAgent socket client. Owns the singleton instance,
+// re-wires renderer events on construction, and exposes a small API the IPC
+// layer + tray menu can call.
+
+import { HeySureAgent, AgentStatus } from '../agent'
+import { store, AgentSettings } from '../store'
+import { getMainWindow } from '../windows/main-window'
+import { sendActivityLog } from './activity-log'
+import { updateTray, STATUS_LABELS } from '../windows/tray'
+
+let agent: HeySureAgent | null = null
+
+function buildAgent(settings: AgentSettings): HeySureAgent {
+  return new HeySureAgent(settings, {
+    onStatusChange: (status, reason) => {
+      updateTray(status)
+      getMainWindow()?.webContents.send('agent:status-changed', status, reason)
+      sendActivityLog(
+        'system',
+        status === 'registered' ? 'success' : status === 'error' ? 'error' : 'info',
+        `状态变更: ${STATUS_LABELS[status]}${reason ? ` (${reason})` : ''}`,
+      )
+    },
+    onLog: (level, message, data) => sendActivityLog(level, 'info', message, data),
+    onTaskStart: (taskId, tool, args) => {
+      getMainWindow()?.webContents.send('task:start', {
+        taskId, tool, args, timestamp: Date.now(),
+      })
+      sendActivityLog('task', 'running', `[工具] ${tool}`, args)
+    },
+    onTaskResult: (taskId, tool, result, success) => {
+      getMainWindow()?.webContents.send('task:result', {
+        taskId, tool, result, success, timestamp: Date.now(),
+      })
+      sendActivityLog(
+        'task',
+        success ? 'success' : 'error',
+        `${success ? '✓' : '✗'} ${tool}`,
+        success ? (result?.summary || result) : result,
+      )
+    },
+  })
+}
+
+export function initAgent(settings: AgentSettings): HeySureAgent {
+  agent = buildAgent(settings)
+  return agent
+}
+
+export function getAgent(): HeySureAgent | null {
+  return agent
+}
+
+export function rebuildAgent(settings: AgentSettings): HeySureAgent {
+  agent?.disconnect()
+  agent = buildAgent(settings)
+  return agent
+}
+
+export function isAgentActive(): boolean {
+  const s = agent?.status
+  return s === 'connected' || s === 'registered'
+}
+
+export function clearSelectedAiConfig(): void {
+  store.set('selectedAiConfigId', null)
+  store.set('selectedAiConfigName', '')
+  store.set('selectedAiConfigRole', 'member')
+  store.set('selectedAiConfigLifecycle', 'working')
+  store.set('selectedAiConfigProject', '')
+  store.set('agentToken', '')
+  store.set('agentId', '')
+  store.set('agentName', 'Windows Agent')
+  store.set('agentGroup', '')
+}
+
+export function clearAiSelectionIfLoggedOut(): boolean {
+  if (store.get('authToken')) return false
+  if (!store.get('selectedAiConfigId')) return false
+  clearSelectedAiConfig()
+  return true
+}

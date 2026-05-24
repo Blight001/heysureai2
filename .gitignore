@@ -46,6 +46,11 @@ web/.vite/
 web/tsconfig.tsbuildinfo
 web/tsconfig.node.tsbuildinfo
 
+# Win agent (Electron) build output
+agent/win/dist/
+agent/win/release/
+agent/win/tsconfig.tsbuildinfo
+
 # Build artifacts
 *.out
 *.exe
