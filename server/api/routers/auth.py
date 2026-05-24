@@ -7,6 +7,11 @@ import uuid
 
 from api.database import get_session
 from api.ai_service import ensure_default_ai_for_user
+from api.core.config import (
+    USER_WORKSPACE_SUBFOLDERS,
+    WORKSPACE_DIR,
+    user_workspace_dir,
+)
 from api.models import User, UserCreate, UserLogin, UserRead, Token, UserUpdate
 from api.auth import get_password_hash, verify_password, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, decode_access_token
 from datetime import timedelta
@@ -14,37 +19,21 @@ from datetime import timedelta
 router = APIRouter()
 PREFIX = "/api/auth"
 
-def ensure_user_workspace(user_id: int):
-    """确保用户的 workspace 目录及其子目录存在"""
-    # 当前文件: server/api/routers/auth.py
-    # 获取 server 目录
-    server_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    # 路径改为 server/data/workspace
-    workspace_dir = os.path.join(server_dir, "data", "workspace")
-    user_dir = os.path.join(workspace_dir, str(user_id))
-
-    # 需要创建的子文件夹列表
-    subfolders = ["Valhalla", "BrainCore", "KnowledgeBase", "EvolutionArena", "SystemSetting"]
-
+def ensure_user_workspace(user_id: int) -> None:
+    """Ensure the per-user workspace directory and its standard subfolders exist."""
+    user_dir = user_workspace_dir(user_id)
     try:
-        # 如果 workspace 不存在则创建
-        if not os.path.exists(workspace_dir):
-            os.makedirs(workspace_dir)
-        
-        # 创建用户 ID 目录
+        os.makedirs(WORKSPACE_DIR, exist_ok=True)
         if not os.path.exists(user_dir):
             os.makedirs(user_dir)
             print(f"Created user directory: {user_dir}")
-        
-        # 创建子文件夹
-        for folder in subfolders:
+        for folder in USER_WORKSPACE_SUBFOLDERS:
             folder_path = os.path.join(user_dir, folder)
             if not os.path.exists(folder_path):
                 os.makedirs(folder_path)
                 print(f"Created subfolder: {folder_path}")
-                
-    except Exception as e:
-        print(f"Error ensuring user directories for user {user_id}: {e}")
+    except Exception as exc:
+        print(f"Error ensuring user directories for user {user_id}: {exc}")
 
 def get_current_user_from_token(token: str = Depends(lambda x: x), session: Session = Depends(get_session)):
     # This dependency can be used to get user from Bearer token

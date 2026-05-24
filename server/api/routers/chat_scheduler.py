@@ -23,7 +23,7 @@ def _load_previous_unfinished_block(user_id: int, ai_config_id: int, job_id: str
     if generation <= 1 or not job_id:
         return ""
     try:
-        from api.mcp_core import _resolve_ai_workspace, safe_join
+        from api.mcp.core import _resolve_ai_workspace, safe_join
         import os, json
         ws = _resolve_ai_workspace(user_id, ai_config_id)
         rel = os.path.join("Valhalla", job_id, f"g{generation - 1}", "unfinished.json")

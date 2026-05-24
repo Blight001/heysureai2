@@ -9,7 +9,7 @@ from api.database import get_session
 from api.agent_dispatch import dispatch_endpoint_tool_and_wait
 from api.desktop_agent_tools import endpoint_bridge_tools_for_config, is_endpoint_agent_tool
 from api.mcp import registry
-from api.mcp_permissions import (
+from api.mcp.permissions import (
     CONFIGURABLE_ROLES,
     ROLE_LABELS_ZH,
     config_role_tier,

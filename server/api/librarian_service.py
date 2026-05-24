@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 
 from .database import engine
-from .mcp_core import _resolve_ai_workspace, safe_join
+from .mcp.core import _resolve_ai_workspace, safe_join
 from .models import AssistantAIConfig, KnowledgeEntry
 from .sio import sio
 
