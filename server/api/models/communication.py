@@ -20,6 +20,11 @@ class AIMessage(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True)
     from_ai_config_id: int = Field(foreign_key="assistantaiconfig.id", index=True)
     to_ai_config_id: int = Field(foreign_key="assistantaiconfig.id", index=True)
+    # 目标 AI 应该在哪个 session 内消费本消息。发送时绑定，pop 时严格匹配，
+    # 防止并发会话相互串话。
+    target_session_id: str = Field(default="", index=True)
+    # 发送方所在的 session（便于日志/审计/将来回流到原始上下文）。
+    from_session_id: str = Field(default="")
     content: str = Field(default="")
     status: str = Field(default="pending", index=True)
     reply_content: Optional[str] = Field(default=None)

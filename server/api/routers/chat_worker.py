@@ -528,9 +528,13 @@ def _run_worker(
 
                 # 抢占式钩子：若收件箱有 pending 的 AI 间消息，在下一次 LLM
                 # 调用前把它注入到 convo 强制 AI 优先回复。
+                # 必须按 session_id 严格匹配——保证 (AI, session) 的消息流
+                # 不会跨会话相互串话。
                 if ai_config_id is not None:
                     try:
-                        _inbound = ai_message_service.pop_pending_for(user_id, int(ai_config_id))
+                        _inbound = ai_message_service.pop_pending_for(
+                            user_id, int(ai_config_id), session_id
+                        )
                     except Exception as _iex:
                         _inbound = None
                         print(f"[chat_worker] inbox poll failed: {_iex}")

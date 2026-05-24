@@ -54,6 +54,7 @@ def run_pending_migrations() -> None:
         )
         _migrate_assistantaiconfig(cursor)
         _migrate_aitaskjob(cursor)
+        _migrate_aimessage(cursor)
 
         conn.commit()
     finally:
@@ -188,3 +189,24 @@ def _migrate_aitaskjob(cursor: sqlite3.Cursor) -> None:
     existing = _existing_columns(cursor, "aitaskjob")
     _add_column(cursor, "aitaskjob", "task_payload", "TEXT", existing)
     _add_column(cursor, "aitaskjob", "created_by_ai_config_id", "INTEGER", existing)
+
+
+def _migrate_aimessage(cursor: sqlite3.Cursor) -> None:
+    # Table may not exist yet if running on a brand new DB before
+    # SQLModel.metadata.create_all — guard against that.
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='aimessage'"
+    )
+    if not cursor.fetchone():
+        return
+    existing = _existing_columns(cursor, "aimessage")
+    _add_column(cursor, "aimessage", "target_session_id", "TEXT DEFAULT ''", existing)
+    _add_column(cursor, "aimessage", "from_session_id", "TEXT DEFAULT ''", existing)
+    # 旧的、缺乏 session 归属的 in-flight 消息无法被新的严格匹配 pop 出来，
+    # 直接终结掉避免幽灵堆积。
+    cursor.execute(
+        "UPDATE aimessage SET status='failed', "
+        "failure_reason='schema migration: target_session_id required' "
+        "WHERE status IN ('pending','delivered') "
+        "AND (target_session_id IS NULL OR target_session_id='')"
+    )

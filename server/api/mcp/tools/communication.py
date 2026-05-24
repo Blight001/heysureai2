@@ -1,7 +1,7 @@
 """通信类 MCP 工具：
 - user.send_message  → 向用户发送消息（沿用飞书底座，名字改为业务语义）
-- ai.send_message    → 向另一个 AI 发送消息（异步入队，不阻塞等待回复）
-- ai.reply_message   → 目标 AI 用此回复对方
+- ai.send_message    → 向另一个 AI 发送消息（事件驱动；默认阻塞等回复，可关）
+- ai.reply_message   → 目标 AI 用此回复对方；落库即刻唤醒等待方
 - ai.list_inbox      → 查看自己的未处理消息（一般不需要主动看，强插已经会注入）
 """
 
@@ -14,6 +14,7 @@ from ...database import engine
 from ...integrations.feishu.service import send_feishu_text_message
 from ...models import AssistantAIConfig, User
 from ...services import ai_message_service
+from ...services.agent_dispatch import get_run_session_context
 
 
 # ---------- 与用户通信 ----------
@@ -83,10 +84,34 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
     content = str(args.get("content") or args.get("text") or args.get("message") or "").strip()
     if not content:
         raise HTTPException(status_code=400, detail="content is required")
-    # Keep require_reply as message metadata for the target-side reply flow, but
-    # ai.send_message itself no longer blocks waiting for that reply.
     require_reply = bool(args.get("require_reply", True))
     timeout_seconds = int(args.get("timeout_seconds") or 120)
+
+    # 提前确定目标 AI 应该在哪个 session 处理本消息：
+    #   - 已有活跃 run → 复用其 session，强插到该会话顶部
+    #   - 空闲       → 预生成一个新 session_id，稍后由 wake_idle_target_for_message
+    #                   按同一 id 创建会话，pop 时严格匹配。
+    active_session_id = ai_message_service.get_active_session_id(user_id, to_id)
+    target_active_initial = active_session_id is not None
+
+    # 先生成 message_id 是为了把 session_id 预先确定下来；这里通过预算
+    # session_id 再 send 的方式实现：reserve_idle_session_id 用占位
+    # message_id，send 后再回写实际 id。最简单做法是先 send 占位、再
+    # 立刻把 target_session_id 改为 ai_message_<message_id>。这里直接
+    # 复用：先 send 给一个临时 token，然后 wake 时同步。但为了让
+    # pop_pending_for 能在新 session 启动后第一时间命中，我们必须在
+    # send 时就写入最终的 session_id。
+    #
+    # 采用两步：(1) 若目标活跃，直接用其 session_id；(2) 否则先用
+    # uuid 占位生成 session_id，send + wake 都使用同一个。
+    if active_session_id:
+        prebound_session_id = active_session_id
+    else:
+        import uuid as _uuid
+        prebound_session_id = f"ai_message_{_uuid.uuid4().hex[:14]}"
+
+    sender_ctx = get_run_session_context() or {}
+    from_session_id = str(sender_ctx.get("session_id") or "").strip()
 
     try:
         msg = ai_message_service.send(
@@ -94,41 +119,78 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
             from_ai_config_id=int(ai_config_id),
             to_ai_config_id=to_id,
             content=content,
+            target_session_id=prebound_session_id,
+            from_session_id=from_session_id,
             require_reply=require_reply,
             timeout_seconds=timeout_seconds,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    target_active = ai_message_service.target_has_active_run(user_id, to_id)
     wakeup = None
+    target_active = target_active_initial
     if not target_active:
         try:
             wakeup = ai_message_service.wake_idle_target_for_message(
                 message_id=msg.message_id,
                 user_id=user_id,
             )
+            # wake 内部会把 msg.target_session_id 改为它实际创建的 session_id
+            # （等于我们预算的 prebound_session_id，所以这里就是同一个）。
             target_active = bool(wakeup.get("started") or wakeup.get("run_id"))
         except Exception as exc:
             wakeup = {"started": False, "error": str(exc)}
-    out = {
+
+    base_out: Dict[str, Any] = {
         "message_id": msg.message_id,
         "queued": True,
         "target_active_run": target_active,
         "from_ai_config_id": ai_config_id,
         "to_ai_config_id": to_id,
+        "target_session_id": msg.target_session_id,
         "require_reply": require_reply,
         "timeout_seconds": timeout_seconds,
     }
     if wakeup is not None:
-        out["target_wakeup"] = wakeup
-    if wakeup and wakeup.get("started"):
-        out["note"] = "已入队，不等待回复；目标 AI 原本空闲，系统已创建新对话并唤醒处理本消息。"
-    elif target_active:
-        out["note"] = "已入队，不等待回复；目标 AI 工作循环到下一轮顶部会捕获并处理本消息。"
+        base_out["target_wakeup"] = wakeup
+
+    if not require_reply:
+        # Fire-and-forget 路径：不阻塞。
+        if wakeup and wakeup.get("started"):
+            base_out["note"] = "已入队（不等待回复）；目标 AI 空闲，系统已创建新对话处理本消息。"
+        elif target_active:
+            base_out["note"] = "已入队（不等待回复）；目标 AI 会在下一轮顶部处理。"
+        else:
+            base_out["note"] = "已入队（不等待回复），但目标 AI 唤醒失败。"
+        return base_out
+
+    if not target_active:
+        # 没人会消费这条消息，立刻返回失败而不是干等到超时。
+        base_out["replied"] = False
+        base_out["status"] = "failed"
+        base_out["failure_reason"] = "target AI is idle and wakeup failed"
+        return base_out
+
+    # 事件驱动等待：reply_message 落库后立即唤醒，无轮询、无 5 秒 idle 误判。
+    final = await ai_message_service.wait_for_reply(
+        message_id=msg.message_id,
+        user_id=user_id,
+        timeout_seconds=timeout_seconds,
+    )
+    base_out.update({
+        "replied": final.get("status") == "replied",
+        "status": final.get("status"),
+        "reply_content": final.get("reply_content"),
+        "failure_reason": final.get("failure_reason"),
+        "replied_at": final.get("replied_at"),
+    })
+    if final.get("status") == "replied":
+        base_out["note"] = "目标 AI 已回复，见 reply_content。"
+    elif final.get("status") == "timeout":
+        base_out["note"] = f"等待 {timeout_seconds}s 后未收到回复（超时）。"
     else:
-        out["note"] = "已入队，但目标 AI 唤醒失败；它要等被唤起执行任务时才能看到。"
-    return out
+        base_out["note"] = "未能拿到回复，详见 status / failure_reason。"
+    return base_out
 
 
 def _ai_reply_message(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
