@@ -14,9 +14,9 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from .database import engine
-from .models import HumanRequest
-from .sio import sio
+from ...database import engine
+from ...models import HumanRequest
+from ...sio import sio
 
 _KINDS = {"confirm", "select", "text"}
 

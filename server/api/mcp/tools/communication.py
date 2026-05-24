@@ -10,10 +10,10 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from . import ai_message_service
-from .database import engine
-from .feishu_service import send_feishu_text_message
-from .models import AssistantAIConfig, User
+from ... import ai_message_service
+from ...database import engine
+from ...feishu_service import send_feishu_text_message
+from ...models import AssistantAIConfig, User
 
 
 # ---------- 与用户通信 ----------

@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
-from . import librarian_service
+from ... import librarian_service
 
 
 def _ensure_librarian_only(user_id: int, ai_config_id: Optional[int]) -> None:

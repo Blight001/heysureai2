@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from .database import engine
-from .models import AssistantAIConfig, EvolutionProject
+from ...database import engine
+from ...models import AssistantAIConfig, EvolutionProject
 def _normalize_project_status(status: Any) -> str:
     value = str(status or "running").strip()
     if value not in {"running", "ended"}:

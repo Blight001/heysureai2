@@ -60,21 +60,20 @@ from .chat_runtime_helpers import (
 )
 from .chat_scheduler import _start_task_run
 
+from api.core.config import DEFAULT_CHAT_MAX_STEPS, DEFAULT_TASK_MAX_STEPS
+
 DEFAULT_AI_MSG_INBOUND_FALLBACK = (
     "[系统中断 · AI 间通信]\n"
     "来自 {from_ai_name}（ai_config_id={from_ai_config_id}）：\n{content}\n\n"
     "请调用 ai.reply_message(message_id=\"{message_id}\", content=...) 回复后再继续。"
 )
 
+
 def _coerce_max_steps(value: object, default: int = 48) -> int:
     try:
         return max(1, min(999, int(value or default)))
     except Exception:
         return max(1, min(999, int(default)))
-
-
-DEFAULT_CHAT_MAX_STEPS = _coerce_max_steps(os.getenv("HEYSURE_CHAT_MAX_STEPS"), 48)
-DEFAULT_TASK_MAX_STEPS = _coerce_max_steps(os.getenv("HEYSURE_TASK_MAX_STEPS"), DEFAULT_CHAT_MAX_STEPS)
 
 
 def _resolve_ai_name_safe(session: Session, ai_config_id: Optional[int]) -> str:

@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from api.ai_service import ensure_default_ai_for_user, sync_switch_file
 from api.database import get_session
 from api.feishu_long_connection import start_feishu_long_connection_clients
-from api.mcp_permissions import clamp_tools_json, config_role_tier
+from api.mcp.permissions import clamp_tools_json, config_role_tier
 from api.models import (
     AIRuntimeStatus,
     AssistantAIConfig,

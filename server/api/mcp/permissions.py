@@ -101,9 +101,13 @@ def tool_min_role(tool_name: str) -> str:
 
 
 def all_registry_tool_names() -> Set[str]:
-    from .mcp import registry
+    from . import registry as _registry_module
 
-    return {str(tool.get("name") or "").strip() for tool in registry.list_tools() if tool.get("name")}
+    return {
+        str(tool.get("name") or "").strip()
+        for tool in _registry_module.registry.list_tools()
+        if tool.get("name")
+    }
 
 
 def config_role_tier(cfg) -> str:
