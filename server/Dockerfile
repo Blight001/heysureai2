@@ -13,4 +13,4 @@ COPY . .
 
 EXPOSE 3000
 
-CMD ["uvicorn", "main:sio_app", "--host", "0.0.0.0", "--port", "3000"]
+CMD ["uvicorn", "api.app:sio_app", "--host", "0.0.0.0", "--port", "3000"]

@@ -2,6 +2,8 @@ import os
 
 import uvicorn
 
+from api.app import sio_app
+
 
 def _env_enabled(name: str, default: bool = False) -> bool:
     raw = os.environ.get(name)
