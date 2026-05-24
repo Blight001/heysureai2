@@ -4,7 +4,6 @@ from sqlmodel import Field, SQLModel
 
 from .defaults import (
     DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,
-    DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE,
     DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
     DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
     DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
@@ -53,7 +52,6 @@ class User(SQLModel, table=True):
     default_supervision_idle_seconds: int = Field(default=25)
     default_inheritance_notice: str = Field(default=DEFAULT_INHERITANCE_NOTICE)
 
-    prompt_ai_message_inbound: str = Field(default=DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE)
     prompt_ai_message_notify: str = Field(default=DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE)
     prompt_ai_message_inquiry: str = Field(default=DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE)
     prompt_ai_message_reply: str = Field(default=DEFAULT_AI_MESSAGE_REPLY_TEMPLATE)
@@ -104,7 +102,6 @@ class UserRead(SQLModel):
     default_supervision_prompt: str
     default_supervision_idle_seconds: int
     default_inheritance_notice: str
-    prompt_ai_message_inbound: str
     prompt_ai_message_notify: str
     prompt_ai_message_inquiry: str
     prompt_ai_message_reply: str
@@ -139,7 +136,6 @@ class UserUpdate(SQLModel):
     default_supervision_prompt: Optional[str] = None
     default_supervision_idle_seconds: Optional[int] = None
     default_inheritance_notice: Optional[str] = None
-    prompt_ai_message_inbound: Optional[str] = None
     prompt_ai_message_notify: Optional[str] = None
     prompt_ai_message_inquiry: Optional[str] = None
     prompt_ai_message_reply: Optional[str] = None

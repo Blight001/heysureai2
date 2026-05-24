@@ -71,33 +71,10 @@ from api.models.defaults import (
     DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
 )
 
-DEFAULT_AI_MSG_INBOUND_FALLBACK = (
-    "[系统中断 · AI 间通信]\n"
-    "收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）\n"
-    "发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）\n"
-    "消息编号: {message_id}\n\n"
-    "{content}\n\n"
-    "请调用 ai.send_message(to_ai_config_id={from_ai_config_id}, content=..., "
-    "require_reply=false, reply_to_message_id=\"{message_id}\", current_session_id=\"{current_session_id}\") 回发给发送方。"
-)
 
-DEFAULT_AI_MSG_INBOUND_NO_REPLY_FALLBACK = (
-    DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE
-)
-
-
-def _select_inbound_template(
-    user: Any,
-    *,
-    message_type: str,
-    require_reply: bool,
-) -> tuple[str, str]:
-    """Pick (template_text, kind_label) by message_type.
-
-    kind_label is just for logging/tagging; the template is what we inject into
-    the AI's convo. Legacy paths (require_reply=true without an explicit
-    message_type) keep the old "inbound" template for back-compat.
-    """
+def _select_inbound_template(user: Any, message_type: str) -> tuple[str, str]:
+    """Pick (template_text, kind_label) by message_type. Caller has already
+    normalized message_type to one of inquiry/reply/chitchat/notify."""
     if message_type == "inquiry":
         tpl = str(getattr(user, "prompt_ai_message_inquiry", "") or DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE)
         return tpl, "inquiry"
@@ -107,11 +84,7 @@ def _select_inbound_template(
     if message_type == "chitchat":
         tpl = str(getattr(user, "prompt_ai_message_chitchat", "") or DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE)
         return tpl, "chitchat"
-    # notify / 未知 → 走单向通知模板（不要求回复）
-    if require_reply:
-        tpl = str(getattr(user, "prompt_ai_message_inbound", "") or DEFAULT_AI_MSG_INBOUND_FALLBACK)
-        return tpl, "inbound_legacy"
-    tpl = str(getattr(user, "prompt_ai_message_notify", "") or DEFAULT_AI_MSG_INBOUND_NO_REPLY_FALLBACK)
+    tpl = str(getattr(user, "prompt_ai_message_notify", "") or DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE)
     return tpl, "notify"
 
 
@@ -610,9 +583,7 @@ def _run_worker(
                                 )
                         else:
                             _chitchat_hint = ""
-                        _tpl, _tpl_kind = _select_inbound_template(
-                            user, message_type=_msg_type, require_reply=_requires_reply
-                        )
+                        _tpl, _tpl_kind = _select_inbound_template(user, _msg_type)
                         _fmt_kwargs = dict(
                             from_ai_name=_from_name,
                             from_ai_config_id=_inbound.from_ai_config_id,
@@ -641,7 +612,6 @@ def _run_worker(
                                 "reply": _FB_REPLY,
                                 "chitchat": _FB_CHITCHAT,
                                 "notify": _FB_NOTIFY,
-                                "inbound_legacy": DEFAULT_AI_MSG_INBOUND_FALLBACK,
                             }
                             _fallback_tpl = _fallback_map.get(_tpl_kind, _FB_NOTIFY)
                             try:
@@ -667,11 +637,9 @@ def _run_worker(
                             ),
                         )
                         convo.append({"role": "system", "content": _injected})
-                        # 仅 inquiry / 旧 inbound 期望对方答复。reply 是对话闭环、
-                        # notify 是单向通知、chitchat 让 AI 自主决定，全部不做
-                        # "assistant 终态文本 = 自动答复" 兜底，避免又生成一条
-                        # reply 类消息形成新链路。
-                        if _tpl_kind in {"inquiry", "inbound_legacy"}:
+                        # 只有 inquiry 期望对方答复，所以才打开 assistant 终态
+                        # 文本自动作答的兜底；reply / notify / chitchat 都不开。
+                        if _tpl_kind == "inquiry":
                             pending_ai_reply_message_id = str(_inbound.message_id or "").strip()
                         else:
                             pending_ai_reply_message_id = ""

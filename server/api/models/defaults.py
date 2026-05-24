@@ -26,19 +26,6 @@ Rules:
 - Call exactly one tool per <mcp-call> block; never join two tool names into one name.
 - Only fall back to legacy File/Create File/Delete File/Run Command formats if MCP is unavailable."""
 
-DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE = """[系统中断 · AI 间通信]
-你刚才的工作被一条来自其它 AI 的消息打断了。请优先处理此消息。
-
-- 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）
-- 发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）
-- 消息编号: {message_id}
-- 消息内容:
-{content}
-
-阅读后，请立即调用 MCP 工具 `ai.send_message` 回发消息给发送方：
-  arguments: {{"to_ai_config_id": {from_ai_config_id}, "content": "<你的回复>", "require_reply": false, "reply_to_message_id": "{message_id}", "current_session_id": "{current_session_id}"}}
-回复发出后，请继续你刚才被打断的工作。在你回发之前，不要执行其它 MCP 工具。"""
-
 DEFAULT_AI_MESSAGE_REPLY_SUCCESS = """[系统提示] 你对消息 {message_id} 的回复已送达。
 现在请继续你刚才被打断的任务。"""
 

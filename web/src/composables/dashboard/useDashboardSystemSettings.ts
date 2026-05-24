@@ -131,18 +131,6 @@ Rules:
   const defaultSupervisionPrompt = ref('系统监督提醒：请确认当前任务是否已完成。若已完成请调用 task.complete 标记；若未完成请给出剩余步骤并继续执行。')
   const defaultSupervisionIdleSeconds = ref(25)
   const defaultInheritanceNotice = ref('当前思考量已达到阈值（{session_tokens}/{threshold}），建议立即开启传承流程，沉淀本轮结论与关键上下文。')
-  const promptAiMessageInbound = ref(`[系统中断 · AI 间通信]
-你刚才的工作被一条来自其它 AI 的消息打断了。请优先处理此消息。
-
-- 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）
-- 发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）
-- 消息编号: {message_id}
-- 消息内容:
-{content}
-
-阅读后，请立即调用 MCP 工具 \`ai.send_message\` 回发消息给发送方：
-  arguments: {{"to_ai_config_id": {from_ai_config_id}, "content": "<你的回复>", "require_reply": false}}
-回复发出后，请继续你刚才被打断的工作。在你回发之前，不要执行其它 MCP 工具。`)
   const promptAiMessageNotify = ref(`[系统通知 · AI 间通信]
 你收到一条来自其它 AI 的通知消息。发送方不会在原工具调用中阻塞等待，但你仍然可以主动回复。
 
@@ -230,7 +218,6 @@ Rules:
         default_supervision_prompt: defaultSupervisionPrompt.value,
         default_supervision_idle_seconds: clampIdleSeconds(defaultSupervisionIdleSeconds.value),
         default_inheritance_notice: defaultInheritanceNotice.value,
-        prompt_ai_message_inbound: promptAiMessageInbound.value,
         prompt_ai_message_notify: promptAiMessageNotify.value,
         prompt_ai_message_inquiry: promptAiMessageInquiry.value,
         prompt_ai_message_reply: promptAiMessageReply.value,
@@ -293,9 +280,6 @@ Rules:
       if (Object.prototype.hasOwnProperty.call(rawUser, 'default_inheritance_notice')) {
         defaultInheritanceNotice.value = String(rawUser.default_inheritance_notice ?? '')
       }
-      if (Object.prototype.hasOwnProperty.call(rawUser, 'prompt_ai_message_inbound')) {
-        promptAiMessageInbound.value = String(rawUser.prompt_ai_message_inbound ?? '')
-      }
       if (Object.prototype.hasOwnProperty.call(rawUser, 'prompt_ai_message_notify')) {
         promptAiMessageNotify.value = String(rawUser.prompt_ai_message_notify ?? '')
       }
@@ -340,7 +324,6 @@ Rules:
     defaultSupervisionPrompt,
     defaultSupervisionIdleSeconds,
     defaultInheritanceNotice,
-    promptAiMessageInbound,
     promptAiMessageNotify,
     promptAiMessageInquiry,
     promptAiMessageReply,

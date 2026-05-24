@@ -1,19 +1,19 @@
 """通信类 MCP 工具：
 - user.send_message  → 向用户发送消息（沿用飞书底座，名字改为业务语义）
-- ai.send_message    → 向另一个 AI 发送消息（默认不阻塞；对方可再用 send_message 回发）
-- ai.reply_message   → 目标 AI 用此回复对方；落库即刻唤醒等待方
-- ai.list_inbox      → 查看自己的未处理消息（一般不需要主动看，强插已经会注入）
+- ai.send_message    → 向另一个 AI 发送消息。所有"回信"都走它本身：带
+                       message_type="reply" 与 reply_to_message_id。
+                       系统按 (target_session_id, status) 严格匹配，并由
+                       cascade_depth 限制 chitchat 链路最多 5 条。
 """
 
-import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from ...database import engine
 from ...integrations.feishu.service import send_feishu_text_message
-from ...models import AssistantAIConfig, User
+from ...models import User
 from ...models.defaults import CHITCHAT_MAX_DEPTH
 from ...services import ai_message_service
 from ...services.agent_dispatch import get_run_session_context
@@ -80,14 +80,6 @@ def _user_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
 
 
 # ---------- AI 间通信 ----------
-
-def _extract_message_ids(text: str) -> List[str]:
-    ids = re.findall(r"\bmai_[A-Za-z0-9]{8,40}\b", text or "")
-    out: List[str] = []
-    for item in ids:
-        if item not in out:
-            out.append(item)
-    return out
 
 
 def _reply_result(
@@ -156,14 +148,12 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         or sender_ctx.get("session_id")
         or ""
     ).strip()
-    reply_to_candidates = []
-    for key in ("reply_to_message_id", "in_reply_to_message_id", "original_message_id"):
-        raw = str(args.get(key) or "").strip()
-        if raw and raw not in reply_to_candidates:
-            reply_to_candidates.append(raw)
-    for raw in _extract_message_ids(content):
-        if raw not in reply_to_candidates:
-            reply_to_candidates.append(raw)
+    reply_to_message_id = str(
+        args.get("reply_to_message_id")
+        or args.get("in_reply_to_message_id")
+        or args.get("original_message_id")
+        or ""
+    ).strip()
 
     return_route = ai_message_service.find_return_route(
         user_id=user_id,
@@ -171,12 +161,10 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         target_ai_config_id=to_id,
         current_session_id=from_session_id,
     )
-    route_message_id = str(return_route.get("message_id") or "").strip()
-    if route_message_id and route_message_id not in reply_to_candidates:
-        reply_to_candidates.append(route_message_id)
     return_session_id = str(return_route.get("from_session_id") or "").strip()
 
-    for reply_to_message_id in reply_to_candidates:
+    # 显式 reply_to_message_id：尝试直接落库为对那条消息的回复。
+    if reply_to_message_id:
         completed_reply = ai_message_service.resolve_waiting_reply_to_message_id_from_send_message(
             user_id=user_id,
             current_ai_config_id=int(ai_config_id),
@@ -238,17 +226,11 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
 
     target_active_initial = ai_message_service.target_session_has_active_run(user_id, to_id, prebound_session_id)
 
-    # 推导本条消息在链路里的 cascade_depth：优先看显式 reply_to，再退而看
-    # 系统找到的 return_route（典型场景：对方在向我们发回信但没填 reply_to）。
+    # 推导本条消息在链路里的 cascade_depth：优先看显式 reply_to，否则看
+    # find_return_route 推出的原始消息。chitchat 链路靠这个 +1 累计计数。
     parent_depth: Optional[int] = None
     parent_type: Optional[str] = None
-    parent_candidate_id = ""
-    for candidate in reply_to_candidates:
-        if candidate:
-            parent_candidate_id = candidate
-            break
-    if not parent_candidate_id and route_message_id:
-        parent_candidate_id = route_message_id
+    parent_candidate_id = reply_to_message_id or str(return_route.get("message_id") or "").strip()
     if parent_candidate_id:
         parent_row = ai_message_service.fetch_cascade_parent(
             user_id=user_id, message_id=parent_candidate_id
@@ -371,40 +353,3 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
     return base_out
 
 
-def _ai_reply_message(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    if ai_config_id is None:
-        raise HTTPException(status_code=400, detail="ai.reply_message must be called by an AI runtime")
-    message_id = str(args.get("message_id") or "").strip()
-    if not message_id:
-        raise HTTPException(status_code=400, detail="message_id is required")
-    content = str(args.get("content") or args.get("text") or "").strip()
-    if not content:
-        raise HTTPException(status_code=400, detail="content is required")
-    try:
-        msg = ai_message_service.reply(
-            message_id=message_id,
-            user_id=user_id,
-            replier_ai_config_id=int(ai_config_id),
-            content=content,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return {
-        "replied": True,
-        "message_id": msg.message_id,
-        "to_ai_config_id": msg.to_ai_config_id,
-        "from_ai_config_id": msg.from_ai_config_id,
-        "status": msg.status,
-    }
-
-
-def _ai_list_inbox(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    if ai_config_id is None:
-        raise HTTPException(status_code=400, detail="ai.list_inbox must be called by an AI runtime")
-    include_resolved = bool(args.get("include_resolved", False))
-    items = ai_message_service.list_inbox(
-        user_id=user_id,
-        ai_config_id=int(ai_config_id),
-        include_resolved=include_resolved,
-    )
-    return {"count": len(items), "items": items}

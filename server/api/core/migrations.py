@@ -21,7 +21,6 @@ def run_pending_migrations() -> None:
         return
     from ..models.defaults import (
         DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,
-        DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE,
         DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
         DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
         DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
@@ -50,7 +49,6 @@ def run_pending_migrations() -> None:
             resume_task_prompt=DEFAULT_RESUME_TASK_PROMPT,
             supervision_prompt=DEFAULT_SUPERVISION_PROMPT,
             inheritance_notice=DEFAULT_INHERITANCE_NOTICE,
-            ai_message_inbound=DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE,
             ai_message_notify=DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
             ai_message_inquiry=DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
             ai_message_reply=DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
@@ -101,7 +99,6 @@ def _migrate_user(
     resume_task_prompt: str,
     supervision_prompt: str,
     inheritance_notice: str,
-    ai_message_inbound: str,
     ai_message_notify: str,
     ai_message_inquiry: str,
     ai_message_reply: str,
@@ -121,25 +118,12 @@ def _migrate_user(
     _add_column(cursor, "user", "default_supervision_prompt", f"TEXT DEFAULT '{_quote(supervision_prompt)}'", existing)
     _add_column(cursor, "user", "default_supervision_idle_seconds", "INTEGER DEFAULT 25", existing)
     _add_column(cursor, "user", "default_inheritance_notice", f"TEXT DEFAULT '{_quote(inheritance_notice)}'", existing)
-    _add_column(cursor, "user", "prompt_ai_message_inbound", f"TEXT DEFAULT '{_quote(ai_message_inbound)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_notify", f"TEXT DEFAULT '{_quote(ai_message_notify)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_inquiry", f"TEXT DEFAULT '{_quote(ai_message_inquiry)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_reply", f"TEXT DEFAULT '{_quote(ai_message_reply)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_chitchat", f"TEXT DEFAULT '{_quote(ai_message_chitchat)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_reply_success", f"TEXT DEFAULT '{_quote(ai_message_reply_success)}'", existing)
     _add_column(cursor, "user", "prompt_user_message_notice", f"TEXT DEFAULT '{_quote(user_message_notice)}'", existing)
-    cursor.execute(
-        f"UPDATE user SET prompt_ai_message_inbound = '{_quote(ai_message_inbound)}' "
-        "WHERE prompt_ai_message_inbound LIKE '%ai.reply_message%' "
-        "OR (prompt_ai_message_inbound LIKE '%ai.send_message%' "
-        "AND prompt_ai_message_inbound NOT LIKE '%reply_to_message_id%')"
-    )
-    cursor.execute(
-        f"UPDATE user SET prompt_ai_message_notify = '{_quote(ai_message_notify)}' "
-        "WHERE prompt_ai_message_notify LIKE '%ai.reply_message%' "
-        "OR (prompt_ai_message_notify LIKE '%ai.send_message%' "
-        "AND prompt_ai_message_notify NOT LIKE '%reply_to_message_id%')"
-    )
     _add_column(cursor, "user", "ui_theme_mode", f"TEXT DEFAULT '{ui_theme_mode}'", existing)
     _add_column(cursor, "user", "ui_font_size", f"TEXT DEFAULT '{ui_font_size}'", existing)
 

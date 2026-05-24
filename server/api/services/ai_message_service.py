@@ -205,60 +205,6 @@ def fetch(message_id: str, user_id: int) -> Optional[AIMessage]:
         ).first()
 
 
-def mark_delivered(message_id: str) -> Optional[AIMessage]:
-    with Session(engine) as session:
-        row = session.exec(
-            select(AIMessage).where(AIMessage.message_id == message_id)
-        ).first()
-        if not row:
-            return None
-        if row.status == "pending":
-            row.status = "delivered"
-            row.delivered_at = time.time()
-            session.add(row)
-            session.commit()
-            session.refresh(row)
-        return row
-
-
-def reply(
-    *,
-    message_id: str,
-    user_id: int,
-    replier_ai_config_id: int,
-    content: str,
-) -> AIMessage:
-    """目标 AI 调用 ai.reply_message 时落库 + 唤醒等待方。"""
-    content = (content or "").strip()
-    if not content:
-        raise ValueError("reply content is required")
-    with Session(engine) as session:
-        row = session.exec(
-            select(AIMessage).where(
-                AIMessage.user_id == user_id,
-                AIMessage.message_id == message_id,
-            )
-        ).first()
-        if not row:
-            raise ValueError("message not found")
-        if int(row.to_ai_config_id) != int(replier_ai_config_id):
-            raise ValueError("only the receiver of this message may reply")
-        if row.status in {"replied", "failed"}:
-            raise ValueError(f"message already in terminal state: {row.status}")
-        row.reply_content = content
-        row.status = "replied"
-        row.replied_at = time.time()
-        session.add(row)
-        session.commit()
-        session.refresh(row)
-        payload = _row_to_dict(row)
-    # 落库成功后再唤醒，确保等待方读到 DB 也是最新状态。
-    resolved_waiter = _pending_replies.resolve(message_id, payload)
-    if not resolved_waiter:
-        _enqueue_unwaited_reply(payload)
-    return row
-
-
 def complete_inbound_with_assistant_reply(
     *,
     message_id: str,
@@ -408,18 +354,6 @@ def pop_pending_for(
         session.commit()
         session.refresh(row)
         return row
-
-
-def list_inbox(*, user_id: int, ai_config_id: int, include_resolved: bool = False) -> List[Dict[str, Any]]:
-    with Session(engine) as session:
-        stmt = select(AIMessage).where(
-            AIMessage.user_id == user_id,
-            AIMessage.to_ai_config_id == ai_config_id,
-        )
-        if not include_resolved:
-            stmt = stmt.where(AIMessage.status.in_(["pending", "delivered"]))
-        rows = session.exec(stmt.order_by(AIMessage.created_at.desc()).limit(50)).all()
-        return [_row_to_dict(r) for r in rows]
 
 
 def _row_to_dict(row: AIMessage) -> Dict[str, Any]:
