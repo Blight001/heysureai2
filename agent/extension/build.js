@@ -16,9 +16,9 @@ const sharedOpts = {
 }
 
 const entries = [
-  { in: 'src/background.ts', out: 'dist/background.js' },
-  { in: 'src/content.ts',    out: 'dist/content.js' },
-  { in: 'src/popup.ts',      out: 'dist/popup.js' },
+  { in: 'src/background.ts',    out: 'dist/background.js' },
+  { in: 'src/content/index.ts', out: 'dist/content.js' },
+  { in: 'src/popup/index.ts',   out: 'dist/popup.js' },
 ]
 
 if (!fs.existsSync('dist')) fs.mkdirSync('dist', { recursive: true })

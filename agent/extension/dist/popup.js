@@ -333,7 +333,261 @@
       throw new Error(await parseError(res, `${action} \u4EFB\u52A1\u5931\u8D25`));
   }
 
-  // src/popup.ts
+  // src/popup/markdown.ts
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function inlineMd(text) {
+    const placeholders = [];
+    const stash = (html) => {
+      const key = `@@HTML_${placeholders.length}@@`;
+      placeholders.push(html);
+      return key;
+    };
+    let out = esc(text);
+    out = out.replace(/`([^`]+)`/g, (_, code) => stash(`<code>${esc(code)}</code>`));
+    out = out.replace(
+      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+      (_, label, url) => stash(`<a href="${esc(url)}" target="_blank" rel="noreferrer">${esc(label)}</a>`)
+    );
+    out = out.replace(
+      /(^|[\s(])(https?:\/\/[^\s<)]+)/g,
+      (_, prefix, url) => `${prefix}${stash(`<a href="${esc(url)}" target="_blank" rel="noreferrer">${esc(url)}</a>`)}`
+    );
+    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_]+)__/g, "<strong>$1</strong>").replace(/\*([^*\n]+)\*/g, "<em>$1</em>").replace(/_([^_\n]+)_/g, "<em>$1</em>").replace(/~~([^~]+)~~/g, "<del>$1</del>");
+    placeholders.forEach((html, idx) => {
+      out = out.replaceAll(`@@HTML_${idx}@@`, html);
+    });
+    return out;
+  }
+  function isMarkdownTableStart(lines, index) {
+    const head = lines[index]?.trim() || "";
+    const sep = lines[index + 1]?.trim() || "";
+    return /^\|.+\|$/.test(head) && /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(sep);
+  }
+  function parseTableRow(line) {
+    return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+  }
+  function renderMarkdownTable(lines, start) {
+    const headers = parseTableRow(lines[start]);
+    let idx = start + 2;
+    const rows = [];
+    while (idx < lines.length && /^\|.+\|$/.test(lines[idx].trim())) {
+      rows.push(parseTableRow(lines[idx]));
+      idx++;
+    }
+    const head = headers.map((cell) => `<th>${inlineMd(cell)}</th>`).join("");
+    const body = rows.map((row) => `<tr>${headers.map((_, i) => `<td>${inlineMd(row[i] || "")}</td>`).join("")}</tr>`).join("");
+    return {
+      html: `<div class="chat-table-wrap"><table class="chat-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`,
+      next: idx
+    };
+  }
+  function renderMarkdown(text) {
+    const src = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+    if (!src)
+      return "";
+    const blocks = [];
+    const parts = src.split(/(```[\s\S]*?```)/g);
+    for (const part of parts) {
+      if (!part)
+        continue;
+      const fence = part.match(/^```([\w-]*)\n?([\s\S]*?)```$/);
+      if (fence) {
+        const lang = fence[1] ? `<div class="chat-mcp-title">${esc(fence[1])}</div>` : "";
+        blocks.push(`${lang}<pre>${esc(fence[2].trim())}</pre>`);
+        continue;
+      }
+      const lines = part.split("\n");
+      let para = [];
+      let list = [];
+      let ordered = false;
+      const flushPara = () => {
+        if (para.length) {
+          blocks.push(`<p>${inlineMd(para.join("\n")).replace(/\n/g, "<br>")}</p>`);
+          para = [];
+        }
+      };
+      const flushList = () => {
+        if (list.length) {
+          blocks.push(`<${ordered ? "ol" : "ul"}>${list.join("")}</${ordered ? "ol" : "ul"}>`);
+          list = [];
+        }
+      };
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const line = lines[lineIndex];
+        const trimmed = line.trim();
+        if (!trimmed) {
+          flushPara();
+          flushList();
+          continue;
+        }
+        if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+          flushPara();
+          flushList();
+          blocks.push("<hr>");
+          continue;
+        }
+        if (isMarkdownTableStart(lines, lineIndex)) {
+          flushPara();
+          flushList();
+          const table = renderMarkdownTable(lines, lineIndex);
+          blocks.push(table.html);
+          lineIndex = table.next - 1;
+          continue;
+        }
+        const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+        if (heading) {
+          flushPara();
+          flushList();
+          const level = Math.min(3, heading[1].length);
+          blocks.push(`<h${level}>${inlineMd(heading[2])}</h${level}>`);
+          continue;
+        }
+        const quote = trimmed.match(/^>\s+(.+)$/);
+        if (quote) {
+          flushPara();
+          flushList();
+          blocks.push(`<blockquote>${inlineMd(quote[1])}</blockquote>`);
+          continue;
+        }
+        const task = trimmed.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/);
+        const unordered = trimmed.match(/^[-*]\s+(.+)$/);
+        const orderedMatch = trimmed.match(/^\d+\.\s+(.+)$/);
+        if (task || unordered || orderedMatch) {
+          flushPara();
+          const nextOrdered = !!orderedMatch;
+          if (list.length && ordered !== nextOrdered)
+            flushList();
+          ordered = nextOrdered;
+          if (task) {
+            const checked = task[1].trim().toLowerCase() === "x";
+            list.push(`<li class="chat-task"><span class="chat-check">${checked ? "\u2713" : ""}</span>${inlineMd(task[2])}</li>`);
+          } else {
+            list.push(`<li>${inlineMd((unordered || orderedMatch)[1])}</li>`);
+          }
+          continue;
+        }
+        flushList();
+        para.push(line);
+      }
+      flushPara();
+      flushList();
+    }
+    return `<div class="chat-md">${blocks.join("")}</div>`;
+  }
+  function normalizeJsonText(raw) {
+    const text = String(raw || "").trim();
+    try {
+      return JSON.stringify(JSON.parse(text), null, 2);
+    } catch {
+      return text;
+    }
+  }
+  var MCP_CALL_BLOCK_RE = /<mcp[-_]call>\s*([\s\S]*?)\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*invoke)\s*>/gi;
+  var MCP_HEADER_LINE_RE = /^(?:#{1,6}\s*)?(\[MCP执行[^\]]*\]|\[工具参数\]|\[工具执行结果\]|系统已执行工具[：:].*|工具(?:名称)?[：:].*|执行状态[：:].*|状态[：:].*|可用工具[：:].*)$/i;
+  function splitInlineContent(text) {
+    let body = String(text || "");
+    const reasoning = [];
+    body = body.replace(/<think>\s*([\s\S]*?)\s*<\/think>/gi, (_, inner) => {
+      reasoning.push(String(inner || "").trim());
+      return "";
+    });
+    const parts = [];
+    const matches = [];
+    for (const m of body.matchAll(MCP_CALL_BLOCK_RE)) {
+      matches.push({
+        index: m.index ?? 0,
+        length: m[0].length,
+        payload: normalizeJsonText(String(m[1] || "").trim())
+      });
+    }
+    matches.sort((a, b) => a.index - b.index);
+    let cursor = 0;
+    for (const m of matches) {
+      if (m.index > cursor) {
+        const slice = body.slice(cursor, m.index);
+        if (slice.trim())
+          parts.push({ kind: "text", content: slice });
+      }
+      parts.push({ kind: "mcp-block", content: m.payload });
+      cursor = m.index + m.length;
+    }
+    if (cursor < body.length) {
+      const tail = body.slice(cursor);
+      if (tail.trim())
+        parts.push({ kind: "text", content: tail });
+    }
+    if (!parts.length && body.trim())
+      parts.push({ kind: "text", content: body });
+    const refined = [];
+    for (const part of parts) {
+      if (part.kind !== "text") {
+        refined.push(part);
+        continue;
+      }
+      const lines = part.content.split("\n");
+      const headerIdx = lines.findIndex((line) => MCP_HEADER_LINE_RE.test(line.trim()));
+      if (headerIdx < 0) {
+        refined.push(part);
+        continue;
+      }
+      const plain = lines.slice(0, headerIdx).join("\n").trimEnd();
+      const mcpText = lines.slice(headerIdx).join("\n").trim();
+      if (plain)
+        refined.push({ kind: "text", content: plain });
+      if (mcpText)
+        refined.push({ kind: "mcp-snippet", content: mcpText });
+    }
+    return { reasoning, parts: refined };
+  }
+  function renderChatEvent(event) {
+    return `<div class="chat-mcp-card"><div class="chat-mcp-title">${esc(event.label)}</div>` + (event.detail ? `<pre class="chat-mcp-pre">${esc(event.detail)}</pre>` : "") + `</div>`;
+  }
+  function renderMcpBlockHtml(payload) {
+    return `<div class="chat-mcp-card"><div class="chat-mcp-title">\u{1F9F0} MCP \u8C03\u7528</div><pre class="chat-mcp-pre">${esc(payload)}</pre></div>`;
+  }
+  function renderMcpSnippetHtml(text) {
+    return `<div class="chat-mcp-card"><div class="chat-mcp-title">MCP \u64CD\u4F5C</div><pre class="chat-mcp-pre">${esc(text)}</pre></div>`;
+  }
+  function renderChatContent(text, opts = {}) {
+    const { reasoning: inlineReasoning, parts } = splitInlineContent(text);
+    const reasoningParts = [opts.reasoning, ...inlineReasoning].map((v) => String(v || "").trim()).filter(Boolean);
+    const chunks = [];
+    if (reasoningParts.length) {
+      chunks.push(
+        `<details class="chat-reasoning" ${opts.loading ? "open" : ""}><summary>\u6DF1\u5EA6\u601D\u8003</summary><div class="chat-reasoning-body">${esc(reasoningParts.join("\n\n"))}</div></details>`
+      );
+    }
+    if (opts.currentTool) {
+      chunks.push(`<div class="chat-tool-phase">\u2699 \u7B49\u5F85 MCP: ${esc(opts.currentTool)}</div>`);
+    }
+    for (const part of parts) {
+      if (part.kind === "text")
+        chunks.push(renderMarkdown(part.content));
+      else if (part.kind === "mcp-block")
+        chunks.push(renderMcpBlockHtml(part.content));
+      else
+        chunks.push(renderMcpSnippetHtml(part.content));
+    }
+    if (opts.toolsUsed?.length) {
+      chunks.push(
+        `<div class="chat-mcp-card"><div class="chat-mcp-title">\u{1F9F0} MCP \u8C03\u7528</div><div class="tool-chips">${opts.toolsUsed.map((tool) => `<span class="tool-chip">${esc(tool)}</span>`).join("")}</div></div>`
+      );
+    }
+    if (!chunks.length && opts.loading) {
+      chunks.push('<div class="chat-empty-live">\u601D\u8003\u4E2D...</div><div class="thinking"><span></span><span></span><span></span></div>');
+    }
+    return chunks.join("");
+  }
+  function renderChatFrame(text, opts = {}) {
+    return [
+      ...(opts.events || []).map(renderChatEvent),
+      renderChatContent(text, opts)
+    ].filter(Boolean).join("");
+  }
+
+  // src/popup/index.ts
   var currentTheme = "dark";
   var activeTab = "chat";
   var currentStatus = "disconnected";
@@ -462,9 +716,6 @@
   var cmReplace = $("cm-replace");
   var cmSkip = $("cm-skip");
   var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  function esc(s) {
-    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  }
   function fmt(ts) {
     return new Date(ts).toTimeString().slice(0, 8);
   }
@@ -750,255 +1001,6 @@
       chatClearBtn.disabled = !hasMessages && !chatHistory.length && !chatBusy;
     }
     updateChatSessionControls();
-  }
-  function inlineMd(text) {
-    const placeholders = [];
-    const stash = (html) => {
-      const key = `@@HTML_${placeholders.length}@@`;
-      placeholders.push(html);
-      return key;
-    };
-    let out = esc(text);
-    out = out.replace(/`([^`]+)`/g, (_, code) => stash(`<code>${esc(code)}</code>`));
-    out = out.replace(
-      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
-      (_, label, url) => stash(`<a href="${esc(url)}" target="_blank" rel="noreferrer">${esc(label)}</a>`)
-    );
-    out = out.replace(
-      /(^|[\s(])(https?:\/\/[^\s<)]+)/g,
-      (_, prefix, url) => `${prefix}${stash(`<a href="${esc(url)}" target="_blank" rel="noreferrer">${esc(url)}</a>`)}`
-    );
-    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_]+)__/g, "<strong>$1</strong>").replace(/\*([^*\n]+)\*/g, "<em>$1</em>").replace(/_([^_\n]+)_/g, "<em>$1</em>").replace(/~~([^~]+)~~/g, "<del>$1</del>");
-    placeholders.forEach((html, idx) => {
-      out = out.replaceAll(`@@HTML_${idx}@@`, html);
-    });
-    return out;
-  }
-  function isMarkdownTableStart(lines, index) {
-    const head = lines[index]?.trim() || "";
-    const sep = lines[index + 1]?.trim() || "";
-    return /^\|.+\|$/.test(head) && /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(sep);
-  }
-  function parseTableRow(line) {
-    return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
-  }
-  function renderMarkdownTable(lines, start) {
-    const headers = parseTableRow(lines[start]);
-    let idx = start + 2;
-    const rows = [];
-    while (idx < lines.length && /^\|.+\|$/.test(lines[idx].trim())) {
-      rows.push(parseTableRow(lines[idx]));
-      idx++;
-    }
-    const head = headers.map((cell) => `<th>${inlineMd(cell)}</th>`).join("");
-    const body = rows.map((row) => `<tr>${headers.map((_, i) => `<td>${inlineMd(row[i] || "")}</td>`).join("")}</tr>`).join("");
-    return {
-      html: `<div class="chat-table-wrap"><table class="chat-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`,
-      next: idx
-    };
-  }
-  function renderMarkdown(text) {
-    const src = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
-    if (!src)
-      return "";
-    const blocks = [];
-    const parts = src.split(/(```[\s\S]*?```)/g);
-    for (const part of parts) {
-      if (!part)
-        continue;
-      const fence = part.match(/^```([\w-]*)\n?([\s\S]*?)```$/);
-      if (fence) {
-        const lang = fence[1] ? `<div class="chat-mcp-title">${esc(fence[1])}</div>` : "";
-        blocks.push(`${lang}<pre>${esc(fence[2].trim())}</pre>`);
-        continue;
-      }
-      const lines = part.split("\n");
-      let para = [];
-      let list = [];
-      let ordered = false;
-      const flushPara = () => {
-        if (para.length) {
-          blocks.push(`<p>${inlineMd(para.join("\n")).replace(/\n/g, "<br>")}</p>`);
-          para = [];
-        }
-      };
-      const flushList = () => {
-        if (list.length) {
-          blocks.push(`<${ordered ? "ol" : "ul"}>${list.join("")}</${ordered ? "ol" : "ul"}>`);
-          list = [];
-        }
-      };
-      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-        const line = lines[lineIndex];
-        const trimmed = line.trim();
-        if (!trimmed) {
-          flushPara();
-          flushList();
-          continue;
-        }
-        if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
-          flushPara();
-          flushList();
-          blocks.push("<hr>");
-          continue;
-        }
-        if (isMarkdownTableStart(lines, lineIndex)) {
-          flushPara();
-          flushList();
-          const table = renderMarkdownTable(lines, lineIndex);
-          blocks.push(table.html);
-          lineIndex = table.next - 1;
-          continue;
-        }
-        const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
-        if (heading) {
-          flushPara();
-          flushList();
-          const level = Math.min(3, heading[1].length);
-          blocks.push(`<h${level}>${inlineMd(heading[2])}</h${level}>`);
-          continue;
-        }
-        const quote = trimmed.match(/^>\s+(.+)$/);
-        if (quote) {
-          flushPara();
-          flushList();
-          blocks.push(`<blockquote>${inlineMd(quote[1])}</blockquote>`);
-          continue;
-        }
-        const task = trimmed.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/);
-        const unordered = trimmed.match(/^[-*]\s+(.+)$/);
-        const orderedMatch = trimmed.match(/^\d+\.\s+(.+)$/);
-        if (task || unordered || orderedMatch) {
-          flushPara();
-          const nextOrdered = !!orderedMatch;
-          if (list.length && ordered !== nextOrdered)
-            flushList();
-          ordered = nextOrdered;
-          if (task) {
-            const checked = task[1].trim().toLowerCase() === "x";
-            list.push(`<li class="chat-task"><span class="chat-check">${checked ? "\u2713" : ""}</span>${inlineMd(task[2])}</li>`);
-          } else {
-            list.push(`<li>${inlineMd((unordered || orderedMatch)[1])}</li>`);
-          }
-          continue;
-        }
-        flushList();
-        para.push(line);
-      }
-      flushPara();
-      flushList();
-    }
-    return `<div class="chat-md">${blocks.join("")}</div>`;
-  }
-  function normalizeJsonText(raw) {
-    const text = String(raw || "").trim();
-    try {
-      return JSON.stringify(JSON.parse(text), null, 2);
-    } catch {
-      return text;
-    }
-  }
-  var MCP_CALL_BLOCK_RE = /<mcp[-_]call>\s*([\s\S]*?)\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*invoke)\s*>/gi;
-  var MCP_HEADER_LINE_RE = /^(?:#{1,6}\s*)?(\[MCP执行[^\]]*\]|\[工具参数\]|\[工具执行结果\]|系统已执行工具[：:].*|工具(?:名称)?[：:].*|执行状态[：:].*|状态[：:].*|可用工具[：:].*)$/i;
-  function splitInlineContent(text) {
-    let body = String(text || "");
-    const reasoning = [];
-    body = body.replace(/<think>\s*([\s\S]*?)\s*<\/think>/gi, (_, inner) => {
-      reasoning.push(String(inner || "").trim());
-      return "";
-    });
-    const parts = [];
-    const matches = [];
-    for (const m of body.matchAll(MCP_CALL_BLOCK_RE)) {
-      matches.push({
-        index: m.index ?? 0,
-        length: m[0].length,
-        payload: normalizeJsonText(String(m[1] || "").trim())
-      });
-    }
-    matches.sort((a, b) => a.index - b.index);
-    let cursor = 0;
-    for (const m of matches) {
-      if (m.index > cursor) {
-        const slice = body.slice(cursor, m.index);
-        if (slice.trim())
-          parts.push({ kind: "text", content: slice });
-      }
-      parts.push({ kind: "mcp-block", content: m.payload });
-      cursor = m.index + m.length;
-    }
-    if (cursor < body.length) {
-      const tail = body.slice(cursor);
-      if (tail.trim())
-        parts.push({ kind: "text", content: tail });
-    }
-    if (!parts.length && body.trim())
-      parts.push({ kind: "text", content: body });
-    const refined = [];
-    for (const part of parts) {
-      if (part.kind !== "text") {
-        refined.push(part);
-        continue;
-      }
-      const lines = part.content.split("\n");
-      const headerIdx = lines.findIndex((line) => MCP_HEADER_LINE_RE.test(line.trim()));
-      if (headerIdx < 0) {
-        refined.push(part);
-        continue;
-      }
-      const plain = lines.slice(0, headerIdx).join("\n").trimEnd();
-      const mcpText = lines.slice(headerIdx).join("\n").trim();
-      if (plain)
-        refined.push({ kind: "text", content: plain });
-      if (mcpText)
-        refined.push({ kind: "mcp-snippet", content: mcpText });
-    }
-    return { reasoning, parts: refined };
-  }
-  function renderChatEvent(event) {
-    return `<div class="chat-mcp-card"><div class="chat-mcp-title">${esc(event.label)}</div>` + (event.detail ? `<pre class="chat-mcp-pre">${esc(event.detail)}</pre>` : "") + `</div>`;
-  }
-  function renderMcpBlockHtml(payload) {
-    return `<div class="chat-mcp-card"><div class="chat-mcp-title">\u{1F9F0} MCP \u8C03\u7528</div><pre class="chat-mcp-pre">${esc(payload)}</pre></div>`;
-  }
-  function renderMcpSnippetHtml(text) {
-    return `<div class="chat-mcp-card"><div class="chat-mcp-title">MCP \u64CD\u4F5C</div><pre class="chat-mcp-pre">${esc(text)}</pre></div>`;
-  }
-  function renderChatContent(text, opts = {}) {
-    const { reasoning: inlineReasoning, parts } = splitInlineContent(text);
-    const reasoningParts = [opts.reasoning, ...inlineReasoning].map((v) => String(v || "").trim()).filter(Boolean);
-    const chunks = [];
-    if (reasoningParts.length) {
-      chunks.push(
-        `<details class="chat-reasoning" ${opts.loading ? "open" : ""}><summary>\u6DF1\u5EA6\u601D\u8003</summary><div class="chat-reasoning-body">${esc(reasoningParts.join("\n\n"))}</div></details>`
-      );
-    }
-    if (opts.currentTool) {
-      chunks.push(`<div class="chat-tool-phase">\u2699 \u7B49\u5F85 MCP: ${esc(opts.currentTool)}</div>`);
-    }
-    for (const part of parts) {
-      if (part.kind === "text")
-        chunks.push(renderMarkdown(part.content));
-      else if (part.kind === "mcp-block")
-        chunks.push(renderMcpBlockHtml(part.content));
-      else
-        chunks.push(renderMcpSnippetHtml(part.content));
-    }
-    if (opts.toolsUsed?.length) {
-      chunks.push(
-        `<div class="chat-mcp-card"><div class="chat-mcp-title">\u{1F9F0} MCP \u8C03\u7528</div><div class="tool-chips">${opts.toolsUsed.map((tool) => `<span class="tool-chip">${esc(tool)}</span>`).join("")}</div></div>`
-      );
-    }
-    if (!chunks.length && opts.loading) {
-      chunks.push('<div class="chat-empty-live">\u601D\u8003\u4E2D...</div><div class="thinking"><span></span><span></span><span></span></div>');
-    }
-    return chunks.join("");
-  }
-  function renderChatFrame(text, opts = {}) {
-    return [
-      ...(opts.events || []).map(renderChatEvent),
-      renderChatContent(text, opts)
-    ].filter(Boolean).join("");
   }
   function syncChatHistory() {
     if (useServerChat())
