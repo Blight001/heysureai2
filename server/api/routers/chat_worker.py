@@ -12,12 +12,16 @@ import requests
 from sqlmodel import Session, select
 
 from api.database import engine
-from api.agent_dispatch import dispatch_endpoint_tool_and_wait, set_run_session_context
-from api.desktop_agent_tools import endpoint_bridge_tools_for_config
-from api.desktop_agent_tools import build_endpoint_tools_payload, is_endpoint_agent_tool
 from api.mcp import registry, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
-from api.task_system import (
+from api.services import ai_message_service, valhalla_service
+from api.services.agent_dispatch import dispatch_endpoint_tool_and_wait, set_run_session_context
+from api.services.desktop_agent_tools import (
+    build_endpoint_tools_payload,
+    endpoint_bridge_tools_for_config,
+    is_endpoint_agent_tool,
+)
+from api.services.task_system import (
     DEFAULT_SYSTEM_AUTO_CONTROL,
     TASK_RUNTIME_REQUIRED_TOOLS,
     normalize_system_auto_control,
@@ -25,8 +29,6 @@ from api.task_system import (
     with_task_create_compat,
     with_workspace_read_by_name_compat,
 )
-from api import valhalla_service
-from api import ai_message_service
 from .chat_prompt_utils import (
     _append_mcp_state_to_tags,
     _append_prompt_section,
@@ -44,7 +46,7 @@ from .chat_prompt_utils import (
     _strip_prompt_section,
     _strip_task_runtime_sections,
 )
-from .chat_persistence import _save_message
+from api.services.chat_persistence import _save_message
 from .chat_stream import StreamResult, _detect_provider, stream_turn_anthropic, stream_turn_openai_compat
 from .chat_runtime_helpers import (
     _create_loop_scheduled_job,

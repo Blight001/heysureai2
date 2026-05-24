@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api.sio import sio, agents
-from api.agent_dispatch import dispatch_task_to_agent
+from api.services.agent_dispatch import dispatch_task_to_agent
 
 router = APIRouter()
 

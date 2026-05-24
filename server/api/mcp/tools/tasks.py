@@ -8,9 +8,9 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from ...database import engine
-from ...governance import assert_can_manage_or_legacy
 from ...models import AITaskJob, AssistantAIConfig, ChatMessage
-from ...task_system import extract_task_payload
+from ...services.governance import assert_can_manage_or_legacy
+from ...services.task_system import extract_task_payload
 
 _FINISHED_STATUSES = {"completed", "cancelled", "stopped", "error"}
 

@@ -6,8 +6,8 @@ import requests
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from .database import engine
-from .models import AssistantAIConfig
+from ...database import engine
+from ...models import AssistantAIConfig
 
 FEISHU_OPEN_API_BASE = "https://open.feishu.cn/open-apis"
 _TOKEN_CACHE: Dict[int, Dict[str, Any]] = {}

@@ -5,9 +5,8 @@ import time
 from fastapi import Depends, Header, HTTPException
 from sqlmodel import Session, select
 
-from api.ai_service import ensure_default_ai_for_user, sync_switch_file
 from api.database import get_session
-from api.feishu_long_connection import start_feishu_long_connection_clients
+from api.integrations.feishu.long_connection import start_feishu_long_connection_clients
 from api.mcp.permissions import clamp_tools_json, config_role_tier
 from api.models import (
     AIRuntimeStatus,
@@ -16,7 +15,8 @@ from api.models import (
     AssistantAIConfigUpdate,
 )
 from api.routers.auth import get_current_user
-from api.task_system import normalize_workspace_root
+from api.services.ai_service import ensure_default_ai_for_user, sync_switch_file
+from api.services.task_system import normalize_workspace_root
 from .ai_base import (
     _default_system_auto_control_for_user,
     _normalize_ai_role,

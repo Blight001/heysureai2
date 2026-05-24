@@ -1,7 +1,7 @@
 import time
 
 from api.sio import sio, agents, is_agent_token_valid
-from api.agent_dispatch import (
+from api.services.agent_dispatch import (
     handle_task_error,
     handle_task_progress,
     handle_task_result,

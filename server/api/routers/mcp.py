@@ -6,8 +6,6 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from api.database import get_session
-from api.agent_dispatch import dispatch_endpoint_tool_and_wait
-from api.desktop_agent_tools import endpoint_bridge_tools_for_config, is_endpoint_agent_tool
 from api.mcp import registry
 from api.mcp.permissions import (
     CONFIGURABLE_ROLES,
@@ -21,7 +19,9 @@ from api.mcp.permissions import (
 )
 from api.models import AssistantAIConfig
 from api.routers.auth import get_current_user
-from api.task_system import with_task_create_compat, with_workspace_read_by_name_compat
+from api.services.agent_dispatch import dispatch_endpoint_tool_and_wait
+from api.services.desktop_agent_tools import endpoint_bridge_tools_for_config, is_endpoint_agent_tool
+from api.services.task_system import with_task_create_compat, with_workspace_read_by_name_compat
 
 router = APIRouter()
 PREFIX = "/api/mcp"

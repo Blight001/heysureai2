@@ -5,8 +5,8 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from ...database import engine
-from ...governance import assert_can_manage_or_legacy
 from ...models import AssistantAIConfig, User
+from ...services.governance import assert_can_manage_or_legacy
 
 
 SYSTEM_PROMPT_FIELDS = {

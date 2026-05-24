@@ -11,8 +11,8 @@ from fastapi import HTTPException
 
 from api.mcp import registry
 from api.models import AssistantAIConfig, DEFAULT_MCP_FORMAT_ERROR_HINT
-from api.desktop_agent_tools import endpoint_bridge_tools_for_config
-from api.task_system import (
+from api.services.desktop_agent_tools import endpoint_bridge_tools_for_config
+from api.services.task_system import (
     DEFAULT_SYSTEM_AUTO_CONTROL,
     with_task_create_compat,
     with_workspace_read_by_name_compat,

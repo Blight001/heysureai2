@@ -18,8 +18,8 @@ from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, select
 
-from .database import engine
-from .models import AIMessage, AssistantAIConfig, ChatRun, ChatSession
+from ..database import engine
+from ..models import AIMessage, AssistantAIConfig, ChatRun, ChatSession
 
 
 def _new_message_id() -> str:

@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 from api.database import engine
 from api.mcp import get_project_root, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, User
-from api.task_system import parse_generation_from_session_id, with_task_create_compat, with_workspace_read_by_name_compat
+from api.services.task_system import parse_generation_from_session_id, with_task_create_compat, with_workspace_read_by_name_compat
 from .chat_base import _RUN_LIVE_STATE, _RUN_STATE_LOCK
 from .chat_prompt_utils import (
     _append_prompt_section,

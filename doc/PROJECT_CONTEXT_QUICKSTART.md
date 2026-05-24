@@ -223,9 +223,48 @@
 
 ### 后端（FastAPI + Socket.IO）
 
+> **分层约定**（2026-05-24 大改造后）
+>
+> - `core/`：基础设施配置（`config.py` 路径/JWT/调度参数 + `migrations.py` SQLite ALTER）
+> - `models/`：SQLModel 数据表与 Pydantic schema，按领域拆分
+> - `database.py` / `sio.py` / `auth.py` / `socket_events.py`：进程级单例与基础设施
+> - `services/`：业务逻辑层（不依赖 `routers/`，只能被 `routers/` 与 `mcp/` 调用）
+> - `integrations/`：第三方平台对接（飞书等）
+> - `mcp/`：MCP 工具子系统（core / registry / permissions / tools.*）
+> - `routers/`：FastAPI HTTP 端点 + 聊天运行时编排（chat_* / ai_* 子集是聚合入口）
+>
+> 依赖方向：`routers/` → `services/`，`services/` → `models/` / `database` / `mcp`，
+> 不允许反向。`integrations/` 与 `services/` 平级，互不相依。
+
 - `server/api/app.py`
   - 启动入口，含定时扫描任务与任务调度轮询（`process_task_scheduler`）
   - 路由自动注册支持入口标记：仅注册 `IS_ROUTER_ENTRY != False` 的模块（避免拆分子模块重复挂载）
+- `server/api/services/ai_service.py`（原 `server/api/ai_service.py`）
+  - 默认 AI 初始化（主脑/辅助管理员/执行AI）、开关文件同步、定时扫描逻辑
+  - 默认种子角色：主脑为 `digital_member + manager`；执行AI为 `digital_member + member`
+- `server/api/services/task_system.py`（原 `server/api/task_system.py`）
+  - 任务系统后端公共封装层：`system_auto_control` 归一化、任务 payload 解析、任务 active run 判定、代际编号解析
+  - `extract_task_payload` 已支持 `schedule_loop_enabled/schedule_run_immediately`
+  - MCP 白名单兼容工具：`with_task_create_compat` / `with_workspace_read_by_name_compat`
+  - `with_task_create_compat` 会自动补齐 `task.create_immediate/task.create_scheduled/task.create_recurring/task.create` 创建工具组（兼容历史配置）
+- `server/api/services/chat_persistence.py`（原 `server/api/routers/chat_persistence.py`）
+  - 聊天消息 / 会话 / token 快照的纯持久化层（无 HTTP 路由）
+- `server/api/services/agent_dispatch.py`（原 `server/api/agent_dispatch.py`）
+  - Socket.IO 桌面 Agent 调度：任务下发、结果回写、超时清理
+- `server/api/services/desktop_agent_tools.py`（原 `server/api/desktop_agent_tools.py`）
+  - Endpoint Agent 工具白名单与 capability 解析
+- `server/api/services/ai_message_service.py`（原 `server/api/ai_message_service.py`）
+  - AI ↔ AI 同步消息（含 worker 收件箱钩子）
+- `server/api/services/librarian_service.py`（原 `server/api/librarian_service.py`）
+  - 图书管理员/KnowledgeBase 业务服务
+- `server/api/services/valhalla_service.py`（原 `server/api/valhalla_service.py`）
+  - 英灵殿（Valhalla）落盘服务：传承 / 完成事件的文件化记忆
+- `server/api/services/governance.py`（原 `server/api/governance.py`）
+  - AI ↔ AI 管理权限规则（治理树校验）
+- `server/api/integrations/feishu/service.py`（原 `server/api/feishu_service.py`）
+  - 飞书 REST：发送消息、解析事件
+- `server/api/integrations/feishu/long_connection.py`（原 `server/api/feishu_long_connection.py`）
+  - 飞书长连接客户端生命周期
 - `server/api/routers/ai.py`（聚合入口，已拆分）
   - 实际实现拆分到：
     - `server/api/routers/ai_base.py`（共享 helper + router）
@@ -248,19 +287,14 @@
     - 循环 + 立即执行时首次 `schedule_at=now`
   - `/api/ai/cards` 已补充运行态字段：`user_chat_active/active_run_status/active_run_phase`
   - 保留清空 token 接口：`/api/ai/configs/{config_id}/clear-tokens`（当前 UI 未暴露）
-- `server/api/task_system.py`
-  - 任务系统后端公共封装层：`system_auto_control` 归一化、任务 payload 解析、任务 active run 判定、代际编号解析
-  - `extract_task_payload` 已支持 `schedule_loop_enabled/schedule_run_immediately`
-  - MCP 白名单兼容工具：`with_task_create_compat` / `with_workspace_read_by_name_compat`
-  - `with_task_create_compat` 会自动补齐 `task.create_immediate/task.create_scheduled/task.create_recurring/task.create` 创建工具组（兼容历史配置）
 - `server/api/routers/chat.py`（聚合入口，已拆分）
   - 实际实现拆分到：
     - `server/api/routers/chat_base.py`（共享状态与常量）
     - `server/api/routers/chat_prompt_utils.py`（MCP 解析/提示与 run live 状态工具）
-    - `server/api/routers/chat_persistence.py`（消息/会话/token 快照持久化）
     - `server/api/routers/chat_runtime_helpers.py`（AI 运行时解析与任务运行辅助）
     - `server/api/routers/chat_scheduler.py`（任务调度与 `_start_task_run`）
     - `server/api/routers/chat_worker.py`（后台 run worker）
+    - `server/api/routers/chat_stream.py`（provider-aware 流式适配）
     - `server/api/routers/chat_history_routes.py`、`chat_action_routes.py`（路由实现）
   - 聊天保存/查询/会话管理；后端 run 执行编排、流式状态输出、MCP 等待控制
   - 新增任务调度内核（定时入队、优先级抢占、手动恢复、监督追问）
@@ -272,20 +306,27 @@
   - 任务防循环：白名单外重复调用熔断、错误 run 自动暂停、防止监督轮次无限增长
   - 任务调度器时间判定已兼容旧任务 payload：无 `schedule_at` 时使用 `created_at + duration_minutes`
   - 在 `task.complete` 完成分支中，循环定时任务会自动续建下一条 `queued/schedule` 任务
-  - MCP 失败兜底提示拼接；会话变更后 token 快照重建
+  - MCP 失败兜底提示拼接；会话变更后 token 快照重建（通过 `services/chat_persistence._rebuild_usage_snapshots`）
   - MCP 白名单解析已兼容任务创建工具组（`task.create_immediate/task.create_scheduled/task.create_recurring/task.create`）与 `workspace.read_file_by_name`（历史 `mcp_tools` 配置可直接使用）
   - run 终止链路已收敛：
     - `chat_action_routes.stop_chat_run` 会立即落库 `stopped` 并清理 live 缓存
     - `chat_worker._run_worker` 在线程启动前会先检查 `stop_requested`
 - `server/api/routers/mcp.py`
   - MCP 工具调用入口（含任务创建工具组与 `workspace.read_file_by_name` 的历史白名单兼容）
-- `server/api/mcp.py`（聚合入口，已拆分）
-  - 实际实现拆分到：
-    - `server/api/mcp_core.py`（registry 核心、状态广播、工作目录解析）
-    - `server/api/mcp_workspace_tools.py`（workspace/admin 工具）
-    - `server/api/mcp_project_tools.py`（project 工具）
-    - `server/api/mcp_task_tools.py`（task 工具、定时参数校验）
-    - `server/api/mcp_registry_setup.py`（工具注册表）
+- `server/api/mcp/`（MCP 子系统，模块化）
+  - `mcp/core.py`（registry 核心、状态广播、工作目录解析）
+  - `mcp/registry.py`（singleton registry + 全部工具注册）
+  - `mcp/permissions.py`（按角色的允许列表策略）
+  - `mcp/tools/workspace.py`（workspace/admin 工具）
+  - `mcp/tools/projects.py`（project 工具）
+  - `mcp/tools/tasks.py`（task 工具、定时参数校验）
+  - `mcp/tools/prompts.py`（prompt 管理）
+  - `mcp/tools/memory.py`（结构化 memory）
+  - `mcp/tools/communication.py`（user/ai 消息）
+  - `mcp/tools/feishu.py`（飞书桥接）
+  - `mcp/tools/human.py`（human-in-the-loop）
+  - `mcp/tools/librarian.py`（图书管理员/KnowledgeBase）
+  - `mcp/tools/conversation.py`（会话相关工具）
   - MCP 工具注册与调用逻辑、状态广播、按 `ai_config_id` 解析工作目录
   - MCP 调用结束进入 `idle` 时保留最近工具名（供卡片“最近MCP”展示）
   - 新增任务工具：`task.create_immediate` / `task.create_scheduled` / `task.create_recurring` / `task.create(兼容)` / `task.list` / `task.get_current` / `task.inherit` / `task.complete`
@@ -303,14 +344,13 @@
   - `workspace.read_files` 已加读取限流；新增 `workspace.read_file_by_name` 以降低一次性上下文 token
 - `server/api/socket_events.py`
   - Socket 事件（含 `ui:join` 房间订阅）
-- `server/api/ai_service.py`
-  - 默认 AI 初始化（主脑/辅助管理员/执行AI）、开关文件同步、定时扫描逻辑
-  - 默认种子角色：主脑为 `digital_member + manager`；执行AI为 `digital_member + member`
-- `server/api/models.py`
-  - 数据模型定义（AI 扩展字段、会话、token 分段、运行态）
+- `server/api/models/`（按领域拆分；外部仍 `from api.models import ...` 即可）
+  - `models/defaults.py`（prompt 模板/UI 默认常量）
+  - `models/user.py`、`models/chat.py`、`models/ai_config.py`、`models/ai_runtime.py`
+  - `models/project.py`、`models/knowledge.py`、`models/communication.py`
   - `AssistantAIConfig` 新增 `digital_member_role`
   - 新增 `ChatRun`（会话级后台运行任务：状态、终止标记、错误信息）
-- `server/api/database.py`
+- `server/api/database.py` + `server/api/core/migrations.py`
   - 建表与轻量迁移（含 AI 扩展字段迁移）
   - 旧角色数据迁移：`admin/worker -> digital_member`，并补齐 `digital_member_role`
 
@@ -448,7 +488,7 @@
 - `server/api/routers/ai_task_routes.py`
   - `get_ai_task_jobs`：执行记录列表里的 `generation_count/latest_generation` 计算。
   - `get_task_job_generations`：代际详情聚合逻辑（同代去重）。
-- `server/api/task_system.py`
+- `server/api/services/task_system.py`
   - `parse_generation_from_session_id`：代号解析工具，避免各处重复写正则。
 
 ### 8.3 最小回归检查（每次改完都跑一遍）
@@ -487,7 +527,7 @@
 - 先看：`web/src/components/god-dashboard/useDashboardData.ts`
   - 关键词：`mcp:status` / `connectDashboardSocket` / `applyMcpStatusLive` / `rememberLatestRuntimeTool`
 - 页面集成与生命周期看：`web/src/components/GodDashboard.vue`
-- 再看：`server/api/mcp_core.py`
+- 再看：`server/api/mcp/core.py`
   - 关键词：`_set_runtime_status(... "idle", tool.name)`（结束时保留最近工具）
 
 ### 9.2 聊天窗口刷新策略（非空闲实时同步）
@@ -536,7 +576,7 @@
   - 先看：`web/src/components/god-dashboard/mcpTools.ts`
   - UI 看：`web/src/components/god-dashboard/modals/McpToolsModal.vue`
 - 监督超时阈值全局配置：
-  - 看：`server/api/models.py`（`default_supervision_idle_seconds`）
+  - 看：`server/api/models/`（`default_supervision_idle_seconds`）
   - 看：`server/api/routers/chat_scheduler.py`（`process_task_scheduler` 内监督触发间隔）
 
 ### 9.6 定时任务立即执行排查（高优先级）
@@ -582,7 +622,7 @@
 ### 9.9 MCP 任务与读文件（本轮新增）
 
 - `assistant_admin` 创建任务报 `Only digital_member supports task scheduler`：
-  - 先看：`server/api/mcp_task_tools.py`
+  - 先看：`server/api/mcp/tools/tasks.py`
   - 关键词：`_resolve_task_runtime_owner` / `target_ai_config_id`
   - 关键规则：默认自动路由到可用 `digital_member`（优先 `manager`），也可显式指定目标 AI
 - 定时任务“口头时间”和真实执行时间不一致：
@@ -594,11 +634,11 @@
   - `task.create_scheduled.schedule_at`：仅允许 Unix 秒或带时区 ISO-8601（必须包含 `+08:00` 或 `Z`）
   - `task.create_recurring`：不要传 `schedule_at`，仅用 `schedule_duration_minutes`，可选 `schedule_run_immediately`
 - MCP 读文件 token 过大：
-  - 先看：`server/api/mcp_workspace_tools.py`
+  - 先看：`server/api/mcp/tools/workspace.py`
   - 关键词：`_read_files` / `max_files` / `max_total_bytes` / `max_single_file_bytes` / `_read_file_by_name`
   - 建议优先走 `workspace.read_file_by_name` 按名称精准读取，避免目录级批量拉取
 - MCP 写文件/编辑文件结构化模式（本轮新增）：
-  - 先看：`server/api/mcp_workspace_tools.py`
+  - 先看：`server/api/mcp/tools/workspace.py`
   - 关键词：`_extract_write_request` / `_extract_edit_operations` / `_apply_edit_operation`
   - 写文件推荐参数：`target.path` + `content.text` + `options(create/overwrite/create_dirs/if_exists)`
   - 编辑文件推荐参数：`target.path` + `edits[]` + `options(create_if_missing/create_content)`
@@ -607,7 +647,7 @@
 ### 9.10 配置快改 SOP（定时任务）
 
 - 场景 1：改定时任务时间格式规则
-  - 后端主入口：`server/api/mcp_task_tools.py`
+  - 后端主入口：`server/api/mcp/tools/tasks.py`
   - 先看函数：`_parse_schedule_at_strict` / `_task_create_impl` / `_enforce_task_schedule_mode`
   - 同步提示：`server/api/routers/chat_prompt_utils.py` 的 `_render_mcp_tool_item`（示例）与 `server/api/routers/chat_runtime_helpers.py` 的 `_build_task_mcp_rules`（运行时规则）
 - 场景 2：改管理端任务创建表单与提交

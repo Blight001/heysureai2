@@ -10,7 +10,7 @@ from api.database import get_session
 from api.models import ChatMessage, ChatSession
 from api.routers.auth import get_current_user
 from .chat_base import router
-from .chat_persistence import _rebuild_usage_snapshots
+from api.services.chat_persistence import _rebuild_usage_snapshots
 from .chat_runtime_helpers import _live_pending_tokens_for
 
 

@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session
 
-from .database import engine
+from ..database import engine
 from .desktop_agent_tools import (
     get_connected_browser_agent,
     get_connected_desktop_agent,
@@ -31,9 +31,9 @@ from .desktop_agent_tools import (
     is_desktop_tool,
     is_endpoint_agent_tool,
 )
-from .models import ChatMessageCreate
-from .sio import agents, sio
-from .routers.chat_persistence import _save_message
+from ..models import ChatMessageCreate
+from ..sio import agents, sio
+from .chat_persistence import _save_message
 
 # Per-run session context so MCP tools (running inside the worker thread) can
 # attach dispatched-task results to the correct chat session. asyncio.run()
