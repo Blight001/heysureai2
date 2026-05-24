@@ -19,6 +19,7 @@ interface UseAiConfigManagementOptions {
   mcpToolMetaByName: Ref<Record<string, McpToolDefinition>>
   mcpRoleMeta: Ref<McpRoleMeta>
   normalizeSystemAutoControl: (raw: unknown) => any
+  alert?: (options: { title?: string; message: string; type?: 'info' | 'success' | 'warning' | 'error' }) => Promise<void>
   onToggleAiRunByConfigId: (configId?: number) => Promise<void>
   onReloadAgents: () => Promise<void>
   onPatchChatTargetAutoApprove?: (configId: number, enabled: boolean) => void
@@ -34,6 +35,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     mcpToolMetaByName,
     mcpRoleMeta,
     normalizeSystemAutoControl,
+    alert,
     onToggleAiRunByConfigId,
     onReloadAgents,
     onPatchChatTargetAutoApprove,
@@ -361,8 +363,8 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
   }
 
   const saveAiConfig = async () => {
-    if (!aiConfigForm.value) return
-    if (!getAuthToken()) return
+    if (!aiConfigForm.value) return false
+    if (!getAuthToken()) return false
     const normalizedWorkspaceRoot = normalizeWorkspacePath(aiConfigForm.value.workspace_root || '')
 
     const payload: AiConfigUpsertPayload = {
@@ -407,11 +409,22 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
           onPatchChatTargetAutoApprove?.(aiConfigForm.value.id, !!aiConfigForm.value.mcp_auto_approve)
         }
       }
-    } catch {
-      // best-effort; caller will see existing list refresh
+    } catch (err) {
+      await alert?.({
+        title: '保存失败',
+        message: (err as Error)?.message || 'AI 配置保存失败，请检查配置后重试。',
+        type: 'error',
+      })
+      return false
     }
     aiConfigModalOpen.value = false
     await onReloadAgents()
+    await alert?.({
+      title: '保存成功',
+      message: 'AI 配置已保存。',
+      type: 'success',
+    })
+    return true
   }
 
   const deleteAiConfig = async () => {

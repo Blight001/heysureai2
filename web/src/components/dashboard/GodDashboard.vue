@@ -192,6 +192,7 @@ const {
   mcpToolMetaByName,
   mcpRoleMeta,
   normalizeSystemAutoControl,
+  alert,
   onToggleAiRunByConfigId: toggleAiRunByConfigId,
   onReloadAgents: loadAIAgents,
   onPatchChatTargetAutoApprove: (configId, enabled) => {
@@ -271,8 +272,8 @@ const refreshDashboardAfterSave = async () => {
 }
 
 const saveAiConfigAndRefresh = async () => {
-  await saveAiConfig()
-  await refreshDashboardAfterSave()
+  const saved = await saveAiConfig()
+  if (saved) await refreshDashboardAfterSave()
 }
 
 const deleteAiConfigAndRefresh = async () => {

@@ -101,11 +101,11 @@ def tool_min_role(tool_name: str) -> str:
 
 
 def all_registry_tool_names() -> Set[str]:
-    from . import registry as _registry_module
+    from .registry import registry
 
     return {
         str(tool.get("name") or "").strip()
-        for tool in _registry_module.registry.list_tools()
+        for tool in registry.list_tools()
         if tool.get("name")
     }
 
