@@ -6,10 +6,10 @@ import git
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from .database import engine
-from .models import AIRuntimeStatus, AssistantAIConfig
-from .sio import agents, sio
-from .mcp_core import _IGNORED_WORKSPACE_DIRS, generate_file_tree, get_project_root, safe_join
+from ...database import engine
+from ...models import AIRuntimeStatus, AssistantAIConfig
+from ...sio import agents, sio
+from ..core import _IGNORED_WORKSPACE_DIRS, generate_file_tree, get_project_root, safe_join
 def _list_files(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     project_root = get_project_root(user_id, ai_config_id)
     all_paths: List[str] = []

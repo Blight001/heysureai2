@@ -1,5 +1,5 @@
-from .mcp_core import MCPRegistry, MCPTool
-from .mcp_workspace_tools import (
+from .core import MCPRegistry, MCPTool
+from .tools.workspace import (
     _dispatch_flow,
     _get_git_diff,
     _get_overview,
@@ -13,13 +13,13 @@ from .mcp_workspace_tools import (
     _edit_file,
     _delete_path,
 )
-from .mcp_project_tools import (
+from .tools.projects import (
     _create_project,
     _delete_project,
     _list_projects,
     _update_project,
 )
-from .mcp_task_tools import (
+from .tools.tasks import (
     _task_complete,
     _task_create,
     _task_create_immediate,
@@ -30,15 +30,15 @@ from .mcp_task_tools import (
     _task_list,
     _task_wait_all,
 )
-from .mcp_prompt_tools import (
+from .tools.prompts import (
     _prompt_list_targets,
     _prompt_read_ai,
     _prompt_read_system,
     _prompt_write_ai,
     _prompt_write_system,
 )
-from .agent_dispatch import _dispatch_task
-from .mcp_memory_tools import (
+from ..agent_dispatch import _dispatch_task
+from .tools.memory import (
     _evolution_input,
     _evolution_list,
     _evolution_review,
@@ -48,14 +48,14 @@ from .mcp_memory_tools import (
     _memory_update,
     _memory_write,
 )
-from .mcp_human_tools import _human_ask
-from .mcp_communication_tools import (
+from .tools.human import _human_ask
+from .tools.communication import (
     _ai_list_inbox,
     _ai_reply_message,
     _ai_send_message,
     _user_send_message,
 )
-from .mcp_librarian_tools import (
+from .tools.librarian import (
     _librarian_archive,
     _librarian_consult,
     _librarian_list_topics,

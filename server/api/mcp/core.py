@@ -7,9 +7,10 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from .database import engine
-from .models import AIRuntimeStatus, AssistantAIConfig
-from .sio import sio
+from ..core.config import USER_WORKSPACE_SUBFOLDERS, user_workspace_dir
+from ..database import engine
+from ..models import AIRuntimeStatus, AssistantAIConfig
+from ..sio import sio
 
 _MCP_RUNTIME_OVERRIDES: contextvars.ContextVar[Optional[Dict[str, Any]]] = contextvars.ContextVar(
     "mcp_runtime_overrides",
@@ -25,12 +26,8 @@ def reset_mcp_runtime_overrides(token) -> None:
 def get_mcp_runtime_overrides() -> Optional[Dict[str, Any]]:
     return _MCP_RUNTIME_OVERRIDES.get()
 
-def _default_workspace_root(user_id: int) -> str:
-    server_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(server_dir, "data", "workspace", str(user_id))
-
 def _resolve_ai_workspace(user_id: int, ai_config_id: Optional[int]) -> str:
-    default_root = _default_workspace_root(user_id)
+    default_root = user_workspace_dir(user_id)
     runtime_overrides = get_mcp_runtime_overrides() or {}
     override_uid = runtime_overrides.get("user_id")
     override_cfg = runtime_overrides.get("ai_config_id")
@@ -69,7 +66,7 @@ def get_project_root(user_id: int, ai_config_id: Optional[int] = None) -> str:
 
     if not os.path.exists(workspace_dir):
         os.makedirs(workspace_dir, exist_ok=True)
-        for folder in ["Valhalla", "BrainCore", "KnowledgeBase", "EvolutionArena", "SystemSetting"]:
+        for folder in USER_WORKSPACE_SUBFOLDERS:
             os.makedirs(os.path.join(workspace_dir, folder), exist_ok=True)
 
     return workspace_dir

@@ -13,8 +13,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from .database import engine
-from .models import EvolutionInput, Memory
+from ...database import engine
+from ...models import EvolutionInput, Memory
 
 _MEMORY_KINDS = {"fact", "decision", "lesson", "todo", "risk", "template"}
 _EVOLUTION_TYPES = {
