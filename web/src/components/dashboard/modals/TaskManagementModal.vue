@@ -17,7 +17,7 @@ import type {
   AITaskListItem,
   TaskCreateForm,
 } from '@/utils/taskSystem'
-import { getMcpToolZhLabel, groupMcpToolsByZhTag } from '@/utils/mcpTools'
+import { getMcpToolZhLabel, groupMcpToolGroupsByParent, groupMcpToolsByZhTag } from '@/utils/mcpTools'
 import type { Agent } from '@/types'
 
 interface Props {
@@ -62,6 +62,7 @@ const props = defineProps<Props>()
 type JobStateFilter = 'running' | 'next' | 'scheduled' | 'completed'
 const selectedJobStateFilter = ref<JobStateFilter | null>(null)
 const taskMcpToolGroups = computed(() => groupMcpToolsByZhTag(props.availableMcpTools.length ? props.availableMcpTools : props.defaultMcpTools))
+const taskMcpToolParentGroups = computed(() => groupMcpToolGroupsByParent(taskMcpToolGroups.value))
 
 const completedTaskJobs = computed(() => {
   return props.taskJobs.filter(isCompletedTaskJob)
@@ -555,33 +556,69 @@ const taskStateFilterButtonClass = (state: JobStateFilter) => {
               class="space-y-2 max-h-44 overflow-y-auto pr-1"
             >
               <details
-                v-for="group in taskMcpToolGroups"
-                :key="`task-create-mcp-${group.tag}`"
+                v-for="parent in taskMcpToolParentGroups"
+                :key="`task-create-mcp-parent-${parent.title}`"
                 class="rounded-lg border border-zinc-200 bg-white/70 dark:border-zinc-700 dark:bg-zinc-900/50"
               >
                 <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between">
-                  <span>{{ group.tag }}</span>
+                  <span>{{ parent.title }}</span>
                   <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
-                    {{ group.tools.filter(tool => taskCreateForm.mcp_tools_override.includes(tool)).length }} / {{ group.tools.length }}
+                    {{ parent.tools.filter(tool => taskCreateForm.mcp_tools_override.includes(tool)).length }} / {{ parent.tools.length }}
                   </span>
                 </summary>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-1.5 px-2 pb-2">
-                  <label
-                    v-for="tool in group.tools"
-                    :key="`task-create-tool-${tool}`"
-                    class="text-[11px] text-zinc-600 dark:text-zinc-300 flex items-start gap-2"
+                <div class="space-y-2 px-2 pb-2">
+                  <div
+                    v-if="parent.groups.length === 1"
+                    class="grid grid-cols-1 md:grid-cols-2 gap-1.5"
                   >
-                    <input
-                      type="checkbox"
-                      class="mt-0.5"
-                      :checked="taskCreateForm.mcp_tools_override.includes(tool)"
-                      @change="onTaskCreateToolChange(tool, $event)"
-                    />
-                    <span class="min-w-0">
-                      <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
-                      <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
-                    </span>
-                  </label>
+                    <label
+                      v-for="tool in parent.groups[0].tools"
+                      :key="`task-create-tool-${tool}`"
+                      class="text-[11px] text-zinc-600 dark:text-zinc-300 flex items-start gap-2"
+                    >
+                      <input
+                        type="checkbox"
+                        class="mt-0.5"
+                        :checked="taskCreateForm.mcp_tools_override.includes(tool)"
+                        @change="onTaskCreateToolChange(tool, $event)"
+                      />
+                      <span class="min-w-0">
+                        <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
+                        <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
+                      </span>
+                    </label>
+                  </div>
+                  <details
+                    v-else
+                    v-for="group in parent.groups"
+                    :key="`task-create-mcp-${parent.title}-${group.tag}`"
+                    class="rounded-lg border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-950/50"
+                  >
+                    <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between">
+                      <span>{{ group.tag }}</span>
+                      <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
+                        {{ group.tools.filter(tool => taskCreateForm.mcp_tools_override.includes(tool)).length }} / {{ group.tools.length }}
+                      </span>
+                    </summary>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-1.5 px-2 pb-2">
+                      <label
+                        v-for="tool in group.tools"
+                        :key="`task-create-tool-${tool}`"
+                        class="text-[11px] text-zinc-600 dark:text-zinc-300 flex items-start gap-2"
+                      >
+                        <input
+                          type="checkbox"
+                          class="mt-0.5"
+                          :checked="taskCreateForm.mcp_tools_override.includes(tool)"
+                          @change="onTaskCreateToolChange(tool, $event)"
+                        />
+                        <span class="min-w-0">
+                          <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
+                          <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
+                        </span>
+                      </label>
+                    </div>
+                  </details>
                 </div>
               </details>
             </div>

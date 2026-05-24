@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, Set
 from .sio import agents
 
 
-ENDPOINT_BRIDGE_MCP_TOOLS = {"admin.list_agents", "admin.dispatch_task"}
+ENDPOINT_BRIDGE_MCP_TOOLS = {"admin.list_agents"}
 DESKTOP_AGENT_MCP_TOOLS = {
     "fs.list",
     "fs.read",

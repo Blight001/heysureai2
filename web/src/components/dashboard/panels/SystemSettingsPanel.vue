@@ -143,9 +143,20 @@ const promptUserMessageNoticeValue = computed({
 type SettingsDialog = '' | 'mcp' | 'roles' | 'prompts'
 
 const settingsDialog = ref<SettingsDialog>('')
+const selectedRole = ref('')
 
 const openSettingsDialog = (name: Exclude<SettingsDialog, ''>) => {
   settingsDialog.value = name
+  selectedRole.value = ''
+}
+
+const closeSettingsDialog = () => {
+  settingsDialog.value = ''
+  selectedRole.value = ''
+}
+
+const openRoleDialog = (role: string) => {
+  selectedRole.value = role
 }
 
 const settingsDialogTitles: Record<Exclude<SettingsDialog, ''>, string> = {
@@ -160,7 +171,10 @@ const settingsDialogTitle = computed(() => {
 })
 
 watch(() => props.show, visible => {
-  if (!visible) settingsDialog.value = ''
+  if (!visible) {
+    settingsDialog.value = ''
+    selectedRole.value = ''
+  }
 })
 </script>
 
@@ -260,7 +274,7 @@ watch(() => props.show, visible => {
         <div
           v-if="settingsDialog"
           class="fixed inset-0 z-[70] bg-black/45 flex items-center justify-center p-4 backdrop-blur-sm"
-          @click.stop="settingsDialog = ''"
+          @click.stop="closeSettingsDialog"
         >
           <div
             class="bg-white rounded-2xl shadow-2xl w-[860px] max-w-[94vw] max-h-[88vh] flex flex-col dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800"
@@ -268,7 +282,7 @@ watch(() => props.show, visible => {
           >
             <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-100 dark:border-zinc-800">
               <h3 class="text-base font-bold text-zinc-900 dark:text-zinc-100">{{ settingsDialogTitle }}</h3>
-              <button @click="settingsDialog = ''" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors">
+              <button @click="closeSettingsDialog" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -318,15 +332,21 @@ watch(() => props.show, visible => {
                   </button>
                 </div>
                 <div v-if="roleTiers.length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">正在加载角色权限…</div>
-                <details
+                <div class="grid grid-cols-1 gap-3">
+                  <button
                   v-for="role in roleTiers"
                   :key="`role-${role}`"
-                  class="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white/70 dark:bg-zinc-950/50"
+                    type="button"
+                    class="settings-entry bg-white/80 dark:bg-zinc-950/50"
+                    @click="openRoleDialog(role)"
                 >
-                  <summary class="cursor-pointer select-none px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
-                    <span>{{ roleLabel(role) }}</span>
+                    <span>
+                      <span class="settings-entry-title">{{ roleLabel(role) }}</span>
+                      <span class="settings-entry-desc">
+                        已选 {{ (roleMcpPermissions[role] || []).length }} / 可用 {{ roleOptionTools(role).length }} 个 MCP 工具
+                      </span>
+                    </span>
                     <span class="flex items-center gap-3">
-                      <span class="text-[10px] text-zinc-400 dark:text-zinc-500">{{ (roleMcpPermissions[role] || []).length }} / {{ roleOptionTools(role).length }}</span>
                       <span class="flex items-center gap-1 text-[10px] text-zinc-500 dark:text-zinc-400" @click.stop>
                         <input
                           type="checkbox"
@@ -336,80 +356,10 @@ watch(() => props.show, visible => {
                         />
                         <span>全选</span>
                       </span>
+                      <span class="settings-entry-arrow">›</span>
                     </span>
-                  </summary>
-                  <div class="px-3 pb-3">
-                    <div class="space-y-3 max-h-64 overflow-y-auto pr-1">
-                      <details
-                        v-for="source in roleSourceGroups(role)"
-                        :key="`${role}-mcp-source-${source.source}`"
-                        class="rounded-lg border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-950/60"
-                      >
-                        <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
-                          <span>{{ source.title }}</span>
-                          <span class="flex items-center gap-3">
-                            <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
-                              {{ source.tools.filter(tool => isRoleToolChecked(role, tool)).length }} / {{ source.tools.length }}
-                            </span>
-                            <span class="flex items-center gap-1 text-[10px] font-normal text-zinc-500 dark:text-zinc-400" @click.stop>
-                              <input
-                                type="checkbox"
-                                :checked="toolsAllChecked(role, source.tools)"
-                                @click.stop
-                                @change.stop="onRoleToolsChange(role, source.tools, $event)"
-                              />
-                              <span>全选</span>
-                            </span>
-                          </span>
-                        </summary>
-                        <div class="px-2 pb-2">
-                          <details
-                            v-for="group in source.groups"
-                            :key="`${role}-${source.source}-mcp-group-${group.tag}`"
-                            class="mb-2 rounded-lg border border-zinc-200 bg-zinc-50/70 last:mb-0 dark:border-zinc-700 dark:bg-zinc-800/40"
-                          >
-                            <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
-                              <span>{{ group.tag }}</span>
-                              <span class="flex items-center gap-3">
-                                <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
-                                  {{ group.tools.filter(tool => isRoleToolChecked(role, tool)).length }} / {{ group.tools.length }}
-                                </span>
-                                <span class="flex items-center gap-1 text-[10px] font-normal text-zinc-500 dark:text-zinc-400" @click.stop>
-                                  <input
-                                    type="checkbox"
-                                    :checked="toolsAllChecked(role, group.tools)"
-                                    @click.stop
-                                    @change.stop="onRoleToolsChange(role, group.tools, $event)"
-                                  />
-                                  <span>全选</span>
-                                </span>
-                              </span>
-                            </summary>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 px-2 pb-2">
-                              <label
-                                v-for="tool in group.tools"
-                                :key="`${role}-${source.source}-${tool}`"
-                                class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2"
-                              >
-                                <input
-                                  type="checkbox"
-                                  class="mt-0.5"
-                                  :checked="isRoleToolChecked(role, tool)"
-                                  @change="onRoleToolChange(role, tool, $event)"
-                                />
-                                <span class="min-w-0">
-                                  <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
-                                  <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
-                                </span>
-                              </label>
-                            </div>
-                          </details>
-                        </div>
-                      </details>
-                      <div v-if="roleOptionTools(role).length === 0" class="text-[11px] text-zinc-500 dark:text-zinc-400">该角色暂无可分配的工具</div>
-                    </div>
-                  </div>
-                </details>
+                  </button>
+                </div>
               </div>
 
               <div v-else-if="settingsDialog === 'prompts'" class="space-y-5">
@@ -467,9 +417,159 @@ watch(() => props.show, visible => {
             </div>
 
             <div class="px-5 py-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end">
-              <button @click="settingsDialog = ''" class="px-4 py-2 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 rounded-xl text-sm font-bold hover:opacity-90 active:scale-95 transition-all">确定</button>
+              <button @click="closeSettingsDialog" class="px-4 py-2 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 rounded-xl text-sm font-bold hover:opacity-90 active:scale-95 transition-all">确定</button>
             </div>
           </div>
+
+          <Transition name="fade">
+            <div
+              v-if="settingsDialog === 'roles' && selectedRole"
+              class="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center p-4 backdrop-blur-sm"
+              @click.stop="selectedRole = ''"
+            >
+              <div
+                class="bg-white rounded-2xl shadow-2xl w-[760px] max-w-[94vw] max-h-[82vh] flex flex-col dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800"
+                @click.stop
+              >
+                <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-100 dark:border-zinc-800">
+                  <div>
+                    <h3 class="text-base font-bold text-zinc-900 dark:text-zinc-100">{{ roleLabel(selectedRole) }}</h3>
+                    <div class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      已选 {{ (roleMcpPermissions[selectedRole] || []).length }} / 可用 {{ roleOptionTools(selectedRole).length }}
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <label class="flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      <input
+                        type="checkbox"
+                        :checked="roleAllChecked(selectedRole)"
+                        @change="onRoleAllChange(selectedRole, $event)"
+                      />
+                      <span>全选</span>
+                    </label>
+                    <button @click="selectedRole = ''" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="flex-1 overflow-y-auto px-5 py-4">
+                  <div class="space-y-3">
+                    <details
+                      v-for="source in roleSourceGroups(selectedRole)"
+                      :key="`${selectedRole}-mcp-source-${source.source}`"
+                      open
+                      class="rounded-lg border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-950/60"
+                    >
+                      <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
+                        <span>{{ source.title }}</span>
+                        <span class="flex items-center gap-3">
+                          <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
+                            {{ source.tools.filter(tool => isRoleToolChecked(selectedRole, tool)).length }} / {{ source.tools.length }}
+                          </span>
+                          <span class="flex items-center gap-1 text-[10px] font-normal text-zinc-500 dark:text-zinc-400" @click.stop>
+                            <input
+                              type="checkbox"
+                              :checked="toolsAllChecked(selectedRole, source.tools)"
+                              @click.stop
+                              @change.stop="onRoleToolsChange(selectedRole, source.tools, $event)"
+                            />
+                            <span>全选</span>
+                          </span>
+                        </span>
+                      </summary>
+                      <div class="px-2 pb-2">
+                        <details
+                          v-for="parent in source.parentGroups"
+                          :key="`${selectedRole}-${source.source}-mcp-parent-${parent.title}`"
+                          class="mb-2 rounded-lg border border-zinc-200 bg-zinc-50/70 last:mb-0 dark:border-zinc-700 dark:bg-zinc-800/40"
+                        >
+                          <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
+                            <span>{{ parent.title }}</span>
+                            <span class="flex items-center gap-3">
+                              <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
+                                {{ parent.tools.filter(tool => isRoleToolChecked(selectedRole, tool)).length }} / {{ parent.tools.length }}
+                              </span>
+                              <span class="flex items-center gap-1 text-[10px] font-normal text-zinc-500 dark:text-zinc-400" @click.stop>
+                                <input
+                                  type="checkbox"
+                                  :checked="toolsAllChecked(selectedRole, parent.tools)"
+                                  @click.stop
+                                  @change.stop="onRoleToolsChange(selectedRole, parent.tools, $event)"
+                                />
+                                <span>全选</span>
+                              </span>
+                            </span>
+                          </summary>
+                          <div class="space-y-2 px-2 pb-2">
+                            <div
+                              v-if="parent.groups.length === 1"
+                              class="grid grid-cols-1 md:grid-cols-2 gap-2"
+                            >
+                              <label
+                                v-for="tool in parent.groups[0].tools"
+                                :key="`${selectedRole}-${source.source}-${tool}`"
+                                class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2"
+                              >
+                                <input
+                                  type="checkbox"
+                                  class="mt-0.5"
+                                  :checked="isRoleToolChecked(selectedRole, tool)"
+                                  @change="onRoleToolChange(selectedRole, tool, $event)"
+                                />
+                                <span class="min-w-0">
+                                  <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
+                                  <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
+                                </span>
+                              </label>
+                            </div>
+                            <details
+                              v-else
+                              v-for="group in parent.groups"
+                              :key="`${selectedRole}-${source.source}-${parent.title}-${group.tag}`"
+                              class="rounded-lg border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/60"
+                            >
+                              <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
+                                <span>{{ group.tag }}</span>
+                                <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
+                                  {{ group.tools.filter(tool => isRoleToolChecked(selectedRole, tool)).length }} / {{ group.tools.length }}
+                                </span>
+                              </summary>
+                              <div class="grid grid-cols-1 md:grid-cols-2 gap-2 px-2 pb-2">
+                                <label
+                                  v-for="tool in group.tools"
+                                  :key="`${selectedRole}-${source.source}-${tool}`"
+                                  class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    class="mt-0.5"
+                                    :checked="isRoleToolChecked(selectedRole, tool)"
+                                    @change="onRoleToolChange(selectedRole, tool, $event)"
+                                  />
+                                  <span class="min-w-0">
+                                    <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
+                                    <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
+                                  </span>
+                                </label>
+                              </div>
+                            </details>
+                          </div>
+                        </details>
+                      </div>
+                    </details>
+                    <div v-if="roleOptionTools(selectedRole).length === 0" class="text-[11px] text-zinc-500 dark:text-zinc-400">该角色暂无可分配的工具</div>
+                  </div>
+                </div>
+
+                <div class="px-5 py-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end">
+                  <button @click="selectedRole = ''" class="px-4 py-2 bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 rounded-xl text-sm font-bold hover:opacity-90 active:scale-95 transition-all">确定</button>
+                </div>
+              </div>
+            </div>
+          </Transition>
         </div>
       </Transition>
     </div>

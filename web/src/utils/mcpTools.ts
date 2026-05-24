@@ -5,10 +5,17 @@ export interface McpToolGroup {
   tools: string[]
 }
 
+export interface McpToolParentGroup {
+  title: string
+  groups: McpToolGroup[]
+  tools: string[]
+}
+
 export interface McpToolSourceGroup {
   source: 'server' | 'desktop' | 'browser'
   title: string
   groups: McpToolGroup[]
+  parentGroups: McpToolParentGroup[]
   tools: string[]
 }
 
@@ -89,41 +96,48 @@ export const MCP_TOOL_ZH_META: Record<string, { label: string; description: stri
   'workspace.delete_path': { label: '删除路径', description: '删除指定文件或目录，请谨慎操作。', tag: '工作区' },
   'workspace.run_command': { label: '执行命令', description: '在工作目录中执行终端命令。', tag: '工作区' },
   'workspace.git_diff': { label: 'Git 变更', description: '查看当前工作目录的 Git 差异。', tag: '工作区' },
-  'admin.list_agents': { label: '列出智能体', description: '查看系统中的 AI 成员列表。', tag: '管理' },
-  'admin.get_overview': { label: '管理总览', description: '获取系统运行状态与关键统计。', tag: '管理' },
-  'admin.dispatch_flow': { label: '分派流程', description: '向指定 AI 下发流程或任务。', tag: '管理' },
-  'admin.dispatch_task': { label: '分派端侧任务', description: '通过已连接的端侧 Agent 执行任务；具体目标由桌面端 MCP 或浏览器 MCP 来源决定。', tag: '管理' },
-  'project.list_projects': { label: '项目列表', description: '查看当前用户下的项目信息。', tag: '项目' },
-  'project.create_project': { label: '创建项目', description: '创建新的项目记录。', tag: '项目' },
-  'project.update_project': { label: '更新项目', description: '更新项目信息与成员绑定。', tag: '项目' },
-  'project.delete_project': { label: '删除项目', description: '删除项目记录，请谨慎操作。', tag: '项目' },
-  'task.create_immediate': { label: '创建即时任务', description: '立即执行任务；不使用任何定时参数。核心参数：title、instruction。', tag: '任务' },
-  'task.create_scheduled': { label: '创建定时任务', description: '一次性定时任务；使用 schedule_at 或 schedule_duration_minutes（二选一）。', tag: '任务' },
-  'task.create_recurring': { label: '创建循环任务', description: '循环任务；使用 schedule_duration_minutes 作为间隔，可选 schedule_run_immediately 首次立即执行。', tag: '任务' },
-  'task.create': { label: '创建任务(兼容)', description: '兼容入口，建议优先使用上面三类创建工具。', tag: '任务' },
-  'task.list': { label: '任务队列', description: '查看当前 AI 的任务队列情况。', tag: '任务' },
-  'task.get_current': { label: '当前任务', description: '读取当前执行中的任务详情。', tag: '任务' },
-  'task.inherit': { label: '提交传承', description: '提交任务传承摘要与上下文。', tag: '任务' },
-  'task.complete': { label: '标记完成', description: '将当前任务标记为完成。', tag: '任务' },
-  'task.wait_all': { label: '等待子任务', description: '阻塞等待指定子任务全部完成或超时后返回各自结果摘要，常用于并行编排。', tag: '任务' },
+  'admin.list_agents': { label: '列出智能体', description: '查看系统中的 AI 成员列表。', tag: '管理与项目' },
+  'admin.get_overview': { label: '管理总览', description: '获取系统运行状态与关键统计。', tag: '管理与项目' },
+  'admin.dispatch_flow': { label: '分派流程', description: '向指定 AI 下发流程或任务。', tag: '管理与项目' },
+  'project.list_projects': { label: '项目列表', description: '查看当前用户下的项目信息。', tag: '管理与项目' },
+  'project.create_project': { label: '创建项目', description: '创建新的项目记录。', tag: '管理与项目' },
+  'project.update_project': { label: '更新项目', description: '更新项目信息与成员绑定。', tag: '管理与项目' },
+  'project.delete_project': { label: '删除项目', description: '删除项目记录，请谨慎操作。', tag: '管理与项目' },
+  'task.create_immediate': { label: '创建即时任务', description: '立即执行任务；不使用任何定时参数。核心参数：title、instruction。', tag: '计划与记忆' },
+  'task.create_scheduled': { label: '创建定时任务', description: '一次性定时任务；使用 schedule_at 或 schedule_duration_minutes（二选一）。', tag: '计划与记忆' },
+  'task.create_recurring': { label: '创建循环任务', description: '循环任务；使用 schedule_duration_minutes 作为间隔，可选 schedule_run_immediately 首次立即执行。', tag: '计划与记忆' },
+  'task.create': { label: '创建任务(兼容)', description: '兼容入口，建议优先使用上面三类创建工具。', tag: '计划与记忆' },
+  'task.list': { label: '任务队列', description: '查看当前 AI 的任务队列情况。', tag: '计划与记忆' },
+  'task.get_current': { label: '当前任务', description: '读取当前执行中的任务详情。', tag: '计划与记忆' },
+  'task.inherit': { label: '提交传承', description: '提交任务传承摘要与上下文。', tag: '计划与记忆' },
+  'task.complete': { label: '标记完成', description: '将当前任务标记为完成。', tag: '计划与记忆' },
+  'task.wait_all': { label: '等待子任务', description: '阻塞等待指定子任务全部完成或超时后返回各自结果摘要，常用于并行编排。', tag: '计划与记忆' },
   'prompt.list_targets': { label: 'Prompt 目标', description: '列出当前 AI 基础 prompt 目标与全局/系统 prompt 模板键。', tag: 'Prompt' },
   'prompt.read_ai': { label: '读取 AI Prompt', description: '读取指定 AI 实际使用的基础 prompt；未指定时读取当前 AI。', tag: 'Prompt' },
   'prompt.write_ai': { label: '修改 AI Prompt', description: '按行修改指定 AI 的 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
   'prompt.read_system': { label: '读取系统 Prompt', description: '读取全局注入模板/旧版兜底 prompt；当前 AI 基础 prompt 请用读取 AI Prompt。', tag: 'Prompt' },
   'prompt.write_system': { label: '修改系统 Prompt', description: '按行修改全局注入模板/旧版兜底 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
-  'feishu.send_message': { label: '飞书发消息', description: '通过与该 AI 绑定的飞书机器人发送文本消息。', tag: '飞书' },
-  'conversation.forget_before_current': { label: '忘记前文', description: '删除当前会话里当前用户消息之前的内容，保留当前消息及之后内容。', tag: '对话' },
-  'memory.write': { label: '写入记忆', description: '沉淀高价值的结构化记忆（事实/决策/经验/待办/风险/模板）供后续检索。', tag: '记忆' },
-  'memory.search': { label: '检索记忆', description: '按关键词、类型、项目或标签搜索已存储的记忆。', tag: '记忆' },
-  'memory.list': { label: '记忆列表', description: '列出已存储的记忆，可按类型/项目过滤。', tag: '记忆' },
-  'memory.update': { label: '更新记忆', description: '更新已有记忆的内容/标签/类型/置信度。', tag: '记忆' },
-  'memory.archive': { label: '归档记忆', description: '归档（软删除）记忆，使其默认检索时不再出现。', tag: '记忆' },
+  'user.send_message': { label: '发送用户消息', description: '向用户发送文本消息；当前默认通过绑定的飞书机器人投递。', tag: '协作' },
+  'conversation.forget_before_current': { label: '忘记前文', description: '删除当前会话里当前用户消息之前的内容，保留当前消息及之后内容。', tag: '协作' },
+  'ai.send_message': { label: '发送 AI 消息', description: '向另一个 AI 发送消息，可等待对方回复，用于 AI 间协作。', tag: '协作' },
+  'ai.reply_message': { label: '回复 AI 消息', description: '回复收到的 AI 间消息，回复后继续之前被中断的工作。', tag: '协作' },
+  'ai.list_inbox': { label: 'AI 收件箱', description: '查看当前 AI 尚未处理或历史收到的 AI 间消息。', tag: '协作' },
+  'memory.write': { label: '写入记忆', description: '沉淀高价值的结构化记忆（事实/决策/经验/待办/风险/模板）供后续检索。', tag: '计划与记忆' },
+  'memory.search': { label: '检索记忆', description: '按关键词、类型、项目或标签搜索已存储的记忆。', tag: '计划与记忆' },
+  'memory.list': { label: '记忆列表', description: '列出已存储的记忆，可按类型/项目过滤。', tag: '计划与记忆' },
+  'memory.update': { label: '更新记忆', description: '更新已有记忆的内容/标签/类型/置信度。', tag: '计划与记忆' },
+  'memory.archive': { label: '归档记忆', description: '归档（软删除）记忆，使其默认检索时不再出现。', tag: '计划与记忆' },
+  'librarian.propose': { label: '提交知识流程', description: '向图书管理员提交可复用流程，等待审批后进入知识库。', tag: '计划与记忆' },
+  'librarian.consult': { label: '咨询图书管理员', description: '按问题检索图书管理员知识库中的相关流程与做法。', tag: '计划与记忆' },
+  'librarian.list_topics': { label: '知识主题列表', description: '浏览图书管理员已收录的流程标题与触发关键词。', tag: '计划与记忆' },
+  'librarian.read': { label: '读取知识流程', description: '按 memory_id 读取图书管理员知识库中的完整流程内容。', tag: '计划与记忆' },
+  'librarian.archive': { label: '归档知识流程', description: '归档图书管理员知识库中的流程条目。', tag: '计划与记忆' },
   'evolution.input': { label: '提交进化建议', description: '提交对提示词/工具/流程的改进建议，交由核心管理者评审。', tag: '进化' },
   'evolution.list': { label: '进化建议列表', description: '列出已提交的进化建议，可按评审状态过滤。', tag: '进化' },
   'evolution.review': { label: '评审进化建议', description: '评审进化建议：接受/拒绝/应用（核心管理者）。', tag: '进化' },
   'human.ask': { label: '询问人类', description: '暂停当前任务并向人类提问（确认/选择/文本），阻塞直至回答或超时。', tag: '协作' },
-  'browser_find_popups': { label: '查找弹窗', description: '检测当前页面可见的弹窗、模态框、抽屉、遮罩，并返回可能的关闭按钮。', tag: '浏览器MCP' },
-  'browser_close_popup': { label: '关闭弹窗', description: '关闭当前页面弹窗；优先点击关闭按钮，必要时使用 Escape 或遮罩点击兜底。', tag: '浏览器MCP' },
+  'browser_find_popups': { label: '查找弹窗', description: '检测当前页面可见的弹窗、模态框、抽屉、遮罩，并返回可能的关闭按钮。', tag: '浏览器页面' },
+  'browser_close_popup': { label: '关闭弹窗', description: '关闭当前页面弹窗；优先点击关闭按钮，必要时使用 Escape 或遮罩点击兜底。', tag: '浏览器页面' },
 }
 
 export const normalizeMcpSchemaType = (rawType: unknown) => {
@@ -153,23 +167,69 @@ export const normalizeMcpSchemaType = (rawType: unknown) => {
   return toZh(text || 'any')
 }
 
-const MCP_TOOL_TAG_ORDER = ['工作区', '管理', '桌面端MCP', '浏览器MCP', '项目', '任务', 'Prompt', '飞书', '对话', '记忆', '进化', '协作', '通用']
+const MCP_TOOL_TAG_ORDER = [
+  '工作区',
+  '管理与项目',
+  '文件系统',
+  '终端',
+  'Git',
+  '键鼠输入',
+  '屏幕',
+  '剪贴板',
+  '窗口',
+  '进程',
+  '浏览器导航',
+  '浏览器页面',
+  '浏览器交互',
+  '浏览器数据',
+  '浏览器标签页',
+  '浏览器卡片',
+  '计划与记忆',
+  'Prompt',
+  '进化',
+  '协作',
+  '通用',
+]
 
 const hasMcpPrefix = (name: string, prefix: string) => name.startsWith(`${prefix}.`) || name.startsWith(`${prefix}_`)
 
+const getEndpointCapabilityTag = (name: string) => {
+  if (hasMcpPrefix(name, 'fs')) return '文件系统'
+  if (hasMcpPrefix(name, 'shell')) return '终端'
+  if (hasMcpPrefix(name, 'git')) return 'Git'
+  if (hasMcpPrefix(name, 'keyboard') || hasMcpPrefix(name, 'mouse')) return '键鼠输入'
+  if (hasMcpPrefix(name, 'screen')) return '屏幕'
+  if (hasMcpPrefix(name, 'clipboard')) return '剪贴板'
+  if (hasMcpPrefix(name, 'window')) return '窗口'
+  if (hasMcpPrefix(name, 'process')) return '进程'
+
+  if (['browser_navigate', 'browser_search', 'browser_history_back', 'browser_history_forward'].includes(name)) return '浏览器导航'
+  if (['browser_screenshot', 'browser_get_content', 'browser_extract', 'browser_find_text', 'browser_find_popups', 'browser_close_popup', 'browser_page_info'].includes(name)) return '浏览器页面'
+  if (['browser_click', 'browser_type', 'browser_scroll', 'browser_wait', 'browser_fill_form', 'browser_select', 'browser_hover', 'browser_right_click', 'browser_double_click', 'browser_drag', 'browser_press_key'].includes(name)) return '浏览器交互'
+  if (['browser_evaluate', 'browser_clipboard_write', 'browser_storage_get'].includes(name)) return '浏览器数据'
+  if (['browser_tab_list', 'browser_tab_open', 'browser_tab_close'].includes(name)) return '浏览器标签页'
+  if (hasMcpPrefix(name, 'card')) return '浏览器卡片'
+  if (hasMcpPrefix(name, 'browser')) return '浏览器页面'
+
+  return ''
+}
+
 const getMcpToolFallbackTag = (name: string) => {
+  const endpointCapabilityTag = getEndpointCapabilityTag(name)
+  if (endpointCapabilityTag) return endpointCapabilityTag
   if (hasMcpPrefix(name, 'workspace')) return '工作区'
-  if (hasMcpPrefix(name, 'admin')) return '管理'
-  if (hasMcpPrefix(name, 'browser')) return '浏览器MCP'
-  if (hasMcpPrefix(name, 'card')) return '浏览器MCP'
-  if (hasMcpPrefix(name, 'desktop')) return '桌面端MCP'
-  if (['fs', 'shell', 'git', 'keyboard', 'mouse', 'screen', 'clipboard', 'window', 'process'].some(prefix => hasMcpPrefix(name, prefix))) return '桌面端MCP'
-  if (hasMcpPrefix(name, 'project')) return '项目'
-  if (hasMcpPrefix(name, 'task')) return '任务'
+  if (hasMcpPrefix(name, 'admin')) return '管理与项目'
+  if (hasMcpPrefix(name, 'desktop')) return '桌面能力'
+  if (hasMcpPrefix(name, 'project')) return '管理与项目'
+  if (hasMcpPrefix(name, 'task')) return '计划与记忆'
   if (hasMcpPrefix(name, 'prompt')) return 'Prompt'
-  if (hasMcpPrefix(name, 'memory')) return '记忆'
+  if (hasMcpPrefix(name, 'memory')) return '计划与记忆'
+  if (hasMcpPrefix(name, 'librarian')) return '计划与记忆'
   if (hasMcpPrefix(name, 'evolution')) return '进化'
-  if (hasMcpPrefix(name, 'feishu')) return '飞书'
+  if (hasMcpPrefix(name, 'feishu')) return '协作'
+  if (hasMcpPrefix(name, 'conversation')) return '协作'
+  if (hasMcpPrefix(name, 'user')) return '协作'
+  if (hasMcpPrefix(name, 'ai')) return '协作'
   if (hasMcpPrefix(name, 'human')) return '协作'
   return '通用'
 }
@@ -190,9 +250,28 @@ export const getMcpToolSource = (name: string): 'server' | 'desktop' | 'browser'
   return 'server'
 }
 
+const getMcpToolFallbackLabel = (name: string) => {
+  const normalized = String(name || '').trim()
+  if (!normalized) return '未命名工具'
+  if (hasMcpPrefix(normalized, 'workspace')) return `工作区工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'admin')) return `管理工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'project')) return `项目工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'task')) return `任务工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'prompt')) return `Prompt 工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'memory')) return `记忆工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'librarian')) return `图书管理员工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'evolution')) return `进化工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'conversation')) return `对话工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'user')) return `用户协作工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'ai')) return `AI 协作工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'human')) return `人类协作工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'feishu')) return `飞书工具：${normalized}`
+  return `通用工具：${normalized}`
+}
+
 // Chinese-first label for a tool: the Chinese name leads, the English call name
 // follows as a secondary reference.
-export const getMcpToolZhLabel = (name: string) => MCP_TOOL_ZH_META[name]?.label || name
+export const getMcpToolZhLabel = (name: string) => MCP_TOOL_ZH_META[name]?.label || getMcpToolFallbackLabel(name)
 
 export const getMcpToolZhTag = (name: string) => MCP_TOOL_ZH_META[name]?.tag || getMcpToolFallbackTag(name)
 
@@ -219,6 +298,46 @@ export const groupMcpToolsByZhTag = (tools: string[]): McpToolGroup[] => {
     })
 }
 
+const getMcpToolGroupParent = (tag: string) => {
+  if (tag === '管理与项目' || tag === 'Prompt') return '管理员'
+  return ''
+}
+
+export const groupMcpToolGroupsByParent = (groups: McpToolGroup[]): McpToolParentGroup[] => {
+  const parentMap = new Map<string, McpToolGroup[]>()
+  const standalone: McpToolParentGroup[] = []
+
+  for (const group of groups) {
+    const parent = getMcpToolGroupParent(group.tag)
+    if (!parent) {
+      standalone.push({ title: group.tag, groups: [group], tools: group.tools })
+      continue
+    }
+    const rows = parentMap.get(parent) || []
+    rows.push(group)
+    parentMap.set(parent, rows)
+  }
+
+  const parentRows = Array.from(parentMap.entries()).map(([title, childGroups]) => ({
+    title,
+    groups: childGroups,
+    tools: childGroups.flatMap(group => group.tools),
+  }))
+
+  const parentOrder = ['管理员']
+  return [...parentRows, ...standalone].sort((a, b) => {
+    const aRank = parentOrder.includes(a.title) ? parentOrder.indexOf(a.title) : parentOrder.length
+    const bRank = parentOrder.includes(b.title) ? parentOrder.indexOf(b.title) : parentOrder.length
+    if (aRank !== bRank) return aRank - bRank
+    const aGroup = a.groups[0]?.tag || a.title
+    const bGroup = b.groups[0]?.tag || b.title
+    const aTagRank = MCP_TOOL_TAG_ORDER.includes(aGroup) ? MCP_TOOL_TAG_ORDER.indexOf(aGroup) : MCP_TOOL_TAG_ORDER.length
+    const bTagRank = MCP_TOOL_TAG_ORDER.includes(bGroup) ? MCP_TOOL_TAG_ORDER.indexOf(bGroup) : MCP_TOOL_TAG_ORDER.length
+    if (aTagRank !== bTagRank) return aTagRank - bTagRank
+    return a.title.localeCompare(b.title, 'zh-Hans-CN')
+  })
+}
+
 export const groupMcpToolsBySource = (tools: string[]): McpToolSourceGroup[] => {
   const sourceTitles: Record<McpToolSourceGroup['source'], string> = {
     server: '服务端 MCP',
@@ -238,11 +357,13 @@ export const groupMcpToolsBySource = (tools: string[]): McpToolSourceGroup[] => 
   return (['server', 'desktop', 'browser'] as const)
     .map(source => {
       const sourceTools = Array.from(new Set(buckets[source])).sort((a, b) => getMcpToolZhLabel(a).localeCompare(getMcpToolZhLabel(b), 'zh-Hans-CN'))
+      const groups = groupMcpToolsByZhTag(sourceTools)
       return {
         source,
         title: sourceTitles[source],
         tools: sourceTools,
-        groups: groupMcpToolsByZhTag(sourceTools),
+        groups,
+        parentGroups: groupMcpToolGroupsByParent(groups),
       }
     })
     .filter(section => section.tools.length > 0)
@@ -255,14 +376,8 @@ export const withMcpToolLocale = (tool: McpToolDefinition): McpToolDefinition =>
   const isBrowserCapability = tool.mcpSource === 'browser' || hasMcpPrefix(tool.name, 'browser') || hasMcpPrefix(tool.name, 'card')
   const rawDescription = String(tool.description || '').trim()
   const sourceSpecificDescription = (() => {
-    if (tool.name === 'admin.dispatch_task' && tool.mcpSource === 'desktop') {
-      return '通过已连接的桌面端 Agent 分派任务，可进一步调用 fs.*、shell.*、git.*、keyboard.*、mouse.*、screen.*、clipboard.*、window.*、process.* 等桌面能力。'
-    }
-    if (tool.name === 'admin.dispatch_task' && tool.mcpSource === 'browser') {
-      return '通过已连接的浏览器插件分派任务，可进一步调用 browser_* 与 card_* 浏览器自动化能力。'
-    }
-    if (isDesktopCapability) return '桌面端 Agent 上报的执行能力。服务端 AI 需要通过 admin.dispatch_task 下发到已连接桌面端执行。'
-    if (isBrowserCapability) return '浏览器插件上报的执行能力。服务端 AI 需要通过 admin.dispatch_task 下发到已连接插件执行。'
+    if (isDesktopCapability) return '桌面端 Agent 上报的执行能力。服务端 AI 可直接调用该工具并在已连接桌面端执行。'
+    if (isBrowserCapability) return '浏览器插件上报的执行能力。服务端 AI 可直接调用该工具并在已连接浏览器插件执行。'
     return ''
   })()
   const zhDescription = sourceSpecificDescription
@@ -272,8 +387,6 @@ export const withMcpToolLocale = (tool: McpToolDefinition): McpToolDefinition =>
   const tags = sourceTag ? [sourceTag] : [getMcpToolZhTag(tool.name)]
   if (tool.destructive) tags.push('高风险')
   const sourceSpecificLabel = (() => {
-    if (tool.name === 'admin.dispatch_task' && tool.mcpSource === 'desktop') return '分派到桌面端'
-    if (tool.name === 'admin.dispatch_task' && tool.mcpSource === 'browser') return '分派到浏览器插件'
     return ''
   })()
   return {

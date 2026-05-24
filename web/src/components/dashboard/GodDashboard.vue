@@ -246,6 +246,40 @@ const {
   onReloadAgents: loadAIAgents,
 })
 
+const findFreshAgent = (agent: Agent | null) => {
+  if (!agent) return null
+  const configId = Number(agent.aiConfigId)
+  if (Number.isFinite(configId)) {
+    const byConfig = agents.value.find(item => Number(item.aiConfigId) === configId)
+    if (byConfig) return byConfig
+  }
+  return agents.value.find(item => item.id === agent.id) || agent
+}
+
+const syncOpenAgentReferences = () => {
+  chatTarget.value = findFreshAgent(chatTarget.value)
+  taskListTarget.value = findFreshAgent(taskListTarget.value)
+  workspaceContextModalTarget.value = findFreshAgent(workspaceContextModalTarget.value)
+  if (workspaceContextModalTarget.value) {
+    workspaceContextModalTitle.value = workspaceContextModalTarget.value.name
+  }
+}
+
+const refreshDashboardAfterSave = async () => {
+  await refreshDashboardLive(refreshOpenTaskPanel, { force: true })
+  syncOpenAgentReferences()
+}
+
+const saveAiConfigAndRefresh = async () => {
+  await saveAiConfig()
+  await refreshDashboardAfterSave()
+}
+
+const deleteAiConfigAndRefresh = async () => {
+  await deleteAiConfig()
+  await refreshDashboardAfterSave()
+}
+
 const openAllMcpToolsFromSystemSettings = async () => {
   if (Object.keys(mcpToolMetaByName.value || {}).length === 0) {
     await loadMcpTools()
@@ -335,6 +369,14 @@ watch(
       void refreshDashboardLive(refreshOpenTaskPanel)
     }
   }
+)
+
+watch(
+  agents,
+  () => {
+    syncOpenAgentReferences()
+  },
+  { flush: 'post' }
 )
 
 onMounted(async () => {
@@ -593,8 +635,8 @@ onUnmounted(() => {
       :on-tool-checkbox-change="onToolCheckboxChange"
       :on-toggle-run="toggleAiRunInSettings"
       :on-toggle-delete-confirm="() => aiConfigDeleteConfirm = !aiConfigDeleteConfirm"
-      :on-save="saveAiConfig"
-      :on-delete="deleteAiConfig"
+      :on-save="saveAiConfigAndRefresh"
+      :on-delete="deleteAiConfigAndRefresh"
     />
     <SystemSettingsPanel
       v-model:show="settingsOpen"

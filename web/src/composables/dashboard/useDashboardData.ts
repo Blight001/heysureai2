@@ -10,7 +10,7 @@ import type {
   ProjectItem,
 } from '@/types'
 import { listValhallaEntries, type ValhallaEntry } from '@/api/valhalla'
-import { listProposals, type KnowledgeEntryItem } from '@/api/librarian'
+import { listEntries, listProposals, type KnowledgeEntryItem } from '@/api/librarian'
 import { listAiCards, toggleAiRun } from '@/api/ai'
 import {
   createProject as apiCreateProject,
@@ -459,6 +459,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     })
     dashboardSocket.on('librarian:proposal_resolved', () => {
       loadLibrarianPending()
+      loadKnowledgeEntries()
     })
   }
 
@@ -488,13 +489,57 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     }
   }
 
-  const refreshDashboardLive = async (onRefreshOpenTaskPanel: () => Promise<void>) => {
-    if (dashboardRefreshing) return
+  const formatKnowledgeTime = (ts: number) => {
+    if (!ts) return ''
+    const date = new Date(ts * 1000)
+    const y = date.getFullYear()
+    const m = String(date.getMonth() + 1).padStart(2, '0')
+    const d = String(date.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+
+  const scopeLabel = (entry: KnowledgeEntryItem) => {
+    if (entry.scope === 'global') return '系统'
+    if (entry.scope === 'project') return '业务'
+    if (entry.scope === 'ai') return '传承'
+    return entry.scope || '知识'
+  }
+
+  const loadKnowledgeEntries = async () => {
+    const token = getAuthToken()
+    if (!token) return
+    try {
+      const data = await listEntries(token, { status: 'active' })
+      knowledgeBase.value = (data.items || []).map(entry => {
+        const tags = [
+          scopeLabel(entry),
+          ...entry.triggers.slice(0, 3),
+        ].filter(Boolean)
+        return {
+          id: entry.memory_id,
+          title: entry.title,
+          author: entry.source_job_id ? `任务传承 · 第 ${entry.source_generation || 1} 代` : '图书管理员',
+          time: formatKnowledgeTime(entry.updated_at || entry.created_at),
+          tags: tags.length ? tags : ['知识'],
+        }
+      })
+    } catch {
+      // best-effort
+    }
+  }
+
+  const refreshDashboardLive = async (
+    onRefreshOpenTaskPanel: () => Promise<void>,
+    options: { force?: boolean } = {},
+  ) => {
+    if (dashboardRefreshing && !options.force) return
     dashboardRefreshing = true
     try {
       await loadAIAgents()
+      await loadConnectedAgents()
       await loadValhallaEntries()
       await loadLibrarianPending()
+      await loadKnowledgeEntries()
       await onRefreshOpenTaskPanel()
     } finally {
       dashboardRefreshing = false
@@ -504,12 +549,16 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
   const createSeedData = async () => {
     await loadProjects()
     await loadAIAgents()
+    await loadConnectedAgents()
     await loadValhallaEntries()
     await loadLibrarianPending()
-    knowledgeBase.value = [
-      { id: 'k1', title: '学习总结数据库规范 v1.0', author: '主脑·阿尔法', time: '2026-03-01', tags: ['记忆', '规范'] },
-      { id: 'k2', title: '多 Agent 端接入与行为准则', author: '主脑·阿尔法', time: '2026-03-05', tags: ['接入', '治理'] },
-    ]
+    await loadKnowledgeEntries()
+    if (knowledgeBase.value.length === 0) {
+      knowledgeBase.value = [
+        { id: 'k1', title: '学习总结数据库规范 v1.0', author: '主脑·阿尔法', time: '2026-03-01', tags: ['记忆', '规范'] },
+        { id: 'k2', title: '多 Agent 端接入与行为准则', author: '主脑·阿尔法', time: '2026-03-05', tags: ['接入', '治理'] },
+      ]
+    }
   }
 
   watch(
@@ -544,6 +593,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     valhallaEntries,
     loadLibrarianPending,
     librarianPending,
+    loadKnowledgeEntries,
     loadConnectedAgents,
     createProject,
     updateProject,

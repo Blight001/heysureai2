@@ -229,6 +229,7 @@ const onToolGroupChange = (tools: string[], event: Event) => {
                   <details
                     v-for="source in groupedAvailableMcpTools"
                     :key="`ai-config-mcp-source-${source.source}`"
+                    open
                     class="rounded-lg border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/60"
                   >
                     <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
@@ -250,40 +251,72 @@ const onToolGroupChange = (tools: string[], event: Event) => {
                     </summary>
                     <div class="px-2 pb-2">
                       <details
-                        v-for="group in source.groups"
-                        :key="`ai-config-mcp-${source.source}-${group.tag}`"
+                        v-for="parent in source.parentGroups"
+                        :key="`ai-config-mcp-${source.source}-parent-${parent.title}`"
                         class="mb-2 rounded-lg border border-zinc-200 bg-zinc-50/70 last:mb-0 dark:border-zinc-700 dark:bg-zinc-800/40"
                       >
                         <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
-                          <span>{{ group.tag }}</span>
+                          <span>{{ parent.title }}</span>
                           <span class="flex items-center gap-3">
                             <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
-                              {{ group.tools.filter(tool => form.mcp_tools.includes(tool)).length }} / {{ group.tools.length }}
+                              {{ parent.tools.filter(tool => form.mcp_tools.includes(tool)).length }} / {{ parent.tools.length }}
                             </span>
                             <span class="flex items-center gap-1 text-[10px] font-normal text-zinc-500 dark:text-zinc-400" @click.stop>
                               <input
                                 type="checkbox"
-                                :checked="toolsAllSelected(group.tools)"
+                                :checked="toolsAllSelected(parent.tools)"
                                 @click.stop
-                                @change.stop="onToolGroupChange(group.tools, $event)"
+                                @change.stop="onToolGroupChange(parent.tools, $event)"
                               />
                               <span>全选</span>
                             </span>
                           </span>
                         </summary>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 px-2 pb-2">
-                          <label v-for="tool in group.tools" :key="tool" class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2 px-2 py-1.5 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-                            <input
-                              type="checkbox"
-                              class="mt-0.5"
-                              :checked="form.mcp_tools.includes(tool)"
-                              @change="onToolCheckboxChange(tool, $event)"
-                            />
-                            <span class="min-w-0">
-                              <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
-                              <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
-                            </span>
-                          </label>
+                        <div class="space-y-2 px-2 pb-2">
+                          <div
+                            v-if="parent.groups.length === 1"
+                            class="grid grid-cols-1 md:grid-cols-2 gap-2"
+                          >
+                            <label v-for="tool in parent.groups[0].tools" :key="tool" class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2 px-2 py-1.5 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+                              <input
+                                type="checkbox"
+                                class="mt-0.5"
+                                :checked="form.mcp_tools.includes(tool)"
+                                @change="onToolCheckboxChange(tool, $event)"
+                              />
+                              <span class="min-w-0">
+                                <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
+                                <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
+                              </span>
+                            </label>
+                          </div>
+                          <details
+                            v-else
+                            v-for="group in parent.groups"
+                            :key="`ai-config-mcp-${source.source}-${parent.title}-${group.tag}`"
+                            class="rounded-lg border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/60"
+                          >
+                            <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
+                              <span>{{ group.tag }}</span>
+                              <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
+                                {{ group.tools.filter(tool => form.mcp_tools.includes(tool)).length }} / {{ group.tools.length }}
+                              </span>
+                            </summary>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 px-2 pb-2">
+                              <label v-for="tool in group.tools" :key="tool" class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2 px-2 py-1.5 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+                                <input
+                                  type="checkbox"
+                                  class="mt-0.5"
+                                  :checked="form.mcp_tools.includes(tool)"
+                                  @change="onToolCheckboxChange(tool, $event)"
+                                />
+                                <span class="min-w-0">
+                                  <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
+                                  <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
+                                </span>
+                              </label>
+                            </div>
+                          </details>
                         </div>
                       </details>
                     </div>
@@ -330,7 +363,7 @@ const onToolGroupChange = (tools: string[], event: Event) => {
                   </div>
                 </div>
                 <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
-                  Webhook URL 只能让 AI 主动发通知；飞书用户主动与 AI 对话需要配置自建应用 App ID / Secret，并在飞书开放平台的事件订阅里选择“使用长连接接收事件”。启用后请在 MCP 工具权限中勾选 <span class="font-mono">feishu.send_message</span>。
+                  Webhook URL 只能让 AI 主动发通知；飞书用户主动与 AI 对话需要配置自建应用 App ID / Secret，并在飞书开放平台的事件订阅里选择“使用长连接接收事件”。启用后请在 MCP 工具权限中勾选 <span class="font-mono">user.send_message</span>。
                 </div>
               </div>
 

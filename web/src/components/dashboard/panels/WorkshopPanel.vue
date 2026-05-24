@@ -84,6 +84,32 @@ const lastTaskClass = (status?: string | null) => {
   if (status === 'running' || status === 'dispatching') return 'text-indigo-600 dark:text-indigo-400'
   return 'text-zinc-500 dark:text-zinc-400'
 }
+
+const linkedMember = (device: ConnectedAgent) => {
+  const id = Number(device.aiConfigId)
+  if (!Number.isFinite(id) || id <= 0) return undefined
+  return memberByConfigId.value.get(id)
+}
+
+const hasLinkedMember = (device: ConnectedAgent) => !!linkedMember(device)
+
+const memberPanelClass = (device: ConnectedAgent) => hasLinkedMember(device)
+  ? 'border-emerald-200 bg-emerald-50/80 dark:border-emerald-500/30 dark:bg-emerald-500/10'
+  : 'border-amber-200 bg-amber-50/80 dark:border-amber-500/30 dark:bg-amber-500/10'
+
+const deviceCardClass = (device: ConnectedAgent) => hasLinkedMember(device)
+  ? 'border-emerald-200 bg-emerald-50/60 dark:border-emerald-500/30 dark:bg-emerald-500/10'
+  : 'border-amber-200 bg-amber-50/60 dark:border-amber-500/30 dark:bg-amber-500/10'
+
+const memberLabelClass = (device: ConnectedAgent) => hasLinkedMember(device)
+  ? 'text-emerald-600 dark:text-emerald-300'
+  : 'text-amber-600 dark:text-amber-300'
+
+const memberStatusLabel = (device: ConnectedAgent) => hasLinkedMember(device) ? '已链接成员' : '未链接成员'
+
+const memberStatusBadgeClass = (device: ConnectedAgent) => hasLinkedMember(device)
+  ? 'border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-200'
+  : 'border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200'
 </script>
 
 <template>
@@ -95,7 +121,8 @@ const lastTaskClass = (status?: string | null) => {
     <div
       v-for="device in devices"
       :key="device.id"
-      class="rounded-xl border border-zinc-100 bg-white/60 p-3 dark:border-zinc-800 dark:bg-zinc-900/50"
+      class="rounded-xl border p-3"
+      :class="deviceCardClass(device)"
     >
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0">
@@ -112,21 +139,26 @@ const lastTaskClass = (status?: string | null) => {
         </span>
       </div>
 
-      <div class="mt-2 rounded-lg border border-zinc-100 bg-zinc-50/70 p-2 dark:border-zinc-800 dark:bg-zinc-950/40">
-        <div class="text-[10px] text-zinc-400 dark:text-zinc-500 mb-1">分配成员</div>
-        <template v-if="device.aiConfigId && memberByConfigId.get(device.aiConfigId)">
-          <div class="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-            {{ memberByConfigId.get(device.aiConfigId)?.name }}
+      <div class="mt-2 rounded-lg border p-2" :class="memberPanelClass(device)">
+        <div class="mb-1 flex items-center justify-between gap-2">
+          <div class="text-[10px]" :class="memberLabelClass(device)">分配成员</div>
+          <span class="shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-medium" :class="memberStatusBadgeClass(device)">
+            {{ memberStatusLabel(device) }}
+          </span>
+        </div>
+        <template v-if="hasLinkedMember(device)">
+          <div class="text-xs font-semibold text-emerald-800 dark:text-emerald-100">
+            {{ linkedMember(device)?.name }}
           </div>
-          <div class="mt-0.5 text-[10px] text-zinc-500 dark:text-zinc-400">
+          <div class="mt-0.5 text-[10px] text-emerald-700/80 dark:text-emerald-200/80">
             ID: {{ device.aiConfigId }}
-            <span v-if="memberByConfigId.get(device.aiConfigId)?.projectName"> · {{ memberByConfigId.get(device.aiConfigId)?.projectName }}</span>
+            <span v-if="linkedMember(device)?.projectName"> · {{ linkedMember(device)?.projectName }}</span>
           </div>
-          <div class="mt-0.5 text-[10px] text-zinc-500 dark:text-zinc-400 truncate">
-            {{ memberByConfigId.get(device.aiConfigId)?.currentTaskTitle || memberByConfigId.get(device.aiConfigId)?.currentTask || '等待任务' }}
+          <div class="mt-0.5 text-[10px] text-emerald-700/80 dark:text-emerald-200/80 truncate">
+            {{ linkedMember(device)?.currentTaskTitle || linkedMember(device)?.currentTask || '等待任务' }}
           </div>
         </template>
-        <div v-else class="text-xs text-zinc-400 dark:text-zinc-500">未分配成员</div>
+        <div v-else class="text-xs font-medium text-amber-700 dark:text-amber-200">未链接成员</div>
       </div>
 
       <div class="mt-2 grid grid-cols-2 gap-2 text-[10px]">

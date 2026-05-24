@@ -403,12 +403,18 @@ const taskTotalGenerations = (task?: AgentTaskSnapshot | null) => {
           <span class="text-xs font-normal text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400">
             第 {{ syncedGeneration }} 代
           </span>
-        </h3>
-        <div class="text-xs text-zinc-500 mt-0.5 flex items-center justify-between gap-2 dark:text-zinc-400">
-          <p class="min-w-0 flex items-center gap-1">
+          <span
+            class="min-w-0 inline-flex items-center gap-1 rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-xs font-normal text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
+            :title="agent.platform"
+          >
             <span class="inline-block w-2 h-2 rounded-full bg-green-400 animate-pulse shrink-0" title="在线"></span>
             <span class="truncate">{{ agent.platform }}</span>
-          </p>
+          </span>
+        </h3>
+        <div
+          v-if="feishuConnection || desktopConnection || governanceBadge"
+          class="mt-2 flex flex-wrap items-center justify-start gap-1.5"
+        >
           <span
             v-if="feishuConnection"
             class="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-none"

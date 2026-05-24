@@ -15,7 +15,6 @@ export const DEFAULT_MCP_TOOLS = [
   'admin.list_agents',
   'admin.get_overview',
   'admin.dispatch_flow',
-  'admin.dispatch_task',
   'project.list_projects',
   'project.create_project',
   'project.update_project',
@@ -32,7 +31,7 @@ export const DEFAULT_MCP_TOOLS = [
   'prompt.write_ai',
   'prompt.read_system',
   'prompt.write_system',
-  'feishu.send_message',
+  'user.send_message',
   'conversation.forget_before_current',
 ] as const
 

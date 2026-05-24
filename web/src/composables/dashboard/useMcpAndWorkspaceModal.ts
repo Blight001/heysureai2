@@ -51,7 +51,7 @@ export const useMcpAndWorkspaceModal = ({ mcpToolMetaByName }: UseMcpAndWorkspac
     }
     const items = buildToolItems(Array.from(serverTools), 'server')
     if (agent.desktopAgentConnected) {
-      const desktopTools = new Set<string>(['admin.dispatch_task'])
+      const desktopTools = new Set<string>()
       const desktopCapabilities = agent.desktopAgentCapabilities || []
       desktopCapabilities
         .map(item => String(item || '').trim())
@@ -60,7 +60,7 @@ export const useMcpAndWorkspaceModal = ({ mcpToolMetaByName }: UseMcpAndWorkspac
       items.push(...buildToolItems(Array.from(desktopTools), 'desktop'))
     }
     if (agent.browserAgentConnected) {
-      const browserTools = new Set<string>(['admin.dispatch_task'])
+      const browserTools = new Set<string>()
       const browserCapabilities = agent.browserAgentCapabilities || []
       browserCapabilities
         .map(item => String(item || '').trim())

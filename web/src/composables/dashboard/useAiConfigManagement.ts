@@ -197,7 +197,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     for (const name of DESKTOP_AGENT_MCP_TOOLS) {
       map[name] = {
         name,
-        description: '桌面端 Agent 上报的执行能力，通过 admin.dispatch_task 分派到已连接桌面端执行。',
+        description: '桌面端 Agent 上报的执行能力，可直接在已连接桌面端执行。',
         inputSchema: { type: 'object', properties: {} },
         destructive: false,
         mcpSource: 'desktop',
@@ -206,7 +206,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     for (const name of BROWSER_AGENT_MCP_TOOLS) {
       map[name] = {
         name,
-        description: '浏览器插件上报的执行能力，通过 admin.dispatch_task 分派到已连接浏览器插件执行。',
+        description: '浏览器插件上报的执行能力，可直接在已连接浏览器插件执行。',
         inputSchema: { type: 'object', properties: {} },
         destructive: false,
         mcpSource: 'browser',

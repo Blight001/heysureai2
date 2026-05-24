@@ -37,7 +37,6 @@ from .tools.prompts import (
     _prompt_write_ai,
     _prompt_write_system,
 )
-from ..agent_dispatch import _dispatch_task
 from .tools.memory import (
     _evolution_input,
     _evolution_list,
@@ -267,42 +266,6 @@ registry.register(MCPTool(
         "required": ["agentId", "flowData"],
     },
     handler=_dispatch_flow,
-    destructive=True,
-))
-registry.register(MCPTool(
-    name="admin.dispatch_task",
-    description=(
-        "Dispatch a task to a connected desktop or browser agent for local execution. "
-        "Desktop agents can use filesystem, shell, git, keyboard, mouse, screen, clipboard, window, process tools. "
-        "Browser agents can inspect and control the active tab with browser_page_info, browser_get_content, "
-        "browser_screenshot, browser_click, browser_type, browser_scroll, browser_search, browser_navigate, "
-        "browser_extract, browser_find_text, browser_find_popups, browser_close_popup, browser_tab_list and related browser_* tools. "
-        "Provide agentId plus either a natural-language "
-        "instruction or a specific tool + args. The result arrives asynchronously "
-        "and is appended to this session."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "agentId": {"type": "string", "description": "Target connected agent id (from admin.list_agents)."},
-            "instruction": {"type": "string", "description": "Natural-language task description."},
-            "tool": {
-                "type": "string",
-                "description": (
-                    "Optional specific local tool. Desktop examples: fs.list / fs.read / fs.write / shell.run / "
-                    "git.diff / keyboard.type / keyboard.press / mouse.click / mouse.move / screen.capture / "
-                    "clipboard.get / clipboard.set / window.list / window.focus / process.list / process.kill. "
-                    "Browser examples: browser_page_info / browser_get_content / browser_screenshot / "
-                    "browser_click / browser_type / browser_scroll / browser_search / browser_navigate / "
-                    "browser_extract / browser_find_text / browser_find_popups / browser_close_popup / browser_tab_list."
-                ),
-            },
-            "args": {"type": "object", "description": "Arguments for the chosen tool."},
-            "allowedTools": {"type": "array", "items": {"type": "string"}},
-        },
-        "required": ["agentId"],
-    },
-    handler=_dispatch_task,
     destructive=True,
 ))
 registry.register(MCPTool(
@@ -539,8 +502,8 @@ registry.register(MCPTool(
     destructive=True,
 ))
 
-# 与用户通信：把"飞书发消息"业务语义化为"与用户沟通"。底层渠道默认走飞书，
-# 未来可扩展 socket 推送 / 邮件等；feishu.send_message 作为旧别名保留兼容。
+# 与用户通信：把底层飞书投递封装为业务语义上的"给用户发消息"。
+# 未来可扩展 socket 推送 / 邮件等。
 registry.register(MCPTool(
     name="user.send_message",
     description=(
@@ -565,27 +528,6 @@ registry.register(MCPTool(
             },
             "chat_id": {"type": "string", "description": "Alias of receive_id."},
             "open_id": {"type": "string", "description": "Alias of receive_id."},
-        },
-        "required": ["text"],
-    },
-    handler=_user_send_message,
-    destructive=True,
-))
-# 旧别名：feishu.send_message — 行为与 user.send_message 一致，建议新提示词改用 user.*
-registry.register(MCPTool(
-    name="feishu.send_message",
-    description="[deprecated alias] Same as user.send_message. Prefer user.send_message in new prompts.",
-    input_schema={
-        "type": "object",
-        "properties": {
-            "text": {"type": "string"},
-            "receive_id": {"type": "string"},
-            "receive_id_type": {
-                "type": "string",
-                "enum": ["chat_id", "open_id", "user_id", "union_id", "email"],
-            },
-            "chat_id": {"type": "string"},
-            "open_id": {"type": "string"},
         },
         "required": ["text"],
     },
