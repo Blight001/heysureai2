@@ -429,13 +429,6 @@ async def wait_for_reply(
 # ---------------------------------------------------------------------------
 
 
-def target_has_active_run(user_id: int, to_ai_config_id: int) -> bool:
-    """判断目标 AI 是否有正在进行的 run（用于 send 前的提示，非强制）。"""
-    with Session(engine) as session:
-        row = _get_live_active_run(session, user_id, to_ai_config_id)
-        return row is not None
-
-
 def target_session_has_active_run(user_id: int, to_ai_config_id: int, session_id: str) -> bool:
     """判断目标 AI 的指定 session 是否有真实活跃 worker。"""
     session_id = (session_id or "").strip()
@@ -540,22 +533,6 @@ def find_return_route_by_message_id(
             )
         ).first()
         return _row_to_dict(row) if row else {}
-
-
-def find_return_session_id(
-    *,
-    user_id: int,
-    current_ai_config_id: int,
-    target_ai_config_id: int,
-    current_session_id: str,
-) -> str:
-    route = find_return_route(
-        user_id=user_id,
-        current_ai_config_id=current_ai_config_id,
-        target_ai_config_id=target_ai_config_id,
-        current_session_id=current_session_id,
-    )
-    return str(route.get("from_session_id") or "").strip()
 
 
 def resolve_waiting_reply_to_message_id_from_send_message(
@@ -686,12 +663,6 @@ def _run_thread_is_alive(run_id: str) -> bool:
         return False
 
 
-def reserve_idle_session_id(message_id: str) -> str:
-    """对于目标 AI 当前空闲的情况，预先生成它即将启动的 session_id。
-    这样 send() 时就能把 target_session_id 写入消息，pop 时严格匹配。"""
-    return f"ai_message_{message_id}"
-
-
 def wake_idle_target_for_message(
     *,
     message_id: str,
@@ -754,8 +725,8 @@ def _wake_idle_target_for_message_locked(
         ai_kind = "assistant" if target_cfg.ai_role == "assistant_admin" else "core"
         from_name = str(from_cfg.name or "").strip() if from_cfg else f"AI-{msg.from_ai_config_id}"
         target_name = str(target_cfg.name or "").strip() or f"AI-{target_id}"
-        # ``send()`` 已经写好了 target_session_id（来自 reserve_idle_session_id），
-        # 这里直接复用，确保消息和 session 在同一标识下。
+        # ``send()`` 已经写好了 target_session_id；这里直接复用，
+        # 确保消息和 session 在同一标识下。
         session_id = msg.target_session_id or f"ai_message_{message_id}"
         if not msg.target_session_id:
             msg.target_session_id = session_id

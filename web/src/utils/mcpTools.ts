@@ -87,7 +87,7 @@ export const ENDPOINT_AGENT_MCP_TOOLS = [
   ...BROWSER_AGENT_MCP_TOOLS,
 ]
 
-export const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag: string }> = {
+const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag: string }> = {
   'workspace.run_command': { label: '执行命令', description: '在工作目录中执行终端命令。', tag: '工作区' },
   'admin.list_agents': { label: '列出智能体', description: '查看系统中的 AI 成员列表。', tag: '管理与项目' },
   'admin.get_overview': { label: '管理总览', description: '获取系统运行状态与关键统计。', tag: '管理与项目' },
@@ -185,7 +185,7 @@ export const MCP_TOOL_ZH_META: Record<string, { label: string; description: stri
   'card_delete': { label: '删除卡片', description: '删除指定的浏览器记忆卡片。', tag: '浏览器卡片' },
 }
 
-export const normalizeMcpSchemaType = (rawType: unknown) => {
+const normalizeMcpSchemaType = (rawType: unknown) => {
   const toZh = (text: string) => {
     const mapped = text
       .split('|')
@@ -285,7 +285,7 @@ const getSourceTag = (source?: McpToolDefinition['mcpSource']) => {
   return ''
 }
 
-export const getMcpToolSource = (name: string): 'server' | 'desktop' | 'browser' => {
+const getMcpToolSource = (name: string): 'server' | 'desktop' | 'browser' => {
   const normalized = String(name || '').trim()
   if (!normalized) return 'server'
   if (BROWSER_AGENT_MCP_TOOLS.includes(normalized) || hasMcpPrefix(normalized, 'browser') || hasMcpPrefix(normalized, 'card')) {
@@ -319,7 +319,7 @@ const getMcpToolFallbackLabel = (name: string) => {
 // follows as a secondary reference.
 export const getMcpToolZhLabel = (name: string) => MCP_TOOL_ZH_META[name]?.label || getMcpToolFallbackLabel(name)
 
-export const getMcpToolZhTag = (name: string) => MCP_TOOL_ZH_META[name]?.tag || getMcpToolFallbackTag(name)
+const getMcpToolZhTag = (name: string) => MCP_TOOL_ZH_META[name]?.tag || getMcpToolFallbackTag(name)
 
 export const groupMcpToolsByZhTag = (tools: string[]): McpToolGroup[] => {
   const groups = new Map<string, string[]>()

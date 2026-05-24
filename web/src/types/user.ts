@@ -1,5 +1,5 @@
-export type ThemeMode = 'light' | 'dark'
-export type FontSize = 'sm' | 'md' | 'lg'
+type ThemeMode = 'light' | 'dark'
+type FontSize = 'sm' | 'md' | 'lg'
 
 export interface User {
   id: number

@@ -11,7 +11,6 @@ from ...services.governance import assert_can_manage_or_legacy
 
 SYSTEM_PROMPT_FIELDS = {
     "admin_prompt": "旧版/兜底管理员 prompt",
-    "worker_prompt": "旧版/兜底普通 AI prompt",
     "mcp_call_method": "全局 MCP 调用方法 prompt",
     "mcp_format_error_hint": "MCP 格式错误提示 prompt",
     "prompt_ai_message_notify": "AI 间消息·通知模板（notify / 单向通知）",
@@ -27,7 +26,6 @@ SYSTEM_PROMPT_FIELDS = {
 
 SYSTEM_PROMPT_USAGE = {
     "admin_prompt": "仅用于没有指定 AI 配置的旧版管理员运行路径；当前 AI 卡片/飞书/任务运行通常不直接使用它。",
-    "worker_prompt": "旧版普通 AI 默认 prompt；当前 AI 卡片/飞书/任务运行通常使用每个 AI 配置自己的 prompt。",
     "mcp_call_method": "会在运行时合并到当前 AI 的有效 prompt 中，用于说明 MCP 调用格式和可用工具。",
     "mcp_format_error_hint": "当模型输出的 MCP 调用格式无效时，作为系统纠错提示模板使用。",
     "prompt_ai_message_notify": "message_type=\"notify\" 时注入。系统会自动签收，模板应明确告知 AI 不要回应。",

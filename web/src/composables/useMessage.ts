@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
 
-export type MessageType = 'info' | 'success' | 'warning' | 'error'
-export type DialogType = 'alert' | 'confirm' | 'prompt'
+type MessageType = 'info' | 'success' | 'warning' | 'error'
+type DialogType = 'alert' | 'confirm' | 'prompt'
 
 interface MessageOptions {
   title?: string

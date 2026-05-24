@@ -62,7 +62,7 @@ from .chat_runtime_helpers import (
 )
 from .chat_scheduler import _start_task_run
 
-from api.core.config import DEFAULT_CHAT_MAX_STEPS, DEFAULT_TASK_MAX_STEPS
+from api.core.config import DEFAULT_CHAT_MAX_STEPS
 from api.models.defaults import (
     CHITCHAT_MAX_DEPTH,
     DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,

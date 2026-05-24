@@ -176,7 +176,6 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
         )
         existing.add("system_auto_control")
 
-    _add_column(cursor, "assistantaiconfig", "auto_last_trigger_at", "REAL", existing)
     _add_column(cursor, "assistantaiconfig", "parent_ai_config_id", "INTEGER", existing)
     _add_column(cursor, "assistantaiconfig", "root_manager_ai_config_id", "INTEGER", existing)
     _add_column(cursor, "assistantaiconfig", "management_scope", "TEXT DEFAULT 'self'", existing)

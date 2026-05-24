@@ -1,9 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlmodel import Session, select
-from typing import Annotated, Optional
 import os
-import shutil
-import uuid
 
 from api.database import get_session
 from api.services.ai_service import ensure_default_ai_for_user

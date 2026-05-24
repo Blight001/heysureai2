@@ -627,7 +627,6 @@ registry.register(MCPTool(
                 "type": "string",
                 "enum": [
                     "admin_prompt",
-                    "worker_prompt",
                     "mcp_call_method",
                     "mcp_format_error_hint",
                     "default_start_task_prompt",
@@ -656,7 +655,6 @@ registry.register(MCPTool(
                 "type": "string",
                 "enum": [
                     "admin_prompt",
-                    "worker_prompt",
                     "mcp_call_method",
                     "mcp_format_error_hint",
                     "default_start_task_prompt",

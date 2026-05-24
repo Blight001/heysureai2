@@ -27,11 +27,6 @@ class User(SQLModel, table=True):
     hashed_password: str
     avatar: Optional[str] = None
 
-    # AI 配置信息
-    system_reply: str = Field(default="主脑·阿尔法：已收到指引...")
-    admin_token_limit: int = Field(default=2000)
-    worker_token_limit: int = Field(default=1000)
-
     # 主脑 AI 配置
     admin_api_key: str = Field(default="sk-cb40bc0b0b894934919907913e337927")
     admin_base_url: str = Field(default="https://api.deepseek.com/chat/completions")
@@ -62,12 +57,6 @@ class User(SQLModel, table=True):
     ui_theme_mode: str = Field(default=DEFAULT_UI_THEME_MODE)
     ui_font_size: str = Field(default=DEFAULT_UI_FONT_SIZE)
 
-    # 普通 AI 配置
-    worker_api_key: str = Field(default="")
-    worker_base_url: str = Field(default="https://api.deepseek.com/chat/completions")
-    worker_model: str = Field(default="deepseek-chat")
-    worker_prompt: str = Field(default="你是一个高效的工作人员，负责执行具体的任务。")
-
 
 class UserCreate(SQLModel):
     name: str
@@ -86,9 +75,6 @@ class UserRead(SQLModel):
     name: str
     account: str
     avatar: Optional[str] = None
-    system_reply: str
-    admin_token_limit: int
-    worker_token_limit: int
     admin_api_key: str
     admin_base_url: str
     admin_model: str
@@ -110,19 +96,12 @@ class UserRead(SQLModel):
     prompt_user_message_notice: str
     ui_theme_mode: str
     ui_font_size: str
-    worker_api_key: str
-    worker_base_url: str
-    worker_model: str
-    worker_prompt: str
 
 
 class UserUpdate(SQLModel):
     name: Optional[str] = None
     password: Optional[str] = None
     avatar: Optional[str] = None
-    system_reply: Optional[str] = None
-    admin_token_limit: Optional[int] = None
-    worker_token_limit: Optional[int] = None
     admin_api_key: Optional[str] = None
     admin_base_url: Optional[str] = None
     admin_model: Optional[str] = None
@@ -144,10 +123,6 @@ class UserUpdate(SQLModel):
     prompt_user_message_notice: Optional[str] = None
     ui_theme_mode: Optional[str] = None
     ui_font_size: Optional[str] = None
-    worker_api_key: Optional[str] = None
-    worker_base_url: Optional[str] = None
-    worker_model: Optional[str] = None
-    worker_prompt: Optional[str] = None
 
 
 class Token(SQLModel):

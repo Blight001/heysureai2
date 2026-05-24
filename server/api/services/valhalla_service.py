@@ -73,10 +73,6 @@ def _rel_to_valhalla(user_id: int, ai_config_id: int, abs_path: str) -> str:
 
 # ---------- 数据采集 ----------
 
-def _ai_name(session: Session, cfg: AssistantAIConfig) -> str:
-    return str(cfg.name or "").strip() or f"AI-{cfg.id}"
-
-
 def _session_messages(
     session: Session,
     user_id: int,
@@ -310,49 +306,6 @@ def _render_final_words(
     blocks.append("")
     blocks.append(summary.strip() or "（AI 未提供完成摘要）")
     blocks.append("")
-    blocks.append("## Token 生命周期")
-    blocks.append("")
-    blocks.append(f"- 本代消耗：{token_used}")
-    blocks.append(f"- 上限：{int(cfg.token_limit or 0)}")
-    blocks.append("")
-    return "\n".join(blocks)
-
-
-def _render_aborted(
-    *,
-    job: AITaskJob,
-    cfg: AssistantAIConfig,
-    generation: int,
-    reason: str,
-    tail_text: str,
-    token_used: int,
-    created_at: float,
-) -> str:
-    fm = _yaml_frontmatter({
-        "kind": "aborted",
-        "job_id": job.job_id,
-        "job_title": job.title,
-        "generation": generation,
-        "ai_config_id": cfg.id,
-        "ai_name": _ai_name_static(cfg),
-        "token_used": token_used,
-        "token_limit": int(cfg.token_limit or 0),
-        "created_at": created_at,
-    })
-    blocks: List[str] = [fm, ""]
-    blocks.append(f"# 第 {generation} 代 · {_ai_name_static(cfg)} 中断记录")
-    blocks.append("")
-    blocks.append("## 中断原因")
-    blocks.append("")
-    blocks.append((reason or "").strip() or "（未提供原因）")
-    blocks.append("")
-    if tail_text:
-        blocks.append("## 中断前最后的输出（截断）")
-        blocks.append("")
-        blocks.append("```")
-        blocks.append(tail_text[-1200:])
-        blocks.append("```")
-        blocks.append("")
     blocks.append("## Token 生命周期")
     blocks.append("")
     blocks.append(f"- 本代消耗：{token_used}")
@@ -597,86 +550,6 @@ def write_complete(
             return entry
     except Exception as exc:
         print(f"[valhalla.write_complete] error: {exc}")
-        return None
-
-
-def write_aborted(
-    *,
-    user_id: int,
-    ai_config_id: int,
-    job_id: str,
-    generation: int,
-    session_id: Optional[str],
-    reason: str,
-    tail_text: str = "",
-) -> Optional[ValhallaEntry]:
-    """run 进入 error/stopped 终态时调用（可选）。"""
-    try:
-        with Session(engine) as session:
-            cfg = session.exec(
-                select(AssistantAIConfig).where(
-                    AssistantAIConfig.user_id == user_id,
-                    AssistantAIConfig.id == ai_config_id,
-                )
-            ).first()
-            if not cfg:
-                return None
-            job = session.exec(
-                select(AITaskJob).where(
-                    AITaskJob.user_id == user_id,
-                    AITaskJob.ai_config_id == ai_config_id,
-                    AITaskJob.job_id == job_id,
-                )
-            ).first()
-            if not job:
-                return None
-
-            messages = _session_messages(session, user_id, ai_config_id, session_id or "")
-            token_used = _session_token_total(messages)
-            created_at = time.time()
-
-            gen_dir = _gen_dir(user_id, ai_config_id, job_id, generation)
-            _write_job_meta_once(_job_dir(user_id, ai_config_id, job_id), job, cfg)
-
-            md = _render_aborted(
-                job=job, cfg=cfg, generation=generation, reason=reason,
-                tail_text=tail_text, token_used=token_used, created_at=created_at,
-            )
-            _safe_write(os.path.join(gen_dir, "aborted.md"), md)
-
-            rel_path = _rel_to_valhalla(user_id, ai_config_id, os.path.join(gen_dir, "aborted.md"))
-            entry = ValhallaEntry(
-                user_id=user_id,
-                ai_config_id=ai_config_id,
-                ai_name=_ai_name_static(cfg),
-                job_id=job_id,
-                job_title=str(job.title or ""),
-                generation=int(generation or 1),
-                kind="aborted",
-                session_id=session_id,
-                file_path=rel_path,
-                summary_excerpt=_excerpt(reason),
-                token_used=token_used,
-                token_limit=int(cfg.token_limit or 0),
-                reason=reason,
-                created_at=created_at,
-            )
-            session.add(entry)
-            session.commit()
-            session.refresh(entry)
-
-            _append_to_registry(_valhalla_root(user_id, ai_config_id), {
-                "entry_id": entry.id,
-                "kind": "aborted",
-                "job_id": job_id,
-                "generation": generation,
-                "ai_config_id": ai_config_id,
-                "file_path": rel_path,
-                "created_at": created_at,
-            })
-            return entry
-    except Exception as exc:
-        print(f"[valhalla.write_aborted] error: {exc}")
         return None
 
 

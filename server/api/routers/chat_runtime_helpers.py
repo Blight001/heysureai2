@@ -105,34 +105,6 @@ def _resolve_effective_workspace_root(
     finally:
         reset_mcp_runtime_overrides(token)
 
-def _build_task_mcp_rules(allowed_tools: set[str], workspace_root: str, include_workspace: bool = False) -> str:
-    allowlist = "\n".join(f"- {tool}" for tool in sorted(allowed_tools)) if allowed_tools else "- （空）"
-    workspace_section = ""
-    if include_workspace:
-        workspace_section = (
-            "\n\n[任务运行时工作目录(绝对路径)]\n"
-            f"{workspace_root}\n"
-        )
-    return (
-        f"{workspace_section}"
-        "\n[任务运行时MCP调用规则]\n"
-        "1. 每轮最多调用 1 个 MCP 工具；拿到结果后再决定下一步，不允许并行多工具。\n"
-        "2. 仅允许调用白名单中的工具；白名单外工具会被系统拒绝。\n"
-        "3. 所有文件路径都必须是相对路径，并且只能在上述工作目录内访问。\n"
-        "4. 写入/删除/命令执行类操作前，先说明目的、目标对象和预期影响，再执行。\n"
-        "5. 工具失败时先阅读错误并调整参数重试，禁止重复相同失败调用。\n"
-        "6. 禁止编造工具结果；必须基于真实 MCP 返回继续推理与执行。\n"
-        "7. 创建定时任务时，`schedule_at` 仅允许 Unix 秒或带时区 ISO-8601（必须含 `+08:00` 或 `Z`）；"
-        "循环任务禁止传 `schedule_at`。\n"
-        "8. 遇到不确定如何做的步骤时，优先调用 `librarian.consult({query})` 查询图书管理员"
-        "（传承知识库）中是否已有可复用流程；查询命中后据其步骤执行。\n"
-        "9. 用户在对话中明确说「以后记住」「以后这样做」「记录这个操作」之类的话时，请调用 "
-        "`librarian.propose({title, scenario, steps[], triggers[]})` 申请沉淀；该条目"
-        "会进入用户审批队列，审批通过后才会被未来的检索命中。不要在用户未明确表达时主动 propose。\n"
-        "\n[任务运行时MCP工具白名单]\n"
-        f"{allowlist}"
-    )
-
 def _load_task_payload_by_session(
     session: Session,
     user_id: int,

@@ -56,10 +56,3 @@ export const readEntry = (token: string, memoryId: string) =>
     token,
     fallbackError: '条目加载失败',
   })
-
-export const archiveEntry = (token: string, memoryId: string) =>
-  post<{ archived: boolean; entry: KnowledgeEntryItem }>(
-    `/api/librarian/entries/${encodeURIComponent(memoryId)}/archive`,
-    {},
-    { token, fallbackError: '归档失败' },
-  )
