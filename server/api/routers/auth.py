@@ -6,7 +6,7 @@ import shutil
 import uuid
 
 from api.database import get_session
-from api.ai_service import ensure_default_ai_for_user
+from api.services.ai_service import ensure_default_ai_for_user
 from api.core.config import (
     USER_WORKSPACE_SUBFOLDERS,
     WORKSPACE_DIR,

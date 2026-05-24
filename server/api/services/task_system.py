@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 from sqlmodel import Session, select
 
-from api.models import (
+from ..models import (
     DEFAULT_INHERITANCE_NOTICE,
     DEFAULT_RESUME_TASK_PROMPT,
     DEFAULT_START_TASK_PROMPT,

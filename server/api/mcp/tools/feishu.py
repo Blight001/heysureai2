@@ -1,6 +1,6 @@
 from typing import Optional
 
-from ...feishu_service import send_feishu_text_message
+from ...integrations.feishu.service import send_feishu_text_message
 
 
 def _feishu_send_message(user_id: int, args: dict, ai_config_id: Optional[int] = None):

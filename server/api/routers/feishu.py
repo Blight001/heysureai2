@@ -6,9 +6,9 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlmodel import Session, select
 
 from api.database import engine
-from api.feishu_service import parse_feishu_text_event, send_feishu_text_message
+from api.integrations.feishu.service import parse_feishu_text_event, send_feishu_text_message
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
-from api.routers.chat_persistence import _save_message
+from api.services.chat_persistence import _save_message
 from api.routers.chat_runtime_helpers import _resolve_ai_runtime
 from api.routers.chat_worker import _run_worker
 

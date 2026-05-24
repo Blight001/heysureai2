@@ -6,9 +6,9 @@ from typing import Any, Dict, Optional, Tuple
 
 from sqlmodel import Session, select
 
-from api.database import engine
-from api.models import AssistantAIConfig
-from api.routers.feishu import handle_feishu_event_payload
+from ...database import engine
+from ...models import AssistantAIConfig
+from ...routers.feishu import handle_feishu_event_payload
 
 _LOCK = threading.Lock()
 _LOOP_LOCK = threading.Lock()

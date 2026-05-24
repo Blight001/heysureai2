@@ -12,7 +12,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlmodel import Session
 
-from api import valhalla_service
+from api.services import valhalla_service
 from api.database import get_session
 from api.routers.auth import get_current_user
 

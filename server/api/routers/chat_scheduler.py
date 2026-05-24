@@ -11,10 +11,10 @@ from sqlmodel import Session, select
 
 from api.database import engine
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, ChatSession, User
-from api.task_system import DEFAULT_SYSTEM_AUTO_CONTROL, normalize_system_auto_control, parse_generation_from_session_id
-from api import librarian_service
+from api.services import librarian_service
+from api.services.task_system import DEFAULT_SYSTEM_AUTO_CONTROL, normalize_system_auto_control, parse_generation_from_session_id
 from .chat_base import MAX_AUTO_SUPERVISION_ROUNDS, _RUN_THREADS
-from .chat_persistence import _save_message
+from api.services.chat_persistence import _save_message
 
 
 def _load_previous_unfinished_block(user_id: int, ai_config_id: int, job_id: str, generation: int) -> str:

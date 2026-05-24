@@ -1,4 +1,9 @@
-IS_ROUTER_ENTRY = False
+"""Chat message / session / token-snapshot persistence helpers.
+
+Pure persistence layer — no HTTP routes here. Routers and runtime
+workers call these helpers to load/save chat state in a single place
+so the I/O shape stays consistent.
+"""
 
 import json
 import time
@@ -7,7 +12,7 @@ from typing import Dict, Optional, Tuple
 
 from sqlmodel import Session, select
 
-from api.models import ChatMessage, ChatMessageCreate, ChatSession, TokenUsageSnapshot
+from ..models import ChatMessage, ChatMessageCreate, ChatSession, TokenUsageSnapshot
 
 
 def _save_message(

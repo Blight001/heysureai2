@@ -11,7 +11,7 @@ from sqlmodel import Session, select
 from api.database import get_session
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, ChatSession
 from api.routers.auth import get_current_user
-from api.task_system import (
+from api.services.task_system import (
     decode_task_payload,
     extract_task_payload,
     find_task_active_run,

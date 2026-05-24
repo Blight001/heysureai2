@@ -6,9 +6,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import Depends, Header, HTTPException
 from sqlmodel import Session, select
 
-from api.ai_service import ensure_default_ai_for_user, remove_switch_key
 from api.database import get_session
-from api.feishu_long_connection import get_feishu_long_connection_state
+from api.integrations.feishu.long_connection import get_feishu_long_connection_state
 from api.models import (
     AITaskJob,
     AIRuntimeStatus,
@@ -20,7 +19,8 @@ from api.models import (
     TokenUsageSnapshot,
 )
 from api.routers.auth import get_current_user
-from api.task_system import parse_generation_from_session_id
+from api.services.ai_service import ensure_default_ai_for_user, remove_switch_key
+from api.services.task_system import parse_generation_from_session_id
 from .ai_base import router
 
 

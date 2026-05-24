@@ -16,7 +16,7 @@ from api.mcp import get_project_root, registry
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatMessageUpdate, ChatRun
 from api.routers.auth import get_current_user
 from .chat_base import _RUN_LIVE_STATE, _RUN_STATE_LOCK, _RUN_THREADS, router
-from .chat_persistence import _append_usage_snapshot, _rebuild_usage_snapshots, _save_message, _upsert_session
+from api.services.chat_persistence import _append_usage_snapshot, _rebuild_usage_snapshots, _save_message, _upsert_session
 from .chat_prompt_utils import (
     _append_prompt_section,
     _build_mcp_stream_warning,
