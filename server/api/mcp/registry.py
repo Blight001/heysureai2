@@ -40,7 +40,6 @@ from .tools.memory import (
     _memory_write,
 )
 from .tools.communication import (
-    _ai_reply_message,
     _ai_send_message,
     _user_send_message,
 )
@@ -388,10 +387,10 @@ registry.register(MCPTool(
     name="ai.send_message",
     description=(
         "Send a message to another AI in the same digital society. The message is delivered "
-        "into a session strictly bound to the target AI (no cross-session leakage). When "
-        "require_reply=true (default) this call blocks event-driven until the target AI calls "
-        "ai.reply_message or until timeout_seconds elapses—the reply content is returned in the "
-        "tool result. Set require_reply=false for fire-and-forget. If the target is idle, the "
+        "into a session strictly bound to the target AI (no cross-session leakage). By default "
+        "this call returns after queueing. If the target wants to answer, it should call "
+        "ai.send_message back to the sender with require_reply=false. Use send_message in both "
+        "directions. If the target is idle, the "
         "server starts a fresh conversation for it automatically."
     ),
     input_schema={
@@ -402,37 +401,26 @@ registry.register(MCPTool(
             "require_reply": {
                 "type": "boolean",
                 "description": (
-                    "When true (default) the call blocks until the target replies or times out; "
-                    "the tool result then contains reply_content. When false it returns "
-                    "immediately after queueing."
+                    "Default false. Keep false for AI-to-AI collaboration so replies arrive "
+                    "as new ai.send_message calls."
                 ),
             },
             "timeout_seconds": {
                 "type": "integer",
                 "description": "Max seconds to wait for a reply when require_reply=true (default 120).",
             },
+            "reply_to_message_id": {
+                "type": "string",
+                "description": "Optional original AI message id (mai_...) when this send is a reply.",
+            },
+            "current_session_id": {
+                "type": "string",
+                "description": "Optional current conversation/session id; the runtime supplies it automatically when omitted.",
+            },
         },
         "required": ["to_ai_config_id", "content"],
     },
     handler=_ai_send_message,
-    destructive=True,
-))
-registry.register(MCPTool(
-    name="ai.reply_message",
-    description=(
-        "Reply to an incoming AI message. Must be called by the receiver, with the message_id "
-        "carried in the inbound notice. After a successful reply, the system will let you resume "
-        "your previously interrupted work."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "message_id": {"type": "string"},
-            "content": {"type": "string"},
-        },
-        "required": ["message_id", "content"],
-    },
-    handler=_ai_reply_message,
     destructive=True,
 ))
 

@@ -7,8 +7,8 @@
   匹配的 session 里才能把它 pop 出来。这样同一个 AI 在多个并行会话里
   不会串话。
 * 发送方阻塞等待回复时走 ``_PendingReplyRegistry``：一个进程内的
-  ``concurrent.futures.Future`` 表，``ai.reply_message`` 落库后会立即
-  resolve 对应 Future，比 1 秒一次的 DB 轮询响应快两个数量级。
+  ``concurrent.futures.Future`` 表。``ai.reply_message``，以及对方从同一
+  通信 session 里发回的 ``ai.send_message``，都会立即 resolve 对应 Future。
 * worker 线程跑 MCP 工具时是临时 asyncio loop，跨线程用
   ``asyncio.wrap_future`` 把 ``concurrent.futures.Future`` 转成可 await
   的对象，``set_result`` 的回调会通过 ``call_soon_threadsafe`` 安全派
@@ -21,6 +21,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import re
 import threading
 import time
 import uuid
@@ -75,10 +77,32 @@ class _PendingReplyRegistry:
 
 
 _pending_replies = _PendingReplyRegistry()
+_WAKE_LOCK = threading.Lock()
 
 
 def _new_message_id() -> str:
     return f"mai_{uuid.uuid4().hex[:14]}"
+
+
+def _content_requests_response(content: str) -> bool:
+    text = (content or "").strip().lower()
+    if not text:
+        return False
+    return bool(re.search(r"(回复|回信|回话|回应|答复|确认|收到|回我|回传|reply|respond|response|ack)", text))
+
+
+def stable_peer_session_id(
+    *,
+    user_id: int,
+    from_ai_config_id: int,
+    to_ai_config_id: int,
+    from_session_id: str,
+) -> str:
+    """Deterministic target-side session for one sender conversation."""
+    from_session_id = (from_session_id or "").strip()
+    seed = f"{int(user_id)}:{int(from_ai_config_id)}:{int(to_ai_config_id)}:{from_session_id}"
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:16]
+    return f"ai_mail_{int(from_ai_config_id)}_{int(to_ai_config_id)}_{digest}"
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +212,7 @@ def reply(
             raise ValueError("message not found")
         if int(row.to_ai_config_id) != int(replier_ai_config_id):
             raise ValueError("only the receiver of this message may reply")
-        if row.status in {"replied", "timeout", "failed"}:
+        if row.status in {"replied", "failed"}:
             raise ValueError(f"message already in terminal state: {row.status}")
         row.reply_content = content
         row.status = "replied"
@@ -198,8 +222,124 @@ def reply(
         session.refresh(row)
         payload = _row_to_dict(row)
     # 落库成功后再唤醒，确保等待方读到 DB 也是最新状态。
-    _pending_replies.resolve(message_id, payload)
+    resolved_waiter = _pending_replies.resolve(message_id, payload)
+    if not resolved_waiter:
+        _enqueue_unwaited_reply(payload)
     return row
+
+
+def complete_inbound_with_assistant_reply(
+    *,
+    message_id: str,
+    user_id: int,
+    replier_ai_config_id: int,
+    content: str,
+) -> Optional[Dict[str, Any]]:
+    """Use the receiver's final assistant text as the reply for an AI message.
+
+    Models sometimes answer the injected AI-to-AI message as normal assistant
+    text instead of calling ``ai.send_message``. This keeps the mail semantics
+    reliable: a final answer in the bound receiver session still wakes the
+    original sender.
+    """
+    message_id = (message_id or "").strip()
+    content = (content or "").strip()
+    if not message_id or not content:
+        return None
+    with Session(engine) as session:
+        row = session.exec(
+            select(AIMessage).where(
+                AIMessage.user_id == user_id,
+                AIMessage.message_id == message_id,
+            )
+        ).first()
+        if not row:
+            return None
+        if int(row.to_ai_config_id) != int(replier_ai_config_id):
+            return None
+        requires_reply = bool(row.require_reply)
+        if not requires_reply and not _content_requests_response(row.content):
+            return None
+        if row.status in {"replied", "failed"}:
+            payload = _row_to_dict(row)
+            payload["already_resolved"] = True
+            return payload
+        previous_status = str(row.status or "")
+        row.reply_content = content
+        row.status = "replied"
+        row.replied_at = time.time()
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        payload = _row_to_dict(row)
+
+    resolved_waiter = _pending_replies.resolve(message_id, payload)
+    payload["waiter_resolved"] = resolved_waiter
+    payload["auto_completed"] = True
+    if not requires_reply:
+        payload["auto_forwarded"] = True
+        _enqueue_unwaited_reply(payload)
+    elif not resolved_waiter and previous_status == "timeout":
+        _enqueue_unwaited_reply(payload)
+    return payload
+
+
+def _enqueue_unwaited_reply(original: Dict[str, Any]) -> None:
+    """Route late/fire-and-forget replies back to the original sender.
+
+    If the sender is still synchronously waiting, ``reply`` resolves its Future
+    and this path is skipped. Otherwise the reply would only sit on the
+    AIMessage row and the original AI would not get a fresh runtime interrupt.
+    """
+    user_id = int(original.get("user_id") or 0)
+    from_ai_config_id = int(original.get("from_ai_config_id") or 0)
+    to_ai_config_id = int(original.get("to_ai_config_id") or 0)
+    if not user_id or not from_ai_config_id or not to_ai_config_id:
+        return
+
+    reply_content = str(original.get("reply_content") or "").strip()
+    if not reply_content:
+        return
+
+    target_session_id = str(original.get("from_session_id") or "").strip()
+    if not target_session_id:
+        target_session_id = get_active_session_id(user_id, from_ai_config_id) or f"ai_message_reply_{uuid.uuid4().hex[:14]}"
+
+    followup_content = (
+        f"你之前发送的 AI 间消息已收到回复。\n"
+        f"- 原消息编号: {original.get('message_id')}\n"
+        f"- 回复方 ai_config_id: {to_ai_config_id}\n\n"
+        f"[回复内容]\n{reply_content}"
+    )
+    try:
+        followup = send(
+            user_id=user_id,
+            from_ai_config_id=to_ai_config_id,
+            to_ai_config_id=from_ai_config_id,
+            content=followup_content,
+            target_session_id=target_session_id,
+            from_session_id=str(original.get("target_session_id") or "").strip(),
+            require_reply=False,
+            timeout_seconds=5,
+        )
+    except Exception as exc:
+        print(f"[ai_message_service] enqueue unwaited reply failed: {exc}")
+        return
+
+    if not _has_active_run_for_session(user_id, from_ai_config_id, target_session_id):
+        try:
+            wake_idle_target_for_message(message_id=followup.message_id, user_id=user_id)
+        except Exception as exc:
+            print(f"[ai_message_service] wake sender for unwaited reply failed: {exc}")
+
+
+def _has_active_run_for_session(user_id: int, ai_config_id: int, session_id: str) -> bool:
+    session_id = (session_id or "").strip()
+    if not session_id:
+        return False
+    with Session(engine) as session:
+        row = _get_live_active_run(session, user_id, ai_config_id, session_id=session_id)
+        return row is not None
 
 
 def pop_pending_for(
@@ -251,6 +391,7 @@ def list_inbox(*, user_id: int, ai_config_id: int, include_resolved: bool = Fals
 def _row_to_dict(row: AIMessage) -> Dict[str, Any]:
     return {
         "message_id": row.message_id,
+        "user_id": row.user_id,
         "from_ai_config_id": row.from_ai_config_id,
         "to_ai_config_id": row.to_ai_config_id,
         "target_session_id": row.target_session_id,
@@ -321,27 +462,258 @@ async def wait_for_reply(
 def target_has_active_run(user_id: int, to_ai_config_id: int) -> bool:
     """判断目标 AI 是否有正在进行的 run（用于 send 前的提示，非强制）。"""
     with Session(engine) as session:
-        row = session.exec(
-            select(ChatRun).where(
-                ChatRun.user_id == user_id,
-                ChatRun.ai_config_id == to_ai_config_id,
-                ChatRun.status.in_(["queued", "running"]),
-            )
-        ).first()
+        row = _get_live_active_run(session, user_id, to_ai_config_id)
+        return row is not None
+
+
+def target_session_has_active_run(user_id: int, to_ai_config_id: int, session_id: str) -> bool:
+    """判断目标 AI 的指定 session 是否有真实活跃 worker。"""
+    session_id = (session_id or "").strip()
+    if not session_id:
+        return False
+    with Session(engine) as session:
+        row = _get_live_active_run(session, user_id, to_ai_config_id, session_id=session_id)
         return row is not None
 
 
 def get_active_session_id(user_id: int, to_ai_config_id: int) -> Optional[str]:
     """返回目标 AI 当前最新活跃 run 的 session_id；无则 None。"""
     with Session(engine) as session:
-        row = session.exec(
-            select(ChatRun).where(
-                ChatRun.user_id == user_id,
-                ChatRun.ai_config_id == to_ai_config_id,
-                ChatRun.status.in_(["queued", "running"]),
-            ).order_by(ChatRun.updated_at.desc())
-        ).first()
+        row = _get_live_active_run(session, user_id, to_ai_config_id)
         return row.session_id if row else None
+
+
+def find_corresponding_target_session_id(
+    *,
+    user_id: int,
+    from_ai_config_id: int,
+    to_ai_config_id: int,
+    from_session_id: str,
+) -> str:
+    """Return the target-side session bound to this sender conversation."""
+    from_session_id = (from_session_id or "").strip()
+    if not from_session_id:
+        return ""
+    with Session(engine) as session:
+        row = session.exec(
+            select(AIMessage).where(
+                AIMessage.user_id == user_id,
+                AIMessage.from_ai_config_id == from_ai_config_id,
+                AIMessage.to_ai_config_id == to_ai_config_id,
+                AIMessage.from_session_id == from_session_id,
+                AIMessage.target_session_id != "",
+                AIMessage.status != "failed",
+            ).order_by(AIMessage.created_at.desc())
+        ).first()
+        if row:
+            target_session_id = str(row.target_session_id or "").strip()
+            if target_session_id:
+                return target_session_id
+    return stable_peer_session_id(
+        user_id=user_id,
+        from_ai_config_id=from_ai_config_id,
+        to_ai_config_id=to_ai_config_id,
+        from_session_id=from_session_id,
+    )
+
+
+def find_return_route(
+    *,
+    user_id: int,
+    current_ai_config_id: int,
+    target_ai_config_id: int,
+    current_session_id: str,
+) -> Dict[str, Any]:
+    """Find the original sender session when replying with ai.send_message.
+
+    If AI B is currently processing a message from AI A in session S2, the
+    original AIMessage stores A's session as ``from_session_id``. A later
+    ``ai.send_message(to_ai_config_id=A)`` from S2 should route back there.
+    """
+    current_session_id = (current_session_id or "").strip()
+    if not current_session_id:
+        return {}
+    with Session(engine) as session:
+        row = session.exec(
+            select(AIMessage).where(
+                AIMessage.user_id == user_id,
+                AIMessage.from_ai_config_id == target_ai_config_id,
+                AIMessage.to_ai_config_id == current_ai_config_id,
+                AIMessage.target_session_id == current_session_id,
+                AIMessage.from_session_id != "",
+                AIMessage.status.in_(["delivered", "replied", "timeout"]),
+            ).order_by(AIMessage.delivered_at.desc(), AIMessage.created_at.desc())
+        ).first()
+        return _row_to_dict(row) if row else {}
+
+
+def find_return_route_by_message_id(
+    *,
+    user_id: int,
+    current_ai_config_id: int,
+    target_ai_config_id: int,
+    message_id: str,
+) -> Dict[str, Any]:
+    """Find the original route for an explicit AI message id."""
+    message_id = (message_id or "").strip()
+    if not message_id:
+        return {}
+    with Session(engine) as session:
+        row = session.exec(
+            select(AIMessage).where(
+                AIMessage.user_id == user_id,
+                AIMessage.message_id == message_id,
+                AIMessage.from_ai_config_id == target_ai_config_id,
+                AIMessage.to_ai_config_id == current_ai_config_id,
+                AIMessage.from_session_id != "",
+                AIMessage.status != "failed",
+            )
+        ).first()
+        return _row_to_dict(row) if row else {}
+
+
+def find_return_session_id(
+    *,
+    user_id: int,
+    current_ai_config_id: int,
+    target_ai_config_id: int,
+    current_session_id: str,
+) -> str:
+    route = find_return_route(
+        user_id=user_id,
+        current_ai_config_id=current_ai_config_id,
+        target_ai_config_id=target_ai_config_id,
+        current_session_id=current_session_id,
+    )
+    return str(route.get("from_session_id") or "").strip()
+
+
+def resolve_waiting_reply_to_message_id_from_send_message(
+    *,
+    user_id: int,
+    current_ai_config_id: int,
+    target_ai_config_id: int,
+    message_id: str,
+    content: str,
+) -> Optional[Dict[str, Any]]:
+    """Treat ``ai.send_message`` as a reply to an explicit AI message id."""
+    message_id = (message_id or "").strip()
+    content = (content or "").strip()
+    if not message_id or not content:
+        return None
+    with Session(engine) as session:
+        row = session.exec(
+            select(AIMessage).where(
+                AIMessage.user_id == user_id,
+                AIMessage.message_id == message_id,
+                AIMessage.from_ai_config_id == target_ai_config_id,
+                AIMessage.to_ai_config_id == current_ai_config_id,
+                AIMessage.status.in_(["pending", "delivered", "timeout"]),
+            )
+        ).first()
+        if not row:
+            return None
+        row.reply_content = content
+        row.status = "replied"
+        row.replied_at = time.time()
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        payload = _row_to_dict(row)
+    resolved_waiter = _pending_replies.resolve(message_id, payload)
+    payload["waiter_resolved"] = resolved_waiter
+    payload["reply_to_message_id"] = message_id
+    if not resolved_waiter:
+        _enqueue_unwaited_reply(payload)
+    return payload
+
+
+def resolve_waiting_reply_from_send_message(
+    *,
+    user_id: int,
+    current_ai_config_id: int,
+    target_ai_config_id: int,
+    current_session_id: str,
+    content: str,
+) -> Optional[Dict[str, Any]]:
+    """Treat a return ``ai.send_message`` as the reply for a waiting sender.
+
+    Prompts now tell AIs to use ``ai.send_message`` in both directions. This
+    bridges that behavior with the older synchronous ``require_reply=true``
+    wait path so the sender does not block until timeout.
+    """
+    content = (content or "").strip()
+    current_session_id = (current_session_id or "").strip()
+    if not content or not current_session_id:
+        return None
+    with Session(engine) as session:
+        row = session.exec(
+            select(AIMessage).where(
+                AIMessage.user_id == user_id,
+                AIMessage.from_ai_config_id == target_ai_config_id,
+                AIMessage.to_ai_config_id == current_ai_config_id,
+                AIMessage.target_session_id == current_session_id,
+                AIMessage.from_session_id != "",
+                AIMessage.status.in_(["pending", "delivered", "timeout"]),
+            ).order_by(AIMessage.delivered_at.desc(), AIMessage.created_at.desc())
+        ).first()
+        if not row:
+            return None
+        row.reply_content = content
+        row.status = "replied"
+        row.replied_at = time.time()
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        payload = _row_to_dict(row)
+    resolved_waiter = _pending_replies.resolve(str(payload.get("message_id") or ""), payload)
+    payload["waiter_resolved"] = resolved_waiter
+    payload["reply_to_message_id"] = payload.get("message_id")
+    if not resolved_waiter:
+        _enqueue_unwaited_reply(payload)
+    return payload
+
+
+def _get_live_active_run(
+    session: Session,
+    user_id: int,
+    ai_config_id: int,
+    *,
+    session_id: str = "",
+) -> Optional[ChatRun]:
+    stmt = select(ChatRun).where(
+        ChatRun.user_id == user_id,
+        ChatRun.ai_config_id == ai_config_id,
+        ChatRun.status.in_(["queued", "running"]),
+    )
+    if session_id:
+        stmt = stmt.where(ChatRun.session_id == session_id)
+    rows = session.exec(stmt.order_by(ChatRun.updated_at.desc())).all()
+    now = time.time()
+    for row in rows:
+        if _run_thread_is_alive(str(row.run_id or "")):
+            return row
+        if row.status == "queued" and now - float(row.created_at or now) < 5:
+            return row
+        row.status = "failed"
+        row.error_message = "stale active run without live worker thread"
+        row.finished_at = now
+        row.updated_at = now
+        session.add(row)
+    if rows:
+        session.commit()
+    return None
+
+
+def _run_thread_is_alive(run_id: str) -> bool:
+    if not run_id:
+        return False
+    try:
+        from api.routers.chat_base import _RUN_THREADS
+        worker = _RUN_THREADS.get(run_id)
+        return bool(worker and worker.is_alive())
+    except Exception:
+        return False
 
 
 def reserve_idle_session_id(message_id: str) -> str:
@@ -351,6 +723,20 @@ def reserve_idle_session_id(message_id: str) -> str:
 
 
 def wake_idle_target_for_message(
+    *,
+    message_id: str,
+    user_id: int,
+    max_steps: Optional[int] = None,
+) -> Dict[str, Any]:
+    with _WAKE_LOCK:
+        return _wake_idle_target_for_message_locked(
+            message_id=message_id,
+            user_id=user_id,
+            max_steps=max_steps,
+        )
+
+
+def _wake_idle_target_for_message_locked(
     *,
     message_id: str,
     user_id: int,
@@ -369,13 +755,8 @@ def wake_idle_target_for_message(
             raise ValueError("message not found")
 
         target_id = int(msg.to_ai_config_id)
-        active = session.exec(
-            select(ChatRun).where(
-                ChatRun.user_id == user_id,
-                ChatRun.ai_config_id == target_id,
-                ChatRun.status.in_(["queued", "running"]),
-            ).order_by(ChatRun.updated_at.desc())
-        ).first()
+        target_session_id = str(msg.target_session_id or "").strip()
+        active = _get_live_active_run(session, user_id, target_id, session_id=target_session_id)
         if active:
             return {
                 "started": False,
@@ -409,16 +790,28 @@ def wake_idle_target_for_message(
         if not msg.target_session_id:
             msg.target_session_id = session_id
             session.add(msg)
-        session_name = f"AI通信：来自 {from_name}"
-
-        chat_session = ChatSession(
-            user_id=user_id,
-            ai_config_id=target_id,
-            ai_kind=ai_kind,
-            session_id=session_id,
-            session_name=session_name,
+        existing_chat_session = session.exec(
+            select(ChatSession).where(
+                ChatSession.user_id == user_id,
+                ChatSession.ai_config_id == target_id,
+                ChatSession.ai_kind == ai_kind,
+                ChatSession.session_id == session_id,
+            ).order_by(ChatSession.updated_at.desc())
+        ).first()
+        session_name = (
+            str(existing_chat_session.session_name or "").strip()
+            if existing_chat_session
+            else f"AI通信：来自 {from_name}"
         )
-        session.add(chat_session)
+        if existing_chat_session is None:
+            chat_session = ChatSession(
+                user_id=user_id,
+                ai_config_id=target_id,
+                ai_kind=ai_kind,
+                session_id=session_id,
+                session_name=session_name,
+            )
+            session.add(chat_session)
 
         run_id = f"run_{uuid.uuid4().hex}"
         row = ChatRun(
@@ -452,8 +845,8 @@ def wake_idle_target_for_message(
         },
         daemon=True,
     )
-    worker.start()
     _RUN_THREADS[run_id] = worker
+    worker.start()
     return {
         "started": True,
         "run_id": run_id,

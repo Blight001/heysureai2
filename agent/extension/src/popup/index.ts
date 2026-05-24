@@ -174,6 +174,31 @@ function memberById(id: number | null): MemberConfig | undefined {
 function toolCount(m: MemberConfig): number {
   try { const a = JSON.parse(m.mcp_tools || '[]'); return Array.isArray(a) ? a.length : 0 } catch { return 0 }
 }
+function getConnectedAiShortLabel(): string {
+  const name = String(memberById(selectedMemberId)?.name || auth.userName || auth.account || 'AI').trim()
+  const shortName = name.slice(0, 2) || 'AI'
+  return `${shortName}.,,`
+}
+function hasBrowserMcpPermission(m: MemberConfig): boolean {
+  if (m.mcp_enabled === false) return false
+  try {
+    const parsed = JSON.parse(m.mcp_tools || '[]')
+    if (!Array.isArray(parsed)) return false
+    return parsed.some(tool => {
+      const name = String(tool || '').trim()
+      return name.startsWith('browser_') || name.startsWith('card_')
+    })
+  } catch {
+    return false
+  }
+}
+
+function syncSelectedAiToBackground(force = false) {
+  if (!selectedMemberId) return
+  if (!auth.token && !force) return
+  if (!memberById(selectedMemberId)) return
+  port.postMessage({ type: 'agent:selected-ai', aiConfigId: selectedMemberId })
+}
 
 // ── Tab switching ──────────────────────────────────────────────────────────
 function switchTab(tab: TabName) {
@@ -222,7 +247,9 @@ function renderStatus() {
     return
   }
   statusDot.className = `status-dot ${currentStatus}`
-  statusLabel.textContent = STATUS_LABELS[currentStatus] || currentStatus
+  statusLabel.textContent = currentStatus === 'registered'
+    ? getConnectedAiShortLabel()
+    : (STATUS_LABELS[currentStatus] || currentStatus)
 }
 
 function setStatus(status: AgentStatus) {
@@ -289,6 +316,11 @@ function updateUserChip() {
 }
 
 async function doLogin() {
+  const configuredServerUrl = cfgServer.value.trim()
+  if (configuredServerUrl && configuredServerUrl !== serverUrl) {
+    serverUrl = configuredServerUrl
+    port.postMessage({ type: 'settings:save', payload: { serverUrl } })
+  }
   const account = loginAccount.value.trim()
   const password = loginPassword.value
   if (!account || !password) { loginFeedback.textContent = '请输入账号和密码'; loginFeedback.style.color = 'var(--error)'; return }
@@ -305,6 +337,7 @@ async function doLogin() {
     loginFeedback.style.color = 'var(--success)'
     updateUserChip()
     await loadMembers()
+    syncSelectedAiToBackground(true)
     renderSettingsViews()
     if (useServerChat()) await refreshServerSessionsAndHistory()
   } catch (err: any) {
@@ -368,14 +401,24 @@ async function loadMembers() {
   membersEmpty.textContent = '加载中…'
   membersEmpty.style.display = 'block'
   try {
-    members = await listConfigs(serverUrl, auth.token)
+    const rows = await listConfigs(serverUrl, auth.token)
+    members = rows.filter(hasBrowserMcpPermission)
     if (selectedMemberId && !memberById(selectedMemberId)) {
       selectedMemberId = null
       port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
+      serverSessions = []
+      currentServerSessionId = ''
+      lastSyncedMessageId = 0
+      chatHistory = []
+      renderChatHistory()
+      updateChatSessionControls()
+    } else if (selectedMemberId && memberById(selectedMemberId)) {
+      port.postMessage({ type: 'agent:selected-ai', aiConfigId: selectedMemberId })
     }
     renderMembers()
     updateTargetBanners()
     renderSettingsViews()
+    renderStatus()
   } catch (err: any) {
     if (/401|令牌|凭证|credential/i.test(String(err?.message))) {
       // token expired
@@ -391,7 +434,7 @@ function renderMembers() {
   membersList.querySelectorAll('.member-card').forEach(e => e.remove())
   if (!members.length) {
     membersEmpty.style.display = 'block'
-    membersEmpty.textContent = auth.token ? '暂无 AI 成员' : '请先登录'
+    membersEmpty.textContent = auth.token ? '暂无可显示的 AI 成员' : '请先登录'
     return
   }
   membersEmpty.style.display = 'none'
@@ -428,6 +471,7 @@ function selectMember(id: number) {
   renderMembers()
   updateTargetBanners()
   renderSettingsViews()
+  renderStatus()
   chatHistory = []
   serverSessions = []
   currentServerSessionId = ''
@@ -1261,7 +1305,7 @@ cardsExportAllBtn.addEventListener('click', async () => {
 // ── Settings (load + save) ─────────────────────────────────────────────────
 function loadSettings(s: AgentSettings) {
   serverUrl = s.serverUrl || ''
-  selectedMemberId = auth.token ? (s.selectedAiConfigId || null) : null
+  selectedMemberId = s.selectedAiConfigId || null
   cfgServer.value   = s.serverUrl   || ''
   cfgAiKey.value    = s.aiKey       || ''
   cfgAiBase.value   = s.aiBaseUrl   || ''
@@ -1274,6 +1318,7 @@ function loadSettings(s: AgentSettings) {
   hasAiKey = !!(s.aiKey?.trim())
   updateOfflineUi()
   renderMembers()
+  syncSelectedAiToBackground()
   applyTheme(s.theme || 'dark', false)
 }
 
@@ -1431,10 +1476,6 @@ async function init() {
   localModel = s.aiModel || ''
   selectedMemberId = s.selectedAiConfigId || null
   auth = await getAuth()
-  if (!auth.token && selectedMemberId) {
-    selectedMemberId = null
-    port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
-  }
   loginAccount.value = auth.account || ''
   updateUserChip()
   updateOfflineUi()
@@ -1446,6 +1487,7 @@ async function init() {
         const me = await getMe(serverUrl, auth.token)
         if (me?.name) { auth.userName = me.name; await saveAuth({ userName: me.name }); updateUserChip() }
         await loadMembers()
+        syncSelectedAiToBackground(true)
         if (useServerChat()) await refreshServerSessionsAndHistory()
       } catch {
         await doLogout()

@@ -2,6 +2,7 @@
 // Manages: Socket.IO server connection, task dispatching, popup port communication
 import { io, Socket } from 'socket.io-client'
 import { getSettings, saveSettings, pushActivity, getActivity, getCard, getAuth } from './lib/storage'
+import { listConfigs, MemberConfig } from './lib/client'
 import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS, runCardSteps, setCardProgress } from './lib/tools'
 import { callAI } from './lib/ai'
 import {
@@ -151,6 +152,39 @@ function disconnect() {
   socket?.disconnect()
   socket = null
   setStatus('disconnected')
+}
+
+async function refreshServerAiSelectionOnStartup(): Promise<number | null> {
+  const settings = await getSettings()
+  const auth = await getAuth()
+  if (settings.offlineMode || !auth.token || !settings.serverUrl) return null
+
+  let members: MemberConfig[]
+  try {
+    members = await listConfigs(settings.serverUrl, auth.token)
+  } catch (err: any) {
+    log('system', 'warn', `启动时获取 AI 成员失败: ${err?.message || err}`)
+    return null
+  }
+
+  const selectedAiConfigId = settings.selectedAiConfigId || null
+  if (!selectedAiConfigId) return null
+
+  const selected = members.find(m => m.id === selectedAiConfigId)
+  if (!selected) {
+    await saveSettings({ selectedAiConfigId: null })
+    log('system', 'warn', '上次选择的 AI 已不存在，已清除自动选择')
+    return null
+  }
+
+  log('system', 'info', `已恢复上次选择的 AI：${selected.name || selected.id}`)
+  return selectedAiConfigId
+}
+
+async function restoreAndConnectOnStartup() {
+  const selectedAiConfigId = await refreshServerAiSelectionOnStartup()
+  const s = await getSettings()
+  if (!s.offlineMode && (selectedAiConfigId || s.autoConnect)) await connect()
 }
 
 // ── Task handling ─────────────────────────────────────────────────────────
@@ -415,13 +449,10 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
 
 // ── Auto-connect on browser startup ──────────────────────────────────────
 chrome.runtime.onStartup.addListener(async () => {
-  const s = await getSettings()
-  const auth = await getAuth()
-  if (!auth.token && s.selectedAiConfigId) {
-    await saveSettings({ selectedAiConfigId: null })
-  }
-  if (!s.offlineMode && s.autoConnect) await connect()
+  await restoreAndConnectOnStartup()
 })
+
+void restoreAndConnectOnStartup()
 
 // On install / update — register alarms fresh
 chrome.runtime.onInstalled.addListener(() => {

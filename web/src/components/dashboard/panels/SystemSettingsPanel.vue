@@ -13,6 +13,7 @@ interface Props {
   defaultSupervisionIdleSeconds: number
   defaultInheritanceNotice: string
   promptAiMessageInbound: string
+  promptAiMessageNotify: string
   promptAiMessageReplySuccess: string
   promptUserMessageNotice: string
   themeMode: 'light' | 'dark'
@@ -33,6 +34,7 @@ const emit = defineEmits<{
   (e: 'update:defaultSupervisionIdleSeconds', value: number): void
   (e: 'update:defaultInheritanceNotice', value: string): void
   (e: 'update:promptAiMessageInbound', value: string): void
+  (e: 'update:promptAiMessageNotify', value: string): void
   (e: 'update:promptAiMessageReplySuccess', value: string): void
   (e: 'update:promptUserMessageNotice', value: string): void
   (e: 'update:themeMode', value: 'light' | 'dark'): void
@@ -128,6 +130,11 @@ const defaultInheritanceNoticeValue = computed({
 const promptAiMessageInboundValue = computed({
   get: () => props.promptAiMessageInbound,
   set: value => emit('update:promptAiMessageInbound', value)
+})
+
+const promptAiMessageNotifyValue = computed({
+  get: () => props.promptAiMessageNotify,
+  set: value => emit('update:promptAiMessageNotify', value)
 })
 
 const promptAiMessageReplySuccessValue = computed({
@@ -382,12 +389,20 @@ watch(() => props.show, visible => {
                   <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">AI 通信提示词</h4>
                   <div>
                     <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
-                      AI 收到来自其它 AI 消息时的中断提示（占位符：<code>{from_ai_name}</code>、<code>{from_ai_config_id}</code>、<code>{message_id}</code>、<code>{content}</code>）
+                      AI 收到来自其它 AI 消息时的中断提示（占位符：<code>{target_ai_name}</code>、<code>{target_ai_config_id}</code>、<code>{from_ai_name}</code>、<code>{from_ai_config_id}</code>、<code>{message_id}</code>、<code>{content}</code>）
                     </div>
                     <textarea v-model="promptAiMessageInboundValue" rows="7" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
                     <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                      ai.send_message 触发后，目标 AI 在下一轮工作循环顶部会强行收到这段提示，
-                      在没调 ai.reply_message 之前不应执行其它 MCP 工具。
+                      ai.send_message 触发后，目标 AI 在下一轮工作循环顶部会强行收到这段提示。默认建议用 ai.send_message 回发给发送方。
+                    </p>
+                  </div>
+                  <div>
+                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
+                      AI 收到不阻塞等待回复消息时的通知提示（占位符同上，另支持 <code>{target_ai_name}</code>、<code>{target_ai_config_id}</code>）
+                    </div>
+                    <textarea v-model="promptAiMessageNotifyValue" rows="7" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
+                    <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      ai.send_message 使用 require_reply=false 时注入。默认建议继续用 ai.send_message 回发给发送方。
                     </p>
                   </div>
                   <div>

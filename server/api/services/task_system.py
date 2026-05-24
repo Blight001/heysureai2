@@ -29,7 +29,7 @@ TASK_RUNTIME_REQUIRED_TOOLS = {
     "task.inherit",
     "task.list",
     "task.wait_all",
-    "ai.reply_message",
+    "ai.send_message",
 }
 TASK_TOOLSET_FOR_CREATE_COMPAT = {"task.list", "task.get_current", "task.inherit", "task.complete"}
 TASK_CREATE_TOOLS = {"task.create", "task.create_immediate", "task.create_scheduled", "task.create_recurring"}

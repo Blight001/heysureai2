@@ -63,11 +63,20 @@ from .chat_runtime_helpers import (
 from .chat_scheduler import _start_task_run
 
 from api.core.config import DEFAULT_CHAT_MAX_STEPS, DEFAULT_TASK_MAX_STEPS
+from api.models.defaults import DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE
 
 DEFAULT_AI_MSG_INBOUND_FALLBACK = (
     "[系统中断 · AI 间通信]\n"
-    "来自 {from_ai_name}（ai_config_id={from_ai_config_id}）：\n{content}\n\n"
-    "请调用 ai.reply_message(message_id=\"{message_id}\", content=...) 回复后再继续。"
+    "收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）\n"
+    "发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）\n"
+    "消息编号: {message_id}\n\n"
+    "{content}\n\n"
+    "请调用 ai.send_message(to_ai_config_id={from_ai_config_id}, content=..., "
+    "require_reply=false, reply_to_message_id=\"{message_id}\", current_session_id=\"{current_session_id}\") 回发给发送方。"
+)
+
+DEFAULT_AI_MSG_INBOUND_NO_REPLY_FALLBACK = (
+    DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE
 )
 
 
@@ -423,9 +432,9 @@ def _run_worker(
             effective_tool_allowlist = _parse_allowed_tools(cfg.mcp_tools if cfg else None)
             effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user_id))
             if ai_config_id is not None:
-                # System-injected AI-to-AI messages must remain replyable even
+                # System-injected AI-to-AI messages must remain answerable even
                 # when a task or config narrows the general MCP tool allowlist.
-                effective_tool_allowlist.add("ai.reply_message")
+                effective_tool_allowlist.add("ai.send_message")
             if str(session_id or "").startswith("feishu_"):
                 # Feishu conversations need a self-service context trim path even
                 # for older AI configs whose saved MCP list predates this tool.
@@ -444,7 +453,7 @@ def _run_worker(
                         effective_tool_allowlist = with_workspace_read_by_name_compat(effective_tool_allowlist)
                         effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user_id))
                         if ai_config_id is not None:
-                            effective_tool_allowlist.add("ai.reply_message")
+                            effective_tool_allowlist.add("ai.send_message")
                 override_token = task_payload.get("override_token_limit")
                 if isinstance(override_token, dict) and bool(override_token.get("enabled")):
                     try:
@@ -521,6 +530,7 @@ def _run_worker(
                 "current_user_message_id": current_user_message_id,
             })
 
+            pending_ai_reply_message_id = ""
             for _ in range(max_steps):
                 if _run_should_stop(run_id):
                     _run_set_status(run_id, "stopped", finished=True)
@@ -540,19 +550,45 @@ def _run_worker(
                         print(f"[chat_worker] inbox poll failed: {_iex}")
                     if _inbound is not None:
                         _from_name = _resolve_ai_name_safe(bg, _inbound.from_ai_config_id) or f"AI-{_inbound.from_ai_config_id}"
+                        _target_name = _resolve_ai_name_safe(bg, ai_config_id) or f"AI-{ai_config_id}"
+                        _requires_reply = bool(getattr(_inbound, "require_reply", True))
                         _tpl = str(getattr(user, "prompt_ai_message_inbound", "") or DEFAULT_AI_MSG_INBOUND_FALLBACK)
+                        if not _requires_reply:
+                            _tpl = str(getattr(user, "prompt_ai_message_notify", "") or DEFAULT_AI_MSG_INBOUND_NO_REPLY_FALLBACK)
+                        _identity_header = (
+                            "[AI 间通信上下文]\n"
+                            f"- 收件方（你）: {_target_name}（ai_config_id={ai_config_id}）\n"
+                            f"- 发送方: {_from_name}（ai_config_id={_inbound.from_ai_config_id}）\n"
+                            f"- 消息编号: {_inbound.message_id}\n"
+                            "- 回信方式: 调用 ai.send_message，to_ai_config_id 填发送方 ai_config_id，"
+                            "require_reply 填 false。\n"
+                            f"- 当前对话ID: {session_id}\n"
+                            "- 建议参数: "
+                            f'{{"to_ai_config_id": {_inbound.from_ai_config_id}, "content": "<你的回复>", '
+                            f'"require_reply": false, "reply_to_message_id": "{_inbound.message_id}", '
+                            f'"current_session_id": "{session_id}"}}\n'
+                        )
                         try:
                             _injected = _tpl.format(
                                 from_ai_name=_from_name,
                                 from_ai_config_id=_inbound.from_ai_config_id,
+                                target_ai_name=_target_name,
+                                target_ai_config_id=ai_config_id,
                                 message_id=_inbound.message_id,
+                                current_session_id=session_id,
                                 content=_inbound.content,
                             )
                         except Exception:
                             _injected = (
-                                f"[AI 间通信] 来自 {_from_name}：{_inbound.content}\n"
-                                f"请调用 ai.reply_message(message_id=\"{_inbound.message_id}\", content=...) 回复。"
+                                f"[AI 间通信] 收件方（你）: {_target_name}（ai_config_id={ai_config_id}）\n"
+                                f"发送方: {_from_name}（ai_config_id={_inbound.from_ai_config_id}）\n"
+                                f"消息内容: {_inbound.content}\n"
+                                f"请调用 ai.send_message(to_ai_config_id={_inbound.from_ai_config_id}, content=..., "
+                                f'require_reply=false, reply_to_message_id="{_inbound.message_id}", '
+                                f'current_session_id="{session_id}") 回发。'
                             )
+                        if "[AI 间通信上下文]" not in _injected:
+                            _injected = f"{_identity_header}\n{_injected}"
                         _save_message(
                             bg,
                             user_id,
@@ -569,6 +605,7 @@ def _run_worker(
                             ),
                         )
                         convo.append({"role": "system", "content": _injected})
+                        pending_ai_reply_message_id = str(_inbound.message_id or "").strip()
 
                 _append_missing_tool_responses(
                     convo,
@@ -826,6 +863,27 @@ def _run_worker(
                             )
                             convo.append({"role": "user", "content": warning})
                             continue
+                    if pending_ai_reply_message_id and assistant_text.strip() and ai_config_id is not None:
+                        try:
+                            _auto_reply = ai_message_service.complete_inbound_with_assistant_reply(
+                                message_id=pending_ai_reply_message_id,
+                                user_id=user_id,
+                                replier_ai_config_id=int(ai_config_id),
+                                content=assistant_text,
+                            )
+                            if _auto_reply and _auto_reply.get("auto_completed"):
+                                saved.tags = _append_mcp_state_to_tags(
+                                    saved.tags,
+                                    "ai.auto_reply",
+                                    {"message_id": pending_ai_reply_message_id},
+                                    "assistant final text delivered as AI message reply",
+                                )
+                                bg.add(saved)
+                                bg.commit()
+                        except Exception as _arex:
+                            print(f"[chat_worker] auto AI message reply failed: {_arex}")
+                        finally:
+                            pending_ai_reply_message_id = ""
                     _run_set_status(run_id, "completed", finished=True)
                     return
                 if joined_native_tools:

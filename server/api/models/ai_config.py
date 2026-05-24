@@ -14,7 +14,7 @@ _DEFAULT_MCP_TOOLS = (
     '"prompt.write_system","memory.write","memory.search","memory.list","memory.update",'
     '"memory.archive","evolution.input","evolution.list","evolution.review",'
     '"librarian.propose","librarian.consult","librarian.list_topics","librarian.read",'
-    '"librarian.archive","user.send_message","ai.send_message","ai.reply_message"]'
+    '"librarian.archive","user.send_message","ai.send_message"]'
 )
 
 _DEFAULT_SYSTEM_AUTO_CONTROL = (

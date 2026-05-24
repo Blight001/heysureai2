@@ -33,6 +33,7 @@ from .chat import (
 from .communication import AIMessage
 from .defaults import (
     DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE,
+    DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
     DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
     DEFAULT_INHERITANCE_NOTICE,
     DEFAULT_MCP_CALL_METHOD,
@@ -51,6 +52,7 @@ from .user import Token, User, UserCreate, UserLogin, UserRead, UserUpdate
 __all__ = [
     # defaults
     "DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE",
+    "DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE",
     "DEFAULT_AI_MESSAGE_REPLY_SUCCESS",
     "DEFAULT_INHERITANCE_NOTICE",
     "DEFAULT_MCP_CALL_METHOD",

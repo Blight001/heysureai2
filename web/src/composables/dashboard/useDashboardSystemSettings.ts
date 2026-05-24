@@ -134,14 +134,27 @@ Rules:
   const promptAiMessageInbound = ref(`[系统中断 · AI 间通信]
 你刚才的工作被一条来自其它 AI 的消息打断了。请优先处理此消息。
 
+- 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）
 - 发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）
 - 消息编号: {message_id}
 - 消息内容:
 {content}
 
-阅读后，请立即调用 MCP 工具 \`ai.reply_message\` 回复：
-  arguments: {{"message_id": "{message_id}", "content": "<你的回复>"}}
-回复成功后，系统会让你继续刚才的工作。在你回复之前，不要执行任何其它 MCP 工具。`)
+阅读后，请立即调用 MCP 工具 \`ai.send_message\` 回发消息给发送方：
+  arguments: {{"to_ai_config_id": {from_ai_config_id}, "content": "<你的回复>", "require_reply": false}}
+回复发出后，请继续你刚才被打断的工作。在你回发之前，不要执行其它 MCP 工具。`)
+  const promptAiMessageNotify = ref(`[系统通知 · AI 间通信]
+你收到一条来自其它 AI 的通知消息。发送方不会在原工具调用中阻塞等待，但你仍然可以主动回复。
+
+- 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）
+- 发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）
+- 消息编号: {message_id}
+- 消息内容:
+{content}
+
+如果消息内容要求你回话、确认或补充状态，请调用 MCP 工具 \`ai.send_message\` 回发消息给发送方：
+  arguments: {{"to_ai_config_id": {from_ai_config_id}, "content": "<你的回复>", "require_reply": false}}
+这样发送方会作为新收件方被系统唤醒处理你的回信。`)
   const promptAiMessageReplySuccess = ref('[系统提示] 你对消息 {message_id} 的回复已送达。\n现在请继续你刚才被打断的任务。')
   const promptUserMessageNotice = ref('[系统提示] 你已向用户发出一条消息（{channel}）。\n用户的回复（如有）会通过正常对话渠道返回，请不要重复发送。')
 
@@ -184,6 +197,7 @@ Rules:
         default_supervision_idle_seconds: clampIdleSeconds(defaultSupervisionIdleSeconds.value),
         default_inheritance_notice: defaultInheritanceNotice.value,
         prompt_ai_message_inbound: promptAiMessageInbound.value,
+        prompt_ai_message_notify: promptAiMessageNotify.value,
         prompt_ai_message_reply_success: promptAiMessageReplySuccess.value,
         prompt_user_message_notice: promptUserMessageNotice.value,
         ui_theme_mode: themeMode.value,
@@ -245,6 +259,9 @@ Rules:
       if (Object.prototype.hasOwnProperty.call(rawUser, 'prompt_ai_message_inbound')) {
         promptAiMessageInbound.value = String(rawUser.prompt_ai_message_inbound ?? '')
       }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'prompt_ai_message_notify')) {
+        promptAiMessageNotify.value = String(rawUser.prompt_ai_message_notify ?? '')
+      }
       if (Object.prototype.hasOwnProperty.call(rawUser, 'prompt_ai_message_reply_success')) {
         promptAiMessageReplySuccess.value = String(rawUser.prompt_ai_message_reply_success ?? '')
       }
@@ -278,6 +295,7 @@ Rules:
     defaultSupervisionIdleSeconds,
     defaultInheritanceNotice,
     promptAiMessageInbound,
+    promptAiMessageNotify,
     promptAiMessageReplySuccess,
     promptUserMessageNotice,
     normalizeSystemAutoControl,

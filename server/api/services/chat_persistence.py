@@ -114,15 +114,16 @@ def _upsert_session(
     ai_config_id: Optional[int],
     ai_kind: str,
 ) -> None:
-    row = session.exec(
-        select(ChatSession).where(
-            ChatSession.user_id == user_id,
-            ChatSession.session_id == session_id,
-            ChatSession.ai_kind == ai_kind,
-        )
-    ).first()
-    if row and row.ai_config_id != ai_config_id:
-        row = None
+    stmt = select(ChatSession).where(
+        ChatSession.user_id == user_id,
+        ChatSession.session_id == session_id,
+        ChatSession.ai_kind == ai_kind,
+    )
+    if ai_config_id is not None:
+        stmt = stmt.where(ChatSession.ai_config_id == ai_config_id)
+    else:
+        stmt = stmt.where(ChatSession.ai_config_id.is_(None))
+    row = session.exec(stmt).first()
     if not row:
         row = ChatSession(
             user_id=user_id,

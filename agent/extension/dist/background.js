@@ -3468,6 +3468,33 @@
     return (await getCards()).find((c) => c.id === id);
   }
 
+  // src/lib/client.ts
+  var trimUrl = (u) => String(u || "").replace(/\/+$/, "");
+  var authHeaders = (token, withJson = false) => {
+    const h = { Authorization: `Bearer ${token}` };
+    if (withJson)
+      h["Content-Type"] = "application/json";
+    return h;
+  };
+  async function parseError(res, fallback) {
+    try {
+      const data = await res.json();
+      return String(data?.detail || data?.error || fallback);
+    } catch {
+      return `${fallback} (HTTP ${res.status})`;
+    }
+  }
+  async function requestJson(url2, init, fallback) {
+    const res = await fetch(url2, { ...init, signal: init.signal ?? AbortSignal.timeout(2e4) });
+    if (!res.ok)
+      throw new Error(await parseError(res, fallback));
+    return await res.json();
+  }
+  async function listConfigs(serverUrl, token) {
+    const rows = await requestJson(`${trimUrl(serverUrl)}/api/ai/configs`, { headers: authHeaders(token) }, "AI \u6210\u5458\u5217\u8868\u52A0\u8F7D\u5931\u8D25");
+    return Array.isArray(rows) ? rows : [];
+  }
+
   // src/lib/tools/definitions.ts
   var SEARCH_ENGINES = {
     google: "https://www.google.com/search?q=",
@@ -4670,6 +4697,36 @@ Always:
     socket = null;
     setStatus("disconnected");
   }
+  async function refreshServerAiSelectionOnStartup() {
+    const settings = await getSettings();
+    const auth = await getAuth();
+    if (settings.offlineMode || !auth.token || !settings.serverUrl)
+      return null;
+    let members;
+    try {
+      members = await listConfigs(settings.serverUrl, auth.token);
+    } catch (err) {
+      log("system", "warn", `\u542F\u52A8\u65F6\u83B7\u53D6 AI \u6210\u5458\u5931\u8D25: ${err?.message || err}`);
+      return null;
+    }
+    const selectedAiConfigId = settings.selectedAiConfigId || null;
+    if (!selectedAiConfigId)
+      return null;
+    const selected = members.find((m) => m.id === selectedAiConfigId);
+    if (!selected) {
+      await saveSettings({ selectedAiConfigId: null });
+      log("system", "warn", "\u4E0A\u6B21\u9009\u62E9\u7684 AI \u5DF2\u4E0D\u5B58\u5728\uFF0C\u5DF2\u6E05\u9664\u81EA\u52A8\u9009\u62E9");
+      return null;
+    }
+    log("system", "info", `\u5DF2\u6062\u590D\u4E0A\u6B21\u9009\u62E9\u7684 AI\uFF1A${selected.name || selected.id}`);
+    return selectedAiConfigId;
+  }
+  async function restoreAndConnectOnStartup() {
+    const selectedAiConfigId = await refreshServerAiSelectionOnStartup();
+    const s = await getSettings();
+    if (!s.offlineMode && (selectedAiConfigId || s.autoConnect))
+      await connect();
+  }
   async function handleTask(task) {
     const taskId = task.taskId;
     if (!taskId)
@@ -4916,14 +4973,9 @@ Respond in the same language as the user. For factual questions, search the web 
     }
   });
   chrome.runtime.onStartup.addListener(async () => {
-    const s = await getSettings();
-    const auth = await getAuth();
-    if (!auth.token && s.selectedAiConfigId) {
-      await saveSettings({ selectedAiConfigId: null });
-    }
-    if (!s.offlineMode && s.autoConnect)
-      await connect();
+    await restoreAndConnectOnStartup();
   });
+  void restoreAndConnectOnStartup();
   chrome.runtime.onInstalled.addListener(() => {
     chrome.alarms.create("keepalive", { periodInMinutes: 0.4 });
   });

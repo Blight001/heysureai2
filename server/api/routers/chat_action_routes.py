@@ -45,14 +45,17 @@ async def start_chat_run(
     if not model_content:
         raise HTTPException(status_code=400, detail="Message content is required")
 
-    active = session.exec(
-        select(ChatRun).where(
-            ChatRun.user_id == user.id,
-            ChatRun.ai_kind == ai_kind,
-            ChatRun.session_id == session_id,
-            ChatRun.status.in_(["queued", "running"]),
-        )
-    ).first()
+    active_stmt = select(ChatRun).where(
+        ChatRun.user_id == user.id,
+        ChatRun.ai_kind == ai_kind,
+        ChatRun.session_id == session_id,
+        ChatRun.status.in_(["queued", "running"]),
+    )
+    if ai_config_id is not None:
+        active_stmt = active_stmt.where(ChatRun.ai_config_id == ai_config_id)
+    else:
+        active_stmt = active_stmt.where(ChatRun.ai_config_id.is_(None))
+    active = session.exec(active_stmt).first()
     if active:
         raise HTTPException(status_code=409, detail="A run is already active in this session")
 
@@ -162,17 +165,18 @@ async def get_active_chat_run(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    row = session.exec(
-        select(ChatRun).where(
-            ChatRun.user_id == user.id,
-            ChatRun.session_id == session_id,
-            ChatRun.ai_kind == ai_kind,
-            ChatRun.status.in_(["queued", "running"]),
-        ).order_by(ChatRun.updated_at.desc())
-    ).first()
+    stmt = select(ChatRun).where(
+        ChatRun.user_id == user.id,
+        ChatRun.session_id == session_id,
+        ChatRun.ai_kind == ai_kind,
+        ChatRun.status.in_(["queued", "running"]),
+    )
+    if ai_config_id is not None:
+        stmt = stmt.where(ChatRun.ai_config_id == ai_config_id)
+    else:
+        stmt = stmt.where(ChatRun.ai_config_id.is_(None))
+    row = session.exec(stmt.order_by(ChatRun.updated_at.desc())).first()
     if not row:
-        return {"run": None}
-    if ai_config_id is not None and row.ai_config_id != ai_config_id:
         return {"run": None}
     with _RUN_STATE_LOCK:
         live = _RUN_LIVE_STATE.get(row.run_id) or {}

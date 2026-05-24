@@ -739,6 +739,35 @@
       return 0;
     }
   }
+  function getConnectedAiShortLabel() {
+    const name = String(memberById(selectedMemberId)?.name || auth.userName || auth.account || "AI").trim();
+    const shortName = name.slice(0, 2) || "AI";
+    return `${shortName}.,,`;
+  }
+  function hasBrowserMcpPermission(m) {
+    if (m.mcp_enabled === false)
+      return false;
+    try {
+      const parsed = JSON.parse(m.mcp_tools || "[]");
+      if (!Array.isArray(parsed))
+        return false;
+      return parsed.some((tool) => {
+        const name = String(tool || "").trim();
+        return name.startsWith("browser_") || name.startsWith("card_");
+      });
+    } catch {
+      return false;
+    }
+  }
+  function syncSelectedAiToBackground(force = false) {
+    if (!selectedMemberId)
+      return;
+    if (!auth.token && !force)
+      return;
+    if (!memberById(selectedMemberId))
+      return;
+    port.postMessage({ type: "agent:selected-ai", aiConfigId: selectedMemberId });
+  }
   function switchTab(tab) {
     activeTab = tab;
     Object.keys(panes).forEach((k) => panes[k].classList.add("hidden"));
@@ -786,7 +815,7 @@
       return;
     }
     statusDot.className = `status-dot ${currentStatus}`;
-    statusLabel.textContent = STATUS_LABELS[currentStatus] || currentStatus;
+    statusLabel.textContent = currentStatus === "registered" ? getConnectedAiShortLabel() : STATUS_LABELS[currentStatus] || currentStatus;
   }
   function setStatus(status) {
     currentStatus = status;
@@ -850,6 +879,11 @@
     logoutBtn.style.display = auth.token ? "block" : "none";
   }
   async function doLogin() {
+    const configuredServerUrl = cfgServer.value.trim();
+    if (configuredServerUrl && configuredServerUrl !== serverUrl) {
+      serverUrl = configuredServerUrl;
+      port.postMessage({ type: "settings:save", payload: { serverUrl } });
+    }
     const account = loginAccount.value.trim();
     const password = loginPassword.value;
     if (!account || !password) {
@@ -874,6 +908,7 @@
       loginFeedback.style.color = "var(--success)";
       updateUserChip();
       await loadMembers();
+      syncSelectedAiToBackground(true);
       renderSettingsViews();
       if (useServerChat())
         await refreshServerSessionsAndHistory();
@@ -941,14 +976,24 @@
     membersEmpty.textContent = "\u52A0\u8F7D\u4E2D\u2026";
     membersEmpty.style.display = "block";
     try {
-      members = await listConfigs(serverUrl, auth.token);
+      const rows = await listConfigs(serverUrl, auth.token);
+      members = rows.filter(hasBrowserMcpPermission);
       if (selectedMemberId && !memberById(selectedMemberId)) {
         selectedMemberId = null;
         port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
+        serverSessions = [];
+        currentServerSessionId = "";
+        lastSyncedMessageId = 0;
+        chatHistory = [];
+        renderChatHistory();
+        updateChatSessionControls();
+      } else if (selectedMemberId && memberById(selectedMemberId)) {
+        port.postMessage({ type: "agent:selected-ai", aiConfigId: selectedMemberId });
       }
       renderMembers();
       updateTargetBanners();
       renderSettingsViews();
+      renderStatus();
     } catch (err) {
       if (/401|令牌|凭证|credential/i.test(String(err?.message))) {
         await doLogout();
@@ -963,7 +1008,7 @@
     membersList.querySelectorAll(".member-card").forEach((e) => e.remove());
     if (!members.length) {
       membersEmpty.style.display = "block";
-      membersEmpty.textContent = auth.token ? "\u6682\u65E0 AI \u6210\u5458" : "\u8BF7\u5148\u767B\u5F55";
+      membersEmpty.textContent = auth.token ? "\u6682\u65E0\u53EF\u663E\u793A\u7684 AI \u6210\u5458" : "\u8BF7\u5148\u767B\u5F55";
       return;
     }
     membersEmpty.style.display = "none";
@@ -1000,6 +1045,7 @@
     renderMembers();
     updateTargetBanners();
     renderSettingsViews();
+    renderStatus();
     chatHistory = [];
     serverSessions = [];
     currentServerSessionId = "";
@@ -1859,7 +1905,7 @@
   });
   function loadSettings(s) {
     serverUrl = s.serverUrl || "";
-    selectedMemberId = auth.token ? s.selectedAiConfigId || null : null;
+    selectedMemberId = s.selectedAiConfigId || null;
     cfgServer.value = s.serverUrl || "";
     cfgAiKey.value = s.aiKey || "";
     cfgAiBase.value = s.aiBaseUrl || "";
@@ -1872,6 +1918,7 @@
     hasAiKey = !!s.aiKey?.trim();
     updateOfflineUi();
     renderMembers();
+    syncSelectedAiToBackground();
     applyTheme(s.theme || "dark", false);
   }
   var PROVIDER_PRESETS = {
@@ -2024,10 +2071,6 @@
     localModel = s.aiModel || "";
     selectedMemberId = s.selectedAiConfigId || null;
     auth = await getAuth();
-    if (!auth.token && selectedMemberId) {
-      selectedMemberId = null;
-      port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
-    }
     loginAccount.value = auth.account || "";
     updateUserChip();
     updateOfflineUi();
@@ -2042,6 +2085,7 @@
             updateUserChip();
           }
           await loadMembers();
+          syncSelectedAiToBackground(true);
           if (useServerChat())
             await refreshServerSessionsAndHistory();
         } catch {

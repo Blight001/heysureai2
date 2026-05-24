@@ -1,11 +1,12 @@
 """通信类 MCP 工具：
 - user.send_message  → 向用户发送消息（沿用飞书底座，名字改为业务语义）
-- ai.send_message    → 向另一个 AI 发送消息（事件驱动；默认阻塞等回复，可关）
+- ai.send_message    → 向另一个 AI 发送消息（默认不阻塞；对方可再用 send_message 回发）
 - ai.reply_message   → 目标 AI 用此回复对方；落库即刻唤醒等待方
 - ai.list_inbox      → 查看自己的未处理消息（一般不需要主动看，强插已经会注入）
 """
 
-from typing import Any, Dict, Optional
+import re
+from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
@@ -69,6 +70,53 @@ def _user_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
 
 # ---------- AI 间通信 ----------
 
+def _extract_message_ids(text: str) -> List[str]:
+    ids = re.findall(r"\bmai_[A-Za-z0-9]{8,40}\b", text or "")
+    out: List[str] = []
+    for item in ids:
+        if item not in out:
+            out.append(item)
+    return out
+
+
+def _reply_result(
+    *,
+    completed_reply: Dict[str, Any],
+    ai_config_id: int,
+    to_id: int,
+    return_session_id: str,
+) -> Dict[str, Any]:
+    target_session_id = str(completed_reply.get("from_session_id") or return_session_id or "").strip()
+    return {
+        "message_id": completed_reply.get("message_id"),
+        "queued": False,
+        "replied": True,
+        "status": "replied",
+        "from_ai_config_id": ai_config_id,
+        "to_ai_config_id": to_id,
+        "target_session_id": target_session_id,
+        "return_to_session_id": target_session_id or None,
+        "reply_to_message_id": completed_reply.get("reply_to_message_id") or completed_reply.get("message_id"),
+        "reply_content": completed_reply.get("reply_content"),
+        "waiter_resolved": bool(completed_reply.get("waiter_resolved")),
+        "note": "已作为上一封 AI 消息的回信送达原会话。",
+    }
+
+
+def _wrap_return_content(return_route: Dict[str, Any], content: str, replier_ai_config_id: int) -> str:
+    route_message_id = str(return_route.get("message_id") or "").strip()
+    if not route_message_id:
+        return content
+    if "你之前发送的 AI 间消息已收到回复" in content:
+        return content
+    return (
+        "你之前发送的 AI 间消息已收到回复。\n"
+        f"- 原消息编号: {route_message_id}\n"
+        f"- 回复方 ai_config_id: {replier_ai_config_id}\n\n"
+        f"[回复内容]\n{content}"
+    )
+
+
 async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     if ai_config_id is None:
         raise HTTPException(status_code=400, detail="ai.send_message must be called by an AI runtime")
@@ -84,41 +132,107 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
     content = str(args.get("content") or args.get("text") or args.get("message") or "").strip()
     if not content:
         raise HTTPException(status_code=400, detail="content is required")
-    require_reply = bool(args.get("require_reply", True))
+    require_reply = bool(args.get("require_reply", False))
     timeout_seconds = int(args.get("timeout_seconds") or 120)
 
-    # 提前确定目标 AI 应该在哪个 session 处理本消息：
-    #   - 已有活跃 run → 复用其 session，强插到该会话顶部
-    #   - 空闲       → 预生成一个新 session_id，稍后由 wake_idle_target_for_message
-    #                   按同一 id 创建会话，pop 时严格匹配。
-    active_session_id = ai_message_service.get_active_session_id(user_id, to_id)
-    target_active_initial = active_session_id is not None
+    sender_ctx = get_run_session_context() or {}
+    from_session_id = str(
+        args.get("current_session_id")
+        or args.get("source_session_id")
+        or args.get("from_session_id")
+        or args.get("session_id")
+        or sender_ctx.get("session_id")
+        or ""
+    ).strip()
+    reply_to_candidates = []
+    for key in ("reply_to_message_id", "in_reply_to_message_id", "original_message_id"):
+        raw = str(args.get(key) or "").strip()
+        if raw and raw not in reply_to_candidates:
+            reply_to_candidates.append(raw)
+    for raw in _extract_message_ids(content):
+        if raw not in reply_to_candidates:
+            reply_to_candidates.append(raw)
 
-    # 先生成 message_id 是为了把 session_id 预先确定下来；这里通过预算
-    # session_id 再 send 的方式实现：reserve_idle_session_id 用占位
-    # message_id，send 后再回写实际 id。最简单做法是先 send 占位、再
-    # 立刻把 target_session_id 改为 ai_message_<message_id>。这里直接
-    # 复用：先 send 给一个临时 token，然后 wake 时同步。但为了让
-    # pop_pending_for 能在新 session 启动后第一时间命中，我们必须在
-    # send 时就写入最终的 session_id。
-    #
-    # 采用两步：(1) 若目标活跃，直接用其 session_id；(2) 否则先用
-    # uuid 占位生成 session_id，send + wake 都使用同一个。
-    if active_session_id:
-        prebound_session_id = active_session_id
+    return_route = ai_message_service.find_return_route(
+        user_id=user_id,
+        current_ai_config_id=int(ai_config_id),
+        target_ai_config_id=to_id,
+        current_session_id=from_session_id,
+    )
+    route_message_id = str(return_route.get("message_id") or "").strip()
+    if route_message_id and route_message_id not in reply_to_candidates:
+        reply_to_candidates.append(route_message_id)
+    return_session_id = str(return_route.get("from_session_id") or "").strip()
+
+    for reply_to_message_id in reply_to_candidates:
+        completed_reply = ai_message_service.resolve_waiting_reply_to_message_id_from_send_message(
+            user_id=user_id,
+            current_ai_config_id=int(ai_config_id),
+            target_ai_config_id=to_id,
+            message_id=reply_to_message_id,
+            content=content,
+        )
+        if completed_reply is not None:
+            return _reply_result(
+                completed_reply=completed_reply,
+                ai_config_id=int(ai_config_id),
+                to_id=to_id,
+                return_session_id=return_session_id,
+            )
+        if not return_session_id:
+            explicit_route = ai_message_service.find_return_route_by_message_id(
+                user_id=user_id,
+                current_ai_config_id=int(ai_config_id),
+                target_ai_config_id=to_id,
+                message_id=reply_to_message_id,
+            )
+            return_session_id = str(explicit_route.get("from_session_id") or "").strip()
+            if explicit_route:
+                return_route = explicit_route
+
+    if return_session_id:
+        completed_reply = ai_message_service.resolve_waiting_reply_from_send_message(
+            user_id=user_id,
+            current_ai_config_id=int(ai_config_id),
+            target_ai_config_id=to_id,
+            current_session_id=from_session_id,
+            content=content,
+        )
+        if completed_reply is not None:
+            return _reply_result(
+                completed_reply=completed_reply,
+                ai_config_id=int(ai_config_id),
+                to_id=to_id,
+                return_session_id=return_session_id,
+            )
+
+    # 提前确定目标 AI 应该在哪个 session 处理本消息：
+    #   - 回信场景   → 优先投回原始发送方 session（from_session_id）
+    #   - 普通信件   → 复用“发信方当前会话 ↔ 目标 AI”绑定的目标侧 session
+    #   - 新信件     → 生成稳定 session_id，稍后由 wake_idle_target_for_message
+    #                   按同一 id 创建会话，pop 时严格匹配。
+    if return_session_id:
+        prebound_session_id = return_session_id
+    elif from_session_id:
+        prebound_session_id = ai_message_service.find_corresponding_target_session_id(
+            user_id=user_id,
+            from_ai_config_id=int(ai_config_id),
+            to_ai_config_id=to_id,
+            from_session_id=from_session_id,
+        )
     else:
         import uuid as _uuid
         prebound_session_id = f"ai_message_{_uuid.uuid4().hex[:14]}"
 
-    sender_ctx = get_run_session_context() or {}
-    from_session_id = str(sender_ctx.get("session_id") or "").strip()
+    target_active_initial = ai_message_service.target_session_has_active_run(user_id, to_id, prebound_session_id)
 
     try:
+        delivery_content = _wrap_return_content(return_route, content, int(ai_config_id)) if return_session_id else content
         msg = ai_message_service.send(
             user_id=user_id,
             from_ai_config_id=int(ai_config_id),
             to_ai_config_id=to_id,
-            content=content,
+            content=delivery_content,
             target_session_id=prebound_session_id,
             from_session_id=from_session_id,
             require_reply=require_reply,
@@ -148,6 +262,8 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         "from_ai_config_id": ai_config_id,
         "to_ai_config_id": to_id,
         "target_session_id": msg.target_session_id,
+        "return_to_session_id": return_session_id or None,
+        "current_session_id": from_session_id or None,
         "require_reply": require_reply,
         "timeout_seconds": timeout_seconds,
     }
@@ -156,7 +272,11 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
 
     if not require_reply:
         # Fire-and-forget 路径：不阻塞。
-        if wakeup and wakeup.get("started"):
+        if return_session_id and wakeup and wakeup.get("started"):
+            base_out["note"] = "已入队（不等待回复）；系统已投回原发送方会话并唤醒目标 AI 处理。"
+        elif return_session_id:
+            base_out["note"] = "已入队（不等待回复）；系统已投回原发送方会话，目标 AI 会在该会话下一轮顶部处理。"
+        elif wakeup and wakeup.get("started"):
             base_out["note"] = "已入队（不等待回复）；目标 AI 空闲，系统已创建新对话处理本消息。"
         elif target_active:
             base_out["note"] = "已入队（不等待回复）；目标 AI 会在下一轮顶部处理。"

@@ -10,4 +10,8 @@ export interface User {
   ui_font_size?: FontSize
   mcp_max_steps?: number
   role_mcp_permissions?: string
+  prompt_ai_message_inbound?: string
+  prompt_ai_message_notify?: string
+  prompt_ai_message_reply_success?: string
+  prompt_user_message_notice?: string
 }
