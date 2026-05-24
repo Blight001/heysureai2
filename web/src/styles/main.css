@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+ * Document-level defaults
+ * ------------------------------------------------------------------------- */
+html {
+  font-size: var(--app-font-size, 14px);
+}
+
+body {
+  @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+  font-size: inherit;
+}
+
+#app {
+  @apply min-h-screen;
+}
+
+/* ---------------------------------------------------------------------------
+ * Scrollbars (WebKit + Firefox)
+ * ------------------------------------------------------------------------- */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-zinc-300 rounded-full transition-colors;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-zinc-400;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  @apply bg-zinc-700;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  @apply bg-zinc-600;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #d4d4d8 transparent;
+}
+
+.dark * {
+  scrollbar-color: #3f3f46 transparent;
+}
+
+/* ---------------------------------------------------------------------------
+ * Native <select> styling
+ * ------------------------------------------------------------------------- */
+select {
+  @apply cursor-pointer transition-all duration-200 ease-in-out;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2371717a'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 1rem;
+  padding-right: 2rem !important;
+}
+
+.dark select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23a1a1aa'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+}
+
+select:hover {
+  @apply border-indigo-300 dark:border-indigo-700;
+}
+
+select:focus {
+  @apply ring-2 ring-indigo-500/20 border-indigo-500 outline-none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Reusable transition presets used with <Transition name="...">
+ * ------------------------------------------------------------------------- */
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.5s ease;
+}
+
+.list-enter-from,
+.list-leave-to {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.slide-fade-enter-active {
+  transition: all 0.3s ease-out;
+}
+
+.slide-fade-leave-active {
+  transition: all 0.3s cubic-bezier(1, 0.5, 0.8, 1);
+}
+
+.slide-fade-enter-from,
+.slide-fade-leave-to {
+  transform: translateX(20px);
+  opacity: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Decorative utilities (gradient backdrop, glassmorphism)
+ * ------------------------------------------------------------------------- */
+@keyframes gradient-bg {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient-bg 15s ease infinite;
+}
+
+.glass {
+  @apply bg-white/70 backdrop-blur-md border border-white/20 dark:bg-zinc-900/70 dark:border-white/10;
+}

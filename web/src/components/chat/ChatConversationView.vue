@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import ChatMessageList from './ChatMessageList.vue'
-import { parseChatResponseInline, type ActionBlock, type InlineContent as InlineContentType } from '../../utils/chatParser'
+import { parseChatResponseInline, type ActionBlock, type InlineContent as InlineContentType } from '@/utils/chatParser'
 
 interface ConversationInputMessage {
   id?: number

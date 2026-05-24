@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useMessage } from '../../composables/useMessage'
+import { useMessage } from '@/composables/useMessage'
 import ChatHeader from './ChatHeader.vue'
 import ChatConversationView from './ChatConversationView.vue'
 import ChatInput from './ChatInput.vue'
-import { parseChatResponseInline, type ActionBlock, type InlineContent as InlineContentType } from '../../utils/chatParser'
+import { parseChatResponseInline, type ActionBlock, type InlineContent as InlineContentType } from '@/utils/chatParser'
+import * as chatApi from '@/api/chat'
+import { callMcpTool } from '@/api/mcp'
+import { getAuthToken } from '@/api/http'
 
 const { alert, confirm, prompt } = useMessage()
 
@@ -117,11 +120,10 @@ const pickPreferredSessionId = (items: SessionItem[]) => {
   return normal?.id || items[0].id
 }
 
-const queryForAi = (extra: Record<string, string> = {}) => {
-  const query: Record<string, string> = { ai_kind: aiKindValue.value, ...extra }
-  if (props.aiConfigId !== undefined) query.ai_config_id = String(props.aiConfigId)
-  return new URLSearchParams(query).toString()
-}
+const chatCtx = computed<chatApi.AiContext>(() => ({
+  aiKind: aiKindValue.value,
+  aiConfigId: props.aiConfigId,
+}))
 
 const splitTags = (raw?: string) => {
   const text = String(raw || '')
@@ -201,18 +203,16 @@ const collectMessageState = (msg: ChatMessage): PersistedMessageActionState | nu
 
 const persistMessageActionState = async (msg: ChatMessage) => {
   if (!msg.id) return
-  const token = localStorage.getItem('token')
-  if (!token) return
+  if (!getAuthToken()) return
   const { base } = splitTags(msg.tags)
   const nextTags = encodeTagsWithState(base, collectMessageState(msg))
   if ((msg.tags || '') === nextTags) return
-  const res = await fetch(`/api/chat/${msg.id}/tags`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ tags: nextTags }),
-  })
-  if (res.ok) msg.tags = nextTags
-  else console.warn('persistMessageActionState failed', res.status)
+  try {
+    await chatApi.patchChatMessageTags(msg.id, nextTags)
+    msg.tags = nextTags
+  } catch (err) {
+    console.warn('persistMessageActionState failed', err)
+  }
 }
 
 const persistMessageActionStateWhenReady = (msg: ChatMessage, attempts = 12) => {
@@ -486,20 +486,6 @@ const appendLiveAssistantAsLocalMessage = async (text: string) => {
 
 const waitMs = (ms: number) => new Promise<void>(resolve => window.setTimeout(resolve, ms))
 
-const extractResponseError = async (res: Response, fallback: string) => {
-  const text = await res.text().catch(() => '')
-  if (!text) return fallback
-  try {
-    const data = JSON.parse(text)
-    if (typeof data?.detail === 'string' && data.detail.trim()) return data.detail
-    if (typeof data?.error === 'string' && data.error.trim()) return data.error
-    if (typeof data?.message === 'string' && data.message.trim()) return data.message
-    return text
-  } catch {
-    return text
-  }
-}
-
 const appendRunErrorNotice = async (runId: string, message: string) => {
   const key = runId || `unknown_${Date.now()}`
   if (shownRunErrorIds.value.has(key)) return
@@ -517,26 +503,19 @@ const appendRunErrorNotice = async (runId: string, message: string) => {
   const localIndex = chatMessages.value.push(fallbackMsg) - 1
   await scrollToBottom()
 
-  const token = localStorage.getItem('token')
-  if (!token || !currentSessionId.value) return
+  if (!getAuthToken() || !currentSessionId.value) return
   try {
     const currentSessionName = sessionList.value.find(s => s.id === currentSessionId.value)?.name || '未命名会话'
-    const res = await fetch('/api/chat/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        role: 'system',
-        content,
-        tags: `run_error:${key}`,
-        ai_config_id: props.aiConfigId,
-        ai_kind: aiKindValue.value,
-        session_id: currentSessionId.value,
-        session_name: currentSessionName,
-        total_tokens: 0,
-      }),
+    const saved = await chatApi.saveChatMessage({
+      role: 'system',
+      content,
+      tags: `run_error:${key}`,
+      ai_config_id: props.aiConfigId,
+      ai_kind: aiKindValue.value,
+      session_id: currentSessionId.value,
+      session_name: currentSessionName,
+      total_tokens: 0,
     })
-    if (!res.ok) return
-    const saved = await res.json()
     chatMessages.value.splice(localIndex, 1, {
       ...saved,
       display_text: saved.content,
@@ -547,21 +526,20 @@ const appendRunErrorNotice = async (runId: string, message: string) => {
 }
 
 const loadSessions = async () => {
-  const token = localStorage.getItem('token')
-  if (!token) return
-  const res = await fetch(`/api/chat/sessions?${queryForAi()}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (res.ok) {
-    const rows = await res.json()
-    sessionList.value = (Array.isArray(rows) ? rows : []).map((row: any) => ({
-      id: String(row?.id || ''),
-      name: String(row?.name || '未命名会话'),
-      totalTokens: Number(row?.total_tokens || 0),
-    }))
-    if (!currentSessionId.value && sessionList.value.length > 0) {
-      currentSessionId.value = pickPreferredSessionId(sessionList.value)
-    }
+  if (!getAuthToken()) return
+  let rows
+  try {
+    rows = await chatApi.listChatSessions(chatCtx.value)
+  } catch {
+    return
+  }
+  sessionList.value = (Array.isArray(rows) ? rows : []).map((row: any) => ({
+    id: String(row?.id || ''),
+    name: String(row?.name || '未命名会话'),
+    totalTokens: Number(row?.total_tokens || 0),
+  }))
+  if (!currentSessionId.value && sessionList.value.length > 0) {
+    currentSessionId.value = pickPreferredSessionId(sessionList.value)
   }
 }
 
@@ -571,19 +549,13 @@ const createSession = async (nameInput?: string) => {
     name = await prompt({ message: '输入新对话名称:', placeholder: '例如: 需求拆解' }) || ''
   }
   if (!name.trim()) return
-  const token = localStorage.getItem('token')
-  if (!token) return
-  const res = await fetch('/api/chat/sessions', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({
-      name,
-      ai_config_id: props.aiConfigId,
-      ai_kind: aiKindValue.value,
-    }),
-  })
-  if (!res.ok) return
-  const session = await res.json()
+  if (!getAuthToken()) return
+  let session
+  try {
+    session = await chatApi.createChatSession(chatCtx.value, name)
+  } catch {
+    return
+  }
   await loadSessions()
   currentSessionId.value = session.id
   chatMessages.value = []
@@ -595,13 +567,12 @@ const createSessionFromButton = async () => {
 
 const deleteSession = async (sid: string) => {
   if (!(await confirm({ message: '确定删除这个对话记录吗？', type: 'warning' }))) return
-  const token = localStorage.getItem('token')
-  if (!token) return
-  const res = await fetch(`/api/chat/sessions/${sid}?${queryForAi()}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) return
+  if (!getAuthToken()) return
+  try {
+    await chatApi.deleteChatSession(chatCtx.value, sid)
+  } catch {
+    return
+  }
   await loadSessions()
   if (currentSessionId.value === sid) {
     currentSessionId.value = pickPreferredSessionId(sessionList.value)
@@ -618,14 +589,10 @@ const renameSession = async (sid: string) => {
     defaultValue: current?.name || '',
   }) || '').trim()
   if (!name) return
-  const token = localStorage.getItem('token')
-  if (!token) return
-  const res = await fetch(`/api/chat/sessions/${sid}?${queryForAi()}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ name }),
-  })
-  if (!res.ok) {
+  if (!getAuthToken()) return
+  try {
+    await chatApi.renameChatSession(chatCtx.value, sid, name)
+  } catch {
     alert({ message: '会话重命名失败', type: 'error' })
     return
   }
@@ -633,13 +600,13 @@ const renameSession = async (sid: string) => {
 }
 
 const loadTotalTokens = async () => {
-  const token = localStorage.getItem('token')
-  if (!token) return 0
-  const res = await fetch(`/api/chat/total-tokens?${queryForAi()}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) return 0
-  const data = await res.json()
+  if (!getAuthToken()) return 0
+  let data
+  try {
+    data = await chatApi.getChatTotalTokens(chatCtx.value)
+  } catch {
+    return 0
+  }
   emit('totalChatTokensUpdate', data.total_tokens || 0)
   return data.total_tokens || 0
 }
@@ -652,13 +619,13 @@ const refreshTokensDuringRunIfNeeded = async (force = false) => {
 }
 
 const loadChatHistory = async (sid: string) => {
-  const token = localStorage.getItem('token')
-  if (!token || !sid) return
-  const res = await fetch(`/api/chat/history?${queryForAi({ session_id: sid })}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) return
-  const history = await res.json()
+  if (!getAuthToken() || !sid) return
+  let history
+  try {
+    history = await chatApi.getChatHistory(chatCtx.value, sid)
+  } catch {
+    return
+  }
   chatMessages.value = history.map((msg: ChatMessage) => {
     const parsed = parseChatResponseInline(msg.content)
     return {
@@ -678,14 +645,15 @@ const loadChatHistory = async (sid: string) => {
 
 const fetchRunHistoryIncrementalOnce = async () => {
   if (!currentSessionId.value) return
-  const token = localStorage.getItem('token')
-  if (!token) return
-  const afterId = getLastMessageId()
-  const historyRes = await fetch(`/api/chat/history?${queryForAi({ session_id: currentSessionId.value, after_id: String(afterId) })}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!historyRes.ok) return
-  const incremental = await historyRes.json()
+  if (!getAuthToken()) return
+  let incremental
+  try {
+    incremental = await chatApi.getChatHistory(chatCtx.value, currentSessionId.value, {
+      afterId: getLastMessageId(),
+    })
+  } catch {
+    return
+  }
   await upsertHistoryMessages(incremental)
 }
 
@@ -720,21 +688,18 @@ const pollRunHistory = async (epoch: number) => {
 const pollRunLive = async (epoch: number) => {
   if (epoch !== runPollEpoch) return
   if (!currentRunId.value) return
-  const token = localStorage.getItem('token')
-  if (!token) return
+  if (!getAuthToken()) return
+  let run
   try {
-    const runRes = await fetch(`/api/chat/run/status/${currentRunId.value}?after=${liveCursor.value}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!runRes.ok) {
-      const errorText = await extractResponseError(runRes, `状态查询失败: HTTP ${runRes.status}`)
-      currentRunStatus.value = 'error'
-      isTyping.value = false
-      clearLiveAssistantView()
-      await appendRunErrorNotice(currentRunId.value, errorText)
-      return
-    }
-    const run = await runRes.json()
+    run = await chatApi.getRunStatus(currentRunId.value, liveCursor.value)
+  } catch (err: any) {
+    currentRunStatus.value = 'error'
+    isTyping.value = false
+    clearLiveAssistantView()
+    await appendRunErrorNotice(currentRunId.value, err?.message || '状态查询失败')
+    return
+  }
+  try {
     currentRunStatus.value = run.status || 'running'
     currentRunPhase.value = (run.live_phase || 'generating')
     currentMcpTool.value = String(run.current_tool || '')
@@ -784,13 +749,13 @@ const startRunPolling = () => {
 
 const checkActiveRun = async () => {
   if (!currentSessionId.value) return
-  const token = localStorage.getItem('token')
-  if (!token) return
-  const res = await fetch(`/api/chat/run/active?${queryForAi({ session_id: currentSessionId.value })}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  })
-  if (!res.ok) return
-  const data = await res.json()
+  if (!getAuthToken()) return
+  let data
+  try {
+    data = await chatApi.getActiveRun(chatCtx.value, currentSessionId.value)
+  } catch {
+    return
+  }
   if (!data?.run?.run_id) return
   currentRunId.value = data.run.run_id
   currentRunStatus.value = data.run.status || 'running'
@@ -807,17 +772,9 @@ const checkActiveRun = async () => {
 
 const stopCurrentRun = async () => {
   if (!currentRunId.value) return
-  const token = localStorage.getItem('token')
-  if (!token) return
+  if (!getAuthToken()) return
   try {
-    const res = await fetch(`/api/chat/run/${currentRunId.value}/stop`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(String(err?.detail || '终止失败'))
-    }
+    await chatApi.stopRun(currentRunId.value)
     stopRunPolling()
     isTyping.value = false
     currentRunStatus.value = 'stopped'
@@ -846,12 +803,13 @@ const deleteMessage = async (idx: number) => {
     return
   }
   if (!(await confirm({ message: '确定要删除这条消息吗？', type: 'warning' }))) return
-  const token = localStorage.getItem('token')
-  if (!token) return
-  const res = await fetch(`/api/chat/${msg.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } })
-  if (res.ok) {
+  if (!getAuthToken()) return
+  try {
+    await chatApi.deleteChatMessage(msg.id)
     chatMessages.value.splice(idx, 1)
     alert({ message: '消息已删除', type: 'success' })
+  } catch {
+    // best-effort
   }
 }
 
@@ -860,11 +818,13 @@ const recallMessage = async (idx: number) => {
   const msg = chatMessages.value[idx]
   if (!msg.id) return
   if (!(await confirm({ message: '确定撤回此消息吗？将删除它之后的对话。', type: 'warning' }))) return
-  const token = localStorage.getItem('token')
-  if (!token) return
-  const res = await fetch(`/api/chat/recall/${msg.id}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
-  if (!res.ok) return
-  const data = await res.json()
+  if (!getAuthToken()) return
+  let data
+  try {
+    data = await chatApi.recallChatMessage(msg.id)
+  } catch {
+    return
+  }
   chatMessages.value.splice(idx)
   chatInput.value = data.recall_content || msg.content
 }
@@ -913,19 +873,19 @@ const executeAction = async (msgIdx: number, blockIdx: number) => {
   if (!msg.blocks) return
   const block = msg.blocks[blockIdx]
   if (!block) return
-  const token = localStorage.getItem('token')
-  if (!token) return
+  if (!getAuthToken()) return
 
   if (block.type === 'mcp') {
     if (appliedEdits.value.has(block.id)) return
-    const res = await fetch('/api/mcp/call', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ tool: block.tool, arguments: block.arguments || {}, ai_config_id: props.aiConfigId }),
-    })
-    const data = await res.json()
-    if (!res.ok) {
-      alert({ message: data.detail || `工具执行失败: ${block.tool || 'unknown'}`, type: 'error' })
+    let data
+    try {
+      data = await callMcpTool({
+        tool: block.tool || '',
+        arguments: block.arguments || {},
+        ai_config_id: props.aiConfigId,
+      })
+    } catch (err: any) {
+      alert({ message: err?.message || `工具执行失败: ${block.tool || 'unknown'}`, type: 'error' })
       return
     }
     appliedEdits.value.add(block.id)
@@ -939,26 +899,19 @@ const executeAction = async (msgIdx: number, blockIdx: number) => {
     return
   }
 
-  let res: Response
-  {
-    res = await fetch('/api/chat/execute-action', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        action: block.type,
-        filename: block.filename,
-        search: block.search,
-        replace: block.replace,
-        content: block.content,
-        command: block.command,
-        ai_config_id: props.aiConfigId,
-      }),
+  let data
+  try {
+    data = await chatApi.executeChatAction({
+      action: block.type,
+      filename: block.filename,
+      search: block.search,
+      replace: block.replace,
+      content: block.content,
+      command: block.command,
+      ai_config_id: props.aiConfigId,
     })
-  }
-
-  const data = await res.json()
-  if (!res.ok) {
-    alert({ message: data.detail || '工具执行失败', type: 'error' })
+  } catch (err: any) {
+    alert({ message: err?.message || '工具执行失败', type: 'error' })
     return
   }
   appliedEdits.value.add(block.id)
@@ -980,14 +933,12 @@ const revertAction = async (msgIdx: number, blockIdx: number) => {
   if (!block || block.type !== 'mcp') return
   const undo = undoActions.value[block.id]
   if (!undo) return
-  const token = localStorage.getItem('token')
-  if (!token) return
-  const res = await fetch('/api/mcp/call', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ ...undo, ai_config_id: props.aiConfigId }),
-  })
-  if (!res.ok) return
+  if (!getAuthToken()) return
+  try {
+    await callMcpTool({ ...undo, ai_config_id: props.aiConfigId })
+  } catch {
+    return
+  }
   appliedEdits.value.delete(block.id)
   appliedSignatures.value.delete(blockSignature(block))
   delete undoActions.value[block.id]
@@ -1002,23 +953,19 @@ const sendChat = async (overrideContent?: string, options: { silent?: boolean } 
   const silent = !!options.silent
   if (silent) return
   if (!content || isTyping.value || !currentSessionId.value) return
-  const token = localStorage.getItem('token')
-  if (!token) return
+  if (!getAuthToken()) return
 
   let contextStr = ''
 
   if (props.selectedFiles.length > 0) {
-    const res = await fetch('/api/chat/file-content', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ filenames: props.selectedFiles }),
-    })
-    if (res.ok) {
-      const contents = await res.json()
+    try {
+      const contents = await chatApi.getChatFileContent(props.selectedFiles)
       contextStr += '\n### Selected Files Content:\n'
       for (const [filename, text] of Object.entries(contents)) {
         contextStr += `\nFile: \`${filename}\`\n\`\`\`\n${text}\n\`\`\`\n`
       }
+    } catch {
+      // best-effort: continue without file context
     }
   }
 
@@ -1036,23 +983,14 @@ const sendChat = async (overrideContent?: string, options: { silent?: boolean } 
   clearLiveAssistantView()
 
   try {
-    const startRes = await fetch('/api/chat/run/start', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        visible_content: visibleUserContent,
-        model_content: fullContentWithContext,
-        session_id: currentSessionId.value,
-        session_name: currentSessionName,
-        ai_config_id: props.aiConfigId,
-        ai_kind: aiKindValue.value,
-      }),
+    const started = await chatApi.startRun({
+      visible_content: visibleUserContent,
+      model_content: fullContentWithContext,
+      session_id: currentSessionId.value,
+      session_name: currentSessionName,
+      ai_config_id: props.aiConfigId,
+      ai_kind: aiKindValue.value,
     })
-    if (!startRes.ok) {
-      const data = await startRes.json().catch(() => ({}))
-      throw new Error(data?.detail || 'run start failed')
-    }
-    const started = await startRes.json()
     currentRunId.value = started.run_id
     await loadChatHistory(currentSessionId.value)
     startRunPolling()
