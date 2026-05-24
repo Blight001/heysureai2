@@ -110,6 +110,17 @@ def stable_peer_session_id(
 # ---------------------------------------------------------------------------
 
 
+_ALLOWED_MESSAGE_TYPES = {"inquiry", "reply", "chitchat", "notify"}
+
+
+def _normalize_message_type(value: Optional[str], *, require_reply: bool) -> str:
+    text = str(value or "").strip().lower()
+    if text in _ALLOWED_MESSAGE_TYPES:
+        return text
+    # 兜底：require_reply=True 默认 inquiry，否则 notify。保持旧调用者无须显式指定。
+    return "inquiry" if require_reply else "notify"
+
+
 def send(
     *,
     user_id: int,
@@ -120,6 +131,8 @@ def send(
     from_session_id: str = "",
     require_reply: bool = True,
     timeout_seconds: int = 120,
+    message_type: Optional[str] = None,
+    cascade_depth: int = 0,
 ) -> AIMessage:
     """落库一条消息。``target_session_id`` 是消费方在哪个 session 里
     处理它，不能为空。"""
@@ -131,6 +144,8 @@ def send(
     target_session_id = (target_session_id or "").strip()
     if not target_session_id:
         raise ValueError("target_session_id is required")
+    normalized_type = _normalize_message_type(message_type, require_reply=require_reply)
+    safe_depth = max(0, int(cascade_depth or 0))
     with Session(engine) as session:
         from_cfg = session.exec(
             select(AssistantAIConfig).where(
@@ -157,11 +172,27 @@ def send(
             require_reply=bool(require_reply),
             timeout_seconds=max(5, int(timeout_seconds or 120)),
             status="pending",
+            message_type=normalized_type,
+            cascade_depth=safe_depth,
         )
         session.add(row)
         session.commit()
         session.refresh(row)
         return row
+
+
+def fetch_cascade_parent(*, user_id: int, message_id: str) -> Optional[AIMessage]:
+    """读取链路父消息（用于从 reply_to_message_id 推导 cascade_depth）。"""
+    message_id = (message_id or "").strip()
+    if not message_id:
+        return None
+    with Session(engine) as session:
+        return session.exec(
+            select(AIMessage).where(
+                AIMessage.user_id == user_id,
+                AIMessage.message_id == message_id,
+            )
+        ).first()
 
 
 def fetch(message_id: str, user_id: int) -> Optional[AIMessage]:
@@ -311,6 +342,7 @@ def _enqueue_unwaited_reply(original: Dict[str, Any]) -> None:
         f"- 回复方 ai_config_id: {to_ai_config_id}\n\n"
         f"[回复内容]\n{reply_content}"
     )
+    parent_depth = int(original.get("cascade_depth") or 0)
     try:
         followup = send(
             user_id=user_id,
@@ -321,6 +353,8 @@ def _enqueue_unwaited_reply(original: Dict[str, Any]) -> None:
             from_session_id=str(original.get("target_session_id") or "").strip(),
             require_reply=False,
             timeout_seconds=5,
+            message_type="reply",
+            cascade_depth=parent_depth + 1,
         )
     except Exception as exc:
         print(f"[ai_message_service] enqueue unwaited reply failed: {exc}")
@@ -401,6 +435,8 @@ def _row_to_dict(row: AIMessage) -> Dict[str, Any]:
         "reply_content": row.reply_content,
         "require_reply": row.require_reply,
         "timeout_seconds": row.timeout_seconds,
+        "message_type": getattr(row, "message_type", "notify") or "notify",
+        "cascade_depth": int(getattr(row, "cascade_depth", 0) or 0),
         "delivered_at": row.delivered_at,
         "replied_at": row.replied_at,
         "failure_reason": row.failure_reason,

@@ -14,6 +14,9 @@ interface Props {
   defaultInheritanceNotice: string
   promptAiMessageInbound: string
   promptAiMessageNotify: string
+  promptAiMessageInquiry: string
+  promptAiMessageReply: string
+  promptAiMessageChitchat: string
   promptAiMessageReplySuccess: string
   promptUserMessageNotice: string
   themeMode: 'light' | 'dark'
@@ -35,6 +38,9 @@ const emit = defineEmits<{
   (e: 'update:defaultInheritanceNotice', value: string): void
   (e: 'update:promptAiMessageInbound', value: string): void
   (e: 'update:promptAiMessageNotify', value: string): void
+  (e: 'update:promptAiMessageInquiry', value: string): void
+  (e: 'update:promptAiMessageReply', value: string): void
+  (e: 'update:promptAiMessageChitchat', value: string): void
   (e: 'update:promptAiMessageReplySuccess', value: string): void
   (e: 'update:promptUserMessageNotice', value: string): void
   (e: 'update:themeMode', value: 'light' | 'dark'): void
@@ -135,6 +141,21 @@ const promptAiMessageInboundValue = computed({
 const promptAiMessageNotifyValue = computed({
   get: () => props.promptAiMessageNotify,
   set: value => emit('update:promptAiMessageNotify', value)
+})
+
+const promptAiMessageInquiryValue = computed({
+  get: () => props.promptAiMessageInquiry,
+  set: value => emit('update:promptAiMessageInquiry', value)
+})
+
+const promptAiMessageReplyValue = computed({
+  get: () => props.promptAiMessageReply,
+  set: value => emit('update:promptAiMessageReply', value)
+})
+
+const promptAiMessageChitchatValue = computed({
+  get: () => props.promptAiMessageChitchat,
+  set: value => emit('update:promptAiMessageChitchat', value)
 })
 
 const promptAiMessageReplySuccessValue = computed({
@@ -398,11 +419,38 @@ watch(() => props.show, visible => {
                   </div>
                   <div>
                     <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
-                      AI 收到不阻塞等待回复消息时的通知提示（占位符同上，另支持 <code>{target_ai_name}</code>、<code>{target_ai_config_id}</code>）
+                      message_type="notify" 单向通知模板（系统会自动签收，无需回信。占位符同上）
                     </div>
-                    <textarea v-model="promptAiMessageNotifyValue" rows="7" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
+                    <textarea v-model="promptAiMessageNotifyValue" rows="6" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
                     <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                      ai.send_message 使用 require_reply=false 时注入。默认建议继续用 ai.send_message 回发给发送方。
+                      建议明确告诉 AI"无需调用任何工具回应"，避免乒乓球式互相回复。
+                    </p>
+                  </div>
+                  <div>
+                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
+                      message_type="inquiry" 询问模板（期望对方明确答复一次。占位符同上）
+                    </div>
+                    <textarea v-model="promptAiMessageInquiryValue" rows="7" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
+                    <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      接收方收到后用 message_type="reply" 答复，对话即闭环。
+                    </p>
+                  </div>
+                  <div>
+                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
+                      message_type="reply" 回复模板（告知对话已闭环、不要再回。占位符同上）
+                    </div>
+                    <textarea v-model="promptAiMessageReplyValue" rows="6" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
+                    <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      工具层还会硬性拒绝：若想对一条 reply 继续回复，系统会直接报错。
+                    </p>
+                  </div>
+                  <div>
+                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
+                      message_type="chitchat" 闲聊模板（额外支持 <code>{cascade_depth}</code>、<code>{chitchat_max}</code>、<code>{chitchat_action_hint}</code>）
+                    </div>
+                    <textarea v-model="promptAiMessageChitchatValue" rows="7" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
+                    <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      同一条 chitchat 链路最多累计 5 条消息，第 6 条会被 ai.send_message 工具层直接拒绝。
                     </p>
                   </div>
                   <div>

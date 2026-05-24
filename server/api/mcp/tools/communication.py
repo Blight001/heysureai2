@@ -14,8 +14,19 @@ from sqlmodel import Session, select
 from ...database import engine
 from ...integrations.feishu.service import send_feishu_text_message
 from ...models import AssistantAIConfig, User
+from ...models.defaults import CHITCHAT_MAX_DEPTH
 from ...services import ai_message_service
 from ...services.agent_dispatch import get_run_session_context
+
+
+_ALLOWED_MESSAGE_TYPES = {"inquiry", "reply", "chitchat", "notify"}
+
+
+def _coerce_message_type(raw: Any, *, require_reply: bool) -> str:
+    text = str(raw or "").strip().lower()
+    if text in _ALLOWED_MESSAGE_TYPES:
+        return text
+    return "inquiry" if require_reply else "notify"
 
 
 # ---------- 与用户通信 ----------
@@ -134,6 +145,7 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         raise HTTPException(status_code=400, detail="content is required")
     require_reply = bool(args.get("require_reply", False))
     timeout_seconds = int(args.get("timeout_seconds") or 120)
+    message_type = _coerce_message_type(args.get("message_type"), require_reply=require_reply)
 
     sender_ctx = get_run_session_context() or {}
     from_session_id = str(
@@ -226,6 +238,46 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
 
     target_active_initial = ai_message_service.target_session_has_active_run(user_id, to_id, prebound_session_id)
 
+    # 推导本条消息在链路里的 cascade_depth：优先看显式 reply_to，再退而看
+    # 系统找到的 return_route（典型场景：对方在向我们发回信但没填 reply_to）。
+    parent_depth: Optional[int] = None
+    parent_type: Optional[str] = None
+    parent_candidate_id = ""
+    for candidate in reply_to_candidates:
+        if candidate:
+            parent_candidate_id = candidate
+            break
+    if not parent_candidate_id and route_message_id:
+        parent_candidate_id = route_message_id
+    if parent_candidate_id:
+        parent_row = ai_message_service.fetch_cascade_parent(
+            user_id=user_id, message_id=parent_candidate_id
+        )
+        if parent_row is not None:
+            parent_depth = int(getattr(parent_row, "cascade_depth", 0) or 0)
+            parent_type = str(getattr(parent_row, "message_type", "") or "").lower() or None
+    cascade_depth = (parent_depth + 1) if parent_depth is not None else 0
+
+    # 闲聊硬上限：同一条链路累计最多 CHITCHAT_MAX_DEPTH 条消息。
+    if message_type == "chitchat" and cascade_depth >= CHITCHAT_MAX_DEPTH:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"chitchat round limit reached (max {CHITCHAT_MAX_DEPTH} messages per thread). "
+                "Stop replying and resume your real work; if you genuinely need follow-up, "
+                "start a fresh thread with message_type=\"inquiry\"."
+            ),
+        )
+    # 闭环防呆：对方已显式标记 reply（=对话结束），再回就拒绝。
+    if parent_type == "reply" and message_type in {"reply", "chitchat", "inquiry"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "this thread is already closed by a previous 'reply'. Do not respond further. "
+                "If you have a brand-new question, send a new ai.send_message without reply_to_message_id."
+            ),
+        )
+
     try:
         delivery_content = _wrap_return_content(return_route, content, int(ai_config_id)) if return_session_id else content
         msg = ai_message_service.send(
@@ -237,6 +289,8 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
             from_session_id=from_session_id,
             require_reply=require_reply,
             timeout_seconds=timeout_seconds,
+            message_type=message_type,
+            cascade_depth=cascade_depth,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -266,7 +320,11 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         "current_session_id": from_session_id or None,
         "require_reply": require_reply,
         "timeout_seconds": timeout_seconds,
+        "message_type": message_type,
+        "cascade_depth": cascade_depth,
     }
+    if message_type == "chitchat":
+        base_out["chitchat_remaining_rounds"] = max(0, CHITCHAT_MAX_DEPTH - cascade_depth - 1)
     if wakeup is not None:
         base_out["target_wakeup"] = wakeup
 

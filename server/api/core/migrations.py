@@ -20,9 +20,12 @@ def run_pending_migrations() -> None:
     if not SQLITE_FILE.endswith(".db"):
         return
     from ..models.defaults import (
+        DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,
         DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE,
+        DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
         DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
         DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
+        DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
         DEFAULT_INHERITANCE_NOTICE,
         DEFAULT_MCP_CALL_METHOD,
         DEFAULT_MCP_FORMAT_ERROR_HINT,
@@ -49,6 +52,9 @@ def run_pending_migrations() -> None:
             inheritance_notice=DEFAULT_INHERITANCE_NOTICE,
             ai_message_inbound=DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE,
             ai_message_notify=DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
+            ai_message_inquiry=DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
+            ai_message_reply=DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
+            ai_message_chitchat=DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,
             ai_message_reply_success=DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
             user_message_notice=DEFAULT_USER_MESSAGE_NOTICE,
             ui_theme_mode=DEFAULT_UI_THEME_MODE,
@@ -97,6 +103,9 @@ def _migrate_user(
     inheritance_notice: str,
     ai_message_inbound: str,
     ai_message_notify: str,
+    ai_message_inquiry: str,
+    ai_message_reply: str,
+    ai_message_chitchat: str,
     ai_message_reply_success: str,
     user_message_notice: str,
     ui_theme_mode: str,
@@ -114,6 +123,9 @@ def _migrate_user(
     _add_column(cursor, "user", "default_inheritance_notice", f"TEXT DEFAULT '{_quote(inheritance_notice)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_inbound", f"TEXT DEFAULT '{_quote(ai_message_inbound)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_notify", f"TEXT DEFAULT '{_quote(ai_message_notify)}'", existing)
+    _add_column(cursor, "user", "prompt_ai_message_inquiry", f"TEXT DEFAULT '{_quote(ai_message_inquiry)}'", existing)
+    _add_column(cursor, "user", "prompt_ai_message_reply", f"TEXT DEFAULT '{_quote(ai_message_reply)}'", existing)
+    _add_column(cursor, "user", "prompt_ai_message_chitchat", f"TEXT DEFAULT '{_quote(ai_message_chitchat)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_reply_success", f"TEXT DEFAULT '{_quote(ai_message_reply_success)}'", existing)
     _add_column(cursor, "user", "prompt_user_message_notice", f"TEXT DEFAULT '{_quote(user_message_notice)}'", existing)
     cursor.execute(
@@ -239,6 +251,15 @@ def _migrate_aimessage(cursor: sqlite3.Cursor) -> None:
     existing = _existing_columns(cursor, "aimessage")
     _add_column(cursor, "aimessage", "target_session_id", "TEXT DEFAULT ''", existing)
     _add_column(cursor, "aimessage", "from_session_id", "TEXT DEFAULT ''", existing)
+    _add_column(cursor, "aimessage", "message_type", "TEXT DEFAULT 'notify'", existing)
+    _add_column(cursor, "aimessage", "cascade_depth", "INTEGER DEFAULT 0", existing)
+    # 旧的、缺乏 message_type 的行按当前 require_reply 推导出兼容值：
+    # require_reply=1 → inquiry，期望对方答复；其余视为 notify。
+    cursor.execute(
+        "UPDATE aimessage SET message_type='inquiry' "
+        "WHERE (message_type IS NULL OR message_type='' OR message_type='notify') "
+        "AND require_reply=1"
+    )
     # 旧的、缺乏 session 归属的 in-flight 消息无法被新的严格匹配 pop 出来，
     # 直接终结掉避免幽灵堆积。
     cursor.execute(

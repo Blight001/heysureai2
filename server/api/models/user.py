@@ -3,9 +3,12 @@ from typing import Optional
 from sqlmodel import Field, SQLModel
 
 from .defaults import (
+    DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,
     DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE,
+    DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
     DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
     DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
+    DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
     DEFAULT_INHERITANCE_NOTICE,
     DEFAULT_MCP_CALL_METHOD,
     DEFAULT_MCP_FORMAT_ERROR_HINT,
@@ -52,6 +55,9 @@ class User(SQLModel, table=True):
 
     prompt_ai_message_inbound: str = Field(default=DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE)
     prompt_ai_message_notify: str = Field(default=DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE)
+    prompt_ai_message_inquiry: str = Field(default=DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE)
+    prompt_ai_message_reply: str = Field(default=DEFAULT_AI_MESSAGE_REPLY_TEMPLATE)
+    prompt_ai_message_chitchat: str = Field(default=DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE)
     prompt_ai_message_reply_success: str = Field(default=DEFAULT_AI_MESSAGE_REPLY_SUCCESS)
     prompt_user_message_notice: str = Field(default=DEFAULT_USER_MESSAGE_NOTICE)
 
@@ -100,6 +106,9 @@ class UserRead(SQLModel):
     default_inheritance_notice: str
     prompt_ai_message_inbound: str
     prompt_ai_message_notify: str
+    prompt_ai_message_inquiry: str
+    prompt_ai_message_reply: str
+    prompt_ai_message_chitchat: str
     prompt_ai_message_reply_success: str
     prompt_user_message_notice: str
     ui_theme_mode: str
@@ -132,6 +141,9 @@ class UserUpdate(SQLModel):
     default_inheritance_notice: Optional[str] = None
     prompt_ai_message_inbound: Optional[str] = None
     prompt_ai_message_notify: Optional[str] = None
+    prompt_ai_message_inquiry: Optional[str] = None
+    prompt_ai_message_reply: Optional[str] = None
+    prompt_ai_message_chitchat: Optional[str] = None
     prompt_ai_message_reply_success: Optional[str] = None
     prompt_user_message_notice: Optional[str] = None
     ui_theme_mode: Optional[str] = None
