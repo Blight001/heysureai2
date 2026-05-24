@@ -21,7 +21,7 @@ import {
 
 // ── State ──────────────────────────────────────────────────────────────────
 let currentTheme: 'dark' | 'light' = 'dark'
-type TabName = 'feed' | 'chat' | 'tasks' | 'cards' | 'settings'
+type TabName = 'chat' | 'tasks' | 'cards' | 'settings'
 let activeTab: TabName = 'chat'
 let currentStatus: AgentStatus = 'disconnected'
 let chatHistory: ChatMessage[] = []
@@ -50,7 +50,7 @@ let chatHistoryLoading = false
 // ── Status labels ──────────────────────────────────────────────────────────
 const STATUS_LABELS: Record<string, string> = {
   disconnected: '未连接', connecting: '连接中...', connected: '已连接',
-  registered: '已注册', error: '连接错误',
+  registered: '已注册到服务器', error: '连接错误',
 }
 const ROLE_LABELS: Record<string, string> = {
   assistant_admin: '辅助管理员', manager: '管理者', member: '普通成员',
@@ -60,17 +60,18 @@ const ROLE_LABELS: Record<string, string> = {
 const $ = (id: string) => document.getElementById(id)!
 const statusDot    = $('status-dot')
 const statusLabel  = $('status-label')
+const statusPill   = $('status-pill')
 const themeToggle  = $('theme-toggle')
 const userChip     = $('user-chip')
 const userAva      = $('user-ava')
 const userName     = $('user-name')
 
 const tabs: Record<TabName, HTMLElement> = {
-  feed: $('tab-feed'), chat: $('tab-chat'),
+  chat: $('tab-chat'),
   tasks: $('tab-tasks'), cards: $('tab-cards'), settings: $('tab-settings'),
 }
 const panes: Record<TabName, HTMLElement> = {
-  feed: $('feed-pane'), chat: $('chat-pane'),
+  chat: $('chat-pane'),
   tasks: $('task-pane'), cards: $('cards-pane'), settings: $('settings-pane'),
 }
 
@@ -103,7 +104,11 @@ const cfgMouseFx     = $('cfg-mouse-fx') as HTMLInputElement
 
 // Members
 const loginGate    = $('login-gate')
-const membersView  = $('members-view')
+const loginModal   = $('login-modal')
+const loginModalClose = $('login-modal-close')
+const membersModal = $('members-modal')
+const membersModalClose = $('members-modal-close')
+const accountCard  = $('account-card')
 const loginAccount = $('login-account') as HTMLInputElement
 const loginPassword = $('login-password') as HTMLInputElement
 const loginBtn     = $('login-btn') as HTMLButtonElement
@@ -135,6 +140,7 @@ const jobsEmpty    = $('jobs-empty')
 const accountStatusV = $('account-status-v')
 const logoutBtn    = $('logout-btn') as HTMLButtonElement
 const memberSettingsCard = $('member-settings-card')
+const connectionControlCard = $('connection-control-card')
 const memberSettingsBody = $('member-settings-body')
 
 // Cards
@@ -183,8 +189,30 @@ function switchTab(tab: TabName) {
   if (tab === 'settings' && auth.token && members.length === 0) void loadMembers()
   if (tab === 'tasks' && selectedMemberId && auth.token) void loadJobs()
   if (tab === 'cards') void renderCards()
-}
+} 
 ;(Object.keys(tabs) as TabName[]).forEach(k => tabs[k].addEventListener('click', () => switchTab(k)))
+
+function openLoginModal() {
+  loginModal.classList.remove('hidden')
+  updateUserChip()
+  setTimeout(() => {
+    if (!auth.token) loginAccount.focus()
+  }, 0)
+}
+
+function closeLoginModal() {
+  loginModal.classList.add('hidden')
+}
+
+function openMembersModal() {
+  membersModal.classList.remove('hidden')
+  if (auth.token && members.length === 0) void loadMembers()
+  else renderMembers()
+}
+
+function closeMembersModal() {
+  membersModal.classList.add('hidden')
+}
 
 // ── Status display ─────────────────────────────────────────────────────────
 function renderStatus() {
@@ -251,10 +279,11 @@ function updateUserChip() {
     userAva.textContent = '·'
     userName.textContent = '未登录'
   }
-  // Members pane gate
+  // Auth-gated settings blocks
+  connectionControlCard.classList.toggle('hidden', !auth.token)
+  memberSettingsCard.classList.toggle('hidden', !auth.token)
+  accountCard.classList.toggle('hidden', !auth.token)
   loginGate.classList.toggle('hidden', !!auth.token)
-  membersView.classList.toggle('hidden', !auth.token)
-  // Settings account card
   accountStatusV.textContent = auth.token ? `已登录：${auth.userName || auth.account}` : '未登录'
   logoutBtn.style.display = auth.token ? 'block' : 'none'
 }
@@ -287,11 +316,36 @@ async function doLogin() {
 }
 loginBtn.addEventListener('click', () => void doLogin())
 loginPassword.addEventListener('keydown', e => { if ((e as KeyboardEvent).key === 'Enter') void doLogin() })
+userChip.addEventListener('click', () => openLoginModal())
+userChip.addEventListener('keydown', (e) => {
+  const key = (e as KeyboardEvent).key
+  if (key === 'Enter' || key === ' ') {
+    e.preventDefault()
+    openLoginModal()
+  }
+})
+loginModal.addEventListener('click', (e) => {
+  if (e.target === loginModal) closeLoginModal()
+})
+loginModalClose.addEventListener('click', () => closeLoginModal())
+statusPill.addEventListener('click', () => openMembersModal())
+statusPill.addEventListener('keydown', (e) => {
+  const key = (e as KeyboardEvent).key
+  if (key === 'Enter' || key === ' ') {
+    e.preventDefault()
+    openMembersModal()
+  }
+})
+membersModal.addEventListener('click', (e) => {
+  if (e.target === membersModal) closeMembersModal()
+})
+membersModalClose.addEventListener('click', () => closeMembersModal())
 
 async function doLogout() {
   await clearAuth()
   port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
   auth = await getAuth()
+  closeMembersModal()
   members = []
   selectedMemberId = null
   serverSessions = []

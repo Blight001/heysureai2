@@ -64,6 +64,8 @@
       border-radius:20px; background:var(--surface); border:1px solid var(--border);
       font-size:11px; font-weight:500;
     }
+    .status-pill.clickable { cursor:pointer; }
+    .status-pill.clickable:hover { background:var(--surface-h); }
     .status-dot { width:7px; height:7px; border-radius:50%; background:#787878; flex-shrink:0; transition:background var(--tr); }
     .status-dot.connecting  { background:var(--warn);    animation:pulse 1.2s infinite; }
     .status-dot.connected   { background:var(--accent); }
@@ -312,6 +314,8 @@
       background:var(--surface); border:1px solid var(--border); font-size:10px; font-weight:600;
       max-width:120px; overflow:hidden;
     }
+    .user-chip.clickable { cursor:pointer; }
+    .user-chip.clickable:hover { background:var(--surface-h); }
     .user-chip .ua { width:16px; height:16px; border-radius:50%; background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; font-size:9px; color:#fff; flex-shrink:0; }
     .user-chip .un { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .user-chip.guest { color:var(--muted); }
@@ -451,6 +455,28 @@
     .card-modal-title { font-size:13px; font-weight:700; margin-bottom:8px; }
     .card-modal-msg { font-size:11px; color:var(--muted); margin-bottom:12px; word-break:break-word; }
     .card-modal-actions { display:flex; flex-direction:column; gap:6px; }
+
+    /* ── Login modal ── */
+    .login-modal {
+      position:fixed; inset:0; z-index:60;
+      display:flex; align-items:center; justify-content:center;
+      background:rgba(0,0,0,.48);
+      backdrop-filter:blur(4px);
+      padding:14px;
+    }
+    .login-modal.hidden { display:none !important; }
+    .login-modal-box {
+      width:min(360px, 100%);
+      max-height:min(88vh, 620px);
+      overflow:auto;
+      background:var(--bg2);
+      border:1px solid var(--border);
+      border-radius:var(--r2);
+      padding:12px;
+      box-shadow:0 20px 48px rgba(0,0,0,.28);
+    }
+    .login-modal-box::-webkit-scrollbar { width:3px; }
+    .login-modal-box::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
   </style>
 </head>
 <body class="dark">
@@ -464,11 +490,11 @@
       <span class="logo-sub">Browser</span>
     </div>
     <div class="spacer"></div>
-    <div class="user-chip guest" id="user-chip" title="登录状态">
+    <div class="user-chip guest clickable" id="user-chip" title="点击查看或登录软件端账号" role="button" tabindex="0">
       <div class="ua" id="user-ava">·</div>
       <span class="un" id="user-name">未登录</span>
     </div>
-    <div class="status-pill" title="浏览器 Agent 连接状态">
+    <div class="status-pill clickable" id="status-pill" title="点击查看 AI 成员" role="button" tabindex="0">
       <div class="status-dot disconnected" id="status-dot"></div>
       <span id="status-label">未连接</span>
     </div>
@@ -481,7 +507,6 @@
     <button class="tab-btn" id="tab-tasks">🗂 任务</button>
     <button class="tab-btn" id="tab-cards">🃏 卡片</button>
     <button class="tab-btn" id="tab-settings">⚙ 设置</button>
-    <button class="tab-btn" id="tab-feed">■ 活动</button>
   </div>
 
   <!-- Content -->
@@ -579,42 +604,6 @@
     <!-- Settings pane -->
     <div class="pane hidden" id="settings-pane">
 
-      <!-- Account -->
-      <div class="card">
-        <div class="card-title">👤 软件端账号</div>
-        <div id="account-status" class="kv"><span class="k">状态</span><span class="v" id="account-status-v">未登录</span></div>
-        <div class="divider"></div>
-        <button class="btn btn-danger" id="logout-btn" style="display:none;">退出登录</button>
-      </div>
-
-      <div id="login-gate" class="card login-box">
-        <div class="card-title">🔐 登录软件端账号</div>
-        <div class="login-hint">使用与软件端相同的账号登录，登录后可查看 AI 成员、对话与安排任务。</div>
-        <div class="fg"><label>账号</label><input type="text" id="login-account" placeholder="你的账号" autocomplete="username"/></div>
-        <div class="fg"><label>密码</label><input type="password" id="login-password" placeholder="密码" autocomplete="current-password"/></div>
-        <button class="btn btn-primary" id="login-btn">登录</button>
-        <div class="save-feedback" id="login-feedback"></div>
-        <div class="login-hint" style="margin-top:4px;">服务器地址在“设置 → 服务器连接”中配置。</div>
-      </div>
-
-      <div id="members-view" class="card hidden">
-        <div class="pane-header" style="margin-bottom:8px;">
-          <span class="pane-title">AI 成员</span>
-          <button id="members-refresh" style="font-size:10px;color:var(--muted);border:none;background:none;cursor:pointer;padding:2px 5px;border-radius:4px;">刷新</button>
-        </div>
-        <div id="members-list" style="max-height:220px;">
-          <div class="empty-note" id="members-empty">加载中…</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">🔗 连接控制</div>
-        <div class="btn-row">
-          <button class="btn btn-primary" id="connect-btn">连接</button>
-          <button class="btn btn-danger" id="disconnect-btn">断开</button>
-        </div>
-      </div>
-
       <!-- Selected member config (read-only) -->
       <div class="card" id="member-settings-card" style="display:none;">
         <div class="card-title">🛡️ 成员配置（只读）</div>
@@ -675,22 +664,73 @@
         <div class="test-result" id="test-result"></div>
       </div>
 
-    </div>
-
-    <!-- Feed pane -->
-    <div class="pane" id="feed-pane">
-      <div class="pane-header">
-        <span class="pane-title">实时活动</span>
-        <button id="clear-btn">清空</button>
+      <div class="card">
+        <div class="pane-header" style="margin-bottom:8px;">
+          <span class="pane-title">实时活动</span>
+          <button id="clear-btn">清空</button>
+        </div>
+        <div id="feed">
+          <div id="feed-empty">
+            <div class="ei">🤖</div>
+            <p style="font-size:11px">连接后将在此显示实时活动</p>
+          </div>
+        </div>
       </div>
-      <div id="feed">
-        <div id="feed-empty">
-          <div class="ei">🤖</div>
-          <p style="font-size:11px">连接后将在此显示实时活动</p>
+
+    </div>
+  </div>
+
+  <!-- Members modal -->
+  <div id="members-modal" class="login-modal hidden">
+    <div class="login-modal-box">
+      <div class="pane-header" style="margin-bottom:8px;">
+        <span class="pane-title">AI 成员</span>
+        <button id="members-modal-close" style="font-size:16px;color:var(--muted);border:none;background:none;cursor:pointer;padding:0 4px;border-radius:4px;">×</button>
+      </div>
+      <div id="members-view" class="card">
+        <div class="pane-header" style="margin-bottom:8px;">
+          <span class="pane-title">AI 成员列表</span>
+          <button id="members-refresh" style="font-size:10px;color:var(--muted);border:none;background:none;cursor:pointer;padding:2px 5px;border-radius:4px;">刷新</button>
+        </div>
+        <div id="members-list" style="max-height:320px;">
+          <div class="empty-note" id="members-empty">加载中…</div>
+        </div>
+        <div class="divider"></div>
+        <div class="card-title">🔗 连接控制</div>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="connect-btn">连接</button>
+          <button class="btn btn-danger" id="disconnect-btn">断开</button>
         </div>
       </div>
     </div>
   </div>
+
+  <!-- Login modal -->
+  <div id="login-modal" class="login-modal hidden">
+    <div class="login-modal-box">
+      <div class="pane-header" style="margin-bottom:8px;">
+        <span class="pane-title">软件端账号</span>
+        <button id="login-modal-close" style="font-size:16px;color:var(--muted);border:none;background:none;cursor:pointer;padding:0 4px;border-radius:4px;">×</button>
+      </div>
+
+      <div class="card" id="account-card">
+        <div id="account-status" class="kv"><span class="k">状态</span><span class="v" id="account-status-v">未登录</span></div>
+        <div class="divider"></div>
+        <button class="btn btn-danger" id="logout-btn" style="display:none;">退出登录</button>
+      </div>
+
+      <div id="login-gate" class="card login-box">
+        <div class="card-title">🔐 登录软件端账号</div>
+        <div class="login-hint">使用与软件端相同的账号登录，登录后可查看 AI 成员、对话与安排任务。</div>
+        <div class="fg"><label>账号</label><input type="text" id="login-account" placeholder="你的账号" autocomplete="username"/></div>
+        <div class="fg"><label>密码</label><input type="password" id="login-password" placeholder="密码" autocomplete="current-password"/></div>
+        <button class="btn btn-primary" id="login-btn">登录</button>
+        <div class="save-feedback" id="login-feedback"></div>
+        <div class="login-hint" style="margin-top:4px;">服务器地址在“设置 → 服务器连接”中配置。</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Card merge prompt modal -->
   <div id="card-modal" class="card-modal-overlay hidden">
     <div class="card-modal-box">

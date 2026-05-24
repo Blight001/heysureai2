@@ -4591,6 +4591,10 @@ Always:
     const settings = await getSettings();
     if (socket?.connected)
       return;
+    if (settings.offlineMode) {
+      log("system", "info", "\u79BB\u7EBF\u6A21\u5F0F\u5DF2\u5F00\u542F\uFF0C\u8DF3\u8FC7\u670D\u52A1\u5668\u8FDE\u63A5");
+      return;
+    }
     let url2;
     try {
       url2 = new URL(settings.serverUrl);
@@ -4635,6 +4639,10 @@ Always:
   async function register() {
     const settings = await getSettings();
     const auth = await getAuth();
+    if (settings.offlineMode) {
+      log("system", "info", "\u79BB\u7EBF\u6A21\u5F0F\u5DF2\u5F00\u542F\uFF0C\u8DF3\u8FC7\u6CE8\u518C");
+      return;
+    }
     const id = settings.agentId || await getMachineId();
     const selectedAiConfigId = auth.token ? settings.selectedAiConfigId || null : null;
     if (!auth.token && settings.selectedAiConfigId) {
@@ -4846,6 +4854,9 @@ Respond in the same language as the user. For factual questions, search the web 
         }
         case "settings:save": {
           await saveSettings(msg.payload);
+          if (msg.payload.offlineMode === true && socket?.connected) {
+            disconnect();
+          }
           break;
         }
         case "agent:selected-ai": {
@@ -4910,7 +4921,7 @@ Respond in the same language as the user. For factual questions, search the web 
     if (!auth.token && s.selectedAiConfigId) {
       await saveSettings({ selectedAiConfigId: null });
     }
-    if (s.autoConnect)
+    if (!s.offlineMode && s.autoConnect)
       await connect();
   });
   chrome.runtime.onInstalled.addListener(() => {

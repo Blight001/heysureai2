@@ -614,7 +614,7 @@
     disconnected: "\u672A\u8FDE\u63A5",
     connecting: "\u8FDE\u63A5\u4E2D...",
     connected: "\u5DF2\u8FDE\u63A5",
-    registered: "\u5DF2\u6CE8\u518C",
+    registered: "\u5DF2\u6CE8\u518C\u5230\u670D\u52A1\u5668",
     error: "\u8FDE\u63A5\u9519\u8BEF"
   };
   var ROLE_LABELS = {
@@ -625,19 +625,18 @@
   var $ = (id) => document.getElementById(id);
   var statusDot = $("status-dot");
   var statusLabel = $("status-label");
+  var statusPill = $("status-pill");
   var themeToggle = $("theme-toggle");
   var userChip = $("user-chip");
   var userAva = $("user-ava");
   var userName = $("user-name");
   var tabs = {
-    feed: $("tab-feed"),
     chat: $("tab-chat"),
     tasks: $("tab-tasks"),
     cards: $("tab-cards"),
     settings: $("tab-settings")
   };
   var panes = {
-    feed: $("feed-pane"),
     chat: $("chat-pane"),
     tasks: $("task-pane"),
     cards: $("cards-pane"),
@@ -670,7 +669,11 @@
   var cfgAiProvider = $("cfg-ai-provider");
   var cfgMouseFx = $("cfg-mouse-fx");
   var loginGate = $("login-gate");
-  var membersView = $("members-view");
+  var loginModal = $("login-modal");
+  var loginModalClose = $("login-modal-close");
+  var membersModal = $("members-modal");
+  var membersModalClose = $("members-modal-close");
+  var accountCard = $("account-card");
   var loginAccount = $("login-account");
   var loginPassword = $("login-password");
   var loginBtn = $("login-btn");
@@ -698,6 +701,7 @@
   var accountStatusV = $("account-status-v");
   var logoutBtn = $("logout-btn");
   var memberSettingsCard = $("member-settings-card");
+  var connectionControlCard = $("connection-control-card");
   var memberSettingsBody = $("member-settings-body");
   var cardsImportBtn = $("cards-import-btn");
   var cardsExportAllBtn = $("cards-export-all-btn");
@@ -754,6 +758,27 @@
       void renderCards();
   }
   Object.keys(tabs).forEach((k) => tabs[k].addEventListener("click", () => switchTab(k)));
+  function openLoginModal() {
+    loginModal.classList.remove("hidden");
+    updateUserChip();
+    setTimeout(() => {
+      if (!auth.token)
+        loginAccount.focus();
+    }, 0);
+  }
+  function closeLoginModal() {
+    loginModal.classList.add("hidden");
+  }
+  function openMembersModal() {
+    membersModal.classList.remove("hidden");
+    if (auth.token && members.length === 0)
+      void loadMembers();
+    else
+      renderMembers();
+  }
+  function closeMembersModal() {
+    membersModal.classList.add("hidden");
+  }
   function renderStatus() {
     if (offlineMode) {
       statusDot.className = "status-dot offline";
@@ -817,8 +842,10 @@
       userAva.textContent = "\xB7";
       userName.textContent = "\u672A\u767B\u5F55";
     }
+    connectionControlCard.classList.toggle("hidden", !auth.token);
+    memberSettingsCard.classList.toggle("hidden", !auth.token);
+    accountCard.classList.toggle("hidden", !auth.token);
     loginGate.classList.toggle("hidden", !!auth.token);
-    membersView.classList.toggle("hidden", !auth.token);
     accountStatusV.textContent = auth.token ? `\u5DF2\u767B\u5F55\uFF1A${auth.userName || auth.account}` : "\u672A\u767B\u5F55";
     logoutBtn.style.display = auth.token ? "block" : "none";
   }
@@ -862,10 +889,37 @@
     if (e.key === "Enter")
       void doLogin();
   });
+  userChip.addEventListener("click", () => openLoginModal());
+  userChip.addEventListener("keydown", (e) => {
+    const key = e.key;
+    if (key === "Enter" || key === " ") {
+      e.preventDefault();
+      openLoginModal();
+    }
+  });
+  loginModal.addEventListener("click", (e) => {
+    if (e.target === loginModal)
+      closeLoginModal();
+  });
+  loginModalClose.addEventListener("click", () => closeLoginModal());
+  statusPill.addEventListener("click", () => openMembersModal());
+  statusPill.addEventListener("keydown", (e) => {
+    const key = e.key;
+    if (key === "Enter" || key === " ") {
+      e.preventDefault();
+      openMembersModal();
+    }
+  });
+  membersModal.addEventListener("click", (e) => {
+    if (e.target === membersModal)
+      closeMembersModal();
+  });
+  membersModalClose.addEventListener("click", () => closeMembersModal());
   async function doLogout() {
     await clearAuth();
     port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
     auth = await getAuth();
+    closeMembersModal();
     members = [];
     selectedMemberId = null;
     serverSessions = [];

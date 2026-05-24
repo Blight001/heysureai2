@@ -62,6 +62,10 @@ async function getMachineId(): Promise<string> {
 async function connect() {
   const settings = await getSettings()
   if (socket?.connected) return
+  if (settings.offlineMode) {
+    log('system', 'info', '离线模式已开启，跳过服务器连接')
+    return
+  }
 
   let url: URL
   try { url = new URL(settings.serverUrl) } catch {
@@ -116,6 +120,10 @@ async function connect() {
 async function register() {
   const settings = await getSettings()
   const auth = await getAuth()
+  if (settings.offlineMode) {
+    log('system', 'info', '离线模式已开启，跳过注册')
+    return
+  }
   const id = settings.agentId || await getMachineId()
   const selectedAiConfigId = auth.token ? (settings.selectedAiConfigId || null) : null
   if (!auth.token && settings.selectedAiConfigId) {
@@ -338,6 +346,9 @@ chrome.runtime.onConnect.addListener((port) => {
       }
       case 'settings:save': {
         await saveSettings(msg.payload)
+        if (msg.payload.offlineMode === true && socket?.connected) {
+          disconnect()
+        }
         break
       }
       case 'agent:selected-ai': {
@@ -409,7 +420,7 @@ chrome.runtime.onStartup.addListener(async () => {
   if (!auth.token && s.selectedAiConfigId) {
     await saveSettings({ selectedAiConfigId: null })
   }
-  if (s.autoConnect) await connect()
+  if (!s.offlineMode && s.autoConnect) await connect()
 })
 
 // On install / update — register alarms fresh

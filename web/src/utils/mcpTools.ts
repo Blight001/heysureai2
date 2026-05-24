@@ -127,8 +127,63 @@ export const MCP_TOOL_ZH_META: Record<string, { label: string; description: stri
   'evolution.input': { label: '提交进化建议', description: '提交对提示词/工具/流程的改进建议，交由核心管理者评审。', tag: '进化' },
   'evolution.list': { label: '进化建议列表', description: '列出已提交的进化建议，可按评审状态过滤。', tag: '进化' },
   'evolution.review': { label: '评审进化建议', description: '评审进化建议：接受/拒绝/应用（核心管理者）。', tag: '进化' },
+  'fs.list': { label: '列出文件', description: '列出工作区目录中的文件和子目录。', tag: '文件系统' },
+  'fs.read': { label: '读取文件', description: '读取工作区中的文件内容。', tag: '文件系统' },
+  'fs.write': { label: '写入文件', description: '在工作区中创建或覆盖文件内容。', tag: '文件系统' },
+  'shell.run': { label: '运行命令', description: '在本机或工作区环境中执行命令行指令。', tag: '终端' },
+  'git.diff': { label: '查看差异', description: '查看当前工作区与 Git 基线之间的改动差异。', tag: 'Git' },
+  'keyboard.type': { label: '键盘输入', description: '向当前焦点位置输入文本。', tag: '键鼠输入' },
+  'keyboard.press': { label: '按键', description: '向当前焦点位置发送单个或组合键。', tag: '键鼠输入' },
+  'mouse.move': { label: '移动鼠标', description: '将鼠标移动到指定坐标。', tag: '键鼠输入' },
+  'mouse.click': { label: '单击鼠标', description: '在指定坐标执行单击。', tag: '键鼠输入' },
+  'mouse.double_click': { label: '双击鼠标', description: '在指定坐标执行双击。', tag: '键鼠输入' },
+  'mouse.right_click': { label: '右键单击', description: '在指定坐标执行右键单击。', tag: '键鼠输入' },
+  'mouse.scroll': { label: '滚动鼠标', description: '在指定坐标执行鼠标滚轮滚动。', tag: '键鼠输入' },
+  'mouse.drag': { label: '拖拽鼠标', description: '从一个坐标拖拽到另一个坐标。', tag: '键鼠输入' },
+  'screen.capture': { label: '截取屏幕', description: '截取整个屏幕的图像。', tag: '屏幕' },
+  'screen.capture_region': { label: '截取区域', description: '截取屏幕中的指定区域。', tag: '屏幕' },
+  'screen.info': { label: '屏幕信息', description: '读取当前屏幕的分辨率与显示信息。', tag: '屏幕' },
+  'clipboard.get': { label: '读取剪贴板', description: '读取系统剪贴板内容。', tag: '剪贴板' },
+  'clipboard.set': { label: '写入剪贴板', description: '将文本写入系统剪贴板。', tag: '剪贴板' },
+  'window.list': { label: '列出窗口', description: '列出当前可见窗口。', tag: '窗口' },
+  'window.focus': { label: '聚焦窗口', description: '激活并切换到指定窗口。', tag: '窗口' },
+  'window.close': { label: '关闭窗口', description: '关闭指定窗口。', tag: '窗口' },
+  'process.list': { label: '列出进程', description: '列出当前系统中的进程。', tag: '进程' },
+  'process.kill': { label: '结束进程', description: '按名称或 PID 结束进程。', tag: '进程' },
+  'browser_navigate': { label: '跳转页面', description: '打开或跳转到指定 URL；可选择在新标签页中打开。', tag: '浏览器导航' },
+  'browser_screenshot': { label: '截取屏幕', description: '截取当前标签页可见区域的 PNG 截图。', tag: '浏览器页面' },
+  'browser_click': { label: '点击元素', description: '通过 CSS 选择器、文本或坐标点击页面元素。', tag: '浏览器交互' },
+  'browser_type': { label: '输入内容', description: '向输入框或文本区域输入文本。', tag: '浏览器交互' },
+  'browser_get_content': { label: '读取内容', description: '读取当前页面的可见文本、标题、地址和基础元信息。', tag: '浏览器页面' },
+  'browser_search': { label: '搜索网页', description: '使用搜索引擎检索网页并打开结果页。', tag: '浏览器导航' },
+  'browser_scroll': { label: '滚动页面', description: '按方向或目标元素滚动页面，并返回滚动结果。', tag: '浏览器交互' },
+  'browser_wait': { label: '等待页面', description: '等待指定元素出现或等待固定时长。', tag: '浏览器交互' },
+  'browser_evaluate': { label: '执行脚本', description: '在当前页面上下文中执行 JavaScript 并返回结果。', tag: '浏览器数据' },
+  'browser_extract': { label: '提取数据', description: '按选择器提取结构化页面数据，例如文本、链接和图片地址。', tag: '浏览器页面' },
+  'browser_find_text': { label: '查找文本', description: '查找页面中包含指定文本的元素。', tag: '浏览器页面' },
   'browser_find_popups': { label: '查找弹窗', description: '检测当前页面可见的弹窗、模态框、抽屉、遮罩，并返回可能的关闭按钮。', tag: '浏览器页面' },
   'browser_close_popup': { label: '关闭弹窗', description: '关闭当前页面弹窗；优先点击关闭按钮，必要时使用 Escape 或遮罩点击兜底。', tag: '浏览器页面' },
+  'browser_fill_form': { label: '填写表单', description: '一次性填写多个表单字段，并可在完成后提交。', tag: '浏览器交互' },
+  'browser_select': { label: '选择选项', description: '在下拉框中选择指定的值或可见文本。', tag: '浏览器交互' },
+  'browser_tab_list': { label: '标签页列表', description: '列出当前浏览器中的所有标签页。', tag: '浏览器标签页' },
+  'browser_tab_open': { label: '新开标签页', description: '使用指定 URL 打开一个新的标签页。', tag: '浏览器标签页' },
+  'browser_tab_close': { label: '关闭标签页', description: '关闭指定标签页；未指定时关闭当前活动标签页。', tag: '浏览器标签页' },
+  'browser_history_back': { label: '后退', description: '让当前标签页返回上一页。', tag: '浏览器导航' },
+  'browser_history_forward': { label: '前进', description: '让当前标签页前进到下一页。', tag: '浏览器导航' },
+  'browser_clipboard_write': { label: '写入剪贴板', description: '将文本写入系统剪贴板。', tag: '浏览器数据' },
+  'browser_storage_get': { label: '读取存储', description: '读取页面 localStorage 或 sessionStorage 中的键值。', tag: '浏览器数据' },
+  'browser_hover': { label: '悬停元素', description: '将鼠标悬停在元素上以触发提示或悬浮菜单。', tag: '浏览器交互' },
+  'browser_page_info': { label: '页面信息', description: '读取当前页面的滚动位置、视口、标题、可见章节和元素数量。', tag: '浏览器页面' },
+  'browser_right_click': { label: '右键点击', description: '通过选择器、文本或坐标对元素执行右键点击。', tag: '浏览器交互' },
+  'browser_double_click': { label: '双击元素', description: '通过选择器、文本或坐标对元素执行双击。', tag: '浏览器交互' },
+  'browser_drag': { label: '拖拽元素', description: '从源元素或坐标拖拽到目标元素或坐标。', tag: '浏览器交互' },
+  'browser_press_key': { label: '按键操作', description: '对当前页面发送键盘按键，可组合 Ctrl、Shift、Alt、Meta。', tag: '浏览器交互' },
+  'card_list': { label: '列出卡片', description: '查看当前浏览器记忆卡片列表。', tag: '浏览器卡片' },
+  'card_get': { label: '读取卡片', description: '按名称或 ID 读取单个浏览器记忆卡片。', tag: '浏览器卡片' },
+  'card_save': { label: '保存卡片', description: '创建或更新一张浏览器记忆卡片及其步骤。', tag: '浏览器卡片' },
+  'card_update_step': { label: '更新卡片步骤', description: '修改已有卡片中的单个自动化步骤。', tag: '浏览器卡片' },
+  'card_run': { label: '运行卡片', description: '执行一张浏览器记忆卡片中的全部步骤。', tag: '浏览器卡片' },
+  'card_delete': { label: '删除卡片', description: '删除指定的浏览器记忆卡片。', tag: '浏览器卡片' },
 }
 
 export const normalizeMcpSchemaType = (rawType: unknown) => {
@@ -256,6 +311,8 @@ const getMcpToolFallbackLabel = (name: string) => {
   if (hasMcpPrefix(normalized, 'user')) return `用户协作工具：${normalized}`
   if (hasMcpPrefix(normalized, 'ai')) return `AI 协作工具：${normalized}`
   if (hasMcpPrefix(normalized, 'feishu')) return `飞书工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'browser')) return `浏览器工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'card')) return `浏览器卡片工具：${normalized}`
   return `通用工具：${normalized}`
 }
 
@@ -366,12 +423,12 @@ export const withMcpToolLocale = (tool: McpToolDefinition): McpToolDefinition =>
   const isBrowserCapability = tool.mcpSource === 'browser' || hasMcpPrefix(tool.name, 'browser') || hasMcpPrefix(tool.name, 'card')
   const rawDescription = String(tool.description || '').trim()
   const sourceSpecificDescription = (() => {
-    if (isDesktopCapability) return '桌面端 Agent 上报的执行能力。服务端 AI 可直接调用该工具并在已连接桌面端执行。'
-    if (isBrowserCapability) return '浏览器插件上报的执行能力。服务端 AI 可直接调用该工具并在已连接浏览器插件执行。'
+    if (isDesktopCapability) return '桌面端 Agent 上报的执行能力，可用于本机文件、命令行、鼠标键盘、窗口、屏幕和剪贴板操作。服务端 AI 可直接调用并在已连接桌面端执行。'
+    if (isBrowserCapability) return '浏览器插件上报的执行能力，可用于网页导航、点击、输入、滚动、标签页管理、弹窗处理和页面数据读取。服务端 AI 可直接调用并在已连接浏览器插件执行。'
     return ''
   })()
-  const zhDescription = sourceSpecificDescription
-    || meta?.description
+  const zhDescription = meta?.description
+    || sourceSpecificDescription
     || rawDescription
     || '暂无中文说明'
   const tags = sourceTag ? [sourceTag] : [getMcpToolZhTag(tool.name)]
