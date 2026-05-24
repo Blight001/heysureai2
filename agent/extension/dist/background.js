@@ -3468,99 +3468,7 @@
     return (await getCards()).find((c) => c.id === id);
   }
 
-  // src/lib/ai.ts
-  async function callAI(baseUrl, apiKey, model, messages, tools, systemPrompt) {
-    if (!apiKey)
-      throw new Error("AI Key is not configured");
-    const isAnthropic = baseUrl.includes("anthropic.com");
-    const endpoint = isAnthropic ? `${baseUrl.replace(/\/$/, "")}/v1/messages` : `${baseUrl.replace(/\/$/, "")}/v1/chat/completions`;
-    const headers = { "Content-Type": "application/json" };
-    if (isAnthropic) {
-      headers["x-api-key"] = apiKey;
-      headers["anthropic-version"] = "2023-06-01";
-    } else {
-      headers["Authorization"] = `Bearer ${apiKey}`;
-    }
-    let body;
-    if (isAnthropic) {
-      body = { model, max_tokens: 4096, messages };
-      if (tools?.length)
-        body.tools = tools;
-      if (systemPrompt)
-        body.system = systemPrompt;
-    } else {
-      const openAiMessages = systemPrompt ? [{ role: "system", content: systemPrompt }, ...messages] : messages;
-      body = { model, max_tokens: 4096, messages: openAiMessages };
-      if (tools?.length) {
-        body.tools = tools.map((t) => ({
-          type: "function",
-          function: { name: t.name, description: t.description, parameters: t.input_schema }
-        }));
-      }
-    }
-    const res = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body) });
-    const data = await res.json();
-    if (!res.ok)
-      throw new Error(data?.error?.message || `AI API error ${res.status}`);
-    if (isAnthropic) {
-      const textBlock = data.content?.find((b) => b.type === "text");
-      const toolUseBlocks = (data.content || []).filter((b) => b.type === "tool_use");
-      return {
-        text: textBlock?.text,
-        toolUses: toolUseBlocks.length ? toolUseBlocks : void 0,
-        stopReason: data.stop_reason
-      };
-    } else {
-      const choice = data.choices?.[0];
-      if (choice?.message?.tool_calls?.length) {
-        const toolUses = choice.message.tool_calls.map((tc) => ({
-          type: "tool_use",
-          id: tc.id,
-          name: tc.function.name,
-          input: (() => {
-            try {
-              return JSON.parse(tc.function.arguments || "{}");
-            } catch {
-              return {};
-            }
-          })()
-        }));
-        return { toolUses, stopReason: choice.finish_reason };
-      }
-      return { text: choice?.message?.content || "", stopReason: choice?.finish_reason };
-    }
-  }
-
-  // src/lib/cards.ts
-  var newId = () => "card_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-  function deriveNote(tool, args) {
-    const labels = {
-      browser_navigate: "\u8DF3\u8F6C\u9875\u9762",
-      browser_wait: "\u7B49\u5F85",
-      browser_click: "\u70B9\u51FB",
-      browser_double_click: "\u53CC\u51FB",
-      browser_right_click: "\u53F3\u952E",
-      browser_type: "\u8F93\u5165\u5185\u5BB9",
-      browser_scroll: "\u6EDA\u52A8",
-      browser_select: "\u9009\u62E9",
-      browser_press_key: "\u6309\u952E",
-      browser_drag: "\u62D6\u62FD",
-      browser_hover: "\u60AC\u505C",
-      browser_fill_form: "\u586B\u5199\u8868\u5355",
-      browser_search: "\u641C\u7D22",
-      browser_screenshot: "\u622A\u56FE",
-      browser_extract: "\u63D0\u53D6\u6570\u636E",
-      browser_get_content: "\u8BFB\u53D6\u5185\u5BB9",
-      browser_page_info: "\u67E5\u770B\u9875\u9762\u4F4D\u7F6E",
-      browser_find_popups: "\u67E5\u627E\u5F39\u7A97",
-      browser_close_popup: "\u5173\u95ED\u5F39\u7A97"
-    };
-    const base = labels[tool] || tool.replace(/^browser_/, "");
-    const hint = args?.url || args?.text || args?.selector || args?.query || (args?.direction ? `${args.direction}${args?.amount ? " " + args.amount : ""}` : "") || (args?.key ? `\u6309\u952E ${args.key}` : "") || (args?.ms ? `${args.ms}ms` : "");
-    return hint ? `${base}\uFF1A${String(hint).slice(0, 60)}` : base;
-  }
-
-  // src/lib/tools.ts
+  // src/lib/tools/definitions.ts
   var SEARCH_ENGINES = {
     google: "https://www.google.com/search?q=",
     bing: "https://www.bing.com/search?q=",
@@ -3970,6 +3878,8 @@
     }
   ];
   var BROWSER_CAPABILITIES = BROWSER_TOOLS.map((t) => t.name);
+
+  // src/lib/tools/browser.ts
   async function getActiveTab() {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     if (!tab?.id)
@@ -4182,9 +4092,135 @@
       meta: !!args.meta
     });
   }
+  async function executeBrowserOnly(name, args) {
+    switch (name) {
+      case "browser_navigate":
+        return toolNavigate(args);
+      case "browser_screenshot":
+        return toolScreenshot();
+      case "browser_click":
+        return toolClick(args);
+      case "browser_type":
+        return toolType(args);
+      case "browser_get_content":
+        return toolGetContent(args);
+      case "browser_search":
+        return toolSearch(args);
+      case "browser_scroll":
+        return toolScroll(args);
+      case "browser_wait":
+        return toolWait(args);
+      case "browser_evaluate":
+        return toolEvaluate(args);
+      case "browser_extract":
+        return toolExtract(args);
+      case "browser_find_text":
+        return toolFindText(args);
+      case "browser_find_popups":
+        return toolFindPopups(args);
+      case "browser_close_popup":
+        return toolClosePopup(args);
+      case "browser_fill_form":
+        return toolFillForm(args);
+      case "browser_select":
+        return toolSelect(args);
+      case "browser_tab_list":
+        return toolTabList();
+      case "browser_tab_open":
+        return toolTabOpen(args);
+      case "browser_tab_close":
+        return toolTabClose(args);
+      case "browser_history_back":
+        return toolHistoryBack();
+      case "browser_history_forward":
+        return toolHistoryForward();
+      case "browser_clipboard_write":
+        return toolClipboardWrite(args);
+      case "browser_storage_get":
+        return toolStorageGet(args);
+      case "browser_hover":
+        return toolHover(args);
+      case "browser_page_info":
+        return toolPageInfo();
+      case "browser_right_click":
+        return toolRightClick(args);
+      case "browser_double_click":
+        return toolDoubleClick(args);
+      case "browser_drag":
+        return toolDrag(args);
+      case "browser_press_key":
+        return toolPressKey(args);
+      default:
+        throw new Error(`Unknown browser tool: ${name}`);
+    }
+  }
+
+  // src/lib/cards.ts
+  var newId = () => "card_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+  function deriveNote(tool, args) {
+    const labels = {
+      browser_navigate: "\u8DF3\u8F6C\u9875\u9762",
+      browser_wait: "\u7B49\u5F85",
+      browser_click: "\u70B9\u51FB",
+      browser_double_click: "\u53CC\u51FB",
+      browser_right_click: "\u53F3\u952E",
+      browser_type: "\u8F93\u5165\u5185\u5BB9",
+      browser_scroll: "\u6EDA\u52A8",
+      browser_select: "\u9009\u62E9",
+      browser_press_key: "\u6309\u952E",
+      browser_drag: "\u62D6\u62FD",
+      browser_hover: "\u60AC\u505C",
+      browser_fill_form: "\u586B\u5199\u8868\u5355",
+      browser_search: "\u641C\u7D22",
+      browser_screenshot: "\u622A\u56FE",
+      browser_extract: "\u63D0\u53D6\u6570\u636E",
+      browser_get_content: "\u8BFB\u53D6\u5185\u5BB9",
+      browser_page_info: "\u67E5\u770B\u9875\u9762\u4F4D\u7F6E",
+      browser_find_popups: "\u67E5\u627E\u5F39\u7A97",
+      browser_close_popup: "\u5173\u95ED\u5F39\u7A97"
+    };
+    const base = labels[tool] || tool.replace(/^browser_/, "");
+    const hint = args?.url || args?.text || args?.selector || args?.query || (args?.direction ? `${args.direction}${args?.amount ? " " + args.amount : ""}` : "") || (args?.key ? `\u6309\u952E ${args.key}` : "") || (args?.ms ? `${args.ms}ms` : "");
+    return hint ? `${base}\uFF1A${String(hint).slice(0, 60)}` : base;
+  }
+
+  // src/lib/tools/cards.ts
   var cardProgress = null;
   function setCardProgress(fn) {
     cardProgress = fn;
+  }
+  async function runCardSteps(card, opts = {}) {
+    const total = card.steps.length;
+    const results = [];
+    for (let i = 0; i < total; i++) {
+      if (opts.shouldStop?.())
+        return { success: false, stopped: true, results };
+      const step = card.steps[i];
+      if (/^card[_.]/i.test(step.tool)) {
+        const r = { index: i, note: step.note, tool: step.tool, status: "error", error: "\u5361\u7247\u6B65\u9AA4\u4E0D\u5141\u8BB8\u8C03\u7528\u5361\u7247\u5DE5\u5177\uFF08\u907F\u514D\u9012\u5F52\uFF09" };
+        results.push(r);
+        cardProgress?.(card.id, i, total, step.note, step.tool, "error", r.error);
+        return { success: false, results, failedStep: r };
+      }
+      cardProgress?.(card.id, i, total, step.note, step.tool, "running");
+      try {
+        const result = await executeBrowserOnly(step.tool, step.args || {});
+        let preview = "";
+        try {
+          preview = (typeof result === "string" ? result : JSON.stringify(result)).slice(0, 180);
+        } catch {
+        }
+        results.push({ index: i, note: step.note, tool: step.tool, status: "success", preview });
+        cardProgress?.(card.id, i, total, step.note, step.tool, "success");
+      } catch (err) {
+        const msg = err?.message || String(err);
+        const r = { index: i, note: step.note, tool: step.tool, status: "error", error: msg };
+        results.push(r);
+        cardProgress?.(card.id, i, total, step.note, step.tool, "error", msg);
+        return { success: false, results, failedStep: r };
+      }
+    }
+    return { success: true, results };
   }
   function byIdOrName(cards, args) {
     if (args?.id)
@@ -4215,39 +4251,6 @@
       out.push({ tool, args: a, note });
     }
     return out;
-  }
-  async function runCardSteps(card, opts = {}) {
-    const total = card.steps.length;
-    const results = [];
-    for (let i = 0; i < total; i++) {
-      if (opts.shouldStop?.())
-        return { success: false, stopped: true, results };
-      const step = card.steps[i];
-      if (/^card[_.]/i.test(step.tool)) {
-        const r = { index: i, note: step.note, tool: step.tool, status: "error", error: "\u5361\u7247\u6B65\u9AA4\u4E0D\u5141\u8BB8\u8C03\u7528\u5361\u7247\u5DE5\u5177\uFF08\u907F\u514D\u9012\u5F52\uFF09" };
-        results.push(r);
-        cardProgress?.(card.id, i, total, step.note, step.tool, "error", r.error);
-        return { success: false, results, failedStep: r };
-      }
-      cardProgress?.(card.id, i, total, step.note, step.tool, "running");
-      try {
-        const result = await executeBrowserTool(step.tool, step.args || {});
-        let preview = "";
-        try {
-          preview = (typeof result === "string" ? result : JSON.stringify(result)).slice(0, 180);
-        } catch {
-        }
-        results.push({ index: i, note: step.note, tool: step.tool, status: "success", preview });
-        cardProgress?.(card.id, i, total, step.note, step.tool, "success");
-      } catch (err) {
-        const msg = err?.message || String(err);
-        const r = { index: i, note: step.note, tool: step.tool, status: "error", error: msg };
-        results.push(r);
-        cardProgress?.(card.id, i, total, step.note, step.tool, "error", msg);
-        return { success: false, results, failedStep: r };
-      }
-    }
-    return { success: true, results };
   }
   async function toolCardList() {
     const cards = await getCards();
@@ -4334,64 +4337,8 @@
       results: res.results
     };
   }
-  async function executeBrowserTool(name, args) {
+  async function executeCardTool(name, args) {
     switch (name) {
-      case "browser_navigate":
-        return toolNavigate(args);
-      case "browser_screenshot":
-        return toolScreenshot();
-      case "browser_click":
-        return toolClick(args);
-      case "browser_type":
-        return toolType(args);
-      case "browser_get_content":
-        return toolGetContent(args);
-      case "browser_search":
-        return toolSearch(args);
-      case "browser_scroll":
-        return toolScroll(args);
-      case "browser_wait":
-        return toolWait(args);
-      case "browser_evaluate":
-        return toolEvaluate(args);
-      case "browser_extract":
-        return toolExtract(args);
-      case "browser_find_text":
-        return toolFindText(args);
-      case "browser_find_popups":
-        return toolFindPopups(args);
-      case "browser_close_popup":
-        return toolClosePopup(args);
-      case "browser_fill_form":
-        return toolFillForm(args);
-      case "browser_select":
-        return toolSelect(args);
-      case "browser_tab_list":
-        return toolTabList();
-      case "browser_tab_open":
-        return toolTabOpen(args);
-      case "browser_tab_close":
-        return toolTabClose(args);
-      case "browser_history_back":
-        return toolHistoryBack();
-      case "browser_history_forward":
-        return toolHistoryForward();
-      case "browser_clipboard_write":
-        return toolClipboardWrite(args);
-      case "browser_storage_get":
-        return toolStorageGet(args);
-      case "browser_hover":
-        return toolHover(args);
-      case "browser_page_info":
-        return toolPageInfo();
-      case "browser_right_click":
-        return toolRightClick(args);
-      case "browser_double_click":
-        return toolDoubleClick(args);
-      case "browser_drag":
-        return toolDrag(args);
-      case "browser_press_key":
-        return toolPressKey(args);
       case "card_list":
         return toolCardList();
       case "card_get":
@@ -4405,9 +4352,81 @@
       case "card_delete":
         return toolCardDelete(args);
       default:
-        throw new Error(`Unknown browser tool: ${name}`);
+        throw new Error(`Unknown card tool: ${name}`);
     }
   }
+
+  // src/lib/tools/router.ts
+  async function executeBrowserTool(name, args) {
+    if (name.startsWith("card_"))
+      return executeCardTool(name, args);
+    return executeBrowserOnly(name, args);
+  }
+
+  // src/lib/ai.ts
+  async function callAI(baseUrl, apiKey, model, messages, tools, systemPrompt) {
+    if (!apiKey)
+      throw new Error("AI Key is not configured");
+    const isAnthropic = baseUrl.includes("anthropic.com");
+    const endpoint = isAnthropic ? `${baseUrl.replace(/\/$/, "")}/v1/messages` : `${baseUrl.replace(/\/$/, "")}/v1/chat/completions`;
+    const headers = { "Content-Type": "application/json" };
+    if (isAnthropic) {
+      headers["x-api-key"] = apiKey;
+      headers["anthropic-version"] = "2023-06-01";
+    } else {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
+    let body;
+    if (isAnthropic) {
+      body = { model, max_tokens: 4096, messages };
+      if (tools?.length)
+        body.tools = tools;
+      if (systemPrompt)
+        body.system = systemPrompt;
+    } else {
+      const openAiMessages = systemPrompt ? [{ role: "system", content: systemPrompt }, ...messages] : messages;
+      body = { model, max_tokens: 4096, messages: openAiMessages };
+      if (tools?.length) {
+        body.tools = tools.map((t) => ({
+          type: "function",
+          function: { name: t.name, description: t.description, parameters: t.input_schema }
+        }));
+      }
+    }
+    const res = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok)
+      throw new Error(data?.error?.message || `AI API error ${res.status}`);
+    if (isAnthropic) {
+      const textBlock = data.content?.find((b) => b.type === "text");
+      const toolUseBlocks = (data.content || []).filter((b) => b.type === "tool_use");
+      return {
+        text: textBlock?.text,
+        toolUses: toolUseBlocks.length ? toolUseBlocks : void 0,
+        stopReason: data.stop_reason
+      };
+    } else {
+      const choice = data.choices?.[0];
+      if (choice?.message?.tool_calls?.length) {
+        const toolUses = choice.message.tool_calls.map((tc) => ({
+          type: "tool_use",
+          id: tc.id,
+          name: tc.function.name,
+          input: (() => {
+            try {
+              return JSON.parse(tc.function.arguments || "{}");
+            } catch {
+              return {};
+            }
+          })()
+        }));
+        return { toolUses, stopReason: choice.finish_reason };
+      }
+      return { text: choice?.message?.content || "", stopReason: choice?.finish_reason };
+    }
+  }
+
+  // src/lib/tools/executor.ts
   function inferTool(instruction) {
     const t = instruction.toLowerCase();
     if (/截图|screenshot/.test(t))

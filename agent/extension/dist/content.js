@@ -1,53 +1,5 @@
 (() => {
-  // src/content.ts
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    handleAction(msg).then(sendResponse).catch((err) => sendResponse({ error: err.message || String(err) }));
-    return true;
-  });
-  async function handleAction(msg) {
-    switch (msg.action) {
-      case "click":
-        return doClick(msg);
-      case "double_click":
-        return doDoubleClick(msg);
-      case "right_click":
-        return doRightClick(msg);
-      case "drag":
-        return doDrag(msg);
-      case "press_key":
-        return doPressKey(msg);
-      case "find_popups":
-        return doFindPopups(msg);
-      case "close_popup":
-        return doClosePopup(msg);
-      case "page_info":
-        return doPageInfo();
-      case "type":
-        return doType(msg);
-      case "get_content":
-        return getContent(msg);
-      case "scroll":
-        return doScroll(msg);
-      case "wait":
-        return doWait(msg);
-      case "evaluate":
-        return doEvaluate(msg);
-      case "extract":
-        return doExtract(msg);
-      case "find_text":
-        return findText(msg);
-      case "fill_form":
-        return fillForm(msg);
-      case "select":
-        return doSelect(msg);
-      case "hover":
-        return doHover(msg);
-      case "storage_get":
-        return storageGet(msg);
-      default:
-        throw new Error(`Unknown content action: ${msg.action}`);
-    }
-  }
+  // src/content/fx.ts
   var FX = "__hs_mouse_fx__";
   var fxEnabled = true;
   var fxCursor = null;
@@ -55,6 +7,7 @@
   var fxY = 0;
   var fxHideTimer = null;
   var fxSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  var isFxEnabled = () => fxEnabled;
   try {
     chrome.storage?.local?.get("mouseFx").then((r) => {
       if (r && typeof r.mouseFx === "boolean")
@@ -225,63 +178,9 @@
     setTimeout(() => cur.classList.remove("grab", "press"), 320);
     fxScheduleHide();
   }
-  var POPUP_SELECTOR = [
-    "dialog[open]",
-    '[role="dialog"]',
-    '[role="alertdialog"]',
-    '[aria-modal="true"]',
-    '[class*="modal" i]',
-    '[class*="dialog" i]',
-    '[class*="popup" i]',
-    '[class*="popover" i]',
-    '[class*="drawer" i]',
-    '[class*="toast" i]',
-    '[class*="overlay" i]',
-    '[class*="ant-modal" i]',
-    '[class*="el-dialog" i]',
-    '[class*="MuiDialog" i]',
-    '[class*="van-popup" i]'
-  ].join(",");
-  var CLOSE_SELECTOR = [
-    'button[aria-label*="close" i]',
-    'button[aria-label*="\u5173\u95ED" i]',
-    '[role="button"][aria-label*="close" i]',
-    '[role="button"][aria-label*="\u5173\u95ED" i]',
-    'button[title*="close" i]',
-    'button[title*="\u5173\u95ED" i]',
-    "[data-dismiss]",
-    "[data-bs-dismiss]",
-    '[data-testid*="close" i]',
-    '[class*="close" i]',
-    '[class*="cancel" i]',
-    ".ant-modal-close",
-    ".el-dialog__headerbtn",
-    ".MuiDialog-root button[aria-label]",
-    ".btn-close"
-  ].join(",");
-  var CLOSE_TEXTS = [
-    "\u5173\u95ED",
-    "\u5173 \u95ED",
-    "\u53D6\u6D88",
-    "\u7A0D\u540E",
-    "\u7A0D\u540E\u518D\u8BF4",
-    "\u6211\u77E5\u9053\u4E86",
-    "\u77E5\u9053\u4E86",
-    "\u786E\u5B9A",
-    "\u786E\u8BA4",
-    "\u4E0D\u518D\u63D0\u793A",
-    "\u8DF3\u8FC7",
-    "\u5173\u95ED\u5F39\u7A97",
-    "Close",
-    "Cancel",
-    "OK",
-    "Ok",
-    "Got it",
-    "Dismiss",
-    "\xD7",
-    "x",
-    "X"
-  ];
+  var getFxPos = () => ({ x: fxX, y: fxY });
+
+  // src/content/dom.ts
   function isVisible(el) {
     if (!el || !(el instanceof HTMLElement))
       return false;
@@ -375,16 +274,6 @@
     }
     return null;
   }
-  function clickLikeUser(el) {
-    const c = elCenter(el);
-    const opts = { bubbles: true, cancelable: true, view: window, clientX: c.x, clientY: c.y };
-    el.dispatchEvent(new PointerEvent("pointerdown", opts));
-    el.dispatchEvent(new MouseEvent("mousedown", opts));
-    el.dispatchEvent(new PointerEvent("pointerup", opts));
-    el.dispatchEvent(new MouseEvent("mouseup", opts));
-    el.dispatchEvent(new MouseEvent("click", opts));
-    el.click?.();
-  }
   function elCenter(el) {
     const r = el.getBoundingClientRect();
     return {
@@ -403,6 +292,8 @@
     const c = elCenter(el);
     return { el, x: c.x, y: c.y };
   }
+
+  // src/content/viewport.ts
   function viewportContext() {
     const doc = document.documentElement;
     const scrollY = Math.round(window.scrollY);
@@ -466,6 +357,8 @@
   function doPageInfo() {
     return { success: true, ...viewportContext() };
   }
+
+  // src/content/actions.ts
   async function doClick(msg) {
     const { selector, text, x, y } = msg;
     let el = null;
@@ -477,7 +370,7 @@
     if (!el)
       throw new Error(`Element not found: selector=${selector || ""} text=${text || ""} coords=${x},${y}`);
     el.scrollIntoView({ block: "center", behavior: "smooth" });
-    if (fxEnabled) {
+    if (isFxEnabled()) {
       await fxSleep(220);
       await fxToElement(el);
       const r = el.getBoundingClientRect();
@@ -495,11 +388,11 @@
     };
   }
   async function doDoubleClick(msg) {
-    const { el, x, y } = resolveTarget(msg);
+    const { el } = resolveTarget(msg);
     if (!el)
       throw new Error(`Element not found: selector=${msg.selector || ""} text=${msg.text || ""} coords=${msg.x},${msg.y}`);
     el.scrollIntoView({ block: "center", behavior: "smooth" });
-    if (fxEnabled) {
+    if (isFxEnabled()) {
       await fxSleep(220);
       await fxToElement(el);
       const c2 = elCenter(el);
@@ -518,11 +411,11 @@
     return { success: true, tag: el.tagName, text: el.innerText?.slice(0, 100) };
   }
   async function doRightClick(msg) {
-    const { el, x, y } = resolveTarget(msg);
+    const { el } = resolveTarget(msg);
     if (!el)
       throw new Error(`Element not found: selector=${msg.selector || ""} text=${msg.text || ""} coords=${msg.x},${msg.y}`);
     el.scrollIntoView({ block: "center", behavior: "smooth" });
-    if (fxEnabled) {
+    if (isFxEnabled()) {
       await fxSleep(220);
       await fxToElement(el);
       const c2 = elCenter(el);
@@ -545,11 +438,11 @@
       throw new Error("Drag target not found");
     if (src.el)
       src.el.scrollIntoView({ block: "center", behavior: "smooth" });
-    if (fxEnabled)
+    if (isFxEnabled())
       await fxSleep(200);
     const s = src.el ? elCenter(src.el) : { x: src.x, y: src.y };
     const d = dst.el ? elCenter(dst.el) : { x: dst.x, y: dst.y };
-    if (fxEnabled)
+    if (isFxEnabled())
       await fxDragPath(s.x, s.y, d.x, d.y);
     const dt = (() => {
       try {
@@ -603,191 +496,6 @@
     el.dispatchEvent(new KeyboardEvent("keyup", init));
     return { success: true, key, target: el.tagName };
   }
-  function isLikelyPopup(el) {
-    if (!isVisible(el) || el === document.body || el === document.documentElement)
-      return false;
-    const h = el;
-    const tag = h.tagName.toLowerCase();
-    const role = h.getAttribute("role");
-    const cls = String(h.className || "").toLowerCase();
-    const explicit = tag === "dialog" || role === "dialog" || role === "alertdialog" || h.getAttribute("aria-modal") === "true" || /(modal|dialog|popup|popover|drawer|toast|overlay|ant-modal|el-dialog|muidialog|van-popup)/i.test(cls);
-    if (explicit)
-      return true;
-    const s = getComputedStyle(h);
-    if (!["fixed", "sticky"].includes(s.position))
-      return false;
-    const z = zIndexOf(h);
-    const r = h.getBoundingClientRect();
-    const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
-    const areaRatio = r.width * r.height / viewportArea;
-    const coversCenter = r.left <= window.innerWidth / 2 && r.right >= window.innerWidth / 2 && r.top <= window.innerHeight / 2 && r.bottom >= window.innerHeight / 2;
-    const hasClose = findCloseCandidates(h, 1).length > 0;
-    return z >= 10 && (hasClose || coversCenter || areaRatio >= 0.12);
-  }
-  function findCloseCandidates(root, limit = 12) {
-    const candidates = [];
-    const seen = /* @__PURE__ */ new Set();
-    const add = (el) => {
-      if (!el || seen.has(el) || !isVisible(el))
-        return;
-      const clickable2 = clickableAncestor(el);
-      if (!isVisible(clickable2) || seen.has(clickable2))
-        return;
-      seen.add(clickable2);
-      candidates.push(clickable2);
-    };
-    root.querySelectorAll(CLOSE_SELECTOR).forEach(add);
-    const clickable = root.querySelectorAll('button,a,[role="button"],input[type="button"],input[type="submit"],[aria-label],[title]');
-    clickable.forEach((el) => {
-      const txt = textOf(el, 80);
-      const cls = String(el.className || "").toLowerCase();
-      const labelledClose = /(close|cancel|dismiss)/.test(cls) || /关闭|取消/.test(txt);
-      if (labelledClose || CLOSE_TEXTS.some((t) => txt.toLowerCase() === t.toLowerCase()))
-        add(el);
-    });
-    return candidates.sort((a, b) => {
-      const ta = textOf(a, 80);
-      const tb = textOf(b, 80);
-      const score = (t) => {
-        if (/^(×|x)$/i.test(t))
-          return 0;
-        if (/关闭|close/i.test(t))
-          return 1;
-        if (/取消|cancel|dismiss|稍后|知道了|ok/i.test(t))
-          return 2;
-        return 3;
-      };
-      return score(ta) - score(tb);
-    }).slice(0, limit);
-  }
-  function collectPopupElements() {
-    const raw = /* @__PURE__ */ new Set();
-    document.querySelectorAll(POPUP_SELECTOR).forEach((el) => raw.add(el));
-    document.querySelectorAll("body *").forEach((el) => {
-      if (isLikelyPopup(el))
-        raw.add(el);
-    });
-    const popups = Array.from(raw).filter(isLikelyPopup).sort((a, b) => {
-      const z = zIndexOf(b) - zIndexOf(a);
-      if (z !== 0)
-        return z;
-      return elementArea(a) - elementArea(b);
-    });
-    const out = [];
-    for (const el of popups) {
-      if (out.some((existing) => existing === el || existing.contains(el) && findCloseCandidates(existing, 1).length > 0))
-        continue;
-      out.push(el);
-    }
-    return out.slice(0, 10);
-  }
-  function popupInfo(el, index) {
-    const r = el.getBoundingClientRect();
-    const closes = findCloseCandidates(el, 6);
-    return {
-      index,
-      selector: cssPath(el),
-      tag: el.tagName,
-      role: el.getAttribute("role") || "",
-      ariaModal: el.getAttribute("aria-modal") || "",
-      zIndex: zIndexOf(el),
-      rect: { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) },
-      text: textOf(el, 260),
-      closeCandidates: closes.map((c) => ({ selector: cssPath(c), text: textOf(c, 80), tag: c.tagName }))
-    };
-  }
-  function doFindPopups(msg) {
-    const limit = Math.max(1, Math.min(Number(msg.limit || 10), 20));
-    const popups = collectPopupElements().slice(0, limit).map(popupInfo);
-    return { success: true, count: popups.length, popups };
-  }
-  async function doClosePopup(msg) {
-    const strategy = String(msg.strategy || "auto");
-    const before = collectPopupElements();
-    let target = null;
-    if (msg.selector)
-      target = document.querySelector(String(msg.selector));
-    if (!target && msg.text) {
-      const needle = String(msg.text);
-      target = before.find((el) => textOf(el, 1e3).includes(needle)) || null;
-    }
-    if (!target)
-      target = before[Math.max(0, Number(msg.index || 0))] || null;
-    if (!target)
-      return { success: false, closed: false, reason: "no_popup_found", beforeCount: 0, afterCount: 0 };
-    const beforeSelector = cssPath(target);
-    const tryCloseButton = async () => {
-      const candidates = findCloseCandidates(target, 8);
-      const btn = candidates[0];
-      if (!btn)
-        return false;
-      if (fxEnabled) {
-        await fxToElement(btn);
-        const c = elCenter(btn);
-        fxClickAt(c.x, c.y);
-        await fxSleep(80);
-      }
-      clickLikeUser(btn);
-      return true;
-    };
-    const pressEscape = () => {
-      const init = { key: "Escape", code: "Escape", bubbles: true, cancelable: true };
-      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", init));
-      document.dispatchEvent(new KeyboardEvent("keydown", init));
-      document.dispatchEvent(new KeyboardEvent("keyup", init));
-    };
-    const clickBackdrop = () => {
-      const r = target.getBoundingClientRect();
-      const points = [
-        { x: Math.max(2, r.left + 8), y: Math.max(2, r.top + 8) },
-        { x: Math.min(window.innerWidth - 2, r.right - 8), y: Math.max(2, r.top + 8) },
-        { x: window.innerWidth / 2, y: Math.min(window.innerHeight - 2, r.bottom - 8) }
-      ];
-      const pt = points.find((p) => {
-        const hit2 = document.elementFromPoint(p.x, p.y);
-        return hit2 === target || !!hit2 && target.contains(hit2);
-      }) || points[0];
-      const hit = document.elementFromPoint(pt.x, pt.y) || target;
-      hit.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window, clientX: pt.x, clientY: pt.y }));
-      hit.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window, clientX: pt.x, clientY: pt.y }));
-      hit.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window, clientX: pt.x, clientY: pt.y }));
-    };
-    const targetGone = () => !document.documentElement.contains(target) || !isVisible(target);
-    let method = "";
-    if (strategy === "close_button" || strategy === "auto") {
-      if (await tryCloseButton())
-        method = "close_button";
-      else if (strategy === "close_button")
-        throw new Error("No close button found in popup");
-    }
-    if (!method && (strategy === "escape" || strategy === "auto")) {
-      pressEscape();
-      method = "escape";
-    }
-    await fxSleep(260);
-    if (!targetGone() && (strategy === "backdrop" || strategy === "auto")) {
-      clickBackdrop();
-      method = method ? `${method}+backdrop` : "backdrop";
-      await fxSleep(260);
-    }
-    if (!targetGone() && msg.force_remove === true) {
-      ;
-      target.remove();
-      method = method ? `${method}+force_remove` : "force_remove";
-      await fxSleep(60);
-    }
-    const after = collectPopupElements();
-    return {
-      success: targetGone() || after.length < before.length,
-      closed: targetGone() || after.length < before.length,
-      reason: targetGone() || after.length < before.length ? "" : "popup_still_visible",
-      method: method || "none",
-      selector: beforeSelector,
-      beforeCount: before.length,
-      afterCount: after.length,
-      remainingPopups: after.map(popupInfo)
-    };
-  }
   async function doType(msg) {
     const selector = msg.selector || "input:focus, textarea:focus, [contenteditable]:focus";
     const text = String(msg.text ?? "");
@@ -797,9 +505,10 @@
       el = document.activeElement;
     if (!el)
       throw new Error("No input element found \u2014 try providing a selector");
-    if (fxEnabled) {
+    if (isFxEnabled()) {
       await fxToElement(el);
-      fxClickAt(fxX, fxY);
+      const p = getFxPos();
+      fxClickAt(p.x, p.y);
     }
     el.focus();
     if (el.isContentEditable) {
@@ -991,10 +700,311 @@
     const el = document.querySelector(msg.selector);
     if (!el)
       throw new Error(`Element not found: ${msg.selector}`);
-    if (fxEnabled)
+    if (isFxEnabled())
       await fxToElement(el);
     el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     el.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
     return { success: true, selector: msg.selector };
+  }
+
+  // src/content/popups.ts
+  var POPUP_SELECTOR = [
+    "dialog[open]",
+    '[role="dialog"]',
+    '[role="alertdialog"]',
+    '[aria-modal="true"]',
+    '[class*="modal" i]',
+    '[class*="dialog" i]',
+    '[class*="popup" i]',
+    '[class*="popover" i]',
+    '[class*="drawer" i]',
+    '[class*="toast" i]',
+    '[class*="overlay" i]',
+    '[class*="ant-modal" i]',
+    '[class*="el-dialog" i]',
+    '[class*="MuiDialog" i]',
+    '[class*="van-popup" i]'
+  ].join(",");
+  var CLOSE_SELECTOR = [
+    'button[aria-label*="close" i]',
+    'button[aria-label*="\u5173\u95ED" i]',
+    '[role="button"][aria-label*="close" i]',
+    '[role="button"][aria-label*="\u5173\u95ED" i]',
+    'button[title*="close" i]',
+    'button[title*="\u5173\u95ED" i]',
+    "[data-dismiss]",
+    "[data-bs-dismiss]",
+    '[data-testid*="close" i]',
+    '[class*="close" i]',
+    '[class*="cancel" i]',
+    ".ant-modal-close",
+    ".el-dialog__headerbtn",
+    ".MuiDialog-root button[aria-label]",
+    ".btn-close"
+  ].join(",");
+  var CLOSE_TEXTS = [
+    "\u5173\u95ED",
+    "\u5173 \u95ED",
+    "\u53D6\u6D88",
+    "\u7A0D\u540E",
+    "\u7A0D\u540E\u518D\u8BF4",
+    "\u6211\u77E5\u9053\u4E86",
+    "\u77E5\u9053\u4E86",
+    "\u786E\u5B9A",
+    "\u786E\u8BA4",
+    "\u4E0D\u518D\u63D0\u793A",
+    "\u8DF3\u8FC7",
+    "\u5173\u95ED\u5F39\u7A97",
+    "Close",
+    "Cancel",
+    "OK",
+    "Ok",
+    "Got it",
+    "Dismiss",
+    "\xD7",
+    "x",
+    "X"
+  ];
+  function isLikelyPopup(el) {
+    if (!isVisible(el) || el === document.body || el === document.documentElement)
+      return false;
+    const h = el;
+    const tag = h.tagName.toLowerCase();
+    const role = h.getAttribute("role");
+    const cls = String(h.className || "").toLowerCase();
+    const explicit = tag === "dialog" || role === "dialog" || role === "alertdialog" || h.getAttribute("aria-modal") === "true" || /(modal|dialog|popup|popover|drawer|toast|overlay|ant-modal|el-dialog|muidialog|van-popup)/i.test(cls);
+    if (explicit)
+      return true;
+    const s = getComputedStyle(h);
+    if (!["fixed", "sticky"].includes(s.position))
+      return false;
+    const z = zIndexOf(h);
+    const r = h.getBoundingClientRect();
+    const viewportArea = Math.max(1, window.innerWidth * window.innerHeight);
+    const areaRatio = r.width * r.height / viewportArea;
+    const coversCenter = r.left <= window.innerWidth / 2 && r.right >= window.innerWidth / 2 && r.top <= window.innerHeight / 2 && r.bottom >= window.innerHeight / 2;
+    const hasClose = findCloseCandidates(h, 1).length > 0;
+    return z >= 10 && (hasClose || coversCenter || areaRatio >= 0.12);
+  }
+  function findCloseCandidates(root, limit = 12) {
+    const candidates = [];
+    const seen = /* @__PURE__ */ new Set();
+    const add = (el) => {
+      if (!el || seen.has(el) || !isVisible(el))
+        return;
+      const clickable2 = clickableAncestor(el);
+      if (!isVisible(clickable2) || seen.has(clickable2))
+        return;
+      seen.add(clickable2);
+      candidates.push(clickable2);
+    };
+    root.querySelectorAll(CLOSE_SELECTOR).forEach(add);
+    const clickable = root.querySelectorAll('button,a,[role="button"],input[type="button"],input[type="submit"],[aria-label],[title]');
+    clickable.forEach((el) => {
+      const txt = textOf(el, 80);
+      const cls = String(el.className || "").toLowerCase();
+      const labelledClose = /(close|cancel|dismiss)/.test(cls) || /关闭|取消/.test(txt);
+      if (labelledClose || CLOSE_TEXTS.some((t) => txt.toLowerCase() === t.toLowerCase()))
+        add(el);
+    });
+    return candidates.sort((a, b) => {
+      const ta = textOf(a, 80);
+      const tb = textOf(b, 80);
+      const score = (t) => {
+        if (/^(×|x)$/i.test(t))
+          return 0;
+        if (/关闭|close/i.test(t))
+          return 1;
+        if (/取消|cancel|dismiss|稍后|知道了|ok/i.test(t))
+          return 2;
+        return 3;
+      };
+      return score(ta) - score(tb);
+    }).slice(0, limit);
+  }
+  function collectPopupElements() {
+    const raw = /* @__PURE__ */ new Set();
+    document.querySelectorAll(POPUP_SELECTOR).forEach((el) => raw.add(el));
+    document.querySelectorAll("body *").forEach((el) => {
+      if (isLikelyPopup(el))
+        raw.add(el);
+    });
+    const popups = Array.from(raw).filter(isLikelyPopup).sort((a, b) => {
+      const z = zIndexOf(b) - zIndexOf(a);
+      if (z !== 0)
+        return z;
+      return elementArea(a) - elementArea(b);
+    });
+    const out = [];
+    for (const el of popups) {
+      if (out.some((existing) => existing === el || existing.contains(el) && findCloseCandidates(existing, 1).length > 0))
+        continue;
+      out.push(el);
+    }
+    return out.slice(0, 10);
+  }
+  function popupInfo(el, index) {
+    const r = el.getBoundingClientRect();
+    const closes = findCloseCandidates(el, 6);
+    return {
+      index,
+      selector: cssPath(el),
+      tag: el.tagName,
+      role: el.getAttribute("role") || "",
+      ariaModal: el.getAttribute("aria-modal") || "",
+      zIndex: zIndexOf(el),
+      rect: { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) },
+      text: textOf(el, 260),
+      closeCandidates: closes.map((c) => ({ selector: cssPath(c), text: textOf(c, 80), tag: c.tagName }))
+    };
+  }
+  function doFindPopups(msg) {
+    const limit = Math.max(1, Math.min(Number(msg.limit || 10), 20));
+    const popups = collectPopupElements().slice(0, limit).map(popupInfo);
+    return { success: true, count: popups.length, popups };
+  }
+  async function doClosePopup(msg) {
+    const strategy = String(msg.strategy || "auto");
+    const before = collectPopupElements();
+    let target = null;
+    if (msg.selector)
+      target = document.querySelector(String(msg.selector));
+    if (!target && msg.text) {
+      const needle = String(msg.text);
+      target = before.find((el) => textOf(el, 1e3).includes(needle)) || null;
+    }
+    if (!target)
+      target = before[Math.max(0, Number(msg.index || 0))] || null;
+    if (!target)
+      return { success: false, closed: false, reason: "no_popup_found", beforeCount: 0, afterCount: 0 };
+    const beforeSelector = cssPath(target);
+    const tryCloseButton = async () => {
+      const candidates = findCloseCandidates(target, 8);
+      const btn = candidates[0];
+      if (!btn)
+        return false;
+      if (isFxEnabled()) {
+        await fxToElement(btn);
+        const c2 = elCenter(btn);
+        fxClickAt(c2.x, c2.y);
+        await fxSleep(80);
+      }
+      const c = elCenter(btn);
+      const opts = { bubbles: true, cancelable: true, view: window, clientX: c.x, clientY: c.y };
+      btn.dispatchEvent(new PointerEvent("pointerdown", opts));
+      btn.dispatchEvent(new MouseEvent("mousedown", opts));
+      btn.dispatchEvent(new PointerEvent("pointerup", opts));
+      btn.dispatchEvent(new MouseEvent("mouseup", opts));
+      btn.dispatchEvent(new MouseEvent("click", opts));
+      btn.click?.();
+      return true;
+    };
+    const pressEscape = () => {
+      const init = { key: "Escape", code: "Escape", bubbles: true, cancelable: true };
+      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", init));
+      document.dispatchEvent(new KeyboardEvent("keydown", init));
+      document.dispatchEvent(new KeyboardEvent("keyup", init));
+    };
+    const clickBackdrop = () => {
+      const r = target.getBoundingClientRect();
+      const points = [
+        { x: Math.max(2, r.left + 8), y: Math.max(2, r.top + 8) },
+        { x: Math.min(window.innerWidth - 2, r.right - 8), y: Math.max(2, r.top + 8) },
+        { x: window.innerWidth / 2, y: Math.min(window.innerHeight - 2, r.bottom - 8) }
+      ];
+      const pt = points.find((p) => {
+        const hit2 = document.elementFromPoint(p.x, p.y);
+        return hit2 === target || !!hit2 && target.contains(hit2);
+      }) || points[0];
+      const hit = document.elementFromPoint(pt.x, pt.y) || target;
+      hit.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window, clientX: pt.x, clientY: pt.y }));
+      hit.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window, clientX: pt.x, clientY: pt.y }));
+      hit.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window, clientX: pt.x, clientY: pt.y }));
+    };
+    const targetGone = () => !document.documentElement.contains(target) || !isVisible(target);
+    let method = "";
+    if (strategy === "close_button" || strategy === "auto") {
+      if (await tryCloseButton())
+        method = "close_button";
+      else if (strategy === "close_button")
+        throw new Error("No close button found in popup");
+    }
+    if (!method && (strategy === "escape" || strategy === "auto")) {
+      pressEscape();
+      method = "escape";
+    }
+    await fxSleep(260);
+    if (!targetGone() && (strategy === "backdrop" || strategy === "auto")) {
+      clickBackdrop();
+      method = method ? `${method}+backdrop` : "backdrop";
+      await fxSleep(260);
+    }
+    if (!targetGone() && msg.force_remove === true) {
+      ;
+      target.remove();
+      method = method ? `${method}+force_remove` : "force_remove";
+      await fxSleep(60);
+    }
+    const after = collectPopupElements();
+    return {
+      success: targetGone() || after.length < before.length,
+      closed: targetGone() || after.length < before.length,
+      reason: targetGone() || after.length < before.length ? "" : "popup_still_visible",
+      method: method || "none",
+      selector: beforeSelector,
+      beforeCount: before.length,
+      afterCount: after.length,
+      remainingPopups: after.map(popupInfo)
+    };
+  }
+
+  // src/content/index.ts
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    handleAction(msg).then(sendResponse).catch((err) => sendResponse({ error: err.message || String(err) }));
+    return true;
+  });
+  async function handleAction(msg) {
+    switch (msg.action) {
+      case "click":
+        return doClick(msg);
+      case "double_click":
+        return doDoubleClick(msg);
+      case "right_click":
+        return doRightClick(msg);
+      case "drag":
+        return doDrag(msg);
+      case "press_key":
+        return doPressKey(msg);
+      case "find_popups":
+        return doFindPopups(msg);
+      case "close_popup":
+        return doClosePopup(msg);
+      case "page_info":
+        return doPageInfo();
+      case "type":
+        return doType(msg);
+      case "get_content":
+        return getContent(msg);
+      case "scroll":
+        return doScroll(msg);
+      case "wait":
+        return doWait(msg);
+      case "evaluate":
+        return doEvaluate(msg);
+      case "extract":
+        return doExtract(msg);
+      case "find_text":
+        return findText(msg);
+      case "fill_form":
+        return fillForm(msg);
+      case "select":
+        return doSelect(msg);
+      case "hover":
+        return doHover(msg);
+      case "storage_get":
+        return storageGet(msg);
+      default:
+        throw new Error(`Unknown content action: ${msg.action}`);
+    }
   }
 })();
