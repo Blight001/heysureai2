@@ -95,7 +95,6 @@ export const MCP_TOOL_ZH_META: Record<string, { label: string; description: stri
   'workspace.edit_file': { label: '编辑文件', description: '支持结构化 edits（replace/set/append/prepend）并兼容旧 search/replace。', tag: '工作区' },
   'workspace.delete_path': { label: '删除路径', description: '删除指定文件或目录，请谨慎操作。', tag: '工作区' },
   'workspace.run_command': { label: '执行命令', description: '在工作目录中执行终端命令。', tag: '工作区' },
-  'workspace.git_diff': { label: 'Git 变更', description: '查看当前工作目录的 Git 差异。', tag: '工作区' },
   'admin.list_agents': { label: '列出智能体', description: '查看系统中的 AI 成员列表。', tag: '管理与项目' },
   'admin.get_overview': { label: '管理总览', description: '获取系统运行状态与关键统计。', tag: '管理与项目' },
   'admin.dispatch_flow': { label: '分派流程', description: '向指定 AI 下发流程或任务。', tag: '管理与项目' },
@@ -121,14 +120,13 @@ export const MCP_TOOL_ZH_META: Record<string, { label: string; description: stri
   'conversation.forget_before_current': { label: '忘记前文', description: '删除当前会话里当前用户消息之前的内容，保留当前消息及之后内容。', tag: '协作' },
   'ai.send_message': { label: '发送 AI 消息', description: '向另一个 AI 发送消息，可等待对方回复，用于 AI 间协作。', tag: '协作' },
   'ai.reply_message': { label: '回复 AI 消息', description: '回复收到的 AI 间消息，回复后继续之前被中断的工作。', tag: '协作' },
-  'ai.list_inbox': { label: 'AI 收件箱', description: '查看当前 AI 尚未处理或历史收到的 AI 间消息。', tag: '协作' },
   'memory.write': { label: '写入记忆', description: '沉淀高价值的结构化记忆（事实/决策/经验/待办/风险/模板）供后续检索。', tag: '计划与记忆' },
   'memory.search': { label: '检索记忆', description: '按关键词、类型、项目或标签搜索已存储的记忆。', tag: '计划与记忆' },
   'memory.list': { label: '记忆列表', description: '列出已存储的记忆，可按类型/项目过滤。', tag: '计划与记忆' },
   'memory.update': { label: '更新记忆', description: '更新已有记忆的内容/标签/类型/置信度。', tag: '计划与记忆' },
   'memory.archive': { label: '归档记忆', description: '归档（软删除）记忆，使其默认检索时不再出现。', tag: '计划与记忆' },
   'librarian.propose': { label: '提交知识流程', description: '向图书管理员提交可复用流程，等待审批后进入知识库。', tag: '计划与记忆' },
-  'librarian.consult': { label: '咨询图书管理员', description: '按问题检索图书管理员知识库中的相关流程与做法。', tag: '计划与记忆' },
+  'librarian.consult': { label: '咨询图书管理员', description: '按问题检索图书管理员知识库中的相关流程与做法。', tag: '协作' },
   'librarian.list_topics': { label: '知识主题列表', description: '浏览图书管理员已收录的流程标题与触发关键词。', tag: '计划与记忆' },
   'librarian.read': { label: '读取知识流程', description: '按 memory_id 读取图书管理员知识库中的完整流程内容。', tag: '计划与记忆' },
   'librarian.archive': { label: '归档知识流程', description: '归档图书管理员知识库中的流程条目。', tag: '计划与记忆' },
@@ -224,6 +222,7 @@ const getMcpToolFallbackTag = (name: string) => {
   if (hasMcpPrefix(name, 'task')) return '计划与记忆'
   if (hasMcpPrefix(name, 'prompt')) return 'Prompt'
   if (hasMcpPrefix(name, 'memory')) return '计划与记忆'
+  if (name === 'librarian.consult') return '协作'
   if (hasMcpPrefix(name, 'librarian')) return '计划与记忆'
   if (hasMcpPrefix(name, 'evolution')) return '进化'
   if (hasMcpPrefix(name, 'feishu')) return '协作'

@@ -46,7 +46,6 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "workspace.get_file_tree": ROLE_MEMBER,
     "workspace.read_files": ROLE_MEMBER,
     "workspace.read_file_by_name": ROLE_MEMBER,
-    "workspace.git_diff": ROLE_MEMBER,
     # Workspace write — every tier within its own workspace; shell exec is manager+.
     "workspace.write_file": ROLE_MEMBER,
     "workspace.edit_file": ROLE_MEMBER,

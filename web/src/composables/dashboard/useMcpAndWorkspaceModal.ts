@@ -95,25 +95,17 @@ export const useMcpAndWorkspaceModal = ({ mcpToolMetaByName }: UseMcpAndWorkspac
     workspaceContextModalGitDiff.value = ''
     workspaceContextModalChanged.value = []
     try {
-      const [treeData, diffData] = await Promise.all([
-        callMcpTool({ tool: 'workspace.get_file_tree', arguments: {}, ai_config_id: agent.aiConfigId }),
-        callMcpTool({ tool: 'workspace.git_diff', arguments: {}, ai_config_id: agent.aiConfigId }),
-      ])
+      const treeData = await callMcpTool({ tool: 'workspace.get_file_tree', arguments: {}, ai_config_id: agent.aiConfigId })
 
       const treeResult = (treeData?.result && typeof treeData.result === 'object') ? treeData.result : {}
-      const diffResult = (diffData?.result && typeof diffData.result === 'object') ? diffData.result : {}
 
       const root = String(treeResult.selected_path || treeResult.root || '.')
       const treeText = String(treeResult.tree || '').trim()
       workspaceContextModalTree.value = treeText
         ? `当前根目录: ${root}\n\n${treeText}`
         : `当前根目录: ${root}\n\n暂无目录结构数据`
-
-      const changed = Array.isArray(diffResult.changed)
-        ? diffResult.changed.map((item: any) => String(item || '').trim()).filter(Boolean)
-        : []
-      workspaceContextModalChanged.value = changed
-      workspaceContextModalGitDiff.value = String(diffResult.diff || '').trim() || '暂无 Git Diff 变更'
+      workspaceContextModalChanged.value = []
+      workspaceContextModalGitDiff.value = ''
     } catch (err: any) {
       workspaceContextModalError.value = String(err?.message || '加载 AI 工作区上下文失败')
     } finally {

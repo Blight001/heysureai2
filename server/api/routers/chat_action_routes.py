@@ -383,9 +383,8 @@ async def get_git_diff(
     session: Session = Depends(get_session),
     authorization: str = Header(None)
 ):
-    user = get_current_user(authorization, session)
-    result = await registry.call("workspace.git_diff", user.id, {})
-    return result["result"]
+    get_current_user(authorization, session)
+    raise HTTPException(status_code=410, detail="workspace.git_diff MCP has been removed")
 
 @router.post("/file-content")
 async def get_file_content(

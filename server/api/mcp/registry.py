@@ -1,7 +1,6 @@
 from .core import MCPRegistry, MCPTool
 from .tools.workspace import (
     _dispatch_flow,
-    _get_git_diff,
     _get_overview,
     _get_tree,
     _list_agents,
@@ -49,7 +48,6 @@ from .tools.memory import (
 )
 from .tools.human import _human_ask
 from .tools.communication import (
-    _ai_list_inbox,
     _ai_reply_message,
     _ai_send_message,
     _user_send_message,
@@ -235,12 +233,6 @@ registry.register(MCPTool(
     },
     handler=_run_command,
     destructive=True,
-))
-registry.register(MCPTool(
-    name="workspace.git_diff",
-    description="Get the current git diff and changed files for the user's workspace.",
-    input_schema={"type": "object", "properties": {}},
-    handler=_get_git_diff,
 ))
 registry.register(MCPTool(
     name="admin.list_agents",
@@ -606,20 +598,6 @@ registry.register(MCPTool(
     },
     handler=_ai_reply_message,
     destructive=True,
-))
-registry.register(MCPTool(
-    name="ai.list_inbox",
-    description=(
-        "List unresolved messages addressed to the current AI. Usually unnecessary — the worker "
-        "automatically injects pending messages at the next loop iteration."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "include_resolved": {"type": "boolean"},
-        },
-    },
-    handler=_ai_list_inbox,
 ))
 
 registry.register(MCPTool(

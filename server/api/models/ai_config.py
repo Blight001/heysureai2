@@ -6,7 +6,7 @@ from sqlmodel import Field, SQLModel
 _DEFAULT_MCP_TOOLS = (
     '["workspace.list_files","workspace.get_file_tree","workspace.read_files",'
     '"workspace.read_file_by_name","workspace.write_file","workspace.edit_file",'
-    '"workspace.delete_path","workspace.run_command","workspace.git_diff",'
+    '"workspace.delete_path","workspace.run_command",'
     '"admin.list_agents","admin.get_overview","admin.dispatch_flow",'
     '"project.list_projects","project.create_project","project.update_project",'
     '"project.delete_project","task.create_immediate","task.create_scheduled",'
@@ -16,8 +16,7 @@ _DEFAULT_MCP_TOOLS = (
     '"prompt.write_system","memory.write","memory.search","memory.list","memory.update",'
     '"memory.archive","evolution.input","evolution.list","evolution.review",'
     '"librarian.propose","librarian.consult","librarian.list_topics","librarian.read",'
-    '"librarian.archive","user.send_message","ai.send_message","ai.reply_message",'
-    '"ai.list_inbox"]'
+    '"librarian.archive","user.send_message","ai.send_message","ai.reply_message"]'
 )
 
 _DEFAULT_SYSTEM_AUTO_CONTROL = (

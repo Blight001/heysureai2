@@ -142,7 +142,6 @@ Available MCP tools include:
 - workspace.edit_file
 - workspace.delete_path
 - workspace.run_command
-- workspace.git_diff
 - admin.list_agents
 - admin.get_overview
 - admin.dispatch_flow
