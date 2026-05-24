@@ -5,7 +5,8 @@ import {
   listProposals,
   rejectProposal,
   type KnowledgeEntryItem,
-} from '../../services/librarianApi'
+} from '@/api/librarian'
+import { getAuthToken } from '@/api/http'
 
 interface Props {
   show: boolean
@@ -35,7 +36,7 @@ const refresh = async () => {
   loading.value = true
   error.value = ''
   try {
-    const token = localStorage.getItem('token') || ''
+    const token = getAuthToken()
     const data = await listProposals(token)
     items.value = data.items || []
     if (selectedId.value && !items.value.find(it => it.memory_id === selectedId.value)) {
@@ -87,7 +88,7 @@ const onApprove = async () => {
   acting.value = true
   actionError.value = ''
   try {
-    const token = localStorage.getItem('token') || ''
+    const token = getAuthToken()
     const body = editing.value ? editedBody.value : undefined
     await approveProposal(token, selected.value.memory_id, body)
     emit('resolved')
@@ -108,7 +109,7 @@ const onReject = async () => {
   acting.value = true
   actionError.value = ''
   try {
-    const token = localStorage.getItem('token') || ''
+    const token = getAuthToken()
     await rejectProposal(token, selected.value.memory_id, rejectReason.value.trim())
     emit('resolved')
     await refresh()

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { InlineContent as InlineContentType } from '../../utils/chatParser';
+import type { InlineContent as InlineContentType } from '@/utils/chatParser';
 import MarkdownText from './MarkdownText.vue';
 
 const props = withDefaults(defineProps<{

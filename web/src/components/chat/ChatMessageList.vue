@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import ChatMessage from './ChatMessage.vue'
 import TypingIndicator from './TypingIndicator.vue'
-import type { InlineContent as InlineContentType } from '../../utils/chatParser'
+import type { InlineContent as InlineContentType } from '@/utils/chatParser'
 
 interface Message {
   role: 'user' | 'assistant' | 'system'

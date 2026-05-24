@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import InlineContent from './InlineContent.vue'
-import type { InlineContent as InlineContentType } from '../../utils/chatParser'
+import type { InlineContent as InlineContentType } from '@/utils/chatParser'
 import { computed, ref } from 'vue'
 
 const emit = defineEmits<{
