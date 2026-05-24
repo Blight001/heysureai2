@@ -679,6 +679,17 @@
     }
   }
   function selectMember(id) {
+    if (!auth.token) {
+      selectedMemberId = null;
+      port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
+      loginFeedback.textContent = "\u8BF7\u5148\u767B\u5F55\u540E\u518D\u9009\u62E9 AI \u6210\u5458";
+      loginFeedback.style.color = "var(--warn)";
+      switchTab("settings");
+      renderMembers();
+      updateTargetBanners();
+      renderSettingsViews();
+      return;
+    }
     selectedMemberId = id;
     port.postMessage({ type: "agent:selected-ai", aiConfigId: id });
     renderMembers();
@@ -1792,7 +1803,7 @@
   });
   function loadSettings(s) {
     serverUrl = s.serverUrl || "";
-    selectedMemberId = s.selectedAiConfigId || null;
+    selectedMemberId = auth.token ? s.selectedAiConfigId || null : null;
     cfgServer.value = s.serverUrl || "";
     cfgAiKey.value = s.aiKey || "";
     cfgAiBase.value = s.aiBaseUrl || "";
@@ -1957,6 +1968,10 @@
     localModel = s.aiModel || "";
     selectedMemberId = s.selectedAiConfigId || null;
     auth = await getAuth();
+    if (!auth.token && selectedMemberId) {
+      selectedMemberId = null;
+      port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
+    }
     loginAccount.value = auth.account || "";
     updateUserChip();
     updateOfflineUi();

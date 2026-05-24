@@ -102,6 +102,7 @@ async def start_chat_run(
             "model_user_content": model_content,
             "merged_system_prompt": merged_system_prompt,
             "max_steps": req.get("max_steps"),
+            "current_user_message_id": user_msg.id,
         },
         daemon=True,
     )

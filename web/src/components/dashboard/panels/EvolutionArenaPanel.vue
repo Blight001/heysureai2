@@ -288,6 +288,12 @@ const onMemberCheckboxChange = (memberId: number, event: Event) => {
         </div>
       </div>
     </TransitionGroup>
+    <div v-if="projectGroups.length === 0" class="absolute inset-0 flex items-center justify-center pt-10 pointer-events-none">
+      <div class="text-center text-xs text-zinc-400 dark:text-zinc-500">
+        <div class="text-sm font-medium text-zinc-500 dark:text-zinc-400">暂无项目</div>
+        <div class="mt-1">点击右上角“+ 项目”后再添加。</div>
+      </div>
+    </div>
 
     <Transition name="fade">
       <div v-if="projectDialogOpen" class="fixed inset-0 z-[96] bg-black/45 flex items-center justify-center p-4" @click="closeProjectDialog">

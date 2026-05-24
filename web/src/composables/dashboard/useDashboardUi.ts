@@ -101,7 +101,27 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
     userMenuOpen.value = false
   }
 
+  const isUnassignedAgent = (agent: Agent) => (agent.projectId || unassignedProjectId) === unassignedProjectId
+
+  const hasAssignedWork = (agent: Agent) => {
+    const taskStatus = String(agent.currentTaskStatus || '').toLowerCase()
+    const runStatus = String(agent.activeRunStatus || '').toLowerCase()
+    const snapshotStatus = String(agent.taskCurrentOrRecent?.effectiveStatus || agent.taskCurrentOrRecent?.status || '').toLowerCase()
+    const inactive = new Set(['', 'idle', 'completed', 'done', 'cancelled', 'canceled', 'stopped', 'error'])
+    return (
+      !inactive.has(taskStatus)
+      || ['queued', 'running'].includes(runStatus)
+      || (!!agent.taskCurrentOrRecent?.title && !inactive.has(snapshotStatus))
+    )
+  }
+
   const adminAgents = computed(() => agents.value.filter(a => a.role === 'admin' && a.status !== 'dead'))
+  const sidebarMemberAgents = computed(() => agents.value.filter(
+    agent => agent.role === 'worker'
+      && agent.status !== 'dead'
+      && isUnassignedAgent(agent)
+      && !hasAssignedWork(agent)
+  ))
   const activeAgents = computed(() => agents.value.filter(a => a.status !== 'dead').reverse())
   const deadAgents = computed(() => agents.value.filter(a => a.status === 'dead').reverse())
 
@@ -126,24 +146,37 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
   })
 
   const projectGroups = computed(() => {
+    const hasLearningAgents = agents.value.some(
+      agent => agent.role === 'worker'
+        && isUnassignedAgent(agent)
+        && hasAssignedWork(agent)
+    )
     const base = [
       ...projects.value,
-      {
-        id: unassignedProjectId,
-        name: '待分配/学习中',
-        description: '尚未绑定项目的 Agent',
-        status: 'running' as const,
-        aiMemberIds: [],
-        readonly: true,
-      },
+      ...(hasLearningAgents
+        ? [{
+            id: unassignedProjectId,
+            name: '学习中',
+            description: '尚未绑定项目但已有任务的 Agent',
+            status: 'running' as const,
+            aiMemberIds: [],
+            readonly: true,
+          }]
+        : []),
     ]
 
     return base.map(project => {
       const activeAgentsByProject = agents.value.filter(
-        agent => agent.role === 'worker' && agent.status !== 'dead' && (agent.projectId || unassignedProjectId) === project.id
+        agent => agent.role === 'worker'
+          && agent.status !== 'dead'
+          && (agent.projectId || unassignedProjectId) === project.id
+          && (project.id !== unassignedProjectId || hasAssignedWork(agent))
       )
       const deadAgentsByProject = agents.value.filter(
-        agent => agent.role === 'worker' && agent.status === 'dead' && (agent.projectId || unassignedProjectId) === project.id
+        agent => agent.role === 'worker'
+          && agent.status === 'dead'
+          && (agent.projectId || unassignedProjectId) === project.id
+          && project.id !== unassignedProjectId
       )
       const aiMemberIds = Array.from(
         new Set(
@@ -202,6 +235,7 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
     submitGuidance,
     closeUserMenu,
     adminAgents,
+    sidebarMemberAgents,
     activeAgents,
     deadAgents,
     centerGridClass,

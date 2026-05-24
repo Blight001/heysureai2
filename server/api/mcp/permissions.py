@@ -79,6 +79,8 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "prompt.write_system": ROLE_ASSISTANT_ADMIN,
     # Feishu outbound — every tier by default.
     "feishu.send_message": ROLE_MEMBER,
+    # Conversation maintenance — every tier can trim its own active session.
+    "conversation.forget_before_current": ROLE_MEMBER,
     # Admin / governance — assistant_admin only.
     "admin.list_agents": ROLE_ASSISTANT_ADMIN,
     "admin.get_overview": ROLE_ASSISTANT_ADMIN,

@@ -108,7 +108,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
   }
 
   const getProjectName = (projectId: string, fallbackName?: string) => {
-    if (projectId === unassignedProjectId) return '待分配/学习中'
+    if (projectId === unassignedProjectId) return '学习中'
     const match = projects.value.find(project => project.id === projectId)
     return match?.name ?? fallbackName ?? projectId
   }

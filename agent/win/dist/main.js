@@ -252,15 +252,47 @@ function sendActivityLog(type, status, message, data) {
         timestamp: Date.now(),
     });
 }
+function clearSelectedAiConfig() {
+    store_1.store.set('selectedAiConfigId', null);
+    store_1.store.set('selectedAiConfigName', '');
+    store_1.store.set('selectedAiConfigRole', 'member');
+    store_1.store.set('selectedAiConfigLifecycle', 'working');
+    store_1.store.set('selectedAiConfigProject', '');
+    store_1.store.set('agentToken', '');
+    store_1.store.set('agentId', '');
+    store_1.store.set('agentName', 'Windows Agent');
+    store_1.store.set('agentGroup', '');
+}
+function clearAiSelectionIfLoggedOut() {
+    if (store_1.store.get('authToken'))
+        return false;
+    if (!store_1.store.get('selectedAiConfigId'))
+        return false;
+    clearSelectedAiConfig();
+    return true;
+}
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 function registerIpc() {
-    electron_1.ipcMain.handle('settings:get', () => store_1.store.store);
+    electron_1.ipcMain.handle('settings:get', () => {
+        clearAiSelectionIfLoggedOut();
+        return store_1.store.store;
+    });
     electron_1.ipcMain.handle('settings:save', (_event, newSettings) => {
         Object.entries(newSettings).forEach(([k, v]) => store_1.store.set(k, v));
+        if (clearAiSelectionIfLoggedOut()) {
+            sendActivityLog('system', 'warn', '未登录，已取消 AI 成员自动注册选择');
+        }
         agent?.updateSettings(store_1.store.store);
         return store_1.store.store;
     });
     electron_1.ipcMain.handle('agent:connect', () => {
+        if (!store_1.store.get('authToken')) {
+            if (clearAiSelectionIfLoggedOut()) {
+                agent?.updateSettings(store_1.store.store);
+            }
+            sendActivityLog('system', 'warn', '请先登录并选择 AI 成员后再连接软件端 Agent');
+            return false;
+        }
         agent?.connect();
         return true;
     });
@@ -296,9 +328,13 @@ function registerIpc() {
             return { success: false, error: err.message || String(err) };
         }
     });
-    electron_1.ipcMain.handle('chat:send', async (_event, messages) => {
+    electron_1.ipcMain.handle('chat:history', async () => {
         const s = store_1.store.store;
-        return callServerChat(s, messages);
+        return getServerChatHistory(s);
+    });
+    electron_1.ipcMain.handle('chat:send', async (_event, content) => {
+        const s = store_1.store.store;
+        return callServerChat(s, String(content || ''));
     });
     electron_1.ipcMain.handle('auth:login', async (_event, params) => {
         const { serverUrl, account, password } = params;
@@ -323,8 +359,9 @@ function registerIpc() {
         store_1.store.set('serverUrl', base);
         store_1.store.set('authToken', data.access_token);
         store_1.store.set('userAccount', account);
-        if (data.user?.id)
-            store_1.store.set('userId', data.user.id);
+        store_1.store.set('userId', data.user?.id ?? null);
+        clearSelectedAiConfig();
+        agent?.updateSettings(store_1.store.store);
         return { success: true, user: data.user };
     });
     electron_1.ipcMain.handle('auth:logout', () => {
@@ -332,14 +369,7 @@ function registerIpc() {
         store_1.store.set('authToken', '');
         store_1.store.set('userAccount', '');
         store_1.store.set('userId', null);
-        store_1.store.set('selectedAiConfigId', null);
-        store_1.store.set('selectedAiConfigName', '');
-        store_1.store.set('selectedAiConfigRole', 'member');
-        store_1.store.set('selectedAiConfigLifecycle', 'working');
-        store_1.store.set('selectedAiConfigProject', '');
-        store_1.store.set('agentToken', '');
-        store_1.store.set('agentId', '');
-        store_1.store.set('agentName', 'Windows Agent');
+        clearSelectedAiConfig();
         return { success: true };
     });
     electron_1.ipcMain.handle('ai-config:list', async () => {
@@ -375,6 +405,14 @@ function registerIpc() {
         }
     });
     electron_1.ipcMain.handle('ai-config:select', async (_event, cfg) => {
+        const s = store_1.store.store;
+        if (!s.serverUrl || !s.authToken) {
+            clearSelectedAiConfig();
+            agent?.updateSettings(store_1.store.store);
+            throw new Error('请先登录后再选择 AI 成员');
+        }
+        if (!cfg?.id)
+            throw new Error('AI 成员无效');
         store_1.store.set('selectedAiConfigId', cfg.id);
         store_1.store.set('selectedAiConfigName', cfg.name);
         store_1.store.set('selectedAiConfigRole', cfg.digital_member_role || 'member');
@@ -382,7 +420,7 @@ function registerIpc() {
         store_1.store.set('selectedAiConfigProject', cfg.project_name || '');
         store_1.store.set('agentToken', store_1.store.get('authToken'));
         store_1.store.set('agentId', `win-desktop-${cfg.id}`);
-        store_1.store.set('agentName', cfg.name);
+        store_1.store.set('agentName', 'Windows Agent');
         store_1.store.set('agentGroup', cfg.project_name || '');
         agent?.disconnect();
         agent = createAgent(store_1.store.store);
@@ -532,74 +570,127 @@ async function callTaskJobAction(jobId, action, fallback) {
     }
     return { success: true };
 }
-// ── Server-side AI chat helper ────────────────────────────────────────────────
-async function callServerChat(settings, messages) {
+// ── Server-backed AI chat helper ──────────────────────────────────────────────
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+function requireChatSettings(settings) {
     if (!settings.serverUrl || !settings.authToken)
         throw new Error('请先登录服务器');
-    const base = (0, server_url_1.normalizeServerUrl)(settings.serverUrl);
-    const normalizedMessages = messages.map(m => ({
-        role: m.role === 'ai' ? 'assistant' : m.role,
-        content: String(m.content || ''),
-    }));
-    const res = await electron_1.net.fetch(`${base}/api/chat/stream`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${settings.authToken}`,
-        },
-        body: JSON.stringify({
-            messages: normalizedMessages,
-            ai_kind: 'assistant',
-            ai_config_id: settings.selectedAiConfigId,
-        }),
-        signal: AbortSignal.timeout(120000),
-    });
-    const text = await res.text();
-    if (!res.ok) {
-        try {
-            const data = JSON.parse(text);
-            throw new Error(data?.detail || `服务器聊天失败 (${res.status})`);
-        }
-        catch (err) {
-            if (err?.message && !err.message.startsWith('Unexpected'))
-                throw err;
-            throw new Error(text || `服务器聊天失败 (${res.status})`);
-        }
-    }
-    return extractChatStreamText(text) || text;
+    if (!settings.selectedAiConfigId)
+        throw new Error('请先选择 AI 成员');
+    return {
+        base: (0, server_url_1.normalizeServerUrl)(settings.serverUrl),
+        token: settings.authToken,
+        aiConfigId: Number(settings.selectedAiConfigId),
+    };
 }
-function extractChatStreamText(text) {
-    let reply = '';
-    for (const rawLine of text.split(/\r?\n/)) {
-        const line = rawLine.trim();
-        if (!line.startsWith('data:'))
-            continue;
-        const data = line.slice(5).trim();
-        if (!data || data === '[DONE]')
-            continue;
+async function readJsonResponse(res, fallback) {
+    const text = await res.text();
+    let data = {};
+    if (text) {
         try {
-            const chunk = JSON.parse(data);
-            const delta = chunk?.choices?.[0]?.delta;
-            const content = delta?.content;
-            if (typeof content === 'string') {
-                reply += content;
-            }
-            else if (Array.isArray(content)) {
-                for (const part of content) {
-                    if (typeof part?.text === 'string')
-                        reply += part.text;
-                }
-            }
+            data = JSON.parse(text);
         }
         catch {
-            // Ignore non-JSON stream lines.
+            data = { detail: text };
         }
     }
-    return reply;
+    if (!res.ok)
+        throw new Error(data?.detail || data?.error || `${fallback} (${res.status})`);
+    return data;
+}
+async function ensureDesktopChatSession(settings) {
+    const { base, token, aiConfigId } = requireChatSettings(settings);
+    const query = new URLSearchParams({ ai_kind: 'assistant', ai_config_id: String(aiConfigId) }).toString();
+    const listRes = await electron_1.net.fetch(`${base}/api/chat/sessions?${query}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10000),
+    });
+    const sessions = await readJsonResponse(listRes, '会话列表加载失败');
+    if (Array.isArray(sessions) && sessions.length > 0) {
+        const preferred = sessions.find((s) => /^软件端对话|^Windows Agent/.test(String(s?.name || ''))) || sessions[0];
+        return { id: String(preferred.id), name: String(preferred.name || '软件端对话') };
+    }
+    const createRes = await electron_1.net.fetch(`${base}/api/chat/sessions`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            name: '软件端对话',
+            ai_config_id: aiConfigId,
+            ai_kind: 'assistant',
+        }),
+        signal: AbortSignal.timeout(10000),
+    });
+    const created = await readJsonResponse(createRes, '会话创建失败');
+    return { id: String(created?.id || ''), name: String(created?.name || '软件端对话') };
+}
+async function getServerChatHistory(settings) {
+    const { base, token, aiConfigId } = requireChatSettings(settings);
+    const session = await ensureDesktopChatSession(settings);
+    const query = new URLSearchParams({
+        ai_kind: 'assistant',
+        ai_config_id: String(aiConfigId),
+        session_id: session.id,
+    }).toString();
+    const res = await electron_1.net.fetch(`${base}/api/chat/history?${query}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10000),
+    });
+    const rows = await readJsonResponse(res, '会话历史加载失败');
+    return Array.isArray(rows) ? rows : [];
+}
+async function callServerChat(settings, content) {
+    const text = String(content || '').trim();
+    if (!text)
+        throw new Error('消息内容不能为空');
+    const { base, token, aiConfigId } = requireChatSettings(settings);
+    const session = await ensureDesktopChatSession(settings);
+    const startRes = await electron_1.net.fetch(`${base}/api/chat/run/start`, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            visible_content: text,
+            model_content: text,
+            session_id: session.id,
+            session_name: session.name,
+            ai_config_id: aiConfigId,
+            ai_kind: 'assistant',
+        }),
+        signal: AbortSignal.timeout(15000),
+    });
+    const started = await readJsonResponse(startRes, '发起对话失败');
+    const runId = String(started?.run_id || '');
+    if (!runId)
+        throw new Error('服务器未返回运行 ID');
+    let lastText = '';
+    const MAX_POLLS = 600;
+    for (let i = 0; i < MAX_POLLS; i++) {
+        await sleep(800);
+        const statusRes = await electron_1.net.fetch(`${base}/api/chat/run/status/${encodeURIComponent(runId)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(10000),
+        });
+        const st = await readJsonResponse(statusRes, '运行状态查询失败');
+        lastText = String(st?.live_text || lastText || '');
+        const status = String(st?.status || '');
+        if (status === 'completed')
+            return { text: lastText || '完成', sessionId: session.id };
+        if (status === 'stopped')
+            return { text: lastText || '（已停止）', sessionId: session.id };
+        if (status === 'error')
+            throw new Error(st?.error_message || 'AI 对话执行失败');
+    }
+    return { text: lastText || '（超时，未收到完整回复）', sessionId: session.id };
 }
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 electron_1.app.whenReady().then(async () => {
     await setupCaptureWindow();
+    clearAiSelectionIfLoggedOut();
     const settings = store_1.store.store;
     agent = createAgent(settings);
     registerIpc();

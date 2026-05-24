@@ -26,7 +26,8 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   // Connection test
   testConnection: () => ipcRenderer.invoke('connection:test'),
   // AI chat
-  sendChat: (messages: any[]) => ipcRenderer.invoke('chat:send', messages),
+  sendChat: (content: string) => ipcRenderer.invoke('chat:send', content),
+  getChatHistory: () => ipcRenderer.invoke('chat:history'),
   // Auth
   login: (params: { serverUrl: string; account: string; password: string }) =>
     ipcRenderer.invoke('auth:login', params),

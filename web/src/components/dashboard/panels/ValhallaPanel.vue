@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import ActiveAgentsPanel from './ActiveAgentsPanel.vue'
+import WorkshopPanel from './WorkshopPanel.vue'
 import { readValhallaEntry, type ValhallaEntry, type ValhallaEntryDetail } from '@/api/valhalla'
 import { getAuthToken } from '@/api/http'
+import type { ConnectedAgent } from '@/composables/dashboard/useDashboardData'
 
 interface Agent {
   id: string
@@ -23,11 +25,12 @@ interface Agent {
 interface Props {
   entries: ValhallaEntry[]
   activeAgents: Agent[]
+  connectedAgents: ConnectedAgent[]
 }
 
 const props = defineProps<Props>()
 
-const activeTab = ref<'valhalla' | 'active'>('valhalla')
+const activeTab = ref<'valhalla' | 'active' | 'workshop'>('valhalla')
 
 // 按 job 分组，便于"任务 → 代际"的层级浏览
 type JobGroup = {
@@ -148,6 +151,15 @@ const closeDetail = () => {
         >
           <span>🌱</span> 存活 AI
         </button>
+        <button
+          @click="activeTab = 'workshop'"
+          class="flex-1 px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 flex items-center justify-center gap-2"
+          :class="activeTab === 'workshop'
+            ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-400'
+            : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
+        >
+          <span>🏭</span> 作坊
+        </button>
       </div>
     </div>
 
@@ -201,7 +213,8 @@ const closeDetail = () => {
       </div>
     </div>
 
-    <ActiveAgentsPanel v-else :active-agents="activeAgents" />
+    <ActiveAgentsPanel v-else-if="activeTab === 'active'" :active-agents="activeAgents" />
+    <WorkshopPanel v-else :devices="connectedAgents" :agents="activeAgents" />
 
     <!-- 遗言全文弹窗 -->
     <div

@@ -396,6 +396,7 @@ def _run_worker(
     model_user_content: Optional[str] = None,
     merged_system_prompt: Optional[str] = None,
     max_steps: Optional[int] = None,
+    current_user_message_id: Optional[int] = None,
 ):
     if _run_should_stop(run_id):
         _run_set_status(run_id, "stopped", finished=True)
@@ -423,6 +424,10 @@ def _run_worker(
                 # System-injected AI-to-AI messages must remain replyable even
                 # when a task or config narrows the general MCP tool allowlist.
                 effective_tool_allowlist.add("ai.reply_message")
+            if str(session_id or "").startswith("feishu_"):
+                # Feishu conversations need a self-service context trim path even
+                # for older AI configs whose saved MCP list predates this tool.
+                effective_tool_allowlist.add("conversation.forget_before_current")
             token_threshold_override = None
             workspace_root_override = None
             if task_payload:
@@ -511,6 +516,7 @@ def _run_worker(
                 "session_id": session_id,
                 "session_name": session_name,
                 "model": model,
+                "current_user_message_id": current_user_message_id,
             })
 
             for _ in range(max_steps):

@@ -112,6 +112,7 @@ export const MCP_TOOL_ZH_META: Record<string, { label: string; description: stri
   'prompt.read_system': { label: '读取系统 Prompt', description: '读取全局注入模板/旧版兜底 prompt；当前 AI 基础 prompt 请用读取 AI Prompt。', tag: 'Prompt' },
   'prompt.write_system': { label: '修改系统 Prompt', description: '按行修改全局注入模板/旧版兜底 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
   'feishu.send_message': { label: '飞书发消息', description: '通过与该 AI 绑定的飞书机器人发送文本消息。', tag: '飞书' },
+  'conversation.forget_before_current': { label: '忘记前文', description: '删除当前会话里当前用户消息之前的内容，保留当前消息及之后内容。', tag: '对话' },
   'memory.write': { label: '写入记忆', description: '沉淀高价值的结构化记忆（事实/决策/经验/待办/风险/模板）供后续检索。', tag: '记忆' },
   'memory.search': { label: '检索记忆', description: '按关键词、类型、项目或标签搜索已存储的记忆。', tag: '记忆' },
   'memory.list': { label: '记忆列表', description: '列出已存储的记忆，可按类型/项目过滤。', tag: '记忆' },
@@ -152,7 +153,7 @@ export const normalizeMcpSchemaType = (rawType: unknown) => {
   return toZh(text || 'any')
 }
 
-const MCP_TOOL_TAG_ORDER = ['工作区', '管理', '桌面端MCP', '浏览器MCP', '项目', '任务', 'Prompt', '飞书', '记忆', '进化', '协作', '通用']
+const MCP_TOOL_TAG_ORDER = ['工作区', '管理', '桌面端MCP', '浏览器MCP', '项目', '任务', 'Prompt', '飞书', '对话', '记忆', '进化', '协作', '通用']
 
 const hasMcpPrefix = (name: string, prefix: string) => name.startsWith(`${prefix}.`) || name.startsWith(`${prefix}_`)
 

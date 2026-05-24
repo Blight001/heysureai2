@@ -71,12 +71,9 @@
     .logo-icon {
       width: 28px;
       height: 28px;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
       border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
+      display: block;
+      object-fit: cover;
       flex-shrink: 0;
     }
     .logo-sub {
@@ -237,12 +234,9 @@
     .login-logo-icon {
       width: 52px;
       height: 52px;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
       border-radius: 14px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 26px;
+      display: block;
+      object-fit: cover;
       box-shadow: 0 4px 20px rgba(99,102,241,0.35);
     }
     .login-title {
@@ -620,10 +614,6 @@
       color: #fbbf24;
     }
 
-    #switch-ai-btn {
-      padding: 5px 10px;
-      font-size: 11px;
-    }
     #settings-toggle {
       padding: 5px 10px;
       font-size: 14px;
@@ -1367,6 +1357,59 @@
     .chat-msg.ai   .chat-bubble { background: var(--surface); border: 1px solid var(--border); border-top-left-radius: 4px; color: var(--text); }
     .chat-msg.user .chat-bubble { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border-top-right-radius: 4px; }
     .chat-bubble code { font-family: 'Cascadia Code','Consolas',monospace; font-size: 11px; background: var(--bg3); padding: 1px 5px; border-radius: 3px; }
+    .chat-md { display: flex; flex-direction: column; gap: 7px; }
+    .chat-md p { margin: 0; }
+    .chat-md h1, .chat-md h2, .chat-md h3 {
+      margin: 3px 0 1px;
+      font-weight: 700;
+      line-height: 1.35;
+      color: var(--text);
+    }
+    .chat-md h1 { font-size: 17px; }
+    .chat-md h2 { font-size: 15px; }
+    .chat-md h3 { font-size: 14px; }
+    .chat-msg.user .chat-md h1, .chat-msg.user .chat-md h2, .chat-msg.user .chat-md h3 { color: #fff; }
+    .chat-md ul, .chat-md ol { margin: 0; padding-left: 20px; }
+    .chat-md li + li { margin-top: 2px; }
+    .chat-md blockquote {
+      margin: 0;
+      padding-left: 9px;
+      border-left: 3px solid rgba(99,102,241,0.35);
+      color: var(--text-muted);
+    }
+    .chat-md hr { width: 100%; border: 0; border-top: 1px solid var(--border); margin: 3px 0; }
+    .chat-md a { color: var(--info); text-decoration: none; }
+    .chat-md a:hover { text-decoration: underline; }
+    .chat-md pre {
+      margin: 0;
+      padding: 9px;
+      border-radius: var(--radius-sm);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      overflow: auto;
+      max-height: 260px;
+      font-family: 'Cascadia Code','Consolas',monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+    .chat-code-lang {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-muted);
+      margin-bottom: -3px;
+      text-transform: uppercase;
+    }
+    .chat-table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+    .chat-table-wrap table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 280px; }
+    .chat-table-wrap th, .chat-table-wrap td {
+      padding: 7px 8px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+    .chat-table-wrap th { background: var(--bg3); font-weight: 700; }
+    .chat-table-wrap tr:last-child td { border-bottom: 0; }
 
     .chat-thinking { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
     .chat-thinking-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); animation: thinking 1.4s infinite; }
@@ -1505,7 +1548,7 @@
 <div id="screen-login" class="screen">
   <div class="login-card">
     <div class="login-header">
-      <div class="login-logo-icon">&#x26A1;</div>
+      <img class="login-logo-icon" src="../../assets/icon.ico" alt="HeySure Agent" />
       <div class="login-title">HeySure Agent</div>
       <div class="login-subtitle">Windows 桌面端 — 请登录以继续</div>
     </div>
@@ -1545,7 +1588,7 @@
 
   <header class="ai-select-header">
     <div class="logo">
-      <div class="logo-icon">&#x26A1;</div>
+      <img class="logo-icon" src="../../assets/icon.ico" alt="HeySure Agent" />
       <span class="logo-text">HeySure Agent</span>
     </div>
 
@@ -1588,7 +1631,7 @@
   <!-- Header -->
   <header id="header">
     <div class="logo">
-      <div class="logo-icon">&#x26A1;</div>
+      <img class="logo-icon" src="../../assets/icon.ico" alt="HeySure Agent" />
       <span class="logo-text">HeySure Agent</span>
       <span class="logo-sub-txt">Windows</span>
     </div>
@@ -1602,7 +1645,6 @@
 
     <div class="header-spacer"></div>
 
-    <button class="btn btn-ghost btn-icon" id="switch-ai-btn" title="切换 AI 成员">&#x21C6;</button>
     <button class="btn btn-ghost btn-icon" id="settings-toggle" title="设置">&#x2699;</button>
     <button id="theme-toggle" title="切换主题">&#x1F319;</button>
   </header>

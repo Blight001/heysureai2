@@ -55,6 +55,7 @@ from .tools.communication import (
     _ai_send_message,
     _user_send_message,
 )
+from .tools.conversation import _forget_before_current
 from .tools.librarian import (
     _librarian_archive,
     _librarian_consult,
@@ -589,6 +590,30 @@ registry.register(MCPTool(
         "required": ["text"],
     },
     handler=_user_send_message,
+    destructive=True,
+))
+
+registry.register(MCPTool(
+    name="conversation.forget_before_current",
+    description=(
+        "Delete only the messages before the current user message in this active conversation. "
+        "Use when the user asks to forget previous context, reset prior context, or ignore everything before now. "
+        "This preserves the current user request and future messages; it does not clear the whole session."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "session_id": {
+                "type": "string",
+                "description": "Optional. Defaults to the active run session.",
+            },
+            "current_message_id": {
+                "type": "integer",
+                "description": "Optional. Defaults to the current user message in the active run.",
+            },
+        },
+    },
+    handler=_forget_before_current,
     destructive=True,
 ))
 

@@ -7,6 +7,7 @@ interface Agent {
   id: string
   name: string
   role: 'admin' | 'worker'
+  aiRole?: 'assistant_admin' | 'digital_member' | 'admin' | 'worker'
   tokensUsed: number
   tokenLimit: number
   generation: number
@@ -25,6 +26,7 @@ interface Agent {
   digitalMemberRole?: 'manager' | 'member'
   currentTaskTitle?: string
   currentTaskStatus?: string
+  activeRunStatus?: string
   latestThinking?: string
 }
 
@@ -39,6 +41,7 @@ interface KnowledgeItem {
 interface Props {
   currentUserId?: number
   adminAgents: Agent[]
+  memberAgents: Agent[]
   knowledgeItems: KnowledgeItem[]
   knowledgeTotalCount: number
   knowledgeFilterOpen: boolean
@@ -95,6 +98,7 @@ const activeTab = ref<'brain' | 'knowledge'>('brain')
           class="flex-1"
           no-glass
           :admin-agents="adminAgents"
+          :member-agents="memberAgents"
           @context="emit('context', $event)"
           @show-tools="emit('show-tools', $event)"
           @show-context="emit('show-context', $event)"

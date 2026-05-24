@@ -3449,6 +3449,12 @@
     const r = await chrome.storage.session.get(ACT_KEY).catch(() => ({}));
     return r[ACT_KEY] || [];
   }
+  var AUTH_KEY = "_auth_state";
+  var AUTH_DEFAULT = { token: "", account: "", userId: null, userName: "" };
+  async function getAuth() {
+    const r = await chrome.storage.local.get(AUTH_KEY);
+    return { ...AUTH_DEFAULT, ...r[AUTH_KEY] || {} };
+  }
   var CARDS_KEY = "_memory_cards";
   async function getCards() {
     const r = await chrome.storage.local.get(CARDS_KEY);
@@ -4612,8 +4618,13 @@ Always:
   }
   async function register() {
     const settings = await getSettings();
+    const auth = await getAuth();
     const id = settings.agentId || await getMachineId();
-    const selectedAiConfigId = settings.selectedAiConfigId || null;
+    const selectedAiConfigId = auth.token ? settings.selectedAiConfigId || null : null;
+    if (!auth.token && settings.selectedAiConfigId) {
+      await saveSettings({ selectedAiConfigId: null });
+      log("system", "warn", "\u672A\u767B\u5F55\uFF0C\u5DF2\u53D6\u6D88 AI \u6210\u5458\u81EA\u52A8\u6CE8\u518C\u9009\u62E9");
+    }
     socket?.emit("agent:register", {
       id,
       aiConfigId: selectedAiConfigId,
@@ -4822,7 +4833,12 @@ Respond in the same language as the user. For factual questions, search the web 
           break;
         }
         case "agent:selected-ai": {
-          await saveSettings({ selectedAiConfigId: msg.aiConfigId });
+          const auth = await getAuth();
+          const aiConfigId = auth.token ? msg.aiConfigId : null;
+          if (msg.aiConfigId && !auth.token) {
+            log("system", "warn", "\u8BF7\u5148\u767B\u5F55\u8F6F\u4EF6\u7AEF\u8D26\u53F7\uFF0C\u518D\u9009\u62E9 AI \u6210\u5458\u81EA\u52A8\u6CE8\u518C");
+          }
+          await saveSettings({ selectedAiConfigId: aiConfigId });
           if (socket?.connected) {
             await register();
           }
@@ -4874,6 +4890,10 @@ Respond in the same language as the user. For factual questions, search the web 
   });
   chrome.runtime.onStartup.addListener(async () => {
     const s = await getSettings();
+    const auth = await getAuth();
+    if (!auth.token && s.selectedAiConfigId) {
+      await saveSettings({ selectedAiConfigId: null });
+    }
     if (s.autoConnect)
       await connect();
   });

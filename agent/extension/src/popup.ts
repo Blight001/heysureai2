@@ -357,6 +357,17 @@ function renderMembers() {
   }
 }
 function selectMember(id: number) {
+  if (!auth.token) {
+    selectedMemberId = null
+    port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
+    loginFeedback.textContent = '请先登录后再选择 AI 成员'
+    loginFeedback.style.color = 'var(--warn)'
+    switchTab('settings')
+    renderMembers()
+    updateTargetBanners()
+    renderSettingsViews()
+    return
+  }
   selectedMemberId = id
   port.postMessage({ type: 'agent:selected-ai', aiConfigId: id })
   renderMembers()
@@ -1495,7 +1506,7 @@ cardsExportAllBtn.addEventListener('click', async () => {
 // ── Settings (load + save) ─────────────────────────────────────────────────
 function loadSettings(s: AgentSettings) {
   serverUrl = s.serverUrl || ''
-  selectedMemberId = s.selectedAiConfigId || null
+  selectedMemberId = auth.token ? (s.selectedAiConfigId || null) : null
   cfgServer.value   = s.serverUrl   || ''
   cfgAiKey.value    = s.aiKey       || ''
   cfgAiBase.value   = s.aiBaseUrl   || ''
@@ -1665,6 +1676,10 @@ async function init() {
   localModel = s.aiModel || ''
   selectedMemberId = s.selectedAiConfigId || null
   auth = await getAuth()
+  if (!auth.token && selectedMemberId) {
+    selectedMemberId = null
+    port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
+  }
   loginAccount.value = auth.account || ''
   updateUserChip()
   updateOfflineUi()

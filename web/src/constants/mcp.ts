@@ -33,6 +33,7 @@ export const DEFAULT_MCP_TOOLS = [
   'prompt.read_system',
   'prompt.write_system',
   'feishu.send_message',
+  'conversation.forget_before_current',
 ] as const
 
 export type DefaultMcpTool = (typeof DEFAULT_MCP_TOOLS)[number]

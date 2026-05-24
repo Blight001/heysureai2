@@ -27,7 +27,8 @@ electron_1.contextBridge.exposeInMainWorld('heysureAPI', {
     // Connection test
     testConnection: () => electron_1.ipcRenderer.invoke('connection:test'),
     // AI chat
-    sendChat: (messages) => electron_1.ipcRenderer.invoke('chat:send', messages),
+    sendChat: (content) => electron_1.ipcRenderer.invoke('chat:send', content),
+    getChatHistory: () => electron_1.ipcRenderer.invoke('chat:history'),
     // Auth
     login: (params) => electron_1.ipcRenderer.invoke('auth:login', params),
     logout: () => electron_1.ipcRenderer.invoke('auth:logout'),

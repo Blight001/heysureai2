@@ -240,17 +240,49 @@ function sendActivityLog(type: string, status: string, message: string, data?: a
   })
 }
 
+function clearSelectedAiConfig(): void {
+  store.set('selectedAiConfigId', null)
+  store.set('selectedAiConfigName', '')
+  store.set('selectedAiConfigRole', 'member')
+  store.set('selectedAiConfigLifecycle', 'working')
+  store.set('selectedAiConfigProject', '')
+  store.set('agentToken', '')
+  store.set('agentId', '')
+  store.set('agentName', 'Windows Agent')
+  store.set('agentGroup', '')
+}
+
+function clearAiSelectionIfLoggedOut(): boolean {
+  if (store.get('authToken')) return false
+  if (!store.get('selectedAiConfigId')) return false
+  clearSelectedAiConfig()
+  return true
+}
+
 // ── IPC handlers ──────────────────────────────────────────────────────────────
 function registerIpc(): void {
-  ipcMain.handle('settings:get', () => store.store)
+  ipcMain.handle('settings:get', () => {
+    clearAiSelectionIfLoggedOut()
+    return store.store
+  })
 
   ipcMain.handle('settings:save', (_event, newSettings: Partial<AgentSettings>) => {
     Object.entries(newSettings).forEach(([k, v]) => store.set(k as any, v as any))
+    if (clearAiSelectionIfLoggedOut()) {
+      sendActivityLog('system', 'warn', '未登录，已取消 AI 成员自动注册选择')
+    }
     agent?.updateSettings(store.store)
     return store.store
   })
 
   ipcMain.handle('agent:connect', () => {
+    if (!store.get('authToken')) {
+      if (clearAiSelectionIfLoggedOut()) {
+        agent?.updateSettings(store.store)
+      }
+      sendActivityLog('system', 'warn', '请先登录并选择 AI 成员后再连接软件端 Agent')
+      return false
+    }
     agent?.connect()
     return true
   })
@@ -284,9 +316,14 @@ function registerIpc(): void {
     }
   })
 
-  ipcMain.handle('chat:send', async (_event, messages: any[]) => {
+  ipcMain.handle('chat:history', async () => {
     const s = store.store
-    return callServerChat(s, messages)
+    return getServerChatHistory(s)
+  })
+
+  ipcMain.handle('chat:send', async (_event, content: string) => {
+    const s = store.store
+    return callServerChat(s, String(content || ''))
   })
 
   ipcMain.handle('auth:login', async (_event, params: { serverUrl: string; account: string; password: string }) => {
@@ -305,7 +342,9 @@ function registerIpc(): void {
     store.set('serverUrl', base)
     store.set('authToken', data.access_token)
     store.set('userAccount', account)
-    if (data.user?.id) store.set('userId', data.user.id)
+    store.set('userId', data.user?.id ?? null)
+    clearSelectedAiConfig()
+    agent?.updateSettings(store.store)
     return { success: true, user: data.user }
   })
 
@@ -314,14 +353,7 @@ function registerIpc(): void {
     store.set('authToken', '')
     store.set('userAccount', '')
     store.set('userId', null)
-    store.set('selectedAiConfigId', null)
-    store.set('selectedAiConfigName', '')
-    store.set('selectedAiConfigRole', 'member')
-    store.set('selectedAiConfigLifecycle', 'working')
-    store.set('selectedAiConfigProject', '')
-    store.set('agentToken', '')
-    store.set('agentId', '')
-    store.set('agentName', 'Windows Agent')
+    clearSelectedAiConfig()
     return { success: true }
   })
 
@@ -353,6 +385,13 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('ai-config:select', async (_event, cfg: any) => {
+    const s = store.store
+    if (!s.serverUrl || !s.authToken) {
+      clearSelectedAiConfig()
+      agent?.updateSettings(store.store)
+      throw new Error('请先登录后再选择 AI 成员')
+    }
+    if (!cfg?.id) throw new Error('AI 成员无效')
     store.set('selectedAiConfigId', cfg.id)
     store.set('selectedAiConfigName', cfg.name)
     store.set('selectedAiConfigRole', cfg.digital_member_role || 'member')
@@ -360,7 +399,7 @@ function registerIpc(): void {
     store.set('selectedAiConfigProject', cfg.project_name || '')
     store.set('agentToken', store.get('authToken'))
     store.set('agentId', `win-desktop-${cfg.id}`)
-    store.set('agentName', cfg.name)
+    store.set('agentName', 'Windows Agent')
     store.set('agentGroup', cfg.project_name || '')
     agent?.disconnect()
     agent = createAgent(store.store)
@@ -498,75 +537,126 @@ async function callTaskJobAction(jobId: string, action: 'pause' | 'resume', fall
   return { success: true }
 }
 
-// ── Server-side AI chat helper ────────────────────────────────────────────────
-async function callServerChat(
-  settings: AgentSettings,
-  messages: Array<{ role: string; content: string }>,
-): Promise<string> {
+// ── Server-backed AI chat helper ──────────────────────────────────────────────
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+function requireChatSettings(settings: AgentSettings): { base: string; token: string; aiConfigId: number } {
   if (!settings.serverUrl || !settings.authToken) throw new Error('请先登录服务器')
-
-  const base = normalizeServerUrl(settings.serverUrl)
-  const normalizedMessages = messages.map(m => ({
-    role: m.role === 'ai' ? 'assistant' : m.role,
-    content: String(m.content || ''),
-  }))
-  const res = await net.fetch(`${base}/api/chat/stream`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${settings.authToken}`,
-    },
-    body: JSON.stringify({
-      messages: normalizedMessages,
-      ai_kind: 'assistant',
-      ai_config_id: settings.selectedAiConfigId,
-    }),
-    signal: AbortSignal.timeout(120000),
-  })
-  const text = await res.text()
-
-  if (!res.ok) {
-    try {
-      const data = JSON.parse(text)
-      throw new Error(data?.detail || `服务器聊天失败 (${res.status})`)
-    } catch (err: any) {
-      if (err?.message && !err.message.startsWith('Unexpected')) throw err
-      throw new Error(text || `服务器聊天失败 (${res.status})`)
-    }
+  if (!settings.selectedAiConfigId) throw new Error('请先选择 AI 成员')
+  return {
+    base: normalizeServerUrl(settings.serverUrl),
+    token: settings.authToken,
+    aiConfigId: Number(settings.selectedAiConfigId),
   }
-
-  return extractChatStreamText(text) || text
 }
 
-function extractChatStreamText(text: string): string {
-  let reply = ''
-  for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim()
-    if (!line.startsWith('data:')) continue
-    const data = line.slice(5).trim()
-    if (!data || data === '[DONE]') continue
-    try {
-      const chunk = JSON.parse(data)
-      const delta = chunk?.choices?.[0]?.delta
-      const content = delta?.content
-      if (typeof content === 'string') {
-        reply += content
-      } else if (Array.isArray(content)) {
-        for (const part of content) {
-          if (typeof part?.text === 'string') reply += part.text
-        }
-      }
-    } catch {
-      // Ignore non-JSON stream lines.
-    }
+async function readJsonResponse(res: Response, fallback: string): Promise<any> {
+  const text = await res.text()
+  let data: any = {}
+  if (text) {
+    try { data = JSON.parse(text) } catch { data = { detail: text } }
   }
-  return reply
+  if (!res.ok) throw new Error(data?.detail || data?.error || `${fallback} (${res.status})`)
+  return data
+}
+
+async function ensureDesktopChatSession(settings: AgentSettings): Promise<{ id: string; name: string }> {
+  const { base, token, aiConfigId } = requireChatSettings(settings)
+  const query = new URLSearchParams({ ai_kind: 'assistant', ai_config_id: String(aiConfigId) }).toString()
+  const listRes = await net.fetch(`${base}/api/chat/sessions?${query}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10000),
+  })
+  const sessions = await readJsonResponse(listRes, '会话列表加载失败')
+  if (Array.isArray(sessions) && sessions.length > 0) {
+    const preferred = sessions.find((s: any) => /^软件端对话|^Windows Agent/.test(String(s?.name || ''))) || sessions[0]
+    return { id: String(preferred.id), name: String(preferred.name || '软件端对话') }
+  }
+
+  const createRes = await net.fetch(`${base}/api/chat/sessions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: '软件端对话',
+      ai_config_id: aiConfigId,
+      ai_kind: 'assistant',
+    }),
+    signal: AbortSignal.timeout(10000),
+  })
+  const created = await readJsonResponse(createRes, '会话创建失败')
+  return { id: String(created?.id || ''), name: String(created?.name || '软件端对话') }
+}
+
+async function getServerChatHistory(settings: AgentSettings): Promise<any[]> {
+  const { base, token, aiConfigId } = requireChatSettings(settings)
+  const session = await ensureDesktopChatSession(settings)
+  const query = new URLSearchParams({
+    ai_kind: 'assistant',
+    ai_config_id: String(aiConfigId),
+    session_id: session.id,
+  }).toString()
+  const res = await net.fetch(`${base}/api/chat/history?${query}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10000),
+  })
+  const rows = await readJsonResponse(res, '会话历史加载失败')
+  return Array.isArray(rows) ? rows : []
+}
+
+async function callServerChat(
+  settings: AgentSettings,
+  content: string,
+): Promise<{ text: string; sessionId: string }> {
+  const text = String(content || '').trim()
+  if (!text) throw new Error('消息内容不能为空')
+  const { base, token, aiConfigId } = requireChatSettings(settings)
+  const session = await ensureDesktopChatSession(settings)
+  const startRes = await net.fetch(`${base}/api/chat/run/start`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      visible_content: text,
+      model_content: text,
+      session_id: session.id,
+      session_name: session.name,
+      ai_config_id: aiConfigId,
+      ai_kind: 'assistant',
+    }),
+    signal: AbortSignal.timeout(15000),
+  })
+  const started = await readJsonResponse(startRes, '发起对话失败')
+  const runId = String(started?.run_id || '')
+  if (!runId) throw new Error('服务器未返回运行 ID')
+
+  let lastText = ''
+  const MAX_POLLS = 600
+  for (let i = 0; i < MAX_POLLS; i++) {
+    await sleep(800)
+    const statusRes = await net.fetch(`${base}/api/chat/run/status/${encodeURIComponent(runId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(10000),
+    })
+    const st = await readJsonResponse(statusRes, '运行状态查询失败')
+    lastText = String(st?.live_text || lastText || '')
+    const status = String(st?.status || '')
+    if (status === 'completed') return { text: lastText || '完成', sessionId: session.id }
+    if (status === 'stopped') return { text: lastText || '（已停止）', sessionId: session.id }
+    if (status === 'error') throw new Error(st?.error_message || 'AI 对话执行失败')
+  }
+  return { text: lastText || '（超时，未收到完整回复）', sessionId: session.id }
 }
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   await setupCaptureWindow()
 
+  clearAiSelectionIfLoggedOut()
   const settings = store.store
   agent = createAgent(settings)
 

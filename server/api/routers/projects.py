@@ -17,13 +17,6 @@ from api.routers.auth import get_current_user
 router = APIRouter()
 PREFIX = "/api/projects"
 
-DEFAULT_PROJECTS = [
-    {"project_id": "p-files", "name": "文件项目管理系统", "description": "归档策略与协作流", "status": "running"},
-    {"project_id": "p-multiagent", "name": "多端 Agent 统一管理", "description": "设备接入与行为治理", "status": "running"},
-    {"project_id": "p-memory", "name": "学习总结数据库", "description": "知识传承与演化规则", "status": "running"},
-]
-
-
 def _validate_status(status: str) -> str:
     if status not in {"running", "ended"}:
         raise HTTPException(status_code=400, detail="status must be one of: running, ended")
@@ -51,29 +44,6 @@ def _normalize_member_ids(value: object) -> List[int]:
 
 def _save_member_ids(row: EvolutionProject, member_ids: List[int]) -> None:
     row.ai_member_ids = json.dumps(member_ids, ensure_ascii=False)
-
-
-def _ensure_default_projects(session: Session, user_id: int) -> None:
-    existing = session.exec(
-        select(EvolutionProject).where(EvolutionProject.user_id == user_id)
-    ).all()
-    # Seed defaults only for first-time users.
-    # If user already has projects, do not recreate deleted defaults.
-    if existing:
-        return
-    created = False
-    for item in DEFAULT_PROJECTS:
-        row = EvolutionProject(
-            user_id=user_id,
-            project_id=item["project_id"],
-            name=item["name"],
-            description=item["description"],
-            status=item["status"],
-        )
-        session.add(row)
-        created = True
-    if created:
-        session.commit()
 
 
 def _sync_project_members(session: Session, user_id: int, row: EvolutionProject) -> List[int]:
@@ -121,7 +91,6 @@ async def list_projects(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    _ensure_default_projects(session, user.id)
     rows = session.exec(
         select(EvolutionProject)
         .where(EvolutionProject.user_id == user.id)

@@ -20,7 +20,6 @@ import type { Agent, McpRoleMeta, McpToolDefinition, User } from '@/types'
 import logoUrl from '@/assets/logo/HeySure.png'
 import SystemSettingsPanel from './panels/SystemSettingsPanel.vue'
 import LeftSidebarPanel from './panels/LeftSidebarPanel.vue'
-import ConnectedAgentsPanel from './panels/ConnectedAgentsPanel.vue'
 import EvolutionArenaPanel from './panels/EvolutionArenaPanel.vue'
 import ValhallaPanel from './panels/ValhallaPanel.vue'
 import ChatInterface from '@/components/chat/ChatInterface.vue'
@@ -133,6 +132,7 @@ const {
   submitGuidance,
   closeUserMenu,
   adminAgents,
+  sidebarMemberAgents,
   activeAgents,
   centerGridClass,
   projectGridClass,
@@ -436,6 +436,7 @@ onUnmounted(() => {
         <div v-else class="h-auto lg:h-full">
           <LeftSidebarPanel
             :admin-agents="adminAgents"
+            :member-agents="sidebarMemberAgents"
             :knowledge-items="filteredKnowledgeBase"
             :knowledge-total-count="filteredKnowledgeBase.length"
             :knowledge-filter-open="knowledgeFilterOpen"
@@ -451,9 +452,6 @@ onUnmounted(() => {
             @settings="openAgentSettings"
             @create-ai="openCreateAiConfig('assistant_admin')"
           />
-          <div v-if="!leftCollapsed" class="mt-3">
-            <ConnectedAgentsPanel :agents="connectedAgents" />
-          </div>
         </div>
       </section>
 
@@ -489,7 +487,7 @@ onUnmounted(() => {
           英灵殿
         </div>
         <div v-else class="flex flex-col gap-4 h-auto lg:h-full">
-          <ValhallaPanel :entries="valhallaEntries" :active-agents="activeAgents" />
+          <ValhallaPanel :entries="valhallaEntries" :active-agents="activeAgents" :connected-agents="connectedAgents" />
         </div>
       </section>
 

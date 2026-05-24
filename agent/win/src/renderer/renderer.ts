@@ -13,7 +13,8 @@ interface Window {
     onTaskResult: (cb: (data: any) => void) => void
     setTheme: (theme: 'dark' | 'light') => Promise<void>
     testConnection: () => Promise<{ success: boolean; status?: number; ms?: number; error?: string }>
-    sendChat: (messages: any[]) => Promise<string>
+    sendChat: (content: string) => Promise<{ text: string; sessionId?: string }>
+    getChatHistory: () => Promise<Array<{ id?: number; role: string; content: string; think?: string | null }>>
     login: (params: { serverUrl: string; account: string; password: string }) => Promise<{ success: boolean; user: any }>
     logout: () => Promise<{ success: boolean }>
     listAiConfigs: () => Promise<any[]>
@@ -99,7 +100,7 @@ interface TriggerTaskPayload {
 type AppScreen = 'login' | 'ai-select' | 'main'
 let currentTheme: 'dark' | 'light' = 'dark'
 let totalTasks = 0, successTasks = 0, failedTasks = 0, runningTasks = 0
-let chatHistory: Array<{ role: string; content: string }> = []
+let chatHistory: Array<{ role: string; content: string; serverId?: number }> = []
 let chatBusy = false
 let activeTab: 'feed' | 'chat' | 'tasks' = 'feed'
 let sidebarOpen = false
@@ -221,7 +222,10 @@ function switchTab(tab: 'feed' | 'chat' | 'tasks') {
   feedPane.classList.toggle('hidden', tab !== 'feed')
   chatPane.classList.toggle('active', tab === 'chat')
   tasksPane.classList.toggle('active', tab === 'tasks')
-  if (tab === 'chat') chatMessages.scrollTop = chatMessages.scrollHeight
+  if (tab === 'chat') {
+    if (chatHistory.length === 0) loadServerChatHistory().catch(() => {})
+    chatMessages.scrollTop = chatMessages.scrollHeight
+  }
   if (tab === 'tasks') loadTasks().catch(err => showTaskError(err.message || String(err)))
   syncTaskLiveRefresh()
 }
@@ -907,14 +911,175 @@ function addEntry(entry: { id?: string; type: string; status: string; message: s
 }
 
 // ── Chat UI ────────────────────────────────────────────────────────────────
-function renderMd(text: string) {
-  return escapeHtml(text).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\n/g, '<br>')
+function inlineMd(text: string): string {
+  const placeholders: string[] = []
+  const stash = (html: string) => {
+    const key = `@@HTML_${placeholders.length}@@`
+    placeholders.push(html)
+    return key
+  }
+  let out = escapeHtml(text)
+  out = out.replace(/`([^`]+)`/g, (_, code) => stash(`<code>${escapeHtml(code)}</code>`))
+  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, label, url) =>
+    stash(`<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(label)}</a>`),
+  )
+  out = out.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, prefix, url) =>
+    `${prefix}${stash(`<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(url)}</a>`)}`,
+  )
+  out = out
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+    .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')
+    .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+    .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+  placeholders.forEach((html, idx) => {
+    out = out.split(`@@HTML_${idx}@@`).join(html)
+  })
+  return out
 }
+
+function isMarkdownTableStart(lines: string[], index: number): boolean {
+  const head = lines[index]?.trim() || ''
+  const sep = lines[index + 1]?.trim() || ''
+  return /^\|.+\|$/.test(head) && /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(sep)
+}
+
+function parseTableRow(line: string): string[] {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(cell => cell.trim())
+}
+
+function renderMarkdownTable(lines: string[], start: number): { html: string; next: number } {
+  const headers = parseTableRow(lines[start])
+  let idx = start + 2
+  const rows: string[][] = []
+  while (idx < lines.length && /^\|.+\|$/.test(lines[idx].trim())) {
+    rows.push(parseTableRow(lines[idx]))
+    idx++
+  }
+  const head = headers.map(cell => `<th>${inlineMd(cell)}</th>`).join('')
+  const body = rows.map(row =>
+    `<tr>${headers.map((_, i) => `<td>${inlineMd(row[i] || '')}</td>`).join('')}</tr>`,
+  ).join('')
+  return {
+    html: `<div class="chat-table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`,
+    next: idx,
+  }
+}
+
+function renderMarkdown(text: string): string {
+  const src = String(text || '').replace(/<think>[\s\S]*?<\/think>/g, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+  if (!src) return ''
+  const blocks: string[] = []
+  const parts = src.split(/(```[\s\S]*?```)/g)
+  for (const part of parts) {
+    if (!part) continue
+    const fence = part.match(/^```([\w-]*)\n?([\s\S]*?)```$/)
+    if (fence) {
+      const lang = fence[1] ? `<div class="chat-code-lang">${escapeHtml(fence[1])}</div>` : ''
+      blocks.push(`${lang}<pre>${escapeHtml(fence[2].trim())}</pre>`)
+      continue
+    }
+
+    const lines = part.split('\n')
+    let para: string[] = []
+    let list: string[] = []
+    let ordered = false
+    const flushPara = () => {
+      if (!para.length) return
+      blocks.push(`<p>${inlineMd(para.join('\n')).replace(/\n/g, '<br>')}</p>`)
+      para = []
+    }
+    const flushList = () => {
+      if (!list.length) return
+      blocks.push(`<${ordered ? 'ol' : 'ul'}>${list.join('')}</${ordered ? 'ol' : 'ul'}>`)
+      list = []
+    }
+
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      const line = lines[lineIndex]
+      const trimmed = line.trim()
+      if (!trimmed) {
+        flushPara()
+        flushList()
+        continue
+      }
+      if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
+        flushPara()
+        flushList()
+        blocks.push('<hr>')
+        continue
+      }
+      if (isMarkdownTableStart(lines, lineIndex)) {
+        flushPara()
+        flushList()
+        const table = renderMarkdownTable(lines, lineIndex)
+        blocks.push(table.html)
+        lineIndex = table.next - 1
+        continue
+      }
+      const heading = trimmed.match(/^(#{1,3})\s+(.+)$/)
+      if (heading) {
+        flushPara()
+        flushList()
+        const level = Math.min(3, heading[1].length)
+        blocks.push(`<h${level}>${inlineMd(heading[2])}</h${level}>`)
+        continue
+      }
+      const quote = trimmed.match(/^>\s+(.+)$/)
+      if (quote) {
+        flushPara()
+        flushList()
+        blocks.push(`<blockquote>${inlineMd(quote[1])}</blockquote>`)
+        continue
+      }
+      const unordered = trimmed.match(/^[-*]\s+(.+)$/)
+      const orderedMatch = trimmed.match(/^\d+\.\s+(.+)$/)
+      if (unordered || orderedMatch) {
+        flushPara()
+        const nextOrdered = !!orderedMatch
+        if (list.length && ordered !== nextOrdered) flushList()
+        ordered = nextOrdered
+        list.push(`<li>${inlineMd((unordered || orderedMatch)![1])}</li>`)
+        continue
+      }
+      para.push(line)
+    }
+    flushPara()
+    flushList()
+  }
+  return `<div class="chat-md">${blocks.join('')}</div>`
+}
+
+function renderChatHistory() {
+  chatMessages.querySelectorAll('.chat-msg').forEach(el => el.remove())
+  chatNoKey.style.display = chatHistory.length === 0 ? 'flex' : 'none'
+  chatHistory.forEach(msg => appendChatMsg(msg.role === 'assistant' ? 'ai' : 'user', msg.content))
+  updateChatEmptyVisibility()
+}
+
+async function loadServerChatHistory() {
+  try {
+    const rows = await window.heysureAPI.getChatHistory()
+    chatHistory = rows
+      .filter(row => row && (row.role === 'user' || row.role === 'assistant'))
+      .map(row => ({
+        role: row.role,
+        content: row.think ? `<think>${row.think}</think>${row.content || ''}` : String(row.content || ''),
+        serverId: typeof row.id === 'number' ? row.id : undefined,
+      }))
+    renderChatHistory()
+  } catch (err: any) {
+    chatHistory = []
+    renderChatHistory()
+    appendChatMsg('ai', `⚠ 错误: ${err.message || String(err)}`)
+  }
+}
+
 function appendChatMsg(role: 'user' | 'ai', content: string) {
   chatNoKey.style.display = 'none'
   const el = document.createElement('div')
   el.className = `chat-msg ${role}`
-  el.innerHTML = `<div class="chat-avatar">${role === 'ai' ? '&#x2728;' : '&#x1F464;'}</div><div class="chat-bubble">${renderMd(content)}</div>`
+  el.innerHTML = `<div class="chat-avatar">${role === 'ai' ? '&#x2728;' : '&#x1F464;'}</div><div class="chat-bubble">${renderMarkdown(content)}</div>`
   chatMessages.appendChild(el)
   chatMessages.scrollTop = chatMessages.scrollHeight
   return el
@@ -943,10 +1108,9 @@ async function sendChat() {
   appendChatMsg('user', text)
   const thinkEl = appendThinking()
   try {
-    const reply = await window.heysureAPI.sendChat(chatHistory)
+    await window.heysureAPI.sendChat(text)
     thinkEl.remove()
-    chatHistory.push({ role: 'assistant', content: reply })
-    appendChatMsg('ai', reply)
+    await loadServerChatHistory()
   } catch (err: any) {
     thinkEl.remove()
     appendChatMsg('ai', `⚠ 错误: ${err.message || String(err)}`)
@@ -1176,6 +1340,7 @@ function renderAiGrid(configs: any[], statuses: any[]) {
           updateAiMemberDisplay(s)
           const status = await window.heysureAPI.getStatus()
           setStatus(status)
+          await loadServerChatHistory()
           loadTasks(true).catch(() => {})
           showScreen('main')
         } catch (err: any) {
@@ -1205,7 +1370,6 @@ function goToAiSelect() {
   loadAiSelectScreen().catch(() => {})
   showScreen('ai-select')
 }
-document.getElementById('switch-ai-btn')?.addEventListener('click', goToAiSelect)
 document.getElementById('switch-ai-btn2')?.addEventListener('click', goToAiSelect)
 
 // ══════════════════════════════════════════════════════
@@ -1217,6 +1381,7 @@ async function init() {
 
   if (s.authToken && s.selectedAiConfigId) {
     await loadMainSettings()
+    await loadServerChatHistory()
     const status = await window.heysureAPI.getStatus()
     setStatus(status)
     showScreen('main')

@@ -104,6 +104,11 @@ export class HeySureAgent {
   private register(): void {
     const agentId = this.settings.agentId ||
       `agent-${os.hostname().toLowerCase().replace(/[^a-z0-9]/g, '-')}`
+    const hasAuth = !!this.settings.authToken
+    const selectedAiConfigId = hasAuth ? this.settings.selectedAiConfigId : null
+    if (!hasAuth && this.settings.selectedAiConfigId) {
+      this.log('warn', '未登录，已忽略残留的 AI 成员自动注册选择')
+    }
     this.socket?.emit('agent:register', {
       id: agentId,
       name: this.settings.agentName || os.hostname(),
@@ -116,8 +121,8 @@ export class HeySureAgent {
       workspaceRoot: this.workspaceRoot,
       lifecycle: 'registered',
       isWindowsDesktop: true,
-      aiConfigId: this.settings.selectedAiConfigId,
-      userId: this.settings.userId,
+      aiConfigId: selectedAiConfigId,
+      userId: hasAuth ? this.settings.userId : null,
     })
   }
 

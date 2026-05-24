@@ -1,7 +1,7 @@
 // background.ts — HeySure Agent service worker
 // Manages: Socket.IO server connection, task dispatching, popup port communication
 import { io, Socket } from 'socket.io-client'
-import { getSettings, saveSettings, pushActivity, getActivity, getCard } from './lib/storage'
+import { getSettings, saveSettings, pushActivity, getActivity, getCard, getAuth } from './lib/storage'
 import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS, runCardSteps, setCardProgress } from './lib/tools'
 import { callAI } from './lib/ai'
 import {
@@ -117,8 +117,13 @@ async function connect() {
 
 async function register() {
   const settings = await getSettings()
+  const auth = await getAuth()
   const id = settings.agentId || await getMachineId()
-  const selectedAiConfigId = settings.selectedAiConfigId || null
+  const selectedAiConfigId = auth.token ? (settings.selectedAiConfigId || null) : null
+  if (!auth.token && settings.selectedAiConfigId) {
+    await saveSettings({ selectedAiConfigId: null })
+    log('system', 'warn', '未登录，已取消 AI 成员自动注册选择')
+  }
   socket?.emit('agent:register', {
     id,
     aiConfigId: selectedAiConfigId,
@@ -338,7 +343,12 @@ chrome.runtime.onConnect.addListener((port) => {
         break
       }
       case 'agent:selected-ai': {
-        await saveSettings({ selectedAiConfigId: msg.aiConfigId })
+        const auth = await getAuth()
+        const aiConfigId = auth.token ? msg.aiConfigId : null
+        if (msg.aiConfigId && !auth.token) {
+          log('system', 'warn', '请先登录软件端账号，再选择 AI 成员自动注册')
+        }
+        await saveSettings({ selectedAiConfigId: aiConfigId })
         if (socket?.connected) {
           await register()
         }
@@ -397,6 +407,10 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
 // ── Auto-connect on browser startup ──────────────────────────────────────
 chrome.runtime.onStartup.addListener(async () => {
   const s = await getSettings()
+  const auth = await getAuth()
+  if (!auth.token && s.selectedAiConfigId) {
+    await saveSettings({ selectedAiConfigId: null })
+  }
   if (s.autoConnect) await connect()
 })
 
