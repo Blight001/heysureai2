@@ -387,12 +387,12 @@ registry.register(MCPTool(
 registry.register(MCPTool(
     name="ai.send_message",
     description=(
-        "Send a message to another AI in the same digital society without blocking for the reply. "
-        "The target AI's work loop will be interrupted at the next iteration top and "
-        "forced to handle this message before resuming its current task; if the target is idle, "
-        "the server starts a fresh conversation for it. Use this for targeted "
-        "AI↔AI coordination (e.g. asking the librarian to confirm something, asking another worker "
-        "to pause/abort, sharing context). The target replies separately via ai.reply_message."
+        "Send a message to another AI in the same digital society. The message is delivered "
+        "into a session strictly bound to the target AI (no cross-session leakage). When "
+        "require_reply=true (default) this call blocks event-driven until the target AI calls "
+        "ai.reply_message or until timeout_seconds elapses—the reply content is returned in the "
+        "tool result. Set require_reply=false for fire-and-forget. If the target is idle, the "
+        "server starts a fresh conversation for it automatically."
     ),
     input_schema={
         "type": "object",
@@ -401,11 +401,15 @@ registry.register(MCPTool(
             "content": {"type": "string", "description": "Message body."},
             "require_reply": {
                 "type": "boolean",
-                "description": "Compatibility metadata only. ai.send_message always returns after queueing.",
+                "description": (
+                    "When true (default) the call blocks until the target replies or times out; "
+                    "the tool result then contains reply_content. When false it returns "
+                    "immediately after queueing."
+                ),
             },
             "timeout_seconds": {
                 "type": "integer",
-                "description": "Compatibility metadata only; ai.send_message no longer waits for replies.",
+                "description": "Max seconds to wait for a reply when require_reply=true (default 120).",
             },
         },
         "required": ["to_ai_config_id", "content"],
