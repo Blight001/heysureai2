@@ -279,12 +279,18 @@ const frontPromptMessage = computed<ConversationMessage | null>(() => {
 const liveAssistantMessage = computed<ConversationMessage | null>(() => {
   const text = String(props.liveText || '')
   if (!text.trim()) return null
+  const think = String(props.liveThinking || '').trim()
   return {
     id: -1,
     role: 'assistant',
     content: text,
     display_text: text,
+    think: think || undefined,
   }
+})
+
+const typingThinkingText = computed(() => {
+  return String(props.liveText || '').trim() ? '' : props.liveThinking
 })
 
 const renderMessages = computed<ConversationMessage[]>(() => {
@@ -319,7 +325,7 @@ const onRevert = (msgIdx: number, blockIdx: number) => {
     :actionResults="mergedActionResults"
     :actionResultsBySignature="mergedActionResultsBySignature"
     :isTyping="isTyping"
-    :thinkingText="liveThinking"
+    :thinkingText="typingThinkingText"
     :isEmpty="renderMessages.length === 0"
     :readonly="readonly"
     @delete="onDelete"

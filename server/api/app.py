@@ -5,7 +5,7 @@ import importlib
 import glob
 import traceback
 import asyncio
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -52,6 +52,8 @@ async def lifespan(app: FastAPI):
     yield
     stop_event.set()
     task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 # FastAPI App
 app = FastAPI(lifespan=lifespan)

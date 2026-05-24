@@ -33,9 +33,6 @@ TASK_RUNTIME_REQUIRED_TOOLS = {
 }
 TASK_TOOLSET_FOR_CREATE_COMPAT = {"task.list", "task.get_current", "task.inherit", "task.complete"}
 TASK_CREATE_TOOLS = {"task.create", "task.create_immediate", "task.create_scheduled", "task.create_recurring"}
-WORKSPACE_TOOLSET_FOR_READ_BY_NAME_COMPAT = {"workspace.read_files"}
-
-
 def with_task_create_compat(tools: set[str]) -> set[str]:
     normalized = {str(item).strip() for item in (tools or set()) if str(item).strip()}
     if normalized.intersection(TASK_CREATE_TOOLS):
@@ -47,12 +44,12 @@ def with_task_create_compat(tools: set[str]) -> set[str]:
 
 
 def with_workspace_read_by_name_compat(tools: set[str]) -> set[str]:
-    normalized = {str(item).strip() for item in (tools or set()) if str(item).strip()}
-    if "workspace.read_file_by_name" in normalized:
-        return normalized
-    if normalized.intersection(WORKSPACE_TOOLSET_FOR_READ_BY_NAME_COMPAT):
-        normalized.add("workspace.read_file_by_name")
-    return normalized
+    return {
+        str(item).strip()
+        for item in (tools or set())
+        if str(item).strip()
+        and (not str(item).strip().startswith("workspace.") or str(item).strip() == "workspace.run_command")
+    }
 
 
 def normalize_workspace_root(value: Optional[str]) -> Optional[str]:

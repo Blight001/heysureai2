@@ -28,7 +28,7 @@ const parseMcpPayload = (raw: string): { tool: string; arguments: Record<string,
     return { tool, arguments: args };
   } catch {
     // fallback to XML-like payload:
-    // <tool>workspace.read_files</tool>
+    // <tool>workspace.run_command</tool>
     // <arguments>{"paths":["a.txt"]}</arguments>
   }
 
@@ -131,16 +131,10 @@ All file paths must be relative to the user's workspace root.
 
 When you want to call a tool, output one or more blocks using EXACTLY this format and do not wrap them in markdown code fences:
 <mcp-call>
-{"tool":"workspace.read_files","arguments":{"paths":["README.md"]}}
+{"tool":"workspace.run_command","arguments":{"command":"dir"}}
 </mcp-call>
 
 Available MCP tools include:
-- workspace.list_files
-- workspace.get_file_tree
-- workspace.read_files
-- workspace.write_file
-- workspace.edit_file
-- workspace.delete_path
 - workspace.run_command
 - admin.list_agents
 - admin.get_overview
@@ -159,9 +153,7 @@ Available MCP tools include:
 
 Rules:
 - Explain your intent in normal text first when helpful, then emit the MCP call block.
-- For workspace.write_file and workspace.edit_file, prefer structured arguments: target + content/edits + options.
-- Use workspace.edit_file for targeted edits to existing files.
-- Use workspace.write_file for new files or full rewrites.
+- Use workspace.run_command for workspace inspection, file reads, file writes, edits, deletion, and command execution.
 - Use admin.* tools when managing connected agents.
 - Only fall back to legacy File/Create File/Delete File/Run Command formats if MCP is unavailable.`;
 

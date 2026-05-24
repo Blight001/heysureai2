@@ -1,11 +1,10 @@
-"""AI ↔ AI 同步消息服务（带回复语义与发送方阻塞等待）。
+"""AI ↔ AI 消息服务（带回复语义）。
 
 设计要点：
 - 真正的"中断"靠目标 AI worker 在主循环顶部检查收件箱实现，详见
   chat_worker._poll_inbound_ai_message 钩子。
-- 发送方走 async handler + asyncio.sleep 轮询 DB，等到 status=replied
-  或超时；这样不阻塞别的 worker 线程（每个 MCP 调用都有自己的
-  asyncio.run() 创建的临时 loop）。
+- 发送方 MCP 调用只负责入队和唤醒目标 AI，不再阻塞等待回复。
+- wait_for_reply 保留给历史兼容或调试场景，当前 ai.send_message 不使用它。
 """
 
 from __future__ import annotations
@@ -190,8 +189,7 @@ async def wait_for_reply(
 ) -> Dict[str, Any]:
     """async 轮询消息状态。返回最终的 dict（含 status 与 reply_content）。
 
-    用在 ai.send_message 的发送方 handler 中：发送后阻塞最多 timeout_seconds，
-    一旦目标 AI 回复就立即返回。
+    历史兼容/调试用：发送后阻塞最多 timeout_seconds，一旦目标 AI 回复就立即返回。
     """
     deadline = time.time() + max(1, int(timeout_seconds or 120))
     while True:

@@ -4631,9 +4631,6 @@ Always:
     socket.on("task:dispatch", (task) => {
       void handleTask(task);
     });
-    socket.on("human:ask", (data) => {
-      broadcast({ type: "activity:log", entry: mkEntry("human", "warn", `AI\u63D0\u95EE: ${data.prompt}`, data) });
-    });
   }
   async function register() {
     const settings = await getSettings();

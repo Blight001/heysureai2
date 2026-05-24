@@ -230,26 +230,7 @@ def _render_mcp_tool_item(tool_info: Dict[str, Any]) -> str:
     field_limit = 100 if name in _TASK_CREATE_TOOL_NAMES else (30 if name.startswith("task.") else 6)
 
     example_args: Dict[str, Any] = {}
-    if name == "workspace.write_file":
-        example_args = {
-            "target": {"path": "doc/notes/todo.md"},
-            "content": {"text": "# 今日待办\n- 修复 MCP 文件编辑策略\n- 回归验证"},
-            "options": {"create": True, "overwrite": True, "create_dirs": True},
-        }
-    elif name == "workspace.edit_file":
-        example_args = {
-            "target": {"path": "doc/notes/todo.md"},
-            "edits": [
-                {
-                    "op": "replace",
-                    "search": "修复 MCP 文件编辑策略",
-                    "replace": "修复 MCP 文件编辑策略（结构化模式）",
-                    "replace_all": False,
-                }
-            ],
-            "options": {"create_if_missing": False},
-        }
-    elif name == "task.create_immediate":
+    if name == "task.create_immediate":
         if "title" in props:
             example_args["title"] = "整理今日待办并更新任务看板"
         elif "name" in props:
@@ -326,11 +307,6 @@ def _render_mcp_tool_item(tool_info: Dict[str, Any]) -> str:
         format_hint = (
             "\n"
             "  时间格式: 循环任务不要传 `schedule_at`，仅使用 `schedule_duration_minutes`（分钟间隔）。"
-        )
-    elif name in {"workspace.write_file", "workspace.edit_file"}:
-        format_hint = (
-            "\n"
-            "  结构化模式: 建议优先使用 `target + content/edits + options`；旧字段（path/search/replace）仍兼容。"
         )
     return (
         f"- {name} (必填: {_compact_fields(required_desc, field_limit)}; 可选: {_compact_fields(optional_desc, field_limit)})\n"

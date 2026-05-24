@@ -2,15 +2,8 @@ from .core import MCPRegistry, MCPTool
 from .tools.workspace import (
     _dispatch_flow,
     _get_overview,
-    _get_tree,
     _list_agents,
-    _list_files,
-    _read_file_by_name,
-    _read_files,
     _run_command,
-    _write_file,
-    _edit_file,
-    _delete_path,
 )
 from .tools.projects import (
     _create_project,
@@ -46,7 +39,6 @@ from .tools.memory import (
     _memory_update,
     _memory_write,
 )
-from .tools.human import _human_ask
 from .tools.communication import (
     _ai_reply_message,
     _ai_send_message,
@@ -63,166 +55,6 @@ from .tools.librarian import (
 
 registry = MCPRegistry()
 
-registry.register(MCPTool(
-    name="workspace.list_files",
-    description="List files and directories in the current user's workspace.",
-    input_schema={"type": "object", "properties": {}},
-    handler=_list_files,
-))
-registry.register(MCPTool(
-    name="workspace.get_file_tree",
-    description="Get workspace tree. Optional: path for a specific folder, or name to locate folders by name.",
-    input_schema={
-        "type": "object",
-        "properties": {
-            "path": {"type": "string"},
-            "name": {"type": "string"},
-            "case_sensitive": {"type": "boolean"},
-            "max_matches": {"type": "integer"},
-        },
-    },
-    handler=_get_tree,
-))
-registry.register(MCPTool(
-    name="workspace.read_files",
-    description="Read one or more concrete files from workspace with safety limits on file count and bytes.",
-    input_schema={
-        "type": "object",
-        "properties": {
-            "paths": {"type": "array", "items": {"type": "string"}},
-            "max_files": {"type": "integer"},
-            "max_total_bytes": {"type": "integer"},
-            "max_single_file_bytes": {"type": "integer"},
-        },
-        "required": ["paths"],
-    },
-    handler=_read_files,
-))
-registry.register(MCPTool(
-    name="workspace.read_file_by_name",
-    description="Find file(s) by name and read matched content with the same safety limits as workspace.read_files.",
-    input_schema={
-        "type": "object",
-        "properties": {
-            "name": {"type": "string"},
-            "names": {"type": "array", "items": {"type": "string"}},
-            "case_sensitive": {"type": "boolean"},
-            "allow_partial": {"type": "boolean"},
-            "max_matches": {"type": "integer"},
-            "read_all_matches": {"type": "boolean"},
-            "max_files": {"type": "integer"},
-            "max_total_bytes": {"type": "integer"},
-            "max_single_file_bytes": {"type": "integer"},
-        },
-        "required": [],
-    },
-    handler=_read_file_by_name,
-))
-registry.register(MCPTool(
-    name="workspace.write_file",
-    description="Create or overwrite a file in the current user's workspace. Supports structured mode (target/content/options) and legacy flat fields.",
-    input_schema={
-        "type": "object",
-        "properties": {
-            "target": {
-                "type": "object",
-                "description": "Structured target container.",
-                "properties": {
-                    "path": {"type": "string", "description": "Relative file path in workspace."},
-                },
-            },
-            "content": {
-                "type": ["string", "object"],
-                "description": "File content. Structured mode supports {\"text\":\"...\"}.",
-                "properties": {
-                    "text": {"type": "string"},
-                    "value": {"type": "string"},
-                    "raw": {"type": "string"},
-                },
-            },
-            "options": {
-                "type": "object",
-                "description": "Structured write options.",
-                "properties": {
-                    "create": {"type": "boolean", "description": "Allow create when file is missing. Default true."},
-                    "overwrite": {"type": "boolean", "description": "Allow overwrite when file exists. Default true."},
-                    "create_dirs": {"type": "boolean", "description": "Auto create parent directories. Default true."},
-                    "if_exists": {"type": "string", "enum": ["overwrite", "error", "skip"], "description": "Existing-file strategy."},
-                },
-            },
-            "path": {"type": "string", "description": "Legacy path field."},
-            "create": {"type": "boolean", "description": "Legacy create flag (same as options.create)."},
-            "overwrite": {"type": "boolean", "description": "Legacy overwrite flag (same as options.overwrite)."},
-            "if_exists": {"type": "string", "enum": ["overwrite", "error", "skip"], "description": "Legacy existing-file strategy."},
-        },
-        "required": [],
-    },
-    handler=_write_file,
-    destructive=True,
-))
-registry.register(MCPTool(
-    name="workspace.edit_file",
-    description="Edit a file with structured edit operations (replace/set/append/prepend), or create it if allowed. Legacy search/replace is still supported.",
-    input_schema={
-        "type": "object",
-        "properties": {
-            "target": {
-                "type": "object",
-                "description": "Structured target container.",
-                "properties": {
-                    "path": {"type": "string", "description": "Relative file path in workspace."},
-                },
-            },
-            "edits": {
-                "type": "array",
-                "description": "Structured edit sequence, applied in order.",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "op": {"type": "string", "enum": ["replace", "set", "append", "prepend"]},
-                        "search": {"type": "string", "description": "Required for replace."},
-                        "match": {"type": "string", "description": "Alias of search."},
-                        "find": {"type": "string", "description": "Alias of search."},
-                        "replace": {"type": "string", "description": "Replacement text for replace."},
-                        "with": {"type": "string", "description": "Alias of replace."},
-                        "content": {"type": "string", "description": "Content for set/append/prepend."},
-                        "text": {"type": "string", "description": "Alias of content."},
-                        "value": {"type": "string", "description": "Alias of content/replace."},
-                        "replace_all": {"type": "boolean", "description": "Replace all matches (replace op)."},
-                        "allow_missing": {"type": "boolean", "description": "Skip edit if search text is missing."},
-                    },
-                },
-            },
-            "options": {
-                "type": "object",
-                "description": "Structured edit options.",
-                "properties": {
-                    "create_if_missing": {"type": "boolean", "description": "Create file when missing. Default false."},
-                    "create_content": {"type": "string", "description": "Seed content used when creating a missing file in structured mode."},
-                },
-            },
-            "path": {"type": "string", "description": "Legacy path field."},
-            "search": {"type": "string", "description": "Legacy search snippet."},
-            "replace": {"type": "string", "description": "Legacy replacement snippet (or full content when search is empty)."},
-            "create_if_missing": {"type": "boolean", "description": "Legacy create_if_missing flag."},
-            "replace_all": {"type": "boolean", "description": "Legacy replace_all flag."},
-        },
-        "required": [],
-    },
-    handler=_edit_file,
-    destructive=True,
-))
-registry.register(MCPTool(
-    name="workspace.delete_path",
-    description="Delete a file from the current user's workspace.",
-    input_schema={
-        "type": "object",
-        "properties": {"path": {"type": "string"}},
-        "required": ["path"],
-    },
-    handler=_delete_path,
-    destructive=True,
-))
 registry.register(MCPTool(
     name="workspace.run_command",
     description="Run a shell command in the current user's workspace.",
@@ -501,7 +333,7 @@ registry.register(MCPTool(
     description=(
         "Send a text message to the human user (currently via the bound Feishu bot). "
         "Use this for proactive notifications, status updates, or asking the user to take action "
-        "asynchronously. For inline synchronous Q&A prefer human.ask instead."
+        "asynchronously."
     ),
     input_schema={
         "type": "object",
@@ -555,12 +387,12 @@ registry.register(MCPTool(
 registry.register(MCPTool(
     name="ai.send_message",
     description=(
-        "Send a message to another AI in the same digital society and (by default) block until it "
-        "replies. The target AI's work loop will be interrupted at the next iteration top and "
+        "Send a message to another AI in the same digital society without blocking for the reply. "
+        "The target AI's work loop will be interrupted at the next iteration top and "
         "forced to handle this message before resuming its current task; if the target is idle, "
         "the server starts a fresh conversation for it. Use this for targeted "
         "AI↔AI coordination (e.g. asking the librarian to confirm something, asking another worker "
-        "to pause/abort, sharing context)."
+        "to pause/abort, sharing context). The target replies separately via ai.reply_message."
     ),
     input_schema={
         "type": "object",
@@ -569,11 +401,11 @@ registry.register(MCPTool(
             "content": {"type": "string", "description": "Message body."},
             "require_reply": {
                 "type": "boolean",
-                "description": "If true (default) wait synchronously for the target's reply.",
+                "description": "Compatibility metadata only. ai.send_message always returns after queueing.",
             },
             "timeout_seconds": {
                 "type": "integer",
-                "description": "Max seconds to wait for reply (default 120).",
+                "description": "Compatibility metadata only; ai.send_message no longer waits for replies.",
             },
         },
         "required": ["to_ai_config_id", "content"],
@@ -724,37 +556,6 @@ registry.register(MCPTool(
     },
     handler=_evolution_review,
     destructive=True,
-))
-
-registry.register(MCPTool(
-    name="human.ask",
-    description=(
-        "Pause the current task and ask the human a question. "
-        "Use kind='confirm' for yes/no, kind='select' for multiple-choice (provide options), "
-        "kind='text' for free-form text input. Blocks until the human answers or timeout elapses."
-    ),
-    input_schema={
-        "type": "object",
-        "properties": {
-            "prompt": {"type": "string", "description": "The question or prompt to show the human."},
-            "kind": {
-                "type": "string",
-                "enum": ["confirm", "select", "text"],
-                "description": "Interaction type. Default: text.",
-            },
-            "options": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Choices for kind=select or custom labels for kind=confirm.",
-            },
-            "timeout_seconds": {"type": "integer", "description": "Max wait time in seconds (5-3600). Default 300."},
-            "session_id": {"type": "string", "description": "Optional session id for context."},
-            "job_id": {"type": "string", "description": "Optional job id for context."},
-        },
-        "required": ["prompt"],
-    },
-    handler=_human_ask,
-    destructive=False,
 ))
 
 registry.register(MCPTool(

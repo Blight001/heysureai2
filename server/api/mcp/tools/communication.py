@@ -1,6 +1,6 @@
 """通信类 MCP 工具：
 - user.send_message  → 向用户发送消息（沿用飞书底座，名字改为业务语义）
-- ai.send_message    → 向另一个 AI 发送消息（可选阻塞等待回复）
+- ai.send_message    → 向另一个 AI 发送消息（异步入队，不阻塞等待回复）
 - ai.reply_message   → 目标 AI 用此回复对方
 - ai.list_inbox      → 查看自己的未处理消息（一般不需要主动看，强插已经会注入）
 """
@@ -83,6 +83,8 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
     content = str(args.get("content") or args.get("text") or args.get("message") or "").strip()
     if not content:
         raise HTTPException(status_code=400, detail="content is required")
+    # Keep require_reply as message metadata for the target-side reply flow, but
+    # ai.send_message itself no longer blocks waiting for that reply.
     require_reply = bool(args.get("require_reply", True))
     timeout_seconds = int(args.get("timeout_seconds") or 120)
 
@@ -120,26 +122,12 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
     }
     if wakeup is not None:
         out["target_wakeup"] = wakeup
-    if not require_reply:
-        if wakeup and wakeup.get("started"):
-            out["note"] = "已入队，不等待回复；目标 AI 原本空闲，系统已创建新对话并唤醒处理本消息。"
-        elif target_active:
-            out["note"] = "已入队，不等待回复；目标 AI 工作循环到下一轮顶部会捕获并处理本消息。"
-        else:
-            out["note"] = "已入队，但目标 AI 唤醒失败；它要等被唤起执行任务时才能看到。"
-        return out
-
-    # 阻塞等待回复
-    final = await ai_message_service.wait_for_reply(
-        message_id=msg.message_id,
-        user_id=user_id,
-        timeout_seconds=timeout_seconds,
-    )
-    out["status"] = final.get("status")
-    out["reply_content"] = final.get("reply_content")
-    if final.get("failure_reason"):
-        out["failure_reason"] = final.get("failure_reason")
-    out["replied_at"] = final.get("replied_at")
+    if wakeup and wakeup.get("started"):
+        out["note"] = "已入队，不等待回复；目标 AI 原本空闲，系统已创建新对话并唤醒处理本消息。"
+    elif target_active:
+        out["note"] = "已入队，不等待回复；目标 AI 工作循环到下一轮顶部会捕获并处理本消息。"
+    else:
+        out["note"] = "已入队，但目标 AI 唤醒失败；它要等被唤起执行任务时才能看到。"
     return out
 
 

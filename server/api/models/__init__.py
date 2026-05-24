@@ -13,7 +13,7 @@ Sub-modules:
 - ai_runtime   — AITaskJob / AIRuntimeStatus / TokenUsageSnapshot
 - project      — EvolutionProject (multi-AI collaboration containers)
 - knowledge    — Memory / KnowledgeEntry / ValhallaEntry / EvolutionInput
-- communication — AIMessage / HumanRequest
+- communication — AIMessage
 """
 
 from .ai_config import (
@@ -30,7 +30,7 @@ from .chat import (
     ChatSession,
     ChatSessionCreate,
 )
-from .communication import AIMessage, HumanRequest
+from .communication import AIMessage
 from .defaults import (
     DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE,
     DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
@@ -93,5 +93,4 @@ __all__ = [
     "ValhallaEntry",
     # communication
     "AIMessage",
-    "HumanRequest",
 ]

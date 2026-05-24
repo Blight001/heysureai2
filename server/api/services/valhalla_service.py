@@ -99,9 +99,6 @@ def _session_token_total(messages: List[ChatMessage]) -> int:
 
 
 _WRITE_TOOL_NAMES = {
-    "workspace.write_file",
-    "workspace.edit_file",
-    "workspace.delete_path",
     "workspace.run_command",
 }
 
@@ -162,18 +159,6 @@ def _parse_mcp_block(block: str) -> tuple[str, Dict[str, Any]]:
 def _pick_artifact_path(tool: str, args: Dict[str, Any]) -> str:
     if not isinstance(args, dict):
         return ""
-    if tool == "workspace.write_file":
-        target = args.get("target")
-        if isinstance(target, dict) and target.get("path"):
-            return str(target.get("path"))
-        return str(args.get("path") or "")
-    if tool == "workspace.edit_file":
-        target = args.get("target")
-        if isinstance(target, dict) and target.get("path"):
-            return str(target.get("path"))
-        return str(args.get("path") or "")
-    if tool == "workspace.delete_path":
-        return str(args.get("path") or "")
     if tool == "workspace.run_command":
         return str(args.get("command") or args.get("cmd") or "")
     return ""

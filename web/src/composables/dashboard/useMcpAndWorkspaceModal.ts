@@ -95,15 +95,17 @@ export const useMcpAndWorkspaceModal = ({ mcpToolMetaByName }: UseMcpAndWorkspac
     workspaceContextModalGitDiff.value = ''
     workspaceContextModalChanged.value = []
     try {
-      const treeData = await callMcpTool({ tool: 'workspace.get_file_tree', arguments: {}, ai_config_id: agent.aiConfigId })
+      const treeData = await callMcpTool({
+        tool: 'workspace.run_command',
+        arguments: { command: 'dir /s /b' },
+        ai_config_id: agent.aiConfigId,
+      })
 
-      const treeResult = (treeData?.result && typeof treeData.result === 'object') ? treeData.result : {}
-
-      const root = String(treeResult.selected_path || treeResult.root || '.')
-      const treeText = String(treeResult.tree || '').trim()
+      const commandResult = (treeData?.result && typeof treeData.result === 'object') ? treeData.result : {}
+      const treeText = String(commandResult.output || '').trim()
       workspaceContextModalTree.value = treeText
-        ? `当前根目录: ${root}\n\n${treeText}`
-        : `当前根目录: ${root}\n\n暂无目录结构数据`
+        ? `执行命令: dir /s /b\n\n${treeText}`
+        : '执行命令: dir /s /b\n\n暂无目录结构数据'
       workspaceContextModalChanged.value = []
       workspaceContextModalGitDiff.value = ''
     } catch (err: any) {

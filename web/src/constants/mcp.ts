@@ -4,12 +4,6 @@
  * is empty.
  */
 export const DEFAULT_MCP_TOOLS = [
-  'workspace.list_files',
-  'workspace.get_file_tree',
-  'workspace.read_files',
-  'workspace.write_file',
-  'workspace.edit_file',
-  'workspace.delete_path',
   'workspace.run_command',
   'admin.list_agents',
   'admin.get_overview',

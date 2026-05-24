@@ -88,12 +88,6 @@ export const ENDPOINT_AGENT_MCP_TOOLS = [
 ]
 
 export const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag: string }> = {
-  'workspace.list_files': { label: '列出文件', description: '查看当前工作目录下可访问的文件与目录。', tag: '工作区' },
-  'workspace.get_file_tree': { label: '目录树', description: '获取目录树结构，便于快速理解工程层级。', tag: '工作区' },
-  'workspace.read_files': { label: '读取文件', description: '按路径批量读取文件内容。', tag: '工作区' },
-  'workspace.write_file': { label: '写入文件', description: '支持结构化参数（target/content/options）与兼容旧字段的文件写入。', tag: '工作区' },
-  'workspace.edit_file': { label: '编辑文件', description: '支持结构化 edits（replace/set/append/prepend）并兼容旧 search/replace。', tag: '工作区' },
-  'workspace.delete_path': { label: '删除路径', description: '删除指定文件或目录，请谨慎操作。', tag: '工作区' },
   'workspace.run_command': { label: '执行命令', description: '在工作目录中执行终端命令。', tag: '工作区' },
   'admin.list_agents': { label: '列出智能体', description: '查看系统中的 AI 成员列表。', tag: '管理与项目' },
   'admin.get_overview': { label: '管理总览', description: '获取系统运行状态与关键统计。', tag: '管理与项目' },
@@ -118,7 +112,7 @@ export const MCP_TOOL_ZH_META: Record<string, { label: string; description: stri
   'prompt.write_system': { label: '修改系统 Prompt', description: '按行修改全局注入模板/旧版兜底 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
   'user.send_message': { label: '发送用户消息', description: '向用户发送文本消息；当前默认通过绑定的飞书机器人投递。', tag: '协作' },
   'conversation.forget_before_current': { label: '忘记前文', description: '删除当前会话里当前用户消息之前的内容，保留当前消息及之后内容。', tag: '协作' },
-  'ai.send_message': { label: '发送 AI 消息', description: '向另一个 AI 发送消息，可等待对方回复，用于 AI 间协作。', tag: '协作' },
+  'ai.send_message': { label: '发送 AI 消息', description: '向另一个 AI 发送消息并立即返回；对方会通过 AI 消息回复流程返回结果。', tag: '协作' },
   'ai.reply_message': { label: '回复 AI 消息', description: '回复收到的 AI 间消息，回复后继续之前被中断的工作。', tag: '协作' },
   'memory.write': { label: '写入记忆', description: '沉淀高价值的结构化记忆（事实/决策/经验/待办/风险/模板）供后续检索。', tag: '计划与记忆' },
   'memory.search': { label: '检索记忆', description: '按关键词、类型、项目或标签搜索已存储的记忆。', tag: '计划与记忆' },
@@ -133,7 +127,6 @@ export const MCP_TOOL_ZH_META: Record<string, { label: string; description: stri
   'evolution.input': { label: '提交进化建议', description: '提交对提示词/工具/流程的改进建议，交由核心管理者评审。', tag: '进化' },
   'evolution.list': { label: '进化建议列表', description: '列出已提交的进化建议，可按评审状态过滤。', tag: '进化' },
   'evolution.review': { label: '评审进化建议', description: '评审进化建议：接受/拒绝/应用（核心管理者）。', tag: '进化' },
-  'human.ask': { label: '询问人类', description: '暂停当前任务并向人类提问（确认/选择/文本），阻塞直至回答或超时。', tag: '协作' },
   'browser_find_popups': { label: '查找弹窗', description: '检测当前页面可见的弹窗、模态框、抽屉、遮罩，并返回可能的关闭按钮。', tag: '浏览器页面' },
   'browser_close_popup': { label: '关闭弹窗', description: '关闭当前页面弹窗；优先点击关闭按钮，必要时使用 Escape 或遮罩点击兜底。', tag: '浏览器页面' },
 }
@@ -229,7 +222,6 @@ const getMcpToolFallbackTag = (name: string) => {
   if (hasMcpPrefix(name, 'conversation')) return '协作'
   if (hasMcpPrefix(name, 'user')) return '协作'
   if (hasMcpPrefix(name, 'ai')) return '协作'
-  if (hasMcpPrefix(name, 'human')) return '协作'
   return '通用'
 }
 
@@ -263,7 +255,6 @@ const getMcpToolFallbackLabel = (name: string) => {
   if (hasMcpPrefix(normalized, 'conversation')) return `对话工具：${normalized}`
   if (hasMcpPrefix(normalized, 'user')) return `用户协作工具：${normalized}`
   if (hasMcpPrefix(normalized, 'ai')) return `AI 协作工具：${normalized}`
-  if (hasMcpPrefix(normalized, 'human')) return `人类协作工具：${normalized}`
   if (hasMcpPrefix(normalized, 'feishu')) return `飞书工具：${normalized}`
   return `通用工具：${normalized}`
 }

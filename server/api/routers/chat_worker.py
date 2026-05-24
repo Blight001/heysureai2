@@ -553,7 +553,7 @@ def _run_worker(
                             bg,
                             user_id,
                             ChatMessageCreate(
-                                role="user",
+                                role="system",
                                 content=_injected,
                                 tags=f"ai_message_inbound:{_inbound.message_id}",
                                 ai_config_id=ai_config_id,
@@ -564,7 +564,7 @@ def _run_worker(
                                 total_tokens=0,
                             ),
                         )
-                        convo.append({"role": "user", "content": _injected})
+                        convo.append({"role": "system", "content": _injected})
 
                 _append_missing_tool_responses(
                     convo,
@@ -1251,7 +1251,7 @@ def _run_worker(
                                     bg,
                                     user_id,
                                     ChatMessageCreate(
-                                        role="user",
+                                        role="system",
                                         content=_resume,
                                         tags=f"ai_message_reply_ok:{_replied_id}",
                                         ai_config_id=ai_config_id,
@@ -1262,7 +1262,7 @@ def _run_worker(
                                         total_tokens=0,
                                     ),
                                 )
-                                convo.append({"role": "user", "content": _resume})
+                                convo.append({"role": "system", "content": _resume})
                         except Exception as _rex:
                             print(f"[chat_worker] ai.reply_message resume notice failed: {_rex}")
                 _set_run_live_phase(run_id, "generating")

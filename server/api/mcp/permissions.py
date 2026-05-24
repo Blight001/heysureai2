@@ -41,15 +41,7 @@ DEFAULT_MIN_ROLE = ROLE_MEMBER
 # map default to DEFAULT_MIN_ROLE (available to everyone). Sensitive tools are
 # raised so they can only be granted to the appropriate tiers.
 MCP_TOOL_MIN_ROLE: Dict[str, str] = {
-    # Workspace read — every tier.
-    "workspace.list_files": ROLE_MEMBER,
-    "workspace.get_file_tree": ROLE_MEMBER,
-    "workspace.read_files": ROLE_MEMBER,
-    "workspace.read_file_by_name": ROLE_MEMBER,
-    # Workspace write — every tier within its own workspace; shell exec is manager+.
-    "workspace.write_file": ROLE_MEMBER,
-    "workspace.edit_file": ROLE_MEMBER,
-    "workspace.delete_path": ROLE_MEMBER,
+    # Workspace access is command-only. AI should use shell commands for file operations.
     "workspace.run_command": ROLE_MANAGER,
     # Task — members run their own task; orchestration is manager+.
     "task.get_current": ROLE_MEMBER,
@@ -67,8 +59,6 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "memory.list": ROLE_MEMBER,
     "memory.update": ROLE_MEMBER,
     "memory.archive": ROLE_MANAGER,
-    # Human-in-the-loop — every tier.
-    "human.ask": ROLE_MEMBER,
     # Prompt — read own prompt is member; editing AI prompts is manager+;
     # global/system prompt templates are assistant_admin+.
     "prompt.list_targets": ROLE_MEMBER,
@@ -191,6 +181,8 @@ def clamp_tools_json(user, tier: str, mcp_tools_json: Optional[str]) -> str:
     clamped: List[str] = []
     seen: Set[str] = set()
     for tool in requested:
+        if tool.startswith("workspace.") and tool != "workspace.run_command":
+            continue
         # Unknown (dynamic) tools are governed elsewhere; keep them as-is.
         if tool not in names or tool in allowed:
             if tool not in seen:

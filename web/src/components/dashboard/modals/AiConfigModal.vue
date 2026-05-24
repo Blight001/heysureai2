@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { getMcpToolZhLabel, groupMcpToolsBySource } from '@/utils/mcpTools'
 
 type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'feishu'
@@ -24,6 +24,7 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const promptDetailOpen = ref(false)
 
 const settingsSectionTitle: Record<SettingsSection, string> = {
   mcp: 'MCP 工具权限',
@@ -41,8 +42,17 @@ const closeSettingsSection = () => {
   props.onToggleSettingsSection(props.settingsSection)
 }
 
+const openPromptDetail = () => {
+  promptDetailOpen.value = true
+}
+
+const closePromptDetail = () => {
+  promptDetailOpen.value = false
+}
+
 const groupedAvailableMcpTools = computed(() => groupMcpToolsBySource(props.availableMcpTools))
 const isToolSelected = (tool: string) => Array.isArray(props.form?.mcp_tools) && props.form.mcp_tools.includes(tool)
+const selectedAvailableMcpToolCount = computed(() => props.availableMcpTools.filter(tool => isToolSelected(tool)).length)
 const toolsAllSelected = (tools: string[]) => tools.length > 0 && tools.every(tool => isToolSelected(tool))
 const emitToolSelection = (tool: string, checked: boolean) => {
   props.onToolCheckboxChange(tool, { target: { checked } } as unknown as Event)
@@ -117,7 +127,16 @@ const onToolGroupChange = (tools: string[], event: Event) => {
             <input v-model="form.base_url" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100" />
           </div>
           <div class="md:col-span-2">
-            <label class="block text-xs text-zinc-500 mb-1">Prompt</label>
+            <div class="mb-1 flex items-center justify-between gap-2">
+              <label class="block text-xs text-zinc-500">Prompt</label>
+              <button
+                type="button"
+                class="text-[11px] px-2 py-1 rounded border border-zinc-200 text-zinc-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-indigo-500/50 dark:hover:text-indigo-300"
+                @click="openPromptDetail"
+              >
+                详情
+              </button>
+            </div>
             <textarea v-model="form.prompt" rows="3" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100"></textarea>
           </div>
         </div>
@@ -133,7 +152,7 @@ const onToolGroupChange = (tools: string[], event: Event) => {
             >
               <span class="block text-xs font-medium text-zinc-700 dark:text-zinc-200">MCP 工具权限</span>
               <span class="mt-1 block text-[11px] text-zinc-500 dark:text-zinc-400">
-                已选 {{ form.mcp_tools.length }} / 可用 {{ availableMcpTools.length }}，{{ form.mcp_auto_approve ? '无需确认' : '调用需确认' }}
+                已选 {{ selectedAvailableMcpToolCount }} / 可用 {{ availableMcpTools.length }}，{{ form.mcp_auto_approve ? '无需确认' : '调用需确认' }}
               </span>
             </button>
             <button
@@ -433,6 +452,30 @@ const onToolGroupChange = (tools: string[], event: Event) => {
                   任务列表已迁移到 AI 卡片下方，点击“任务列表”按钮可查看按优先级排序和执行状态。
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <Transition name="fade">
+        <div
+          v-if="promptDetailOpen"
+          class="fixed inset-0 z-[110] bg-black/40 flex items-center justify-center p-4"
+          @click.stop="closePromptDetail"
+        >
+          <div class="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700 shadow-xl w-full max-w-5xl h-[82vh] flex flex-col" @click.stop>
+            <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
+              <div class="min-w-0">
+                <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100 truncate">Prompt 详情</h4>
+                <div class="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">{{ form.name || '未命名 AI' }}</div>
+              </div>
+              <button class="text-xs px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-300" @click="closePromptDetail">关闭</button>
+            </div>
+            <div class="flex-1 min-h-0 p-4">
+              <textarea
+                v-model="form.prompt"
+                class="w-full h-full resize-none px-3 py-2 rounded-lg border border-zinc-200 font-mono text-xs leading-5 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100"
+              ></textarea>
             </div>
           </div>
         </div>

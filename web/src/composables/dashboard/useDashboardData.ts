@@ -23,9 +23,6 @@ import { listConnectedAgents } from '@/api/agents'
 import { listWorkspaceFiles } from '@/api/workspace'
 import { getAuthToken } from '@/api/http'
 import { TOKEN_LIMIT_DEFAULTS } from '@/constants/dashboard'
-import type { HumanAskEvent } from '@/api/human'
-
-export type { HumanAskEvent }
 
 export interface ConnectedAgent {
   id: string
@@ -63,7 +60,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
 
   const agents = ref<Agent[]>([])
   const connectedAgents = ref<ConnectedAgent[]>([])
-  const humanAskQueue = ref<HumanAskEvent[]>([])
   const knowledgeBase = ref<KnowledgeItem[]>([])
   const projects = ref<ProjectItem[]>([])
   const globalGeneration = ref(1)
@@ -418,8 +414,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     dashboardSocket.off('connect_error')
     dashboardSocket.off('mcp:status')
     dashboardSocket.off('agent:list')
-    dashboardSocket.off('human:ask')
-    dashboardSocket.off('human:resolved')
     dashboardSocket.disconnect()
     dashboardSocket = null
     dashboardSocketConnected.value = false
@@ -446,14 +440,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     dashboardSocket.on('agent:list', (rows: any) => {
       applyConnectedAgents(rows)
     })
-    dashboardSocket.on('human:ask', (event: HumanAskEvent) => {
-      if (!humanAskQueue.value.find(e => e.requestId === event.requestId)) {
-        humanAskQueue.value.push(event)
-      }
-    })
-    dashboardSocket.on('human:resolved', (payload: { requestId: string }) => {
-      humanAskQueue.value = humanAskQueue.value.filter(e => e.requestId !== payload.requestId)
-    })
     dashboardSocket.on('librarian:proposal_new', () => {
       loadLibrarianPending()
     })
@@ -461,10 +447,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
       loadLibrarianPending()
       loadKnowledgeEntries()
     })
-  }
-
-  const dismissHumanAsk = (requestId: string) => {
-    humanAskQueue.value = humanAskQueue.value.filter(e => e.requestId !== requestId)
   }
 
   const loadValhallaEntries = async () => {
@@ -578,8 +560,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
   return {
     agents,
     connectedAgents,
-    humanAskQueue,
-    dismissHumanAsk,
     knowledgeBase,
     projects,
     globalGeneration,

@@ -140,7 +140,7 @@ const promptUserMessageNoticeValue = computed({
   set: value => emit('update:promptUserMessageNotice', value)
 })
 
-type SettingsDialog = '' | 'mcp' | 'roles' | 'prompts'
+type SettingsDialog = '' | 'roles' | 'prompts'
 
 const settingsDialog = ref<SettingsDialog>('')
 const selectedRole = ref('')
@@ -160,7 +160,6 @@ const openRoleDialog = (role: string) => {
 }
 
 const settingsDialogTitles: Record<Exclude<SettingsDialog, ''>, string> = {
-  mcp: 'MCP 配置',
   roles: 'MCP 角色权限',
   prompts: '提示词配置',
 }
@@ -234,16 +233,6 @@ watch(() => props.show, visible => {
           <div class="grid grid-cols-1 gap-3">
             <button
               class="settings-entry"
-              @click="openSettingsDialog('mcp')"
-            >
-              <span>
-                <span class="settings-entry-title">🧰 MCP 配置</span>
-                <span class="settings-entry-desc">编辑全局 MCP 调用规范与格式错误提示</span>
-              </span>
-              <span class="settings-entry-arrow">›</span>
-            </button>
-            <button
-              class="settings-entry"
               @click="openSettingsDialog('roles')"
             >
               <span>
@@ -258,7 +247,7 @@ watch(() => props.show, visible => {
             >
               <span>
                 <span class="settings-entry-title">🧭 提示词配置</span>
-                <span class="settings-entry-desc">编辑任务启动、恢复、监督、传承，以及 AI 间通信与用户消息回执提示</span>
+                <span class="settings-entry-desc">编辑 MCP 调用规范、任务提示、AI 通信与用户消息回执提示</span>
               </span>
               <span class="settings-entry-arrow">›</span>
             </button>
@@ -290,36 +279,7 @@ watch(() => props.show, visible => {
             </div>
 
             <div class="flex-1 overflow-y-auto px-5 py-4">
-              <div v-if="settingsDialog === 'mcp'" class="space-y-4">
-                <div class="flex items-center justify-end">
-                  <button
-                    class="px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-600 bg-indigo-50 text-xs font-medium hover:bg-indigo-100 dark:border-indigo-500/40 dark:text-indigo-300 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20"
-                    @click="emit('viewAllMcp')"
-                  >
-                    查看当前全部MCP
-                  </button>
-                </div>
-                <div>
-                  <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">全局 MCP 调用规范</div>
-                  <textarea
-                    v-model="globalMcpCallMethodValue"
-                    rows="14"
-                    class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs leading-relaxed font-mono"
-                    placeholder="粘贴全局 MCP 调用方法模板，例如包含 <mcp-call> ... </mcp-call>、Available MCP tools include: {MCP} 和 Rules"
-                  ></textarea>
-                </div>
-                <div>
-                  <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">MCP 格式错误提示</div>
-                  <textarea
-                    v-model="globalMcpFormatErrorHintValue"
-                    rows="10"
-                    class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs leading-relaxed"
-                    placeholder="当检测到 AI 试图调用 MCP 但格式错误时，自动回注的系统提示文案。可使用 {details}、{format_error_count} 等占位符。"
-                  ></textarea>
-                </div>
-              </div>
-
-              <div v-else-if="settingsDialog === 'roles'" class="space-y-4">
+              <div v-if="settingsDialog === 'roles'" class="space-y-4">
                 <div class="flex items-center justify-between">
                   <p class="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed pr-2">
                     为每类角色设置可用的 MCP 工具范围。每个角色都可查看全部 MCP 工具，默认只勾选适合该角色的常用工具；各 AI 成员保存配置时会自动收敛到所属角色允许的工具。
@@ -363,6 +323,36 @@ watch(() => props.show, visible => {
               </div>
 
               <div v-else-if="settingsDialog === 'prompts'" class="space-y-5">
+                <section class="space-y-3">
+                  <div class="flex items-center justify-between gap-3">
+                    <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">MCP 提示词</h4>
+                    <button
+                      class="px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-600 bg-indigo-50 text-xs font-medium hover:bg-indigo-100 dark:border-indigo-500/40 dark:text-indigo-300 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20"
+                      @click="emit('viewAllMcp')"
+                    >
+                      查看当前全部MCP
+                    </button>
+                  </div>
+                  <div>
+                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">全局 MCP 调用规范</div>
+                    <textarea
+                      v-model="globalMcpCallMethodValue"
+                      rows="14"
+                      class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs leading-relaxed font-mono"
+                      placeholder="粘贴全局 MCP 调用方法模板，例如包含 <mcp-call> ... </mcp-call>、Available MCP tools include: {MCP} 和 Rules"
+                    ></textarea>
+                  </div>
+                  <div>
+                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">MCP 格式错误提示</div>
+                    <textarea
+                      v-model="globalMcpFormatErrorHintValue"
+                      rows="10"
+                      class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs leading-relaxed"
+                      placeholder="当检测到 AI 试图调用 MCP 但格式错误时，自动回注的系统提示文案。可使用 {details}、{format_error_count} 等占位符。"
+                    ></textarea>
+                  </div>
+                </section>
+
                 <section class="space-y-3">
                   <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">默认任务提示词</h4>
                   <div>

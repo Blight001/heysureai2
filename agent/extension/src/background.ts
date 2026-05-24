@@ -111,8 +111,6 @@ async function connect() {
 
   socket.on('task:dispatch', (task: DispatchedTask) => { void handleTask(task) })
 
-  // Human-in-the-loop: surface to popup
-  socket.on('human:ask', (data: any) => { broadcast({ type: 'activity:log', entry: mkEntry('human', 'warn', `AI提问: ${data.prompt}`, data) }) })
 }
 
 async function register() {

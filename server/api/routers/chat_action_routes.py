@@ -1,6 +1,7 @@
 IS_ROUTER_ENTRY = False
 
 import json
+import os
 import threading
 import time
 import uuid
@@ -366,8 +367,17 @@ async def list_files(
     authorization: str = Header(None)
 ):
     user = get_current_user(authorization, session)
-    result = await registry.call("workspace.list_files", user.id, {})
-    return result["result"]["paths"]
+    project_root = get_project_root(user.id, None)
+    all_paths = []
+    for root, dirs, files in os.walk(project_root):
+        dirs[:] = [d for d in dirs if d not in {".git", "__pycache__", "venv", "node_modules", ".aider"}]
+        rel_root = os.path.relpath(root, project_root)
+        rel_root = "" if rel_root == "." else rel_root
+        for directory in dirs:
+            all_paths.append((os.path.join(rel_root, directory) if rel_root else directory).replace(os.sep, "/") + "/")
+        for filename in files:
+            all_paths.append((os.path.join(rel_root, filename) if rel_root else filename).replace(os.sep, "/"))
+    return sorted(set(all_paths))
 
 @router.get("/tree")
 async def get_tree(
@@ -375,8 +385,12 @@ async def get_tree(
     authorization: str = Header(None)
 ):
     user = get_current_user(authorization, session)
-    result = await registry.call("workspace.get_file_tree", user.id, {})
-    return result["result"]
+    result = await registry.call("workspace.run_command", user.id, {"command": "dir /s /b"})
+    return {
+        "root": ".",
+        "tree": result["result"].get("output", ""),
+        "command": "dir /s /b",
+    }
 
 @router.get("/git-diff")
 async def get_git_diff(
@@ -394,8 +408,25 @@ async def get_file_content(
 ):
     user = get_current_user(authorization, session)
     filenames = req.get("filenames", [])
-    result = await registry.call("workspace.read_files", user.id, {"paths": filenames})
-    return result["result"]["files"]
+    if isinstance(filenames, str):
+        filenames = [filenames]
+    if not isinstance(filenames, list):
+        raise HTTPException(status_code=400, detail="filenames must be a list")
+    project_root = get_project_root(user.id, req.get("ai_config_id"))
+    out = {}
+    for item in filenames[:20]:
+        path = str(item or "").strip()
+        if not path:
+            continue
+        full = os.path.abspath(os.path.join(project_root, path))
+        if os.path.commonpath([os.path.abspath(project_root), full]) != os.path.abspath(project_root):
+            raise HTTPException(status_code=400, detail=f"Unsafe path: {path}")
+        if not os.path.isfile(full):
+            out[path] = ""
+            continue
+        with open(full, "r", encoding="utf-8", errors="replace") as handle:
+            out[path] = handle.read(200_000)
+    return out
 
 @router.post("/execute-action")
 async def execute_action(
@@ -412,29 +443,10 @@ async def execute_action(
         raise HTTPException(status_code=400, detail="Missing action field")
         
     try:
-        if action == "edit":
-            result = await registry.call("workspace.edit_file", user.id, {
-                "path": filename,
-                "search": req.get("search", ""),
-                "replace": req.get("replace", ""),
-                "create_if_missing": True,
-            }, req.get("ai_config_id"))
-            return {"success": True, "message": f"Applied changes to {filename}", "mcp": result}
-            
-        elif action == "create":
-            result = await registry.call("workspace.write_file", user.id, {
-                "path": filename,
-                "content": req.get("content", ""),
-                "create": True,
-                "overwrite": False,
-            }, req.get("ai_config_id"))
-            return {"success": True, "message": f"Created file {filename}", "mcp": result}
-            
-        elif action == "delete":
-            result = await registry.call("workspace.delete_path", user.id, {"path": filename}, req.get("ai_config_id"))
-            return {"success": True, "message": f"Deleted {filename}", "mcp": result}
-            
-        elif action == "run":
+        if action in {"edit", "create", "delete"}:
+            raise HTTPException(status_code=410, detail="File edit/create/delete actions have been removed. Use workspace.run_command instead.")
+
+        if action == "run":
             result = await registry.call("workspace.run_command", user.id, {"command": req.get("command")}, req.get("ai_config_id"))
             return {
                 "success": result["result"]["success"],

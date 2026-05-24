@@ -33,7 +33,7 @@ export const useDashboardSystemSettings = (options: UseDashboardSystemSettingsOp
   const mcpMaxSteps = ref(48)
   const globalMcpCallMethod = ref(`When you want to call a tool, output one or more blocks using EXACTLY this format and do not wrap them in markdown code fences:
 <mcp-call>
-{"tool":"workspace.read_files","arguments":{"paths":["README.md"]}}
+{"tool":"workspace.run_command","arguments":{"command":"dir"}}
 </mcp-call>
 
 Available MCP tools include:
@@ -41,9 +41,7 @@ Available MCP tools include:
 
 Rules:
 - Explain your intent in normal text first when helpful, then emit the MCP call block.
-- For workspace.write_file and workspace.edit_file, prefer structured arguments: target + content/edits + options.
-- Use workspace.edit_file for targeted edits to existing files.
-- Use workspace.write_file for new files or full rewrites.
+- Use workspace.run_command for workspace inspection, file reads, file writes, edits, deletion, and command execution.
 - Use admin.* tools when managing connected agents.
 - Call exactly one tool per <mcp-call> block; never join two tool names into one name.
 - Only fall back to legacy File/Create File/Delete File/Run Command formats if MCP is unavailable.`)
@@ -52,13 +50,13 @@ Rules:
 请改用以下标准格式（任选其一）：
 1) JSON 方式（推荐）
 <mcp-call>
-{"tool":"workspace.read_files","arguments":{"paths":["README.md"]}}
+{"tool":"workspace.run_command","arguments":{"command":"dir"}}
 </mcp-call>
 
 2) XML-like 方式
 <mcp-call>
-<tool>workspace.read_files</tool>
-<arguments>{"paths":["README.md"]}</arguments>
+<tool>workspace.run_command</tool>
+<arguments>{"command":"dir"}</arguments>
 </mcp-call>
 
 注意：
@@ -145,7 +143,7 @@ Rules:
   arguments: {{"message_id": "{message_id}", "content": "<你的回复>"}}
 回复成功后，系统会让你继续刚才的工作。在你回复之前，不要执行任何其它 MCP 工具。`)
   const promptAiMessageReplySuccess = ref('[系统提示] 你对消息 {message_id} 的回复已送达。\n现在请继续你刚才被打断的任务。')
-  const promptUserMessageNotice = ref('[系统提示] 你已向用户发出一条消息（{channel}）。\n用户的回复（如有）会通过 human.ask 工具或正常对话渠道返回，请不要重复发送。')
+  const promptUserMessageNotice = ref('[系统提示] 你已向用户发出一条消息（{channel}）。\n用户的回复（如有）会通过正常对话渠道返回，请不要重复发送。')
 
   const applyTheme = (mode: ThemeMode) => {
     const root = document.documentElement

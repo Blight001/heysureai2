@@ -27,7 +27,6 @@ import McpToolsModal from './modals/McpToolsModal.vue'
 import WorkspaceContextModal from './modals/WorkspaceContextModal.vue'
 import TaskManagementModal from './modals/TaskManagementModal.vue'
 import AiConfigModal from './modals/AiConfigModal.vue'
-import HumanAskModal from './modals/HumanAskModal.vue'
 import ProposalReviewModal from '@/components/librarian/ProposalReviewModal.vue'
 
 const { alert, confirm } = useMessage()
@@ -84,8 +83,6 @@ let resolveMcpAutoApprove = (_configId?: number) => false
 const {
   agents,
   connectedAgents,
-  humanAskQueue,
-  dismissHumanAsk,
   knowledgeBase,
   projects,
   globalGeneration,
@@ -695,12 +692,6 @@ onUnmounted(() => {
         </div>
       </div>
     </Transition>
-
-    <!-- Human-in-the-loop modal: shows the first pending AI question -->
-    <HumanAskModal
-      :event="humanAskQueue[0] ?? null"
-      :on-answered="dismissHumanAsk"
-    />
 
     <!-- Librarian proposal review modal -->
     <ProposalReviewModal
