@@ -1,4 +1,5 @@
 import threading
+import time
 import uuid
 from typing import Any, Dict, Tuple
 
@@ -7,8 +8,9 @@ from sqlmodel import Session, select
 
 from api.database import engine
 from api.integrations.feishu.service import parse_feishu_text_event, send_feishu_text_message
-from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
+from api.models import AIMessage, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.services.chat_persistence import _save_message
+from api.routers.chat_base import _RUN_THREADS
 from api.routers.chat_runtime_helpers import _resolve_ai_runtime
 from api.routers.chat_worker import _run_worker
 
@@ -178,8 +180,104 @@ def _send_feishu_error_if_needed(
     )
 
 
+def _feishu_session_has_live_run(
+    *,
+    user_id: int,
+    ai_config_id: int,
+    ai_kind: str,
+    session_id: str,
+) -> bool:
+    now = time.time()
+    with Session(engine) as session:
+        rows = session.exec(
+            select(ChatRun).where(
+                ChatRun.user_id == user_id,
+                ChatRun.ai_config_id == ai_config_id,
+                ChatRun.ai_kind == ai_kind,
+                ChatRun.session_id == session_id,
+                ChatRun.status.in_(["queued", "running"]),
+            ).order_by(ChatRun.updated_at.desc())
+        ).all()
+    for row in rows:
+        run_id = str(row.run_id or "")
+        worker = _RUN_THREADS.get(run_id)
+        if worker and worker.is_alive():
+            return True
+        # A newly inserted run may not have reached _RUN_THREADS yet.
+        if str(row.status or "") == "queued" and now - float(row.created_at or now) < 5:
+            return True
+    return False
+
+
+def _feishu_session_has_pending_ai_reply(
+    *,
+    user_id: int,
+    ai_config_id: int,
+    session_id: str,
+) -> bool:
+    now = time.time()
+    with Session(engine) as session:
+        rows = session.exec(
+            select(AIMessage).where(
+                AIMessage.user_id == user_id,
+                AIMessage.from_ai_config_id == ai_config_id,
+                AIMessage.from_session_id == session_id,
+                AIMessage.status.in_(["pending", "delivered"]),
+                AIMessage.message_type.in_(["inquiry", "chitchat"]),
+            ).order_by(AIMessage.created_at.desc())
+        ).all()
+    for row in rows:
+        timeout_seconds = max(1, min(600, int(row.timeout_seconds or 120)))
+        if now <= float(row.created_at or now) + timeout_seconds + 5:
+            return True
+    return False
+
+
+def _feishu_session_has_recent_ai_activity(
+    *,
+    user_id: int,
+    ai_config_id: int,
+    session_id: str,
+    window_seconds: int = 30,
+) -> bool:
+    now = time.time()
+    cutoff = now - max(1, int(window_seconds or 30))
+    rows = []
+    with Session(engine) as session:
+        rows.extend(
+            session.exec(
+                select(AIMessage).where(
+                    AIMessage.user_id == user_id,
+                    AIMessage.from_ai_config_id == ai_config_id,
+                    AIMessage.from_session_id == session_id,
+                    AIMessage.created_at >= cutoff,
+                )
+            ).all()
+        )
+        rows.extend(
+            session.exec(
+                select(AIMessage).where(
+                    AIMessage.user_id == user_id,
+                    AIMessage.to_ai_config_id == ai_config_id,
+                    AIMessage.target_session_id == session_id,
+                    AIMessage.created_at >= cutoff,
+                )
+            ).all()
+        )
+    for row in rows:
+        activity_at = max(
+            float(row.created_at or 0),
+            float(row.delivered_at or 0),
+            float(row.replied_at or 0),
+        )
+        if activity_at >= cutoff:
+            return True
+    return False
+
+
 def _run_feishu_worker_and_notify(worker_kwargs: Dict[str, Any], notify_kwargs: Dict[str, Any]) -> None:
     worker = threading.Thread(target=_run_worker, kwargs=worker_kwargs, daemon=True)
+    _RUN_THREADS[str(notify_kwargs["run_id"])] = worker
     worker.start()
 
     last_sent_message_id = int(notify_kwargs["after_message_id"])
@@ -192,7 +290,8 @@ def _run_feishu_worker_and_notify(worker_kwargs: Dict[str, Any], notify_kwargs: 
         "receive_id": str(notify_kwargs["receive_id"]),
         "receive_id_type": str(notify_kwargs["receive_id_type"]),
     }
-    while worker.is_alive():
+    idle_deadline = 0.0
+    while True:
         next_message_id, did_send = _send_new_feishu_reply_segments(
             **send_kwargs,
             after_message_id=last_sent_message_id,
@@ -201,7 +300,31 @@ def _run_feishu_worker_and_notify(worker_kwargs: Dict[str, Any], notify_kwargs: 
             sent_any = True
         if next_message_id > last_sent_message_id:
             last_sent_message_id = next_message_id
-        worker.join(timeout=0.5)
+
+        active = _feishu_session_has_live_run(
+            user_id=send_kwargs["user_id"],
+            ai_config_id=send_kwargs["ai_config_id"],
+            ai_kind=send_kwargs["ai_kind"],
+            session_id=send_kwargs["session_id"],
+        )
+        pending_ai_reply = _feishu_session_has_pending_ai_reply(
+            user_id=send_kwargs["user_id"],
+            ai_config_id=send_kwargs["ai_config_id"],
+            session_id=send_kwargs["session_id"],
+        )
+        recent_ai_activity = _feishu_session_has_recent_ai_activity(
+            user_id=send_kwargs["user_id"],
+            ai_config_id=send_kwargs["ai_config_id"],
+            session_id=send_kwargs["session_id"],
+        )
+        if active or pending_ai_reply or recent_ai_activity:
+            idle_deadline = time.time() + 3
+        elif idle_deadline <= 0:
+            idle_deadline = time.time() + 3
+        elif time.time() >= idle_deadline:
+            break
+
+        time.sleep(0.5)
 
     next_message_id, did_send = _send_new_feishu_reply_segments(
         **send_kwargs,

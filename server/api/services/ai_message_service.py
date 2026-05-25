@@ -700,10 +700,13 @@ def _wake_idle_target_for_message_locked(
 
         target_id = int(msg.to_ai_config_id)
         target_session_id = str(msg.target_session_id or "").strip()
-        active = (
-            _get_live_active_run(session, user_id, target_id, session_id=target_session_id)
-            or _get_live_active_run(session, user_id, target_id)
-        )
+        if target_session_id:
+            # A bound AI message must be delivered back into its intended
+            # conversation. Falling back to "any active run" can steal replies
+            # from Feishu/session-bound channels and make their notifier stop.
+            active = _get_live_active_run(session, user_id, target_id, session_id=target_session_id)
+        else:
+            active = _get_live_active_run(session, user_id, target_id)
         interrupted = None
         if active:
             interrupted = _mark_run_interrupted(session, active, message_id)
