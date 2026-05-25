@@ -12,7 +12,7 @@ import {
   type AiConfigUpsertPayload,
 } from '@/api/ai'
 
-type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'feishu'
+type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'bot'
 
 interface UseAiConfigManagementOptions {
   defaultMcpTools: string[]
@@ -126,6 +126,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     prompt: '',
     mcp_tools: [...defaultMcpTools],
     mcp_auto_approve: false,
+    bot_channel: 'feishu' as 'feishu' | 'qq',
     feishu_enabled: false,
     feishu_webhook_url: '',
     feishu_app_id: '',
@@ -133,6 +134,12 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     feishu_verification_token: '',
     feishu_default_receive_id: '',
     feishu_default_receive_id_type: 'chat_id',
+    qq_enabled: false,
+    qq_app_id: '',
+    qq_app_secret: '',
+    qq_sandbox: true,
+    qq_default_target_id: '',
+    qq_default_target_type: 'c2c',
     system_auto_control: normalizeSystemAutoControl({}),
   })
 
@@ -294,6 +301,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       enabled: !!cfg.enabled,
       mcp_tools: parsedTools,
       mcp_auto_approve: !!aiConfigForm.value.mcp_auto_approve,
+      bot_channel: cfg.bot_channel === 'qq' ? 'qq' : 'feishu',
       feishu_enabled: !!cfg.feishu_enabled,
       feishu_webhook_url: cfg.feishu_webhook_url || '',
       feishu_app_id: cfg.feishu_app_id || '',
@@ -301,6 +309,12 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       feishu_verification_token: cfg.feishu_verification_token || '',
       feishu_default_receive_id: cfg.feishu_default_receive_id || '',
       feishu_default_receive_id_type: cfg.feishu_default_receive_id_type || 'chat_id',
+      qq_enabled: !!cfg.qq_enabled,
+      qq_app_id: cfg.qq_app_id || '',
+      qq_app_secret: cfg.qq_app_secret || '',
+      qq_sandbox: cfg.qq_sandbox !== false,
+      qq_default_target_id: cfg.qq_default_target_id || '',
+      qq_default_target_type: cfg.qq_default_target_type || 'c2c',
       system_auto_control: normalizeSystemAutoControl((() => {
         try { return JSON.parse(cfg.system_auto_control || '{}') } catch { return {} }
       })()),
@@ -338,6 +352,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       enabled: !!agent.enabled,
       mcp_tools: parsedTools,
       mcp_auto_approve: !!agent.mcpAutoApprove,
+      bot_channel: agent.botChannel === 'qq' ? 'qq' : 'feishu',
       feishu_enabled: false,
       feishu_webhook_url: '',
       feishu_app_id: '',
@@ -345,6 +360,12 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       feishu_verification_token: '',
       feishu_default_receive_id: '',
       feishu_default_receive_id_type: 'chat_id',
+      qq_enabled: false,
+      qq_app_id: '',
+      qq_app_secret: '',
+      qq_sandbox: true,
+      qq_default_target_id: '',
+      qq_default_target_type: 'c2c',
       system_auto_control: normalizeSystemAutoControl({}),
     }
     void loadWorkspaceDirs()
@@ -384,6 +405,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       model: aiConfigForm.value.model,
       prompt: aiConfigForm.value.prompt,
       mcp_tools: JSON.stringify(aiConfigForm.value.mcp_tools || []),
+      bot_channel: aiConfigForm.value.bot_channel === 'qq' ? 'qq' : 'feishu',
       feishu_enabled: !!aiConfigForm.value.feishu_enabled,
       feishu_webhook_url: aiConfigForm.value.feishu_webhook_url || '',
       feishu_app_id: aiConfigForm.value.feishu_app_id || '',
@@ -391,6 +413,12 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       feishu_verification_token: aiConfigForm.value.feishu_verification_token || '',
       feishu_default_receive_id: aiConfigForm.value.feishu_default_receive_id || '',
       feishu_default_receive_id_type: aiConfigForm.value.feishu_default_receive_id_type || 'chat_id',
+      qq_enabled: !!aiConfigForm.value.qq_enabled,
+      qq_app_id: aiConfigForm.value.qq_app_id || '',
+      qq_app_secret: aiConfigForm.value.qq_app_secret || '',
+      qq_sandbox: aiConfigForm.value.qq_sandbox !== false,
+      qq_default_target_id: aiConfigForm.value.qq_default_target_id || '',
+      qq_default_target_type: aiConfigForm.value.qq_default_target_type || 'c2c',
       system_auto_control: JSON.stringify(
         normalizeSystemAutoControl(
           aiConfigForm.value.system_auto_control || {},

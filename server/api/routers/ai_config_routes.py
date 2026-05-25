@@ -25,6 +25,11 @@ from .ai_base import (
 )
 
 
+def _normalize_bot_channel(value) -> str:
+    channel = str(value or "feishu").strip().lower()
+    return channel if channel in {"feishu", "qq"} else "feishu"
+
+
 @router.get("/configs")
 async def list_ai_configs(
     session: Session = Depends(get_session),
@@ -53,6 +58,7 @@ async def create_ai_config(
     workspace_root = normalize_workspace_root(body.workspace_root)
     if role == "assistant_admin" and workspace_root is None:
         workspace_root = "."
+    bot_channel = _normalize_bot_channel(body.bot_channel)
     raw_mcp_tools = body.mcp_tools or AssistantAIConfig.model_fields["mcp_tools"].default
     tier = config_role_tier(
         AssistantAIConfig(ai_role=role, digital_member_role=member_role)
@@ -75,13 +81,20 @@ async def create_ai_config(
         current_behavior=body.current_behavior or "等待指令...",
         workspace_root=workspace_root,
         database_uri=body.database_uri,
-        feishu_enabled=bool(body.feishu_enabled),
+        bot_channel=bot_channel,
+        feishu_enabled=bool(body.feishu_enabled) and bot_channel == "feishu",
         feishu_webhook_url=body.feishu_webhook_url or "",
         feishu_app_id=body.feishu_app_id or "",
         feishu_app_secret=body.feishu_app_secret or "",
         feishu_verification_token=body.feishu_verification_token or "",
         feishu_default_receive_id=body.feishu_default_receive_id or "",
         feishu_default_receive_id_type=body.feishu_default_receive_id_type or "chat_id",
+        qq_enabled=bool(body.qq_enabled) and bot_channel == "qq",
+        qq_app_id=body.qq_app_id or "",
+        qq_app_secret=body.qq_app_secret or "",
+        qq_sandbox=body.qq_sandbox if body.qq_sandbox is not None else True,
+        qq_default_target_id=body.qq_default_target_id or "",
+        qq_default_target_type=body.qq_default_target_type or "c2c",
         project_id=body.project_id,
         project_name=body.project_name,
         sort_order=body.sort_order or 100,
@@ -113,6 +126,13 @@ async def update_ai_config(
     if not cfg or cfg.user_id != user.id:
         raise HTTPException(status_code=404, detail="AI config not found")
     updates = body.model_dump(exclude_unset=True)
+    if "bot_channel" in updates:
+        updates["bot_channel"] = _normalize_bot_channel(updates.get("bot_channel"))
+    next_bot_channel = updates.get("bot_channel", cfg.bot_channel)
+    if next_bot_channel == "qq":
+        updates["feishu_enabled"] = False
+    if next_bot_channel == "feishu":
+        updates["qq_enabled"] = False
     if "ai_role" in updates:
         updates["ai_role"] = _normalize_ai_role(updates.get("ai_role"))
     next_ai_role = updates.get("ai_role", cfg.ai_role)
@@ -339,7 +359,9 @@ async def clone_ai_config(
         current_behavior="等待指令...",
         workspace_root=src.workspace_root,
         database_uri=src.database_uri,
+        bot_channel="feishu",
         feishu_enabled=False,
+        qq_enabled=False,
         project_id=src.project_id,
         project_name=src.project_name,
         parent_ai_config_id=src.parent_ai_config_id,

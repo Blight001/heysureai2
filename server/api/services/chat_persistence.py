@@ -56,7 +56,7 @@ def _save_message(
 
         notify_saved_assistant_message(session, db_msg)
     except Exception as exc:
-        print(f"[chat_persistence] feishu auto notify failed message_id={db_msg.id}: {exc}")
+        print(f"[chat_persistence] bot auto notify failed message_id={db_msg.id}: {exc}")
     return db_msg
 
 def _rebuild_usage_snapshots(

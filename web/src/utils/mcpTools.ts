@@ -108,7 +108,7 @@ const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag
   'prompt.write_ai': { label: '修改 AI Prompt', description: '按行修改指定 AI 的 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
   'prompt.read_system': { label: '读取系统 Prompt', description: '读取全局注入模板/旧版兜底 prompt；当前 AI 基础 prompt 请用读取 AI Prompt。', tag: 'Prompt' },
   'prompt.write_system': { label: '修改系统 Prompt', description: '按行修改全局注入模板/旧版兜底 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
-  'user.send_message': { label: '发送用户消息', description: '向用户发送文本消息；当前默认通过绑定的飞书机器人投递。', tag: '协作' },
+  'user.send_message': { label: '发送用户消息', description: '向用户发送文本、图片或视频；默认通过当前 AI 绑定的飞书或 QQ 机器人投递。', tag: '协作' },
   'conversation.forget_before_current': { label: '忘记前文', description: '删除当前会话里当前用户消息之前的内容，保留当前消息及之后内容。', tag: '协作' },
   'ai.send_message': { label: '发送 AI 消息', description: '向另一个 AI 发送消息；必须填写 message_type：inquiry 询问、reply 回复、notify 通知。', tag: '协作' },
   'memory.write': { label: '写入记忆', description: '沉淀高价值的结构化记忆（事实/决策/经验/待办/风险/模板）供后续检索。', tag: '记忆' },

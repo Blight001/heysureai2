@@ -14,7 +14,10 @@ export async function screenCapture(args: any = {}) {
   const savePath = String(args.path || path.join(os.tmpdir(), `hs_screen_${Date.now()}.png`))
   fs.writeFileSync(savePath, buf)
   const { width, height } = pngSize(buf)
-  return { success: true, path: savePath, width, height, bytes: buf.length, display: displayIndex }
+  const dataUrl = args.upload_to_server === false || args.return_data_url === false
+    ? undefined
+    : `data:image/png;base64,${buf.toString('base64')}`
+  return { success: true, path: savePath, dataUrl, width, height, bytes: buf.length, display: displayIndex }
 }
 
 export async function screenCaptureRegion(args: any) {
@@ -23,7 +26,10 @@ export async function screenCaptureRegion(args: any) {
   const buf = await executeCapture({ cropRegion: { x: Number(x), y: Number(y), width: Number(width), height: Number(height) } })
   const savePath = String(args.path || path.join(os.tmpdir(), `hs_region_${Date.now()}.png`))
   fs.writeFileSync(savePath, buf)
-  return { success: true, path: savePath, x, y, width, height, bytes: buf.length }
+  const dataUrl = args.upload_to_server === false || args.return_data_url === false
+    ? undefined
+    : `data:image/png;base64,${buf.toString('base64')}`
+  return { success: true, path: savePath, dataUrl, x, y, width, height, bytes: buf.length }
 }
 
 export async function screenInfo(_args: any = {}) {

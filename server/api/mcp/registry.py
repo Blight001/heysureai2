@@ -298,34 +298,44 @@ registry.register(MCPTool(
     destructive=True,
 ))
 
-# 与用户通信：把底层飞书投递封装为业务语义上的"给用户发消息"。
-# 未来可扩展 socket 推送 / 邮件等。
+# 与用户通信：把底层机器人投递封装为业务语义上的"给用户发消息"。
 registry.register(MCPTool(
     name="user.send_message",
     description=(
-        "Send a text message to the human user (currently via the bound Feishu bot). "
+        "Send a text message to the human user via the bound bot channel (Feishu or QQ). "
         "Use this for proactive notifications, status updates, or asking the user to take action "
         "asynchronously."
     ),
     input_schema={
         "type": "object",
         "properties": {
-            "text": {"type": "string", "description": "Message text to send to the user."},
+            "text": {"type": "string", "description": "Message text to send to the user. Optional when sending media."},
             "channel": {
                 "type": "string",
-                "enum": ["feishu"],
-                "description": "Delivery channel. Defaults to 'feishu'.",
+                "enum": ["feishu", "qq"],
+                "description": "Delivery channel. Defaults to the AI config bot channel.",
             },
             "receive_id": {"type": "string", "description": "Optional receiver id; defaults to AI config default."},
             "receive_id_type": {
                 "type": "string",
-                "enum": ["chat_id", "open_id", "user_id", "union_id", "email"],
-                "description": "Receiver id type; defaults to AI config default.",
+                "enum": ["chat_id", "open_id", "user_id", "union_id", "email", "c2c", "group", "channel", "dm"],
+                "description": "Receiver id type; for QQ use c2c/group/channel/dm.",
             },
             "chat_id": {"type": "string", "description": "Alias of receive_id."},
             "open_id": {"type": "string", "description": "Alias of receive_id."},
+            "target_id": {"type": "string", "description": "QQ target id alias."},
+            "target_type": {"type": "string", "enum": ["c2c", "group", "channel", "dm"], "description": "QQ target type."},
+            "media_url": {"type": "string", "description": "HTTP(S) URL of an image or video for the server to fetch and send."},
+            "media_path": {"type": "string", "description": "Server-local image or video path to send."},
+            "media_type": {"type": "string", "enum": ["image", "video"], "description": "Optional explicit media type."},
+            "image_url": {"type": "string", "description": "Alias of media_url with media_type=image."},
+            "video_url": {"type": "string", "description": "Alias of media_url with media_type=video."},
+            "image_path": {"type": "string", "description": "Alias of media_path with media_type=image."},
+            "video_path": {"type": "string", "description": "Alias of media_path with media_type=video."},
+            "file_name": {"type": "string", "description": "Optional filename to use when uploading media."},
+            "duration": {"type": "integer", "description": "Optional media duration in milliseconds for Feishu video upload."},
         },
-        "required": ["text"],
+        "required": [],
     },
     handler=_user_send_message,
     destructive=True,

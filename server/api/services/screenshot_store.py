@@ -1,0 +1,95 @@
+import base64
+import os
+import re
+import time
+from typing import Any, Dict, Optional
+
+from ..core.config import user_workspace_dir
+
+DATA_URL_RE = re.compile(r"^data:image/(?P<ext>png|jpeg|jpg|webp);base64,(?P<data>.+)$", re.IGNORECASE | re.DOTALL)
+
+
+def _safe_segment(value: str, fallback: str) -> str:
+    text = re.sub(r"[^a-zA-Z0-9_.-]+", "_", str(value or "").strip())
+    text = text.strip("._")
+    return text[:80] or fallback
+
+
+def _extract_data_url(result: Any) -> str:
+    if isinstance(result, dict):
+        for key in ("dataUrl", "data_url", "imageDataUrl", "screenshotDataUrl"):
+            value = result.get(key)
+            if isinstance(value, str) and value.startswith("data:image/"):
+                return value
+    return ""
+
+
+def persist_screenshot_result(
+    *,
+    user_id: int,
+    ai_config_id: Optional[int],
+    tool: str,
+    result: Any,
+) -> Optional[Dict[str, Any]]:
+    data_url = _extract_data_url(result)
+    if not data_url:
+        return None
+    match = DATA_URL_RE.match(data_url)
+    if not match:
+        return None
+    ext = match.group("ext").lower()
+    if ext == "jpeg":
+        ext = "jpg"
+    raw = base64.b64decode(match.group("data"), validate=False)
+    if not raw:
+        return None
+
+    root = user_workspace_dir(int(user_id))
+    folder = os.path.join(root, "Screenshots")
+    os.makedirs(folder, exist_ok=True)
+    cfg_part = f"ai{int(ai_config_id)}" if ai_config_id else "ai"
+    tool_part = _safe_segment(tool.replace(".", "_"), "screenshot")
+    filename = f"{cfg_part}_{tool_part}_{int(time.time() * 1000)}.{ext}"
+    abs_path = os.path.abspath(os.path.join(folder, filename))
+    with open(abs_path, "wb") as fh:
+        fh.write(raw)
+    rel_path = os.path.relpath(abs_path, root).replace(os.sep, "/")
+    return {
+        "server_path": abs_path,
+        "workspace_path": rel_path,
+        "file_name": filename,
+        "bytes": len(raw),
+        "media_type": "image",
+    }
+
+
+def attach_persisted_screenshot(
+    *,
+    user_id: int,
+    ai_config_id: Optional[int],
+    tool: str,
+    result: Any,
+) -> Any:
+    saved = persist_screenshot_result(
+        user_id=user_id,
+        ai_config_id=ai_config_id,
+        tool=tool,
+        result=result,
+    )
+    if not saved or not isinstance(result, dict):
+        return result
+    next_result = dict(result)
+    for key in ("dataUrl", "data_url", "imageDataUrl", "screenshotDataUrl"):
+        if key in next_result:
+            next_result.pop(key, None)
+    next_result["uploaded"] = True
+    next_result["server_path"] = saved["server_path"]
+    next_result["workspace_path"] = saved["workspace_path"]
+    next_result["file_name"] = saved["file_name"]
+    next_result["media_type"] = saved["media_type"]
+    next_result["bytes"] = saved["bytes"]
+    next_result["send_to_user_hint"] = (
+        "可用 user.send_message 发送给飞书/QQ，例如 "
+        f'{{"image_path":"{saved["server_path"]}"}}'
+    )
+    return next_result

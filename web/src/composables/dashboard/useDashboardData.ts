@@ -129,6 +129,10 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
       effectiveStatus: String(raw.effective_status || raw.status || 'idle'),
       runStatus: String(raw.run_status || ''),
       triggerType: String(raw.trigger_type || ''),
+      scheduleEnabled: !!raw.schedule_enabled,
+      scheduleAt: Number.isFinite(Number(raw.schedule_at)) ? Number(raw.schedule_at) : undefined,
+      scheduleLoopEnabled: !!raw.schedule_loop_enabled,
+      scheduleDurationMinutes: Math.max(0, Number(raw.schedule_duration_minutes) || 0),
       generationCount: Math.max(1, Number(raw.generation_count) || 1),
       latestGeneration: Math.max(1, Number(raw.latest_generation) || 1),
       taskTokenUsed: Math.max(0, Number(raw.task_token_used) || 0),
@@ -199,11 +203,24 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
         : (uiRole === 'admin' ? TOKEN_LIMIT_DEFAULTS.admin : TOKEN_LIMIT_DEFAULTS.worker)
       const parsedTokenLimit = Number(row.token_limit)
       const runtimeTool = rememberLatestRuntimeTool(configId, row.latest_mcp_tool || row.runtime_tool || '')
+      const taskCurrent = parseTaskSnapshot(row.task_current)
       const taskCurrentOrRecent = parseTaskSnapshot(row.task_current_or_recent)
       const taskRecentCompleted = parseTaskSnapshot(row.task_recent_completed)
+      const taskScheduledTasks = Array.isArray(row.task_scheduled_tasks)
+        ? row.task_scheduled_tasks.map(parseTaskSnapshot).filter(Boolean) as AgentTaskSnapshot[]
+        : []
+      if (taskScheduledTasks.length === 0) {
+        const fallbackScheduled = taskCurrentOrRecent
+          && String(taskCurrentOrRecent.triggerType || '').toLowerCase() === 'schedule'
+          && !taskCurrent
+          ? taskCurrentOrRecent
+          : null
+        if (fallbackScheduled) taskScheduledTasks.push(fallbackScheduled)
+      }
       const parsedGeneration = Math.max(
         1,
         Number(row.generation) || 1,
+        Number(taskCurrent?.latestGeneration) || 1,
         Number(taskCurrentOrRecent?.latestGeneration) || 1,
         Number(taskRecentCompleted?.latestGeneration) || 1,
       )
@@ -228,12 +245,21 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
         mcpEnabled: !!row.mcp_enabled,
         mcpTools: row.mcp_tools || '[]',
         mcpAutoApprove: getMcpAutoApprove(configId),
+        botChannel: row.bot_channel === 'qq' ? 'qq' : 'feishu',
+        botEnabled: !!row.bot_enabled,
+        botStatus: row.bot_status || undefined,
         feishuEnabled: !!row.feishu_enabled,
         feishuWebhookUrl: row.feishu_webhook_url || '',
         feishuAppId: row.feishu_app_id || '',
         feishuDefaultReceiveId: row.feishu_default_receive_id || '',
         feishuDefaultReceiveIdType: row.feishu_default_receive_id_type || 'chat_id',
         feishuStatus: row.feishu_status || undefined,
+        qqEnabled: !!row.qq_enabled,
+        qqAppId: row.qq_app_id || '',
+        qqSandbox: row.qq_sandbox !== false,
+        qqDefaultTargetId: row.qq_default_target_id || '',
+        qqDefaultTargetType: row.qq_default_target_type || 'c2c',
+        qqStatus: row.qq_status || undefined,
         desktopAgentConnected: false,
         desktopAgentId: '',
         desktopAgentName: '',
@@ -255,8 +281,10 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
         model: row.model || '',
         currentTaskTitle: row.current_task_title || '',
         currentTaskStatus: row.current_task_status || 'idle',
+        taskCurrent,
         taskCurrentOrRecent,
         taskRecentCompleted,
+        taskScheduledTasks,
         latestThinking: row.latest_thinking || '',
       })
     })

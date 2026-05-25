@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { getMcpToolZhLabel, groupMcpToolsBySource } from '@/utils/mcpTools'
 
-type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'feishu'
+type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'bot'
 
 interface Props {
   show: boolean
@@ -28,7 +28,7 @@ const promptDetailOpen = ref(false)
 
 const settingsSectionTitle: Record<SettingsSection, string> = {
   mcp: 'MCP 工具权限',
-  feishu: '飞书机器人',
+  bot: '机器人配置',
   workspace: '工作区权限',
   auto: '系统自动控制',
 }
@@ -51,6 +51,8 @@ const closePromptDetail = () => {
 }
 
 const groupedAvailableMcpTools = computed(() => groupMcpToolsBySource(props.availableMcpTools))
+const selectedBotName = computed(() => props.form?.bot_channel === 'qq' ? 'QQ机器人' : '飞书机器人')
+const selectedBotEnabled = computed(() => props.form?.bot_channel === 'qq' ? !!props.form?.qq_enabled : !!props.form?.feishu_enabled)
 const isToolSelected = (tool: string) => Array.isArray(props.form?.mcp_tools) && props.form.mcp_tools.includes(tool)
 const selectedAvailableMcpToolCount = computed(() => props.availableMcpTools.filter(tool => isToolSelected(tool)).length)
 const toolsAllSelected = (tools: string[]) => tools.length > 0 && tools.every(tool => isToolSelected(tool))
@@ -158,11 +160,11 @@ const onToolGroupChange = (tools: string[], event: Event) => {
             <button
               type="button"
               class="text-left px-3 py-2.5 rounded-lg border border-zinc-200 bg-zinc-50/70 hover:border-indigo-300 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800/40 dark:hover:border-indigo-500/50 dark:hover:bg-zinc-800"
-              @click="openSettingsSection('feishu')"
+              @click="openSettingsSection('bot')"
             >
-              <span class="block text-xs font-medium text-zinc-700 dark:text-zinc-200">飞书机器人</span>
+              <span class="block text-xs font-medium text-zinc-700 dark:text-zinc-200">机器人配置</span>
               <span class="mt-1 block text-[11px] text-zinc-500 dark:text-zinc-400">
-                {{ form.feishu_enabled ? '已启用' : '未启用' }}，默认接收类型 {{ form.feishu_default_receive_id_type || 'chat_id' }}
+                {{ selectedBotName }}，{{ selectedBotEnabled ? '已启用' : '未启用' }}
               </span>
             </button>
             <button
@@ -344,7 +346,16 @@ const onToolGroupChange = (tools: string[], event: Event) => {
                 </div>
               </div>
 
-              <div v-else-if="settingsSection === 'feishu'" class="space-y-3">
+              <div v-else-if="settingsSection === 'bot'" class="space-y-3">
+                <div>
+                  <label class="block text-[11px] text-zinc-500 mb-1">机器人类型</label>
+                  <select v-model="form.bot_channel" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs">
+                    <option value="feishu">飞书机器人</option>
+                    <option value="qq">QQ机器人</option>
+                  </select>
+                </div>
+
+                <template v-if="form.bot_channel === 'feishu'">
                 <label class="flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-300 px-2 py-2 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60">
                   <span>启用飞书机器人</span>
                   <input type="checkbox" v-model="form.feishu_enabled" />
@@ -384,6 +395,44 @@ const onToolGroupChange = (tools: string[], event: Event) => {
                 <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
                   Webhook URL 只能让 AI 主动发通知；飞书用户主动与 AI 对话需要配置自建应用 App ID / Secret，并在飞书开放平台的事件订阅里选择“使用长连接接收事件”。启用后请在 MCP 工具权限中勾选 <span class="font-mono">user.send_message</span>。
                 </div>
+                </template>
+
+                <template v-else>
+                <label class="flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-300 px-2 py-2 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60">
+                  <span>启用 QQ机器人</span>
+                  <input type="checkbox" v-model="form.qq_enabled" />
+                </label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-[11px] text-zinc-500 mb-1">App ID</label>
+                    <input v-model="form.qq_app_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="开放平台机器人 AppID" />
+                  </div>
+                  <div>
+                    <label class="block text-[11px] text-zinc-500 mb-1">App Secret</label>
+                    <input v-model="form.qq_app_secret" type="password" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
+                  </div>
+                  <label class="md:col-span-2 flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-300 px-2 py-2 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60">
+                    <span>使用沙箱环境</span>
+                    <input type="checkbox" v-model="form.qq_sandbox" />
+                  </label>
+                  <div>
+                    <label class="block text-[11px] text-zinc-500 mb-1">默认目标类型</label>
+                    <select v-model="form.qq_default_target_type" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs">
+                      <option value="c2c">单聊 openid</option>
+                      <option value="group">群聊 group_openid</option>
+                      <option value="channel">频道 channel_id</option>
+                      <option value="dm">频道私信 guild_id</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-[11px] text-zinc-500 mb-1">默认目标 ID</label>
+                    <input v-model="form.qq_default_target_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="openid / group_openid / channel_id" />
+                  </div>
+                </div>
+                <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  QQ 回调地址配置为 <span class="font-mono">/api/qq/events/{AI配置ID}</span>。官方接口使用 AppID + AppSecret 获取调用凭证，回调签名使用 AppSecret，启用入站对话需在 QQ 开放平台订阅 C2C/群聊/频道消息事件。
+                </div>
+                </template>
               </div>
 
               <div v-else-if="settingsSection === 'workspace'">

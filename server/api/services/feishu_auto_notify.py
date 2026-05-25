@@ -5,7 +5,8 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from ..integrations.feishu.service import send_feishu_text_message
-from ..models import ChatMessage, FeishuSessionRoute
+from ..integrations.qq.service import send_qq_text_message
+from ..models import ChatMessage, FeishuSessionRoute, QQSessionRoute
 
 
 FEISHU_TEXT_MAX_CHARS = 1800
@@ -56,6 +57,56 @@ def register_feishu_session_route(
     session.commit()
 
 
+def register_qq_session_route(
+    session: Session,
+    *,
+    user_id: int,
+    ai_config_id: int,
+    ai_kind: str,
+    session_id: str,
+    target_id: str,
+    target_type: str,
+    source_message_id: str = "",
+    source_event_id: str = "",
+    next_msg_seq: int = 1,
+) -> None:
+    session_id = str(session_id or "").strip()
+    target_id = str(target_id or "").strip()
+    target_type = str(target_type or "c2c").strip() or "c2c"
+    if not session_id or not target_id:
+        return
+    row = session.exec(
+        select(QQSessionRoute).where(
+            QQSessionRoute.user_id == int(user_id),
+            QQSessionRoute.ai_config_id == int(ai_config_id),
+            QQSessionRoute.ai_kind == str(ai_kind or "core"),
+            QQSessionRoute.session_id == session_id,
+        )
+    ).first()
+    now = time.time()
+    if row is None:
+        row = QQSessionRoute(
+            user_id=int(user_id),
+            ai_config_id=int(ai_config_id),
+            ai_kind=str(ai_kind or "core"),
+            session_id=session_id,
+            target_id=target_id,
+            target_type=target_type,
+            source_message_id=str(source_message_id or ""),
+            source_event_id=str(source_event_id or ""),
+            next_msg_seq=max(1, int(next_msg_seq or 1)),
+        )
+    else:
+        row.target_id = target_id
+        row.target_type = target_type
+        row.source_message_id = str(source_message_id or row.source_message_id or "")
+        row.source_event_id = str(source_event_id or row.source_event_id or "")
+        row.next_msg_seq = max(int(row.next_msg_seq or 1), int(next_msg_seq or 1))
+        row.updated_at = now
+    session.add(row)
+    session.commit()
+
+
 def _route_from_session_id(message: ChatMessage) -> Optional[FeishuSessionRoute]:
     session_id = str(message.session_id or "")
     ai_config_id = int(message.ai_config_id or 0)
@@ -87,6 +138,19 @@ def _load_route(session: Session, message: ChatMessage) -> Optional[FeishuSessio
         )
     ).first()
     return row or _route_from_session_id(message)
+
+
+def _load_qq_route(session: Session, message: ChatMessage) -> Optional[QQSessionRoute]:
+    if not message.ai_config_id:
+        return None
+    return session.exec(
+        select(QQSessionRoute).where(
+            QQSessionRoute.user_id == int(message.user_id),
+            QQSessionRoute.ai_config_id == int(message.ai_config_id),
+            QQSessionRoute.ai_kind == str(message.ai_kind or "core"),
+            QQSessionRoute.session_id == str(message.session_id or ""),
+        )
+    ).first()
 
 
 def _feishu_visible_content(message: ChatMessage) -> str:
@@ -150,7 +214,34 @@ def notify_saved_assistant_message(session: Session, message: ChatMessage) -> No
     if not _is_feishu_visible_assistant_message(message):
         return
     content = _feishu_visible_content(message)
-    if not str(message.session_id or "").startswith("feishu_"):
+    session_id = str(message.session_id or "")
+    if session_id.startswith("qq_"):
+        route = _load_qq_route(session, message)
+        if not route:
+            return
+        prefix = _feishu_assistant_prefix(session, message)
+        content = f"{prefix}{content}" if prefix else content
+        msg_seq = max(1, int(route.next_msg_seq or 1))
+        try:
+            send_qq_text_message(
+                int(message.user_id),
+                int(message.ai_config_id or 0),
+                text=content,
+                target_id=str(route.target_id or ""),
+                target_type=str(route.target_type or "c2c"),
+                msg_id=str(route.source_message_id or ""),
+                event_id=str(route.source_event_id or ""),
+                msg_seq=msg_seq if route.source_message_id else None,
+            )
+            route.next_msg_seq = msg_seq + 1
+            route.updated_at = time.time()
+            session.add(route)
+            session.commit()
+        except Exception as exc:
+            print(f"[qq_auto_notify] send failed message_id={message.id}: {exc}")
+        return
+
+    if not session_id.startswith("feishu_"):
         return
     route = _load_route(session, message)
     if not route:

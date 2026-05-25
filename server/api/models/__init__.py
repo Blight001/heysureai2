@@ -49,7 +49,7 @@ from .defaults import (
     DEFAULT_UI_THEME_MODE,
     DEFAULT_USER_MESSAGE_NOTICE,
 )
-from .feishu import FeishuSessionRoute
+from .feishu import FeishuSessionRoute, QQSessionRoute
 from .knowledge import EvolutionInput, KnowledgeEntry, Memory, ValhallaEntry
 from .project import EvolutionProject, EvolutionProjectCreate, EvolutionProjectUpdate
 from .user import Token, User, UserCreate, UserLogin, UserRead, UserUpdate
@@ -106,4 +106,5 @@ __all__ = [
     "AIMessage",
     # feishu
     "FeishuSessionRoute",
+    "QQSessionRoute",
 ]

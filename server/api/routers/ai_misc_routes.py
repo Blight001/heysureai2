@@ -20,7 +20,7 @@ from api.models import (
 )
 from api.routers.auth import get_current_user
 from api.services.ai_service import ensure_default_ai_for_user, remove_switch_key
-from api.services.task_system import parse_generation_from_session_id
+from api.services.task_system import decode_task_payload, parse_generation_from_session_id
 from .ai_base import router
 
 
@@ -260,6 +260,17 @@ async def list_ai_cards(
         if run_status in {"queued", "running"} and effective_status in {"queued", "running"}:
             effective_status = "running" if run_status == "running" else "queued"
         task_token_used = core_task_tokens_by_prefix.get((int(job.ai_config_id), session_prefix), 0)
+        task_payload = decode_task_payload(job.task_payload)
+        schedule = task_payload.get("schedule") if isinstance(task_payload, dict) else {}
+        schedule = schedule if isinstance(schedule, dict) else {}
+        try:
+            schedule_at = float(schedule.get("schedule_at") or 0)
+        except Exception:
+            schedule_at = 0.0
+        try:
+            schedule_duration_minutes = int(schedule.get("duration_minutes") or 0)
+        except Exception:
+            schedule_duration_minutes = 0
         return {
             "job_id": job.job_id,
             "title": job.title,
@@ -267,6 +278,10 @@ async def list_ai_cards(
             "effective_status": effective_status,
             "run_status": run_status,
             "trigger_type": job.trigger_type,
+            "schedule_enabled": bool(schedule.get("enabled")),
+            "schedule_at": schedule_at if schedule_at > 0 else None,
+            "schedule_loop_enabled": bool(schedule.get("loop_enabled")),
+            "schedule_duration_minutes": schedule_duration_minutes,
             "generation_count": generation_count,
             "latest_generation": latest_generation,
             "task_token_used": int(task_token_used or 0),
@@ -286,6 +301,23 @@ async def list_ai_cards(
             if value > 0:
                 return value
         return 0.0
+
+    def _is_scheduled_task(item: Dict[str, Any]) -> bool:
+        return (
+            str(item.get("trigger_type") or "").lower() == "schedule"
+            or bool(item.get("schedule_enabled"))
+        )
+
+    def _is_unfinished_task(item: Dict[str, Any]) -> bool:
+        status = str(item.get("effective_status") or item.get("status") or "").lower()
+        return status not in {"completed", "done", "finished", "cancelled", "stopped", "error"}
+
+    def _scheduled_task_sort_key(item: Dict[str, Any]) -> tuple[float, float]:
+        try:
+            schedule_at = float(item.get("schedule_at") or 0)
+        except Exception:
+            schedule_at = 0.0
+        return (schedule_at if schedule_at > 0 else float("inf"), -_task_activity_ts(item))
 
     def _build_feishu_status(cfg: AssistantAIConfig) -> Dict[str, str]:
         if not cfg.feishu_enabled:
@@ -317,6 +349,26 @@ async def list_ai_cards(
             }
         return {"status": "failed", "mode": "none", "label": "失败", "message": "未配置 App ID/Secret 或 Webhook URL"}
 
+    def _build_qq_status(cfg: AssistantAIConfig) -> Dict[str, str]:
+        if not cfg.qq_enabled:
+            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "QQ机器人未启用"}
+        app_id = str(cfg.qq_app_id or "").strip()
+        app_secret = str(cfg.qq_app_secret or "").strip()
+        if not app_id or not app_secret:
+            return {
+                "status": "failed",
+                "mode": "webhook",
+                "label": "失败",
+                "message": "App ID / Secret 配置不完整",
+            }
+        mode = "sandbox_webhook" if bool(cfg.qq_sandbox) else "webhook"
+        return {
+            "status": "success",
+            "mode": mode,
+            "label": "成功",
+            "message": "QQ 使用 Webhook 回调，不会建立长连接；请在 QQ 开放平台配置公网 HTTPS 回调 /api/qq/events/{AI配置ID}",
+        }
+
     cards = []
     for cfg in cfgs:
         status = status_map.get(cfg.id)
@@ -347,18 +399,19 @@ async def list_ai_cards(
             key=_task_activity_ts,
             reverse=True,
         )
-        current_or_scheduled_task = next(
+        current_task = next(
             (
                 item for item in cfg_task_summaries_by_activity
-                if str(item.get("effective_status") or "").lower() in {"running", "queued", "paused"}
+                if str(item.get("effective_status") or "").lower() == "running"
             ),
             None,
         )
-        if current_or_scheduled_task is None:
-            current_or_scheduled_task = next(
+        if current_task is None:
+            current_task = next(
                 (
                     item for item in cfg_task_summaries_by_activity
-                    if str(item.get("trigger_type") or "").lower() == "schedule"
+                    if str(item.get("effective_status") or "").lower() in {"queued", "paused"}
+                    and not _is_scheduled_task(item)
                 ),
                 None,
             )
@@ -369,9 +422,19 @@ async def list_ai_cards(
             ),
             None,
         )
-        current_task_title = str(current_or_scheduled_task.get("title") or "") if current_or_scheduled_task else ""
-        current_task_status = str(current_or_scheduled_task.get("effective_status") or "idle") if current_or_scheduled_task else "idle"
+        scheduled_tasks = [
+            item for item in cfg_task_summaries_by_activity
+            if _is_scheduled_task(item)
+            and _is_unfinished_task(item)
+            and (not current_task or item.get("job_id") != current_task.get("job_id"))
+        ]
+        scheduled_tasks = sorted(scheduled_tasks, key=_scheduled_task_sort_key)[:3]
+        current_or_recent_task = current_task or latest_completed_task
+        current_task_title = str(current_task.get("title") or "") if current_task else ""
+        current_task_status = str(current_task.get("effective_status") or "idle") if current_task else "idle"
         feishu_status = _build_feishu_status(cfg)
+        qq_status = _build_qq_status(cfg)
+        bot_channel = str(cfg.bot_channel or "feishu")
         cards.append(
             {
                 "id": cfg.id,
@@ -396,12 +459,21 @@ async def list_ai_cards(
                 "management_scope": cfg.management_scope,
                 "enabled": cfg.enabled,
                 "mcp_enabled": cfg.mcp_enabled,
+                "bot_channel": bot_channel,
                 "feishu_enabled": cfg.feishu_enabled,
                 "feishu_webhook_url": cfg.feishu_webhook_url,
                 "feishu_app_id": cfg.feishu_app_id,
                 "feishu_default_receive_id": cfg.feishu_default_receive_id,
                 "feishu_default_receive_id_type": cfg.feishu_default_receive_id_type,
                 "feishu_status": feishu_status,
+                "qq_enabled": cfg.qq_enabled,
+                "qq_app_id": cfg.qq_app_id,
+                "qq_sandbox": cfg.qq_sandbox,
+                "qq_default_target_id": cfg.qq_default_target_id,
+                "qq_default_target_type": cfg.qq_default_target_type,
+                "qq_status": qq_status,
+                "bot_enabled": cfg.qq_enabled if bot_channel == "qq" else cfg.feishu_enabled,
+                "bot_status": qq_status if bot_channel == "qq" else feishu_status,
                 "switch_key": cfg.switch_key,
                 "mcp_tools": cfg.mcp_tools,
                 "system_auto_control": cfg.system_auto_control,
@@ -416,8 +488,10 @@ async def list_ai_cards(
                 "recent_user_chat_at": recent_user_chat.created_at if recent_user_chat else None,
                 "current_task_title": current_task_title,
                 "current_task_status": current_task_status,
-                "task_current_or_recent": current_or_scheduled_task,
+                "task_current": current_task,
+                "task_current_or_recent": current_or_recent_task,
                 "task_recent_completed": latest_completed_task,
+                "task_scheduled_tasks": scheduled_tasks,
                 "latest_thinking": live_reasoning or live_text,
             }
         )

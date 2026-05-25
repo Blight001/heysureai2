@@ -31,6 +31,7 @@ from .desktop_agent_tools import (
     is_desktop_tool,
     is_endpoint_agent_tool,
 )
+from .screenshot_store import attach_persisted_screenshot
 from ..models import ChatMessageCreate
 from ..sio import agents, sio
 from .chat_persistence import _save_message
@@ -246,6 +247,19 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
     tool = str(data.get("tool") or ctx.get("tool") or "")
     summary = str(data.get("summary") or "")
     result = data.get("result")
+    if success and tool in {"browser_screenshot", "screen.capture", "screen.capture_region"}:
+        try:
+            result = attach_persisted_screenshot(
+                user_id=int(ctx.get("user_id") or 0),
+                ai_config_id=ctx.get("ai_config_id"),
+                tool=tool,
+                result=result,
+            )
+        except Exception as exc:
+            if isinstance(result, dict):
+                result = {k: v for k, v in result.items() if k not in {"dataUrl", "data_url", "imageDataUrl", "screenshotDataUrl"}}
+                result["uploaded"] = False
+                result["upload_error"] = str(exc)
 
     status = "成功" if success else "失败"
     result_text = result if isinstance(result, str) else _safe_dump(result)

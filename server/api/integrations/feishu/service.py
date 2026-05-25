@@ -1,4 +1,5 @@
 import json
+import mimetypes
 import re
 import time
 from typing import Any, Dict, Optional
@@ -8,6 +9,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from ...database import engine
+from ...integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
 from ...models import AssistantAIConfig
 
 FEISHU_OPEN_API_BASE = "https://open.feishu.cn/open-apis"
@@ -162,6 +164,150 @@ def send_feishu_text_message(
         "message_id": (data.get("data") or {}).get("message_id"),
         "raw": data,
     }
+
+
+def _send_feishu_open_message(
+    cfg: AssistantAIConfig,
+    *,
+    token: str,
+    receive_id: str,
+    receive_id_type: str,
+    msg_type: str,
+    content: Dict[str, Any],
+) -> Dict[str, Any]:
+    res = requests.post(
+        f"{FEISHU_OPEN_API_BASE}/im/v1/messages",
+        params={"receive_id_type": receive_id_type},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json; charset=utf-8",
+        },
+        json={
+            "receive_id": receive_id,
+            "msg_type": msg_type,
+            "content": json.dumps(content, ensure_ascii=False),
+        },
+        timeout=20,
+    )
+    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
+    if not res.ok or int(data.get("code") or 0) != 0:
+        raise HTTPException(status_code=502, detail=f"Feishu send {msg_type} failed: {data or res.text}")
+    return {
+        "success": True,
+        "receive_id": receive_id,
+        "receive_id_type": receive_id_type,
+        "message_id": (data.get("data") or {}).get("message_id"),
+        "raw": data,
+    }
+
+
+def upload_feishu_image(user_id: int, ai_config_id: Optional[int], source: MediaSource) -> str:
+    _load_feishu_config(user_id, ai_config_id)
+    token = get_tenant_access_token(user_id, ai_config_id)
+    with open(source.path, "rb") as fh:
+        res = requests.post(
+            f"{FEISHU_OPEN_API_BASE}/im/v1/images",
+            headers={"Authorization": f"Bearer {token}"},
+            data={"image_type": "message"},
+            files={"image": (source.filename, fh, source.mime_type)},
+            timeout=60,
+        )
+    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
+    if not res.ok or int(data.get("code") or 0) != 0:
+        raise HTTPException(status_code=502, detail=f"Feishu image upload failed: {data or res.text}")
+    image_key = str((data.get("data") or {}).get("image_key") or "").strip()
+    if not image_key:
+        raise HTTPException(status_code=502, detail="Feishu image upload response missing image_key")
+    return image_key
+
+
+def upload_feishu_file(
+    user_id: int,
+    ai_config_id: Optional[int],
+    source: MediaSource,
+    *,
+    file_type: str,
+    duration: Optional[int] = None,
+) -> str:
+    _load_feishu_config(user_id, ai_config_id)
+    token = get_tenant_access_token(user_id, ai_config_id)
+    data = {"file_type": file_type, "file_name": source.filename}
+    if duration is not None:
+        data["duration"] = str(int(duration))
+    with open(source.path, "rb") as fh:
+        res = requests.post(
+            f"{FEISHU_OPEN_API_BASE}/im/v1/files",
+            headers={"Authorization": f"Bearer {token}"},
+            data=data,
+            files={"file": (source.filename, fh, source.mime_type or mimetypes.guess_type(source.filename)[0] or "application/octet-stream")},
+            timeout=120,
+        )
+    parsed = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
+    if not res.ok or int(parsed.get("code") or 0) != 0:
+        raise HTTPException(status_code=502, detail=f"Feishu file upload failed: {parsed or res.text}")
+    file_key = str((parsed.get("data") or {}).get("file_key") or "").strip()
+    if not file_key:
+        raise HTTPException(status_code=502, detail="Feishu file upload response missing file_key")
+    return file_key
+
+
+def send_feishu_media_message(
+    user_id: int,
+    ai_config_id: Optional[int],
+    *,
+    media_url: str = "",
+    media_path: str = "",
+    media_type: str = "",
+    file_name: str = "",
+    receive_id: str = "",
+    receive_id_type: str = "",
+    duration: Optional[int] = None,
+) -> Dict[str, Any]:
+    cfg = _load_feishu_config(user_id, ai_config_id)
+    if not cfg.feishu_app_id or not cfg.feishu_app_secret:
+        raise HTTPException(status_code=400, detail="Feishu media messages require App ID / App Secret")
+    target_id = str(receive_id or cfg.feishu_default_receive_id or "").strip()
+    target_type = str(receive_id_type or cfg.feishu_default_receive_id_type or "chat_id").strip()
+    if not target_id:
+        raise HTTPException(status_code=400, detail="Feishu receive_id is required")
+    if target_type not in {"chat_id", "open_id", "user_id", "union_id", "email"}:
+        raise HTTPException(status_code=400, detail=f"Unsupported Feishu receive_id_type: {target_type}")
+    source = resolve_media_source(
+        url=media_url,
+        path=media_path,
+        filename=file_name,
+        max_bytes=30 * 1024 * 1024,
+    )
+    try:
+        kind = infer_media_kind(source, media_type)
+        token = get_tenant_access_token(user_id, ai_config_id)
+        if kind == "image":
+            image_key = upload_feishu_image(user_id, ai_config_id, source)
+            return _send_feishu_open_message(
+                cfg,
+                token=token,
+                receive_id=target_id,
+                receive_id_type=target_type,
+                msg_type="image",
+                content={"image_key": image_key},
+            )
+        file_key = upload_feishu_file(
+            user_id,
+            ai_config_id,
+            source,
+            file_type="mp4",
+            duration=duration,
+        )
+        return _send_feishu_open_message(
+            cfg,
+            token=token,
+            receive_id=target_id,
+            receive_id_type=target_type,
+            msg_type="media",
+            content={"file_key": file_key},
+        )
+    finally:
+        source.cleanup()
 
 
 def parse_feishu_text_event(payload: Dict[str, Any]) -> Optional[Dict[str, str]]:

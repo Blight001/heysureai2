@@ -8,6 +8,10 @@ export interface AgentTaskSnapshot {
   effectiveStatus: string
   runStatus: string
   triggerType: string
+  scheduleEnabled?: boolean
+  scheduleAt?: number
+  scheduleLoopEnabled?: boolean
+  scheduleDurationMinutes?: number
   generationCount: number
   latestGeneration: number
   taskTokenUsed: number
@@ -41,12 +45,31 @@ export interface Agent {
   mcpEnabled?: boolean
   mcpTools?: string
   mcpAutoApprove?: boolean
+  botChannel?: 'feishu' | 'qq'
+  botEnabled?: boolean
+  botStatus?: {
+    status?: string
+    mode?: string
+    label?: string
+    message?: string
+  }
   feishuEnabled?: boolean
   feishuWebhookUrl?: string
   feishuAppId?: string
   feishuDefaultReceiveId?: string
   feishuDefaultReceiveIdType?: string
   feishuStatus?: {
+    status?: string
+    mode?: string
+    label?: string
+    message?: string
+  }
+  qqEnabled?: boolean
+  qqAppId?: string
+  qqSandbox?: boolean
+  qqDefaultTargetId?: string
+  qqDefaultTargetType?: string
+  qqStatus?: {
     status?: string
     mode?: string
     label?: string
@@ -73,8 +96,10 @@ export interface Agent {
   model?: string
   currentTaskTitle?: string
   currentTaskStatus?: string
+  taskCurrent?: AgentTaskSnapshot | null
   taskCurrentOrRecent?: AgentTaskSnapshot | null
   taskRecentCompleted?: AgentTaskSnapshot | null
+  taskScheduledTasks?: AgentTaskSnapshot[]
   latestThinking?: string
 }
 

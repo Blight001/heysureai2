@@ -48,7 +48,8 @@ class AssistantAIConfig(SQLModel, table=True):
     workspace_root: Optional[str] = Field(default=None)
     database_uri: Optional[str] = Field(default=None)
 
-    # Feishu integration
+    # Bot integrations
+    bot_channel: str = Field(default="feishu", index=True)  # feishu / qq
     feishu_enabled: bool = Field(default=False)
     feishu_webhook_url: str = Field(default="")
     feishu_app_id: str = Field(default="")
@@ -56,6 +57,12 @@ class AssistantAIConfig(SQLModel, table=True):
     feishu_verification_token: str = Field(default="")
     feishu_default_receive_id: str = Field(default="")
     feishu_default_receive_id_type: str = Field(default="chat_id")
+    qq_enabled: bool = Field(default=False)
+    qq_app_id: str = Field(default="")
+    qq_app_secret: str = Field(default="")
+    qq_sandbox: bool = Field(default=False)
+    qq_default_target_id: str = Field(default="")
+    qq_default_target_type: str = Field(default="c2c")
 
     project_id: Optional[str] = Field(default=None, index=True)
     project_name: Optional[str] = None
@@ -92,12 +99,19 @@ class AssistantAIConfigCreate(SQLModel):
     workspace_root: Optional[str] = None
     database_uri: Optional[str] = None
     feishu_enabled: Optional[bool] = False
+    bot_channel: Optional[str] = "feishu"
     feishu_webhook_url: Optional[str] = ""
     feishu_app_id: Optional[str] = ""
     feishu_app_secret: Optional[str] = ""
     feishu_verification_token: Optional[str] = ""
     feishu_default_receive_id: Optional[str] = ""
     feishu_default_receive_id_type: Optional[str] = "chat_id"
+    qq_enabled: Optional[bool] = False
+    qq_app_id: Optional[str] = ""
+    qq_app_secret: Optional[str] = ""
+    qq_sandbox: Optional[bool] = False
+    qq_default_target_id: Optional[str] = ""
+    qq_default_target_type: Optional[str] = "c2c"
     project_id: Optional[str] = None
     project_name: Optional[str] = None
     parent_ai_config_id: Optional[int] = None
@@ -129,12 +143,19 @@ class AssistantAIConfigUpdate(SQLModel):
     workspace_root: Optional[str] = None
     database_uri: Optional[str] = None
     feishu_enabled: Optional[bool] = None
+    bot_channel: Optional[str] = None
     feishu_webhook_url: Optional[str] = None
     feishu_app_id: Optional[str] = None
     feishu_app_secret: Optional[str] = None
     feishu_verification_token: Optional[str] = None
     feishu_default_receive_id: Optional[str] = None
     feishu_default_receive_id_type: Optional[str] = None
+    qq_enabled: Optional[bool] = None
+    qq_app_id: Optional[str] = None
+    qq_app_secret: Optional[str] = None
+    qq_sandbox: Optional[bool] = None
+    qq_default_target_id: Optional[str] = None
+    qq_default_target_type: Optional[str] = None
     project_id: Optional[str] = None
     project_name: Optional[str] = None
     parent_ai_config_id: Optional[int] = None

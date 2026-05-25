@@ -23,6 +23,7 @@ export interface AiConfigUpsertPayload {
   model?: string
   prompt?: string
   mcp_tools: string
+  bot_channel: 'feishu' | 'qq'
   feishu_enabled: boolean
   feishu_webhook_url?: string
   feishu_app_id?: string
@@ -30,6 +31,12 @@ export interface AiConfigUpsertPayload {
   feishu_verification_token?: string
   feishu_default_receive_id?: string
   feishu_default_receive_id_type?: string
+  qq_enabled?: boolean
+  qq_app_id?: string
+  qq_app_secret?: string
+  qq_sandbox?: boolean
+  qq_default_target_id?: string
+  qq_default_target_type?: string
   system_auto_control: string
 }
 

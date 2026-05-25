@@ -21,11 +21,26 @@ _LOOP: Optional[asyncio.AbstractEventLoop] = None
 _LOOP_THREAD: Optional[threading.Thread] = None
 
 
+def _is_normal_lark_close(exc: BaseException) -> bool:
+    name = exc.__class__.__name__
+    if name in {"ConnectionClosedOK", "ConnectionClosed"} and "1000" in str(exc):
+        return True
+    return "Close(code=1000" in str(exc)
+
+
+def _ignore_normal_lark_loop_exception(loop: asyncio.AbstractEventLoop, context: Dict[str, Any]) -> None:
+    exc = context.get("exception")
+    if isinstance(exc, BaseException) and _is_normal_lark_close(exc):
+        return
+    loop.default_exception_handler(context)
+
+
 def _ensure_lark_loop():
     import lark_oapi.ws.client as lark_ws_client
 
     global _LOOP, _LOOP_THREAD
     loop = lark_ws_client.loop
+    loop.set_exception_handler(_ignore_normal_lark_loop_exception)
     with _LOOP_LOCK:
         _LOOP = loop
         if loop.is_running():
@@ -157,7 +172,7 @@ def start_feishu_long_connection_clients() -> int:
         config_id = int(cfg.id or 0)
         app_id = str(cfg.feishu_app_id or "").strip()
         app_secret = str(cfg.feishu_app_secret or "").strip()
-        if config_id and cfg.feishu_enabled and app_id and app_secret:
+        if config_id and str(cfg.bot_channel or "feishu") == "feishu" and cfg.feishu_enabled and app_id and app_secret:
             desired[config_id] = (app_id, app_secret)
 
     disconnects = []

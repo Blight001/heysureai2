@@ -8,6 +8,10 @@ interface AgentTaskSnapshot {
   effectiveStatus: string
   runStatus: string
   triggerType: string
+  scheduleEnabled?: boolean
+  scheduleAt?: number
+  scheduleLoopEnabled?: boolean
+  scheduleDurationMinutes?: number
   generationCount: number
   latestGeneration: number
   taskTokenUsed: number
@@ -36,12 +40,31 @@ interface AgentProps {
     enabled?: boolean
     mcpEnabled?: boolean
     mcpTools?: string
+    botChannel?: 'feishu' | 'qq'
+    botEnabled?: boolean
+    botStatus?: {
+      status?: string
+      mode?: string
+      label?: string
+      message?: string
+    }
     feishuEnabled?: boolean
     feishuWebhookUrl?: string
     feishuAppId?: string
     feishuDefaultReceiveId?: string
     feishuDefaultReceiveIdType?: string
     feishuStatus?: {
+      status?: string
+      mode?: string
+      label?: string
+      message?: string
+    }
+    qqEnabled?: boolean
+    qqAppId?: string
+    qqSandbox?: boolean
+    qqDefaultTargetId?: string
+    qqDefaultTargetType?: string
+    qqStatus?: {
       status?: string
       mode?: string
       label?: string
@@ -66,8 +89,10 @@ interface AgentProps {
     managementScope?: string
     currentTaskTitle?: string
     currentTaskStatus?: string
+    taskCurrent?: AgentTaskSnapshot | null
     taskCurrentOrRecent?: AgentTaskSnapshot | null
     taskRecentCompleted?: AgentTaskSnapshot | null
+    taskScheduledTasks?: AgentTaskSnapshot[]
     latestThinking?: string
   }
 }
@@ -151,16 +176,28 @@ const isRealtimeWorking = computed(() => {
   const taskStatus = String(props.agent.currentTaskStatus || '').toLowerCase()
   return taskStatus === 'running' || props.agent.runtimeStatus === 'running'
 })
-const scheduledTaskSnapshot = computed(() => {
+const taskSnapshotDisplay = computed(() => {
+  const current = props.agent.taskCurrent || null
+  if (current) return { label: '当前任务', task: current, isCurrent: true }
+  const recent = props.agent.taskRecentCompleted || props.agent.taskCurrentOrRecent || null
+  return recent ? { label: '最近任务', task: recent, isCurrent: false } : null
+})
+const scheduledTaskSnapshots = computed(() => {
+  const currentJobId = props.agent.taskCurrent?.jobId || ''
+  const scheduled = Array.isArray(props.agent.taskScheduledTasks)
+    ? props.agent.taskScheduledTasks
+    : []
+  const normalized = scheduled.filter(task => task && task.jobId !== currentJobId)
+  if (normalized.length > 0) return normalized
   const task = props.agent.taskCurrentOrRecent
-  if (!task) return null
-  if (String(task.triggerType || '').toLowerCase() !== 'schedule') return null
+  if (!task || task.jobId === currentJobId) return []
+  if (String(task.triggerType || '').toLowerCase() !== 'schedule' && !task.scheduleEnabled) return []
   const effectiveStatus = String(task.effectiveStatus || task.status || '').toLowerCase()
-  return ['queued', 'paused', 'scheduled', 'next'].includes(effectiveStatus) ? task : null
+  return ['queued', 'paused', 'scheduled', 'next'].includes(effectiveStatus) ? [task] : []
 })
 const showTaskSnapshotBlock = computed(() => {
   if (props.agent.aiRole !== 'digital_member') return false
-  return Boolean(scheduledTaskSnapshot.value || props.agent.taskRecentCompleted)
+  return Boolean(taskSnapshotDisplay.value || scheduledTaskSnapshots.value.length > 0)
 })
 const showWorkspaceContextButton = computed(() => {
   return props.agent.aiRole === 'digital_member' && props.agent.digitalMemberRole === 'manager'
@@ -178,24 +215,32 @@ const governanceBadge = computed(() => {
   return null
 })
 
-const feishuConnection = computed(() => {
-  if (!props.agent.feishuEnabled) return null
-  const status = String(props.agent.feishuStatus?.status || '').trim()
-  const mode = String(props.agent.feishuStatus?.mode || '').trim()
-  const message = String(props.agent.feishuStatus?.message || '').trim()
-  const receiveId = String(props.agent.feishuDefaultReceiveId || '').trim()
-  const modeText = mode === 'long_connection' ? '长连接' : mode === 'webhook' ? 'Webhook' : '未配置'
+const botConnection = computed(() => {
+  const channel = props.agent.botChannel === 'qq' ? 'qq' : 'feishu'
+  const enabled = channel === 'qq' ? props.agent.qqEnabled : props.agent.feishuEnabled
+  if (!enabled) return null
+  const botStatus = channel === 'qq' ? props.agent.qqStatus : props.agent.feishuStatus
+  const status = String(botStatus?.status || '').trim()
+  const mode = String(botStatus?.mode || '').trim()
+  const message = String(botStatus?.message || '').trim()
+  const receiveId = channel === 'qq'
+    ? String(props.agent.qqDefaultTargetId || '').trim()
+    : String(props.agent.feishuDefaultReceiveId || '').trim()
+  const name = channel === 'qq' ? 'QQ' : '飞书'
+  const modeText = channel === 'qq'
+    ? (mode === 'sandbox_webhook' ? '沙箱Webhook' : mode === 'webhook' ? 'Webhook' : '未配置')
+    : (mode === 'long_connection' ? '长连接' : mode === 'webhook' ? 'Webhook' : '未配置')
   if (status === 'success') {
     return {
-      text: `飞书成功 · ${modeText}`,
+      text: `${name}成功 · ${modeText}`,
       class: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300',
-      title: [message || '飞书连接状态成功', receiveId ? `默认接收：${receiveId}` : ''].filter(Boolean).join('；'),
+      title: [message || `${name}机器人状态成功`, receiveId ? `默认接收：${receiveId}` : ''].filter(Boolean).join('；'),
     }
   }
   return {
-    text: `飞书失败 · ${modeText}`,
+    text: `${name}失败 · ${modeText}`,
     class: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300',
-    title: message || '飞书连接状态失败',
+    title: message || `${name}机器人状态失败`,
   }
 })
 
@@ -357,6 +402,7 @@ const taskStatusLabel = (raw?: string) => {
   const status = String(raw || '').toLowerCase()
   if (status === 'running') return '执行中'
   if (status === 'queued' || status === 'paused') return '等待执行'
+  if (status === 'scheduled' || status === 'next') return '定时等待'
   if (status === 'completed' || status === 'done' || status === 'finished') return '已完成'
   if (status === 'error' || status === 'stopped' || status === 'cancelled') return '已终止'
   return '待命'
@@ -366,6 +412,7 @@ const taskStatusClass = (raw?: string) => {
   const status = String(raw || '').toLowerCase()
   if (status === 'running') return 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-500/50 dark:bg-emerald-500/10 dark:text-emerald-300'
   if (status === 'queued' || status === 'paused') return 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/50 dark:bg-amber-500/10 dark:text-amber-300'
+  if (status === 'scheduled' || status === 'next') return 'border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/50 dark:bg-sky-500/10 dark:text-sky-300'
   if (status === 'completed' || status === 'done' || status === 'finished') return 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-500/50 dark:bg-blue-500/10 dark:text-blue-300'
   if (status === 'error' || status === 'stopped' || status === 'cancelled') return 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-300'
   return 'border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
@@ -381,6 +428,20 @@ const taskGenerationText = (task?: AgentTaskSnapshot | null) => {
 const taskTotalGenerations = (task?: AgentTaskSnapshot | null) => {
   if (!task) return 1
   return Math.max(1, Number(task.generationCount) || 1)
+}
+
+const formatTaskSchedule = (task?: AgentTaskSnapshot | null) => {
+  if (!task) return ''
+  const parts: string[] = []
+  if (task.scheduleAt) {
+    const date = new Date(task.scheduleAt * 1000)
+    if (!Number.isNaN(date.getTime())) {
+      parts.push(`时间: ${date.toLocaleString()}`)
+    }
+  }
+  if (task.scheduleLoopEnabled) parts.push('循环')
+  if (task.scheduleDurationMinutes) parts.push(`${task.scheduleDurationMinutes}分钟`)
+  return parts.join(' · ')
 }
 </script>
 
@@ -412,16 +473,16 @@ const taskTotalGenerations = (task?: AgentTaskSnapshot | null) => {
           </span>
         </h3>
         <div
-          v-if="feishuConnection || desktopConnection || governanceBadge"
+          v-if="botConnection || desktopConnection || governanceBadge"
           class="mt-2 flex flex-wrap items-center justify-start gap-1.5"
         >
           <span
-            v-if="feishuConnection"
+            v-if="botConnection"
             class="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-none"
-            :class="feishuConnection.class"
-            :title="feishuConnection.title"
+            :class="botConnection.class"
+            :title="botConnection.title"
           >
-            {{ feishuConnection.text }}
+            {{ botConnection.text }}
           </span>
           <span
             v-if="desktopConnection"
@@ -515,46 +576,55 @@ const taskTotalGenerations = (task?: AgentTaskSnapshot | null) => {
       </div>
       <div v-if="showTaskSnapshotBlock" class="mt-2 pl-2 space-y-1.5">
         <div
-          v-if="scheduledTaskSnapshot"
+          v-if="taskSnapshotDisplay"
           class="rounded-md border border-zinc-200 dark:border-zinc-700 bg-white/80 dark:bg-zinc-900/50 p-2"
         >
-          <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">等待中的定时任务</div>
+          <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">{{ taskSnapshotDisplay.label }}</div>
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <div class="text-xs font-medium text-zinc-800 dark:text-zinc-100 truncate">{{ scheduledTaskSnapshot.title }}</div>
+              <div class="text-xs font-medium text-zinc-800 dark:text-zinc-100 truncate">{{ taskSnapshotDisplay.task.title }}</div>
               <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
-                代数: {{ taskGenerationText(scheduledTaskSnapshot) }}
+                {{ taskSnapshotDisplay.isCurrent ? `代数: ${taskGenerationText(taskSnapshotDisplay.task)}` : `总共代数: ${taskTotalGenerations(taskSnapshotDisplay.task)}` }}
               </div>
             </div>
             <span
+              v-if="taskSnapshotDisplay.isCurrent"
               class="shrink-0 text-[10px] px-1.5 py-0.5 rounded border"
-              :class="taskStatusClass(scheduledTaskSnapshot.effectiveStatus || scheduledTaskSnapshot.status)"
+              :class="taskStatusClass(taskSnapshotDisplay.task.effectiveStatus || taskSnapshotDisplay.task.status)"
             >
-              {{ taskStatusLabel(scheduledTaskSnapshot.effectiveStatus || scheduledTaskSnapshot.status) }}
+              {{ taskStatusLabel(taskSnapshotDisplay.task.effectiveStatus || taskSnapshotDisplay.task.status) }}
             </span>
-          </div>
-        </div>
-
-        <div
-          v-if="agent.taskRecentCompleted"
-          class="rounded-md border border-zinc-200 dark:border-zinc-700 bg-white/80 dark:bg-zinc-900/50 p-2"
-        >
-          <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">最近任务</div>
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <div class="text-xs font-medium text-zinc-800 dark:text-zinc-100 truncate">{{ agent.taskRecentCompleted.title }}</div>
-              <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
-                总共代数: {{ taskTotalGenerations(agent.taskRecentCompleted) }}
-              </div>
-            </div>
             <button
+              v-else
               class="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors dark:border-indigo-500/40 dark:text-indigo-300 dark:hover:bg-indigo-500/10"
-              @click.stop="agent.taskRecentCompleted?.jobId
-                ? emit('show-task-detail', { agent, jobId: agent.taskRecentCompleted.jobId })
+              @click.stop="taskSnapshotDisplay.task.jobId
+                ? emit('show-task-detail', { agent, jobId: taskSnapshotDisplay.task.jobId })
                 : emit('show-tasks', agent)"
             >
               对话详情
             </button>
+          </div>
+        </div>
+
+        <div
+          v-for="task in scheduledTaskSnapshots"
+          :key="task.jobId"
+          class="rounded-md border border-zinc-200 dark:border-zinc-700 bg-white/80 dark:bg-zinc-900/50 p-2"
+        >
+          <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">定时任务</div>
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <div class="text-xs font-medium text-zinc-800 dark:text-zinc-100 truncate">{{ task.title }}</div>
+              <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
+                {{ formatTaskSchedule(task) || `代数: ${taskGenerationText(task)}` }}
+              </div>
+            </div>
+            <span
+              class="shrink-0 text-[10px] px-1.5 py-0.5 rounded border"
+              :class="taskStatusClass(task.effectiveStatus || task.status)"
+            >
+              {{ taskStatusLabel(task.effectiveStatus || task.status) }}
+            </span>
           </div>
         </div>
       </div>

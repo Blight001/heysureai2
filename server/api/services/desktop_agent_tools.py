@@ -137,6 +137,27 @@ def endpoint_tool_input_schema(name: str) -> Dict[str, Any]:
             "include_html": {"type": "boolean"},
             "limit": {"type": "number"},
         }
+    elif tool in {"browser_screenshot", "screen.capture"}:
+        properties = {
+            "display": {"type": "number", "description": "Desktop display index for screen.capture."},
+            "screen": {"type": "number", "description": "Alias of display."},
+            "upload_to_server": {
+                "type": "boolean",
+                "description": "Defaults true. The server stores the screenshot under the user's Screenshots workspace folder and returns server_path/workspace_path.",
+            },
+        }
+    elif tool == "screen.capture_region":
+        properties = {
+            "x": {"type": "number"},
+            "y": {"type": "number"},
+            "width": {"type": "number"},
+            "height": {"type": "number"},
+            "upload_to_server": {
+                "type": "boolean",
+                "description": "Defaults true. The server stores the screenshot under the user's Screenshots workspace folder and returns server_path/workspace_path.",
+            },
+        }
+        required = ["width", "height"]
     elif tool == "browser_find_popups":
         properties = {
             "limit": {"type": "number", "description": "Maximum popups to return."},

@@ -61,6 +61,7 @@ def run_pending_migrations() -> None:
             ui_font_size=DEFAULT_UI_FONT_SIZE,
         )
         _migrate_assistantaiconfig(cursor)
+        _migrate_qqsessionroute(cursor)
         _migrate_aitaskjob(cursor)
         _migrate_aimessage(cursor)
 
@@ -177,6 +178,7 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
     _add_column(cursor, "assistantaiconfig", "current_behavior", "TEXT DEFAULT '等待指令...'", existing)
     _add_column(cursor, "assistantaiconfig", "workspace_root", "TEXT", existing)
     _add_column(cursor, "assistantaiconfig", "database_uri", "TEXT", existing)
+    _add_column(cursor, "assistantaiconfig", "bot_channel", "TEXT DEFAULT 'feishu'", existing)
     _add_column(cursor, "assistantaiconfig", "feishu_enabled", "BOOLEAN DEFAULT 0", existing)
     _add_column(cursor, "assistantaiconfig", "feishu_webhook_url", "TEXT DEFAULT ''", existing)
     _add_column(cursor, "assistantaiconfig", "feishu_app_id", "TEXT DEFAULT ''", existing)
@@ -184,6 +186,12 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
     _add_column(cursor, "assistantaiconfig", "feishu_verification_token", "TEXT DEFAULT ''", existing)
     _add_column(cursor, "assistantaiconfig", "feishu_default_receive_id", "TEXT DEFAULT ''", existing)
     _add_column(cursor, "assistantaiconfig", "feishu_default_receive_id_type", "TEXT DEFAULT 'chat_id'", existing)
+    _add_column(cursor, "assistantaiconfig", "qq_enabled", "BOOLEAN DEFAULT 0", existing)
+    _add_column(cursor, "assistantaiconfig", "qq_app_id", "TEXT DEFAULT ''", existing)
+    _add_column(cursor, "assistantaiconfig", "qq_app_secret", "TEXT DEFAULT ''", existing)
+    _add_column(cursor, "assistantaiconfig", "qq_sandbox", "BOOLEAN DEFAULT 1", existing)
+    _add_column(cursor, "assistantaiconfig", "qq_default_target_id", "TEXT DEFAULT ''", existing)
+    _add_column(cursor, "assistantaiconfig", "qq_default_target_type", "TEXT DEFAULT 'c2c'", existing)
     _add_column(cursor, "assistantaiconfig", "project_id", "TEXT", existing)
     _add_column(cursor, "assistantaiconfig", "project_name", "TEXT", existing)
     _add_column(cursor, "assistantaiconfig", "sort_order", "INTEGER DEFAULT 100", existing)
@@ -247,6 +255,41 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
         "workspace.run_command",
         ["web.search"],
     )
+    cursor.execute(
+        "UPDATE assistantaiconfig SET bot_channel = 'feishu' "
+        "WHERE bot_channel IS NULL OR bot_channel = '' "
+        "OR bot_channel NOT IN ('feishu', 'qq')"
+    )
+    cursor.execute(
+        "UPDATE assistantaiconfig SET qq_default_target_type = 'c2c' "
+        "WHERE qq_default_target_type IS NULL OR qq_default_target_type = '' "
+        "OR qq_default_target_type NOT IN ('c2c', 'group', 'channel', 'dm')"
+    )
+
+
+def _migrate_qqsessionroute(cursor: sqlite3.Cursor) -> None:
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS qqsessionroute (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            ai_config_id INTEGER NOT NULL,
+            ai_kind TEXT NOT NULL DEFAULT 'core',
+            session_id TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            target_type TEXT NOT NULL DEFAULT 'c2c',
+            source_message_id TEXT NOT NULL DEFAULT '',
+            source_event_id TEXT NOT NULL DEFAULT '',
+            next_msg_seq INTEGER NOT NULL DEFAULT 1,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        )
+        """
+    )
+    existing = _existing_columns(cursor, "qqsessionroute")
+    _add_column(cursor, "qqsessionroute", "source_message_id", "TEXT DEFAULT ''", existing)
+    _add_column(cursor, "qqsessionroute", "source_event_id", "TEXT DEFAULT ''", existing)
+    _add_column(cursor, "qqsessionroute", "next_msg_seq", "INTEGER DEFAULT 1", existing)
 
 
 def _migrate_aitaskjob(cursor: sqlite3.Cursor) -> None:
