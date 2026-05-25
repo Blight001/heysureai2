@@ -620,6 +620,39 @@ const loadTotalTokens = async () => {
   return data.total_tokens || 0
 }
 
+const mapHistoryMessages = (history: ChatMessage[]) => {
+  return history.map((msg: ChatMessage) => {
+    const parsed = parseChatResponseInline(msg.content)
+    return {
+      ...msg,
+      display_text: parsed.displayText,
+      think: msg.think || parsed.think,
+      blocks: parsed.blocks,
+      inlineContent: parsed.inlineContent,
+    }
+  })
+}
+
+const isForgetBeforeCurrentToolMessage = (msg: ChatMessage) => {
+  return String(msg.tags || '') === 'mcp_tool_call'
+    && String(msg.content || '').includes('工具: conversation.forget_before_current')
+    && String(msg.content || '').includes('状态: 成功')
+}
+
+const reloadCurrentHistorySnapshot = async () => {
+  if (!getAuthToken() || !currentSessionId.value) return
+  let history
+  try {
+    history = await chatApi.getChatHistory(chatCtx.value, currentSessionId.value)
+  } catch {
+    return
+  }
+  chatMessages.value = mapHistoryMessages(history)
+  restoreActionStatesFromHistory(chatMessages.value)
+  await loadTotalTokens()
+  await scrollToBottom()
+}
+
 const refreshTokensDuringRunIfNeeded = async (force = false) => {
   const now = Date.now()
   if (!force && now - lastRealtimeTokenSyncAt < 1000) return
@@ -635,16 +668,7 @@ const loadChatHistory = async (sid: string) => {
   } catch {
     return
   }
-  chatMessages.value = history.map((msg: ChatMessage) => {
-    const parsed = parseChatResponseInline(msg.content)
-    return {
-      ...msg,
-      display_text: parsed.displayText,
-      think: msg.think || parsed.think,
-      blocks: parsed.blocks,
-      inlineContent: parsed.inlineContent,
-    }
-  })
+  chatMessages.value = mapHistoryMessages(history)
   restoreActionStatesFromHistory(chatMessages.value)
   currentSessionId.value = sid
   await loadTotalTokens()
@@ -664,7 +688,11 @@ const fetchRunHistoryIncrementalOnce = async () => {
   } catch {
     return
   }
+  const shouldReloadSnapshot = Array.isArray(incremental) && incremental.some(isForgetBeforeCurrentToolMessage)
   await upsertHistoryMessages(incremental)
+  if (shouldReloadSnapshot) {
+    await reloadCurrentHistorySnapshot()
+  }
 }
 
 const pollSessionSync = async (epoch: number) => {

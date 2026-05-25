@@ -374,6 +374,54 @@ def _save_mcp_tool_bubble(
     )
 
 
+def _load_current_user_content(
+    session: Session,
+    *,
+    user_id: int,
+    ai_config_id: Optional[int],
+    ai_kind: str,
+    session_id: str,
+    current_user_message_id: Optional[int],
+    fallback: Optional[str],
+) -> str:
+    fallback_text = str(fallback or "").strip()
+    if current_user_message_id:
+        row = session.get(ChatMessage, current_user_message_id)
+        if (
+            row
+            and row.user_id == user_id
+            and row.ai_config_id == ai_config_id
+            and row.ai_kind == ai_kind
+            and row.session_id == session_id
+            and row.role == "user"
+        ):
+            return fallback_text or str(row.content or "").strip()
+    return fallback_text
+
+
+def _reset_convo_after_forget(
+    convo: List[Dict],
+    *,
+    system_prompt: str,
+    current_user_content: str,
+    tool_result: Dict[str, object],
+) -> None:
+    result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else tool_result
+    follow_up = (
+        "[MCP执行确认]\n"
+        "系统已执行工具：conversation.forget_before_current\n"
+        "执行状态：成功\n\n"
+        "[工具执行结果]\n"
+        f"{_safe_json(result_payload)}\n\n"
+        "旧上下文已从本轮模型上下文中移除。请只基于当前用户消息和以上结果继续。"
+    )
+    convo.clear()
+    convo.append({"role": "system", "content": system_prompt})
+    if current_user_content:
+        convo.append({"role": "user", "content": current_user_content})
+    convo.append({"role": "user", "content": follow_up})
+
+
 def _append_mcp_disabled_feedback(
     *,
     bg: Session,
@@ -1153,6 +1201,25 @@ def _run_worker(
                     result_text=result_text,
                     failed=tool_failed,
                 )
+
+                if (not tool_failed) and tool == "conversation.forget_before_current":
+                    current_user_content = _load_current_user_content(
+                        bg,
+                        user_id=user_id,
+                        ai_config_id=ai_config_id,
+                        ai_kind=ai_kind,
+                        session_id=session_id,
+                        current_user_message_id=current_user_message_id,
+                        fallback=model_user_content,
+                    )
+                    _reset_convo_after_forget(
+                        convo,
+                        system_prompt=system_prompt,
+                        current_user_content=current_user_content,
+                        tool_result=tool_result,
+                    )
+                    _set_run_live_phase(run_id, "generating")
+                    continue
 
                 if (not tool_failed) and tool == "task.inherit":
                     result_payload = tool_result.get("result", tool_result)

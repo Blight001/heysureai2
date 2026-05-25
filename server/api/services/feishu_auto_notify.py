@@ -1,3 +1,4 @@
+import re
 import time
 from typing import Optional
 
@@ -8,6 +9,10 @@ from ..models import ChatMessage, FeishuSessionRoute
 
 
 FEISHU_TEXT_MAX_CHARS = 1800
+MCP_CALL_RE = re.compile(
+    r"<mcp[-_]call>\s*[\s\S]*?\s*</\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*invoke)\s*>",
+    re.IGNORECASE,
+)
 
 
 def register_feishu_session_route(
@@ -84,12 +89,20 @@ def _load_route(session: Session, message: ChatMessage) -> Optional[FeishuSessio
     return row or _route_from_session_id(message)
 
 
+def _feishu_visible_content(message: ChatMessage) -> str:
+    content = str(message.content or "")
+    if not content:
+        return ""
+    content = MCP_CALL_RE.sub("", content)
+    content = re.sub(r"<mcp[-_]call\b[\s\S]*$", "", content, flags=re.IGNORECASE)
+    content = re.sub(r"\n{3,}", "\n\n", content)
+    return content.strip()
+
+
 def _is_feishu_visible_assistant_message(message: ChatMessage) -> bool:
     if message.role != "assistant":
         return False
-    if "mcp_assistant_call" in str(message.tags or ""):
-        return False
-    return bool(str(message.content or "").strip())
+    return bool(_feishu_visible_content(message))
 
 
 def _feishu_assistant_prefix(session: Session, message: ChatMessage) -> str:
@@ -136,7 +149,7 @@ def _feishu_assistant_prefix(session: Session, message: ChatMessage) -> str:
 def notify_saved_assistant_message(session: Session, message: ChatMessage) -> None:
     if not _is_feishu_visible_assistant_message(message):
         return
-    content = str(message.content or "").strip()
+    content = _feishu_visible_content(message)
     if not str(message.session_id or "").startswith("feishu_"):
         return
     route = _load_route(session, message)
