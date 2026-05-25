@@ -1,15 +1,16 @@
 import threading
 import time
 import uuid
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
 from sqlmodel import Session, select
 
 from api.database import engine
 from api.integrations.feishu.service import parse_feishu_text_event, send_feishu_text_message
-from api.models import AIMessage, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
+from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.services.chat_persistence import _save_message
+from api.services.feishu_auto_notify import register_feishu_session_route
 from api.routers.chat_base import _RUN_THREADS
 from api.routers.chat_runtime_helpers import _resolve_ai_runtime
 from api.routers.chat_worker import _run_worker
@@ -81,128 +82,15 @@ def _send_feishu_text(
     return ok
 
 
-def _has_successful_feishu_send(
-    session: Session,
-    *,
-    user_id: int,
-    ai_config_id: int,
-    ai_kind: str,
-    session_id: str,
-    after_message_id: int,
-) -> bool:
-    rows = session.exec(
-        select(ChatMessage).where(
-            ChatMessage.user_id == user_id,
-            ChatMessage.ai_config_id == ai_config_id,
-            ChatMessage.ai_kind == ai_kind,
-            ChatMessage.session_id == session_id,
-            ChatMessage.id > after_message_id,
-            ChatMessage.tags == "mcp_tool_call",
-        )
-    ).all()
-    for row in rows:
-        content = str(row.content or "")
-        if ("工具: user.send_message" in content or "工具: feishu.send_message" in content) and "状态: 成功" in content:
-            return True
-    return False
-
-
-def _send_new_feishu_reply_segments(
-    *,
-    user_id: int,
-    ai_config_id: int,
-    ai_kind: str,
-    session_id: str,
-    after_message_id: int,
-    receive_id: str,
-    receive_id_type: str,
-) -> Tuple[int, bool]:
-    with Session(engine) as session:
-        if _has_successful_feishu_send(
-            session,
-            user_id=user_id,
-            ai_config_id=ai_config_id,
-            ai_kind=ai_kind,
-            session_id=session_id,
-            after_message_id=after_message_id,
-        ):
-            return after_message_id, False
-        rows = session.exec(
-            select(ChatMessage).where(
-                ChatMessage.user_id == user_id,
-                ChatMessage.ai_config_id == ai_config_id,
-                ChatMessage.ai_kind == ai_kind,
-                ChatMessage.session_id == session_id,
-                ChatMessage.id > after_message_id,
-            ).order_by(ChatMessage.id.asc())
-        ).all()
-        reply_segments = []
-        prefix = ""
-        for msg in rows:
-            msg_id = int(msg.id or 0)
-            if msg.tags == "mcp_tool_call":
-                prefix += "🧰"
-                continue
-            if msg.role != "assistant":
-                continue
-            if str(msg.think or "").strip():
-                prefix += "🤔"
-            segment = str(msg.content or "").strip()
-            if segment:
-                reply_segments.append((msg_id, f"{prefix}{segment}" if prefix else segment))
-                prefix = ""
-
-    last_message_id = after_message_id
-    sent_any = False
-    for msg_id, segment in reply_segments:
-        if not segment:
-            continue
-        if not _send_feishu_text(
-            user_id=user_id,
-            ai_config_id=ai_config_id,
-            receive_id=receive_id,
-            receive_id_type=receive_id_type,
-            text=segment,
-        ):
-            return last_message_id, sent_any
-        if msg_id:
-            last_message_id = msg_id
-        sent_any = True
-    return last_message_id, sent_any
-
-
-def _send_feishu_error_if_needed(
-    *,
-    run_id: str,
-    user_id: int,
-    ai_config_id: int,
-    receive_id: str,
-    receive_id_type: str,
-    sent_any: bool,
-) -> None:
-    with Session(engine) as session:
-        row = session.exec(select(ChatRun).where(ChatRun.run_id == run_id)).first()
-        if not row or str(row.status or "") != "error" or sent_any:
-            return
-        error_text = f"飞书机器人处理失败：{row.error_message or '未知错误'}"
-
-    _send_feishu_text(
-        user_id=user_id,
-        ai_config_id=ai_config_id,
-        receive_id=receive_id,
-        receive_id_type=receive_id_type,
-        text=error_text,
-    )
-
-
-def _start_feishu_worker_and_notify(worker_kwargs: Dict[str, Any], notify_kwargs: Dict[str, Any]) -> str:
+def _start_feishu_worker(worker_kwargs: Dict[str, Any]) -> str:
     worker = threading.Thread(
-        target=_run_feishu_worker_and_notify,
-        kwargs={"worker_kwargs": worker_kwargs, "notify_kwargs": notify_kwargs},
+        target=_run_worker,
+        kwargs=worker_kwargs,
         daemon=True,
     )
+    _RUN_THREADS[str(worker_kwargs["run_id"])] = worker
     worker.start()
-    return str(notify_kwargs["run_id"])
+    return str(worker_kwargs["run_id"])
 
 
 def _feishu_session_has_live_run(
@@ -238,14 +126,13 @@ def _wait_for_feishu_idle_then_run(
     *,
     deferred_key: str,
     worker_kwargs: Dict[str, Any],
-    notify_kwargs: Dict[str, Any],
 ) -> None:
     try:
         send_kwargs = {
-            "user_id": int(notify_kwargs["user_id"]),
-            "ai_config_id": int(notify_kwargs["ai_config_id"]),
-            "ai_kind": str(notify_kwargs["ai_kind"]),
-            "session_id": str(notify_kwargs["session_id"]),
+            "user_id": int(worker_kwargs["user_id"]),
+            "ai_config_id": int(worker_kwargs["ai_config_id"]),
+            "ai_kind": str(worker_kwargs["ai_kind"]),
+            "session_id": str(worker_kwargs["session_id"]),
         }
         deadline = time.time() + 24 * 60 * 60
         while time.time() < deadline:
@@ -258,15 +145,6 @@ def _wait_for_feishu_idle_then_run(
 
         run_id = f"run_{uuid.uuid4().hex}"
         with Session(engine) as session:
-            latest_msg = session.exec(
-                select(ChatMessage).where(
-                    ChatMessage.user_id == send_kwargs["user_id"],
-                    ChatMessage.ai_config_id == send_kwargs["ai_config_id"],
-                    ChatMessage.ai_kind == send_kwargs["ai_kind"],
-                    ChatMessage.session_id == send_kwargs["session_id"],
-                ).order_by(ChatMessage.id.desc())
-            ).first()
-            notify_kwargs["after_message_id"] = int(latest_msg.id or 0) if latest_msg else int(notify_kwargs.get("after_message_id") or 0)
             row = ChatRun(
                 run_id=run_id,
                 user_id=send_kwargs["user_id"],
@@ -280,150 +158,10 @@ def _wait_for_feishu_idle_then_run(
             session.add(row)
             session.commit()
         worker_kwargs["run_id"] = run_id
-        notify_kwargs["run_id"] = run_id
-        _start_feishu_worker_and_notify(worker_kwargs, notify_kwargs)
+        _start_feishu_worker(worker_kwargs)
     finally:
         with _FEISHU_DEFERRED_LOCK:
             _FEISHU_DEFERRED_SESSIONS.discard(deferred_key)
-
-
-def _feishu_session_has_pending_ai_reply(
-    *,
-    user_id: int,
-    ai_config_id: int,
-    session_id: str,
-) -> bool:
-    now = time.time()
-    with Session(engine) as session:
-        rows = session.exec(
-            select(AIMessage).where(
-                AIMessage.user_id == user_id,
-                AIMessage.from_ai_config_id == ai_config_id,
-                AIMessage.from_session_id == session_id,
-                AIMessage.status.in_(["pending", "delivered"]),
-                AIMessage.message_type.in_(["inquiry", "chitchat"]),
-            ).order_by(AIMessage.created_at.desc())
-        ).all()
-    for row in rows:
-        timeout_seconds = max(1, min(24 * 60 * 60, int(row.timeout_seconds or 120)))
-        if now <= float(row.created_at or now) + timeout_seconds + 5:
-            return True
-    return False
-
-
-def _feishu_session_has_recent_ai_activity(
-    *,
-    user_id: int,
-    ai_config_id: int,
-    session_id: str,
-    window_seconds: int = 30,
-) -> bool:
-    now = time.time()
-    cutoff = now - max(1, int(window_seconds or 30))
-    rows = []
-    with Session(engine) as session:
-        rows.extend(
-            session.exec(
-                select(AIMessage).where(
-                    AIMessage.user_id == user_id,
-                    AIMessage.from_ai_config_id == ai_config_id,
-                    AIMessage.from_session_id == session_id,
-                    AIMessage.created_at >= cutoff,
-                )
-            ).all()
-        )
-        rows.extend(
-            session.exec(
-                select(AIMessage).where(
-                    AIMessage.user_id == user_id,
-                    AIMessage.to_ai_config_id == ai_config_id,
-                    AIMessage.target_session_id == session_id,
-                    AIMessage.created_at >= cutoff,
-                )
-            ).all()
-        )
-    for row in rows:
-        activity_at = max(
-            float(row.created_at or 0),
-            float(row.delivered_at or 0),
-            float(row.replied_at or 0),
-        )
-        if activity_at >= cutoff:
-            return True
-    return False
-
-
-def _run_feishu_worker_and_notify(worker_kwargs: Dict[str, Any], notify_kwargs: Dict[str, Any]) -> None:
-    worker = threading.Thread(target=_run_worker, kwargs=worker_kwargs, daemon=True)
-    _RUN_THREADS[str(notify_kwargs["run_id"])] = worker
-    worker.start()
-
-    last_sent_message_id = int(notify_kwargs["after_message_id"])
-    sent_any = False
-    send_kwargs = {
-        "user_id": int(notify_kwargs["user_id"]),
-        "ai_config_id": int(notify_kwargs["ai_config_id"]),
-        "ai_kind": str(notify_kwargs["ai_kind"]),
-        "session_id": str(notify_kwargs["session_id"]),
-        "receive_id": str(notify_kwargs["receive_id"]),
-        "receive_id_type": str(notify_kwargs["receive_id_type"]),
-    }
-    idle_deadline = 0.0
-    while True:
-        active = _feishu_session_has_live_run(
-            user_id=send_kwargs["user_id"],
-            ai_config_id=send_kwargs["ai_config_id"],
-            ai_kind=send_kwargs["ai_kind"],
-            session_id=send_kwargs["session_id"],
-        )
-        pending_ai_reply = _feishu_session_has_pending_ai_reply(
-            user_id=send_kwargs["user_id"],
-            ai_config_id=send_kwargs["ai_config_id"],
-            session_id=send_kwargs["session_id"],
-        )
-        recent_ai_activity = _feishu_session_has_recent_ai_activity(
-            user_id=send_kwargs["user_id"],
-            ai_config_id=send_kwargs["ai_config_id"],
-            session_id=send_kwargs["session_id"],
-        )
-        # Wait until the current AI turn has finished before auto-returning
-        # assistant text to Feishu. During a tool-calling turn the assistant
-        # message is saved before the MCP result bubble; sending it immediately
-        # can race with user.send_message and produce duplicate Feishu messages.
-        if not active:
-            next_message_id, did_send = _send_new_feishu_reply_segments(
-                **send_kwargs,
-                after_message_id=last_sent_message_id,
-            )
-            if did_send:
-                sent_any = True
-            if next_message_id > last_sent_message_id:
-                last_sent_message_id = next_message_id
-
-        if active or pending_ai_reply or recent_ai_activity:
-            idle_deadline = time.time() + 3
-        elif idle_deadline <= 0:
-            idle_deadline = time.time() + 3
-        elif time.time() >= idle_deadline:
-            break
-
-        time.sleep(0.5)
-
-    next_message_id, did_send = _send_new_feishu_reply_segments(
-        **send_kwargs,
-        after_message_id=last_sent_message_id,
-    )
-    if did_send:
-        sent_any = True
-
-    _send_feishu_error_if_needed(
-        run_id=str(notify_kwargs["run_id"]),
-        user_id=int(notify_kwargs["user_id"]),
-        ai_config_id=int(notify_kwargs["ai_config_id"]),
-        receive_id=str(notify_kwargs["receive_id"]),
-        receive_id_type=str(notify_kwargs["receive_id_type"]),
-        sent_any=sent_any,
-    )
 
 
 @router.post("/events/{config_id}")
@@ -458,6 +196,17 @@ def handle_feishu_event_payload(config_id: int, payload: Dict[str, Any], verify_
         session_key = chat_id or open_id or "unknown"
         session_id = f"feishu_{config_id}_{session_key}"
         session_name = f"飞书对话 {session_key}"
+        receive_id = chat_id or open_id
+        receive_id_type = "chat_id" if chat_id else "open_id"
+        register_feishu_session_route(
+            session,
+            user_id=int(cfg.user_id),
+            ai_config_id=int(cfg.id or config_id),
+            ai_kind=ai_kind,
+            session_id=session_id,
+            receive_id=receive_id,
+            receive_id_type=receive_id_type,
+        )
         visible_content = event["text"]
         model_content = visible_content
 
@@ -523,8 +272,6 @@ def handle_feishu_event_payload(config_id: int, payload: Dict[str, Any], verify_
             cfg_id = int(cfg.id or 0)
             cfg_user_id = int(cfg.user_id)
             inbound_message_id = int(inbound_msg.id or 0)
-            receive_id = chat_id or open_id
-            receive_id_type = "chat_id" if chat_id else "open_id"
             _send_feishu_text(
                 user_id=cfg_user_id,
                 ai_config_id=cfg_id,
@@ -541,18 +288,8 @@ def handle_feishu_event_payload(config_id: int, payload: Dict[str, Any], verify_
                 "session_name": session_name,
                 "model_user_content": None,
                 "merged_system_prompt": merged_system_prompt,
-                "max_steps": 6,
+                "max_steps": None,
                 "current_user_message_id": inbound_message_id,
-            }
-            notify_kwargs = {
-                "run_id": "",
-                "user_id": cfg_user_id,
-                "ai_config_id": cfg_id,
-                "ai_kind": ai_kind,
-                "session_id": session_id,
-                "after_message_id": max(0, inbound_message_id - 1),
-                "receive_id": receive_id,
-                "receive_id_type": receive_id_type,
             }
             deferred_key = f"{cfg_user_id}:{cfg_id}:{ai_kind}:{session_id}"
             with _FEISHU_DEFERRED_LOCK:
@@ -565,7 +302,6 @@ def handle_feishu_event_payload(config_id: int, payload: Dict[str, Any], verify_
                     kwargs={
                         "deferred_key": deferred_key,
                         "worker_kwargs": worker_kwargs,
-                        "notify_kwargs": notify_kwargs,
                     },
                     daemon=True,
                 ).start()
@@ -588,8 +324,6 @@ def handle_feishu_event_payload(config_id: int, payload: Dict[str, Any], verify_
         cfg_user_id = int(cfg.user_id)
         inbound_message_id = int(inbound_msg.id or 0)
 
-    receive_id = chat_id or open_id
-    receive_id_type = "chat_id" if chat_id else "open_id"
     worker_kwargs = {
         "run_id": run_id,
         "user_id": cfg_user_id,
@@ -599,18 +333,8 @@ def handle_feishu_event_payload(config_id: int, payload: Dict[str, Any], verify_
         "session_name": session_name,
         "model_user_content": model_content,
         "merged_system_prompt": merged_system_prompt,
-        "max_steps": 6,
+        "max_steps": None,
         "current_user_message_id": inbound_message_id,
     }
-    notify_kwargs = {
-        "run_id": run_id,
-        "user_id": cfg_user_id,
-        "ai_config_id": cfg_id,
-        "ai_kind": ai_kind,
-        "session_id": session_id,
-        "after_message_id": inbound_message_id,
-        "receive_id": receive_id,
-        "receive_id_type": receive_id_type,
-    }
-    _start_feishu_worker_and_notify(worker_kwargs, notify_kwargs)
+    _start_feishu_worker(worker_kwargs)
     return {"success": True, "run_id": run_id}

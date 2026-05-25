@@ -538,7 +538,7 @@ def _run_worker(
                         item["reasoning_content"] = m.think
                     convo.append(item)
                 elif m.role == "system":
-                    if tags.startswith("ai_message_inbound:"):
+                    if tags.startswith("ai_message_inbound:") or tags.startswith("task_completion_notice:"):
                         convo.append({"role": "user", "content": m.content})
             if model_user_content:
                 for i in range(len(convo) - 1, -1, -1):
@@ -755,6 +755,9 @@ def _run_worker(
                 _tc_name = sr.tc_name
                 _tc_args = sr.tc_args
                 latency = time.time() - start_at
+                if not payload_call and not _has_native_tc:
+                    payload_call = _extract_first_mcp_call(assistant_text)
+                assistant_tags = "mcp_assistant_call" if (payload_call or _has_native_tc) else ""
 
                 saved = _save_message(
                     bg,
@@ -763,6 +766,7 @@ def _run_worker(
                         role="assistant",
                         content=assistant_text,
                         think=reasoning_content or None,
+                        tags=assistant_tags,
                         ai_config_id=ai_config_id,
                         ai_kind=ai_kind,
                         session_id=session_id,
@@ -1335,11 +1339,26 @@ def _run_worker(
                         convo.append({"role": "user", "content": follow_up})
                 _set_run_live_phase(run_id, "generating")
 
-            _run_set_status(
-                run_id,
-                "error",
-                f"Reached max steps ({max_steps}); increase HEYSURE_CHAT_MAX_STEPS or pass max_steps for longer MCP runs",
-                finished=True,
+            notice = (
+                "[系统提示]\n"
+                f"本轮已达到 MCP 连续执行步数上限（{max_steps}）。"
+                "系统已暂停本轮自动继续，避免无限循环；如需继续，请发送新消息或提高系统设置里的 MCP 最大步数。"
             )
+            _save_message(
+                bg,
+                user_id,
+                ChatMessageCreate(
+                    role="system",
+                    content=notice,
+                    tags="system_notice_mcp_max_steps",
+                    ai_config_id=ai_config_id,
+                    ai_kind=ai_kind,
+                    session_id=session_id,
+                    session_name=session_name,
+                    model=model,
+                    total_tokens=0,
+                ),
+            )
+            _run_set_status(run_id, "completed", finished=True)
     except Exception as exc:
         _run_set_status(run_id, "error", str(exc), finished=True)

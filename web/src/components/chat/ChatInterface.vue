@@ -82,13 +82,16 @@ const liveCursor = ref(0)
 const shownRunErrorIds = ref<Set<string>>(new Set())
 let runLivePollTimer: number | null = null
 let runHistoryPollTimer: number | null = null
+let sessionSyncPollTimer: number | null = null
 let liveTypingFrame: number | null = null
 let liveRenderLength = 0
 let liveRenderVelocity = 0
 let liveLastFrameTs = 0
 let liveLastScrollTs = 0
 let runPollEpoch = 0
+let sessionSyncPollEpoch = 0
 let lastRealtimeTokenSyncAt = 0
+let lastExternalRunCheckAt = 0
 const chatScrollRef = ref<HTMLElement | null>(null)
 const currentSessionId = ref<string>('')
 const sessionList = ref<SessionItem[]>([])
@@ -414,6 +417,12 @@ const stopRunPolling = () => {
   runHistoryPollTimer = null
 }
 
+const stopSessionSyncPolling = () => {
+  sessionSyncPollEpoch += 1
+  if (sessionSyncPollTimer !== null) window.clearTimeout(sessionSyncPollTimer)
+  sessionSyncPollTimer = null
+}
+
 const upsertHistoryMessages = async (incoming: ChatMessage[]) => {
   if (!incoming.length) return
   const existingIds = new Set(chatMessages.value.map(m => m.id).filter(Boolean))
@@ -641,6 +650,7 @@ const loadChatHistory = async (sid: string) => {
   await loadTotalTokens()
   await scrollToBottom()
   await checkActiveRun()
+  startSessionSyncPolling()
 }
 
 const fetchRunHistoryIncrementalOnce = async () => {
@@ -655,6 +665,34 @@ const fetchRunHistoryIncrementalOnce = async () => {
     return
   }
   await upsertHistoryMessages(incremental)
+}
+
+const pollSessionSync = async (epoch: number) => {
+  if (epoch !== sessionSyncPollEpoch) return
+  try {
+    if (currentSessionId.value && getAuthToken()) {
+      if (!isRunActive.value) {
+        await fetchRunHistoryIncrementalOnce()
+      }
+      const now = Date.now()
+      if (!isRunActive.value && now - lastExternalRunCheckAt > 1500) {
+        lastExternalRunCheckAt = now
+        await checkActiveRun()
+      }
+    }
+  } finally {
+    if (epoch === sessionSyncPollEpoch) {
+      sessionSyncPollTimer = window.setTimeout(() => { void pollSessionSync(epoch) }, 1200)
+    }
+  }
+}
+
+const startSessionSyncPolling = () => {
+  stopSessionSyncPolling()
+  if (!currentSessionId.value || !getAuthToken()) return
+  lastExternalRunCheckAt = 0
+  const epoch = sessionSyncPollEpoch
+  void pollSessionSync(epoch)
 }
 
 const ensureFinalAssistantMessage = async (epoch: number) => {
@@ -1031,6 +1069,7 @@ const initializeSessions = async () => {
 
 watch(() => props.aiConfigId, async () => {
   stopRunPolling()
+  stopSessionSyncPolling()
   chatMessages.value = []
   currentSessionId.value = ''
   currentRunPhase.value = 'idle'
@@ -1042,6 +1081,7 @@ watch(() => props.aiConfigId, async () => {
 watch(currentSessionId, async (sid, oldSid) => {
   if (!sid || sid === oldSid) return
   stopRunPolling()
+  stopSessionSyncPolling()
   currentRunId.value = ''
   currentRunStatus.value = 'idle'
   currentRunPhase.value = 'idle'
@@ -1049,6 +1089,7 @@ watch(currentSessionId, async (sid, oldSid) => {
   clearLiveAssistantView()
   isTyping.value = false
   await checkActiveRun()
+  startSessionSyncPolling()
 })
 
 onMounted(async () => {
@@ -1057,6 +1098,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopRunPolling()
+  stopSessionSyncPolling()
   clearLiveAssistantView()
 })
 </script>

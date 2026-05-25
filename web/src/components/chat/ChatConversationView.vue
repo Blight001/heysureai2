@@ -73,9 +73,51 @@ const parseMcpToolNameFromMessage = (msg?: ConversationInputMessage | Conversati
   return String(match?.[1] || '').trim()
 }
 
-const hideExecutedMcpBlocks = (msg: ConversationMessage, nextMsg?: ConversationMessage) => {
+const stripMcpCallFormatText = (raw?: string) => {
+  return String(raw || '')
+    .replace(/<mcp[-_]call>\s*[\s\S]*?\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*invoke)\s*>/gi, '')
+    .trim()
+}
+
+const stripMcpCallInlineText = (items?: InlineContentType[]) => {
+  if (!Array.isArray(items)) return items
+  return items
+    .map((item) => {
+      if (item.type !== 'text') return item
+      return { ...item, content: stripMcpCallFormatText(item.content) }
+    })
+    .filter((item) => item.type !== 'text' || String(item.content || '').trim())
+}
+
+const stripMcpCallFormatMessage = (msg: ConversationMessage) => {
   if (msg.role !== 'assistant') return msg
-  const executedTool = parseMcpToolNameFromMessage(nextMsg)
+  const next = { ...msg }
+  next.content = stripMcpCallFormatText(next.content)
+  if (typeof next.display_text === 'string') next.display_text = stripMcpCallFormatText(next.display_text)
+  if (typeof next.think === 'string') next.think = stripMcpCallFormatText(next.think)
+  next.inlineContent = stripMcpCallInlineText(next.inlineContent)
+  return next
+}
+
+const findNextExecutedMcpTool = (nextMessages: ConversationMessage[]) => {
+  for (const item of nextMessages.slice(0, 6)) {
+    const tool = parseMcpToolNameFromMessage(item)
+    if (tool) return tool
+    if (item.role === 'user' || item.role === 'assistant') return ''
+  }
+  return ''
+}
+
+const hideExecutedMcpBlocks = (msg: ConversationMessage, nextMessages: ConversationMessage[] = []) => {
+  if (msg.role !== 'assistant') return msg
+  if (String(msg.tags || '').includes('mcp_assistant_call')) {
+    return {
+      ...msg,
+      inlineContent: (msg.inlineContent || []).filter((item) => item.type !== 'block' || item.block?.type !== 'mcp'),
+      blocks: (msg.blocks || []).filter((block) => block.type !== 'mcp'),
+    }
+  }
+  const executedTool = findNextExecutedMcpTool(nextMessages)
   if (!executedTool) return msg
   const inlineContent = (msg.inlineContent || []).filter((item) => {
     if (item.type !== 'block' || item.block?.type !== 'mcp') return true
@@ -112,7 +154,17 @@ const normalizedMessages = computed<ConversationMessage[]>(() => {
       inlineContent: Array.isArray(raw?.inlineContent) ? raw.inlineContent : parsed.inlineContent,
     }
   })
-  return parsed.map((msg, idx) => hideExecutedMcpBlocks(msg, parsed[idx + 1]))
+  return parsed
+    .map((msg, idx) => stripMcpCallFormatMessage(hideExecutedMcpBlocks(msg, parsed.slice(idx + 1))))
+    .filter((msg) => {
+      if (msg.role !== 'assistant') return true
+      return Boolean(
+        String(msg.content || '').trim()
+        || String(msg.display_text || '').trim()
+        || String(msg.think || '').trim()
+        || (Array.isArray(msg.inlineContent) && msg.inlineContent.length > 0)
+      )
+    })
 })
 
 const STATE_PREFIX = '__HS_MCP_STATE__='
@@ -277,9 +329,9 @@ const frontPromptMessage = computed<ConversationMessage | null>(() => {
 })
 
 const liveAssistantMessage = computed<ConversationMessage | null>(() => {
-  const text = String(props.liveText || '')
+  const text = stripMcpCallFormatText(props.liveText)
   if (!text.trim()) return null
-  const think = String(props.liveThinking || '').trim()
+  const think = stripMcpCallFormatText(props.liveThinking)
   return {
     id: -1,
     role: 'assistant',

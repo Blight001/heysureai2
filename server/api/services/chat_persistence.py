@@ -51,6 +51,12 @@ def _save_message(
         completion_tokens=db_msg.completion_tokens or 0,
         total_tokens=db_msg.total_tokens or 0,
     )
+    try:
+        from .feishu_auto_notify import notify_saved_assistant_message
+
+        notify_saved_assistant_message(session, db_msg)
+    except Exception as exc:
+        print(f"[chat_persistence] feishu auto notify failed message_id={db_msg.id}: {exc}")
     return db_msg
 
 def _rebuild_usage_snapshots(

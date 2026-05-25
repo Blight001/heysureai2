@@ -36,13 +36,13 @@ const isFrontPromptMessage = computed(() => {
 const isSystemNoticeMessage = computed(() => {
   if (props.message.role !== 'user' && props.message.role !== 'system') return false
   const text = String(props.message.display_text || props.message.content || '').trim()
-  return text.startsWith('[系统提示]')
+  return text.startsWith('[系统提示]') || text.startsWith('【任务完成回执】')
 })
 
 const isTaskCompleteNotice = computed(() => {
-  if (!isSystemNoticeMessage.value) return false
   const text = String(props.message.display_text || props.message.content || '').trim()
-  return text.includes('任务已通过 `task.complete` 标记为完成')
+  return text.startsWith('【任务完成回执】')
+    || text.includes('任务已通过 `task.complete` 标记为完成')
     || text.includes('任务已通过 task.complete 标记为完成')
     || text.includes('本任务对话已自动锁定')
 })
@@ -145,7 +145,7 @@ const normalizedInlineContent = computed<InlineContentType[]>(() => {
           : (props.message.role === 'user' && !isSystemNoticeMessage)
             ? 'bg-indigo-600 border-indigo-500 text-white rounded-tr-sm shadow-indigo-200/50 dark:shadow-none'
             : isTaskCompleteNotice
-              ? 'bg-violet-50 border-violet-300 text-violet-800 rounded-xl text-center dark:bg-violet-500/15 dark:border-violet-500/40 dark:text-violet-100'
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-800 rounded-xl dark:bg-emerald-500/15 dark:border-emerald-500/40 dark:text-emerald-200'
             : isSystemNoticeMessage
               ? 'bg-emerald-50 border-emerald-300 text-emerald-800 rounded-tl-sm dark:bg-emerald-500/15 dark:border-emerald-500/40 dark:text-emerald-200'
             : isFrontPromptMessage

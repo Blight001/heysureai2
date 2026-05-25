@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from typing import Any, Dict, Optional
 
@@ -11,6 +12,55 @@ from ...models import AssistantAIConfig
 
 FEISHU_OPEN_API_BASE = "https://open.feishu.cn/open-apis"
 _TOKEN_CACHE: Dict[int, Dict[str, Any]] = {}
+
+
+def normalize_feishu_text(text: str) -> str:
+    """Convert common Markdown punctuation into plain Feishu text.
+
+    Feishu text messages do not need Markdown syntax. Keep the readable
+    content while removing formatting markers that otherwise leak to users.
+    """
+    body = str(text or "")
+    if not body:
+        return ""
+
+    body = body.replace("\r\n", "\n").replace("\r", "\n")
+
+    # Links/images: keep the label, drop the URL and image marker.
+    body = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", body)
+    body = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", body)
+
+    # Fenced code keeps content, drops fence punctuation and optional language.
+    body = re.sub(r"```[^\n]*\n?", "", body)
+    body = body.replace("```", "")
+
+    lines = []
+    for raw_line in body.split("\n"):
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if re.fullmatch(r"[:\-\s|]+", stripped) and "|" in stripped:
+            continue
+        line = re.sub(r"^\s{0,3}#{1,6}\s*", "", line)
+        line = re.sub(r"^\s{0,3}>\s?", "", line)
+        line = re.sub(r"^\s*[-*+]\s+", "", line)
+        line = re.sub(r"^\s*\d+[.)]\s+", "", line)
+        if "|" in line:
+            line = re.sub(r"\s*\|\s*", "  ", line).strip()
+        lines.append(line)
+    body = "\n".join(lines)
+
+    # Inline formatting marks: remove the punctuation, keep text.
+    body = re.sub(r"(?<!\w)([*_~]{1,3})(\S(?:.*?\S)?)\1(?!\w)", r"\2", body)
+    body = body.replace("`", "")
+
+    # Markdown task checkboxes and escaped punctuation.
+    body = re.sub(r"\[\s*[xX ]\s*\]\s*", "", body)
+    body = re.sub(r"\\([\\`*_{}\[\]()#+\-.!|>])", r"\1", body)
+
+    # Avoid symbols stuck to CJK/ASCII after marker removal.
+    body = re.sub(r"[ \t]{2,}", " ", body)
+    body = re.sub(r"\n{3,}", "\n\n", body)
+    return body.strip()
 
 
 def _load_feishu_config(user_id: int, ai_config_id: Optional[int]) -> AssistantAIConfig:
@@ -65,6 +115,7 @@ def send_feishu_text_message(
     receive_id_type: str = "",
 ) -> Dict[str, Any]:
     cfg = _load_feishu_config(user_id, ai_config_id)
+    text = normalize_feishu_text(text)
     target_id = str(receive_id or cfg.feishu_default_receive_id or "").strip()
     target_type = str(receive_id_type or cfg.feishu_default_receive_id_type or "chat_id").strip()
     can_send_to_target = bool(target_id and cfg.feishu_app_id and cfg.feishu_app_secret)

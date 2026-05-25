@@ -33,7 +33,15 @@ def _completion_notice(
     executor_name: str,
     summary: str,
 ) -> str:
-    return TASK_COMPLETION_RECEIPT
+    summary = str(summary or "").strip()
+    lines = [
+        TASK_COMPLETION_RECEIPT,
+        f"- 任务ID: {job.job_id}",
+        f"- 任务标题: {job.title}",
+    ]
+    if summary:
+        lines.append(f"- 完成摘要: {summary}")
+    return "\n".join(lines)
 
 
 def _ai_kind_for_config(session: Session, user_id: int, ai_config_id: int) -> str:
@@ -93,7 +101,7 @@ def _start_creator_notice_run(
             "session_name": session_name,
             "model_user_content": None,
             "merged_system_prompt": None,
-            "max_steps": 6,
+            "max_steps": None,
         },
         daemon=True,
     )
@@ -144,9 +152,8 @@ def notify_task_completion(
 ) -> Dict[str, Any]:
     """Return task completion to the AI/session that scheduled the job.
 
-    The notification is idempotent per job. Cross-AI notifications use the
-    existing AI-message inbox so the scheduler AI is woken in its original
-    session. Self-scheduled tasks are appended directly to the original session.
+    The notification is idempotent per job and is appended directly to the
+    scheduler AI's original session as a plain receipt message.
     """
     job_id = str(job_id or "").strip()
     summary = str(summary or "").strip()
@@ -173,7 +180,8 @@ def notify_task_completion(
             return {"notified": False, "reason": "missing_creator_session"}
 
         creator_ai_kind = _ai_kind_for_config(session, user_id, creator_id)
-        content = _completion_notice(job=job, executor_name="", summary=summary)
+        executor_name = _ai_name(session, user_id, int(job.ai_config_id))
+        content = _completion_notice(job=job, executor_name=executor_name, summary=summary)
         now = time.time()
 
         chat_session = session.exec(
@@ -200,7 +208,7 @@ def notify_task_completion(
             session,
             user_id,
             ChatMessageCreate(
-                role="user",
+                role="system",
                 content=content,
                 tags=f"task_completion_notice:{job.job_id}",
                 ai_config_id=creator_id,
@@ -254,24 +262,7 @@ def notify_task_completion(
     return {
         "notified": True,
         "mode": "session_message",
-        "content": TASK_COMPLETION_RECEIPT,
-        "to_ai_config_id": creator_id,
-        "target_session_id": creator_session_id,
-        "wakeup": wakeup,
-    }
-            select(AITaskJob).where(
-                AITaskJob.user_id == user_id,
-                AITaskJob.job_id == job_id,
-            )
-        ).first()
-        if row and not row.completion_notified_at:
-            row.completion_notified_at = now
-            session.add(row)
-            session.commit()
-    return {
-        "notified": True,
-        "mode": "ai_message",
-        "message_id": message.message_id,
+        "content": content,
         "to_ai_config_id": creator_id,
         "target_session_id": creator_session_id,
         "wakeup": wakeup,
