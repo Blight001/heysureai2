@@ -118,6 +118,7 @@ export class HeySureAgent {
     if (!hasAuth && this.settings.selectedAiConfigId) {
       this.log('warn', '未登录，已忽略残留的 AI 成员自动注册选择')
     }
+    this.log('info', `注册 agent (AI=${selectedAiConfigId ?? '未选择'})`)
     this.socket?.emit('agent:register', {
       id: agentId,
       name: this.settings.agentName || os.hostname(),

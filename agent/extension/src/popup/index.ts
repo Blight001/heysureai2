@@ -5,7 +5,7 @@
 // Chat / markdown rendering helpers live in ./markdown.
 
 import { AgentStatus, AgentSettings, ActivityEntry, ChatMessage, BgMsg, MemoryCard } from '../lib/types'
-import { getAuth, saveAuth, clearAuth, getSettings, getCards, setCards, deleteCard, getChatHistory, setChatHistory, clearChatHistory, AuthState } from '../lib/storage'
+import { getAuth, saveAuth, clearAuth, getSettings, saveSettings, getCards, setCards, deleteCard, getChatHistory, setChatHistory, clearChatHistory, AuthState } from '../lib/storage'
 import { parseImport, mergeCards, exportCard } from '../lib/cards'
 import {
   login as apiLogin, getMe, listConfigs,
@@ -459,7 +459,7 @@ function renderMembers() {
     membersList.appendChild(el)
   }
 }
-function selectMember(id: number) {
+async function selectMember(id: number) {
   if (!auth.token) {
     selectedMemberId = null
     port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
@@ -472,6 +472,11 @@ function selectMember(id: number) {
     return
   }
   selectedMemberId = id
+  // Persist directly to storage first. Without this the background's
+  // register() can read a stale settings snapshot during a fast
+  // login -> select-AI -> connect sequence and emit aiConfigId: null,
+  // leaving the server-side agent record without an AI assignment.
+  await saveSettings({ selectedAiConfigId: id })
   port.postMessage({ type: 'agent:selected-ai', aiConfigId: id })
   renderMembers()
   updateTargetBanners()
