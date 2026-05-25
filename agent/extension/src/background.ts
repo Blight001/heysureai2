@@ -68,6 +68,16 @@ async function connect() {
     return
   }
 
+  // Hard gate: an unauthenticated agent is rejected at agent:register
+  // anyway. Refusing to even open the socket prevents the UI from
+  // flashing "已连接" before the server rejects.
+  const auth = await getAuth()
+  if (!auth.token) {
+    setStatus('disconnected')
+    log('system', 'warn', '未登录，已阻止连接服务器（请先登录账号）')
+    return
+  }
+
   let url: URL
   try { url = new URL(settings.serverUrl) } catch {
     log('system', 'error', '服务器 URL 格式无效')
@@ -376,6 +386,13 @@ chrome.runtime.onConnect.addListener((port) => {
     switch (msg.type) {
       case 'agent:connect':    { await connect(); break }
       case 'agent:disconnect': { disconnect();    break }
+      case 'auth:logout': {
+        // Drop the socket entirely so the server sees us leaving and we
+        // don't keep re-registering with an empty/stale token.
+        disconnect()
+        await saveSettings({ selectedAiConfigId: null })
+        break
+      }
 
       case 'settings:get': {
         const settings = await getSettings()

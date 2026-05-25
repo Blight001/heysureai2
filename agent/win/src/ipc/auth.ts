@@ -2,7 +2,7 @@ import { ipcMain } from 'electron'
 import { store } from '../store'
 import { resolveBaseUrl, serverFetch } from '../services/server-client'
 import {
-  getAgent, clearSelectedAiConfig,
+  getAgent, rebuildAgent, clearSelectedAiConfig,
 } from '../services/agent-runtime'
 
 export function registerAuthIpc(): void {
@@ -31,6 +31,7 @@ export function registerAuthIpc(): void {
   })
 
   ipcMain.handle('auth:logout', () => {
+    // Disconnect any live socket first so the server sees us leaving.
     getAgent()?.disconnect()
     store.set('authToken', '')
     store.set('userAccount', '')
@@ -38,6 +39,10 @@ export function registerAuthIpc(): void {
     store.set('userAvatar', '')
     store.set('userId', null)
     clearSelectedAiConfig()
+    // Rebuild the agent so its in-memory `settings` snapshot (which still
+    // holds the old authToken) is replaced with the cleared store. Without
+    // this, a subsequent connect() would reuse the stale token.
+    rebuildAgent(store.store)
     return { success: true }
   })
 }
