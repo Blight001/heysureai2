@@ -334,6 +334,7 @@ async function doLogin() {
   const configuredServerUrl = cfgServer.value.trim()
   if (configuredServerUrl && configuredServerUrl !== serverUrl) {
     serverUrl = configuredServerUrl
+    await saveSettings({ serverUrl })
     port.postMessage({ type: 'settings:save', payload: { serverUrl } })
   }
   const account = loginAccount.value.trim()

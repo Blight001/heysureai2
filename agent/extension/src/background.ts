@@ -84,6 +84,12 @@ async function connect() {
     return
   }
 
+  if (socket) {
+    socket.removeAllListeners()
+    socket.disconnect()
+    socket = null
+  }
+
   setStatus('connecting')
   log('system', 'info', `连接到 ${url.href}...`)
 

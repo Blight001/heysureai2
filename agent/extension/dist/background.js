@@ -4622,12 +4622,23 @@ Always:
       log("system", "info", "\u79BB\u7EBF\u6A21\u5F0F\u5DF2\u5F00\u542F\uFF0C\u8DF3\u8FC7\u670D\u52A1\u5668\u8FDE\u63A5");
       return;
     }
+    const auth = await getAuth();
+    if (!auth.token) {
+      setStatus("disconnected");
+      log("system", "warn", "\u672A\u767B\u5F55\uFF0C\u5DF2\u963B\u6B62\u8FDE\u63A5\u670D\u52A1\u5668\uFF08\u8BF7\u5148\u767B\u5F55\u8D26\u53F7\uFF09");
+      return;
+    }
     let url2;
     try {
       url2 = new URL(settings.serverUrl);
     } catch {
       log("system", "error", "\u670D\u52A1\u5668 URL \u683C\u5F0F\u65E0\u6548");
       return;
+    }
+    if (socket) {
+      socket.removeAllListeners();
+      socket.disconnect();
+      socket = null;
     }
     setStatus("connecting");
     log("system", "info", `\u8FDE\u63A5\u5230 ${url2.href}...`);
@@ -4676,6 +4687,7 @@ Always:
       await saveSettings({ selectedAiConfigId: null });
       log("system", "warn", "\u672A\u767B\u5F55\uFF0C\u5DF2\u53D6\u6D88 AI \u6210\u5458\u81EA\u52A8\u6CE8\u518C\u9009\u62E9");
     }
+    log("system", "info", `\u6CE8\u518C agent (AI=${selectedAiConfigId ?? "\u672A\u9009\u62E9"})`);
     socket?.emit("agent:register", {
       id,
       aiConfigId: selectedAiConfigId,
@@ -4685,7 +4697,11 @@ Always:
       os: { platform: "browser", arch: "unknown", release: "1.0", hostname: id },
       capabilities: BROWSER_CAPABILITIES,
       version: "1.0.0",
-      token: settings.agentToken || "",
+      // The server requires a valid user JWT here. Falling back to the
+      // legacy agentToken shared secret only matters in deployments that set
+      // AGENT_TOKEN explicitly.
+      token: auth.token || settings.agentToken || "",
+      userId: auth.userId ?? null,
       workspaceRoot: "",
       lifecycle: "registered",
       isWindowsDesktop: false,
@@ -4904,6 +4920,11 @@ Respond in the same language as the user. For factual questions, search the web 
           disconnect();
           break;
         }
+        case "auth:logout": {
+          disconnect();
+          await saveSettings({ selectedAiConfigId: null });
+          break;
+        }
         case "settings:get": {
           const settings = await getSettings();
           port.postMessage({ type: "settings:data", settings });
@@ -4925,6 +4946,8 @@ Respond in the same language as the user. For factual questions, search the web 
           await saveSettings({ selectedAiConfigId: aiConfigId });
           if (socket?.connected) {
             await register();
+          } else if (aiConfigId && auth.token) {
+            await connect();
           }
           break;
         }

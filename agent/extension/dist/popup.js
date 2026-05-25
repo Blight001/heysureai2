@@ -22,6 +22,9 @@
     const stored = await chrome.storage.local.get(keys);
     return { ...SETTING_DEFAULTS, ...stored };
   }
+  async function saveSettings(partial) {
+    await chrome.storage.local.set(partial);
+  }
   var CHAT_KEY = "_chat_history";
   var MAX_CHAT = 120;
   function normalizeChatHistory(raw) {
@@ -899,6 +902,7 @@
     const configuredServerUrl = cfgServer.value.trim();
     if (configuredServerUrl && configuredServerUrl !== serverUrl) {
       serverUrl = configuredServerUrl;
+      await saveSettings({ serverUrl });
       port.postMessage({ type: "settings:save", payload: { serverUrl } });
     }
     const account = loginAccount.value.trim();
@@ -969,6 +973,7 @@
   membersModalClose.addEventListener("click", () => closeMembersModal());
   async function doLogout() {
     await clearAuth();
+    port.postMessage({ type: "auth:logout" });
     port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
     auth = await getAuth();
     closeMembersModal();
@@ -1045,7 +1050,7 @@
       membersList.appendChild(el);
     }
   }
-  function selectMember(id) {
+  async function selectMember(id) {
     if (!auth.token) {
       selectedMemberId = null;
       port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
@@ -1058,6 +1063,7 @@
       return;
     }
     selectedMemberId = id;
+    await saveSettings({ selectedAiConfigId: id });
     port.postMessage({ type: "agent:selected-ai", aiConfigId: id });
     renderMembers();
     updateTargetBanners();
