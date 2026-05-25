@@ -196,7 +196,6 @@ const settingsToggle  = document.getElementById('settings-toggle')!
 const themeToggle     = document.getElementById('theme-toggle')!
 const testConnBtn     = document.getElementById('test-conn-btn')!
 const testResult      = document.getElementById('test-result')!
-const aiHeaderChip    = document.getElementById('ai-header-chip')!
 const aiInfoName      = document.getElementById('ai-info-name')!
 const aiInfoRole      = document.getElementById('ai-info-role')!
 const aiInfoLifecycle = document.getElementById('ai-info-lifecycle')!
@@ -1170,13 +1169,11 @@ function updateAiMemberDisplay(s: any) {
   const isManager = s.selectedAiConfigRole === 'manager'
   const name = s.selectedAiConfigName || '—'
   selectedAiConfigId = typeof s.selectedAiConfigId === 'number' ? s.selectedAiConfigId : selectedAiConfigId
-  currentAiDisplayName = name === '—' ? '' : name
+  currentAiDisplayName = name === '—' ? '' : (isManager ? `★ ${name}` : name)
   aiInfoName.textContent = name
   aiInfoRole.textContent = isManager ? '组长 (Manager)' : '成员 (Member)'
   aiInfoLifecycle.textContent = lifecycleLabel(s.selectedAiConfigLifecycle)
   aiInfoProject.textContent = s.selectedAiConfigProject || '—'
-  aiHeaderChip.textContent = (isManager ? '★ ' : '') + name
-  aiHeaderChip.className = `ai-header-chip${isManager ? ' manager' : ''}`
   updateAiSelectTarget()
   setStatus(currentConnectionStatus)
 }
@@ -1188,8 +1185,6 @@ function clearAiMemberDisplay() {
   aiInfoRole.textContent = '—'
   aiInfoLifecycle.textContent = '—'
   aiInfoProject.textContent = '—'
-  aiHeaderChip.textContent = '未选择 AI'
-  aiHeaderChip.className = 'ai-header-chip'
   updateAiSelectTarget()
   setStatus(currentConnectionStatus)
 }
@@ -1341,7 +1336,6 @@ statusPill.addEventListener('keydown', e => {
     openAiSelectModal()
   }
 })
-aiHeaderChip.addEventListener('click', openAiSelectModal)
 aiSelectModalClose.addEventListener('click', closeAiSelectModal)
 aiSelectModal.addEventListener('click', e => { if (e.target === aiSelectModal) closeAiSelectModal() })
 
@@ -1351,16 +1345,28 @@ aiSelectModal.addEventListener('click', e => { if (e.target === aiSelectModal) c
 const aiGrid       = document.getElementById('ai-grid')!
 const logoutBtn    = document.getElementById('logout-btn')!
 const refreshAiBtn = document.getElementById('refresh-ai-btn')!
-const userChipText = document.getElementById('user-chip-text')!
+const accountInfoBlock  = document.getElementById('account-info') as HTMLElement
+const accountInfoAva    = document.getElementById('account-info-ava') as HTMLElement
+const accountInfoName   = document.getElementById('account-info-name') as HTMLElement
+const accountInfoServer = document.getElementById('account-info-server') as HTMLElement
+const loginFormBlock    = document.getElementById('login-form') as HTMLElement
 
 function setUserChip(account: string, server: string, authenticated = true) {
-  const host = (() => { try { return new URL(server).hostname } catch { return server } })()
-  const label = authenticated && account ? `${account} @ ${host}` : '未登录'
-  userChipText.textContent = label
+  const host = (() => { try { return new URL(server).hostname } catch { return server || '—' } })()
   headerUserName.textContent = authenticated && account ? account : '未登录'
   headerUserAva.textContent = authenticated && account ? account.slice(0, 1).toUpperCase() : '·'
   headerUserChip.classList.toggle('logged-in', !!(authenticated && account))
-  logoutBtn.style.display = authenticated ? 'inline-flex' : 'none'
+  // Login modal: swap between login form and account info
+  if (authenticated && account) {
+    accountInfoAva.textContent = account.slice(0, 1).toUpperCase()
+    accountInfoName.textContent = account
+    accountInfoServer.textContent = host
+    accountInfoBlock.style.display = 'flex'
+    loginFormBlock.style.display = 'none'
+  } else {
+    accountInfoBlock.style.display = 'none'
+    loginFormBlock.style.display = 'flex'
+  }
 }
 
 function updateUserChip(s: any) {
@@ -1412,14 +1418,7 @@ async function doLogout() {
   setStatus('disconnected')
 }
 
-headerUserChip.addEventListener('click', async () => {
-  const s = await window.heysureAPI.getSettings()
-  if (s.authToken) {
-    await doLogout()
-  } else {
-    openLoginModal()
-  }
-})
+headerUserChip.addEventListener('click', () => openLoginModal())
 
 async function loadAiSelectScreen() {
   aiGrid.innerHTML = '<div class="ai-loading"><div class="spinner-large"></div><p>加载 AI 成员列表...</p></div>'

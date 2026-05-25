@@ -316,24 +316,6 @@
     }
     .ai-select-header > * { -webkit-app-region: no-drag; }
 
-    .user-chip {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 10px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-    .user-chip-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--success);
-    }
-
     .header-spacer { flex: 1; }
 
     #theme-toggle, #theme-toggle2 {
@@ -682,31 +664,6 @@
     #status-dot.connected    { background: var(--accent); }
     #status-dot.registered   { background: var(--success); animation: pulse-slow 3s infinite; }
     #status-dot.error        { background: var(--error); }
-
-    /* AI chip in header */
-    .ai-header-chip {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      padding: 4px 10px;
-      background: rgba(99,102,241,0.1);
-      border: 1px solid rgba(99,102,241,0.2);
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 600;
-      color: #a5b4fc;
-      max-width: 150px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      cursor: pointer;
-    }
-    .ai-header-chip:hover { background: rgba(99,102,241,0.16); }
-    .ai-header-chip.manager {
-      background: rgba(245,158,11,0.1);
-      border-color: rgba(245,158,11,0.2);
-      color: #fbbf24;
-    }
 
     .top-user-chip {
       display: inline-flex;
@@ -1721,6 +1678,69 @@
     }
     .test-result.success { background: rgba(34,197,94,0.1); color: var(--success); }
     .test-result.error   { background: rgba(239,68,68,0.1); color: var(--error); }
+
+    /* ── Account info inside login modal ─────────────────────── */
+    .account-info {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      animation: fade-in 0.2s ease;
+    }
+    .account-info-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .account-info-ava {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .account-info-body { flex: 1; min-width: 0; }
+    .account-info-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .account-info-server {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 3px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .account-info-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    /* ── Sidebar header ─────────────────────────────────────── */
+    .sidebar-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      padding: 0 2px 2px;
+      margin-bottom: -2px;
+    }
   </style>
 </head>
 <body class="dark">
@@ -1730,12 +1750,27 @@
     <div class="app-modal-header">
       <div>
         <div class="app-modal-title">软件端账号</div>
-        <div class="app-modal-subtitle" id="login-modal-subtitle">服务器地址请先在设置中配置</div>
+        <div class="app-modal-subtitle" id="login-modal-subtitle">使用与软件端相同的账号登录</div>
       </div>
       <div class="header-spacer"></div>
       <button class="app-modal-close" id="login-modal-close" title="关闭">×</button>
     </div>
     <div class="app-modal-body">
+
+      <!-- Account info (shown when logged in) -->
+      <div class="account-info" id="account-info" style="display:none">
+        <div class="account-info-row">
+          <div class="account-info-ava" id="account-info-ava">·</div>
+          <div class="account-info-body">
+            <div class="account-info-name" id="account-info-name">—</div>
+            <div class="account-info-server" id="account-info-server">—</div>
+          </div>
+        </div>
+        <button class="btn btn-danger" id="logout-btn" style="width:100%">退出登录</button>
+        <div class="account-info-hint">退出后将清除本地登录信息，需要重新登录。</div>
+      </div>
+
+      <!-- Login form (shown when not logged in) -->
       <div class="login-form" id="login-form">
         <div class="form-group">
           <label class="form-label" for="login-account">账号</label>
@@ -1752,7 +1787,7 @@
           <div class="spinner"></div>
           <span class="btn-text">登录</span>
         </button>
-        <button class="btn btn-danger" id="logout-btn" style="width:100%;display:none">退出登录</button>
+        <div class="account-info-hint">服务器地址在“设置 → 服务器地址”中配置。</div>
       </div>
     </div>
   </div>
@@ -1763,18 +1798,14 @@
     <div class="app-modal-header">
       <div>
         <div class="app-modal-title">选择 AI 成员</div>
-        <div class="app-modal-subtitle">点击顶部状态可切换当前连接的模型成员</div>
+        <div class="app-modal-subtitle">选择当前连接的 AI 成员，点击头部状态条可随时切换</div>
       </div>
       <div class="header-spacer"></div>
       <button class="btn btn-secondary btn-icon" id="refresh-ai-btn" title="刷新">&#x21BB;</button>
       <button class="app-modal-close" id="ai-select-modal-close" title="关闭">×</button>
     </div>
     <div class="app-modal-body">
-      <div class="user-chip" id="user-chip">
-        <div class="user-chip-dot"></div>
-        <span id="user-chip-text">未登录</span>
-      </div>
-      <div class="target-banner empty" id="ai-select-target" style="margin-top:10px">
+      <div class="target-banner empty" id="ai-select-target">
         <span class="target-text" id="ai-select-target-text">未选择 AI 成员</span>
       </div>
       <div style="margin-top:12px">
@@ -1807,11 +1838,9 @@
       <span id="status-label">未连接</span>
     </div>
 
-    <div id="ai-header-chip" class="ai-header-chip">AI 成员</div>
-
     <div class="header-spacer"></div>
 
-    <button class="top-user-chip" id="header-user-chip" title="未登录时点击登录，已登录时点击退出">
+    <button class="top-user-chip" id="header-user-chip" title="账号 / 登录">
       <span class="top-user-ava" id="header-user-ava">·</span>
       <span class="top-user-name" id="header-user-name">未登录</span>
     </button>
@@ -1966,12 +1995,14 @@
       </div>
     </div>
 
-    <!-- Sidebar -->
+    <!-- Sidebar (Settings panel) -->
     <aside id="sidebar">
 
-      <!-- AI Member Info Card -->
+      <div class="sidebar-title">&#x2699; 设置</div>
+
+      <!-- Current AI member (compact, read-only) -->
       <div class="card" id="ai-member-card">
-        <div class="card-title">&#x1F916; AI 成员</div>
+        <div class="card-title">&#x1F916; 当前 AI 成员</div>
         <div class="info-row">
           <span class="info-label">名称</span>
           <span class="info-value" id="ai-info-name">—</span>
@@ -1988,14 +2019,12 @@
           <span class="info-label">项目</span>
           <span class="info-value" id="ai-info-project">—</span>
         </div>
-        <div style="margin-top:10px">
-          <button class="btn btn-secondary" id="switch-ai-btn2" style="width:100%;font-size:12px">&#x21C6; 切换 AI 成员</button>
-        </div>
+        <button class="btn btn-secondary" id="switch-ai-btn2" style="width:100%;font-size:12px;margin-top:10px">&#x21C6; 切换 AI 成员</button>
       </div>
 
-      <!-- Agent Status Card -->
+      <!-- Connection -->
       <div class="card">
-        <div class="card-title">&#x1F4E1; 连接状态</div>
+        <div class="card-title">&#x1F4E1; 连接</div>
         <div class="info-row">
           <span class="info-label">状态</span>
           <span class="info-value disconnected" id="info-status">未连接</span>
@@ -2008,15 +2037,34 @@
           <span class="info-label">工作区</span>
           <span class="info-value" id="info-workspace">—</span>
         </div>
-        <div style="margin-top:10px" class="btn-row">
+        <div class="btn-row" style="margin-top:10px">
           <button class="btn btn-primary" id="connect-btn" style="font-size:12px;padding:6px">连接</button>
           <button class="btn btn-danger" id="disconnect-btn" style="font-size:12px;padding:6px">断开</button>
         </div>
       </div>
 
-      <!-- Stats Card -->
+      <!-- Local Settings -->
       <div class="card">
-        <div class="card-title">&#x1F4CA; 统计</div>
+        <div class="card-title">&#x1F4BB; 本地设置</div>
+        <div class="form-group">
+          <label class="form-label" for="cfg-server">服务器地址</label>
+          <input class="form-input" id="cfg-server" type="text" placeholder="http://127.0.0.1:3000" autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="cfg-workspace">工作区目录</label>
+          <input class="form-input" id="cfg-workspace" type="text" placeholder="C:\Users\...\Workspace" />
+        </div>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn btn-secondary" id="test-conn-btn" style="font-size:12px;padding:6px">&#x1F50C; 测试</button>
+          <button class="btn btn-primary" id="save-btn" style="font-size:12px;padding:6px">保存</button>
+        </div>
+        <div class="save-feedback" id="save-feedback"></div>
+        <div class="test-result" id="test-result"></div>
+      </div>
+
+      <!-- Stats (compact) -->
+      <div class="card">
+        <div class="card-title">&#x1F4CA; 任务统计</div>
         <div class="stats-grid">
           <div class="stat-box">
             <div class="stat-num" id="stat-tasks">0</div>
@@ -2035,27 +2083,6 @@
             <div class="stat-label">运行中</div>
           </div>
         </div>
-        <div class="sidebar-hint">统计来自当前 AI 的任务执行记录</div>
-      </div>
-
-      <!-- Local Settings Card -->
-      <div class="card">
-        <div class="card-title">&#x2699; 本地设置</div>
-        <div class="form-group">
-          <label class="form-label" for="cfg-server">服务器地址</label>
-          <input class="form-input" id="cfg-server" type="text" placeholder="http://127.0.0.1:3000" autocomplete="off" />
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="cfg-workspace">工作区目录</label>
-          <input class="form-input" id="cfg-workspace" type="text" placeholder="C:\Users\...\Workspace" />
-        </div>
-        <button class="btn btn-secondary" id="save-btn" style="width:100%;margin-top:8px">保存设置</button>
-        <div class="save-feedback" id="save-feedback"></div>
-
-        <div class="divider"></div>
-
-        <button class="btn btn-secondary" id="test-conn-btn" style="width:100%">&#x1F50C; 测试服务器连接</button>
-        <div class="test-result" id="test-result"></div>
       </div>
 
     </aside>
