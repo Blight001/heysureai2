@@ -9,7 +9,7 @@ class AIMessage(SQLModel, table=True):
 
     生命周期：
       pending   → 已入库等待目标 AI 工作循环捕获
-      delivered → 已注入到目标 AI 的 convo，等待 ai.reply_message
+      delivered → 已作为系统提示注入目标 AI 对话，等待 ai.send_message 回信或自动回信
       replied   → 目标 AI 已回复，发送方可拿到结果
       timeout   → 超时未回复
       failed    → 目标不存在/不可达
@@ -32,12 +32,12 @@ class AIMessage(SQLModel, table=True):
     timeout_seconds: int = Field(default=120)
     # 消息语义类型，决定收件方注入哪种模板：
     #   inquiry   询问，期望对方明确答复一次
-    #   reply     回复，是对某条 inquiry 的答复，对话即闭环
-    #   chitchat  闲聊，可双向多轮但 cascade_depth 受 CHITCHAT_MAX_DEPTH 限制
+    #   reply     回复，是对某条 inquiry 的答复
+    #   chitchat  闲聊，可双向多轮
     #   notify    单向通知，不期望回复
     message_type: str = Field(default="notify", index=True)
     # 在同一条消息链路里的位置：父消息的 cascade_depth + 1；首发消息为 0。
-    # 主要用来给 chitchat 加硬上限，避免乒乓球。
+    # 仅用于展示/审计，不作为发送限制。
     cascade_depth: int = Field(default=0)
     delivered_at: Optional[float] = Field(default=None)
     replied_at: Optional[float] = Field(default=None)

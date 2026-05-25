@@ -7,8 +7,8 @@
   匹配的 session 里才能把它 pop 出来。这样同一个 AI 在多个并行会话里
   不会串话。
 * 发送方阻塞等待回复时走 ``_PendingReplyRegistry``：一个进程内的
-  ``concurrent.futures.Future`` 表。``ai.reply_message``，以及对方从同一
-  通信 session 里发回的 ``ai.send_message``，都会立即 resolve 对应 Future。
+  ``concurrent.futures.Future`` 表。对方从同一通信 session 里发回的
+  ``ai.send_message`` 会立即 resolve 对应 Future。
 * worker 线程跑 MCP 工具时是临时 asyncio loop，跨线程用
   ``asyncio.wrap_future`` 把 ``concurrent.futures.Future`` 转成可 await
   的对象，``set_result`` 的回调会通过 ``call_soon_threadsafe`` 安全派
@@ -234,7 +234,8 @@ def complete_inbound_with_assistant_reply(
             return None
         if int(row.to_ai_config_id) != int(replier_ai_config_id):
             return None
-        requires_reply = bool(row.require_reply)
+        waited_reply = bool(row.require_reply)
+        requires_reply = waited_reply or str(getattr(row, "message_type", "") or "").lower() == "inquiry"
         if not requires_reply and not _content_requests_response(row.content):
             return None
         if row.status in {"replied", "failed"}:
@@ -253,7 +254,7 @@ def complete_inbound_with_assistant_reply(
     resolved_waiter = _pending_replies.resolve(message_id, payload)
     payload["waiter_resolved"] = resolved_waiter
     payload["auto_completed"] = True
-    if not requires_reply:
+    if not resolved_waiter and not waited_reply:
         payload["auto_forwarded"] = True
         _enqueue_unwaited_reply(payload)
     elif not resolved_waiter and previous_status == "timeout":
@@ -282,19 +283,13 @@ def _enqueue_unwaited_reply(original: Dict[str, Any]) -> None:
     if not target_session_id:
         target_session_id = get_active_session_id(user_id, from_ai_config_id) or f"ai_message_reply_{uuid.uuid4().hex[:14]}"
 
-    followup_content = (
-        f"你之前发送的 AI 间消息已收到回复。\n"
-        f"- 原消息编号: {original.get('message_id')}\n"
-        f"- 回复方 ai_config_id: {to_ai_config_id}\n\n"
-        f"[回复内容]\n{reply_content}"
-    )
     parent_depth = int(original.get("cascade_depth") or 0)
     try:
         followup = send(
             user_id=user_id,
             from_ai_config_id=to_ai_config_id,
             to_ai_config_id=from_ai_config_id,
-            content=followup_content,
+            content=reply_content,
             target_session_id=target_session_id,
             from_session_id=str(original.get("target_session_id") or "").strip(),
             require_reply=False,
@@ -306,20 +301,10 @@ def _enqueue_unwaited_reply(original: Dict[str, Any]) -> None:
         print(f"[ai_message_service] enqueue unwaited reply failed: {exc}")
         return
 
-    if not _has_active_run_for_session(user_id, from_ai_config_id, target_session_id):
-        try:
-            wake_idle_target_for_message(message_id=followup.message_id, user_id=user_id)
-        except Exception as exc:
-            print(f"[ai_message_service] wake sender for unwaited reply failed: {exc}")
-
-
-def _has_active_run_for_session(user_id: int, ai_config_id: int, session_id: str) -> bool:
-    session_id = (session_id or "").strip()
-    if not session_id:
-        return False
-    with Session(engine) as session:
-        row = _get_live_active_run(session, user_id, ai_config_id, session_id=session_id)
-        return row is not None
+    try:
+        wake_idle_target_for_message(message_id=followup.message_id, user_id=user_id)
+    except Exception as exc:
+        print(f"[ai_message_service] wake sender for unwaited reply failed: {exc}")
 
 
 def pop_pending_for(
@@ -427,16 +412,6 @@ async def wait_for_reply(
 # ---------------------------------------------------------------------------
 # 目标 AI 的状态查询 / 唤醒
 # ---------------------------------------------------------------------------
-
-
-def target_session_has_active_run(user_id: int, to_ai_config_id: int, session_id: str) -> bool:
-    """判断目标 AI 的指定 session 是否有真实活跃 worker。"""
-    session_id = (session_id or "").strip()
-    if not session_id:
-        return False
-    with Session(engine) as session:
-        row = _get_live_active_run(session, user_id, to_ai_config_id, session_id=session_id)
-        return row is not None
 
 
 def get_active_session_id(user_id: int, to_ai_config_id: int) -> Optional[str]:
@@ -663,6 +638,34 @@ def _run_thread_is_alive(run_id: str) -> bool:
         return False
 
 
+def _clear_live_run_state(run_id: str) -> None:
+    if not run_id:
+        return
+    try:
+        from api.routers.chat_base import _RUN_LIVE_STATE, _RUN_STATE_LOCK
+        with _RUN_STATE_LOCK:
+            _RUN_LIVE_STATE.pop(run_id, None)
+    except Exception:
+        return
+
+
+def _mark_run_interrupted(session: Session, row: ChatRun, message_id: str) -> Dict[str, Any]:
+    now = time.time()
+    row.stop_requested = True
+    row.status = "stopped"
+    row.error_message = f"interrupted by AI message {message_id}"
+    row.finished_at = row.finished_at or now
+    row.updated_at = now
+    session.add(row)
+    _clear_live_run_state(str(row.run_id or ""))
+    return {
+        "run_id": row.run_id,
+        "session_id": row.session_id,
+        "ai_kind": row.ai_kind,
+        "session_name": row.session_name,
+    }
+
+
 def wake_idle_target_for_message(
     *,
     message_id: str,
@@ -697,15 +700,18 @@ def _wake_idle_target_for_message_locked(
 
         target_id = int(msg.to_ai_config_id)
         target_session_id = str(msg.target_session_id or "").strip()
-        active = _get_live_active_run(session, user_id, target_id, session_id=target_session_id)
+        active = (
+            _get_live_active_run(session, user_id, target_id, session_id=target_session_id)
+            or _get_live_active_run(session, user_id, target_id)
+        )
+        interrupted = None
         if active:
-            return {
-                "started": False,
-                "reason": "target already has an active run",
-                "run_id": active.run_id,
-                "session_id": active.session_id,
-                "ai_kind": active.ai_kind,
-            }
+            interrupted = _mark_run_interrupted(session, active, message_id)
+            active_session_id = str(active.session_id or "").strip()
+            if active_session_id:
+                msg.target_session_id = active_session_id
+                session.add(msg)
+                target_session_id = active_session_id
 
         target_cfg = session.exec(
             select(AssistantAIConfig).where(
@@ -727,7 +733,7 @@ def _wake_idle_target_for_message_locked(
         target_name = str(target_cfg.name or "").strip() or f"AI-{target_id}"
         # ``send()`` 已经写好了 target_session_id；这里直接复用，
         # 确保消息和 session 在同一标识下。
-        session_id = msg.target_session_id or f"ai_message_{message_id}"
+        session_id = target_session_id or msg.target_session_id or f"ai_message_{message_id}"
         if not msg.target_session_id:
             msg.target_session_id = session_id
             session.add(msg)
@@ -739,11 +745,13 @@ def _wake_idle_target_for_message_locked(
                 ChatSession.session_id == session_id,
             ).order_by(ChatSession.updated_at.desc())
         ).first()
-        session_name = (
-            str(existing_chat_session.session_name or "").strip()
-            if existing_chat_session
-            else f"AI通信：来自 {from_name}"
-        )
+        interrupted_session_name = str((interrupted or {}).get("session_name") or "").strip()
+        if interrupted and str(interrupted.get("session_id") or "").strip() == session_id and interrupted_session_name:
+            session_name = interrupted_session_name
+        elif existing_chat_session:
+            session_name = str(existing_chat_session.session_name or "").strip()
+        else:
+            session_name = f"AI通信：来自 {from_name}"
         if existing_chat_session is None:
             chat_session = ChatSession(
                 user_id=user_id,
@@ -796,4 +804,6 @@ def _wake_idle_target_for_message_locked(
         "ai_kind": ai_kind,
         "to_ai_config_id": target_id,
         "to_ai_name": target_name,
+        "interrupted": bool(interrupted),
+        "interrupted_run": interrupted,
     }

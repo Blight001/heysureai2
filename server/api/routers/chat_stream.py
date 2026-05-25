@@ -75,7 +75,7 @@ def _to_anthropic_messages(convo: List[Dict]) -> tuple:
       - assistant with tool_calls → content includes tool_use blocks
       - tool (OpenAI) → merged as tool_result into a user message
     """
-    system_text = ""
+    system_parts: List[str] = []
     messages: List[Dict] = []
 
     for msg in convo:
@@ -83,7 +83,9 @@ def _to_anthropic_messages(convo: List[Dict]) -> tuple:
         content = msg.get("content") or ""
 
         if role == "system":
-            system_text = str(content)
+            text = str(content).strip()
+            if text:
+                system_parts.append(text)
             continue
 
         if role == "user":
@@ -128,7 +130,7 @@ def _to_anthropic_messages(convo: List[Dict]) -> tuple:
                     "content": [tool_result_block],
                 })
 
-    system_blocks = [{"type": "text", "text": system_text}]
+    system_blocks = [{"type": "text", "text": "\n\n".join(system_parts)}]
     return system_blocks, messages
 
 

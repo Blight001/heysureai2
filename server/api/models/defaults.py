@@ -38,7 +38,7 @@ DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE = """[系统通知 · AI 间通信 · 单向]
 - 通知内容:
 {content}
 
-仅当你判断该信息会显著改变当前决策时，才考虑主动发起一条新的 inquiry 或 chitchat；否则保持沉默。"""
+仅当你判断该信息需要沟通时，才考虑主动发起一条新的 inquiry 或 chitchat；否则保持沉默。"""
 
 
 # AI ↔ AI 询问 / 回复 / 闲聊：按 message_type 分流的入站模板。
@@ -55,32 +55,27 @@ DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE = """[AI 间通信 · 询问]
 回复方式：调用 MCP 工具 `ai.send_message`，参数如下：
   {{"to_ai_config_id": {from_ai_config_id}, "content": "<你的答复>", "message_type": "reply", "require_reply": false, "reply_to_message_id": "{message_id}", "current_session_id": "{current_session_id}"}}
 
-回复后该对话即闭环，**不要再就此话题发起任何消息**。如有新的话题再单独发起。"""
+回复后如仍需沟通，可以继续使用 `ai.send_message`。"""
 
-DEFAULT_AI_MESSAGE_REPLY_TEMPLATE = """[AI 间通信 · 收到答复 · 对话闭环]
-你之前的询问已收到对方答复。本对话已结束，**不要再回信**，回到你原本的工作。
+DEFAULT_AI_MESSAGE_REPLY_TEMPLATE = """[AI 间通信 · 收到答复]
+这是对你之前发出的 AI 间消息的答复。
 
 - 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）
 - 答复方: {from_ai_name}（ai_config_id={from_ai_config_id}）
 - 本次答复消息编号: {message_id}
-- 答复内容:
-{content}
+- 答复上下文与内容:
+{content}"""
 
-如该答复引出了**新的、独立的**问题，请显式调用 `ai.send_message` 并使用 `message_type="inquiry"` 重新发起；不要把它当作对本条 reply 的继续追问。"""
-
-DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE = """[AI 间通信 · 闲聊 · 第 {cascade_depth}/{chitchat_max} 轮]
+DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE = """[AI 间通信 · 闲聊]
 {from_ai_name} 给你发了一条闲聊消息。
 
 - 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）
 - 发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）
 - 消息编号: {message_id}
 - 内容:
-{content}
+{content}"""
 
-闲聊规则：本话题最多累计 {chitchat_max} 轮，超过后系统将拒绝再发。
-{chitchat_action_hint}"""
-
-# 闲聊上限。最多 5 条消息构成一条 chitchat 链；第 6 条将被工具层拒绝。
+# 兼容旧配置字段；当前工具层不再用它限制 AI 间消息轮次。
 CHITCHAT_MAX_DEPTH = 5
 
 DEFAULT_USER_MESSAGE_NOTICE = """[系统提示] 你已向用户发出一条消息（{channel}）。

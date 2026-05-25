@@ -155,28 +155,23 @@ Rules:
 回复方式：调用 MCP 工具 \`ai.send_message\`，参数如下：
   {{"to_ai_config_id": {from_ai_config_id}, "content": "<你的答复>", "message_type": "reply", "require_reply": false, "reply_to_message_id": "{message_id}", "current_session_id": "{current_session_id}"}}
 
-回复后该对话即闭环，**不要再就此话题发起任何消息**。如有新的话题再单独发起。`)
-  const promptAiMessageReply = ref(`[AI 间通信 · 收到答复 · 对话闭环]
-你之前的询问已收到对方答复。本对话已结束，**不要再回信**，回到你原本的工作。
+回复后如仍需沟通，可以继续使用 \`ai.send_message\`。`)
+  const promptAiMessageReply = ref(`[AI 间通信 · 收到答复]
+你之前的询问已收到对方答复。
 
 - 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）
 - 答复方: {from_ai_name}（ai_config_id={from_ai_config_id}）
 - 本次答复消息编号: {message_id}
 - 答复内容:
-{content}
-
-如该答复引出了**新的、独立的**问题，请显式调用 \`ai.send_message\` 并使用 \`message_type="inquiry"\` 重新发起；不要把它当作对本条 reply 的继续追问。`)
-  const promptAiMessageChitchat = ref(`[AI 间通信 · 闲聊 · 第 {cascade_depth}/{chitchat_max} 轮]
+{content}`)
+  const promptAiMessageChitchat = ref(`[AI 间通信 · 闲聊]
 {from_ai_name} 给你发了一条闲聊消息。
 
 - 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）
 - 发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）
 - 消息编号: {message_id}
 - 内容:
-{content}
-
-闲聊规则：本话题最多累计 {chitchat_max} 轮，超过后系统将拒绝再发。
-{chitchat_action_hint}`)
+{content}`)
   const promptAiMessageReplySuccess = ref('[系统提示] 你对消息 {message_id} 的回复已送达。\n现在请继续你刚才被打断的任务。')
   const promptUserMessageNotice = ref('[系统提示] 你已向用户发出一条消息（{channel}）。\n用户的回复（如有）会通过正常对话渠道返回，请不要重复发送。')
 

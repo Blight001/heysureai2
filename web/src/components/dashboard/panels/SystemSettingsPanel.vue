@@ -419,26 +419,20 @@ watch(() => props.show, visible => {
                     </div>
                     <textarea v-model="promptAiMessageInquiryValue" rows="7" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
                     <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                      接收方收到后用 message_type="reply" 答复，对话即闭环。
+                      接收方可用 message_type="reply" 答复；系统不限制后续继续沟通。
                     </p>
                   </div>
                   <div>
                     <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
-                      message_type="reply" 回复模板（告知对话已闭环、不要再回。占位符同上）
+                      message_type="reply" 回复模板（展示对方答复。占位符同上）
                     </div>
                     <textarea v-model="promptAiMessageReplyValue" rows="6" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
-                    <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                      工具层还会硬性拒绝：若想对一条 reply 继续回复，系统会直接报错。
-                    </p>
                   </div>
                   <div>
                     <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
-                      message_type="chitchat" 闲聊模板（额外支持 <code>{cascade_depth}</code>、<code>{chitchat_max}</code>、<code>{chitchat_action_hint}</code>）
+                      message_type="chitchat" 闲聊模板（占位符同上）
                     </div>
                     <textarea v-model="promptAiMessageChitchatValue" rows="7" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
-                    <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                      同一条 chitchat 链路最多累计 5 条消息，第 6 条会被 ai.send_message 工具层直接拒绝。
-                    </p>
                   </div>
                   <div>
                     <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">

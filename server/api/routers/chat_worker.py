@@ -63,29 +63,49 @@ from .chat_runtime_helpers import (
 from .chat_scheduler import _start_task_run
 
 from api.core.config import DEFAULT_CHAT_MAX_STEPS
-from api.models.defaults import (
-    CHITCHAT_MAX_DEPTH,
-    DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,
-    DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
-    DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
-    DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
-)
+def _normalize_ai_message_type(value: Any, require_reply: bool) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"inquiry", "reply", "chitchat", "notify"}:
+        return text
+    return "inquiry" if require_reply else "notify"
 
 
-def _select_inbound_template(user: Any, message_type: str) -> tuple[str, str]:
-    """Pick (template_text, kind_label) by message_type. Caller has already
-    normalized message_type to one of inquiry/reply/chitchat/notify."""
-    if message_type == "inquiry":
-        tpl = str(getattr(user, "prompt_ai_message_inquiry", "") or DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE)
-        return tpl, "inquiry"
-    if message_type == "reply":
-        tpl = str(getattr(user, "prompt_ai_message_reply", "") or DEFAULT_AI_MESSAGE_REPLY_TEMPLATE)
-        return tpl, "reply"
-    if message_type == "chitchat":
-        tpl = str(getattr(user, "prompt_ai_message_chitchat", "") or DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE)
-        return tpl, "chitchat"
-    tpl = str(getattr(user, "prompt_ai_message_notify", "") or DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE)
-    return tpl, "notify"
+def _render_ai_message_system_prompt(
+    *,
+    from_ai_name: str,
+    from_ai_config_id: int,
+    target_ai_name: str,
+    target_ai_config_id: int,
+    message_id: str,
+    current_session_id: str,
+    content: str,
+    message_type: str,
+    require_reply: bool,
+) -> str:
+    should_reply = bool(require_reply) or message_type == "inquiry"
+    reply_rule = (
+        "这条消息需要你回复。回复时调用 MCP 工具 `ai.send_message`，"
+        f"参数必须包含 `to_ai_config_id={from_ai_config_id}`、`message_type=\"reply\"`、"
+        "`require_reply=false`、"
+        f"`reply_to_message_id=\"{message_id}\"`、`current_session_id=\"{current_session_id}\"`。"
+        if should_reply
+        else "这条消息不要求回复。除非内容明确要求你另起一个新问题，否则不要回信。"
+    )
+    return (
+        "[系统提示]\n"
+        "[AI 间通信 · 强制插入]\n"
+        "当前 AI 运行已被这条消息打断。你必须先处理这条系统提示，再继续原本任务。\n\n"
+        f"- 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）\n"
+        f"- 发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）\n"
+        f"- 消息编号: {message_id}\n"
+        f"- 当前会话: {current_session_id}\n"
+        f"- 消息类型: {message_type}\n"
+        f"- 是否要求回复: {'是' if should_reply else '否'}\n\n"
+        "[消息内容]\n"
+        f"{content}\n\n"
+        "[处理规则]\n"
+        f"{reply_rule}"
+    )
 
 
 def _coerce_max_steps(value: object, default: int = 48) -> int:
@@ -509,6 +529,9 @@ def _run_worker(
                     if m.role == "assistant" and m.think:
                         item["reasoning_content"] = m.think
                     convo.append(item)
+                elif m.role == "system":
+                    if tags.startswith("ai_message_inbound:"):
+                        convo.append({"role": "user", "content": m.content})
             if model_user_content:
                 for i in range(len(convo) - 1, -1, -1):
                     if convo[i].get("role") == "user":
@@ -560,31 +583,11 @@ def _run_worker(
                         _from_name = _resolve_ai_name_safe(bg, _inbound.from_ai_config_id) or f"AI-{_inbound.from_ai_config_id}"
                         _target_name = _resolve_ai_name_safe(bg, ai_config_id) or f"AI-{ai_config_id}"
                         _requires_reply = bool(getattr(_inbound, "require_reply", True))
-                        _msg_type = str(getattr(_inbound, "message_type", "") or "").lower()
-                        if _msg_type not in {"inquiry", "reply", "chitchat", "notify"}:
-                            # 兼容旧库：没有 message_type 的行按 require_reply 推导。
-                            _msg_type = "inquiry" if _requires_reply else "notify"
-                        _depth = int(getattr(_inbound, "cascade_depth", 0) or 0)
-                        # 当前这条已经到 AI 手上，所以"已发生轮次"= depth+1。
-                        _current_round = _depth + 1
-                        if _msg_type == "chitchat":
-                            _remaining = max(0, CHITCHAT_MAX_DEPTH - _current_round)
-                            if _remaining <= 0:
-                                _chitchat_hint = (
-                                    f"⚠ 本闲聊已达 {CHITCHAT_MAX_DEPTH} 轮上限，"
-                                    "**不要再回任何内容**。直接回到原本的工作。"
-                                )
-                            else:
-                                _chitchat_hint = (
-                                    f"如果你想继续闲聊，还剩 {_remaining} 轮可回。"
-                                    "调用 `ai.send_message` 时务必带 `message_type=\"chitchat\"` 和 "
-                                    f"`reply_to_message_id=\"{_inbound.message_id}\"`；"
-                                    "如果觉得没必要回，**不要调用任何工具**，继续原工作即可。"
-                                )
-                        else:
-                            _chitchat_hint = ""
-                        _tpl, _tpl_kind = _select_inbound_template(user, _msg_type)
-                        _fmt_kwargs = dict(
+                        _msg_type = _normalize_ai_message_type(
+                            getattr(_inbound, "message_type", None),
+                            _requires_reply,
+                        )
+                        _injected = _render_ai_message_system_prompt(
                             from_ai_name=_from_name,
                             from_ai_config_id=_inbound.from_ai_config_id,
                             target_ai_name=_target_name,
@@ -593,39 +596,13 @@ def _run_worker(
                             current_session_id=session_id,
                             content=_inbound.content,
                             message_type=_msg_type,
-                            cascade_depth=_current_round,
-                            chitchat_max=CHITCHAT_MAX_DEPTH,
-                            chitchat_action_hint=_chitchat_hint,
+                            require_reply=_requires_reply,
                         )
-                        try:
-                            _injected = _tpl.format(**_fmt_kwargs)
-                        except Exception:
-                            # 用户自定义模板缺少新字段时，退到内置模板再格式化一次。
-                            from api.models.defaults import (
-                                DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE as _FB_CHITCHAT,
-                                DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE as _FB_INQUIRY,
-                                DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE as _FB_NOTIFY,
-                                DEFAULT_AI_MESSAGE_REPLY_TEMPLATE as _FB_REPLY,
-                            )
-                            _fallback_map = {
-                                "inquiry": _FB_INQUIRY,
-                                "reply": _FB_REPLY,
-                                "chitchat": _FB_CHITCHAT,
-                                "notify": _FB_NOTIFY,
-                            }
-                            _fallback_tpl = _fallback_map.get(_tpl_kind, _FB_NOTIFY)
-                            try:
-                                _injected = _fallback_tpl.format(**_fmt_kwargs)
-                            except Exception:
-                                _injected = (
-                                    f"[AI 间通信 · {_msg_type}] 来自 {_from_name}: {_inbound.content}\n"
-                                    f"(message_id={_inbound.message_id})"
-                                )
                         _save_message(
                             bg,
                             user_id,
                             ChatMessageCreate(
-                                role="system",
+                                role="user",
                                 content=_injected,
                                 tags=f"ai_message_inbound:{_msg_type}:{_inbound.message_id}",
                                 ai_config_id=ai_config_id,
@@ -636,10 +613,8 @@ def _run_worker(
                                 total_tokens=0,
                             ),
                         )
-                        convo.append({"role": "system", "content": _injected})
-                        # 只有 inquiry 期望对方答复，所以才打开 assistant 终态
-                        # 文本自动作答的兜底；reply / notify / chitchat 都不开。
-                        if _tpl_kind == "inquiry":
+                        convo.append({"role": "user", "content": _injected})
+                        if _requires_reply or _msg_type == "inquiry":
                             pending_ai_reply_message_id = str(_inbound.message_id or "").strip()
                         else:
                             pending_ai_reply_message_id = ""
@@ -756,6 +731,9 @@ def _run_worker(
                     continue
 
                 if sr.stopped:
+                    _run_set_status(run_id, "stopped", finished=True)
+                    return
+                if _run_should_stop(run_id):
                     _run_set_status(run_id, "stopped", finished=True)
                     return
 
@@ -1339,31 +1317,6 @@ def _run_worker(
                             "请基于以上结果继续完成任务。"
                         )
                         convo.append({"role": "user", "content": follow_up})
-                    # 特殊：ai.reply_message 成功 → 追加"可以继续刚才的工作"提示
-                    if (not tool_failed) and tool == "ai.reply_message":
-                        try:
-                            _replied_id = str((arguments or {}).get("message_id") or "").strip()
-                            _tpl = str(getattr(user, "prompt_ai_message_reply_success", "") or "")
-                            if _tpl and _replied_id:
-                                _resume = _tpl.format(message_id=_replied_id)
-                                _save_message(
-                                    bg,
-                                    user_id,
-                                    ChatMessageCreate(
-                                        role="system",
-                                        content=_resume,
-                                        tags=f"ai_message_reply_ok:{_replied_id}",
-                                        ai_config_id=ai_config_id,
-                                        ai_kind=ai_kind,
-                                        session_id=session_id,
-                                        session_name=session_name,
-                                        model=model,
-                                        total_tokens=0,
-                                    ),
-                                )
-                                convo.append({"role": "system", "content": _resume})
-                        except Exception as _rex:
-                            print(f"[chat_worker] ai.reply_message resume notice failed: {_rex}")
                 _set_run_live_phase(run_id, "generating")
 
             _run_set_status(

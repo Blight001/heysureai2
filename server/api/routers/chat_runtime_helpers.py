@@ -202,6 +202,10 @@ def _run_set_status(run_id: str, status: str, error_message: Optional[str] = Non
         row = bg.exec(select(ChatRun).where(ChatRun.run_id == run_id)).first()
         if not row:
             return
+        if row.stop_requested and status != "stopped":
+            status = "stopped"
+            error_message = row.error_message or error_message
+            finished = True
         row.status = status
         row.error_message = error_message
         row.updated_at = time.time()

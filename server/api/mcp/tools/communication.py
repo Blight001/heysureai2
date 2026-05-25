@@ -2,8 +2,7 @@
 - user.send_message  → 向用户发送消息（沿用飞书底座，名字改为业务语义）
 - ai.send_message    → 向另一个 AI 发送消息。所有"回信"都走它本身：带
                        message_type="reply" 与 reply_to_message_id。
-                       系统按 (target_session_id, status) 严格匹配，并由
-                       cascade_depth 限制 chitchat 链路最多 5 条。
+                       系统按 (target_session_id, status) 严格匹配。
 """
 
 from typing import Any, Dict, Optional
@@ -14,7 +13,6 @@ from sqlmodel import Session
 from ...database import engine
 from ...integrations.feishu.service import send_feishu_text_message
 from ...models import User
-from ...models.defaults import CHITCHAT_MAX_DEPTH
 from ...services import ai_message_service
 from ...services.agent_dispatch import get_run_session_context
 
@@ -104,20 +102,6 @@ def _reply_result(
         "waiter_resolved": bool(completed_reply.get("waiter_resolved")),
         "note": "已作为上一封 AI 消息的回信送达原会话。",
     }
-
-
-def _wrap_return_content(return_route: Dict[str, Any], content: str, replier_ai_config_id: int) -> str:
-    route_message_id = str(return_route.get("message_id") or "").strip()
-    if not route_message_id:
-        return content
-    if "你之前发送的 AI 间消息已收到回复" in content:
-        return content
-    return (
-        "你之前发送的 AI 间消息已收到回复。\n"
-        f"- 原消息编号: {route_message_id}\n"
-        f"- 回复方 ai_config_id: {replier_ai_config_id}\n\n"
-        f"[回复内容]\n{content}"
-    )
 
 
 async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
@@ -224,12 +208,8 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         import uuid as _uuid
         prebound_session_id = f"ai_message_{_uuid.uuid4().hex[:14]}"
 
-    target_active_initial = ai_message_service.target_session_has_active_run(user_id, to_id, prebound_session_id)
-
-    # 推导本条消息在链路里的 cascade_depth：优先看显式 reply_to，否则看
-    # find_return_route 推出的原始消息。chitchat 链路靠这个 +1 累计计数。
+    # 保留 cascade_depth 仅用于历史记录兼容，不再作为发送限制。
     parent_depth: Optional[int] = None
-    parent_type: Optional[str] = None
     parent_candidate_id = reply_to_message_id or str(return_route.get("message_id") or "").strip()
     if parent_candidate_id:
         parent_row = ai_message_service.fetch_cascade_parent(
@@ -237,36 +217,14 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         )
         if parent_row is not None:
             parent_depth = int(getattr(parent_row, "cascade_depth", 0) or 0)
-            parent_type = str(getattr(parent_row, "message_type", "") or "").lower() or None
     cascade_depth = (parent_depth + 1) if parent_depth is not None else 0
 
-    # 闲聊硬上限：同一条链路累计最多 CHITCHAT_MAX_DEPTH 条消息。
-    if message_type == "chitchat" and cascade_depth >= CHITCHAT_MAX_DEPTH:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"chitchat round limit reached (max {CHITCHAT_MAX_DEPTH} messages per thread). "
-                "Stop replying and resume your real work; if you genuinely need follow-up, "
-                "start a fresh thread with message_type=\"inquiry\"."
-            ),
-        )
-    # 闭环防呆：对方已显式标记 reply（=对话结束），再回就拒绝。
-    if parent_type == "reply" and message_type in {"reply", "chitchat", "inquiry"}:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "this thread is already closed by a previous 'reply'. Do not respond further. "
-                "If you have a brand-new question, send a new ai.send_message without reply_to_message_id."
-            ),
-        )
-
     try:
-        delivery_content = _wrap_return_content(return_route, content, int(ai_config_id)) if return_session_id else content
         msg = ai_message_service.send(
             user_id=user_id,
             from_ai_config_id=int(ai_config_id),
             to_ai_config_id=to_id,
-            content=delivery_content,
+            content=content,
             target_session_id=prebound_session_id,
             from_session_id=from_session_id,
             require_reply=require_reply,
@@ -277,19 +235,17 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    wakeup = None
-    target_active = target_active_initial
-    if not target_active:
-        try:
-            wakeup = ai_message_service.wake_idle_target_for_message(
-                message_id=msg.message_id,
-                user_id=user_id,
-            )
-            # wake 内部会把 msg.target_session_id 改为它实际创建的 session_id
-            # （等于我们预算的 prebound_session_id，所以这里就是同一个）。
-            target_active = bool(wakeup.get("started") or wakeup.get("run_id"))
-        except Exception as exc:
-            wakeup = {"started": False, "error": str(exc)}
+    try:
+        wakeup = ai_message_service.wake_idle_target_for_message(
+            message_id=msg.message_id,
+            user_id=user_id,
+        )
+        if wakeup.get("session_id"):
+            msg.target_session_id = str(wakeup.get("session_id") or "")
+        target_active = bool(wakeup.get("started") or wakeup.get("run_id"))
+    except Exception as exc:
+        wakeup = {"started": False, "error": str(exc)}
+        target_active = False
 
     base_out: Dict[str, Any] = {
         "message_id": msg.message_id,
@@ -305,21 +261,20 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         "message_type": message_type,
         "cascade_depth": cascade_depth,
     }
-    if message_type == "chitchat":
-        base_out["chitchat_remaining_rounds"] = max(0, CHITCHAT_MAX_DEPTH - cascade_depth - 1)
-    if wakeup is not None:
-        base_out["target_wakeup"] = wakeup
+    base_out["target_wakeup"] = wakeup
 
     if not require_reply:
         # Fire-and-forget 路径：不阻塞。
-        if return_session_id and wakeup and wakeup.get("started"):
+        if wakeup and wakeup.get("interrupted"):
+            base_out["note"] = "已入队（不等待回复）；目标 AI 当前运行已被打断，系统提示已强制注入并启动新运行。"
+        elif return_session_id and wakeup and wakeup.get("started"):
             base_out["note"] = "已入队（不等待回复）；系统已投回原发送方会话并唤醒目标 AI 处理。"
         elif return_session_id:
-            base_out["note"] = "已入队（不等待回复）；系统已投回原发送方会话，目标 AI 会在该会话下一轮顶部处理。"
+            base_out["note"] = "已入队（不等待回复）；系统已投回原发送方会话并启动目标 AI 处理。"
         elif wakeup and wakeup.get("started"):
-            base_out["note"] = "已入队（不等待回复）；目标 AI 空闲，系统已创建新对话处理本消息。"
+            base_out["note"] = "已入队（不等待回复）；系统已启动目标 AI 处理本消息。"
         elif target_active:
-            base_out["note"] = "已入队（不等待回复）；目标 AI 会在下一轮顶部处理。"
+            base_out["note"] = "已入队（不等待回复）；目标 AI 已进入处理队列。"
         else:
             base_out["note"] = "已入队（不等待回复），但目标 AI 唤醒失败。"
         return base_out

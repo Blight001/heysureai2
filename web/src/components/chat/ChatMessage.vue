@@ -34,7 +34,7 @@ const isFrontPromptMessage = computed(() => {
 })
 
 const isSystemNoticeMessage = computed(() => {
-  if (props.message.role !== 'user') return false
+  if (props.message.role !== 'user' && props.message.role !== 'system') return false
   const text = String(props.message.display_text || props.message.content || '').trim()
   return text.startsWith('[系统提示]')
 })

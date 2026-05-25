@@ -387,12 +387,12 @@ registry.register(MCPTool(
     name="ai.send_message",
     description=(
         "Send a message to another AI in the same digital society. The message is delivered "
-        "into a session strictly bound to the target AI (no cross-session leakage). By default "
-        "this call returns after queueing. Pick `message_type` deliberately: it controls how the "
-        "receiver is prompted and whether further replies are even allowed.\n"
-        "- inquiry  : 你在询问对方，期望对方明确答复一次。对方收到后用 message_type=\"reply\" 回信即闭环。\n"
-        "- reply    : 你在答复对方先前的 inquiry。系统会告诉对方对话已结束，对方不应再回。\n"
-        "- chitchat : 闲聊，可双向多轮，但同一条链路全部累计最多 5 条消息，超过后系统将拒绝继续发送。\n"
+        "as a forced system prompt. If the target AI is already running, its current run is "
+        "interrupted and a new run is started with this message injected first. By default "
+        "this call returns after queueing. Pick `message_type` deliberately.\n"
+        "- inquiry  : 你在询问对方，期望对方答复。\n"
+        "- reply    : 你在答复对方先前的 inquiry。\n"
+        "- chitchat : 闲聊，可双向多轮。\n"
         "- notify   : 单向通知，无需对方回复（默认）。"
     ),
     input_schema={
@@ -404,7 +404,7 @@ registry.register(MCPTool(
                 "type": "string",
                 "enum": ["inquiry", "reply", "chitchat", "notify"],
                 "description": (
-                    "Semantic type that drives the receiver-side template and conversation lifecycle. "
+                    "Semantic type shown in the forced system prompt. "
                     "Defaults: inquiry when require_reply=true, otherwise notify."
                 ),
             },
@@ -423,7 +423,7 @@ registry.register(MCPTool(
                 "type": "string",
                 "description": (
                     "Optional original AI message id (mai_...) when this send is a reply. "
-                    "Pass it so the server can derive cascade_depth and enforce chitchat round limits."
+                    "Pass it so the server can keep message-thread context."
                 ),
             },
             "current_session_id": {
