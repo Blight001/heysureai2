@@ -23,6 +23,7 @@ export function registerAuthIpc(): void {
     store.set('authToken', data.access_token)
     store.set('userAccount', account)
     store.set('userName', String(data.user?.name || data.user?.nickname || account))
+    store.set('userAvatar', String(data.user?.avatar || ''))
     store.set('userId', data.user?.id ?? null)
     clearSelectedAiConfig()
     getAgent()?.updateSettings(store.store)
@@ -34,6 +35,7 @@ export function registerAuthIpc(): void {
     store.set('authToken', '')
     store.set('userAccount', '')
     store.set('userName', '')
+    store.set('userAvatar', '')
     store.set('userId', null)
     clearSelectedAiConfig()
     return { success: true }

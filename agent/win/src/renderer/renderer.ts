@@ -1340,23 +1340,52 @@ aiSelectModal.addEventListener('click', e => { if (e.target === aiSelectModal) c
 const aiGrid       = document.getElementById('ai-grid')!
 const logoutBtn    = document.getElementById('logout-btn')!
 const refreshAiBtn = document.getElementById('refresh-ai-btn')!
-const accountInfoBlock  = document.getElementById('account-info') as HTMLElement
-const accountInfoAva    = document.getElementById('account-info-ava') as HTMLElement
-const accountInfoName   = document.getElementById('account-info-name') as HTMLElement
-const accountInfoServer = document.getElementById('account-info-server') as HTMLElement
-const loginFormBlock    = document.getElementById('login-form') as HTMLElement
+const accountInfoBlock     = document.getElementById('account-info') as HTMLElement
+const accountInfoAva       = document.getElementById('account-info-ava') as HTMLElement
+const accountInfoAvaImg    = document.getElementById('account-info-ava-img') as HTMLImageElement
+const accountInfoAvaText   = document.getElementById('account-info-ava-text') as HTMLElement
+const accountInfoName      = document.getElementById('account-info-name') as HTMLElement
+const accountInfoServer    = document.getElementById('account-info-server') as HTMLElement
+const headerUserAvaImg     = document.getElementById('header-user-ava-img') as HTMLImageElement
+const headerUserAvaText    = document.getElementById('header-user-ava-text') as HTMLElement
+const loginFormBlock       = document.getElementById('login-form') as HTMLElement
 
-function setUserChip(account: string, displayName: string, server: string, authenticated = true) {
+function resolveAvatarUrl(avatar: string, server: string): string {
+  const raw = (avatar || '').trim()
+  if (!raw) return ''
+  if (/^(https?:|data:|blob:)/i.test(raw)) return raw
+  const base = (server || '').replace(/\/+$/, '')
+  if (!base) return raw
+  return raw.startsWith('/') ? `${base}${raw}` : `${base}/${raw}`
+}
+
+function bindAvatarImage(imgEl: HTMLImageElement, container: HTMLElement, src: string, fallbackText: string, textEl: HTMLElement) {
+  textEl.textContent = fallbackText
+  container.classList.remove('has-image')
+  imgEl.onload = null
+  imgEl.onerror = null
+  if (!src) {
+    imgEl.removeAttribute('src')
+    return
+  }
+  imgEl.onload = () => container.classList.add('has-image')
+  imgEl.onerror = () => container.classList.remove('has-image')
+  imgEl.src = src
+}
+
+function setUserChip(displayName: string, avatar: string, server: string, authenticated = true) {
   const host = (() => { try { return new URL(server).hostname } catch { return server || '—' } })()
-  const shown = (displayName || account || '').trim()
+  const shown = (displayName || '').trim()
+  const initial = shown ? shown.slice(0, 1).toUpperCase() : '·'
+  const resolvedAvatar = authenticated && shown ? resolveAvatarUrl(avatar, server) : ''
   headerUserName.textContent = authenticated && shown ? shown : '未登录'
-  headerUserAva.textContent = authenticated && shown ? shown.slice(0, 1).toUpperCase() : '·'
+  bindAvatarImage(headerUserAvaImg, headerUserAva, resolvedAvatar, initial, headerUserAvaText)
   headerUserChip.classList.toggle('logged-in', !!(authenticated && shown))
   // Login modal: swap between login form and account info
   if (authenticated && shown) {
-    accountInfoAva.textContent = shown.slice(0, 1).toUpperCase()
+    bindAvatarImage(accountInfoAvaImg, accountInfoAva, resolvedAvatar, initial, accountInfoAvaText)
     accountInfoName.textContent = shown
-    accountInfoServer.textContent = account && account !== shown ? `${account} · ${host}` : host
+    accountInfoServer.textContent = host
     accountInfoBlock.style.display = 'flex'
     loginFormBlock.style.display = 'none'
   } else {
@@ -1366,7 +1395,7 @@ function setUserChip(account: string, displayName: string, server: string, authe
 }
 
 function updateUserChip(s: any) {
-  setUserChip(s.userAccount || '', s.userName || '', s.serverUrl || '', !!s.authToken)
+  setUserChip(s.userName || '', s.userAvatar || '', s.serverUrl || '', !!s.authToken)
 }
 
 function parseMcpTools(value: any): string[] {

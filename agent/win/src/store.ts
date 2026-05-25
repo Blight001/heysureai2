@@ -16,6 +16,7 @@ interface AgentSettings {
   // Auth
   userAccount: string
   userName: string
+  userAvatar: string
   authToken: string
   userId: number | null
   // Selected AI Config
@@ -41,6 +42,7 @@ const defaults: AgentSettings = {
   aiModel: process.env.AI_MODEL || 'claude-sonnet-4-5',
   userAccount: '',
   userName: '',
+  userAvatar: '',
   authToken: '',
   userId: null,
   selectedAiConfigId: null,
