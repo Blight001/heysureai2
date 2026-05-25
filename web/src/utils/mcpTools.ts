@@ -88,6 +88,7 @@ export const ENDPOINT_AGENT_MCP_TOOLS = [
 ]
 
 const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag: string }> = {
+  'web.search': { label: '联网搜索', description: '使用 Tavily 搜索互联网，适合查询实时信息、外部资料和网页结果。', tag: '工作区' },
   'workspace.run_command': { label: '执行命令', description: '在工作目录中执行终端命令。', tag: '工作区' },
   'admin.list_agents': { label: '列出智能体', description: '查看系统中的 AI 成员列表。', tag: '管理' },
   'admin.get_overview': { label: '管理总览', description: '获取系统运行状态与关键统计。', tag: '管理' },

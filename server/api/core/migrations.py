@@ -116,6 +116,7 @@ def _migrate_user(
     _add_column(cursor, "user", "mcp_format_error_hint", f"TEXT DEFAULT '{_quote(mcp_format_error_hint)}'", existing)
     _add_column(cursor, "user", "mcp_max_steps", "INTEGER DEFAULT 48", existing)
     _add_column(cursor, "user", "role_mcp_permissions", "TEXT DEFAULT ''", existing)
+    _add_column(cursor, "user", "tavily_api_key", "TEXT DEFAULT ''", existing)
     _add_column(cursor, "user", "default_start_task_prompt", f"TEXT DEFAULT '{_quote(start_task_prompt)}'", existing)
     _add_column(cursor, "user", "default_resume_task_prompt", f"TEXT DEFAULT '{_quote(resume_task_prompt)}'", existing)
     _add_column(cursor, "user", "default_supervision_prompt", f"TEXT DEFAULT '{_quote(supervision_prompt)}'", existing)
@@ -155,6 +156,11 @@ def _migrate_user(
         cursor,
         "task.create",
         ["task.update", "task.delete"],
+    )
+    _append_role_permission_tool_items_after_anchor(
+        cursor,
+        "workspace.run_command",
+        ["web.search"],
     )
     _remove_role_permission_tool_item(cursor, "task.get_current")
 
@@ -233,6 +239,13 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
         "mcp_tools",
         "task.create",
         ["task.update", "task.delete"],
+    )
+    _append_json_array_items_after_anchor(
+        cursor,
+        "assistantaiconfig",
+        "mcp_tools",
+        "workspace.run_command",
+        ["web.search"],
     )
 
 

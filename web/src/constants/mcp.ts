@@ -4,6 +4,7 @@
  * is empty.
  */
 export const DEFAULT_MCP_TOOLS = [
+  'web.search',
   'workspace.run_command',
   'admin.list_agents',
   'admin.get_overview',

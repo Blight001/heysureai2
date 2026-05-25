@@ -29,7 +29,7 @@ const promptDetailOpen = ref(false)
 const settingsSectionTitle: Record<SettingsSection, string> = {
   mcp: 'MCP 工具权限',
   feishu: '飞书机器人',
-  workspace: '工作目录权限',
+  workspace: '工作区权限',
   auto: '系统自动控制',
 }
 
@@ -170,7 +170,7 @@ const onToolGroupChange = (tools: string[], event: Event) => {
               class="text-left px-3 py-2.5 rounded-lg border border-zinc-200 bg-zinc-50/70 hover:border-indigo-300 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800/40 dark:hover:border-indigo-500/50 dark:hover:bg-zinc-800"
               @click="openSettingsSection('workspace')"
             >
-              <span class="block text-xs font-medium text-zinc-700 dark:text-zinc-200">工作目录权限</span>
+              <span class="block text-xs font-medium text-zinc-700 dark:text-zinc-200">工作区权限</span>
               <span class="mt-1 block text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
                 {{ form.workspace_root ? (form.workspace_root === '.' ? '用户工作区根目录' : form.workspace_root) : '仅对话，不绑定工作目录' }}
               </span>
@@ -242,7 +242,7 @@ const onToolGroupChange = (tools: string[], event: Event) => {
                   <input type="checkbox" v-model="form.mcp_auto_approve" />
                 </label>
                 <p class="mb-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  仅显示当前角色（{{ form.ai_role_group === 'assistant_admin' ? '辅助管理员' : (form.digital_member_role === 'manager' ? '数字成员·管理者' : '数字成员·普通成员') }}）允许的 MCP 工具，可在“系统设置 → MCP 角色权限”中调整各角色范围。
+                  仅显示当前角色（{{ form.ai_role_group === 'assistant_admin' ? '辅助管理员' : (form.digital_member_role === 'manager' ? '数字成员·管理者' : '数字成员·普通成员') }}）允许的 MCP 工具，可在“系统设置 → 工作区与 MCP → MCP 角色权限”中调整各角色范围。
                 </p>
                 <div class="space-y-3 max-h-[46vh] overflow-y-auto pr-1">
                   <details

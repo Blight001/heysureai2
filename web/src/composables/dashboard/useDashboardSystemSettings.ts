@@ -36,6 +36,7 @@ const clampMcpMaxSteps = (value: unknown) => {
 export const useDashboardSystemSettings = (options: UseDashboardSystemSettingsOptions) => {
   const themeMode = ref<ThemeMode>('dark')
   const fontSize = ref<FontSize>('md')
+  const tavilyApiKey = ref('')
   const mcpMaxSteps = ref(48)
   const globalMcpCallMethod = ref(`When you want to call a tool, output one or more blocks using EXACTLY this format and do not wrap them in markdown code fences:
 <mcp-call>
@@ -222,6 +223,7 @@ Rules:
       const updatedUser = await updateProfile({
         mcp_call_method: globalMcpCallMethod.value,
         mcp_format_error_hint: globalMcpFormatErrorHint.value,
+        tavily_api_key: tavilyApiKey.value,
         mcp_max_steps: clampMcpMaxSteps(mcpMaxSteps.value),
         role_mcp_permissions: roleMcpPermissionsInitialized
           ? JSON.stringify(roleMcpPermissions.value)
@@ -273,6 +275,9 @@ Rules:
       }
       if (Object.prototype.hasOwnProperty.call(rawUser, 'mcp_call_method')) {
         globalMcpCallMethod.value = String(rawUser.mcp_call_method ?? '')
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'tavily_api_key')) {
+        tavilyApiKey.value = String(rawUser.tavily_api_key ?? '')
       }
       if (Object.prototype.hasOwnProperty.call(rawUser, 'mcp_format_error_hint')) {
         globalMcpFormatErrorHint.value = String(rawUser.mcp_format_error_hint ?? '')
@@ -337,6 +342,7 @@ Rules:
   return {
     themeMode,
     fontSize,
+    tavilyApiKey,
     globalMcpCallMethod,
     globalMcpFormatErrorHint,
     mcpMaxSteps,

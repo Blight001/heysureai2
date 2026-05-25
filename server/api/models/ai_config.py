@@ -4,7 +4,7 @@ from typing import Optional
 from sqlmodel import Field, SQLModel
 
 _DEFAULT_MCP_TOOLS = (
-    '["workspace.run_command",'
+    '["web.search","workspace.run_command",'
     '"admin.list_agents","admin.get_overview","admin.dispatch_flow",'
     '"project.list_projects","project.create_project","project.update_project",'
     '"project.delete_project","task.create","task.update","task.delete","task.list",'

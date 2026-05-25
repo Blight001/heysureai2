@@ -8,6 +8,7 @@ export interface User {
   avatar?: string
   ui_theme_mode?: ThemeMode
   ui_font_size?: FontSize
+  tavily_api_key?: string
   mcp_max_steps?: number
   role_mcp_permissions?: string
   prompt_ai_message_notify?: string

@@ -22,6 +22,7 @@ interface Props {
   promptUserMessageNotice: string
   themeMode: 'light' | 'dark'
   fontSize: 'sm' | 'md' | 'lg'
+  tavilyApiKey: string
   mcpMaxSteps: number
   mcpRoleMeta: McpRoleMeta
   roleMcpPermissions: Record<string, string[]>
@@ -47,6 +48,7 @@ const emit = defineEmits<{
   (e: 'update:promptUserMessageNotice', value: string): void
   (e: 'update:themeMode', value: 'light' | 'dark'): void
   (e: 'update:fontSize', value: 'sm' | 'md' | 'lg'): void
+  (e: 'update:tavilyApiKey', value: string): void
   (e: 'update:mcpMaxSteps', value: number): void
   (e: 'viewAllMcp'): void
   (e: 'toggleRoleTool', payload: { role: string; tool: string; checked: boolean }): void
@@ -93,6 +95,11 @@ const themeModeValue = computed({
 const fontSizeValue = computed({
   get: () => props.fontSize,
   set: value => emit('update:fontSize', value)
+})
+
+const tavilyApiKeyValue = computed({
+  get: () => props.tavilyApiKey,
+  set: value => emit('update:tavilyApiKey', value)
 })
 
 const mcpMaxStepsValue = computed({
@@ -251,8 +258,20 @@ watch(() => props.show, visible => {
           </div>
 
           <div class="p-4 bg-zinc-50 rounded-xl dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
-            <h4 class="text-sm font-semibold text-zinc-800 mb-3 dark:text-zinc-100 flex items-center gap-2">MCP 运行限制</h4>
-            <div>
+            <h4 class="text-sm font-semibold text-zinc-800 mb-3 dark:text-zinc-100 flex items-center gap-2">工作区与 MCP</h4>
+            <div class="space-y-3">
+              <div>
+                <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">Tavily API Key（联网搜索 MCP）</div>
+                <input
+                  v-model="tavilyApiKeyValue"
+                  type="password"
+                  autocomplete="off"
+                  class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
+                  placeholder="tvly-..."
+                />
+                <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">供 <code>web.search</code> 调用 Tavily 搜索；仍需在 MCP 权限中为对应 AI 勾选该工具。</p>
+              </div>
+              <div>
               <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">单次运行最多步骤 / MCP 续跑次数</div>
               <input
                 v-model.number="mcpMaxStepsValue"
@@ -262,6 +281,7 @@ watch(() => props.show, visible => {
                 class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
               />
               <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">范围 1-999。连续调用 MCP 工具时，每次模型生成和工具返回后的继续执行都会消耗一步。</p>
+              </div>
             </div>
           </div>
 
@@ -272,7 +292,7 @@ watch(() => props.show, visible => {
             >
               <span>
                 <span class="settings-entry-title">🛡️ MCP 角色权限</span>
-                <span class="settings-entry-desc">为不同角色配置可用 MCP 工具范围</span>
+                <span class="settings-entry-desc">工作区栏目中的 MCP 工具授权，包含联网搜索</span>
               </span>
               <span class="settings-entry-arrow">›</span>
             </button>

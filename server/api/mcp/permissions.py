@@ -41,6 +41,8 @@ DEFAULT_MIN_ROLE = ROLE_MEMBER
 # map default to DEFAULT_MIN_ROLE (available to everyone). Sensitive tools are
 # raised so they can only be granted to the appropriate tiers.
 MCP_TOOL_MIN_ROLE: Dict[str, str] = {
+    # Web search — external read-only lookup, available to every tier by default.
+    "web.search": ROLE_MEMBER,
     # Workspace access is command-only. AI should use shell commands for file operations.
     "workspace.run_command": ROLE_MANAGER,
     # Task — members run their own task; orchestration is manager+.

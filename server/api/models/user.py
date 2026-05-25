@@ -41,6 +41,7 @@ class User(SQLModel, table=True):
     # tier (assistant_admin / digital_member_manager / digital_member_member) to a
     # list of allowed tool names. Empty string means "use the per-role default".
     role_mcp_permissions: str = Field(default="")
+    tavily_api_key: str = Field(default="")
 
     default_start_task_prompt: str = Field(default=DEFAULT_START_TASK_PROMPT)
     default_resume_task_prompt: str = Field(default=DEFAULT_RESUME_TASK_PROMPT)
@@ -86,6 +87,7 @@ class UserRead(SQLModel):
     mcp_format_error_hint: str
     mcp_max_steps: int
     role_mcp_permissions: str
+    tavily_api_key: str
     default_start_task_prompt: str
     default_resume_task_prompt: str
     default_supervision_prompt: str
@@ -115,6 +117,7 @@ class UserUpdate(SQLModel):
     mcp_format_error_hint: Optional[str] = None
     mcp_max_steps: Optional[int] = None
     role_mcp_permissions: Optional[str] = None
+    tavily_api_key: Optional[str] = None
     default_start_task_prompt: Optional[str] = None
     default_resume_task_prompt: Optional[str] = None
     default_supervision_prompt: Optional[str] = None

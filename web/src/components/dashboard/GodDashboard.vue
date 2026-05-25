@@ -55,6 +55,7 @@ const mcpRoleMeta = ref<McpRoleMeta>({ order: [], labels: {}, defaults: {}, opti
 const {
   themeMode,
   fontSize,
+  tavilyApiKey,
   mcpMaxSteps,
   globalMcpCallMethod,
   globalMcpFormatErrorHint,
@@ -660,6 +661,7 @@ onUnmounted(() => {
       v-model:promptUserMessageNotice="promptUserMessageNotice"
       v-model:themeMode="themeMode"
       v-model:fontSize="fontSize"
+      v-model:tavilyApiKey="tavilyApiKey"
       v-model:mcpMaxSteps="mcpMaxSteps"
       :mcp-role-meta="mcpRoleMeta"
       :role-mcp-permissions="roleMcpPermissions"

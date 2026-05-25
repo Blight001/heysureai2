@@ -48,8 +48,31 @@ from .tools.librarian import (
     _librarian_propose,
     _librarian_read,
 )
+from .tools.web_search import _web_search
 
 registry = MCPRegistry()
+
+registry.register(MCPTool(
+    name="web.search",
+    description="Search the public web using Tavily. Use for current or external information that is not available in the conversation or workspace.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Search query."},
+            "search_depth": {
+                "type": "string",
+                "enum": ["basic", "advanced"],
+                "description": "Tavily search depth. Defaults to advanced.",
+            },
+            "max_results": {"type": "integer", "description": "Maximum results to return, 1-20. Defaults to 5."},
+            "include_answer": {"type": "boolean", "description": "Whether Tavily should include a generated answer."},
+            "include_raw_content": {"type": "boolean", "description": "Whether to include raw page content when available."},
+            "include_images": {"type": "boolean", "description": "Whether to include image results when available."},
+        },
+        "required": ["query"],
+    },
+    handler=_web_search,
+))
 
 registry.register(MCPTool(
     name="workspace.run_command",
