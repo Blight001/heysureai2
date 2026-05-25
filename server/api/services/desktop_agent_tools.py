@@ -65,7 +65,6 @@ BROWSER_AGENT_MCP_TOOLS = {
     "card_run",
     "card_delete",
 }
-ENDPOINT_AGENT_MCP_TOOLS = DESKTOP_AGENT_MCP_TOOLS | BROWSER_AGENT_MCP_TOOLS
 
 
 def is_desktop_tool(name: str) -> bool:
@@ -274,7 +273,3 @@ def endpoint_bridge_tools_for_config(ai_config_id: Optional[int], user_id: Optio
     if get_connected_endpoint_agent(ai_config_id, user_id):
         return set(ENDPOINT_BRIDGE_MCP_TOOLS)
     return set()
-
-
-def desktop_bridge_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
-    return endpoint_bridge_tools_for_config(ai_config_id, user_id)

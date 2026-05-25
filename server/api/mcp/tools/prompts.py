@@ -11,11 +11,12 @@ from ...services.governance import assert_can_manage_or_legacy
 
 SYSTEM_PROMPT_FIELDS = {
     "admin_prompt": "旧版/兜底管理员 prompt",
-    "worker_prompt": "旧版/兜底普通 AI prompt",
     "mcp_call_method": "全局 MCP 调用方法 prompt",
     "mcp_format_error_hint": "MCP 格式错误提示 prompt",
-    "prompt_ai_message_inbound": "AI 间消息中断提示 prompt",
-    "prompt_ai_message_notify": "AI 间消息通知提示 prompt",
+    "prompt_ai_message_notify": "AI 间消息·通知模板（notify / 单向通知）",
+    "prompt_ai_message_inquiry": "AI 间消息·询问模板（inquiry）",
+    "prompt_ai_message_reply": "AI 间消息·回复模板（reply / 对话闭环）",
+    "prompt_ai_message_chitchat": "AI 间消息·闲聊模板（chitchat / 最多 5 轮）",
     "prompt_ai_message_reply_success": "AI 间消息回复成功提示 prompt",
     "default_start_task_prompt": "默认任务启动 prompt",
     "default_resume_task_prompt": "默认任务恢复 prompt",
@@ -25,12 +26,13 @@ SYSTEM_PROMPT_FIELDS = {
 
 SYSTEM_PROMPT_USAGE = {
     "admin_prompt": "仅用于没有指定 AI 配置的旧版管理员运行路径；当前 AI 卡片/飞书/任务运行通常不直接使用它。",
-    "worker_prompt": "旧版普通 AI 默认 prompt；当前 AI 卡片/飞书/任务运行通常使用每个 AI 配置自己的 prompt。",
     "mcp_call_method": "会在运行时合并到当前 AI 的有效 prompt 中，用于说明 MCP 调用格式和可用工具。",
     "mcp_format_error_hint": "当模型输出的 MCP 调用格式无效时，作为系统纠错提示模板使用。",
-    "prompt_ai_message_inbound": "收到 require_reply=true 的 AI 间消息时注入，默认要求用 ai.send_message 回发给发送方。",
-    "prompt_ai_message_notify": "收到 require_reply=false 的 AI 间消息时注入，发送方不阻塞等待但接收方仍可用 ai.send_message 回发。",
-    "prompt_ai_message_reply_success": "调用 ai.reply_message 成功后注入，用于恢复原工作流。",
+    "prompt_ai_message_notify": "message_type=\"notify\" 时注入。系统会自动签收，模板应明确告知 AI 不要回应。",
+    "prompt_ai_message_inquiry": "message_type=\"inquiry\" 时注入。模板应让对方用 ai.send_message(message_type=\"reply\") 答复一次后即闭环。",
+    "prompt_ai_message_reply": "message_type=\"reply\" 时注入。模板应明确告知对话已闭环、不要再就此话题回信。",
+    "prompt_ai_message_chitchat": "message_type=\"chitchat\" 时注入。会带入 {cascade_depth}/{chitchat_max} 和 {chitchat_action_hint}；同一链路 5 条后系统会硬性拒绝再发。",
+    "prompt_ai_message_reply_success": "AI 间消息被自动签收后，恢复原工作流的提示。",
     "default_start_task_prompt": "任务首次启动时的默认注入提示，不是 AI 基础人格 prompt。",
     "default_resume_task_prompt": "任务传承/恢复时的默认注入提示，不是 AI 基础人格 prompt。",
     "default_supervision_prompt": "任务空闲监督时的默认追问提示，不是 AI 基础人格 prompt。",

@@ -84,7 +84,7 @@ export interface SystemAutoControlDefaults {
   inheritance_notice: string
 }
 
-export interface SystemAutoControlTaskItem {
+interface SystemAutoControlTaskItem {
   id: string
   title: string
   instruction: string
@@ -103,7 +103,7 @@ export interface SystemAutoControlConfig {
   tasks: SystemAutoControlTaskItem[]
 }
 
-export const taskStateClassMap: Record<TaskRuntimeState, string> = {
+const taskStateClassMap: Record<TaskRuntimeState, string> = {
   running: 'border-emerald-400 bg-emerald-50/70 dark:border-emerald-400/70 dark:bg-emerald-500/10 task-running-border',
   next: 'border-amber-300 bg-amber-50/70 dark:border-amber-400/70 dark:bg-amber-500/10',
   scheduled: 'border-blue-300 bg-blue-50/70 dark:border-blue-400/70 dark:bg-blue-500/10',
@@ -111,7 +111,7 @@ export const taskStateClassMap: Record<TaskRuntimeState, string> = {
   idle: 'border-zinc-200 bg-white/70 dark:border-zinc-700 dark:bg-zinc-900/50',
 }
 
-export const taskStateLabelMap: Record<TaskRuntimeState, string> = {
+const taskStateLabelMap: Record<TaskRuntimeState, string> = {
   running: '执行中',
   next: '等待执行',
   scheduled: '定时任务',
@@ -135,7 +135,7 @@ export const syncArrayByKey = <T>(target: T[], incoming: T[], getKey: (item: T) 
   target.splice(0, target.length, ...next)
 }
 
-export const normalizeTaskItem = (raw: any): SystemAutoControlTaskItem => ({
+const normalizeTaskItem = (raw: any): SystemAutoControlTaskItem => ({
   id: String(raw?.id || `task_${Date.now()}_${Math.random().toString(16).slice(2, 6)}`),
   title: String(raw?.title || '未命名任务'),
   instruction: String(raw?.instruction || ''),
@@ -145,7 +145,7 @@ export const normalizeTaskItem = (raw: any): SystemAutoControlTaskItem => ({
   interval_minutes: Math.max(1, Number(raw?.interval_minutes) || 30),
 })
 
-export const defaultSystemAutoControl = (defaults: SystemAutoControlDefaults): SystemAutoControlConfig => ({
+const defaultSystemAutoControl = (defaults: SystemAutoControlDefaults): SystemAutoControlConfig => ({
   enabled: false,
   start_task_prompt: defaults.start_task_prompt,
   resume_task_prompt: defaults.resume_task_prompt,

@@ -388,16 +388,26 @@ registry.register(MCPTool(
     description=(
         "Send a message to another AI in the same digital society. The message is delivered "
         "into a session strictly bound to the target AI (no cross-session leakage). By default "
-        "this call returns after queueing. If the target wants to answer, it should call "
-        "ai.send_message back to the sender with require_reply=false. Use send_message in both "
-        "directions. If the target is idle, the "
-        "server starts a fresh conversation for it automatically."
+        "this call returns after queueing. Pick `message_type` deliberately: it controls how the "
+        "receiver is prompted and whether further replies are even allowed.\n"
+        "- inquiry  : 你在询问对方，期望对方明确答复一次。对方收到后用 message_type=\"reply\" 回信即闭环。\n"
+        "- reply    : 你在答复对方先前的 inquiry。系统会告诉对方对话已结束，对方不应再回。\n"
+        "- chitchat : 闲聊，可双向多轮，但同一条链路全部累计最多 5 条消息，超过后系统将拒绝继续发送。\n"
+        "- notify   : 单向通知，无需对方回复（默认）。"
     ),
     input_schema={
         "type": "object",
         "properties": {
             "to_ai_config_id": {"type": "integer", "description": "Target AI's ai_config_id."},
             "content": {"type": "string", "description": "Message body."},
+            "message_type": {
+                "type": "string",
+                "enum": ["inquiry", "reply", "chitchat", "notify"],
+                "description": (
+                    "Semantic type that drives the receiver-side template and conversation lifecycle. "
+                    "Defaults: inquiry when require_reply=true, otherwise notify."
+                ),
+            },
             "require_reply": {
                 "type": "boolean",
                 "description": (
@@ -411,7 +421,10 @@ registry.register(MCPTool(
             },
             "reply_to_message_id": {
                 "type": "string",
-                "description": "Optional original AI message id (mai_...) when this send is a reply.",
+                "description": (
+                    "Optional original AI message id (mai_...) when this send is a reply. "
+                    "Pass it so the server can derive cascade_depth and enforce chitchat round limits."
+                ),
             },
             "current_session_id": {
                 "type": "string",
@@ -614,7 +627,6 @@ registry.register(MCPTool(
                 "type": "string",
                 "enum": [
                     "admin_prompt",
-                    "worker_prompt",
                     "mcp_call_method",
                     "mcp_format_error_hint",
                     "default_start_task_prompt",
@@ -643,7 +655,6 @@ registry.register(MCPTool(
                 "type": "string",
                 "enum": [
                     "admin_prompt",
-                    "worker_prompt",
                     "mcp_call_method",
                     "mcp_format_error_hint",
                     "default_start_task_prompt",

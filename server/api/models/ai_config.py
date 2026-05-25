@@ -70,7 +70,6 @@ class AssistantAIConfig(SQLModel, table=True):
     switch_key: str = Field(default="assistant_default")
     mcp_tools: str = Field(default=_DEFAULT_MCP_TOOLS)
     system_auto_control: str = Field(default=_DEFAULT_SYSTEM_AUTO_CONTROL)
-    auto_last_trigger_at: Optional[float] = Field(default=None)
 
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)

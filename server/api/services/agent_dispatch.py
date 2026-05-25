@@ -80,10 +80,6 @@ def set_run_session_context(ctx: Optional[Dict[str, Any]]):
     return _RUN_SESSION_CONTEXT.set(ctx or None)
 
 
-def reset_run_session_context(token) -> None:
-    _RUN_SESSION_CONTEXT.reset(token)
-
-
 def get_run_session_context() -> Optional[Dict[str, Any]]:
     return _RUN_SESSION_CONTEXT.get()
 
@@ -382,28 +378,3 @@ async def dispatch_endpoint_tool_and_wait(
     )
 
 
-async def _dispatch_task(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    """MCP tool handler: dispatch a task to a connected desktop or browser agent."""
-    agent_id = str(args.get("agentId") or "").strip()
-    instruction = str(args.get("instruction") or "").strip()
-    tool = str(args.get("tool") or "").strip()
-    tool_args = args.get("args") if isinstance(args.get("args"), dict) else {}
-    if not agent_id:
-        return {"success": False, "error": "Missing agentId"}
-    if not instruction and not tool:
-        return {"success": False, "error": "Provide an instruction or a tool to run"}
-
-    run_ctx = get_run_session_context() or {}
-    return await dispatch_task_to_agent(
-        agent_id=agent_id,
-        user_id=user_id,
-        ai_config_id=ai_config_id,
-        ai_kind=str(run_ctx.get("ai_kind") or "assistant"),
-        session_id=str(run_ctx.get("session_id") or ""),
-        session_name=run_ctx.get("session_name"),
-        model=run_ctx.get("model"),
-        instruction=instruction,
-        tool=tool,
-        args=tool_args,
-        allowed_tools=args.get("allowedTools") if isinstance(args.get("allowedTools"), list) else None,
-    )

@@ -26,34 +26,62 @@ Rules:
 - Call exactly one tool per <mcp-call> block; never join two tool names into one name.
 - Only fall back to legacy File/Create File/Delete File/Run Command formats if MCP is unavailable."""
 
-DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE = """[系统中断 · AI 间通信]
-你刚才的工作被一条来自其它 AI 的消息打断了。请优先处理此消息。
-
-- 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）
-- 发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）
-- 消息编号: {message_id}
-- 消息内容:
-{content}
-
-阅读后，请立即调用 MCP 工具 `ai.send_message` 回发消息给发送方：
-  arguments: {{"to_ai_config_id": {from_ai_config_id}, "content": "<你的回复>", "require_reply": false, "reply_to_message_id": "{message_id}", "current_session_id": "{current_session_id}"}}
-回复发出后，请继续你刚才被打断的工作。在你回发之前，不要执行其它 MCP 工具。"""
-
 DEFAULT_AI_MESSAGE_REPLY_SUCCESS = """[系统提示] 你对消息 {message_id} 的回复已送达。
 现在请继续你刚才被打断的任务。"""
 
-DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE = """[系统通知 · AI 间通信]
-你收到一条来自其它 AI 的通知消息。发送方不会在原工具调用中阻塞等待，但你仍然可以主动回复。
+DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE = """[系统通知 · AI 间通信 · 单向]
+你收到一条单向通知消息。系统已为你自动签收，**无需调用任何工具回应**，请继续你原本的工作。
 
 - 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）
 - 发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）
 - 消息编号: {message_id}
-- 消息内容:
+- 通知内容:
 {content}
 
-如果消息内容要求你回话、确认或补充状态，请调用 MCP 工具 `ai.send_message` 回发消息给发送方：
-  arguments: {{"to_ai_config_id": {from_ai_config_id}, "content": "<你的回复>", "require_reply": false, "reply_to_message_id": "{message_id}", "current_session_id": "{current_session_id}"}}
-这样发送方会作为新收件方被系统唤醒处理你的回信。"""
+仅当你判断该信息会显著改变当前决策时，才考虑主动发起一条新的 inquiry 或 chitchat；否则保持沉默。"""
+
+
+# AI ↔ AI 询问 / 回复 / 闲聊：按 message_type 分流的入站模板。
+# 这三个模板取代旧版"什么消息都要求回信"的兜底逻辑。
+DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE = """[AI 间通信 · 询问]
+{from_ai_name} 向你提出了一个询问，需要你给出明确答复**一次**。
+
+- 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）
+- 发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）
+- 消息编号: {message_id}
+- 询问内容:
+{content}
+
+回复方式：调用 MCP 工具 `ai.send_message`，参数如下：
+  {{"to_ai_config_id": {from_ai_config_id}, "content": "<你的答复>", "message_type": "reply", "require_reply": false, "reply_to_message_id": "{message_id}", "current_session_id": "{current_session_id}"}}
+
+回复后该对话即闭环，**不要再就此话题发起任何消息**。如有新的话题再单独发起。"""
+
+DEFAULT_AI_MESSAGE_REPLY_TEMPLATE = """[AI 间通信 · 收到答复 · 对话闭环]
+你之前的询问已收到对方答复。本对话已结束，**不要再回信**，回到你原本的工作。
+
+- 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）
+- 答复方: {from_ai_name}（ai_config_id={from_ai_config_id}）
+- 本次答复消息编号: {message_id}
+- 答复内容:
+{content}
+
+如该答复引出了**新的、独立的**问题，请显式调用 `ai.send_message` 并使用 `message_type="inquiry"` 重新发起；不要把它当作对本条 reply 的继续追问。"""
+
+DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE = """[AI 间通信 · 闲聊 · 第 {cascade_depth}/{chitchat_max} 轮]
+{from_ai_name} 给你发了一条闲聊消息。
+
+- 收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）
+- 发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）
+- 消息编号: {message_id}
+- 内容:
+{content}
+
+闲聊规则：本话题最多累计 {chitchat_max} 轮，超过后系统将拒绝再发。
+{chitchat_action_hint}"""
+
+# 闲聊上限。最多 5 条消息构成一条 chitchat 链；第 6 条将被工具层拒绝。
+CHITCHAT_MAX_DEPTH = 5
 
 DEFAULT_USER_MESSAGE_NOTICE = """[系统提示] 你已向用户发出一条消息（{channel}）。
 用户的回复（如有）会通过正常对话渠道返回，请不要重复发送。"""

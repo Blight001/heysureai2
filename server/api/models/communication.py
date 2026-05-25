@@ -30,6 +30,15 @@ class AIMessage(SQLModel, table=True):
     reply_content: Optional[str] = Field(default=None)
     require_reply: bool = Field(default=True)
     timeout_seconds: int = Field(default=120)
+    # 消息语义类型，决定收件方注入哪种模板：
+    #   inquiry   询问，期望对方明确答复一次
+    #   reply     回复，是对某条 inquiry 的答复，对话即闭环
+    #   chitchat  闲聊，可双向多轮但 cascade_depth 受 CHITCHAT_MAX_DEPTH 限制
+    #   notify    单向通知，不期望回复
+    message_type: str = Field(default="notify", index=True)
+    # 在同一条消息链路里的位置：父消息的 cascade_depth + 1；首发消息为 0。
+    # 主要用来给 chitchat 加硬上限，避免乒乓球。
+    cascade_depth: int = Field(default=0)
     delivered_at: Optional[float] = Field(default=None)
     replied_at: Optional[float] = Field(default=None)
     failure_reason: Optional[str] = Field(default=None)

@@ -6,7 +6,7 @@ import json
 import os
 import re
 import time
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 from sqlmodel import Session, select
@@ -62,22 +62,30 @@ from .chat_runtime_helpers import (
 )
 from .chat_scheduler import _start_task_run
 
-from api.core.config import DEFAULT_CHAT_MAX_STEPS, DEFAULT_TASK_MAX_STEPS
-from api.models.defaults import DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE
-
-DEFAULT_AI_MSG_INBOUND_FALLBACK = (
-    "[系统中断 · AI 间通信]\n"
-    "收件方（你）: {target_ai_name}（ai_config_id={target_ai_config_id}）\n"
-    "发送方: {from_ai_name}（ai_config_id={from_ai_config_id}）\n"
-    "消息编号: {message_id}\n\n"
-    "{content}\n\n"
-    "请调用 ai.send_message(to_ai_config_id={from_ai_config_id}, content=..., "
-    "require_reply=false, reply_to_message_id=\"{message_id}\", current_session_id=\"{current_session_id}\") 回发给发送方。"
+from api.core.config import DEFAULT_CHAT_MAX_STEPS
+from api.models.defaults import (
+    CHITCHAT_MAX_DEPTH,
+    DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,
+    DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
+    DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
+    DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
 )
 
-DEFAULT_AI_MSG_INBOUND_NO_REPLY_FALLBACK = (
-    DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE
-)
+
+def _select_inbound_template(user: Any, message_type: str) -> tuple[str, str]:
+    """Pick (template_text, kind_label) by message_type. Caller has already
+    normalized message_type to one of inquiry/reply/chitchat/notify."""
+    if message_type == "inquiry":
+        tpl = str(getattr(user, "prompt_ai_message_inquiry", "") or DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE)
+        return tpl, "inquiry"
+    if message_type == "reply":
+        tpl = str(getattr(user, "prompt_ai_message_reply", "") or DEFAULT_AI_MESSAGE_REPLY_TEMPLATE)
+        return tpl, "reply"
+    if message_type == "chitchat":
+        tpl = str(getattr(user, "prompt_ai_message_chitchat", "") or DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE)
+        return tpl, "chitchat"
+    tpl = str(getattr(user, "prompt_ai_message_notify", "") or DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE)
+    return tpl, "notify"
 
 
 def _coerce_max_steps(value: object, default: int = 48) -> int:
@@ -552,50 +560,74 @@ def _run_worker(
                         _from_name = _resolve_ai_name_safe(bg, _inbound.from_ai_config_id) or f"AI-{_inbound.from_ai_config_id}"
                         _target_name = _resolve_ai_name_safe(bg, ai_config_id) or f"AI-{ai_config_id}"
                         _requires_reply = bool(getattr(_inbound, "require_reply", True))
-                        _tpl = str(getattr(user, "prompt_ai_message_inbound", "") or DEFAULT_AI_MSG_INBOUND_FALLBACK)
-                        if not _requires_reply:
-                            _tpl = str(getattr(user, "prompt_ai_message_notify", "") or DEFAULT_AI_MSG_INBOUND_NO_REPLY_FALLBACK)
-                        _identity_header = (
-                            "[AI 间通信上下文]\n"
-                            f"- 收件方（你）: {_target_name}（ai_config_id={ai_config_id}）\n"
-                            f"- 发送方: {_from_name}（ai_config_id={_inbound.from_ai_config_id}）\n"
-                            f"- 消息编号: {_inbound.message_id}\n"
-                            "- 回信方式: 调用 ai.send_message，to_ai_config_id 填发送方 ai_config_id，"
-                            "require_reply 填 false。\n"
-                            f"- 当前对话ID: {session_id}\n"
-                            "- 建议参数: "
-                            f'{{"to_ai_config_id": {_inbound.from_ai_config_id}, "content": "<你的回复>", '
-                            f'"require_reply": false, "reply_to_message_id": "{_inbound.message_id}", '
-                            f'"current_session_id": "{session_id}"}}\n'
+                        _msg_type = str(getattr(_inbound, "message_type", "") or "").lower()
+                        if _msg_type not in {"inquiry", "reply", "chitchat", "notify"}:
+                            # 兼容旧库：没有 message_type 的行按 require_reply 推导。
+                            _msg_type = "inquiry" if _requires_reply else "notify"
+                        _depth = int(getattr(_inbound, "cascade_depth", 0) or 0)
+                        # 当前这条已经到 AI 手上，所以"已发生轮次"= depth+1。
+                        _current_round = _depth + 1
+                        if _msg_type == "chitchat":
+                            _remaining = max(0, CHITCHAT_MAX_DEPTH - _current_round)
+                            if _remaining <= 0:
+                                _chitchat_hint = (
+                                    f"⚠ 本闲聊已达 {CHITCHAT_MAX_DEPTH} 轮上限，"
+                                    "**不要再回任何内容**。直接回到原本的工作。"
+                                )
+                            else:
+                                _chitchat_hint = (
+                                    f"如果你想继续闲聊，还剩 {_remaining} 轮可回。"
+                                    "调用 `ai.send_message` 时务必带 `message_type=\"chitchat\"` 和 "
+                                    f"`reply_to_message_id=\"{_inbound.message_id}\"`；"
+                                    "如果觉得没必要回，**不要调用任何工具**，继续原工作即可。"
+                                )
+                        else:
+                            _chitchat_hint = ""
+                        _tpl, _tpl_kind = _select_inbound_template(user, _msg_type)
+                        _fmt_kwargs = dict(
+                            from_ai_name=_from_name,
+                            from_ai_config_id=_inbound.from_ai_config_id,
+                            target_ai_name=_target_name,
+                            target_ai_config_id=ai_config_id,
+                            message_id=_inbound.message_id,
+                            current_session_id=session_id,
+                            content=_inbound.content,
+                            message_type=_msg_type,
+                            cascade_depth=_current_round,
+                            chitchat_max=CHITCHAT_MAX_DEPTH,
+                            chitchat_action_hint=_chitchat_hint,
                         )
                         try:
-                            _injected = _tpl.format(
-                                from_ai_name=_from_name,
-                                from_ai_config_id=_inbound.from_ai_config_id,
-                                target_ai_name=_target_name,
-                                target_ai_config_id=ai_config_id,
-                                message_id=_inbound.message_id,
-                                current_session_id=session_id,
-                                content=_inbound.content,
-                            )
+                            _injected = _tpl.format(**_fmt_kwargs)
                         except Exception:
-                            _injected = (
-                                f"[AI 间通信] 收件方（你）: {_target_name}（ai_config_id={ai_config_id}）\n"
-                                f"发送方: {_from_name}（ai_config_id={_inbound.from_ai_config_id}）\n"
-                                f"消息内容: {_inbound.content}\n"
-                                f"请调用 ai.send_message(to_ai_config_id={_inbound.from_ai_config_id}, content=..., "
-                                f'require_reply=false, reply_to_message_id="{_inbound.message_id}", '
-                                f'current_session_id="{session_id}") 回发。'
+                            # 用户自定义模板缺少新字段时，退到内置模板再格式化一次。
+                            from api.models.defaults import (
+                                DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE as _FB_CHITCHAT,
+                                DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE as _FB_INQUIRY,
+                                DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE as _FB_NOTIFY,
+                                DEFAULT_AI_MESSAGE_REPLY_TEMPLATE as _FB_REPLY,
                             )
-                        if "[AI 间通信上下文]" not in _injected:
-                            _injected = f"{_identity_header}\n{_injected}"
+                            _fallback_map = {
+                                "inquiry": _FB_INQUIRY,
+                                "reply": _FB_REPLY,
+                                "chitchat": _FB_CHITCHAT,
+                                "notify": _FB_NOTIFY,
+                            }
+                            _fallback_tpl = _fallback_map.get(_tpl_kind, _FB_NOTIFY)
+                            try:
+                                _injected = _fallback_tpl.format(**_fmt_kwargs)
+                            except Exception:
+                                _injected = (
+                                    f"[AI 间通信 · {_msg_type}] 来自 {_from_name}: {_inbound.content}\n"
+                                    f"(message_id={_inbound.message_id})"
+                                )
                         _save_message(
                             bg,
                             user_id,
                             ChatMessageCreate(
                                 role="system",
                                 content=_injected,
-                                tags=f"ai_message_inbound:{_inbound.message_id}",
+                                tags=f"ai_message_inbound:{_msg_type}:{_inbound.message_id}",
                                 ai_config_id=ai_config_id,
                                 ai_kind=ai_kind,
                                 session_id=session_id,
@@ -605,7 +637,12 @@ def _run_worker(
                             ),
                         )
                         convo.append({"role": "system", "content": _injected})
-                        pending_ai_reply_message_id = str(_inbound.message_id or "").strip()
+                        # 只有 inquiry 期望对方答复，所以才打开 assistant 终态
+                        # 文本自动作答的兜底；reply / notify / chitchat 都不开。
+                        if _tpl_kind == "inquiry":
+                            pending_ai_reply_message_id = str(_inbound.message_id or "").strip()
+                        else:
+                            pending_ai_reply_message_id = ""
 
                 _append_missing_tool_responses(
                     convo,

@@ -50,4 +50,3 @@ def _coerce_max_steps(value: object, default: int) -> int:
 
 
 DEFAULT_CHAT_MAX_STEPS = _coerce_max_steps(os.getenv("HEYSURE_CHAT_MAX_STEPS"), 48)
-DEFAULT_TASK_MAX_STEPS = _coerce_max_steps(os.getenv("HEYSURE_TASK_MAX_STEPS"), DEFAULT_CHAT_MAX_STEPS)

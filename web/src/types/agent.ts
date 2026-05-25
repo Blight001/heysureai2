@@ -94,12 +94,3 @@ export interface ProjectItem {
   aiMemberIds: number[]
   readonly?: boolean
 }
-
-export interface TaskItem {
-  id: string
-  title: string
-  role: AgentRole
-  projectId: string
-  specialty?: string
-  status: 'queued' | 'running' | 'done'
-}

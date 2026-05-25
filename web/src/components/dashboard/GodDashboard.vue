@@ -63,8 +63,10 @@ const {
   defaultSupervisionPrompt,
   defaultSupervisionIdleSeconds,
   defaultInheritanceNotice,
-  promptAiMessageInbound,
   promptAiMessageNotify,
+  promptAiMessageInquiry,
+  promptAiMessageReply,
+  promptAiMessageChitchat,
   promptAiMessageReplySuccess,
   promptUserMessageNotice,
   normalizeSystemAutoControl,
@@ -646,8 +648,10 @@ onUnmounted(() => {
       v-model:defaultSupervisionPrompt="defaultSupervisionPrompt"
       v-model:defaultSupervisionIdleSeconds="defaultSupervisionIdleSeconds"
       v-model:defaultInheritanceNotice="defaultInheritanceNotice"
-      v-model:promptAiMessageInbound="promptAiMessageInbound"
       v-model:promptAiMessageNotify="promptAiMessageNotify"
+      v-model:promptAiMessageInquiry="promptAiMessageInquiry"
+      v-model:promptAiMessageReply="promptAiMessageReply"
+      v-model:promptAiMessageChitchat="promptAiMessageChitchat"
       v-model:promptAiMessageReplySuccess="promptAiMessageReplySuccess"
       v-model:promptUserMessageNotice="promptUserMessageNotice"
       v-model:themeMode="themeMode"

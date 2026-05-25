@@ -110,6 +110,17 @@ def stable_peer_session_id(
 # ---------------------------------------------------------------------------
 
 
+_ALLOWED_MESSAGE_TYPES = {"inquiry", "reply", "chitchat", "notify"}
+
+
+def _normalize_message_type(value: Optional[str], *, require_reply: bool) -> str:
+    text = str(value or "").strip().lower()
+    if text in _ALLOWED_MESSAGE_TYPES:
+        return text
+    # 兜底：require_reply=True 默认 inquiry，否则 notify。保持旧调用者无须显式指定。
+    return "inquiry" if require_reply else "notify"
+
+
 def send(
     *,
     user_id: int,
@@ -120,6 +131,8 @@ def send(
     from_session_id: str = "",
     require_reply: bool = True,
     timeout_seconds: int = 120,
+    message_type: Optional[str] = None,
+    cascade_depth: int = 0,
 ) -> AIMessage:
     """落库一条消息。``target_session_id`` 是消费方在哪个 session 里
     处理它，不能为空。"""
@@ -131,6 +144,8 @@ def send(
     target_session_id = (target_session_id or "").strip()
     if not target_session_id:
         raise ValueError("target_session_id is required")
+    normalized_type = _normalize_message_type(message_type, require_reply=require_reply)
+    safe_depth = max(0, int(cascade_depth or 0))
     with Session(engine) as session:
         from_cfg = session.exec(
             select(AssistantAIConfig).where(
@@ -157,11 +172,27 @@ def send(
             require_reply=bool(require_reply),
             timeout_seconds=max(5, int(timeout_seconds or 120)),
             status="pending",
+            message_type=normalized_type,
+            cascade_depth=safe_depth,
         )
         session.add(row)
         session.commit()
         session.refresh(row)
         return row
+
+
+def fetch_cascade_parent(*, user_id: int, message_id: str) -> Optional[AIMessage]:
+    """读取链路父消息（用于从 reply_to_message_id 推导 cascade_depth）。"""
+    message_id = (message_id or "").strip()
+    if not message_id:
+        return None
+    with Session(engine) as session:
+        return session.exec(
+            select(AIMessage).where(
+                AIMessage.user_id == user_id,
+                AIMessage.message_id == message_id,
+            )
+        ).first()
 
 
 def fetch(message_id: str, user_id: int) -> Optional[AIMessage]:
@@ -172,60 +203,6 @@ def fetch(message_id: str, user_id: int) -> Optional[AIMessage]:
                 AIMessage.message_id == message_id,
             )
         ).first()
-
-
-def mark_delivered(message_id: str) -> Optional[AIMessage]:
-    with Session(engine) as session:
-        row = session.exec(
-            select(AIMessage).where(AIMessage.message_id == message_id)
-        ).first()
-        if not row:
-            return None
-        if row.status == "pending":
-            row.status = "delivered"
-            row.delivered_at = time.time()
-            session.add(row)
-            session.commit()
-            session.refresh(row)
-        return row
-
-
-def reply(
-    *,
-    message_id: str,
-    user_id: int,
-    replier_ai_config_id: int,
-    content: str,
-) -> AIMessage:
-    """目标 AI 调用 ai.reply_message 时落库 + 唤醒等待方。"""
-    content = (content or "").strip()
-    if not content:
-        raise ValueError("reply content is required")
-    with Session(engine) as session:
-        row = session.exec(
-            select(AIMessage).where(
-                AIMessage.user_id == user_id,
-                AIMessage.message_id == message_id,
-            )
-        ).first()
-        if not row:
-            raise ValueError("message not found")
-        if int(row.to_ai_config_id) != int(replier_ai_config_id):
-            raise ValueError("only the receiver of this message may reply")
-        if row.status in {"replied", "failed"}:
-            raise ValueError(f"message already in terminal state: {row.status}")
-        row.reply_content = content
-        row.status = "replied"
-        row.replied_at = time.time()
-        session.add(row)
-        session.commit()
-        session.refresh(row)
-        payload = _row_to_dict(row)
-    # 落库成功后再唤醒，确保等待方读到 DB 也是最新状态。
-    resolved_waiter = _pending_replies.resolve(message_id, payload)
-    if not resolved_waiter:
-        _enqueue_unwaited_reply(payload)
-    return row
 
 
 def complete_inbound_with_assistant_reply(
@@ -311,6 +288,7 @@ def _enqueue_unwaited_reply(original: Dict[str, Any]) -> None:
         f"- 回复方 ai_config_id: {to_ai_config_id}\n\n"
         f"[回复内容]\n{reply_content}"
     )
+    parent_depth = int(original.get("cascade_depth") or 0)
     try:
         followup = send(
             user_id=user_id,
@@ -321,6 +299,8 @@ def _enqueue_unwaited_reply(original: Dict[str, Any]) -> None:
             from_session_id=str(original.get("target_session_id") or "").strip(),
             require_reply=False,
             timeout_seconds=5,
+            message_type="reply",
+            cascade_depth=parent_depth + 1,
         )
     except Exception as exc:
         print(f"[ai_message_service] enqueue unwaited reply failed: {exc}")
@@ -376,18 +356,6 @@ def pop_pending_for(
         return row
 
 
-def list_inbox(*, user_id: int, ai_config_id: int, include_resolved: bool = False) -> List[Dict[str, Any]]:
-    with Session(engine) as session:
-        stmt = select(AIMessage).where(
-            AIMessage.user_id == user_id,
-            AIMessage.to_ai_config_id == ai_config_id,
-        )
-        if not include_resolved:
-            stmt = stmt.where(AIMessage.status.in_(["pending", "delivered"]))
-        rows = session.exec(stmt.order_by(AIMessage.created_at.desc()).limit(50)).all()
-        return [_row_to_dict(r) for r in rows]
-
-
 def _row_to_dict(row: AIMessage) -> Dict[str, Any]:
     return {
         "message_id": row.message_id,
@@ -401,6 +369,8 @@ def _row_to_dict(row: AIMessage) -> Dict[str, Any]:
         "reply_content": row.reply_content,
         "require_reply": row.require_reply,
         "timeout_seconds": row.timeout_seconds,
+        "message_type": getattr(row, "message_type", "notify") or "notify",
+        "cascade_depth": int(getattr(row, "cascade_depth", 0) or 0),
         "delivered_at": row.delivered_at,
         "replied_at": row.replied_at,
         "failure_reason": row.failure_reason,
@@ -457,13 +427,6 @@ async def wait_for_reply(
 # ---------------------------------------------------------------------------
 # 目标 AI 的状态查询 / 唤醒
 # ---------------------------------------------------------------------------
-
-
-def target_has_active_run(user_id: int, to_ai_config_id: int) -> bool:
-    """判断目标 AI 是否有正在进行的 run（用于 send 前的提示，非强制）。"""
-    with Session(engine) as session:
-        row = _get_live_active_run(session, user_id, to_ai_config_id)
-        return row is not None
 
 
 def target_session_has_active_run(user_id: int, to_ai_config_id: int, session_id: str) -> bool:
@@ -570,22 +533,6 @@ def find_return_route_by_message_id(
             )
         ).first()
         return _row_to_dict(row) if row else {}
-
-
-def find_return_session_id(
-    *,
-    user_id: int,
-    current_ai_config_id: int,
-    target_ai_config_id: int,
-    current_session_id: str,
-) -> str:
-    route = find_return_route(
-        user_id=user_id,
-        current_ai_config_id=current_ai_config_id,
-        target_ai_config_id=target_ai_config_id,
-        current_session_id=current_session_id,
-    )
-    return str(route.get("from_session_id") or "").strip()
 
 
 def resolve_waiting_reply_to_message_id_from_send_message(
@@ -716,12 +663,6 @@ def _run_thread_is_alive(run_id: str) -> bool:
         return False
 
 
-def reserve_idle_session_id(message_id: str) -> str:
-    """对于目标 AI 当前空闲的情况，预先生成它即将启动的 session_id。
-    这样 send() 时就能把 target_session_id 写入消息，pop 时严格匹配。"""
-    return f"ai_message_{message_id}"
-
-
 def wake_idle_target_for_message(
     *,
     message_id: str,
@@ -784,8 +725,8 @@ def _wake_idle_target_for_message_locked(
         ai_kind = "assistant" if target_cfg.ai_role == "assistant_admin" else "core"
         from_name = str(from_cfg.name or "").strip() if from_cfg else f"AI-{msg.from_ai_config_id}"
         target_name = str(target_cfg.name or "").strip() or f"AI-{target_id}"
-        # ``send()`` 已经写好了 target_session_id（来自 reserve_idle_session_id），
-        # 这里直接复用，确保消息和 session 在同一标识下。
+        # ``send()`` 已经写好了 target_session_id；这里直接复用，
+        # 确保消息和 session 在同一标识下。
         session_id = msg.target_session_id or f"ai_message_{message_id}"
         if not msg.target_session_id:
             msg.target_session_id = session_id

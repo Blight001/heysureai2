@@ -3,9 +3,11 @@ from typing import Optional
 from sqlmodel import Field, SQLModel
 
 from .defaults import (
-    DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE,
+    DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,
+    DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
     DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
     DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
+    DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
     DEFAULT_INHERITANCE_NOTICE,
     DEFAULT_MCP_CALL_METHOD,
     DEFAULT_MCP_FORMAT_ERROR_HINT,
@@ -24,11 +26,6 @@ class User(SQLModel, table=True):
     account: str = Field(unique=True, index=True)
     hashed_password: str
     avatar: Optional[str] = None
-
-    # AI 配置信息
-    system_reply: str = Field(default="主脑·阿尔法：已收到指引...")
-    admin_token_limit: int = Field(default=2000)
-    worker_token_limit: int = Field(default=1000)
 
     # 主脑 AI 配置
     admin_api_key: str = Field(default="sk-cb40bc0b0b894934919907913e337927")
@@ -50,19 +47,15 @@ class User(SQLModel, table=True):
     default_supervision_idle_seconds: int = Field(default=25)
     default_inheritance_notice: str = Field(default=DEFAULT_INHERITANCE_NOTICE)
 
-    prompt_ai_message_inbound: str = Field(default=DEFAULT_AI_MESSAGE_INBOUND_TEMPLATE)
     prompt_ai_message_notify: str = Field(default=DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE)
+    prompt_ai_message_inquiry: str = Field(default=DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE)
+    prompt_ai_message_reply: str = Field(default=DEFAULT_AI_MESSAGE_REPLY_TEMPLATE)
+    prompt_ai_message_chitchat: str = Field(default=DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE)
     prompt_ai_message_reply_success: str = Field(default=DEFAULT_AI_MESSAGE_REPLY_SUCCESS)
     prompt_user_message_notice: str = Field(default=DEFAULT_USER_MESSAGE_NOTICE)
 
     ui_theme_mode: str = Field(default=DEFAULT_UI_THEME_MODE)
     ui_font_size: str = Field(default=DEFAULT_UI_FONT_SIZE)
-
-    # 普通 AI 配置
-    worker_api_key: str = Field(default="")
-    worker_base_url: str = Field(default="https://api.deepseek.com/chat/completions")
-    worker_model: str = Field(default="deepseek-chat")
-    worker_prompt: str = Field(default="你是一个高效的工作人员，负责执行具体的任务。")
 
 
 class UserCreate(SQLModel):
@@ -82,9 +75,6 @@ class UserRead(SQLModel):
     name: str
     account: str
     avatar: Optional[str] = None
-    system_reply: str
-    admin_token_limit: int
-    worker_token_limit: int
     admin_api_key: str
     admin_base_url: str
     admin_model: str
@@ -98,25 +88,20 @@ class UserRead(SQLModel):
     default_supervision_prompt: str
     default_supervision_idle_seconds: int
     default_inheritance_notice: str
-    prompt_ai_message_inbound: str
     prompt_ai_message_notify: str
+    prompt_ai_message_inquiry: str
+    prompt_ai_message_reply: str
+    prompt_ai_message_chitchat: str
     prompt_ai_message_reply_success: str
     prompt_user_message_notice: str
     ui_theme_mode: str
     ui_font_size: str
-    worker_api_key: str
-    worker_base_url: str
-    worker_model: str
-    worker_prompt: str
 
 
 class UserUpdate(SQLModel):
     name: Optional[str] = None
     password: Optional[str] = None
     avatar: Optional[str] = None
-    system_reply: Optional[str] = None
-    admin_token_limit: Optional[int] = None
-    worker_token_limit: Optional[int] = None
     admin_api_key: Optional[str] = None
     admin_base_url: Optional[str] = None
     admin_model: Optional[str] = None
@@ -130,16 +115,14 @@ class UserUpdate(SQLModel):
     default_supervision_prompt: Optional[str] = None
     default_supervision_idle_seconds: Optional[int] = None
     default_inheritance_notice: Optional[str] = None
-    prompt_ai_message_inbound: Optional[str] = None
     prompt_ai_message_notify: Optional[str] = None
+    prompt_ai_message_inquiry: Optional[str] = None
+    prompt_ai_message_reply: Optional[str] = None
+    prompt_ai_message_chitchat: Optional[str] = None
     prompt_ai_message_reply_success: Optional[str] = None
     prompt_user_message_notice: Optional[str] = None
     ui_theme_mode: Optional[str] = None
     ui_font_size: Optional[str] = None
-    worker_api_key: Optional[str] = None
-    worker_base_url: Optional[str] = None
-    worker_model: Optional[str] = None
-    worker_prompt: Optional[str] = None
 
 
 class Token(SQLModel):
