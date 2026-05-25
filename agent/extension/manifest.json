@@ -11,7 +11,10 @@
     "notifications",
     "contextMenus",
     "alarms",
-    "clipboardWrite"
+    "clipboardWrite",
+    "debugger",
+    "cookies",
+    "downloads"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {

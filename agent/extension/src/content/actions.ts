@@ -3,7 +3,7 @@
 // message from the background worker, and returns the JSON that browser.ts
 // forwards back to the AI / popup.
 
-import { findEl, resolveTarget, elCenter } from './dom'
+import { findEl, resolveTarget, elCenter, isVisible, textMatches, textOf, cssPath, clickLikeUser } from './dom'
 import { fxToElement, fxClickAt, fxSleep, fxDragPath, fxScrollDrag, isFxEnabled, getFxPos } from './fx'
 import { viewportContext, waitScrollSettle } from './viewport'
 
@@ -70,15 +70,49 @@ export async function doRightClick(msg: any) {
 }
 
 // ── Drag and drop ─────────────────────────────────────────────────────────────
+function dragDiagnostics(src: Element | null, dst: Element | null, msg: any) {
+  const describe = (el: Element | null) => {
+    if (!el) return null
+    const html = el as HTMLElement
+    const r = html.getBoundingClientRect()
+    const style = getComputedStyle(html)
+    return {
+      selector: cssPath(el),
+      tag: el.tagName,
+      text: textOf(el, 120),
+      draggable: html.draggable || html.getAttribute('draggable') === 'true',
+      role: html.getAttribute('role') || '',
+      visible: isVisible(el),
+      cursor: style.cursor,
+      rect: { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) },
+    }
+  }
+  return {
+    source: describe(src),
+    target: describe(dst),
+    requested: {
+      selector: msg.selector, text: msg.text, x: msg.x, y: msg.y,
+      toSelector: msg.toSelector, toText: msg.toText, toX: msg.toX, toY: msg.toY,
+    },
+  }
+}
+
 export async function doDrag(msg: any) {
   const src = resolveTarget({ selector: msg.selector, text: msg.text, x: msg.x, y: msg.y })
   const dst = resolveTarget({ selector: msg.toSelector, text: msg.toText, x: msg.toX, y: msg.toY })
-  if (!src.el && (msg.x === undefined)) throw new Error('Drag source not found')
-  if (!dst.el && (msg.toX === undefined)) throw new Error('Drag target not found')
+  if (!src.el && (msg.x === undefined)) {
+    const diag = dragDiagnostics(src.el, dst.el, msg)
+    throw new Error(`Drag source not found. diagnostics=${JSON.stringify(diag)}`)
+  }
+  if (!dst.el && (msg.toX === undefined)) {
+    const diag = dragDiagnostics(src.el, dst.el, msg)
+    throw new Error(`Drag target not found. diagnostics=${JSON.stringify(diag)}`)
+  }
   if (src.el) src.el.scrollIntoView({ block: 'center', behavior: 'smooth' })
   if (isFxEnabled()) await fxSleep(200)
   const s = src.el ? elCenter(src.el) : { x: src.x, y: src.y }
   const d = dst.el ? elCenter(dst.el) : { x: dst.x, y: dst.y }
+  const before = src.el ? (src.el as HTMLElement).getBoundingClientRect() : null
   if (isFxEnabled()) await fxDragPath(s.x, s.y, d.x, d.y)
 
   const dt = (() => { try { return new DataTransfer() } catch { return null } })()
@@ -104,7 +138,19 @@ export async function doDrag(msg: any) {
   mk('dragend', d.x, d.y, src.el)
   mk('pointerup', d.x, d.y, dst.el || src.el)
   mk('mouseup', d.x, d.y, dst.el || src.el)
-  return { success: true, from: { x: Math.round(s.x), y: Math.round(s.y) }, to: { x: Math.round(d.x), y: Math.round(d.y) } }
+  await fxSleep(80)
+  const after = src.el ? (src.el as HTMLElement).getBoundingClientRect() : null
+  const moved = before && after
+    ? Math.abs(before.left - after.left) > 1 || Math.abs(before.top - after.top) > 1
+    : false
+  return {
+    success: true,
+    moved,
+    warning: moved ? '' : 'Drag events were dispatched, but the source element did not visibly move. The page may require native browser/OS drag support or a framework-specific gesture.',
+    from: { x: Math.round(s.x), y: Math.round(s.y) },
+    to: { x: Math.round(d.x), y: Math.round(d.y) },
+    diagnostics: dragDiagnostics(src.el, dst.el, msg),
+  }
 }
 
 // ── Press key ─────────────────────────────────────────────────────────────────
@@ -165,18 +211,29 @@ export async function doType(msg: any) {
 
 // ── Get content ───────────────────────────────────────────────────────────
 export function getContent(msg: any) {
-  const root = msg.selector ? document.querySelector(msg.selector) : document.body
+  const root = (msg.selector ? document.querySelector(String(msg.selector)) : document.body) as HTMLElement | null
   if (!root) throw new Error(`Element not found: ${msg.selector}`)
 
   const text = (root as HTMLElement).innerText?.slice(0, 50000) || ''
+  const links = Array.from(root.querySelectorAll<HTMLAnchorElement>('a[href]'))
+    .slice(0, 50)
+    .map(a => ({
+      tag: 'A',
+      selector: cssPath(a),
+      text: textOf(a, 100),
+      href: (a as HTMLAnchorElement).href,
+      attributes: { href: (a as HTMLAnchorElement).href },
+    }))
   const result: any = {
     success: true,
+    source: 'browser_get_content',
+    selector: msg.selector || 'body',
     url:   location.href,
     title: document.title,
     text,
-    links: Array.from(document.querySelectorAll('a[href]'))
-      .slice(0, 50)
-      .map(a => ({ text: (a as HTMLElement).innerText?.trim().slice(0, 100), href: (a as HTMLAnchorElement).href })),
+    content: { text, html: msg.includeHtml ? (root as HTMLElement).innerHTML?.slice(0, 100000) : undefined },
+    links,
+    items: links,
     meta: {
       description: document.querySelector('meta[name="description"]')?.getAttribute('content') || '',
       keywords:    document.querySelector('meta[name="keywords"]')?.getAttribute('content') || '',
@@ -187,9 +244,46 @@ export function getContent(msg: any) {
 }
 
 // ── Scroll ────────────────────────────────────────────────────────────────
+function canScroll(el: HTMLElement, direction: string) {
+  const max = el.scrollHeight - el.clientHeight
+  if (max <= 2) return false
+  if (direction === 'up') return el.scrollTop > 2
+  if (direction === 'down') return el.scrollTop < max - 2
+  return true
+}
+
+function scrollableElement(direction: string): HTMLElement | null {
+  const candidates = Array.from(document.querySelectorAll<HTMLElement>('*'))
+    .filter(el => {
+      const style = getComputedStyle(el)
+      const overflowY = style.overflowY
+      if (!/(auto|scroll|overlay)/.test(overflowY)) return false
+      const rect = el.getBoundingClientRect()
+      if (rect.width <= 0 || rect.height <= 0) return false
+      if (rect.bottom <= 0 || rect.top >= window.innerHeight) return false
+      return canScroll(el, direction)
+    })
+    .sort((a, b) => {
+      const ar = a.getBoundingClientRect()
+      const br = b.getBoundingClientRect()
+      return (br.width * br.height) - (ar.width * ar.height)
+    })
+  return candidates[0] || null
+}
+
+function elementLabel(el: Element | null) {
+  if (!el) return 'window'
+  const html = el as HTMLElement
+  if (html.id) return `#${html.id}`
+  const cls = typeof html.className === 'string' ? html.className.trim().split(/\s+/)[0] : ''
+  return cls ? `${html.tagName.toLowerCase()}.${cls}` : html.tagName.toLowerCase()
+}
+
 export async function doScroll(msg: any) {
   const amount = Number(msg.amount || 400)
   const beforeY = Math.round(window.scrollY)
+  let target: HTMLElement | null = null
+  let beforeElementY = 0
 
   if (msg.selector) {
     const el = document.querySelector(msg.selector)
@@ -206,13 +300,33 @@ export async function doScroll(msg: any) {
   }
   fxScrollDrag(msg.direction, amount)   // visual "grab & pull" feedback
   await waitScrollSettle()
-  const ctx = viewportContext()
-  const scrolledBy = ctx.scrollY - beforeY
+
+  let ctx = viewportContext()
+  let pageScrolledBy = ctx.scrollY - beforeY
+  let elementScrolledBy = 0
+
+  if (!msg.selector && pageScrolledBy === 0 && !ctx.atTop && !ctx.atBottom) {
+    const delta = msg.direction === 'up' ? -amount : amount
+    target = scrollableElement(msg.direction)
+    if (target) {
+      beforeElementY = target.scrollTop
+      target.scrollBy({ top: delta, behavior: 'auto' })
+      elementScrolledBy = Math.round(target.scrollTop - beforeElementY)
+      await waitScrollSettle(250)
+      ctx = viewportContext()
+      pageScrolledBy = ctx.scrollY - beforeY
+    }
+  }
+
+  const scrolledBy = pageScrolledBy || elementScrolledBy
   return {
     success: true,
     direction: msg.direction,
     requestedAmount: amount,
     scrolledBy,                          // actual pixels moved (0 = nothing happened)
+    pageScrolledBy,
+    elementScrolledBy,
+    scrollTarget: msg.selector ? msg.selector : elementLabel(target),
     reachedEdge: ctx.atTop ? 'top' : (ctx.atBottom ? 'bottom' : null),
     ...ctx,
   }
@@ -254,15 +368,160 @@ export function doExtract(msg: any) {
   if (!selector) throw new Error('selector is required')
   const els = Array.from(document.querySelectorAll(selector)).slice(0, limit)
   const items = els.map(el => {
-    const item: any = { text: (el as HTMLElement).innerText?.trim().slice(0, 500) }
+    const collected: Record<string, string> = {}
     const attrs: string[] = attributes || ['href', 'src', 'id', 'class', 'value', 'data-id', 'name']
     for (const attr of attrs) {
       const v = el.getAttribute(attr)
-      if (v !== null) item[attr] = v
+      if (v !== null) collected[attr] = v
     }
+    const item: any = {
+      tag: el.tagName,
+      selector: cssPath(el),
+      text: textOf(el, 500),
+      attributes: collected,
+    }
+    for (const [k, v] of Object.entries(collected)) item[k] = v
     return item
   })
-  return { success: true, selector, count: items.length, items }
+  return {
+    success: true,
+    source: 'browser_extract',
+    url: location.href,
+    title: document.title,
+    selector,
+    count: items.length,
+    items,
+  }
+}
+
+// ── DOM snapshot / frames / performance ───────────────────────────────────
+function attrMap(el: Element, names: string[]) {
+  const out: Record<string, string> = {}
+  for (const name of names) {
+    const v = el.getAttribute(name)
+    if (v !== null) out[name] = v
+  }
+  return out
+}
+
+function snapshotNode(el: Element, depth: number, maxDepth: number, state: { count: number; maxNodes: number }): any {
+  state.count++
+  const html = el as HTMLElement
+  const children = depth >= maxDepth || state.count >= state.maxNodes
+    ? []
+    : Array.from(el.children)
+      .filter(child => isVisible(child) || ['SCRIPT', 'STYLE', 'META', 'LINK'].includes(child.tagName) === false)
+      .slice(0, Math.max(0, state.maxNodes - state.count))
+      .map(child => snapshotNode(child, depth + 1, maxDepth, state))
+      .filter(Boolean)
+  return {
+    tag: el.tagName.toLowerCase(),
+    selector: cssPath(el),
+    text: textOf(el, 160),
+    visible: isVisible(el),
+    role: html.getAttribute('role') || '',
+    attrs: attrMap(el, ['id', 'class', 'name', 'type', 'href', 'src', 'alt', 'title', 'aria-label', 'placeholder']),
+    children,
+  }
+}
+
+export function domSnapshot(msg: any) {
+  const root = (msg.selector ? document.querySelector(String(msg.selector)) : document.body) as HTMLElement | null
+  if (!root) throw new Error(`Element not found: ${msg.selector}`)
+  const maxDepth = Math.min(Math.max(Number(msg.max_depth ?? 4), 0), 8)
+  const maxNodes = Math.min(Math.max(Number(msg.max_nodes ?? 120), 1), 1000)
+  const state = { count: 0, maxNodes }
+  const tree = snapshotNode(root, 0, maxDepth, state)
+  return {
+    success: true,
+    source: 'browser_dom_snapshot',
+    url: location.href,
+    title: document.title,
+    selector: msg.selector || 'body',
+    maxDepth,
+    maxNodes,
+    truncated: state.count >= maxNodes,
+    tree,
+  }
+}
+
+export function iframeList() {
+  const frames = Array.from(document.querySelectorAll('iframe,frame')).map(frame => {
+    const el = frame as HTMLIFrameElement
+    const r = el.getBoundingClientRect()
+    let accessible = false
+    let title = ''
+    try {
+      accessible = !!el.contentDocument
+      title = el.contentDocument?.title || ''
+    } catch { accessible = false }
+    return {
+      selector: cssPath(el),
+      src: el.src || el.getAttribute('src') || '',
+      name: el.name || el.getAttribute('name') || '',
+      title,
+      accessible,
+      visible: isVisible(el),
+      rect: { x: Math.round(r.left), y: Math.round(r.top), width: Math.round(r.width), height: Math.round(r.height) },
+    }
+  })
+  return { success: true, url: location.href, count: frames.length, frames }
+}
+
+export function performanceInfo() {
+  const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+  const resources = performance.getEntriesByType('resource') as PerformanceResourceTiming[]
+  const byType: Record<string, number> = {}
+  for (const r of resources) byType[r.initiatorType || 'other'] = (byType[r.initiatorType || 'other'] || 0) + 1
+  return {
+    success: true,
+    url: location.href,
+    title: document.title,
+    navigation: nav ? {
+      type: nav.type,
+      domContentLoadedMs: Math.round(nav.domContentLoadedEventEnd - nav.startTime),
+      loadMs: Math.round(nav.loadEventEnd - nav.startTime),
+      transferSize: nav.transferSize,
+      encodedBodySize: nav.encodedBodySize,
+      decodedBodySize: nav.decodedBodySize,
+    } : null,
+    resources: {
+      count: resources.length,
+      byType,
+      slowest: resources
+        .slice()
+        .sort((a, b) => b.duration - a.duration)
+        .slice(0, 20)
+        .map(r => ({
+          name: r.name,
+          type: r.initiatorType,
+          durationMs: Math.round(r.duration),
+          transferSize: r.transferSize,
+          encodedBodySize: r.encodedBodySize,
+        })),
+    },
+  }
+}
+
+export function fileUpload(msg: any) {
+  const input = document.querySelector(String(msg.selector || 'input[type="file"]')) as HTMLInputElement | null
+  if (!input || input.type !== 'file') throw new Error(`File input not found: ${msg.selector || 'input[type="file"]'}`)
+  const files = Array.isArray(msg.files) ? msg.files : []
+  if (!files.length) throw new Error('files is required. Use [{name, content, type?, encoding?}]. Local filesystem paths cannot be read by a content script.')
+  const dt = new DataTransfer()
+  for (const f of files) {
+    const name = String(f.name || 'upload.txt')
+    const type = String(f.type || 'application/octet-stream')
+    const raw = String(f.content || '')
+    const data = f.encoding === 'base64'
+      ? Uint8Array.from(atob(raw), c => c.charCodeAt(0))
+      : raw
+    dt.items.add(new File([data], name, { type }))
+  }
+  input.files = dt.files
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  return { success: true, selector: cssPath(input), count: input.files?.length || 0, files: Array.from(input.files || []).map(f => ({ name: f.name, size: f.size, type: f.type })) }
 }
 
 // ── Find text ─────────────────────────────────────────────────────────────
@@ -289,41 +548,199 @@ export function findText(msg: any) {
 }
 
 // ── Fill form ─────────────────────────────────────────────────────────────
+type FillField = {
+  selector?: string
+  name?: string
+  label?: string
+  placeholder?: string
+  text?: string
+  value?: any
+  action?: 'type' | 'set' | 'select' | 'check' | 'uncheck' | 'click'
+}
+
+function cssEscape(value: string) {
+  const esc = (window as any).CSS?.escape
+  return esc ? esc(value) : value.replace(/["\\]/g, '\\$&')
+}
+
+function normalizeFields(raw: any): FillField[] {
+  if (Array.isArray(raw)) return raw
+  if (raw && typeof raw === 'object') {
+    return Object.entries(raw).map(([key, value]) => (
+      /^[.#[]|^[a-z]+[.#[:\s>+~]/i.test(key)
+        ? { selector: key, value }
+        : { name: key, value }
+    ))
+  }
+  return []
+}
+
+function fieldByLabel(text: string): HTMLElement | null {
+  const target = text.trim().toLowerCase()
+  const labels = Array.from(document.querySelectorAll('label')) as HTMLLabelElement[]
+  for (const label of labels) {
+    const labelText = (label.innerText || label.textContent || '').trim().toLowerCase()
+    if (!labelText || !labelText.includes(target)) continue
+    if (label.htmlFor) {
+      const byFor = document.getElementById(label.htmlFor)
+      if (byFor) return byFor as HTMLElement
+    }
+    const nested = label.querySelector('input, textarea, select, [contenteditable="true"]')
+    if (nested) return nested as HTMLElement
+  }
+  return null
+}
+
+function resolveField(field: FillField): HTMLElement | null {
+  if (field.selector) {
+    const bySelector = document.querySelector(field.selector)
+    if (bySelector) return bySelector as HTMLElement
+  }
+  if (field.name) {
+    const name = cssEscape(String(field.name))
+    const byName = document.querySelector(`[name="${name}"], #${name}`)
+    if (byName) return byName as HTMLElement
+  }
+  if (field.placeholder) {
+    const target = String(field.placeholder).toLowerCase()
+    const byPlaceholder = Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input[placeholder], textarea[placeholder]'))
+      .find(el => (el.placeholder || '').toLowerCase().includes(target))
+    if (byPlaceholder) return byPlaceholder
+  }
+  if (field.label || field.text) return fieldByLabel(String(field.label || field.text))
+  return null
+}
+
+function setNativeValue(el: HTMLElement, field: FillField) {
+  const value = field.value
+  const action = field.action || 'set'
+
+  el.focus?.()
+
+  if (action === 'click') {
+    el.click()
+    return
+  }
+
+  if (el instanceof HTMLSelectElement) {
+    const wanted = String(value ?? '')
+    const opt = Array.from(el.options).find(o => o.value === wanted || o.text.trim() === wanted)
+    if (!opt) throw new Error(`Option not found: ${wanted}`)
+    el.value = opt.value
+  } else if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
+    if (action === 'uncheck') el.checked = false
+    else if (action === 'check') el.checked = true
+    else el.checked = Boolean(value)
+  } else if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    el.value = String(value ?? '')
+  } else if (el.isContentEditable) {
+    el.textContent = String(value ?? '')
+  } else {
+    throw new Error(`Unsupported form element: ${el.tagName}`)
+  }
+
+  el.dispatchEvent(new Event('input',  { bubbles: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
 export function fillForm(msg: any) {
-  const fields: Array<{ selector: string; value: string }> = msg.fields || []
-  const filled: string[] = []
+  const fields = normalizeFields(msg.fields)
+  const filled: any[] = []
   const errors: string[] = []
 
+  if (!fields.length) {
+    return {
+      success: false,
+      filled,
+      errors: ['fields must be an array like [{ selector, value }] or an object map like { "input[name=email]": "a@b.com" }'],
+    }
+  }
+
   for (const field of fields) {
-    const el = document.querySelector(field.selector) as HTMLInputElement | null
-    if (!el) { errors.push(`Not found: ${field.selector}`); continue }
-    el.focus()
-    el.value = field.value
-    el.dispatchEvent(new Event('input',  { bubbles: true }))
-    el.dispatchEvent(new Event('change', { bubbles: true }))
-    filled.push(field.selector)
+    try {
+      const el = resolveField(field)
+      if (!el) { errors.push(`Not found: ${field.selector || field.name || field.label || field.placeholder || field.text || '[unknown]'}`); continue }
+      setNativeValue(el, field)
+      filled.push({
+        target: field.selector || field.name || field.label || field.placeholder || field.text || elementLabel(el),
+        resolved: elementLabel(el),
+        tag: el.tagName,
+        type: (el as HTMLInputElement).type || undefined,
+        action: field.action || 'set',
+      })
+    } catch (err: any) {
+      errors.push(`${field.selector || field.name || field.label || field.placeholder || field.text || '[unknown]'}: ${err.message || String(err)}`)
+    }
   }
 
   if (msg.submitSelector) {
     const btn = document.querySelector(msg.submitSelector) as HTMLElement | null
     if (btn) btn.click()
+    else errors.push(`Submit not found: ${msg.submitSelector}`)
   }
 
   return { success: errors.length === 0, filled, errors }
 }
 
 // ── Select dropdown ────────────────────────────────────────────────────────
-export function doSelect(msg: any) {
-  const el = document.querySelector(msg.selector) as HTMLSelectElement | null
-  if (!el || el.tagName !== 'SELECT') throw new Error(`<select> not found: ${msg.selector}`)
+function findCustomOption(value: string, root?: Element | null): HTMLElement | null {
+  const query = [
+    '[role="option"]',
+    '[role="menuitem"]',
+    '[role="menuitemradio"]',
+    '[role="listitem"]',
+    '[data-value]',
+    'li',
+    'button',
+    'a',
+    'div',
+    'span',
+  ].join(',')
+  const scope = root || document
+  const candidates = Array.from(scope.querySelectorAll(query)) as HTMLElement[]
+  return candidates.find(el => {
+    if (!isVisible(el)) return false
+    const dataValue = el.getAttribute('data-value') || el.getAttribute('value') || ''
+    return dataValue === value || textMatches(el, value, true)
+  }) || candidates.find(el => isVisible(el) && textMatches(el, value, false)) || null
+}
 
+export async function doSelect(msg: any) {
+  const el = document.querySelector(msg.selector) as HTMLElement | null
+  if (!el) throw new Error(`Select target not found: ${msg.selector}`)
+
+  if (msg.value === undefined || msg.value === null || String(msg.value) === '') throw new Error('value is required')
   const value = String(msg.value)
-  // Try by value first, then by visible text
-  const opt = Array.from(el.options).find(o => o.value === value || o.text.trim() === value)
-  if (!opt) throw new Error(`Option "${value}" not found in ${msg.selector}`)
-  el.value = opt.value
-  el.dispatchEvent(new Event('change', { bubbles: true }))
-  return { success: true, selector: msg.selector, selected: opt.text }
+  if (el instanceof HTMLSelectElement) {
+    const opt = Array.from(el.options).find(o => o.value === value || o.text.trim() === value)
+    if (!opt) throw new Error(`Option "${value}" not found in ${msg.selector}`)
+    el.value = opt.value
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+    return { success: true, selector: msg.selector, selected: opt.text, value: opt.value, mode: 'native' }
+  }
+
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  if (isFxEnabled()) { await fxSleep(160); await fxToElement(el) }
+  clickLikeUser(el)
+  await fxSleep(250)
+
+  const expanded = el.getAttribute('aria-controls')
+  const popup = expanded ? document.getElementById(expanded) : null
+  const option = findCustomOption(value, popup) || findCustomOption(value)
+  if (!option) {
+    throw new Error(`Custom dropdown option "${value}" not found after opening ${msg.selector}`)
+  }
+  if (isFxEnabled()) await fxToElement(option)
+  clickLikeUser(option)
+  return {
+    success: true,
+    selector: msg.selector,
+    selected: textOf(option, 120) || value,
+    value,
+    mode: 'custom',
+    optionSelector: cssPath(option),
+  }
 }
 
 // ── Storage ────────────────────────────────────────────────────────────────
@@ -331,6 +748,35 @@ export function storageGet(msg: any) {
   const store = msg.storageType === 'session' ? sessionStorage : localStorage
   const value = store.getItem(msg.key)
   return { success: true, key: msg.key, value, found: value !== null }
+}
+
+export function storageSet(msg: any) {
+  const store = msg.storageType === 'session' ? sessionStorage : localStorage
+  if (!msg.key) throw new Error('key is required')
+  store.setItem(String(msg.key), String(msg.value ?? ''))
+  return { success: true, key: String(msg.key), type: msg.storageType === 'session' ? 'session' : 'local' }
+}
+
+export function storageRemove(msg: any) {
+  const store = msg.storageType === 'session' ? sessionStorage : localStorage
+  if (!msg.key) throw new Error('key is required')
+  store.removeItem(String(msg.key))
+  return { success: true, key: String(msg.key), type: msg.storageType === 'session' ? 'session' : 'local' }
+}
+
+export function storageList(msg: any) {
+  const store = msg.storageType === 'session' ? sessionStorage : localStorage
+  const prefix = String(msg.prefix || '')
+  const keys = Array.from({ length: store.length }, (_, i) => store.key(i)).filter(Boolean) as string[]
+  const filtered = prefix ? keys.filter(k => k.startsWith(prefix)) : keys
+  const limit = Math.min(Number(msg.limit || 100), 500)
+  return {
+    success: true,
+    type: msg.storageType === 'session' ? 'session' : 'local',
+    count: filtered.length,
+    keys: filtered.slice(0, limit),
+    items: msg.include_values ? filtered.slice(0, limit).map(key => ({ key, value: store.getItem(key) })) : undefined,
+  }
 }
 
 // ── Hover ─────────────────────────────────────────────────────────────────

@@ -3524,7 +3524,7 @@
     },
     {
       name: "browser_screenshot",
-      description: "Capture a screenshot of the current tab. Returns a base64 PNG data URL.",
+      description: "Capture a screenshot of the current tab. Returns a base64 PNG data URL, or a readable disabled/permission error if screenshots are not allowed.",
       input_schema: { type: "object", properties: {} }
     },
     {
@@ -3556,12 +3556,25 @@
     },
     {
       name: "browser_get_content",
-      description: "Get the visible text content, URL, title, and meta info of the current page.",
+      description: "Get the visible text content, URL, title, links, meta info, and normalized items from the current page.",
       input_schema: {
         type: "object",
         properties: {
           selector: { type: "string", description: "Limit content to this CSS selector (default: body)" },
           include_html: { type: "boolean", description: "Also return raw HTML (truncated)" }
+        }
+      }
+    },
+    {
+      name: "browser_dom_snapshot",
+      description: "Return a structured DOM tree snapshot as a text-friendly alternative when screenshots are disabled or unavailable.",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "Root selector (default body)" },
+          max_depth: { type: "number", description: "Maximum DOM depth (default 4, max 8)" },
+          max_nodes: { type: "number", description: "Maximum nodes to return (default 120, max 1000)" },
+          trace: { type: "boolean", description: "Return structured error trace instead of throwing" }
         }
       }
     },
@@ -3607,18 +3620,21 @@
     },
     {
       name: "browser_evaluate",
-      description: "Execute arbitrary JavaScript in the page context and return the result.",
+      description: "Execute arbitrary JavaScript in the page context and return the result. Uses Chrome DevTools Protocol when available so it works on CSP-restricted pages.",
       input_schema: {
         type: "object",
         properties: {
-          code: { type: "string", description: "JavaScript expression or statements to execute" }
-        },
-        required: ["code"]
+          code: { type: "string", description: "JavaScript expression or statements to execute" },
+          function: { type: "string", description: "Alias for code, kept for compatibility" },
+          fn: { type: "string", description: "Alias for code" },
+          expression: { type: "string", description: "Alias for code" },
+          trace: { type: "boolean", description: "Return structured {error, code, suggestion, trace} on failure" }
+        }
       }
     },
     {
       name: "browser_extract",
-      description: "Extract structured data (text, href, src, etc.) from elements matching a selector.",
+      description: "Extract structured data from elements matching a selector. Returns normalized items with tag, selector, text, attributes, and common attribute aliases.",
       input_schema: {
         type: "object",
         properties: {
@@ -3667,17 +3683,23 @@
     },
     {
       name: "browser_fill_form",
-      description: "Fill multiple form fields in one call.",
+      description: "Fill multiple form fields in one call. Fields can target controls by selector, name, label, placeholder, or an object map.",
       input_schema: {
         type: "object",
         properties: {
           fields: {
             type: "array",
-            description: "List of {selector, value} pairs to fill",
+            description: 'List of fields. Examples: [{selector:"input[name=email]", value:"me@example.com"}, {label:"Password", value:"secret"}, {selector:"#remember", action:"check"}]. Object map form is also accepted by the runtime.',
             items: {
               type: "object",
-              properties: { selector: { type: "string" }, value: { type: "string" } },
-              required: ["selector", "value"]
+              properties: {
+                selector: { type: "string", description: "CSS selector for the input/select/textarea" },
+                name: { type: "string", description: "Form control name or id fallback" },
+                label: { type: "string", description: "Visible label text near the field" },
+                placeholder: { type: "string", description: "Placeholder text to match" },
+                value: { type: ["string", "number", "boolean"], description: "Value to set" },
+                action: { type: "string", enum: ["set", "type", "select", "check", "uncheck", "click"], description: "How to apply the value (default set)" }
+              }
             }
           },
           submit_selector: { type: "string", description: "CSS selector of submit button to click after filling" }
@@ -3687,14 +3709,127 @@
     },
     {
       name: "browser_select",
-      description: "Select an option in a <select> dropdown.",
+      description: "Select an option in a native <select> dropdown or a common custom dropdown/listbox by clicking the control and matching option text/value.",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "CSS selector of the <select> element" },
-          value: { type: "string", description: "Option value or visible text to select" }
+          selector: { type: "string", description: "CSS selector of the select/custom dropdown control" },
+          value: { type: "string", description: "Option value or visible text to select" },
+          text: { type: "string", description: "Alias for value" },
+          option_text: { type: "string", description: "Alias for value" }
         },
-        required: ["selector", "value"]
+        required: ["selector"]
+      }
+    },
+    {
+      name: "browser_iframe_list",
+      description: "List iframe/frame elements on the current page, including src/name/title/accessibility and viewport rect.",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_performance",
+      description: "Read page performance metrics and slow resources from PerformanceNavigationTiming and ResourceTiming.",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_network_log",
+      description: "Return passive resource timing entries as a lightweight network log. This is not active request interception.",
+      input_schema: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "Maximum request/resource entries to return (default 20)" }
+        }
+      }
+    },
+    {
+      name: "browser_file_upload",
+      description: "Populate an <input type=file> using in-memory file contents. Local filesystem paths cannot be read by the extension.",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "CSS selector of file input (default input[type=file])" },
+          files: {
+            type: "array",
+            description: 'Files to synthesize, e.g. [{name:"a.txt", content:"hello", type:"text/plain"}] or encoding:"base64"',
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                content: { type: "string" },
+                type: { type: "string" },
+                encoding: { type: "string", enum: ["text", "base64"] }
+              },
+              required: ["name", "content"]
+            }
+          }
+        },
+        required: ["files"]
+      }
+    },
+    {
+      name: "browser_download",
+      description: "Start a browser download from a URL using chrome.downloads.",
+      input_schema: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "URL to download" },
+          filename: { type: "string", description: "Optional relative filename under the downloads folder" },
+          save_as: { type: "boolean", description: "Show Save As dialog" }
+        },
+        required: ["url"]
+      }
+    },
+    {
+      name: "browser_cookie_list",
+      description: "List cookies for the active tab URL or a given domain.",
+      input_schema: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Cookie URL (default active tab URL)" },
+          domain: { type: "string", description: "Optional domain filter" }
+        }
+      }
+    },
+    {
+      name: "browser_cookie_get",
+      description: "Get one cookie by name for the active tab URL or a provided URL.",
+      input_schema: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Cookie URL (default active tab URL)" },
+          name: { type: "string", description: "Cookie name" }
+        },
+        required: ["name"]
+      }
+    },
+    {
+      name: "browser_cookie_set",
+      description: "Set one cookie for the active tab URL or a provided URL.",
+      input_schema: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Cookie URL (default active tab URL)" },
+          name: { type: "string", description: "Cookie name" },
+          value: { type: "string", description: "Cookie value" },
+          domain: { type: "string" },
+          path: { type: "string" },
+          secure: { type: "boolean" },
+          http_only: { type: "boolean" },
+          expiration_date: { type: "number", description: "Unix seconds" }
+        },
+        required: ["name"]
+      }
+    },
+    {
+      name: "browser_cookie_delete",
+      description: "Delete one cookie by name for the active tab URL or a provided URL.",
+      input_schema: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Cookie URL (default active tab URL)" },
+          name: { type: "string", description: "Cookie name" }
+        },
+        required: ["name"]
       }
     },
     {
@@ -3751,6 +3886,99 @@
       }
     },
     {
+      name: "browser_storage_set",
+      description: "Set a key in the page localStorage or sessionStorage.",
+      input_schema: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: "Storage key" },
+          value: { type: "string", description: "Value to store" },
+          type: { type: "string", enum: ["local", "session"], description: "Storage type (default: local)" }
+        },
+        required: ["key"]
+      }
+    },
+    {
+      name: "browser_storage_remove",
+      description: "Remove a key from the page localStorage or sessionStorage.",
+      input_schema: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: "Storage key" },
+          type: { type: "string", enum: ["local", "session"], description: "Storage type (default: local)" }
+        },
+        required: ["key"]
+      }
+    },
+    {
+      name: "browser_storage_list",
+      description: "List keys from the page localStorage or sessionStorage, optionally including values.",
+      input_schema: {
+        type: "object",
+        properties: {
+          prefix: { type: "string", description: "Optional key prefix filter" },
+          include_values: { type: "boolean", description: "Include values in the response" },
+          limit: { type: "number", description: "Maximum keys/items (default 100)" },
+          type: { type: "string", enum: ["local", "session"], description: "Storage type (default: local)" }
+        }
+      }
+    },
+    {
+      name: "browser_session_save",
+      description: "Save a lightweight browser context snapshot: current URL/title plus localStorage/sessionStorage for the page.",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Optional session id" },
+          name: { type: "string", description: "Friendly session name" }
+        }
+      }
+    },
+    {
+      name: "browser_session_list",
+      description: "List saved lightweight browser context snapshots.",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_session_restore",
+      description: "Restore a saved lightweight browser context snapshot by navigating to its URL and restoring storage.",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Session id" },
+          name: { type: "string", description: "Session name" },
+          new_tab: { type: "boolean", description: "Restore into a new tab" }
+        }
+      }
+    },
+    {
+      name: "browser_session_delete",
+      description: "Delete a saved lightweight browser context snapshot.",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Session id" },
+          name: { type: "string", description: "Session name" }
+        }
+      }
+    },
+    {
+      name: "browser_profile_info",
+      description: "Return the current extension logical profile marker. This does not switch Chrome user profiles.",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_profile_set",
+      description: "Set an extension logical profile marker for grouping state. Chrome user-profile switching is not available to extensions.",
+      input_schema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Logical profile name" },
+          profile: { type: "string", description: "Alias for name" }
+        }
+      }
+    },
+    {
       name: "browser_hover",
       description: "Hover the mouse over an element to reveal tooltips or dropdowns.",
       input_schema: {
@@ -3792,7 +4020,7 @@
     },
     {
       name: "browser_drag",
-      description: "Drag from a source element/point and drop onto a target element/point. Fires both HTML5 drag-and-drop and pointer events, so it works with most draggable UIs (sliders, sortable lists, file drop zones).",
+      description: "Drag from a source element/point and drop onto a target element/point. Fires HTML5, pointer, and mouse events, and returns diagnostics showing whether the source visibly moved.",
       input_schema: {
         type: "object",
         properties: {
@@ -3841,7 +4069,7 @@
     },
     {
       name: "card_save",
-      description: "Save a sequence of browser steps as a reusable memory card. Each step is { tool, args, note } where note (\u5907\u6CE8) explains the step in plain language. If a card with the same name exists, mode controls behavior: replace (default), merge (append steps), or new (force a new card).",
+      description: "Save a sequence of browser steps as a reusable memory card. Steps support args templates like {{name}}, optional if conditions, save_as variables, and var_set pseudo steps.",
       input_schema: {
         type: "object",
         properties: {
@@ -3856,7 +4084,9 @@
               properties: {
                 tool: { type: "string", description: "A browser_* tool name, e.g. browser_navigate" },
                 args: { type: "object", description: "Arguments for that tool" },
-                note: { type: "string", description: "\u5907\u6CE8\uFF1Aplain-language description of this step" }
+                note: { type: "string", description: "\u5907\u6CE8\uFF1Aplain-language description of this step" },
+                if: { type: ["string", "object", "boolean"], description: 'Optional condition, e.g. "item.enabled" or {var:"last.success", equals:true}' },
+                save_as: { type: "string", description: "Save this step result into a variable name" }
               },
               required: ["tool"]
             }
@@ -3883,12 +4113,61 @@
     },
     {
       name: "card_run",
-      description: "Run a saved card by id or name. Executes its steps in order and returns a per-step result list; on failure it returns failedStep with the index, note and error so you can diagnose and fix it (with card_update_step) then re-run.",
+      description: "Run a saved card by id or name. Supports variables for {{name}} templates and conditional steps.",
       input_schema: {
         type: "object",
         properties: {
           id: { type: "string", description: "Card id" },
-          name: { type: "string", description: "Card name (used if id omitted)" }
+          name: { type: "string", description: "Card name (used if id omitted)" },
+          variables: { type: "object", description: "Variables available to step templates and conditions" },
+          vars: { type: "object", description: "Alias for variables" }
+        }
+      }
+    },
+    {
+      name: "card_run_batch",
+      description: "Run a saved card once per item. Each run receives variables {item, index, ...variables}.",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Card id" },
+          name: { type: "string", description: "Card name (used if id omitted)" },
+          items: { type: "array", description: "Batch items" },
+          variables: { type: "object", description: "Shared variables for every run" },
+          stop_on_error: { type: "boolean", description: "Stop at first failed item (default true)" }
+        },
+        required: ["items"]
+      }
+    },
+    {
+      name: "card_schedule",
+      description: 'Schedule a card with interval_minutes, run_at, or simple cron like "*/15 * * * *". Uses Chrome alarms.',
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Card id" },
+          name: { type: "string", description: "Card name (used if id omitted)" },
+          schedule_id: { type: "string", description: "Optional schedule id" },
+          interval_minutes: { type: "number", description: "Recurring interval" },
+          run_at: { type: "string", description: "One-shot ISO datetime" },
+          cron: { type: "string", description: "Only simple every-N-minutes syntax is supported, e.g. */15 * * * *" },
+          variables: { type: "object", description: "Variables passed to the scheduled run" }
+        }
+      }
+    },
+    {
+      name: "card_schedule_list",
+      description: "List scheduled card runs.",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "card_schedule_delete",
+      description: "Delete a scheduled card run.",
+      input_schema: {
+        type: "object",
+        properties: {
+          schedule_id: { type: "string", description: "Schedule id" },
+          id: { type: "string", description: "Alias for schedule_id" }
         }
       }
     },
@@ -3916,15 +4195,47 @@
   async function contentMsg(tabId, msg) {
     try {
       const res = await chrome.tabs.sendMessage(tabId, msg);
-      if (res?.error)
-        throw new Error(res.error);
+      if (res?.error) {
+        const detail = typeof res.error === "object" ? res.error : { message: String(res.error), code: "CONTENT_ACTION_FAILED" };
+        const err = new Error(detail.message || "Content action failed");
+        err.code = detail.code || "CONTENT_ACTION_FAILED";
+        err.suggestion = detail.suggestion;
+        err.trace = res.trace;
+        throw err;
+      }
       return res;
     } catch (err) {
       if (err.message?.includes("Could not establish connection")) {
-        throw new Error("Content script unavailable on this page (try a normal web page, not chrome://).");
+        const e = new Error("Content script unavailable on this page (try a normal web page, not chrome://).");
+        e.code = "CONTENT_SCRIPT_UNAVAILABLE";
+        e.suggestion = "Navigate to a normal http/https page and retry.";
+        throw e;
       }
       throw err;
     }
+  }
+  function normalizeToolError(err, name, args) {
+    return {
+      message: err?.message || String(err),
+      code: err?.code || "TOOL_FAILED",
+      suggestion: err?.suggestion || suggestionForTool(name),
+      trace: args?.trace ? {
+        tool: name,
+        args,
+        cause: err?.trace || null,
+        stack: err?.stack || "",
+        timestamp: Date.now()
+      } : void 0
+    };
+  }
+  function suggestionForTool(name) {
+    if (name.includes("click") || name.includes("select") || name.includes("drag"))
+      return "Use browser_page_info, browser_dom_snapshot, or browser_find_text to verify the target selector/text, then retry.";
+    if (name.includes("screenshot"))
+      return "Confirm the tool is enabled by policy and the extension has permission for the current tab.";
+    if (name.includes("cookie"))
+      return "Confirm the cookies permission is enabled and the URL/domain is valid.";
+    return "Check tool parameters and current page state, then retry with trace:true for details.";
   }
   async function waitForTabLoad(tabId, timeoutMs = 15e3) {
     return new Promise((resolve, reject) => {
@@ -3963,8 +4274,20 @@
   }
   async function toolScreenshot() {
     const tab = await getActiveTab();
-    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
-    return { success: true, dataUrl, tabId: tab.id, url: tab.url };
+    try {
+      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+      return { success: true, dataUrl, tabId: tab.id, url: tab.url };
+    } catch (err) {
+      const message = err?.message || String(err);
+      return {
+        success: false,
+        disabled: /disabled|permission|not allowed|cannot|capture/i.test(message),
+        error: message,
+        tabId: tab.id,
+        url: tab.url,
+        hint: "\u622A\u56FE\u4E0D\u53EF\u7528\u3002\u8BF7\u786E\u8BA4\u7BA1\u7406\u5458\u5DF2\u5206\u914D browser_screenshot \u5DE5\u5177\uFF0C\u4E14\u6269\u5C55\u62E5\u6709\u5F53\u524D\u9875\u9762\u7684\u6355\u83B7\u6743\u9650\u3002"
+      };
+    }
   }
   async function toolSearch(args) {
     const query = String(args.query || "");
@@ -4029,19 +4352,116 @@
   }
   async function toolScroll(args) {
     const tab = await getActiveTab();
-    return contentMsg(tab.id, { action: "scroll", direction: args.direction, amount: args.amount || 400 });
+    return contentMsg(tab.id, { action: "scroll", direction: args.direction, amount: args.amount || 400, selector: args.selector });
   }
   async function toolWait(args) {
     const tab = await getActiveTab();
     return contentMsg(tab.id, { action: "wait", selector: args.selector, ms: args.ms });
   }
+  function remoteObjectValue(obj) {
+    if (!obj)
+      return void 0;
+    if ("value" in obj)
+      return obj.value;
+    if ("unserializableValue" in obj)
+      return obj.unserializableValue;
+    return obj.description ?? `[${obj.type || "unknown"}]`;
+  }
+  function exceptionMessage(details) {
+    const exception = details?.exception;
+    return exception?.description || exception?.value || details?.text || "JavaScript evaluation failed";
+  }
+  async function debuggerEvaluate(tabId, code) {
+    const target = { tabId };
+    let attached = false;
+    async function evaluateExpression(expression) {
+      const result = await chrome.debugger.sendCommand(target, "Runtime.evaluate", {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+        userGesture: true,
+        replMode: true
+      });
+      if (result?.exceptionDetails)
+        throw new Error(exceptionMessage(result.exceptionDetails));
+      return result?.result;
+    }
+    try {
+      await chrome.debugger.attach(target, "1.3");
+      attached = true;
+      let result;
+      try {
+        result = await evaluateExpression(code);
+      } catch (err) {
+        if (!/Illegal return statement|Unexpected token|await is only valid/i.test(err.message || ""))
+          throw err;
+        result = await evaluateExpression(`(async () => {
+${code}
+})()`);
+      }
+      return {
+        success: true,
+        result: remoteObjectValue(result),
+        type: result?.type,
+        subtype: result?.subtype,
+        executionContext: "debugger"
+      };
+    } finally {
+      if (attached) {
+        try {
+          await chrome.debugger.detach(target);
+        } catch {
+        }
+      }
+    }
+  }
   async function toolEvaluate(args) {
     const tab = await getActiveTab();
-    return contentMsg(tab.id, { action: "evaluate", code: args.code });
+    const rawCode = args.code ?? args.function ?? args.fn ?? args.expression;
+    const code = typeof rawCode === "function" ? String(rawCode) : String(rawCode || "");
+    if (!code)
+      throw new Error("code is required");
+    try {
+      return await debuggerEvaluate(tab.id, code);
+    } catch (debuggerErr) {
+      try {
+        const fallback = await contentMsg(tab.id, { action: "evaluate", code });
+        return {
+          ...fallback,
+          executionContext: "content_script",
+          warning: `CDP Runtime.evaluate failed: ${debuggerErr.message || String(debuggerErr)}`
+        };
+      } catch (contentErr) {
+        throw new Error(`browser_evaluate failed. CDP Runtime.evaluate: ${debuggerErr.message || String(debuggerErr)}; content script fallback: ${contentErr.message || String(contentErr)}`);
+      }
+    }
   }
   async function toolExtract(args) {
     const tab = await getActiveTab();
     return contentMsg(tab.id, { action: "extract", selector: args.selector, attributes: args.attributes, limit: args.limit || 50 });
+  }
+  async function toolDomSnapshot(args) {
+    const tab = await getActiveTab();
+    return contentMsg(tab.id, { action: "dom_snapshot", selector: args.selector, max_depth: args.max_depth, max_nodes: args.max_nodes, trace: !!args.trace });
+  }
+  async function toolIframeList() {
+    const tab = await getActiveTab();
+    return contentMsg(tab.id, { action: "iframe_list" });
+  }
+  async function toolPerformance() {
+    const tab = await getActiveTab();
+    return contentMsg(tab.id, { action: "performance" });
+  }
+  async function toolNetworkLog(args) {
+    const tab = await getActiveTab();
+    const result = await contentMsg(tab.id, { action: "performance" });
+    return {
+      ...result,
+      source: "performance_resource_timing",
+      warning: "This is a passive resource-timing view, not active network interception. Full request/response interception requires a debugger/webRequest pipeline.",
+      limit: args.limit || 20,
+      requests: (result.resources?.slowest || []).slice(0, args.limit || 20)
+    };
   }
   async function toolFindText(args) {
     const tab = await getActiveTab();
@@ -4067,15 +4487,153 @@
   }
   async function toolFillForm(args) {
     const tab = await getActiveTab();
-    return contentMsg(tab.id, { action: "fill_form", fields: args.fields, submitSelector: args.submit_selector });
+    return contentMsg(tab.id, {
+      action: "fill_form",
+      fields: args.fields || args.form_fields || args.values,
+      submitSelector: args.submit_selector || args.submitSelector
+    });
   }
   async function toolSelect(args) {
     const tab = await getActiveTab();
-    return contentMsg(tab.id, { action: "select", selector: args.selector, value: args.value });
+    return contentMsg(tab.id, { action: "select", selector: args.selector, value: args.value ?? args.text ?? args.option_text });
   }
   async function toolStorageGet(args) {
     const tab = await getActiveTab();
     return contentMsg(tab.id, { action: "storage_get", key: args.key, storageType: args.type || "local" });
+  }
+  async function toolStorageSet(args) {
+    const tab = await getActiveTab();
+    return contentMsg(tab.id, { action: "storage_set", key: args.key, value: args.value, storageType: args.type || "local" });
+  }
+  async function toolStorageRemove(args) {
+    const tab = await getActiveTab();
+    return contentMsg(tab.id, { action: "storage_remove", key: args.key, storageType: args.type || "local" });
+  }
+  async function toolStorageList(args) {
+    const tab = await getActiveTab();
+    return contentMsg(tab.id, { action: "storage_list", prefix: args.prefix, include_values: !!args.include_values, limit: args.limit, storageType: args.type || "local" });
+  }
+  async function toolFileUpload(args) {
+    const tab = await getActiveTab();
+    return contentMsg(tab.id, { action: "file_upload", selector: args.selector, files: args.files });
+  }
+  async function toolDownload(args) {
+    if (!args.url)
+      throw new Error("url is required");
+    const id = await chrome.downloads.download({
+      url: String(args.url),
+      filename: args.filename ? String(args.filename) : void 0,
+      saveAs: !!args.save_as
+    });
+    return { success: true, downloadId: id, url: args.url, filename: args.filename || "" };
+  }
+  async function toolCookieList(args) {
+    const tab = await getActiveTab();
+    const url2 = String(args.url || tab.url || "");
+    const cookies = await chrome.cookies.getAll(args.domain ? { domain: String(args.domain) } : { url: url2 });
+    return { success: true, url: url2, domain: args.domain || "", count: cookies.length, cookies };
+  }
+  async function toolCookieGet(args) {
+    const tab = await getActiveTab();
+    const url2 = String(args.url || tab.url || "");
+    if (!args.name)
+      throw new Error("name is required");
+    const cookie = await chrome.cookies.get({ url: url2, name: String(args.name) });
+    return { success: true, url: url2, name: args.name, found: !!cookie, cookie };
+  }
+  async function toolCookieSet(args) {
+    const tab = await getActiveTab();
+    const url2 = String(args.url || tab.url || "");
+    if (!args.name)
+      throw new Error("name is required");
+    const cookie = await chrome.cookies.set({
+      url: url2,
+      name: String(args.name),
+      value: String(args.value ?? ""),
+      domain: args.domain ? String(args.domain) : void 0,
+      path: args.path ? String(args.path) : void 0,
+      secure: args.secure === void 0 ? void 0 : !!args.secure,
+      httpOnly: args.http_only === void 0 ? void 0 : !!args.http_only,
+      expirationDate: args.expiration_date ? Number(args.expiration_date) : void 0
+    });
+    return { success: true, cookie };
+  }
+  async function toolCookieDelete(args) {
+    const tab = await getActiveTab();
+    const url2 = String(args.url || tab.url || "");
+    if (!args.name)
+      throw new Error("name is required");
+    const details = await chrome.cookies.remove({ url: url2, name: String(args.name) });
+    return { success: true, removed: !!details, details };
+  }
+  var SESSION_KEY = "_browser_sessions";
+  async function readSessions() {
+    const r = await chrome.storage.local.get(SESSION_KEY);
+    return Array.isArray(r[SESSION_KEY]) ? r[SESSION_KEY] : [];
+  }
+  async function writeSessions(sessions) {
+    await chrome.storage.local.set({ [SESSION_KEY]: sessions });
+  }
+  async function toolSessionSave(args) {
+    const tab = await getActiveTab();
+    const id = String(args.id || `session_${Date.now()}`);
+    const name = String(args.name || id);
+    let local = null;
+    let session = null;
+    try {
+      local = await contentMsg(tab.id, { action: "storage_list", include_values: true, storageType: "local", limit: 500 });
+    } catch {
+    }
+    try {
+      session = await contentMsg(tab.id, { action: "storage_list", include_values: true, storageType: "session", limit: 500 });
+    } catch {
+    }
+    const snapshot = { id, name, url: tab.url, title: tab.title, createdAt: Date.now(), storage: { local, session } };
+    const sessions = (await readSessions()).filter((s) => s.id !== id);
+    sessions.push(snapshot);
+    await writeSessions(sessions);
+    return { success: true, session: snapshot };
+  }
+  async function toolSessionList() {
+    const sessions = await readSessions();
+    return { success: true, count: sessions.length, sessions: sessions.map((s) => ({ id: s.id, name: s.name, url: s.url, title: s.title, createdAt: s.createdAt })) };
+  }
+  async function toolSessionRestore(args) {
+    const sessions = await readSessions();
+    const target = sessions.find((s) => s.id === args.id || s.name === args.name);
+    if (!target)
+      throw new Error("session not found");
+    await toolNavigate({ url: target.url, new_tab: !!args.new_tab });
+    const tab = await getActiveTab();
+    for (const item of target.storage?.local?.items || []) {
+      await contentMsg(tab.id, { action: "storage_set", key: item.key, value: item.value, storageType: "local" }).catch(() => {
+      });
+    }
+    for (const item of target.storage?.session?.items || []) {
+      await contentMsg(tab.id, { action: "storage_set", key: item.key, value: item.value, storageType: "session" }).catch(() => {
+      });
+    }
+    return { success: true, restored: { id: target.id, name: target.name, url: target.url } };
+  }
+  async function toolSessionDelete(args) {
+    const sessions = await readSessions();
+    const kept = sessions.filter((s) => s.id !== args.id && s.name !== args.name);
+    await writeSessions(kept);
+    return { success: true, deleted: sessions.length - kept.length };
+  }
+  async function toolProfileInfo() {
+    const r = await chrome.storage.local.get("_logical_profile");
+    return {
+      success: true,
+      profile: r._logical_profile || "default",
+      scope: "extension-logical-profile",
+      warning: "Chrome extensions cannot switch the browser user profile. This is a logical profile marker for extension-side state only."
+    };
+  }
+  async function toolProfileSet(args) {
+    const profile = String(args.name || args.profile || "default");
+    await chrome.storage.local.set({ _logical_profile: profile });
+    return { success: true, profile, scope: "extension-logical-profile" };
   }
   async function toolHover(args) {
     const tab = await getActiveTab();
@@ -4120,65 +4678,110 @@
     });
   }
   async function executeBrowserOnly(name, args) {
-    switch (name) {
-      case "browser_navigate":
-        return toolNavigate(args);
-      case "browser_screenshot":
-        return toolScreenshot();
-      case "browser_click":
-        return toolClick(args);
-      case "browser_type":
-        return toolType(args);
-      case "browser_get_content":
-        return toolGetContent(args);
-      case "browser_search":
-        return toolSearch(args);
-      case "browser_scroll":
-        return toolScroll(args);
-      case "browser_wait":
-        return toolWait(args);
-      case "browser_evaluate":
-        return toolEvaluate(args);
-      case "browser_extract":
-        return toolExtract(args);
-      case "browser_find_text":
-        return toolFindText(args);
-      case "browser_find_popups":
-        return toolFindPopups(args);
-      case "browser_close_popup":
-        return toolClosePopup(args);
-      case "browser_fill_form":
-        return toolFillForm(args);
-      case "browser_select":
-        return toolSelect(args);
-      case "browser_tab_list":
-        return toolTabList();
-      case "browser_tab_open":
-        return toolTabOpen(args);
-      case "browser_tab_close":
-        return toolTabClose(args);
-      case "browser_history_back":
-        return toolHistoryBack();
-      case "browser_history_forward":
-        return toolHistoryForward();
-      case "browser_clipboard_write":
-        return toolClipboardWrite(args);
-      case "browser_storage_get":
-        return toolStorageGet(args);
-      case "browser_hover":
-        return toolHover(args);
-      case "browser_page_info":
-        return toolPageInfo();
-      case "browser_right_click":
-        return toolRightClick(args);
-      case "browser_double_click":
-        return toolDoubleClick(args);
-      case "browser_drag":
-        return toolDrag(args);
-      case "browser_press_key":
-        return toolPressKey(args);
-      default:
-        throw new Error(`Unknown browser tool: ${name}`);
+    try {
+      switch (name) {
+        case "browser_navigate":
+          return toolNavigate(args);
+        case "browser_screenshot":
+          return toolScreenshot();
+        case "browser_click":
+          return toolClick(args);
+        case "browser_type":
+          return toolType(args);
+        case "browser_get_content":
+          return toolGetContent(args);
+        case "browser_dom_snapshot":
+          return toolDomSnapshot(args);
+        case "browser_search":
+          return toolSearch(args);
+        case "browser_scroll":
+          return toolScroll(args);
+        case "browser_wait":
+          return toolWait(args);
+        case "browser_evaluate":
+          return toolEvaluate(args);
+        case "browser_extract":
+          return toolExtract(args);
+        case "browser_iframe_list":
+          return toolIframeList();
+        case "browser_performance":
+          return toolPerformance();
+        case "browser_network_log":
+          return toolNetworkLog(args);
+        case "browser_file_upload":
+          return toolFileUpload(args);
+        case "browser_download":
+          return toolDownload(args);
+        case "browser_cookie_list":
+          return toolCookieList(args);
+        case "browser_cookie_get":
+          return toolCookieGet(args);
+        case "browser_cookie_set":
+          return toolCookieSet(args);
+        case "browser_cookie_delete":
+          return toolCookieDelete(args);
+        case "browser_find_text":
+          return toolFindText(args);
+        case "browser_find_popups":
+          return toolFindPopups(args);
+        case "browser_close_popup":
+          return toolClosePopup(args);
+        case "browser_fill_form":
+          return toolFillForm(args);
+        case "browser_select":
+          return toolSelect(args);
+        case "browser_tab_list":
+          return toolTabList();
+        case "browser_tab_open":
+          return toolTabOpen(args);
+        case "browser_tab_close":
+          return toolTabClose(args);
+        case "browser_history_back":
+          return toolHistoryBack();
+        case "browser_history_forward":
+          return toolHistoryForward();
+        case "browser_clipboard_write":
+          return toolClipboardWrite(args);
+        case "browser_storage_get":
+          return toolStorageGet(args);
+        case "browser_storage_set":
+          return toolStorageSet(args);
+        case "browser_storage_remove":
+          return toolStorageRemove(args);
+        case "browser_storage_list":
+          return toolStorageList(args);
+        case "browser_session_save":
+          return toolSessionSave(args);
+        case "browser_session_list":
+          return toolSessionList();
+        case "browser_session_restore":
+          return toolSessionRestore(args);
+        case "browser_session_delete":
+          return toolSessionDelete(args);
+        case "browser_profile_info":
+          return toolProfileInfo();
+        case "browser_profile_set":
+          return toolProfileSet(args);
+        case "browser_hover":
+          return toolHover(args);
+        case "browser_page_info":
+          return toolPageInfo();
+        case "browser_right_click":
+          return toolRightClick(args);
+        case "browser_double_click":
+          return toolDoubleClick(args);
+        case "browser_drag":
+          return toolDrag(args);
+        case "browser_press_key":
+          return toolPressKey(args);
+        default:
+          throw new Error(`Unknown browser tool: ${name}`);
+      }
+    } catch (err) {
+      if (args?.trace || args?.return_error) {
+        return { success: false, error: normalizeToolError(err, name, args) };
+      }
+      throw err;
     }
   }
 
@@ -4216,13 +4819,61 @@
   function setCardProgress(fn) {
     cardProgress = fn;
   }
+  function getPath(obj, path) {
+    return String(path).split(".").reduce((cur, part) => cur == null ? void 0 : cur[part], obj);
+  }
+  function applyVars(value2, vars) {
+    if (typeof value2 === "string") {
+      return value2.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, key) => {
+        const v = getPath(vars, key);
+        return v === void 0 || v === null ? "" : String(v);
+      });
+    }
+    if (Array.isArray(value2))
+      return value2.map((v) => applyVars(v, vars));
+    if (value2 && typeof value2 === "object") {
+      const out = {};
+      for (const [k, v] of Object.entries(value2))
+        out[k] = applyVars(v, vars);
+      return out;
+    }
+    return value2;
+  }
+  function shouldRunStep(step, vars) {
+    const cond = step.if ?? step.args?.if;
+    if (cond === void 0 || cond === null || cond === "")
+      return true;
+    if (typeof cond === "boolean")
+      return cond;
+    if (typeof cond === "string")
+      return !!getPath(vars, cond);
+    if (typeof cond === "object") {
+      const actual = getPath(vars, String(cond.var || cond.path || ""));
+      if ("exists" in cond)
+        return cond.exists ? actual !== void 0 : actual === void 0;
+      if ("equals" in cond)
+        return actual === cond.equals;
+      if ("not_equals" in cond)
+        return actual !== cond.not_equals;
+      if ("contains" in cond)
+        return String(actual || "").includes(String(cond.contains));
+    }
+    return true;
+  }
   async function runCardSteps(card, opts = {}) {
     const total = card.steps.length;
     const results = [];
+    const vars = { ...opts.variables || {} };
     for (let i = 0; i < total; i++) {
       if (opts.shouldStop?.())
         return { success: false, stopped: true, results };
       const step = card.steps[i];
+      if (!shouldRunStep(step, vars)) {
+        const skipped = { index: i, note: step.note, tool: step.tool, status: "success", skipped: true, preview: "skipped by condition" };
+        results.push(skipped);
+        cardProgress?.(card.id, i, total, step.note, step.tool, "success");
+        continue;
+      }
       if (/^card[_.]/i.test(step.tool)) {
         const r = { index: i, note: step.note, tool: step.tool, status: "error", error: "\u5361\u7247\u6B65\u9AA4\u4E0D\u5141\u8BB8\u8C03\u7528\u5361\u7247\u5DE5\u5177\uFF08\u907F\u514D\u9012\u5F52\uFF09" };
         results.push(r);
@@ -4231,7 +4882,17 @@
       }
       cardProgress?.(card.id, i, total, step.note, step.tool, "running");
       try {
-        const result = await executeBrowserOnly(step.tool, step.args || {});
+        const args = applyVars(step.args || {}, vars);
+        if (step.tool === "var_set") {
+          vars[String(args.name)] = args.value;
+          results.push({ index: i, note: step.note, tool: step.tool, status: "success", preview: `${args.name}=${JSON.stringify(args.value)}` });
+          cardProgress?.(card.id, i, total, step.note, step.tool, "success");
+          continue;
+        }
+        const result = await executeBrowserOnly(step.tool, args);
+        if (step.save_as || args.save_as_var)
+          vars[String(step.save_as || args.save_as_var)] = result;
+        vars.last = result;
         let preview = "";
         try {
           preview = (typeof result === "string" ? result : JSON.stringify(result)).slice(0, 180);
@@ -4353,7 +5014,7 @@
     const card = byIdOrName(await getCards(), args);
     if (!card)
       throw new Error("\u5361\u7247\u4E0D\u5B58\u5728");
-    const res = await runCardSteps(card);
+    const res = await runCardSteps(card, { variables: args.variables || args.vars || {} });
     return {
       success: res.success,
       cardId: card.id,
@@ -4363,6 +5024,92 @@
       failedStep: res.failedStep,
       results: res.results
     };
+  }
+  async function toolCardRunBatch(args) {
+    const card = byIdOrName(await getCards(), args);
+    if (!card)
+      throw new Error("\u5361\u7247\u4E0D\u5B58\u5728");
+    const rows = Array.isArray(args.items) ? args.items : [];
+    if (!rows.length)
+      throw new Error("items \u4E0D\u80FD\u4E3A\u7A7A");
+    const results = [];
+    for (let i = 0; i < rows.length; i++) {
+      const variables = { ...args.variables || {}, item: rows[i], index: i };
+      const res = await runCardSteps(card, { variables });
+      results.push({ index: i, success: res.success, completed: res.results.filter((r) => r.status === "success" && !r.skipped).length, failedStep: res.failedStep, results: res.results });
+      if (!res.success && args.stop_on_error !== false)
+        break;
+    }
+    return { success: results.every((r) => r.success), cardId: card.id, name: card.name, total: rows.length, results };
+  }
+  var SCHEDULE_KEY = "_card_schedules";
+  async function getSchedules() {
+    const r = await chrome.storage.local.get(SCHEDULE_KEY);
+    return Array.isArray(r[SCHEDULE_KEY]) ? r[SCHEDULE_KEY] : [];
+  }
+  async function setSchedules(schedules) {
+    await chrome.storage.local.set({ [SCHEDULE_KEY]: schedules });
+  }
+  function cronEveryMinutes(cron) {
+    const m = String(cron || "").trim().match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/);
+    if (!m)
+      return null;
+    const n = Number(m[1]);
+    return n >= 1 ? n : null;
+  }
+  async function toolCardSchedule(args) {
+    const card = byIdOrName(await getCards(), args);
+    if (!card)
+      throw new Error("\u5361\u7247\u4E0D\u5B58\u5728");
+    const id = String(args.schedule_id || `schedule_${Date.now()}`);
+    const interval = args.interval_minutes ? Number(args.interval_minutes) : args.cron ? cronEveryMinutes(String(args.cron)) : null;
+    const runAt = args.run_at ? Date.parse(String(args.run_at)) : 0;
+    const schedule = {
+      id,
+      cardId: card.id,
+      name: args.name || `${card.name} schedule`,
+      cron: args.cron || "",
+      intervalMinutes: interval,
+      runAt: Number.isFinite(runAt) ? runAt : 0,
+      variables: args.variables || {},
+      enabled: true,
+      createdAt: Date.now(),
+      lastRunAt: 0
+    };
+    if (!interval && !schedule.runAt) {
+      return { success: false, error: { code: "UNSUPPORTED_CRON", message: 'Only interval_minutes, run_at, or simple cron like "*/15 * * * *" is supported.', suggestion: "Use interval_minutes for recurring schedules." } };
+    }
+    const schedules = (await getSchedules()).filter((s) => s.id !== id);
+    schedules.push(schedule);
+    await setSchedules(schedules);
+    const alarmInfo = interval ? { periodInMinutes: interval, delayInMinutes: Math.max(0.1, interval) } : { when: schedule.runAt };
+    chrome.alarms.create(`card_schedule:${id}`, alarmInfo);
+    return { success: true, schedule };
+  }
+  async function toolCardScheduleList() {
+    const schedules = await getSchedules();
+    return { success: true, count: schedules.length, schedules };
+  }
+  async function toolCardScheduleDelete(args) {
+    const schedules = await getSchedules();
+    const kept = schedules.filter((s) => s.id !== args.schedule_id && s.id !== args.id);
+    const deleted = schedules.length - kept.length;
+    await setSchedules(kept);
+    await chrome.alarms.clear(`card_schedule:${args.schedule_id || args.id}`);
+    return { success: true, deleted };
+  }
+  async function runScheduledCard(scheduleId) {
+    const schedules = await getSchedules();
+    const schedule = schedules.find((s) => s.id === scheduleId);
+    if (!schedule || schedule.enabled === false)
+      return { success: false, reason: "schedule not found or disabled" };
+    const card = (await getCards()).find((c) => c.id === schedule.cardId);
+    if (!card)
+      return { success: false, reason: "card not found" };
+    const res = await runCardSteps(card, { variables: schedule.variables || {} });
+    schedule.lastRunAt = Date.now();
+    await setSchedules(schedules);
+    return { success: res.success, scheduleId, cardId: card.id, results: res.results, failedStep: res.failedStep };
   }
   async function executeCardTool(name, args) {
     switch (name) {
@@ -4376,6 +5123,14 @@
         return toolCardUpdateStep(args);
       case "card_run":
         return toolCardRun(args);
+      case "card_run_batch":
+        return toolCardRunBatch(args);
+      case "card_schedule":
+        return toolCardSchedule(args);
+      case "card_schedule_list":
+        return toolCardScheduleList();
+      case "card_schedule_delete":
+        return toolCardScheduleDelete(args);
       case "card_delete":
         return toolCardDelete(args);
       default:
@@ -4982,6 +5737,13 @@ Respond in the same language as the user. For factual questions, search the web 
   });
   chrome.alarms.create("keepalive", { periodInMinutes: 0.4 });
   chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name.startsWith("card_schedule:")) {
+      const scheduleId = alarm.name.slice("card_schedule:".length);
+      void runScheduledCard(scheduleId).then((res) => {
+        log("card", res?.success ? "success" : "error", `\u5B9A\u65F6\u5361\u7247 ${scheduleId} ${res?.success ? "\u5B8C\u6210" : "\u5931\u8D25"}`, res);
+      });
+      return;
+    }
     if (alarm.name === "keepalive" && socket && !socket.connected && currentStatus !== "connecting") {
       socket.connect();
     }

@@ -34,7 +34,7 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   },
   {
     name: 'browser_screenshot',
-    description: 'Capture a screenshot of the current tab. Returns a base64 PNG data URL.',
+    description: 'Capture a screenshot of the current tab. Returns a base64 PNG data URL, or a readable disabled/permission error if screenshots are not allowed.',
     input_schema: { type: 'object', properties: {} },
   },
   {
@@ -66,12 +66,25 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   },
   {
     name: 'browser_get_content',
-    description: 'Get the visible text content, URL, title, and meta info of the current page.',
+    description: 'Get the visible text content, URL, title, links, meta info, and normalized items from the current page.',
     input_schema: {
       type: 'object',
       properties: {
         selector:     { type: 'string',  description: 'Limit content to this CSS selector (default: body)' },
         include_html: { type: 'boolean', description: 'Also return raw HTML (truncated)' },
+      },
+    },
+  },
+  {
+    name: 'browser_dom_snapshot',
+    description: 'Return a structured DOM tree snapshot as a text-friendly alternative when screenshots are disabled or unavailable.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        selector:  { type: 'string', description: 'Root selector (default body)' },
+        max_depth: { type: 'number', description: 'Maximum DOM depth (default 4, max 8)' },
+        max_nodes: { type: 'number', description: 'Maximum nodes to return (default 120, max 1000)' },
+        trace:     { type: 'boolean', description: 'Return structured error trace instead of throwing' },
       },
     },
   },
@@ -117,18 +130,21 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   },
   {
     name: 'browser_evaluate',
-    description: 'Execute arbitrary JavaScript in the page context and return the result.',
+    description: 'Execute arbitrary JavaScript in the page context and return the result. Uses Chrome DevTools Protocol when available so it works on CSP-restricted pages.',
     input_schema: {
       type: 'object',
       properties: {
-        code: { type: 'string', description: 'JavaScript expression or statements to execute' },
+        code:       { type: 'string', description: 'JavaScript expression or statements to execute' },
+        function:   { type: 'string', description: 'Alias for code, kept for compatibility' },
+        fn:         { type: 'string', description: 'Alias for code' },
+        expression: { type: 'string', description: 'Alias for code' },
+        trace:      { type: 'boolean', description: 'Return structured {error, code, suggestion, trace} on failure' },
       },
-      required: ['code'],
     },
   },
   {
     name: 'browser_extract',
-    description: 'Extract structured data (text, href, src, etc.) from elements matching a selector.',
+    description: 'Extract structured data from elements matching a selector. Returns normalized items with tag, selector, text, attributes, and common attribute aliases.',
     input_schema: {
       type: 'object',
       properties: {
@@ -177,17 +193,23 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   },
   {
     name: 'browser_fill_form',
-    description: 'Fill multiple form fields in one call.',
+    description: 'Fill multiple form fields in one call. Fields can target controls by selector, name, label, placeholder, or an object map.',
     input_schema: {
       type: 'object',
       properties: {
         fields: {
           type: 'array',
-          description: 'List of {selector, value} pairs to fill',
+          description: 'List of fields. Examples: [{selector:"input[name=email]", value:"me@example.com"}, {label:"Password", value:"secret"}, {selector:"#remember", action:"check"}]. Object map form is also accepted by the runtime.',
           items: {
             type: 'object',
-            properties: { selector: { type: 'string' }, value: { type: 'string' } },
-            required: ['selector', 'value'],
+            properties: {
+              selector:    { type: 'string', description: 'CSS selector for the input/select/textarea' },
+              name:        { type: 'string', description: 'Form control name or id fallback' },
+              label:       { type: 'string', description: 'Visible label text near the field' },
+              placeholder: { type: 'string', description: 'Placeholder text to match' },
+              value:       { type: ['string', 'number', 'boolean'], description: 'Value to set' },
+              action:      { type: 'string', enum: ['set', 'type', 'select', 'check', 'uncheck', 'click'], description: 'How to apply the value (default set)' },
+            },
           },
         },
         submit_selector: { type: 'string', description: 'CSS selector of submit button to click after filling' },
@@ -197,14 +219,127 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   },
   {
     name: 'browser_select',
-    description: 'Select an option in a <select> dropdown.',
+    description: 'Select an option in a native <select> dropdown or a common custom dropdown/listbox by clicking the control and matching option text/value.',
     input_schema: {
       type: 'object',
       properties: {
-        selector: { type: 'string', description: 'CSS selector of the <select> element' },
-        value:    { type: 'string', description: 'Option value or visible text to select' },
+        selector:    { type: 'string', description: 'CSS selector of the select/custom dropdown control' },
+        value:       { type: 'string', description: 'Option value or visible text to select' },
+        text:        { type: 'string', description: 'Alias for value' },
+        option_text: { type: 'string', description: 'Alias for value' },
       },
-      required: ['selector', 'value'],
+      required: ['selector'],
+    },
+  },
+  {
+    name: 'browser_iframe_list',
+    description: 'List iframe/frame elements on the current page, including src/name/title/accessibility and viewport rect.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'browser_performance',
+    description: 'Read page performance metrics and slow resources from PerformanceNavigationTiming and ResourceTiming.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'browser_network_log',
+    description: 'Return passive resource timing entries as a lightweight network log. This is not active request interception.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Maximum request/resource entries to return (default 20)' },
+      },
+    },
+  },
+  {
+    name: 'browser_file_upload',
+    description: 'Populate an <input type=file> using in-memory file contents. Local filesystem paths cannot be read by the extension.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        selector: { type: 'string', description: 'CSS selector of file input (default input[type=file])' },
+        files: {
+          type: 'array',
+          description: 'Files to synthesize, e.g. [{name:"a.txt", content:"hello", type:"text/plain"}] or encoding:"base64"',
+          items: {
+            type: 'object',
+            properties: {
+              name:     { type: 'string' },
+              content:  { type: 'string' },
+              type:     { type: 'string' },
+              encoding: { type: 'string', enum: ['text', 'base64'] },
+            },
+            required: ['name', 'content'],
+          },
+        },
+      },
+      required: ['files'],
+    },
+  },
+  {
+    name: 'browser_download',
+    description: 'Start a browser download from a URL using chrome.downloads.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        url:      { type: 'string', description: 'URL to download' },
+        filename: { type: 'string', description: 'Optional relative filename under the downloads folder' },
+        save_as:  { type: 'boolean', description: 'Show Save As dialog' },
+      },
+      required: ['url'],
+    },
+  },
+  {
+    name: 'browser_cookie_list',
+    description: 'List cookies for the active tab URL or a given domain.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        url:    { type: 'string', description: 'Cookie URL (default active tab URL)' },
+        domain: { type: 'string', description: 'Optional domain filter' },
+      },
+    },
+  },
+  {
+    name: 'browser_cookie_get',
+    description: 'Get one cookie by name for the active tab URL or a provided URL.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        url:  { type: 'string', description: 'Cookie URL (default active tab URL)' },
+        name: { type: 'string', description: 'Cookie name' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'browser_cookie_set',
+    description: 'Set one cookie for the active tab URL or a provided URL.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        url:             { type: 'string', description: 'Cookie URL (default active tab URL)' },
+        name:            { type: 'string', description: 'Cookie name' },
+        value:           { type: 'string', description: 'Cookie value' },
+        domain:          { type: 'string' },
+        path:            { type: 'string' },
+        secure:          { type: 'boolean' },
+        http_only:       { type: 'boolean' },
+        expiration_date: { type: 'number', description: 'Unix seconds' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'browser_cookie_delete',
+    description: 'Delete one cookie by name for the active tab URL or a provided URL.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        url:  { type: 'string', description: 'Cookie URL (default active tab URL)' },
+        name: { type: 'string', description: 'Cookie name' },
+      },
+      required: ['name'],
     },
   },
   {
@@ -261,6 +396,99 @@ export const BROWSER_TOOLS: AIToolDef[] = [
     },
   },
   {
+    name: 'browser_storage_set',
+    description: 'Set a key in the page localStorage or sessionStorage.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        key:   { type: 'string', description: 'Storage key' },
+        value: { type: 'string', description: 'Value to store' },
+        type:  { type: 'string', enum: ['local', 'session'], description: 'Storage type (default: local)' },
+      },
+      required: ['key'],
+    },
+  },
+  {
+    name: 'browser_storage_remove',
+    description: 'Remove a key from the page localStorage or sessionStorage.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        key:  { type: 'string', description: 'Storage key' },
+        type: { type: 'string', enum: ['local', 'session'], description: 'Storage type (default: local)' },
+      },
+      required: ['key'],
+    },
+  },
+  {
+    name: 'browser_storage_list',
+    description: 'List keys from the page localStorage or sessionStorage, optionally including values.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        prefix:         { type: 'string', description: 'Optional key prefix filter' },
+        include_values: { type: 'boolean', description: 'Include values in the response' },
+        limit:          { type: 'number', description: 'Maximum keys/items (default 100)' },
+        type:           { type: 'string', enum: ['local', 'session'], description: 'Storage type (default: local)' },
+      },
+    },
+  },
+  {
+    name: 'browser_session_save',
+    description: 'Save a lightweight browser context snapshot: current URL/title plus localStorage/sessionStorage for the page.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id:   { type: 'string', description: 'Optional session id' },
+        name: { type: 'string', description: 'Friendly session name' },
+      },
+    },
+  },
+  {
+    name: 'browser_session_list',
+    description: 'List saved lightweight browser context snapshots.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'browser_session_restore',
+    description: 'Restore a saved lightweight browser context snapshot by navigating to its URL and restoring storage.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id:      { type: 'string', description: 'Session id' },
+        name:    { type: 'string', description: 'Session name' },
+        new_tab: { type: 'boolean', description: 'Restore into a new tab' },
+      },
+    },
+  },
+  {
+    name: 'browser_session_delete',
+    description: 'Delete a saved lightweight browser context snapshot.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id:   { type: 'string', description: 'Session id' },
+        name: { type: 'string', description: 'Session name' },
+      },
+    },
+  },
+  {
+    name: 'browser_profile_info',
+    description: 'Return the current extension logical profile marker. This does not switch Chrome user profiles.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'browser_profile_set',
+    description: 'Set an extension logical profile marker for grouping state. Chrome user-profile switching is not available to extensions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name:    { type: 'string', description: 'Logical profile name' },
+        profile: { type: 'string', description: 'Alias for name' },
+      },
+    },
+  },
+  {
     name: 'browser_hover',
     description: 'Hover the mouse over an element to reveal tooltips or dropdowns.',
     input_schema: {
@@ -302,7 +530,7 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   },
   {
     name: 'browser_drag',
-    description: 'Drag from a source element/point and drop onto a target element/point. Fires both HTML5 drag-and-drop and pointer events, so it works with most draggable UIs (sliders, sortable lists, file drop zones).',
+    description: 'Drag from a source element/point and drop onto a target element/point. Fires HTML5, pointer, and mouse events, and returns diagnostics showing whether the source visibly moved.',
     input_schema: {
       type: 'object',
       properties: {
@@ -351,7 +579,7 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   },
   {
     name: 'card_save',
-    description: 'Save a sequence of browser steps as a reusable memory card. Each step is { tool, args, note } where note (备注) explains the step in plain language. If a card with the same name exists, mode controls behavior: replace (default), merge (append steps), or new (force a new card).',
+    description: 'Save a sequence of browser steps as a reusable memory card. Steps support args templates like {{name}}, optional if conditions, save_as variables, and var_set pseudo steps.',
     input_schema: {
       type: 'object',
       properties: {
@@ -367,6 +595,8 @@ export const BROWSER_TOOLS: AIToolDef[] = [
               tool: { type: 'string', description: 'A browser_* tool name, e.g. browser_navigate' },
               args: { type: 'object', description: 'Arguments for that tool' },
               note: { type: 'string', description: '备注：plain-language description of this step' },
+              if:   { type: ['string', 'object', 'boolean'], description: 'Optional condition, e.g. "item.enabled" or {var:"last.success", equals:true}' },
+              save_as: { type: 'string', description: 'Save this step result into a variable name' },
             },
             required: ['tool'],
           },
@@ -393,12 +623,61 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   },
   {
     name: 'card_run',
-    description: 'Run a saved card by id or name. Executes its steps in order and returns a per-step result list; on failure it returns failedStep with the index, note and error so you can diagnose and fix it (with card_update_step) then re-run.',
+    description: 'Run a saved card by id or name. Supports variables for {{name}} templates and conditional steps.',
     input_schema: {
       type: 'object',
       properties: {
-        id:   { type: 'string', description: 'Card id' },
-        name: { type: 'string', description: 'Card name (used if id omitted)' },
+        id:        { type: 'string', description: 'Card id' },
+        name:      { type: 'string', description: 'Card name (used if id omitted)' },
+        variables: { type: 'object', description: 'Variables available to step templates and conditions' },
+        vars:      { type: 'object', description: 'Alias for variables' },
+      },
+    },
+  },
+  {
+    name: 'card_run_batch',
+    description: 'Run a saved card once per item. Each run receives variables {item, index, ...variables}.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id:            { type: 'string', description: 'Card id' },
+        name:          { type: 'string', description: 'Card name (used if id omitted)' },
+        items:         { type: 'array', description: 'Batch items' },
+        variables:     { type: 'object', description: 'Shared variables for every run' },
+        stop_on_error: { type: 'boolean', description: 'Stop at first failed item (default true)' },
+      },
+      required: ['items'],
+    },
+  },
+  {
+    name: 'card_schedule',
+    description: 'Schedule a card with interval_minutes, run_at, or simple cron like "*/15 * * * *". Uses Chrome alarms.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        id:               { type: 'string', description: 'Card id' },
+        name:             { type: 'string', description: 'Card name (used if id omitted)' },
+        schedule_id:      { type: 'string', description: 'Optional schedule id' },
+        interval_minutes: { type: 'number', description: 'Recurring interval' },
+        run_at:           { type: 'string', description: 'One-shot ISO datetime' },
+        cron:             { type: 'string', description: 'Only simple every-N-minutes syntax is supported, e.g. */15 * * * *' },
+        variables:        { type: 'object', description: 'Variables passed to the scheduled run' },
+      },
+    },
+  },
+  {
+    name: 'card_schedule_list',
+    description: 'List scheduled card runs.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'card_schedule_delete',
+    description: 'Delete a scheduled card run.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        schedule_id: { type: 'string', description: 'Schedule id' },
+        id:          { type: 'string', description: 'Alias for schedule_id' },
       },
     },
   },

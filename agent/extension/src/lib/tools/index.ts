@@ -8,7 +8,7 @@
 
 export { SEARCH_ENGINES, BROWSER_TOOLS, BROWSER_CAPABILITIES } from './definitions'
 export { executeBrowserOnly } from './browser'
-export { runCardSteps, setCardProgress, executeCardTool } from './cards'
+export { runCardSteps, setCardProgress, executeCardTool, runScheduledCard } from './cards'
 export type { CardStepResult } from './cards'
 export { executeBrowserTool } from './router'
 export { executeTask } from './executor'

@@ -3,7 +3,7 @@
 import { io, Socket } from 'socket.io-client'
 import { getSettings, saveSettings, pushActivity, getActivity, getCard, getAuth } from './lib/storage'
 import { listConfigs, MemberConfig } from './lib/client'
-import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS, runCardSteps, setCardProgress } from './lib/tools'
+import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS, runCardSteps, setCardProgress, runScheduledCard } from './lib/tools'
 import { callAI } from './lib/ai'
 import {
   AgentStatus, DispatchedTask, ActivityEntry,
@@ -467,6 +467,13 @@ chrome.runtime.onConnect.addListener((port) => {
 // ── Keepalive alarm ───────────────────────────────────────────────────────
 chrome.alarms.create('keepalive', { periodInMinutes: 0.4 })
 chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name.startsWith('card_schedule:')) {
+    const scheduleId = alarm.name.slice('card_schedule:'.length)
+    void runScheduledCard(scheduleId).then(res => {
+      log('card', res?.success ? 'success' : 'error', `定时卡片 ${scheduleId} ${res?.success ? '完成' : '失败'}`, res)
+    })
+    return
+  }
   if (alarm.name === 'keepalive' && socket && !socket.connected && currentStatus !== 'connecting') {
     socket.connect()
   }
