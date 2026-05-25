@@ -141,6 +141,7 @@ async function register() {
     await saveSettings({ selectedAiConfigId: null })
     log('system', 'warn', '未登录，已取消 AI 成员自动注册选择')
   }
+  log('system', 'info', `注册 agent (AI=${selectedAiConfigId ?? '未选择'})`)
   socket?.emit('agent:register', {
     id,
     aiConfigId: selectedAiConfigId,
@@ -414,7 +415,16 @@ chrome.runtime.onConnect.addListener((port) => {
         }
         await saveSettings({ selectedAiConfigId: aiConfigId })
         if (socket?.connected) {
+          // Already connected — re-register so the server updates the
+          // agent record with the new aiConfigId.
           await register()
+        } else if (aiConfigId && auth.token) {
+          // Not yet connected. The user has shown intent (logged-in +
+          // selected an AI) so connect now. Without this, the agent
+          // either never registers, or — if the user later clicks
+          // "connect" — registers without an aiConfigId, leaving the
+          // server-side record showing the agent with no AI assigned.
+          await connect()
         }
         break
       }

@@ -106,7 +106,11 @@ def register_socket_events():
             'source': 'socket',
             'dispatchable': True,
         }
-        print('Agent registered:', agent_id, 'user:', owner_user_id)
+        print(
+            'Agent registered:', agent_id,
+            'user:', owner_user_id,
+            'ai:', agents[sid].get('aiConfigId'),
+        )
         await sio.emit('agent:registered', {'id': agent_id}, to=sid)
         await sio.emit('agent:list', list(agents.values()))
 
