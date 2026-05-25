@@ -140,7 +140,11 @@ async function register() {
     os:              { platform: 'browser', arch: 'unknown', release: '1.0', hostname: id },
     capabilities:    BROWSER_CAPABILITIES,
     version:         '1.0.0',
-    token:           settings.agentToken || '',
+    // The server requires a valid user JWT here. Falling back to the
+    // legacy agentToken shared secret only matters in deployments that set
+    // AGENT_TOKEN explicitly.
+    token:           auth.token || settings.agentToken || '',
+    userId:          auth.userId ?? null,
     workspaceRoot:   '',
     lifecycle:       'registered',
     isWindowsDesktop: false,

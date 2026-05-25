@@ -1,12 +1,37 @@
 import time
 
-from api.sio import sio, agents, is_agent_token_valid
+from sqlmodel import Session, select
+
+from api.database import engine
+from api.models import AssistantAIConfig
+from api.sio import (
+    sio,
+    agents,
+    is_agent_shared_secret,
+    resolve_agent_user,
+)
 from api.services.agent_dispatch import (
     handle_task_error,
     handle_task_progress,
     handle_task_result,
     purge_stale_dispatches,
 )
+
+
+def _ai_config_belongs_to_user(ai_config_id, user_id: int) -> bool:
+    """Return True only if the AI config is owned by the registering user."""
+    if ai_config_id in (None, "", 0):
+        return True  # No AI claimed; allow generic registration.
+    try:
+        cfg_id = int(ai_config_id)
+    except (TypeError, ValueError):
+        return False
+    with Session(engine) as session:
+        cfg = session.exec(
+            select(AssistantAIConfig).where(AssistantAIConfig.id == cfg_id)
+        ).first()
+        return bool(cfg and cfg.user_id == user_id)
+
 
 def register_socket_events():
     @sio.on('connect')
@@ -17,9 +42,43 @@ def register_socket_events():
     async def agent_register(sid, info):
         info = info if isinstance(info, dict) else {}
         token = info.get('token')
-        if not is_agent_token_valid(token):
-            print('Agent registration rejected (bad token):', info.get('id'))
-            await sio.emit('agent:register_rejected', {'reason': 'invalid agent token'}, to=sid)
+
+        # Resolve to a logged-in user. Shared secret (if configured) is the
+        # only allowed bypass and skips the per-user binding.
+        owner_user_id = None
+        owner_account = None
+        if is_agent_shared_secret(token):
+            owner_user_id = info.get('userId')
+            try:
+                owner_user_id = int(owner_user_id) if owner_user_id is not None else None
+            except (TypeError, ValueError):
+                owner_user_id = None
+        else:
+            resolved = resolve_agent_user(token)
+            if not resolved:
+                print('Agent registration rejected (no auth):', info.get('id'))
+                await sio.emit(
+                    'agent:register_rejected',
+                    {'reason': 'agent must be logged in (invalid or missing user token)'},
+                    to=sid,
+                )
+                return
+            owner_user_id, owner_account = resolved
+
+        # Cross-check that the AI the agent wants to bind to is owned by the
+        # authenticated user. This prevents a logged-in user A from selecting
+        # an AI that belongs to user B.
+        claimed_ai = info.get('aiConfigId')
+        if owner_user_id is not None and not _ai_config_belongs_to_user(claimed_ai, owner_user_id):
+            print(
+                'Agent registration rejected (AI ownership mismatch): agent',
+                info.get('id'), 'user', owner_user_id, 'ai', claimed_ai,
+            )
+            await sio.emit(
+                'agent:register_rejected',
+                {'reason': 'selected AI does not belong to the logged-in user'},
+                to=sid,
+            )
             return
 
         agent_id = str(info.get('id') or sid)
@@ -33,6 +92,8 @@ def register_socket_events():
             **info,
             'id': agent_id,
             'socketId': sid,
+            'userId': owner_user_id,
+            'userAccount': owner_account,
             'capabilities': info.get('capabilities') or [],
             'version': info.get('version') or '',
             'lifecycle': info.get('lifecycle') or 'registered',
@@ -45,7 +106,7 @@ def register_socket_events():
             'source': 'socket',
             'dispatchable': True,
         }
-        print('Agent registered:', agent_id)
+        print('Agent registered:', agent_id, 'user:', owner_user_id)
         await sio.emit('agent:registered', {'id': agent_id}, to=sid)
         await sio.emit('agent:list', list(agents.values()))
 
