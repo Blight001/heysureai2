@@ -22,6 +22,7 @@ def run_pending_migrations() -> None:
     from ..models.defaults import (
         DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,
         DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
+        DEFAULT_AI_MESSAGE_INQUIRY_REMINDER,
         DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
         DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
         DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
@@ -51,6 +52,7 @@ def run_pending_migrations() -> None:
             inheritance_notice=DEFAULT_INHERITANCE_NOTICE,
             ai_message_notify=DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
             ai_message_inquiry=DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
+            ai_message_inquiry_reminder=DEFAULT_AI_MESSAGE_INQUIRY_REMINDER,
             ai_message_reply=DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
             ai_message_chitchat=DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,
             ai_message_reply_success=DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
@@ -101,6 +103,7 @@ def _migrate_user(
     inheritance_notice: str,
     ai_message_notify: str,
     ai_message_inquiry: str,
+    ai_message_inquiry_reminder: str,
     ai_message_reply: str,
     ai_message_chitchat: str,
     ai_message_reply_success: str,
@@ -120,6 +123,8 @@ def _migrate_user(
     _add_column(cursor, "user", "default_inheritance_notice", f"TEXT DEFAULT '{_quote(inheritance_notice)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_notify", f"TEXT DEFAULT '{_quote(ai_message_notify)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_inquiry", f"TEXT DEFAULT '{_quote(ai_message_inquiry)}'", existing)
+    _add_column(cursor, "user", "ai_message_inquiry_reminder_seconds", "INTEGER DEFAULT 3", existing)
+    _add_column(cursor, "user", "prompt_ai_message_inquiry_reminder", f"TEXT DEFAULT '{_quote(ai_message_inquiry_reminder)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_reply", f"TEXT DEFAULT '{_quote(ai_message_reply)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_chitchat", f"TEXT DEFAULT '{_quote(ai_message_chitchat)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_reply_success", f"TEXT DEFAULT '{_quote(ai_message_reply_success)}'", existing)
@@ -235,6 +240,8 @@ def _migrate_aitaskjob(cursor: sqlite3.Cursor) -> None:
     existing = _existing_columns(cursor, "aitaskjob")
     _add_column(cursor, "aitaskjob", "task_payload", "TEXT", existing)
     _add_column(cursor, "aitaskjob", "created_by_ai_config_id", "INTEGER", existing)
+    _add_column(cursor, "aitaskjob", "created_by_session_id", "TEXT", existing)
+    _add_column(cursor, "aitaskjob", "completion_notified_at", "REAL", existing)
 
 
 def _remove_json_array_item(cursor: sqlite3.Cursor, table: str, column: str, item: str) -> None:
@@ -455,6 +462,7 @@ def _migrate_aimessage(cursor: sqlite3.Cursor) -> None:
     _add_column(cursor, "aimessage", "from_session_id", "TEXT DEFAULT ''", existing)
     _add_column(cursor, "aimessage", "message_type", "TEXT DEFAULT 'notify'", existing)
     _add_column(cursor, "aimessage", "cascade_depth", "INTEGER DEFAULT 0", existing)
+    _add_column(cursor, "aimessage", "reply_reminded_at", "REAL", existing)
     # 旧的、缺乏 message_type 的行按当前 require_reply 推导出兼容值：
     # require_reply=1 → inquiry，期望对方答复；其余视为 notify。
     cursor.execute(

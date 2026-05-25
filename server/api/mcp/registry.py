@@ -369,7 +369,7 @@ registry.register(MCPTool(
             },
             "timeout_seconds": {
                 "type": "integer",
-                "description": "Max seconds to wait for a reply when require_reply=true (default 120).",
+                "description": "Optional max seconds to wait when require_reply=true. Omit for the default long wait (86400 / 24h); set a larger value only when the caller intentionally wants to keep waiting longer.",
             },
             "reply_to_message_id": {
                 "type": "string",

@@ -29,6 +29,18 @@ Rules:
 DEFAULT_AI_MESSAGE_REPLY_SUCCESS = """[系统提示] 你对消息 {message_id} 的回复已送达。
 现在请继续你刚才被打断的任务。"""
 
+DEFAULT_AI_MESSAGE_INQUIRY_REMINDER = """[系统提示 · AI 间询问待回复]
+你仍有一条来自 {from_ai_name} 的询问尚未回复，系统正在等待这个闭环。
+
+- 原消息编号: {message_id}
+- 当前会话: {current_session_id}
+- 已等待秒数: {elapsed_seconds}
+- 询问内容:
+{content}
+
+请立即先答复这条询问。回复方式：调用 MCP 工具 `ai.send_message`，参数必须包含：
+{{"to_ai_config_id": {from_ai_config_id}, "content": "<你的答复>", "message_type": "reply", "require_reply": false, "reply_to_message_id": "{message_id}", "current_session_id": "{current_session_id}"}}"""
+
 DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE = """[系统通知 · AI 间通信 · 单向]
 你收到一条单向通知消息。系统已为你自动签收，**无需调用任何工具回应**，请继续你原本的工作。
 

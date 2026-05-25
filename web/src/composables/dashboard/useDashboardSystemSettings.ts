@@ -21,6 +21,12 @@ const clampIdleSeconds = (value: unknown) => {
   return Math.max(5, Math.min(3600, Math.floor(parsed)))
 }
 
+const clampReminderSeconds = (value: unknown) => {
+  const parsed = Number(value ?? 3)
+  if (!Number.isFinite(parsed)) return 3
+  return Math.max(0, Math.min(3600, Math.floor(parsed)))
+}
+
 const clampMcpMaxSteps = (value: unknown) => {
   const parsed = Number(value ?? 48)
   if (!Number.isFinite(parsed)) return 48
@@ -156,6 +162,18 @@ Rules:
   {{"to_ai_config_id": {from_ai_config_id}, "content": "<你的答复>", "message_type": "reply", "require_reply": false, "reply_to_message_id": "{message_id}", "current_session_id": "{current_session_id}"}}
 
 回复后如仍需沟通，可以继续使用 \`ai.send_message\`。`)
+  const aiMessageInquiryReminderSeconds = ref(3)
+  const promptAiMessageInquiryReminder = ref(`[系统提示 · AI 间询问待回复]
+你仍有一条来自 {from_ai_name} 的询问尚未回复，系统正在等待这个闭环。
+
+- 原消息编号: {message_id}
+- 当前会话: {current_session_id}
+- 已等待秒数: {elapsed_seconds}
+- 询问内容:
+{content}
+
+请立即先答复这条询问。回复方式：调用 MCP 工具 \`ai.send_message\`，参数必须包含：
+{{"to_ai_config_id": {from_ai_config_id}, "content": "<你的答复>", "message_type": "reply", "require_reply": false, "reply_to_message_id": "{message_id}", "current_session_id": "{current_session_id}"}}`)
   const promptAiMessageReply = ref(`[AI 间通信 · 收到答复]
 你之前的询问已收到对方答复。
 
@@ -215,6 +233,8 @@ Rules:
         default_inheritance_notice: defaultInheritanceNotice.value,
         prompt_ai_message_notify: promptAiMessageNotify.value,
         prompt_ai_message_inquiry: promptAiMessageInquiry.value,
+        ai_message_inquiry_reminder_seconds: clampReminderSeconds(aiMessageInquiryReminderSeconds.value),
+        prompt_ai_message_inquiry_reminder: promptAiMessageInquiryReminder.value,
         prompt_ai_message_reply: promptAiMessageReply.value,
         prompt_ai_message_chitchat: promptAiMessageChitchat.value,
         prompt_ai_message_reply_success: promptAiMessageReplySuccess.value,
@@ -281,6 +301,12 @@ Rules:
       if (Object.prototype.hasOwnProperty.call(rawUser, 'prompt_ai_message_inquiry')) {
         promptAiMessageInquiry.value = String(rawUser.prompt_ai_message_inquiry ?? '')
       }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'ai_message_inquiry_reminder_seconds')) {
+        aiMessageInquiryReminderSeconds.value = clampReminderSeconds(rawUser.ai_message_inquiry_reminder_seconds)
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'prompt_ai_message_inquiry_reminder')) {
+        promptAiMessageInquiryReminder.value = String(rawUser.prompt_ai_message_inquiry_reminder ?? '')
+      }
       if (Object.prototype.hasOwnProperty.call(rawUser, 'prompt_ai_message_reply')) {
         promptAiMessageReply.value = String(rawUser.prompt_ai_message_reply ?? '')
       }
@@ -321,6 +347,8 @@ Rules:
     defaultInheritanceNotice,
     promptAiMessageNotify,
     promptAiMessageInquiry,
+    aiMessageInquiryReminderSeconds,
+    promptAiMessageInquiryReminder,
     promptAiMessageReply,
     promptAiMessageChitchat,
     promptAiMessageReplySuccess,

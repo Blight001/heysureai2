@@ -40,6 +40,7 @@ class AIMessage(SQLModel, table=True):
     # 仅用于展示/审计，不作为发送限制。
     cascade_depth: int = Field(default=0)
     delivered_at: Optional[float] = Field(default=None)
+    reply_reminded_at: Optional[float] = Field(default=None)
     replied_at: Optional[float] = Field(default=None)
     failure_reason: Optional[str] = Field(default=None)
     created_at: float = Field(default_factory=time.time, index=True)

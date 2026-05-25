@@ -184,6 +184,8 @@ def _create_loop_scheduled_job(
         job_id=f"job_{uuid.uuid4().hex[:12]}",
         user_id=source_job.user_id,
         ai_config_id=source_job.ai_config_id,
+        created_by_ai_config_id=source_job.created_by_ai_config_id,
+        created_by_session_id=source_job.created_by_session_id,
         ai_kind=source_job.ai_kind or "core",
         template_id=source_job.template_id,
         title=source_job.title,

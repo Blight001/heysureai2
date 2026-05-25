@@ -23,6 +23,7 @@ _MESSAGE_TYPE_HINT = (
     '"reply" for answering a previous inquiry, "notify" for one-way notification/status/result '
     'that does not expect an answer, or "chitchat" for casual multi-turn chat.'
 )
+DEFAULT_REPLY_WAIT_SECONDS = 24 * 60 * 60
 
 
 def _coerce_message_type(raw: Any) -> str:
@@ -125,7 +126,7 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
     if not content:
         raise HTTPException(status_code=400, detail="content is required")
     require_reply = bool(args.get("require_reply", False))
-    timeout_seconds = int(args.get("timeout_seconds") or 120)
+    timeout_seconds = int(args.get("timeout_seconds") or DEFAULT_REPLY_WAIT_SECONDS)
     message_type = _coerce_message_type(args.get("message_type"))
 
     sender_ctx = get_run_session_context() or {}

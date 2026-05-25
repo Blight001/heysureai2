@@ -5,6 +5,7 @@ from sqlmodel import Field, SQLModel
 from .defaults import (
     DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,
     DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
+    DEFAULT_AI_MESSAGE_INQUIRY_REMINDER,
     DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
     DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
     DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
@@ -49,6 +50,8 @@ class User(SQLModel, table=True):
 
     prompt_ai_message_notify: str = Field(default=DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE)
     prompt_ai_message_inquiry: str = Field(default=DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE)
+    ai_message_inquiry_reminder_seconds: int = Field(default=3)
+    prompt_ai_message_inquiry_reminder: str = Field(default=DEFAULT_AI_MESSAGE_INQUIRY_REMINDER)
     prompt_ai_message_reply: str = Field(default=DEFAULT_AI_MESSAGE_REPLY_TEMPLATE)
     prompt_ai_message_chitchat: str = Field(default=DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE)
     prompt_ai_message_reply_success: str = Field(default=DEFAULT_AI_MESSAGE_REPLY_SUCCESS)
@@ -90,6 +93,8 @@ class UserRead(SQLModel):
     default_inheritance_notice: str
     prompt_ai_message_notify: str
     prompt_ai_message_inquiry: str
+    ai_message_inquiry_reminder_seconds: int
+    prompt_ai_message_inquiry_reminder: str
     prompt_ai_message_reply: str
     prompt_ai_message_chitchat: str
     prompt_ai_message_reply_success: str
@@ -117,6 +122,8 @@ class UserUpdate(SQLModel):
     default_inheritance_notice: Optional[str] = None
     prompt_ai_message_notify: Optional[str] = None
     prompt_ai_message_inquiry: Optional[str] = None
+    ai_message_inquiry_reminder_seconds: Optional[int] = None
+    prompt_ai_message_inquiry_reminder: Optional[str] = None
     prompt_ai_message_reply: Optional[str] = None
     prompt_ai_message_chitchat: Optional[str] = None
     prompt_ai_message_reply_success: Optional[str] = None

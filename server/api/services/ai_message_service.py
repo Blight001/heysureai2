@@ -32,7 +32,8 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 
 from ..database import engine
-from ..models import AIMessage, AssistantAIConfig, ChatRun, ChatSession
+from ..models import AIMessage, AssistantAIConfig, ChatMessageCreate, ChatRun, ChatSession, User
+from ..services.chat_persistence import _save_message
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +79,7 @@ class _PendingReplyRegistry:
 
 _pending_replies = _PendingReplyRegistry()
 _WAKE_LOCK = threading.Lock()
+DEFAULT_REPLY_WAIT_SECONDS = 24 * 60 * 60
 
 
 def _new_message_id() -> str:
@@ -130,7 +132,7 @@ def send(
     target_session_id: str,
     from_session_id: str = "",
     require_reply: bool = True,
-    timeout_seconds: int = 120,
+    timeout_seconds: int = DEFAULT_REPLY_WAIT_SECONDS,
     message_type: Optional[str] = None,
     cascade_depth: int = 0,
 ) -> AIMessage:
@@ -170,7 +172,7 @@ def send(
             from_session_id=(from_session_id or "").strip(),
             content=content,
             require_reply=bool(require_reply),
-            timeout_seconds=max(5, int(timeout_seconds or 120)),
+            timeout_seconds=max(5, int(timeout_seconds or DEFAULT_REPLY_WAIT_SECONDS)),
             status="pending",
             message_type=normalized_type,
             cascade_depth=safe_depth,
@@ -357,6 +359,7 @@ def _row_to_dict(row: AIMessage) -> Dict[str, Any]:
         "message_type": getattr(row, "message_type", "notify") or "notify",
         "cascade_depth": int(getattr(row, "cascade_depth", 0) or 0),
         "delivered_at": row.delivered_at,
+        "reply_reminded_at": getattr(row, "reply_reminded_at", None),
         "replied_at": row.replied_at,
         "failure_reason": row.failure_reason,
         "created_at": row.created_at,
@@ -366,6 +369,184 @@ def _row_to_dict(row: AIMessage) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 事件驱动的等待
 # ---------------------------------------------------------------------------
+
+
+def _safe_format_template(template: str, values: Dict[str, Any]) -> str:
+    try:
+        return str(template or "").format(**values)
+    except Exception:
+        return str(template or "")
+
+
+def _reply_reminder_seconds(user_id: int) -> int:
+    with Session(engine) as session:
+        user = session.get(User, user_id)
+        raw = getattr(user, "ai_message_inquiry_reminder_seconds", 3) if user else 3
+    try:
+        return max(0, min(3600, int(raw or 0)))
+    except Exception:
+        return 3
+
+
+def _target_has_active_run_for_message(*, message_id: str, user_id: int) -> bool:
+    with Session(engine) as session:
+        row = session.exec(
+            select(AIMessage).where(
+                AIMessage.user_id == user_id,
+                AIMessage.message_id == message_id,
+            )
+        ).first()
+        if not row or row.status in {"replied", "failed"}:
+            return False
+        target_session_id = str(row.target_session_id or "").strip()
+        if not target_session_id:
+            return False
+        return bool(
+            _get_live_active_run(
+                session,
+                user_id,
+                int(row.to_ai_config_id),
+                session_id=target_session_id,
+            )
+        )
+
+
+def _send_inquiry_reply_reminder(*, message_id: str, user_id: int, elapsed_seconds: int) -> Dict[str, Any]:
+    with Session(engine) as session:
+        row = session.exec(
+            select(AIMessage).where(
+                AIMessage.user_id == user_id,
+                AIMessage.message_id == message_id,
+            )
+        ).first()
+        if not row:
+            return {"reminded": False, "reason": "message_not_found"}
+        if row.status in {"replied", "failed"}:
+            return {"reminded": False, "reason": f"already_{row.status}"}
+        if row.reply_reminded_at:
+            return {"reminded": False, "reason": "already_reminded", "reminded_at": row.reply_reminded_at}
+        if not (bool(row.require_reply) or str(row.message_type or "").lower() == "inquiry"):
+            return {"reminded": False, "reason": "not_reply_required"}
+
+        from_cfg = session.exec(
+            select(AssistantAIConfig).where(
+                AssistantAIConfig.user_id == user_id,
+                AssistantAIConfig.id == int(row.from_ai_config_id),
+            )
+        ).first()
+        target_cfg = session.exec(
+            select(AssistantAIConfig).where(
+                AssistantAIConfig.user_id == user_id,
+                AssistantAIConfig.id == int(row.to_ai_config_id),
+            )
+        ).first()
+        user = session.get(User, user_id)
+        if not target_cfg:
+            return {"reminded": False, "reason": "target_ai_not_found"}
+
+        from_name = str(from_cfg.name or "").strip() if from_cfg else f"AI-{row.from_ai_config_id}"
+        target_name = str(target_cfg.name or "").strip() or f"AI-{row.to_ai_config_id}"
+        session_id = str(row.target_session_id or "").strip()
+        if not session_id:
+            return {"reminded": False, "reason": "missing_target_session"}
+        target_ai_config_id = int(row.to_ai_config_id)
+        ai_kind = "assistant" if target_cfg.ai_role == "assistant_admin" else "core"
+        template = str(getattr(user, "prompt_ai_message_inquiry_reminder", "") or "").strip()
+        content = _safe_format_template(template, {
+            "message_id": row.message_id,
+            "from_ai_name": from_name,
+            "from_ai_config_id": row.from_ai_config_id,
+            "target_ai_name": target_name,
+            "target_ai_config_id": row.to_ai_config_id,
+            "current_session_id": session_id,
+            "content": row.content,
+            "elapsed_seconds": int(elapsed_seconds or 0),
+        })
+        if not content.strip():
+            content = (
+                f"[系统提示] 消息 {row.message_id} 已等待 {int(elapsed_seconds or 0)} 秒仍未回复。"
+                f"请立即调用 ai.send_message 回复发送方 AI-{row.from_ai_config_id}。"
+            )
+
+        existing_chat_session = session.exec(
+            select(ChatSession).where(
+                ChatSession.user_id == user_id,
+                ChatSession.ai_config_id == target_ai_config_id,
+                ChatSession.ai_kind == ai_kind,
+                ChatSession.session_id == session_id,
+            ).order_by(ChatSession.updated_at.desc())
+        ).first()
+        session_name = str(existing_chat_session.session_name or "").strip() if existing_chat_session else f"AI通信：来自 {from_name}"
+        if existing_chat_session is None:
+            session.add(ChatSession(
+                user_id=user_id,
+                ai_config_id=target_ai_config_id,
+                ai_kind=ai_kind,
+                session_id=session_id,
+                session_name=session_name,
+            ))
+
+        active = _get_live_active_run(session, user_id, target_ai_config_id, session_id=session_id)
+        if active:
+            return {"reminded": False, "reason": "target_active", "run_id": active.run_id}
+
+        _save_message(
+            session,
+            user_id,
+            ChatMessageCreate(
+                role="user",
+                content=content,
+                tags=f"ai_message_reply_reminder:{row.message_id}",
+                ai_config_id=target_ai_config_id,
+                ai_kind=ai_kind,
+                session_id=session_id,
+                session_name=session_name,
+                total_tokens=0,
+            ),
+        )
+        row.reply_reminded_at = time.time()
+        session.add(row)
+
+        run_id = f"run_{uuid.uuid4().hex}"
+        run = ChatRun(
+            run_id=run_id,
+            user_id=user_id,
+            ai_config_id=target_ai_config_id,
+            ai_kind=ai_kind,
+            session_id=session_id,
+            session_name=session_name,
+            status="queued",
+            stop_requested=False,
+        )
+        session.add(run)
+        session.commit()
+
+    from api.routers.chat_base import _RUN_THREADS
+    from api.routers.chat_worker import _run_worker
+
+    worker = threading.Thread(
+        target=_run_worker,
+        kwargs={
+            "run_id": run_id,
+            "user_id": user_id,
+            "ai_config_id": target_ai_config_id,
+            "ai_kind": ai_kind,
+            "session_id": session_id,
+            "session_name": session_name,
+            "model_user_content": None,
+            "merged_system_prompt": None,
+            "max_steps": None,
+        },
+        daemon=True,
+    )
+    _RUN_THREADS[run_id] = worker
+    worker.start()
+    return {
+        "reminded": True,
+        "run_id": run_id,
+        "target_session_id": session_id,
+        "interrupted": False,
+    }
 
 
 async def wait_for_reply(
@@ -380,7 +561,7 @@ async def wait_for_reply(
     回复就已写入），最后 ``await asyncio.wrap_future`` 等待跨线程
     set_result。
     """
-    timeout = max(1, int(timeout_seconds or 120))
+    timeout = max(1, int(timeout_seconds or DEFAULT_REPLY_WAIT_SECONDS))
     fut = _pending_replies.register(message_id)
     try:
         # Race guard: 回复可能在 register 之前就完成了。
@@ -388,9 +569,55 @@ async def wait_for_reply(
         if early and early.status in {"replied", "timeout", "failed"}:
             _pending_replies.discard(message_id)
             return _row_to_dict(early)
+        reminder_after = _reply_reminder_seconds(user_id)
+        should_remind = 0 < reminder_after < timeout
+        wrapped = asyncio.wrap_future(fut)
         try:
-            result = await asyncio.wait_for(asyncio.wrap_future(fut), timeout=timeout)
-            return result
+            deadline = time.monotonic() + timeout
+            idle_since: Optional[float] = None
+            reminded = False
+            while True:
+                now = time.monotonic()
+                remaining = deadline - now
+                if remaining <= 0:
+                    raise asyncio.TimeoutError()
+
+                wait_slice = min(0.5, remaining)
+                if should_remind and idle_since is not None and not reminded:
+                    wait_slice = min(wait_slice, max(0.05, idle_since + reminder_after - now))
+
+                done, _ = await asyncio.wait({wrapped}, timeout=wait_slice)
+                if done:
+                    return wrapped.result()
+
+                latest = fetch(message_id, user_id)
+                if latest and latest.status in {"replied", "failed"}:
+                    return _row_to_dict(latest)
+
+                target_active = _target_has_active_run_for_message(
+                    message_id=message_id,
+                    user_id=user_id,
+                )
+                if target_active:
+                    idle_since = None
+                    continue
+
+                if idle_since is None:
+                    idle_since = time.monotonic()
+                    continue
+
+                idle_elapsed = time.monotonic() - idle_since
+                if should_remind and not reminded and idle_elapsed >= reminder_after:
+                    try:
+                        _send_inquiry_reply_reminder(
+                            message_id=message_id,
+                            user_id=user_id,
+                            elapsed_seconds=reminder_after,
+                        )
+                    except Exception as exc:
+                        print(f"[ai_message_service] inquiry reply reminder failed: {exc}")
+                    reminded = True
+                    idle_since = None
         except asyncio.TimeoutError:
             _pending_replies.discard(message_id)
             with Session(engine) as session:

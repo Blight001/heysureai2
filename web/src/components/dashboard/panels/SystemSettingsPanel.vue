@@ -14,6 +14,8 @@ interface Props {
   defaultInheritanceNotice: string
   promptAiMessageNotify: string
   promptAiMessageInquiry: string
+  aiMessageInquiryReminderSeconds: number
+  promptAiMessageInquiryReminder: string
   promptAiMessageReply: string
   promptAiMessageChitchat: string
   promptAiMessageReplySuccess: string
@@ -37,6 +39,8 @@ const emit = defineEmits<{
   (e: 'update:defaultInheritanceNotice', value: string): void
   (e: 'update:promptAiMessageNotify', value: string): void
   (e: 'update:promptAiMessageInquiry', value: string): void
+  (e: 'update:aiMessageInquiryReminderSeconds', value: number): void
+  (e: 'update:promptAiMessageInquiryReminder', value: string): void
   (e: 'update:promptAiMessageReply', value: string): void
   (e: 'update:promptAiMessageChitchat', value: string): void
   (e: 'update:promptAiMessageReplySuccess', value: string): void
@@ -139,6 +143,16 @@ const promptAiMessageNotifyValue = computed({
 const promptAiMessageInquiryValue = computed({
   get: () => props.promptAiMessageInquiry,
   set: value => emit('update:promptAiMessageInquiry', value)
+})
+
+const aiMessageInquiryReminderSecondsValue = computed({
+  get: () => Number(props.aiMessageInquiryReminderSeconds || 3),
+  set: value => emit('update:aiMessageInquiryReminderSeconds', Math.max(0, Math.min(3600, Math.floor(Number(value) || 0))))
+})
+
+const promptAiMessageInquiryReminderValue = computed({
+  get: () => props.promptAiMessageInquiryReminder,
+  set: value => emit('update:promptAiMessageInquiryReminder', value)
 })
 
 const promptAiMessageReplyValue = computed({
@@ -402,7 +416,7 @@ watch(() => props.show, visible => {
                 <section class="space-y-3 pt-5 border-t border-zinc-100 dark:border-zinc-800">
                   <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">AI 通信提示词</h4>
                   <p class="text-[11px] text-zinc-500 dark:text-zinc-400">
-                    通用占位符：<code>{target_ai_name}</code>、<code>{target_ai_config_id}</code>、<code>{from_ai_name}</code>、<code>{from_ai_config_id}</code>、<code>{message_id}</code>、<code>{current_session_id}</code>、<code>{content}</code>。
+                    通用占位符：<code>{target_ai_name}</code>、<code>{target_ai_config_id}</code>、<code>{from_ai_name}</code>、<code>{from_ai_config_id}</code>、<code>{message_id}</code>、<code>{current_session_id}</code>、<code>{content}</code>。未回复提醒额外支持 <code>{elapsed_seconds}</code>。
                   </p>
                   <div>
                     <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
@@ -421,6 +435,16 @@ watch(() => props.show, visible => {
                     <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
                       接收方可用 message_type="reply" 答复；系统不限制后续继续沟通。
                     </p>
+                  </div>
+                  <div>
+                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">inquiry 对方停止运行且未回复多久后提醒（秒，0 表示关闭）</div>
+                    <input v-model.number="aiMessageInquiryReminderSecondsValue" type="number" min="0" max="3600" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs" />
+                  </div>
+                  <div>
+                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
+                      inquiry 停止运行后未回复提醒模板（注入乙方原会话，要求其回复原消息）
+                    </div>
+                    <textarea v-model="promptAiMessageInquiryReminderValue" rows="7" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
                   </div>
                   <div>
                     <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">

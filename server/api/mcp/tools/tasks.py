@@ -9,7 +9,9 @@ from sqlmodel import Session, select
 
 from ...database import engine
 from ...models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, ChatSession
+from ...services.agent_dispatch import get_run_session_context
 from ...services.governance import assert_can_manage_or_legacy
+from ...services.task_completion_notify import notify_task_completion
 from ...services.task_system import extract_task_payload
 
 _FINISHED_STATUSES = {"completed", "cancelled", "stopped", "error"}
@@ -357,6 +359,8 @@ def _task_create_impl(
         schedule_enabled = True
 
     task_create_type = _task_create_type_from_payload(task_payload)
+    run_ctx = get_run_session_context() or {}
+    created_by_session_id = str(run_ctx.get("session_id") or "").strip() or None
 
     with Session(engine) as session:
         owner_cfg = _resolve_task_runtime_owner(session, user_id, ai_config_id, normalized_args)
@@ -406,6 +410,7 @@ def _task_create_impl(
             user_id=user_id,
             ai_config_id=int(owner_cfg.id),
             created_by_ai_config_id=int(ai_config_id) if ai_config_id else None,
+            created_by_session_id=created_by_session_id,
             ai_kind="core",
             template_id=template_id,
             title=title,
@@ -433,6 +438,7 @@ def _task_create_impl(
             "owner_ai_config_id": owner_cfg.id,
             "owner_ai_name": owner_cfg.name,
             "requested_ai_config_id": ai_config_id,
+            "created_by_session_id": created_by_session_id,
             "created_at_unix": created_ts,
             "created_at_local": _format_ts_local(created_ts),
             "created_at_utc": _format_ts_utc(created_ts),
@@ -972,11 +978,17 @@ def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[in
         row.updated_at = row.finished_at
         session.add(row)
         session.commit()
+        notification = notify_task_completion(
+            user_id=user_id,
+            job_id=str(row.job_id or ""),
+            summary=summary,
+        )
         return {
             "completed": True,
             "job_id": row.job_id,
             "title": row.title,
             "summary": summary,
+            "completion_notification": notification,
             "next_step_hint": (
                 "若本次产生了可复用经验，请用 memory.write 沉淀关键事实/教训；"
                 "若发现可改进系统 prompt/工具/流程的规律，请用 evolution.input 提交进化建议（附证据与风险）。"

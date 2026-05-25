@@ -34,6 +34,8 @@ class AITaskJob(SQLModel, table=True):
     user_id: int = Field(foreign_key="user.id", index=True)
     ai_config_id: int = Field(foreign_key="assistantaiconfig.id", index=True)
     created_by_ai_config_id: Optional[int] = Field(default=None, index=True)  # dispatcher's AI config id
+    created_by_session_id: Optional[str] = Field(default=None, index=True)  # dispatcher's chat session id
+    completion_notified_at: Optional[float] = None
     ai_kind: str = Field(default="core", index=True)
     template_id: Optional[str] = Field(default=None, index=True)
     title: str

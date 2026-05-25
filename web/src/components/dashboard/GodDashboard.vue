@@ -65,6 +65,8 @@ const {
   defaultInheritanceNotice,
   promptAiMessageNotify,
   promptAiMessageInquiry,
+  aiMessageInquiryReminderSeconds,
+  promptAiMessageInquiryReminder,
   promptAiMessageReply,
   promptAiMessageChitchat,
   promptAiMessageReplySuccess,
@@ -650,6 +652,8 @@ onUnmounted(() => {
       v-model:defaultInheritanceNotice="defaultInheritanceNotice"
       v-model:promptAiMessageNotify="promptAiMessageNotify"
       v-model:promptAiMessageInquiry="promptAiMessageInquiry"
+      v-model:aiMessageInquiryReminderSeconds="aiMessageInquiryReminderSeconds"
+      v-model:promptAiMessageInquiryReminder="promptAiMessageInquiryReminder"
       v-model:promptAiMessageReply="promptAiMessageReply"
       v-model:promptAiMessageChitchat="promptAiMessageChitchat"
       v-model:promptAiMessageReplySuccess="promptAiMessageReplySuccess"

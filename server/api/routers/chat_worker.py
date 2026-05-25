@@ -16,6 +16,7 @@ from api.mcp import registry, reset_mcp_runtime_overrides, set_mcp_runtime_overr
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.services import ai_message_service, valhalla_service
 from api.services.agent_dispatch import dispatch_endpoint_tool_and_wait, set_run_session_context
+from api.services.task_completion_notify import notify_task_completion
 from api.services.desktop_agent_tools import (
     build_endpoint_tools_payload,
     endpoint_bridge_tools_for_config,
@@ -1270,6 +1271,14 @@ def _run_worker(
                             )
                         except Exception as _vex:
                             print(f"[chat_worker] valhalla write_complete failed: {_vex}")
+                        try:
+                            notify_task_completion(
+                                user_id=user_id,
+                                job_id=str(completed_job.job_id or ""),
+                                summary=task_summary,
+                            )
+                        except Exception as _nex:
+                            print(f"[chat_worker] task completion notify failed: {_nex}")
                     next_loop_job = _create_loop_scheduled_job(bg, completed_job, time.time())
                     completion_notice_lines = [
                         "[系统提示]",

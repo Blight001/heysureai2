@@ -145,6 +145,14 @@ async def update_profile(
             update_data["mcp_max_steps"] = max(1, min(999, int(update_data.get("mcp_max_steps") or 48)))
         except Exception:
             update_data["mcp_max_steps"] = 48
+    if "ai_message_inquiry_reminder_seconds" in update_data:
+        try:
+            update_data["ai_message_inquiry_reminder_seconds"] = max(
+                0,
+                min(3600, int(update_data.get("ai_message_inquiry_reminder_seconds") or 0)),
+            )
+        except Exception:
+            update_data["ai_message_inquiry_reminder_seconds"] = 3
     
     if "password" in update_data:
         password = update_data.pop("password")

@@ -12,6 +12,8 @@ export interface User {
   role_mcp_permissions?: string
   prompt_ai_message_notify?: string
   prompt_ai_message_inquiry?: string
+  ai_message_inquiry_reminder_seconds?: number
+  prompt_ai_message_inquiry_reminder?: string
   prompt_ai_message_reply?: string
   prompt_ai_message_chitchat?: string
   prompt_ai_message_reply_success?: string
