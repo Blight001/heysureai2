@@ -89,19 +89,19 @@ export const ENDPOINT_AGENT_MCP_TOOLS = [
 
 const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag: string }> = {
   'workspace.run_command': { label: '执行命令', description: '在工作目录中执行终端命令。', tag: '工作区' },
-  'admin.list_agents': { label: '列出智能体', description: '查看系统中的 AI 成员列表。', tag: '管理与项目' },
-  'admin.get_overview': { label: '管理总览', description: '获取系统运行状态与关键统计。', tag: '管理与项目' },
-  'admin.dispatch_flow': { label: '分派流程', description: '向指定 AI 下发流程或任务。', tag: '管理与项目' },
-  'project.list_projects': { label: '项目列表', description: '查看当前用户下的项目信息。', tag: '管理与项目' },
-  'project.create_project': { label: '创建项目', description: '创建新的项目记录。', tag: '管理与项目' },
-  'project.update_project': { label: '更新项目', description: '更新项目信息与成员绑定。', tag: '管理与项目' },
-  'project.delete_project': { label: '删除项目', description: '删除项目记录，请谨慎操作。', tag: '管理与项目' },
-  'task.create': { label: '创建任务', description: '统一创建入口；用 mode 选择 immediate 立即执行、scheduled 定时执行、recurring 循环运行。', tag: '计划与记忆' },
-  'task.update': { label: '编辑任务', description: '管理员接管任务时修改标题、说明、优先级、状态或定时配置。', tag: '计划与记忆' },
-  'task.delete': { label: '删除任务', description: '硬删除任务并停止相关运行，清理对应任务会话。', tag: '计划与记忆' },
-  'task.list': { label: '任务队列', description: '查看当前 AI 的任务队列情况；传 current_only=true 可只读取当前任务。', tag: '计划与记忆' },
-  'task.inherit': { label: '提交传承', description: '提交任务传承摘要与上下文。', tag: '计划与记忆' },
-  'task.complete': { label: '标记完成', description: '将当前任务标记为完成。', tag: '计划与记忆' },
+  'admin.list_agents': { label: '列出智能体', description: '查看系统中的 AI 成员列表。', tag: '管理' },
+  'admin.get_overview': { label: '管理总览', description: '获取系统运行状态与关键统计。', tag: '管理' },
+  'admin.dispatch_flow': { label: '分派流程', description: '向指定 AI 下发流程或任务。', tag: '管理' },
+  'project.list_projects': { label: '项目列表', description: '查看当前用户下的项目信息。', tag: '项目' },
+  'project.create_project': { label: '创建项目', description: '创建新的项目记录。', tag: '项目' },
+  'project.update_project': { label: '更新项目', description: '更新项目信息与成员绑定。', tag: '项目' },
+  'project.delete_project': { label: '删除项目', description: '删除项目记录，请谨慎操作。', tag: '项目' },
+  'task.create': { label: '创建任务', description: '统一创建入口；用 mode 选择 immediate 立即执行、scheduled 定时执行、recurring 循环运行。', tag: '任务' },
+  'task.update': { label: '编辑任务', description: '管理员接管任务时修改标题、说明、优先级、状态或定时配置。', tag: '任务' },
+  'task.delete': { label: '删除任务', description: '硬删除任务并停止相关运行，清理对应任务会话。', tag: '任务' },
+  'task.list': { label: '任务队列', description: '查看当前 AI 的任务队列；传 current_only=true 只读当前任务，传 include_history=true 查看历史记录。', tag: '任务' },
+  'task.inherit': { label: '提交传承', description: '提交任务传承摘要与上下文。', tag: '任务' },
+  'task.complete': { label: '标记完成', description: '将当前任务标记为完成。', tag: '任务' },
   'prompt.list_targets': { label: 'Prompt 目标', description: '列出当前 AI 基础 prompt 目标与全局/系统 prompt 模板键。', tag: 'Prompt' },
   'prompt.read_ai': { label: '读取 AI Prompt', description: '读取指定 AI 实际使用的基础 prompt；未指定时读取当前 AI。', tag: 'Prompt' },
   'prompt.write_ai': { label: '修改 AI Prompt', description: '按行修改指定 AI 的 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
@@ -110,16 +110,16 @@ const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag
   'user.send_message': { label: '发送用户消息', description: '向用户发送文本消息；当前默认通过绑定的飞书机器人投递。', tag: '协作' },
   'conversation.forget_before_current': { label: '忘记前文', description: '删除当前会话里当前用户消息之前的内容，保留当前消息及之后内容。', tag: '协作' },
   'ai.send_message': { label: '发送 AI 消息', description: '向另一个 AI 发送消息；必须填写 message_type：inquiry 询问、reply 回复、notify 通知。', tag: '协作' },
-  'memory.write': { label: '写入记忆', description: '沉淀高价值的结构化记忆（事实/决策/经验/待办/风险/模板）供后续检索。', tag: '计划与记忆' },
-  'memory.search': { label: '检索记忆', description: '按关键词、类型、项目或标签搜索已存储的记忆。', tag: '计划与记忆' },
-  'memory.list': { label: '记忆列表', description: '列出已存储的记忆，可按类型/项目过滤。', tag: '计划与记忆' },
-  'memory.update': { label: '更新记忆', description: '更新已有记忆的内容/标签/类型/置信度。', tag: '计划与记忆' },
-  'memory.archive': { label: '归档记忆', description: '归档（软删除）记忆，使其默认检索时不再出现。', tag: '计划与记忆' },
-  'librarian.propose': { label: '提交知识流程', description: '向图书管理员提交可复用流程，等待审批后进入知识库。', tag: '计划与记忆' },
-  'librarian.consult': { label: '咨询图书管理员', description: '按问题检索图书管理员知识库中的相关流程与做法。', tag: '协作' },
-  'librarian.list_topics': { label: '知识主题列表', description: '浏览图书管理员已收录的流程标题与触发关键词。', tag: '计划与记忆' },
-  'librarian.read': { label: '读取知识流程', description: '按 memory_id 读取图书管理员知识库中的完整流程内容。', tag: '计划与记忆' },
-  'librarian.archive': { label: '归档知识流程', description: '归档图书管理员知识库中的流程条目。', tag: '计划与记忆' },
+  'memory.write': { label: '写入记忆', description: '沉淀高价值的结构化记忆（事实/决策/经验/待办/风险/模板）供后续检索。', tag: '记忆' },
+  'memory.search': { label: '检索记忆', description: '按关键词、类型、项目或标签搜索已存储的记忆。', tag: '记忆' },
+  'memory.list': { label: '记忆列表', description: '列出已存储的记忆，可按类型/项目过滤。', tag: '记忆' },
+  'memory.update': { label: '更新记忆', description: '更新已有记忆的内容/标签/类型/置信度。', tag: '记忆' },
+  'memory.archive': { label: '归档记忆', description: '归档（软删除）记忆，使其默认检索时不再出现。', tag: '归档' },
+  'librarian.propose': { label: '提交知识流程', description: '向图书管理员提交可复用流程，等待审批后进入知识库。', tag: '总结' },
+  'librarian.consult': { label: '咨询图书管理员', description: '按问题检索图书管理员知识库中的相关流程与做法。', tag: '总结' },
+  'librarian.list_topics': { label: '知识主题列表', description: '浏览图书管理员已收录的流程标题与触发关键词。', tag: '总结' },
+  'librarian.read': { label: '读取知识流程', description: '按 memory_id 读取图书管理员知识库中的完整流程内容。', tag: '总结' },
+  'librarian.archive': { label: '归档知识流程', description: '归档图书管理员知识库中的流程条目。', tag: '归档' },
   'evolution.input': { label: '提交进化建议', description: '提交对提示词/工具/流程的改进建议，交由核心管理者评审。', tag: '进化' },
   'evolution.list': { label: '进化建议列表', description: '列出已提交的进化建议，可按评审状态过滤。', tag: '进化' },
   'evolution.review': { label: '评审进化建议', description: '评审进化建议：接受/拒绝/应用（核心管理者）。', tag: '进化' },
@@ -211,7 +211,9 @@ const normalizeMcpSchemaType = (rawType: unknown) => {
 
 const MCP_TOOL_TAG_ORDER = [
   '工作区',
-  '管理与项目',
+  '管理',
+  '项目',
+  '任务',
   '文件系统',
   '终端',
   'Git',
@@ -226,9 +228,11 @@ const MCP_TOOL_TAG_ORDER = [
   '浏览器数据',
   '浏览器标签页',
   '浏览器卡片',
-  '计划与记忆',
-  'Prompt',
+  '记忆',
+  '归档',
+  '总结',
   '进化',
+  'Prompt',
   '协作',
   '通用',
 ]
@@ -260,14 +264,14 @@ const getMcpToolFallbackTag = (name: string) => {
   const endpointCapabilityTag = getEndpointCapabilityTag(name)
   if (endpointCapabilityTag) return endpointCapabilityTag
   if (hasMcpPrefix(name, 'workspace')) return '工作区'
-  if (hasMcpPrefix(name, 'admin')) return '管理与项目'
+  if (hasMcpPrefix(name, 'admin')) return '管理'
   if (hasMcpPrefix(name, 'desktop')) return '桌面能力'
-  if (hasMcpPrefix(name, 'project')) return '管理与项目'
-  if (hasMcpPrefix(name, 'task')) return '计划与记忆'
+  if (hasMcpPrefix(name, 'project')) return '项目'
+  if (hasMcpPrefix(name, 'task')) return '任务'
   if (hasMcpPrefix(name, 'prompt')) return 'Prompt'
-  if (hasMcpPrefix(name, 'memory')) return '计划与记忆'
-  if (name === 'librarian.consult') return '协作'
-  if (hasMcpPrefix(name, 'librarian')) return '计划与记忆'
+  if (name === 'memory.archive' || name === 'librarian.archive') return '归档'
+  if (hasMcpPrefix(name, 'memory')) return '记忆'
+  if (hasMcpPrefix(name, 'librarian')) return '总结'
   if (hasMcpPrefix(name, 'evolution')) return '进化'
   if (hasMcpPrefix(name, 'feishu')) return '协作'
   if (hasMcpPrefix(name, 'conversation')) return '协作'
@@ -318,7 +322,7 @@ export const getMcpToolZhLabel = (name: string) => MCP_TOOL_ZH_META[name]?.label
 
 const getMcpToolZhTag = (name: string) => MCP_TOOL_ZH_META[name]?.tag || getMcpToolFallbackTag(name)
 
-const PLAN_MEMORY_PREFIX_ORDER = ['task', 'memory', 'librarian']
+const MEMORY_PREFIX_ORDER = ['memory', 'librarian']
 const TASK_TOOL_ORDER = [
   'task.create',
   'task.update',
@@ -328,21 +332,29 @@ const TASK_TOOL_ORDER = [
   'task.complete',
 ]
 
-const getPlanMemoryToolRank = (name: string) => {
-  const prefix = name.split(/[._]/)[0] || ''
-  const prefixRank = PLAN_MEMORY_PREFIX_ORDER.includes(prefix)
-    ? PLAN_MEMORY_PREFIX_ORDER.indexOf(prefix)
-    : PLAN_MEMORY_PREFIX_ORDER.length
+const getTaskToolRank = (name: string) => {
   const toolRank = TASK_TOOL_ORDER.includes(name) ? TASK_TOOL_ORDER.indexOf(name) : 999
-  return { prefixRank, toolRank }
+  return { toolRank }
+}
+
+const getMemoryToolRank = (name: string) => {
+  const prefix = name.split(/[._]/)[0] || ''
+  const prefixRank = MEMORY_PREFIX_ORDER.includes(prefix)
+    ? MEMORY_PREFIX_ORDER.indexOf(prefix)
+    : MEMORY_PREFIX_ORDER.length
+  return { prefixRank }
 }
 
 const compareMcpToolByZh = (a: string, b: string, tag = '') => {
-  if (tag === '计划与记忆') {
-    const ar = getPlanMemoryToolRank(a)
-    const br = getPlanMemoryToolRank(b)
-    if (ar.prefixRank !== br.prefixRank) return ar.prefixRank - br.prefixRank
+  if (tag === '任务') {
+    const ar = getTaskToolRank(a)
+    const br = getTaskToolRank(b)
     if (ar.toolRank !== br.toolRank) return ar.toolRank - br.toolRank
+  }
+  if (tag === '记忆') {
+    const ar = getMemoryToolRank(a)
+    const br = getMemoryToolRank(b)
+    if (ar.prefixRank !== br.prefixRank) return ar.prefixRank - br.prefixRank
   }
   return getMcpToolZhLabel(a).localeCompare(getMcpToolZhLabel(b), 'zh-Hans-CN')
 }
@@ -371,7 +383,8 @@ export const groupMcpToolsByZhTag = (tools: string[]): McpToolGroup[] => {
 }
 
 const getMcpToolGroupParent = (tag: string) => {
-  if (tag === '管理与项目' || tag === 'Prompt') return '管理员'
+  if (tag === '管理' || tag === '项目' || tag === '任务' || tag === 'Prompt') return '管理员'
+  if (tag === '进化' || tag === '记忆' || tag === '归档' || tag === '总结') return '进化'
   return ''
 }
 
@@ -396,7 +409,7 @@ export const groupMcpToolGroupsByParent = (groups: McpToolGroup[]): McpToolParen
     tools: childGroups.flatMap(group => group.tools),
   }))
 
-  const parentOrder = ['管理员']
+  const parentOrder = ['管理员', '进化']
   return [...parentRows, ...standalone].sort((a, b) => {
     const aRank = parentOrder.includes(a.title) ? parentOrder.indexOf(a.title) : parentOrder.length
     const bRank = parentOrder.includes(b.title) ? parentOrder.indexOf(b.title) : parentOrder.length

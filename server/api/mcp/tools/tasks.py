@@ -13,6 +13,8 @@ from ...services.governance import assert_can_manage_or_legacy
 from ...services.task_system import extract_task_payload
 
 _FINISHED_STATUSES = {"completed", "cancelled", "stopped", "error"}
+_ACTIVE_STATUSES = {"queued", "running", "paused"}
+_TASK_LIST_STATUSES = _ACTIVE_STATUSES | _FINISHED_STATUSES
 
 # Phase 5: concurrency caps (0 = unlimited)
 _MAX_ACTIVE_TASKS_PER_AI = 10
@@ -796,9 +798,32 @@ def _task_status_rank(raw: str) -> int:
         return 2
     return 9
 
+def _parse_task_list_statuses(value: Any) -> List[str]:
+    if value is None:
+        return []
+    raw_items = value if isinstance(value, list) else str(value).split(",")
+    out: List[str] = []
+    seen = set()
+    for raw in raw_items:
+        item = str(raw or "").strip()
+        if not item or item not in _TASK_LIST_STATUSES or item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+def _parse_task_list_limit(value: Any, default: int) -> int:
+    try:
+        parsed = int(value)
+    except Exception:
+        parsed = default
+    return max(1, min(500, parsed))
+
 def _task_row_to_dict(row: AITaskJob) -> Dict[str, Any]:
     payload = _safe_decode_task_payload(row.task_payload)
     created_ts = _safe_timestamp(row.created_at)
+    started_ts = _safe_timestamp(row.started_at)
+    finished_ts = _safe_timestamp(row.finished_at)
     return {
         "job_id": row.job_id,
         "title": row.title,
@@ -811,21 +836,36 @@ def _task_row_to_dict(row: AITaskJob) -> Dict[str, Any]:
         "created_at_unix": created_ts,
         "created_at_local": _format_ts_local(created_ts),
         "created_at_utc": _format_ts_utc(created_ts),
+        "started_at_unix": started_ts,
+        "started_at_local": _format_ts_local(started_ts),
+        "started_at_utc": _format_ts_utc(started_ts),
+        "finished_at_unix": finished_ts,
+        "finished_at_local": _format_ts_local(finished_ts),
+        "finished_at_utc": _format_ts_utc(finished_ts),
         "schedule": _build_task_schedule_meta(payload, row.trigger_type),
     }
 
 def _task_list(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     job_id = str(args.get("job_id") or "").strip()
     current_only = _to_bool(args.get("current_only", args.get("current")), False)
+    include_history = _to_bool(args.get("include_history", args.get("history")), False)
+    history_only = _to_bool(args.get("history_only"), False)
+    requested_statuses = _parse_task_list_statuses(args.get("status") or args.get("statuses"))
+    limit = _parse_task_list_limit(args.get("limit"), 100 if (include_history or history_only) else 500)
     with Session(engine) as session:
         owner_cfg = _resolve_task_runtime_owner(session, user_id, ai_config_id, args)
         query = select(AITaskJob).where(
             AITaskJob.user_id == user_id,
             AITaskJob.ai_config_id == int(owner_cfg.id),
-            AITaskJob.status.in_(["queued", "running", "paused"]),
         )
         if job_id:
             query = query.where(AITaskJob.job_id == job_id)
+        elif requested_statuses:
+            query = query.where(AITaskJob.status.in_(requested_statuses))
+        elif history_only:
+            query = query.where(AITaskJob.status.in_(list(_FINISHED_STATUSES)))
+        elif not include_history:
+            query = query.where(AITaskJob.status.in_(list(_ACTIVE_STATUSES)))
         rows = session.exec(
             query.order_by(AITaskJob.priority.desc(), AITaskJob.created_at.asc())
         ).all()
@@ -838,6 +878,15 @@ def _task_list(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) 
                 )
             )
             rows = rows[:1]
+        elif include_history or history_only or requested_statuses:
+            rows.sort(
+                key=lambda item: (
+                    0 if str(item.status or "") in _ACTIVE_STATUSES else 1,
+                    _task_status_rank(str(item.status or "")),
+                    -float(item.created_at or 0),
+                )
+            )
+            rows = rows[:limit]
         tasks = [_task_row_to_dict(row) for row in rows]
         task = tasks[0] if tasks else None
         return {
@@ -846,6 +895,10 @@ def _task_list(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) 
             "requested_ai_config_id": ai_config_id,
             "requested_job_id": job_id or None,
             "current_only": bool(current_only),
+            "include_history": bool(include_history),
+            "history_only": bool(history_only),
+            "statuses": requested_statuses or None,
+            "limit": limit,
             "task": task if (current_only or job_id) else None,
             "tasks": tasks,
         }

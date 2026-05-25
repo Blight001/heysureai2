@@ -175,8 +175,10 @@ registry.register(MCPTool(
 registry.register(MCPTool(
     name="task.list",
     description=(
-        "List queued/running/paused tasks. Set current_only=true to return the current task "
-        "(running first, then queued, then paused). assistant_admin can proxy to digital_member "
+        "List task jobs. By default returns active queued/running/paused tasks. "
+        "Set current_only=true to return the current task (running first, then queued, then paused). "
+        "Set include_history=true to include completed/cancelled/stopped/error history, or history_only=true "
+        "to return only historical finished tasks. assistant_admin can proxy to digital_member "
         "(auto or target_ai_config_id)."
     ),
     input_schema={
@@ -184,6 +186,17 @@ registry.register(MCPTool(
         "properties": {
             "current_only": {"type": "boolean", "description": "Return only the current task as task and tasks[0]."},
             "current": {"type": "boolean", "description": "Alias of current_only."},
+            "include_history": {"type": "boolean", "description": "Include finished historical tasks in addition to active tasks."},
+            "history": {"type": "boolean", "description": "Alias of include_history."},
+            "history_only": {"type": "boolean", "description": "Return only finished historical tasks."},
+            "status": {
+                "description": "Optional status or comma-separated statuses to filter.",
+                "oneOf": [
+                    {"type": "string"},
+                    {"type": "array", "items": {"type": "string"}},
+                ],
+            },
+            "limit": {"type": "integer", "description": "Max rows when history/status filtering is used. 1-500, default 100."},
             "job_id": {"type": "string", "description": "Optional task job id to fetch through task.list."},
             "target_ai_config_id": {"type": "integer"},
             "target_config_id": {"type": "integer"},
