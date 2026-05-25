@@ -1741,6 +1741,65 @@
       padding: 0 2px 2px;
       margin-bottom: -2px;
     }
+
+    /* ── Activity console (in sidebar) ───────────────────────── */
+    .console-feed {
+      max-height: 280px;
+      min-height: 120px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-right: 4px;
+      font-size: 12px;
+    }
+    .console-feed::-webkit-scrollbar { width: 4px; }
+    .console-feed::-webkit-scrollbar-track { background: transparent; }
+    .console-feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .console-feed #feed-empty { padding: 22px 0; }
+    .console-feed #feed-empty .empty-icon { font-size: 28px; }
+    .console-feed #feed-empty p { font-size: 11px; }
+    .console-feed .entry { padding: 7px 9px; gap: 8px; }
+    .console-feed .entry-icon { width: 22px; height: 22px; font-size: 11px; border-radius: 6px; }
+    .console-feed .entry-message { font-size: 11px; line-height: 1.45; }
+    .console-feed .entry-type { font-size: 9px; padding: 1px 4px; }
+    .console-feed .entry-time { font-size: 9px; }
+    .console-feed .entry-data-toggle { font-size: 10px; padding: 1px 5px; }
+    .console-feed .entry-data { max-height: 120px; padding: 6px; }
+    .console-feed .entry-data pre { font-size: 10px; }
+
+    /* ── AI member tool chips (members list) ─────────────────── */
+    .member-card {
+      flex-wrap: wrap;
+    }
+    .member-tools {
+      flex-basis: 100%;
+      padding: 6px 0 0 36px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .member-tool-chip {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .member-tool-chip.more {
+      background: rgba(99,102,241,0.1);
+      border-color: rgba(99,102,241,0.25);
+      color: #a5b4fc;
+    }
+    .member-tool-empty {
+      flex-basis: 100%;
+      padding: 4px 0 0 36px;
+      font-size: 10px;
+      color: var(--text-muted);
+      font-style: italic;
+    }
   </style>
 </head>
 <body class="dark">
@@ -1833,17 +1892,16 @@
       <span class="logo-sub-txt">Windows</span>
     </div>
 
-    <div id="status-pill" title="点击选择 AI 成员" role="button" tabindex="0">
-      <div id="status-dot" class="disconnected"></div>
-      <span id="status-label">未连接</span>
-    </div>
-
     <div class="header-spacer"></div>
 
     <button class="top-user-chip" id="header-user-chip" title="账号 / 登录">
       <span class="top-user-ava" id="header-user-ava">·</span>
       <span class="top-user-name" id="header-user-name">未登录</span>
     </button>
+    <div id="status-pill" title="点击选择 AI 成员" role="button" tabindex="0">
+      <div id="status-dot" class="disconnected"></div>
+      <span id="status-label">未连接</span>
+    </div>
     <button class="btn btn-ghost btn-icon" id="settings-toggle" title="设置">&#x2699;</button>
     <button id="theme-toggle" title="切换主题">&#x1F319;</button>
   </header>
@@ -1854,28 +1912,13 @@
     <!-- Left: tabbed column -->
     <div id="feed-col">
       <div class="tab-nav">
-        <button class="tab-btn active" id="tab-feed">&#x25A0; 活动流</button>
-        <button class="tab-btn" id="tab-tasks">&#x1F4CB; 任务列表</button>
+        <button class="tab-btn active" id="tab-tasks">&#x1F4CB; 任务列表</button>
         <button class="tab-btn" id="tab-chat">&#x1F4AC; AI 对话</button>
       </div>
 
-      <!-- Activity feed pane -->
-      <div id="feed-pane">
-        <div class="feed-header">
-          <span class="feed-title">实时活动</span>
-          <button id="clear-btn">清空</button>
-        </div>
-        <div id="feed">
-          <div id="feed-empty">
-            <div class="empty-icon">&#x1F916;</div>
-            <p>等待任务中...</p>
-            <p style="font-size:11px">Agent 连接后将在此显示实时活动</p>
-          </div>
-        </div>
-      </div>
 
       <!-- Task list pane -->
-      <div id="tasks-pane">
+      <div id="tasks-pane" class="active">
         <div class="task-header">
           <div>
             <div class="feed-title">任务列表</div>
@@ -2081,6 +2124,21 @@
           <div class="stat-box">
             <div class="stat-num" id="stat-running" style="color:var(--warning)">0</div>
             <div class="stat-label">运行中</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity console -->
+      <div class="card" id="console-card">
+        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span>&#x1F4DC; 实时活动控制台</span>
+          <button id="clear-btn" title="清空">清空</button>
+        </div>
+        <div id="feed" class="console-feed">
+          <div id="feed-empty">
+            <div class="empty-icon">&#x1F916;</div>
+            <p>等待任务中...</p>
+            <p style="font-size:11px">Agent 连接后将在此显示实时活动</p>
           </div>
         </div>
       </div>

@@ -102,7 +102,7 @@ let currentTheme: 'dark' | 'light' = 'dark'
 let totalTasks = 0, successTasks = 0, failedTasks = 0, runningTasks = 0
 let chatHistory: Array<{ role: string; content: string; serverId?: number }> = []
 let chatBusy = false
-let activeTab: 'feed' | 'chat' | 'tasks' = 'feed'
+let activeTab: 'chat' | 'tasks' = 'tasks'
 let sidebarOpen = false
 let taskTemplates: TaskTemplate[] = []
 let taskJobs: TaskJob[] = []
@@ -132,14 +132,12 @@ function showScreen(screen: AppScreen) {
 const feed            = document.getElementById('feed')!
 const feedEmpty       = document.getElementById('feed-empty')!
 const bodyEl          = document.getElementById('body')!
-const feedPane        = document.getElementById('feed-pane')!
 const chatPane        = document.getElementById('chat-pane')!
 const tasksPane       = document.getElementById('tasks-pane')!
 const chatMessages    = document.getElementById('chat-messages')!
 const chatNoKey       = document.getElementById('chat-no-key')!
 const chatInput       = document.getElementById('chat-input') as HTMLTextAreaElement
 const chatSendBtn     = document.getElementById('chat-send') as HTMLButtonElement
-const tabFeed         = document.getElementById('tab-feed')!
 const tabChat         = document.getElementById('tab-chat')!
 const tabTasks        = document.getElementById('tab-tasks')!
 const taskList        = document.getElementById('task-list')!
@@ -233,12 +231,10 @@ function applyTheme(theme: 'dark' | 'light', persist = true) {
 )
 
 // ── Tab switching ──────────────────────────────────────────────────────────
-function switchTab(tab: 'feed' | 'chat' | 'tasks') {
+function switchTab(tab: 'chat' | 'tasks') {
   activeTab = tab
-  tabFeed.classList.toggle('active', tab === 'feed')
   tabChat.classList.toggle('active', tab === 'chat')
   tabTasks.classList.toggle('active', tab === 'tasks')
-  feedPane.classList.toggle('hidden', tab !== 'feed')
   chatPane.classList.toggle('active', tab === 'chat')
   tasksPane.classList.toggle('active', tab === 'tasks')
   if (tab === 'chat') {
@@ -248,7 +244,6 @@ function switchTab(tab: 'feed' | 'chat' | 'tasks') {
   if (tab === 'tasks') loadTasks().catch(err => showTaskError(err.message || String(err)))
   syncTaskLiveRefresh()
 }
-tabFeed.addEventListener('click', () => switchTab('feed'))
 tabChat.addEventListener('click', () => switchTab('chat'))
 tabTasks.addEventListener('click', () => switchTab('tasks'))
 
@@ -1351,16 +1346,17 @@ const accountInfoName   = document.getElementById('account-info-name') as HTMLEl
 const accountInfoServer = document.getElementById('account-info-server') as HTMLElement
 const loginFormBlock    = document.getElementById('login-form') as HTMLElement
 
-function setUserChip(account: string, server: string, authenticated = true) {
+function setUserChip(account: string, displayName: string, server: string, authenticated = true) {
   const host = (() => { try { return new URL(server).hostname } catch { return server || '—' } })()
-  headerUserName.textContent = authenticated && account ? account : '未登录'
-  headerUserAva.textContent = authenticated && account ? account.slice(0, 1).toUpperCase() : '·'
-  headerUserChip.classList.toggle('logged-in', !!(authenticated && account))
+  const shown = (displayName || account || '').trim()
+  headerUserName.textContent = authenticated && shown ? shown : '未登录'
+  headerUserAva.textContent = authenticated && shown ? shown.slice(0, 1).toUpperCase() : '·'
+  headerUserChip.classList.toggle('logged-in', !!(authenticated && shown))
   // Login modal: swap between login form and account info
-  if (authenticated && account) {
-    accountInfoAva.textContent = account.slice(0, 1).toUpperCase()
-    accountInfoName.textContent = account
-    accountInfoServer.textContent = host
+  if (authenticated && shown) {
+    accountInfoAva.textContent = shown.slice(0, 1).toUpperCase()
+    accountInfoName.textContent = shown
+    accountInfoServer.textContent = account && account !== shown ? `${account} · ${host}` : host
     accountInfoBlock.style.display = 'flex'
     loginFormBlock.style.display = 'none'
   } else {
@@ -1370,7 +1366,7 @@ function setUserChip(account: string, server: string, authenticated = true) {
 }
 
 function updateUserChip(s: any) {
-  setUserChip(s.userAccount || '', s.serverUrl || '', !!s.authToken)
+  setUserChip(s.userAccount || '', s.userName || '', s.serverUrl || '', !!s.authToken)
 }
 
 function parseMcpTools(value: any): string[] {
@@ -1458,6 +1454,12 @@ function renderAiGrid(configs: any[], statuses: any[]) {
     const isAdmin = role === 'assistant_admin'
     const rs = statusMap.get(cfg.id)
     const isEnabled = rs?.running ?? cfg.enabled
+    const tools = parseMcpTools(cfg?.mcp_tools)
+    const toolsHtml = tools.length === 0
+      ? '<div class="member-tool-empty">未配置可调用的 MCP 工具</div>'
+      : `<div class="member-tools">${
+          tools.slice(0, 12).map(tool => `<span class="member-tool-chip">${escapeHtml(tool)}</span>`).join('')
+        }${tools.length > 12 ? `<span class="member-tool-chip more">+${tools.length - 12}</span>` : ''}</div>`
 
     const card = document.createElement('div')
     card.className = `member-card${cfg.id === selectedAiConfigId ? ' selected' : ''}${isAdmin ? ' admin-card' : ''}`
@@ -1467,9 +1469,10 @@ function renderAiGrid(configs: any[], statuses: any[]) {
       <div class="member-ava">${escapeHtml((cfg.name || '?').slice(0, 1))}</div>
       <div class="member-info">
         <div class="member-name">${escapeHtml(cfg.name || '未命名')}</div>
-        <div class="member-meta">${escapeHtml(cfg.model || '—')} · MCP ${mcpToolCount(cfg)} 项 · ${escapeHtml(cfg.project_name || cfg.description || '无项目')}</div>
+        <div class="member-meta">${escapeHtml(cfg.model || '—')} · MCP ${tools.length} 项 · ${escapeHtml(cfg.project_name || cfg.description || '无项目')}</div>
       </div>
-      <span class="role-badge ${role}">${roleLabel(role)}</span>`
+      <span class="role-badge ${role}">${roleLabel(role)}</span>
+      ${toolsHtml}`
 
     if (!isAdmin) {
       card.addEventListener('click', async () => {

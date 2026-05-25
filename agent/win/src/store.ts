@@ -15,6 +15,7 @@ interface AgentSettings {
   aiModel: string
   // Auth
   userAccount: string
+  userName: string
   authToken: string
   userId: number | null
   // Selected AI Config
@@ -39,6 +40,7 @@ const defaults: AgentSettings = {
   aiBaseUrl: process.env.AI_BASE_URL || 'https://api.anthropic.com',
   aiModel: process.env.AI_MODEL || 'claude-sonnet-4-5',
   userAccount: '',
+  userName: '',
   authToken: '',
   userId: null,
   selectedAiConfigId: null,
