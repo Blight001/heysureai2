@@ -18,13 +18,18 @@ from ...services.agent_dispatch import get_run_session_context
 
 
 _ALLOWED_MESSAGE_TYPES = {"inquiry", "reply", "chitchat", "notify"}
+_MESSAGE_TYPE_HINT = (
+    'message_type is required. Use "inquiry" for a question/request that expects an answer, '
+    '"reply" for answering a previous inquiry, "notify" for one-way notification/status/result '
+    'that does not expect an answer, or "chitchat" for casual multi-turn chat.'
+)
 
 
-def _coerce_message_type(raw: Any, *, require_reply: bool) -> str:
+def _coerce_message_type(raw: Any) -> str:
     text = str(raw or "").strip().lower()
     if text in _ALLOWED_MESSAGE_TYPES:
         return text
-    return "inquiry" if require_reply else "notify"
+    raise HTTPException(status_code=400, detail=_MESSAGE_TYPE_HINT)
 
 
 # ---------- 与用户通信 ----------
@@ -121,7 +126,7 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         raise HTTPException(status_code=400, detail="content is required")
     require_reply = bool(args.get("require_reply", False))
     timeout_seconds = int(args.get("timeout_seconds") or 120)
-    message_type = _coerce_message_type(args.get("message_type"), require_reply=require_reply)
+    message_type = _coerce_message_type(args.get("message_type"))
 
     sender_ctx = get_run_session_context() or {}
     from_session_id = str(

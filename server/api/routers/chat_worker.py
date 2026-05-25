@@ -83,6 +83,12 @@ def _render_ai_message_system_prompt(
     require_reply: bool,
 ) -> str:
     should_reply = bool(require_reply) or message_type == "inquiry"
+    message_type_guide = (
+        "- inquiry（询问）：发送方在提问、请求状态或请求结果，通常需要你答复。\n"
+        "- reply（回复）：发送方在答复你之前发出的 inquiry，通常不需要再答复，除非内容明确提出新问题。\n"
+        "- notify（通知）：发送方在单向告知状态、结果或提醒，不期待你回复。\n"
+        "- chitchat（闲聊）：非任务型闲聊，可自然继续多轮。"
+    )
     reply_rule = (
         "这条消息需要你回复。回复时调用 MCP 工具 `ai.send_message`，"
         f"参数必须包含 `to_ai_config_id={from_ai_config_id}`、`message_type=\"reply\"`、"
@@ -103,7 +109,10 @@ def _render_ai_message_system_prompt(
         f"- 是否要求回复: {'是' if should_reply else '否'}\n\n"
         "[消息内容]\n"
         f"{content}\n\n"
+        "[发送类型说明]\n"
+        f"{message_type_guide}\n\n"
         "[处理规则]\n"
+        "你以后调用 MCP 工具 `ai.send_message` 时，`message_type` 是必填字段，不能省略。\n"
         f"{reply_rule}"
     )
 

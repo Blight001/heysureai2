@@ -388,12 +388,13 @@ registry.register(MCPTool(
     description=(
         "Send a message to another AI in the same digital society. The message is delivered "
         "as a forced system prompt. If the target AI is already running, its current run is "
-        "interrupted and a new run is started with this message injected first. By default "
-        "this call returns after queueing. Pick `message_type` deliberately.\n"
-        "- inquiry  : 你在询问对方，期望对方答复。\n"
-        "- reply    : 你在答复对方先前的 inquiry。\n"
+        "interrupted and a new run is started with this message injected first. "
+        "`message_type` is required; pick it deliberately.\n"
+        "- inquiry  : 询问。你在向对方提问、请求状态或请求结果，通常期望对方答复。\n"
+        "- reply    : 回复。你在答复对方先前发来的 inquiry；应带 reply_to_message_id。\n"
+        "- notify   : 通知。单向状态、结果或提醒，不期待对方回复。\n"
         "- chitchat : 闲聊，可双向多轮。\n"
-        "- notify   : 单向通知，无需对方回复（默认）。"
+        "By default this call returns after queueing; set require_reply=true only when the caller must wait."
     ),
     input_schema={
         "type": "object",
@@ -404,15 +405,16 @@ registry.register(MCPTool(
                 "type": "string",
                 "enum": ["inquiry", "reply", "chitchat", "notify"],
                 "description": (
-                    "Semantic type shown in the forced system prompt. "
-                    "Defaults: inquiry when require_reply=true, otherwise notify."
+                    "Required. Semantic type shown in the forced prompt: inquiry=询问/需要答复, "
+                    "reply=回复上一条 inquiry, notify=单向通知/不期待回复, chitchat=闲聊."
                 ),
             },
             "require_reply": {
                 "type": "boolean",
                 "description": (
-                    "Default false. Keep false for AI-to-AI collaboration so replies arrive "
-                    "as new ai.send_message calls."
+                    "Default false. Controls whether this tool call waits synchronously; it does not "
+                    "replace the required message_type. Keep false for normal AI-to-AI collaboration "
+                    "so replies arrive as new ai.send_message calls."
                 ),
             },
             "timeout_seconds": {
@@ -431,7 +433,7 @@ registry.register(MCPTool(
                 "description": "Optional current conversation/session id; the runtime supplies it automatically when omitted.",
             },
         },
-        "required": ["to_ai_config_id", "content"],
+        "required": ["to_ai_config_id", "content", "message_type"],
     },
     handler=_ai_send_message,
     destructive=True,
