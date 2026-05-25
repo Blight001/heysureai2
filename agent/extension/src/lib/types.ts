@@ -102,6 +102,7 @@ export interface AIToolUse {
 export type PopupMsg =
   | { type: 'agent:connect' }
   | { type: 'agent:disconnect' }
+  | { type: 'auth:logout' }
   | { type: 'settings:get' }
   | { type: 'settings:save'; payload: Partial<AgentSettings> }
   | { type: 'agent:selected-ai'; aiConfigId: number | null }

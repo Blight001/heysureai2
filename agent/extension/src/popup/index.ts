@@ -376,6 +376,11 @@ membersModalClose.addEventListener('click', () => closeMembersModal())
 
 async function doLogout() {
   await clearAuth()
+  // Tell the background to drop its socket so the server sees us leaving.
+  // Without this the socket stays open and the agent keeps trying to
+  // re-register with an empty token (the server now rejects this, but the
+  // socket-level connection would still show "已连接" in the popup).
+  port.postMessage({ type: 'auth:logout' })
   port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
   auth = await getAuth()
   closeMembersModal()

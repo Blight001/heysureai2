@@ -47,6 +47,15 @@ export class HeySureAgent {
 
   connect(): void {
     if (this.socket?.connected) return
+    // Hard gate: an agent that hasn't logged in cannot talk to the server.
+    // Without this guard the socket would open transport-level, the UI would
+    // flash "已连接", then the server would reject agent:register a moment
+    // later. Refusing here keeps the status honest.
+    if (!this.settings.authToken) {
+      this.setStatus('disconnected')
+      this.log('warn', '未登录，已阻止连接服务器（请先登录账号）')
+      return
+    }
     this.setStatus('connecting')
     let serverUrl: string
     try {
