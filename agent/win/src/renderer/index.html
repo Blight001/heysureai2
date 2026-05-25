@@ -535,6 +535,96 @@
       animation: spin 0.8s linear infinite;
     }
 
+    .member-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 520px;
+      overflow-y: auto;
+      padding-right: 3px;
+    }
+    .member-list::-webkit-scrollbar { width: 3px; }
+    .member-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .member-card {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 9px;
+      cursor: pointer;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      transition: all var(--transition);
+    }
+    .member-card:hover { background: var(--surface-h); }
+    .member-card.selected { border-color: var(--accent); background: rgba(99,102,241,0.12); }
+    .member-card.admin-card { opacity: 0.72; cursor: default; }
+    .member-dot-on, .member-dot-off {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .member-dot-on { background: var(--success); }
+    .member-dot-off { background: var(--text-muted); }
+    .member-ava {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .member-info { flex: 1; min-width: 0; }
+    .member-name {
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .member-meta {
+      font-size: 10px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .role-badge {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .role-badge.assistant_admin { background: rgba(139,92,246,0.2); color: #c4b5fd; }
+    .role-badge.manager { background: rgba(56,189,248,0.2); color: #7dd3fc; }
+    .role-badge.member { background: rgba(99,102,241,0.18); color: #a5b4fc; }
+    .target-banner {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 9px;
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text);
+    }
+    .target-banner.empty { color: var(--text-muted); }
+    .target-banner .target-text {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .target-banner .tb-name { font-weight: 600; color: var(--accent); }
+
     /* ══════════════════════════════════════════════════════════
        SCREEN 3: MAIN DASHBOARD
     ══════════════════════════════════════════════════════════ */
@@ -609,7 +699,9 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      cursor: pointer;
     }
+    .ai-header-chip:hover { background: rgba(99,102,241,0.16); }
     .ai-header-chip.manager {
       background: rgba(245,158,11,0.1);
       border-color: rgba(245,158,11,0.2);
@@ -1633,81 +1725,64 @@
 </head>
 <body class="dark">
 
-<!-- ═══════════════════════════════════════════════════════
-     SCREEN 1: LOGIN
-═══════════════════════════════════════════════════════ -->
-<div id="screen-login" class="screen">
-  <div class="login-card">
-    <div class="login-header">
-      <img class="login-logo-icon" src="../../assets/icon.ico" alt="HeySure Agent" />
-      <div class="login-title">HeySure Agent</div>
-      <div class="login-subtitle">Windows 桌面端 — 请登录以继续</div>
+<div id="login-modal" class="app-modal hidden">
+  <div class="app-modal-box narrow">
+    <div class="app-modal-header">
+      <div>
+        <div class="app-modal-title">软件端账号</div>
+        <div class="app-modal-subtitle" id="login-modal-subtitle">服务器地址请先在设置中配置</div>
+      </div>
+      <div class="header-spacer"></div>
+      <button class="app-modal-close" id="login-modal-close" title="关闭">×</button>
     </div>
+    <div class="app-modal-body">
+      <div class="login-form" id="login-form">
+        <div class="form-group">
+          <label class="form-label" for="login-account">账号</label>
+          <input class="form-input" id="login-account" type="text" placeholder="用户名 / 邮箱" autocomplete="username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="login-password">密码</label>
+          <input class="form-input" id="login-password" type="password" placeholder="密码" autocomplete="current-password" />
+        </div>
 
-    <div class="login-divider"></div>
+        <div class="login-error" id="login-error"></div>
 
-    <div class="login-form" id="login-form">
-      <div class="form-group">
-        <label class="form-label" for="login-server">服务器地址</label>
-        <input class="form-input" id="login-server" type="text" placeholder="http://127.0.0.1:3000" autocomplete="off" />
+        <button class="btn btn-primary login-btn" id="login-btn">
+          <div class="spinner"></div>
+          <span class="btn-text">登录</span>
+        </button>
+        <button class="btn btn-danger" id="logout-btn" style="width:100%;display:none">退出登录</button>
       </div>
-      <div class="form-group">
-        <label class="form-label" for="login-account">账号</label>
-        <input class="form-input" id="login-account" type="text" placeholder="用户名 / 邮箱" autocomplete="username" />
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="login-password">密码</label>
-        <input class="form-input" id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" />
-      </div>
-
-      <div class="login-error" id="login-error"></div>
-
-      <button class="btn btn-primary login-btn" id="login-btn">
-        <div class="spinner"></div>
-        <span class="btn-text">登 录</span>
-      </button>
     </div>
-
-    <div class="login-footer">按 Enter 快速登录</div>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════════════════════
-     SCREEN 2: AI MEMBER SELECT
-═══════════════════════════════════════════════════════ -->
-<div id="screen-ai-select" class="screen">
-
-  <header class="ai-select-header">
-    <div class="logo">
-      <img class="logo-icon" src="../../assets/icon.ico" alt="HeySure Agent" />
-      <span class="logo-text">HeySure Agent</span>
-    </div>
-
-    <div class="user-chip" id="user-chip">
-      <div class="user-chip-dot"></div>
-      <span id="user-chip-text">已登录</span>
-    </div>
-
-    <div class="header-spacer"></div>
-
-    <button class="btn btn-secondary btn-icon" id="refresh-ai-btn" title="刷新">&#x21BB;</button>
-    <button id="theme-toggle2" title="切换主题">&#x1F319;</button>
-    <button class="btn btn-ghost" id="logout-btn" style="font-size:12px">退出登录</button>
-  </header>
-
-  <div class="ai-select-body">
-    <div class="ai-select-toolbar">
+<div id="ai-select-modal" class="app-modal hidden">
+  <div class="app-modal-box">
+    <div class="app-modal-header">
       <div>
-        <div class="ai-select-title">选择 AI 成员</div>
-        <div class="ai-select-subtitle">选择一个 AI 成员进行连接，点击克隆可复制已有成员</div>
+        <div class="app-modal-title">选择 AI 成员</div>
+        <div class="app-modal-subtitle">点击顶部状态可切换当前连接的模型成员</div>
       </div>
+      <div class="header-spacer"></div>
+      <button class="btn btn-secondary btn-icon" id="refresh-ai-btn" title="刷新">&#x21BB;</button>
+      <button class="app-modal-close" id="ai-select-modal-close" title="关闭">×</button>
     </div>
-
-    <div class="ai-grid-wrap">
-      <div class="ai-grid" id="ai-grid">
-        <div class="ai-loading">
-          <div class="spinner-large"></div>
-          <p>加载 AI 成员列表...</p>
+    <div class="app-modal-body">
+      <div class="user-chip" id="user-chip">
+        <div class="user-chip-dot"></div>
+        <span id="user-chip-text">未登录</span>
+      </div>
+      <div class="target-banner empty" id="ai-select-target" style="margin-top:10px">
+        <span class="target-text" id="ai-select-target-text">未选择 AI 成员</span>
+      </div>
+      <div style="margin-top:12px">
+        <div class="member-list" id="ai-grid">
+          <div class="ai-loading">
+            <div class="spinner-large"></div>
+            <p>加载 AI 成员列表...</p>
+          </div>
         </div>
       </div>
     </div>
@@ -1727,7 +1802,7 @@
       <span class="logo-sub-txt">Windows</span>
     </div>
 
-    <div id="status-pill">
+    <div id="status-pill" title="点击选择 AI 成员" role="button" tabindex="0">
       <div id="status-dot" class="disconnected"></div>
       <span id="status-label">未连接</span>
     </div>
@@ -1736,6 +1811,10 @@
 
     <div class="header-spacer"></div>
 
+    <button class="top-user-chip" id="header-user-chip" title="未登录时点击登录，已登录时点击退出">
+      <span class="top-user-ava" id="header-user-ava">·</span>
+      <span class="top-user-name" id="header-user-name">未登录</span>
+    </button>
     <button class="btn btn-ghost btn-icon" id="settings-toggle" title="设置">&#x2699;</button>
     <button id="theme-toggle" title="切换主题">&#x1F319;</button>
   </header>
@@ -1962,6 +2041,10 @@
       <!-- Local Settings Card -->
       <div class="card">
         <div class="card-title">&#x2699; 本地设置</div>
+        <div class="form-group">
+          <label class="form-label" for="cfg-server">服务器地址</label>
+          <input class="form-input" id="cfg-server" type="text" placeholder="http://127.0.0.1:3000" autocomplete="off" />
+        </div>
         <div class="form-group">
           <label class="form-label" for="cfg-workspace">工作区目录</label>
           <input class="form-input" id="cfg-workspace" type="text" placeholder="C:\Users\...\Workspace" />

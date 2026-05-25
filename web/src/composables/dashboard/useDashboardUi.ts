@@ -11,6 +11,9 @@ interface UseDashboardUiOptions {
 
 export const useDashboardUi = (options: UseDashboardUiOptions) => {
   const { unassignedProjectId, agents, projects, knowledgeBase, addKnowledge } = options
+  const CONTEXT_MENU_WIDTH = 144
+  const CONTEXT_MENU_HEIGHT = 34
+  const CONTEXT_MENU_MARGIN = 8
 
   const contextMenu = ref({
     visible: false,
@@ -34,11 +37,22 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
   const knowledgeFilter = ref<'all' | 'inheritance' | 'system' | 'business'>('all')
   const userMenuOpen = ref(false)
 
+  const clampContextMenuPosition = (x: number, y: number) => {
+    if (typeof window === 'undefined') return { x, y }
+    const maxX = Math.max(CONTEXT_MENU_MARGIN, window.innerWidth - CONTEXT_MENU_WIDTH - CONTEXT_MENU_MARGIN)
+    const maxY = Math.max(CONTEXT_MENU_MARGIN, window.innerHeight - CONTEXT_MENU_HEIGHT - CONTEXT_MENU_MARGIN)
+    return {
+      x: Math.min(Math.max(CONTEXT_MENU_MARGIN, x), maxX),
+      y: Math.min(Math.max(CONTEXT_MENU_MARGIN, y), maxY),
+    }
+  }
+
   const openContextMenu = (payload: { agent: Agent; x: number; y: number }) => {
+    const position = clampContextMenuPosition(payload.x, payload.y)
     contextMenu.value = {
       visible: true,
-      x: payload.x,
-      y: payload.y,
+      x: position.x,
+      y: position.y,
       agent: payload.agent,
     }
   }

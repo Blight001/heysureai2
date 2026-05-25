@@ -118,6 +118,9 @@ let availableWorkspaceDirs: string[] = ['.']
 let taskCreateSourceJobId = ''
 let taskLiveRefreshTimer = 0
 let taskThinkingRafs: number[] = []
+let currentConnectionStatus = 'disconnected'
+let currentAiDisplayName = ''
+let selectedAiConfigId: number | null = null
 
 // ── Screen navigation ──────────────────────────────────────────────────────
 function showScreen(screen: AppScreen) {
@@ -174,6 +177,7 @@ const taskFormStatus  = document.getElementById('task-form-status')!
 const taskSummary     = document.getElementById('task-summary')!
 const statusDot       = document.getElementById('status-dot')!
 const statusLabel     = document.getElementById('status-label')!
+const statusPill      = document.getElementById('status-pill')!
 const infoStatus      = document.getElementById('info-status')!
 const infoServer      = document.getElementById('info-server')!
 const infoWorkspace   = document.getElementById('info-workspace')!
@@ -181,6 +185,7 @@ const statTasks       = document.getElementById('stat-tasks')!
 const statSuccess     = document.getElementById('stat-success')!
 const statFailed      = document.getElementById('stat-failed')!
 const statRunning     = document.getElementById('stat-running')!
+const cfgServer       = document.getElementById('cfg-server') as HTMLInputElement
 const cfgWorkspace    = document.getElementById('cfg-workspace') as HTMLInputElement
 const saveBtn         = document.getElementById('save-btn')!
 const saveFeedback    = document.getElementById('save-feedback')!
@@ -196,10 +201,25 @@ const aiInfoName      = document.getElementById('ai-info-name')!
 const aiInfoRole      = document.getElementById('ai-info-role')!
 const aiInfoLifecycle = document.getElementById('ai-info-lifecycle')!
 const aiInfoProject   = document.getElementById('ai-info-project')!
+const headerUserChip  = document.getElementById('header-user-chip')!
+const headerUserAva   = document.getElementById('header-user-ava')!
+const headerUserName  = document.getElementById('header-user-name')!
+const aiSelectTarget  = document.getElementById('ai-select-target')!
+const aiSelectTargetText = document.getElementById('ai-select-target-text')!
 
 const STATUS_LABELS: Record<string, string> = {
   disconnected: '未连接', connecting: '连接中...', connected: '已连接', registered: '已注册', error: '连接错误',
 }
+const DESKTOP_AGENT_MCP_TOOLS = new Set([
+  'fs.list', 'fs.read', 'fs.write',
+  'shell.run', 'git.diff',
+  'keyboard.type', 'keyboard.press',
+  'mouse.move', 'mouse.click', 'mouse.double_click', 'mouse.right_click', 'mouse.scroll', 'mouse.drag',
+  'screen.capture', 'screen.capture_region', 'screen.info',
+  'clipboard.get', 'clipboard.set',
+  'window.list', 'window.focus', 'window.close',
+  'process.list', 'process.kill',
+])
 
 // ── Theme ──────────────────────────────────────────────────────────────────
 function applyTheme(theme: 'dark' | 'light', persist = true) {
@@ -235,10 +255,12 @@ tabTasks.addEventListener('click', () => switchTab('tasks'))
 
 // ── Status display ─────────────────────────────────────────────────────────
 function setStatus(status: string) {
-  const label = STATUS_LABELS[status] || status
+  currentConnectionStatus = status
+  const rawLabel = STATUS_LABELS[status] || status
+  const label = status === 'registered' && currentAiDisplayName ? currentAiDisplayName : rawLabel
   statusDot.className = status
   statusLabel.textContent = label
-  infoStatus.textContent = label
+  infoStatus.textContent = rawLabel
   infoStatus.className = `info-value ${status}`
 }
 
@@ -1123,6 +1145,8 @@ chatInput.addEventListener('keydown', (e: KeyboardEvent) => { if (e.key === 'Ent
 chatInput.addEventListener('input', () => { chatInput.style.height = 'auto'; chatInput.style.height = Math.min(chatInput.scrollHeight, 110) + 'px' })
 document.addEventListener('keydown', (event: KeyboardEvent) => {
   if (event.key !== 'Escape') return
+  closeLoginModal()
+  closeAiSelectModal()
   if (taskDetailModal.classList.contains('visible')) closeTaskDetail()
   if (taskCreateOpen) closeTaskCreate()
 })
@@ -1130,31 +1154,64 @@ document.addEventListener('keydown', (event: KeyboardEvent) => {
 // ── Settings ───────────────────────────────────────────────────────────────
 async function loadMainSettings() {
   const s = await window.heysureAPI.getSettings()
+  selectedAiConfigId = typeof s.selectedAiConfigId === 'number' ? s.selectedAiConfigId : null
+  cfgServer.value = s.serverUrl || ''
   cfgWorkspace.value = s.workspaceRoot || ''
   infoServer.textContent    = s.serverUrl || '—'
   infoWorkspace.textContent = s.workspaceRoot ? (s.workspaceRoot.split(/[/\\]/).pop() || s.workspaceRoot) : '—'
   updateChatEmptyVisibility()
   if (s.selectedAiConfigName) updateAiMemberDisplay(s)
+  else clearAiMemberDisplay()
+  updateUserChip(s)
   return s
 }
 
 function updateAiMemberDisplay(s: any) {
   const isManager = s.selectedAiConfigRole === 'manager'
   const name = s.selectedAiConfigName || '—'
+  selectedAiConfigId = typeof s.selectedAiConfigId === 'number' ? s.selectedAiConfigId : selectedAiConfigId
+  currentAiDisplayName = name === '—' ? '' : name
   aiInfoName.textContent = name
   aiInfoRole.textContent = isManager ? '组长 (Manager)' : '成员 (Member)'
   aiInfoLifecycle.textContent = lifecycleLabel(s.selectedAiConfigLifecycle)
   aiInfoProject.textContent = s.selectedAiConfigProject || '—'
   aiHeaderChip.textContent = (isManager ? '★ ' : '') + name
   aiHeaderChip.className = `ai-header-chip${isManager ? ' manager' : ''}`
+  updateAiSelectTarget()
+  setStatus(currentConnectionStatus)
+}
+
+function clearAiMemberDisplay() {
+  selectedAiConfigId = null
+  currentAiDisplayName = ''
+  aiInfoName.textContent = '—'
+  aiInfoRole.textContent = '—'
+  aiInfoLifecycle.textContent = '—'
+  aiInfoProject.textContent = '—'
+  aiHeaderChip.textContent = '未选择 AI'
+  aiHeaderChip.className = 'ai-header-chip'
+  updateAiSelectTarget()
+  setStatus(currentConnectionStatus)
+}
+
+function updateAiSelectTarget() {
+  if (currentAiDisplayName) {
+    aiSelectTarget.classList.remove('empty')
+    aiSelectTargetText.innerHTML = `当前 AI：<span class="tb-name">${escapeHtml(currentAiDisplayName)}</span>`
+  } else {
+    aiSelectTarget.classList.add('empty')
+    aiSelectTargetText.textContent = '未选择 AI 成员'
+  }
 }
 
 async function saveSettings() {
   const settings = {
+    serverUrl: cfgServer.value.trim(),
     workspaceRoot: cfgWorkspace.value.trim(),
   }
   try {
     await window.heysureAPI.saveSettings(settings)
+    infoServer.textContent = settings.serverUrl || '—'
     infoWorkspace.textContent = settings.workspaceRoot ? (settings.workspaceRoot.split(/[/\\]/).pop() || settings.workspaceRoot) : '—'
     updateChatEmptyVisibility()
     saveFeedback.style.color = ''; saveFeedback.textContent = '已保存 ✓'
@@ -1203,21 +1260,55 @@ window.heysureAPI.onTaskResult((data) => {
 // ══════════════════════════════════════════════════════
 // SCREEN 1: LOGIN
 // ══════════════════════════════════════════════════════
-const loginServerInput   = document.getElementById('login-server') as HTMLInputElement
 const loginAccountInput  = document.getElementById('login-account') as HTMLInputElement
 const loginPasswordInput = document.getElementById('login-password') as HTMLInputElement
 const loginBtn           = document.getElementById('login-btn') as HTMLButtonElement
 const loginError         = document.getElementById('login-error')!
+const loginModal         = document.getElementById('login-modal')!
+const loginModalClose    = document.getElementById('login-modal-close')!
+const aiSelectModal      = document.getElementById('ai-select-modal')!
+const aiSelectModalClose = document.getElementById('ai-select-modal-close')!
 
 function showLoginError(msg: string) { loginError.textContent = msg; loginError.classList.add('visible') }
 function clearLoginError() { loginError.classList.remove('visible') }
 
+function openLoginModal() {
+  loginModal.classList.remove('hidden')
+  clearLoginError()
+  window.heysureAPI.getSettings().then(s => {
+    loginAccountInput.value = s.userAccount || ''
+    updateUserChip(s)
+    setTimeout(() => (s.authToken ? loginModalClose : loginAccountInput).focus(), 0)
+  }).catch(() => {})
+}
+
+function closeLoginModal() {
+  loginModal.classList.add('hidden')
+}
+
+function openAiSelectModal() {
+  aiSelectModal.classList.remove('hidden')
+  window.heysureAPI.getSettings().then(s => {
+    updateUserChip(s)
+    if (!s.authToken) {
+      aiGrid.innerHTML = '<div class="ai-empty"><div class="ai-empty-icon">&#x1F512;</div><p>请先点击头像登录软件端账号</p></div>'
+      return
+    }
+    loadAiSelectScreen().catch(() => {})
+  }).catch(() => {})
+}
+
+function closeAiSelectModal() {
+  aiSelectModal.classList.add('hidden')
+}
+
 async function doLogin() {
   clearLoginError()
-  const serverUrl = loginServerInput.value.trim()
+  const saved = await window.heysureAPI.getSettings()
+  const serverUrl = (cfgServer.value.trim() || saved.serverUrl || '').trim()
   const account   = loginAccountInput.value.trim()
   const password  = loginPasswordInput.value
-  if (!serverUrl) { showLoginError('请输入服务器地址'); return }
+  if (!serverUrl) { showLoginError('请先在设置中配置服务器地址'); return }
   if (!account)   { showLoginError('请输入账号'); return }
   if (!password)  { showLoginError('请输入密码'); return }
 
@@ -1225,9 +1316,11 @@ async function doLogin() {
   try {
     await window.heysureAPI.login({ serverUrl, account, password })
     const s = await window.heysureAPI.getSettings()
-    setUserChip(s.userAccount, s.serverUrl)
-    await loadAiSelectScreen()
-    showScreen('ai-select')
+    loginPasswordInput.value = ''
+    updateUserChip(s)
+    closeLoginModal()
+    await loadMainSettings()
+    openAiSelectModal()
   } catch (err: any) {
     showLoginError(err.message || '登录失败')
   } finally {
@@ -1235,9 +1328,22 @@ async function doLogin() {
   }
 }
 loginBtn.addEventListener('click', doLogin)
-;[loginServerInput, loginAccountInput, loginPasswordInput].forEach(el =>
+;[loginAccountInput, loginPasswordInput].forEach(el =>
   el.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin() })
 )
+loginModalClose.addEventListener('click', closeLoginModal)
+loginModal.addEventListener('click', e => { if (e.target === loginModal) closeLoginModal() })
+statusPill.addEventListener('click', openAiSelectModal)
+statusPill.addEventListener('keydown', e => {
+  const key = (e as KeyboardEvent).key
+  if (key === 'Enter' || key === ' ') {
+    e.preventDefault()
+    openAiSelectModal()
+  }
+})
+aiHeaderChip.addEventListener('click', openAiSelectModal)
+aiSelectModalClose.addEventListener('click', closeAiSelectModal)
+aiSelectModal.addEventListener('click', e => { if (e.target === aiSelectModal) closeAiSelectModal() })
 
 // ══════════════════════════════════════════════════════
 // SCREEN 2: AI SELECT
@@ -1247,18 +1353,85 @@ const logoutBtn    = document.getElementById('logout-btn')!
 const refreshAiBtn = document.getElementById('refresh-ai-btn')!
 const userChipText = document.getElementById('user-chip-text')!
 
-function setUserChip(account: string, server: string) {
+function setUserChip(account: string, server: string, authenticated = true) {
   const host = (() => { try { return new URL(server).hostname } catch { return server } })()
-  userChipText.textContent = `${account} @ ${host}`
+  const label = authenticated && account ? `${account} @ ${host}` : '未登录'
+  userChipText.textContent = label
+  headerUserName.textContent = authenticated && account ? account : '未登录'
+  headerUserAva.textContent = authenticated && account ? account.slice(0, 1).toUpperCase() : '·'
+  headerUserChip.classList.toggle('logged-in', !!(authenticated && account))
+  logoutBtn.style.display = authenticated ? 'inline-flex' : 'none'
 }
+
+function updateUserChip(s: any) {
+  setUserChip(s.userAccount || '', s.serverUrl || '', !!s.authToken)
+}
+
+function parseMcpTools(value: any): string[] {
+  if (Array.isArray(value)) return value.map(item => String(item || '').trim()).filter(Boolean)
+  if (typeof value !== 'string') return []
+  try {
+    const parsed = JSON.parse(value || '[]')
+    return Array.isArray(parsed) ? parsed.map(item => String(item || '').trim()).filter(Boolean) : []
+  } catch {
+    return value.split(',').map(item => item.trim()).filter(Boolean)
+  }
+}
+
+function hasDesktopMcpPermission(cfg: any) {
+  if (cfg?.mcp_enabled === false) return false
+  return parseMcpTools(cfg?.mcp_tools).some(tool => DESKTOP_AGENT_MCP_TOOLS.has(tool))
+}
+
+function roleOfConfig(cfg: any) {
+  if (cfg?.ai_role === 'assistant_admin') return 'assistant_admin'
+  return cfg?.digital_member_role === 'manager' ? 'manager' : 'member'
+}
+
+function roleLabel(role: string) {
+  return ({ assistant_admin: '辅助管理员', manager: '管理者', member: '普通成员' } as Record<string, string>)[role] || role
+}
+
+function mcpToolCount(cfg: any) {
+  return parseMcpTools(cfg?.mcp_tools).length
+}
+
+async function doLogout() {
+  await window.heysureAPI.logout()
+  const s = await window.heysureAPI.getSettings()
+  cfgServer.value = s.serverUrl || ''
+  loginAccountInput.value = ''
+  loginPasswordInput.value = ''
+  chatHistory = []
+  renderChatHistory()
+  updateUserChip(s)
+  clearAiMemberDisplay()
+  clearLoginError()
+  closeLoginModal()
+  closeAiSelectModal()
+  setStatus('disconnected')
+}
+
+headerUserChip.addEventListener('click', async () => {
+  const s = await window.heysureAPI.getSettings()
+  if (s.authToken) {
+    await doLogout()
+  } else {
+    openLoginModal()
+  }
+})
 
 async function loadAiSelectScreen() {
   aiGrid.innerHTML = '<div class="ai-loading"><div class="spinner-large"></div><p>加载 AI 成员列表...</p></div>'
   try {
-    const [configs, statuses] = await Promise.all([
+    const [configs, statuses, settings] = await Promise.all([
       window.heysureAPI.listAiConfigs(),
       window.heysureAPI.getAiRuntimeStatus(),
+      window.heysureAPI.getSettings(),
     ])
+    selectedAiConfigId = typeof settings.selectedAiConfigId === 'number' ? settings.selectedAiConfigId : null
+    currentAiDisplayName = settings.selectedAiConfigName || currentAiDisplayName
+    updateAiSelectTarget()
     renderAiGrid(configs, statuses)
   } catch (err: any) {
     aiGrid.innerHTML = `<div class="ai-empty"><div class="ai-empty-icon">&#x26A0;</div><p>加载失败: ${escapeHtml(err.message || String(err))}</p><button class="btn btn-secondary" onclick="loadAiSelectScreen()" style="margin-top:8px">重试</button></div>`
@@ -1266,6 +1439,7 @@ async function loadAiSelectScreen() {
 }
 
 function renderAiGrid(configs: any[], statuses: any[]) {
+  const desktopConfigs = (configs || []).filter(hasDesktopMcpPermission)
   const statusMap = new Map<number, any>()
   statuses.forEach(s => statusMap.set(s.ai_config_id, s))
 
@@ -1274,65 +1448,33 @@ function renderAiGrid(configs: any[], statuses: any[]) {
     return
   }
 
+  if (desktopConfigs.length === 0) {
+    aiGrid.innerHTML = '<div class="ai-empty"><div class="ai-empty-icon">&#x1F5A5;</div><p>暂无具备 Windows 桌面权限的 AI 成员</p><p style="font-size:11px">请在网页端 AI 设置中为成员开启桌面端 MCP 工具权限</p></div>'
+    return
+  }
+
   aiGrid.innerHTML = ''
-  configs.forEach(cfg => {
-    const isAdmin   = cfg.ai_role === 'assistant_admin'
-    const isManager = !isAdmin && cfg.digital_member_role === 'manager'
+  desktopConfigs.forEach(cfg => {
+    const role = roleOfConfig(cfg)
+    const isAdmin = role === 'assistant_admin'
     const rs = statusMap.get(cfg.id)
     const isEnabled = rs?.running ?? cfg.enabled
 
     const card = document.createElement('div')
-    card.className = `ai-card${isAdmin ? ' admin-card' : isManager ? ' manager-card' : ''}`
-
-    const avatarCls  = isAdmin ? 'admin' : isManager ? 'manager' : 'member'
-    const avatarIcon = isAdmin ? '&#x1F512;' : isManager ? '★' : '&#x1F916;'
-    const roleBadge  = isAdmin
-      ? '<span class="badge badge-admin">管理员</span>'
-      : `<span class="badge ${isManager ? 'badge-manager' : 'badge-member'}">${isManager ? '组长' : '成员'}</span>`
-
-    const actionHtml = isAdmin
-      ? '<div class="admin-note">&#x1F512; 管理员 AI 仅供查看，不可调用</div>'
-      : isManager
-        ? `<button class="btn btn-secondary btn-clone">&#x1F4CB; 克隆</button>
-           <div class="manager-note">组长不可直接调用</div>`
-        : `<button class="btn btn-secondary btn-clone">&#x1F4CB; 克隆</button>
-           <button class="btn btn-primary btn-select">选择</button>`
+    card.className = `member-card${cfg.id === selectedAiConfigId ? ' selected' : ''}${isAdmin ? ' admin-card' : ''}`
 
     card.innerHTML = `
-      <div class="ai-card-top">
-        <div class="ai-avatar ${avatarCls}">${avatarIcon}</div>
-        <div class="ai-card-info">
-          <div class="ai-card-name">${escapeHtml(cfg.name)}</div>
-          <div class="ai-card-project">${escapeHtml(cfg.project_name || cfg.description || '无项目')}</div>
-        </div>
+      <div class="${isEnabled ? 'member-dot-on' : 'member-dot-off'}"></div>
+      <div class="member-ava">${escapeHtml((cfg.name || '?').slice(0, 1))}</div>
+      <div class="member-info">
+        <div class="member-name">${escapeHtml(cfg.name || '未命名')}</div>
+        <div class="member-meta">${escapeHtml(cfg.model || '—')} · MCP ${mcpToolCount(cfg)} 项 · ${escapeHtml(cfg.project_name || cfg.description || '无项目')}</div>
       </div>
-      <div class="ai-card-badges">
-        ${roleBadge}
-        <span class="badge badge-${cfg.lifecycle_status || 'working'}">${lifecycleLabel(cfg.lifecycle_status)}</span>
-        <span class="badge ${isEnabled ? 'badge-enabled' : 'badge-disabled'}">${isEnabled ? '● 已启用' : '○ 未启用'}</span>
-      </div>
-      <div class="ai-card-actions">
-        ${actionHtml}
-      </div>`
+      <span class="role-badge ${role}">${roleLabel(role)}</span>`
 
     if (!isAdmin) {
-      card.querySelector('.btn-clone')!.addEventListener('click', async () => {
-        const btn = card.querySelector('.btn-clone') as HTMLButtonElement
-        btn.disabled = true; btn.textContent = '克隆中...'
-        try {
-          await window.heysureAPI.cloneAiConfig(cfg.id)
-          await loadAiSelectScreen()
-        } catch (err: any) {
-          alert('克隆失败: ' + (err.message || String(err)))
-          btn.disabled = false; btn.innerHTML = '&#x1F4CB; 克隆'
-        }
-      })
-    }
-
-    if (!isAdmin && !isManager) {
-      card.querySelector('.btn-select')!.addEventListener('click', async () => {
-        const btn = card.querySelector('.btn-select') as HTMLButtonElement
-        btn.disabled = true; btn.textContent = '连接中...'
+      card.addEventListener('click', async () => {
+        card.classList.add('selected')
         try {
           await window.heysureAPI.selectAiConfig(cfg)
           const s = await window.heysureAPI.getSettings()
@@ -1342,10 +1484,11 @@ function renderAiGrid(configs: any[], statuses: any[]) {
           setStatus(status)
           await loadServerChatHistory()
           loadTasks(true).catch(() => {})
+          closeAiSelectModal()
           showScreen('main')
         } catch (err: any) {
           alert('选择失败: ' + (err.message || String(err)))
-          btn.disabled = false; btn.textContent = '选择'
+          await loadAiSelectScreen()
         }
       })
     }
@@ -1356,19 +1499,12 @@ function renderAiGrid(configs: any[], statuses: any[]) {
 
 ;(window as any).loadAiSelectScreen = loadAiSelectScreen
 
-logoutBtn.addEventListener('click', async () => {
-  await window.heysureAPI.logout()
-  const s = await window.heysureAPI.getSettings()
-  loginServerInput.value = s.serverUrl || ''
-  loginAccountInput.value = ''; loginPasswordInput.value = ''
-  clearLoginError(); showScreen('login')
-})
+logoutBtn.addEventListener('click', () => doLogout())
 
 refreshAiBtn.addEventListener('click', () => loadAiSelectScreen())
 
 function goToAiSelect() {
-  loadAiSelectScreen().catch(() => {})
-  showScreen('ai-select')
+  openAiSelectModal()
 }
 document.getElementById('switch-ai-btn2')?.addEventListener('click', goToAiSelect)
 
@@ -1378,23 +1514,22 @@ document.getElementById('switch-ai-btn2')?.addEventListener('click', goToAiSelec
 async function init() {
   const s = await window.heysureAPI.getSettings()
   applyTheme(s.theme || 'dark', false)
+  cfgServer.value = s.serverUrl || ''
+  loginAccountInput.value = s.userAccount || ''
+  updateUserChip(s)
+  await loadMainSettings()
+  const status = await window.heysureAPI.getStatus()
+  setStatus(status)
+  showScreen('main')
 
   if (s.authToken && s.selectedAiConfigId) {
-    await loadMainSettings()
     await loadServerChatHistory()
-    const status = await window.heysureAPI.getStatus()
-    setStatus(status)
-    showScreen('main')
-    setUserChip(s.userAccount, s.serverUrl)
     loadAiSelectScreen().catch(() => {})
     loadTasks(true).catch(() => {})
   } else if (s.authToken) {
-    setUserChip(s.userAccount, s.serverUrl)
-    await loadAiSelectScreen()
-    showScreen('ai-select')
+    openAiSelectModal()
   } else {
-    loginServerInput.value = s.serverUrl || ''
-    showScreen('login')
+    openLoginModal()
   }
 }
 
