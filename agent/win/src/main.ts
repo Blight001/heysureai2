@@ -4,7 +4,7 @@
 
 import { app, Menu } from 'electron'
 import { store } from './store'
-import { setupCaptureWindow } from './windows/capture-window'
+import { initCapture } from './capture-bridge'
 import { createMainWindow, getMainWindow } from './windows/main-window'
 import { createTray, updateTray } from './windows/tray'
 import {
@@ -19,7 +19,7 @@ if (process.platform === 'win32') {
 }
 
 async function bootstrap(): Promise<void> {
-  await setupCaptureWindow()
+  initCapture()
 
   clearAiSelectionIfLoggedOut()
   initAgent(store.store)

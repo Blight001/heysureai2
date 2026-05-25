@@ -20,7 +20,7 @@ export async function screenCapture(args: any = {}) {
 export async function screenCaptureRegion(args: any) {
   const { x = 0, y = 0, width, height } = args
   if (!width || !height) throw new Error('width and height are required for screen.capture_region')
-  const buf = await executeCapture({ cropRegion: { x, y, width, height } } as any)
+  const buf = await executeCapture({ cropRegion: { x: Number(x), y: Number(y), width: Number(width), height: Number(height) } })
   const savePath = String(args.path || path.join(os.tmpdir(), `hs_region_${Date.now()}.png`))
   fs.writeFileSync(savePath, buf)
   return { success: true, path: savePath, x, y, width, height, bytes: buf.length }
