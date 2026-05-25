@@ -117,7 +117,9 @@ export class HeySureAgent {
       os: getPlatformInfo(),
       capabilities: getAvailableTools(),
       version: '2.0.0',
-      token: this.settings.agentToken || '',
+      // The server requires a valid user JWT. ``authToken`` is the source
+      // of truth; agentToken is kept as a legacy shared-secret fallback.
+      token: this.settings.authToken || this.settings.agentToken || '',
       workspaceRoot: this.workspaceRoot,
       lifecycle: 'registered',
       isWindowsDesktop: true,

@@ -683,6 +683,7 @@
     .top-user-chip:hover { background: var(--surface-h); color: var(--text); }
     .top-user-chip.logged-in { color: var(--text); }
     .top-user-ava {
+      position: relative;
       width: 22px;
       height: 22px;
       border-radius: 50%;
@@ -690,11 +691,20 @@
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      overflow: hidden;
       background: linear-gradient(135deg, var(--accent), var(--accent2));
       color: #fff;
       font-size: 11px;
       font-weight: 700;
     }
+    .top-user-ava img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+    .top-user-ava.has-image img { display: block; }
+    .top-user-ava.has-image span { display: none; }
     .top-user-name {
       min-width: 0;
       overflow: hidden;
@@ -1696,6 +1706,7 @@
       border: 1px solid var(--border);
     }
     .account-info-ava {
+      position: relative;
       width: 38px;
       height: 38px;
       border-radius: 50%;
@@ -1703,11 +1714,20 @@
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
+      overflow: hidden;
       background: linear-gradient(135deg, var(--accent), var(--accent2));
       color: #fff;
       font-size: 16px;
       font-weight: 700;
     }
+    .account-info-ava img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+    .account-info-ava.has-image img { display: block; }
+    .account-info-ava.has-image span { display: none; }
     .account-info-body { flex: 1; min-width: 0; }
     .account-info-name {
       font-size: 14px;
@@ -1819,7 +1839,10 @@
       <!-- Account info (shown when logged in) -->
       <div class="account-info" id="account-info" style="display:none">
         <div class="account-info-row">
-          <div class="account-info-ava" id="account-info-ava">·</div>
+          <div class="account-info-ava" id="account-info-ava">
+            <img id="account-info-ava-img" alt="" />
+            <span id="account-info-ava-text">·</span>
+          </div>
           <div class="account-info-body">
             <div class="account-info-name" id="account-info-name">—</div>
             <div class="account-info-server" id="account-info-server">—</div>
@@ -1895,7 +1918,10 @@
     <div class="header-spacer"></div>
 
     <button class="top-user-chip" id="header-user-chip" title="账号 / 登录">
-      <span class="top-user-ava" id="header-user-ava">·</span>
+      <span class="top-user-ava" id="header-user-ava">
+        <img id="header-user-ava-img" alt="" />
+        <span id="header-user-ava-text">·</span>
+      </span>
       <span class="top-user-name" id="header-user-name">未登录</span>
     </button>
     <div id="status-pill" title="点击选择 AI 成员" role="button" tabindex="0">
