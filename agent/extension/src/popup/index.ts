@@ -33,7 +33,7 @@ let activeChatRequestId: string | null = null
 let serverUrl = ''
 let offlineMode = false
 let localModel = ''
-let auth: AuthState = { token: '', account: '', userId: null, userName: '' }
+let auth: AuthState = { token: '', account: '', userId: null, userName: '', avatar: '' }
 let members: MemberConfig[] = []
 let selectedMemberId: number | null = null
 let activeRunId: string | null = null
@@ -171,6 +171,21 @@ function roleOf(m: MemberConfig): string {
 function memberById(id: number | null): MemberConfig | undefined {
   return members.find(m => m.id === id)
 }
+function normalizeAvatarUrl(avatar?: string): string {
+  const raw = String(avatar || '').trim()
+  if (!raw) return ''
+  const local = raw.match(/avatars([1-5])(?:[-.][^/]*)?\.png/i)
+  if (local) return chrome.runtime.getURL(`avatars/avatars${local[1]}.png`)
+  if (/^(https?:|data:|blob:|chrome-extension:)/i.test(raw)) return raw
+  if (raw.startsWith('/')) return serverUrl ? `${serverUrl.replace(/\/+$/, '')}${raw}` : raw
+  return raw
+}
+function avatarHtml(src: string, fallback: string): string {
+  const safeSrc = normalizeAvatarUrl(src)
+  return safeSrc
+    ? `<img src="${esc(safeSrc)}" alt="" />`
+    : esc(fallback)
+}
 function toolCount(m: MemberConfig): number {
   try { const a = JSON.parse(m.mcp_tools || '[]'); return Array.isArray(a) ? a.length : 0 } catch { return 0 }
 }
@@ -299,7 +314,7 @@ clearBtn.addEventListener('click', () => {
 function updateUserChip() {
   if (auth.token) {
     userChip.classList.remove('guest')
-    userAva.textContent = (auth.userName || auth.account || '?').slice(0, 1).toUpperCase()
+    userAva.innerHTML = avatarHtml(auth.avatar, (auth.userName || auth.account || '?').slice(0, 1).toUpperCase())
     userName.textContent = auth.userName || auth.account || '已登录'
   } else {
     userChip.classList.add('guest')
@@ -330,7 +345,7 @@ async function doLogin() {
   loginFeedback.style.color = 'var(--muted)'
   try {
     const { token, user } = await apiLogin(serverUrl, account, password)
-    auth = { token, account, userId: user?.id ?? null, userName: user?.name || account }
+    auth = { token, account, userId: user?.id ?? null, userName: user?.name || account, avatar: user?.avatar || '' }
     await saveAuth(auth)
     loginPassword.value = ''
     loginFeedback.textContent = '登录成功 ✓'
@@ -567,7 +582,8 @@ function appendChatMsg(role: 'user' | 'ai', content: string, historyIndex?: numb
   el.className = `chat-msg ${role}`
   if (historyIndex !== undefined) el.dataset.historyIndex = String(historyIndex)
   const supportsRecall = role === 'user'
-  el.innerHTML = `<div class="chat-avatar">${role === 'ai' ? '✨' : '👤'}</div>`
+  const avatar = role === 'ai' ? '✨' : avatarHtml(auth.avatar, '👤')
+  el.innerHTML = `<div class="chat-avatar">${avatar}</div>`
     + `<div class="chat-bubble">${rowActionsHtml(role, supportsRecall)}${renderChatContent(content)}</div>`
   chatMsgs.appendChild(el)
   chatMsgs.scrollTop = chatMsgs.scrollHeight
@@ -1485,7 +1501,11 @@ async function init() {
     void (async () => {
       try {
         const me = await getMe(serverUrl, auth.token)
-        if (me?.name) { auth.userName = me.name; await saveAuth({ userName: me.name }); updateUserChip() }
+        auth.userName = me?.name || auth.userName
+        auth.avatar = me?.avatar || ''
+        await saveAuth({ userName: auth.userName, avatar: auth.avatar })
+        updateUserChip()
+        renderChatHistory()
         await loadMembers()
         syncSelectedAiToBackground(true)
         if (useServerChat()) await refreshServerSessionsAndHistory()

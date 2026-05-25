@@ -43,7 +43,7 @@
     await chrome.storage.local.remove(CHAT_KEY);
   }
   var AUTH_KEY = "_auth_state";
-  var AUTH_DEFAULT = { token: "", account: "", userId: null, userName: "" };
+  var AUTH_DEFAULT = { token: "", account: "", userId: null, userName: "", avatar: "" };
   async function getAuth() {
     const r = await chrome.storage.local.get(AUTH_KEY);
     return { ...AUTH_DEFAULT, ...r[AUTH_KEY] || {} };
@@ -599,7 +599,7 @@
   var serverUrl = "";
   var offlineMode = false;
   var localModel = "";
-  var auth = { token: "", account: "", userId: null, userName: "" };
+  var auth = { token: "", account: "", userId: null, userName: "", avatar: "" };
   var members = [];
   var selectedMemberId = null;
   var activeRunId = null;
@@ -730,6 +730,23 @@
   }
   function memberById(id) {
     return members.find((m) => m.id === id);
+  }
+  function normalizeAvatarUrl(avatar) {
+    const raw = String(avatar || "").trim();
+    if (!raw)
+      return "";
+    const local = raw.match(/avatars([1-5])(?:[-.][^/]*)?\.png/i);
+    if (local)
+      return chrome.runtime.getURL(`avatars/avatars${local[1]}.png`);
+    if (/^(https?:|data:|blob:|chrome-extension:)/i.test(raw))
+      return raw;
+    if (raw.startsWith("/"))
+      return serverUrl ? `${serverUrl.replace(/\/+$/, "")}${raw}` : raw;
+    return raw;
+  }
+  function avatarHtml(src, fallback) {
+    const safeSrc = normalizeAvatarUrl(src);
+    return safeSrc ? `<img src="${esc(safeSrc)}" alt="" />` : esc(fallback);
   }
   function toolCount(m) {
     try {
@@ -864,7 +881,7 @@
   function updateUserChip() {
     if (auth.token) {
       userChip.classList.remove("guest");
-      userAva.textContent = (auth.userName || auth.account || "?").slice(0, 1).toUpperCase();
+      userAva.innerHTML = avatarHtml(auth.avatar, (auth.userName || auth.account || "?").slice(0, 1).toUpperCase());
       userName.textContent = auth.userName || auth.account || "\u5DF2\u767B\u5F55";
     } else {
       userChip.classList.add("guest");
@@ -901,7 +918,7 @@
     loginFeedback.style.color = "var(--muted)";
     try {
       const { token, user } = await login(serverUrl, account, password);
-      auth = { token, account, userId: user?.id ?? null, userName: user?.name || account };
+      auth = { token, account, userId: user?.id ?? null, userName: user?.name || account, avatar: user?.avatar || "" };
       await saveAuth(auth);
       loginPassword.value = "";
       loginFeedback.textContent = "\u767B\u5F55\u6210\u529F \u2713";
@@ -1134,7 +1151,8 @@
     if (historyIndex !== void 0)
       el.dataset.historyIndex = String(historyIndex);
     const supportsRecall = role === "user";
-    el.innerHTML = `<div class="chat-avatar">${role === "ai" ? "\u2728" : "\u{1F464}"}</div><div class="chat-bubble">${rowActionsHtml(role, supportsRecall)}${renderChatContent(content)}</div>`;
+    const avatar = role === "ai" ? "\u2728" : avatarHtml(auth.avatar, "\u{1F464}");
+    el.innerHTML = `<div class="chat-avatar">${avatar}</div><div class="chat-bubble">${rowActionsHtml(role, supportsRecall)}${renderChatContent(content)}</div>`;
     chatMsgs.appendChild(el);
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
     return el;
@@ -2079,11 +2097,11 @@
       void (async () => {
         try {
           const me = await getMe(serverUrl, auth.token);
-          if (me?.name) {
-            auth.userName = me.name;
-            await saveAuth({ userName: me.name });
-            updateUserChip();
-          }
+          auth.userName = me?.name || auth.userName;
+          auth.avatar = me?.avatar || "";
+          await saveAuth({ userName: auth.userName, avatar: auth.avatar });
+          updateUserChip();
+          renderChatHistory();
           await loadMembers();
           syncSelectedAiToBackground(true);
           if (useServerChat())

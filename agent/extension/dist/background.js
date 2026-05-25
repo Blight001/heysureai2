@@ -3450,7 +3450,7 @@
     return r[ACT_KEY] || [];
   }
   var AUTH_KEY = "_auth_state";
-  var AUTH_DEFAULT = { token: "", account: "", userId: null, userName: "" };
+  var AUTH_DEFAULT = { token: "", account: "", userId: null, userName: "", avatar: "" };
   async function getAuth() {
     const r = await chrome.storage.local.get(AUTH_KEY);
     return { ...AUTH_DEFAULT, ...r[AUTH_KEY] || {} };

@@ -66,10 +66,11 @@ export interface AuthState {
   account:  string
   userId:   number | null
   userName: string
+  avatar:   string
 }
 
 const AUTH_KEY = '_auth_state'
-const AUTH_DEFAULT: AuthState = { token: '', account: '', userId: null, userName: '' }
+const AUTH_DEFAULT: AuthState = { token: '', account: '', userId: null, userName: '', avatar: '' }
 
 export async function getAuth(): Promise<AuthState> {
   const r = await chrome.storage.local.get(AUTH_KEY)
