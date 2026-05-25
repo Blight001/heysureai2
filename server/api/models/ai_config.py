@@ -8,7 +8,7 @@ _DEFAULT_MCP_TOOLS = (
     '"admin.list_agents","admin.get_overview","admin.dispatch_flow",'
     '"project.list_projects","project.create_project","project.update_project",'
     '"project.delete_project","task.create","task.update","task.delete","task.list",'
-    '"task.get_current","task.inherit","task.complete",'
+    '"task.inherit","task.complete",'
     '"prompt.list_targets","prompt.read_ai","prompt.write_ai","prompt.read_system",'
     '"prompt.write_system","memory.write","memory.search","memory.list","memory.update",'
     '"memory.archive","evolution.input","evolution.list","evolution.review",'

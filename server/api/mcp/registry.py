@@ -15,7 +15,6 @@ from .tools.tasks import (
     _task_complete,
     _task_create,
     _task_delete,
-    _task_get_current,
     _task_inherit,
     _task_list,
     _task_update,
@@ -175,10 +174,17 @@ registry.register(MCPTool(
 ))
 registry.register(MCPTool(
     name="task.list",
-    description="List queued/running/paused tasks. assistant_admin can proxy to digital_member (auto or target_ai_config_id).",
+    description=(
+        "List queued/running/paused tasks. Set current_only=true to return the current task "
+        "(running first, then queued, then paused). assistant_admin can proxy to digital_member "
+        "(auto or target_ai_config_id)."
+    ),
     input_schema={
         "type": "object",
         "properties": {
+            "current_only": {"type": "boolean", "description": "Return only the current task as task and tasks[0]."},
+            "current": {"type": "boolean", "description": "Alias of current_only."},
+            "job_id": {"type": "string", "description": "Optional task job id to fetch through task.list."},
             "target_ai_config_id": {"type": "integer"},
             "target_config_id": {"type": "integer"},
         },
@@ -226,20 +232,6 @@ registry.register(MCPTool(
     },
     handler=_task_delete,
     destructive=True,
-))
-registry.register(MCPTool(
-    name="task.get_current",
-    description="Get task context. assistant_admin can proxy to digital_member (auto or target_ai_config_id).",
-    input_schema={
-        "type": "object",
-        "properties": {
-            "job_id": {"type": "string"},
-            "target_ai_config_id": {"type": "integer"},
-            "target_config_id": {"type": "integer"},
-        },
-        "required": [],
-    },
-    handler=_task_get_current,
 ))
 registry.register(MCPTool(
     name="task.inherit",

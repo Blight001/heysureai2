@@ -786,122 +786,68 @@ def _task_delete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
             "owner_ai_name": owner_cfg.name,
         }
 
+def _task_status_rank(raw: str) -> int:
+    status = str(raw or "").strip()
+    if status == "running":
+        return 0
+    if status == "queued":
+        return 1
+    if status == "paused":
+        return 2
+    return 9
+
+def _task_row_to_dict(row: AITaskJob) -> Dict[str, Any]:
+    payload = _safe_decode_task_payload(row.task_payload)
+    created_ts = _safe_timestamp(row.created_at)
+    return {
+        "job_id": row.job_id,
+        "title": row.title,
+        "instruction": row.instruction,
+        "task_payload": payload,
+        "priority": row.priority,
+        "status": row.status,
+        "session_id": row.session_id,
+        "template_id": row.template_id,
+        "created_at_unix": created_ts,
+        "created_at_local": _format_ts_local(created_ts),
+        "created_at_utc": _format_ts_utc(created_ts),
+        "schedule": _build_task_schedule_meta(payload, row.trigger_type),
+    }
+
 def _task_list(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    with Session(engine) as session:
-        owner_cfg = _resolve_task_runtime_owner(session, user_id, ai_config_id, args)
-        rows = session.exec(
-            select(AITaskJob).where(
-                AITaskJob.user_id == user_id,
-                AITaskJob.ai_config_id == int(owner_cfg.id),
-                AITaskJob.status.in_(["queued", "running", "paused"]),
-            ).order_by(AITaskJob.priority.desc(), AITaskJob.created_at.asc())
-        ).all()
-        tasks: List[Dict[str, Any]] = []
-        for row in rows:
-            payload = _safe_decode_task_payload(row.task_payload)
-            created_ts = _safe_timestamp(row.created_at)
-            tasks.append(
-                {
-                    "job_id": row.job_id,
-                    "title": row.title,
-                    "instruction": row.instruction,
-                    "task_payload": payload,
-                    "priority": row.priority,
-                    "status": row.status,
-                    "session_id": row.session_id,
-                    "template_id": row.template_id,
-                    "created_at_unix": created_ts,
-                    "created_at_local": _format_ts_local(created_ts),
-                    "created_at_utc": _format_ts_utc(created_ts),
-                    "schedule": _build_task_schedule_meta(payload, row.trigger_type),
-                }
-            )
-        return {
-            "owner_ai_config_id": owner_cfg.id,
-            "owner_ai_name": owner_cfg.name,
-            "requested_ai_config_id": ai_config_id,
-            "tasks": tasks
-        }
-
-def _task_get_current(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     job_id = str(args.get("job_id") or "").strip()
+    current_only = _to_bool(args.get("current_only", args.get("current")), False)
     with Session(engine) as session:
         owner_cfg = _resolve_task_runtime_owner(session, user_id, ai_config_id, args)
-        row = None
+        query = select(AITaskJob).where(
+            AITaskJob.user_id == user_id,
+            AITaskJob.ai_config_id == int(owner_cfg.id),
+            AITaskJob.status.in_(["queued", "running", "paused"]),
+        )
         if job_id:
-            row = session.exec(
-                select(AITaskJob).where(
-                    AITaskJob.user_id == user_id,
-                    AITaskJob.ai_config_id == int(owner_cfg.id),
-                    AITaskJob.job_id == job_id,
-                    AITaskJob.status.in_(["running", "queued", "paused"]),
-                )
-            ).first()
-            if not row:
-                return {
-                    "task": None,
-                    "requested_job_id": job_id,
-                    "owner_ai_config_id": owner_cfg.id,
-                    "owner_ai_name": owner_cfg.name,
-                    "requested_ai_config_id": ai_config_id,
-                }
-        if not row:
-            rows = session.exec(
-                select(AITaskJob).where(
-                    AITaskJob.user_id == user_id,
-                    AITaskJob.ai_config_id == int(owner_cfg.id),
-                    AITaskJob.status.in_(["running", "queued", "paused"]),
-                ).order_by(AITaskJob.priority.desc(), AITaskJob.created_at.asc())
-            ).all()
-
-            def _status_rank(raw: str) -> int:
-                status = str(raw or "").strip()
-                if status == "running":
-                    return 0
-                if status == "queued":
-                    return 1
-                if status == "paused":
-                    return 2
-                return 9
-
+            query = query.where(AITaskJob.job_id == job_id)
+        rows = session.exec(
+            query.order_by(AITaskJob.priority.desc(), AITaskJob.created_at.asc())
+        ).all()
+        if current_only or job_id:
             rows.sort(
                 key=lambda item: (
-                    _status_rank(str(item.status or "")),
+                    _task_status_rank(str(item.status or "")),
                     -int(item.priority or 0),
                     float(item.created_at or 0),
                 )
             )
-            row = rows[0] if rows else None
-        if not row:
-            return {
-                "task": None,
-                "requested_job_id": job_id or None,
-                "owner_ai_config_id": owner_cfg.id,
-                "owner_ai_name": owner_cfg.name,
-                "requested_ai_config_id": ai_config_id,
-            }
-        try:
-            payload = _safe_decode_task_payload(row.task_payload)
-        except Exception:
-            payload = {}
-        created_ts = _safe_timestamp(row.created_at)
+            rows = rows[:1]
+        tasks = [_task_row_to_dict(row) for row in rows]
+        task = tasks[0] if tasks else None
         return {
             "owner_ai_config_id": owner_cfg.id,
             "owner_ai_name": owner_cfg.name,
             "requested_ai_config_id": ai_config_id,
-            "task": {
-                "job_id": row.job_id,
-                "title": row.title,
-                "instruction": row.instruction,
-                "task_payload": payload,
-                "priority": row.priority,
-                "status": row.status,
-                "session_id": row.session_id,
-                "created_at_unix": created_ts,
-                "created_at_local": _format_ts_local(created_ts),
-                "created_at_utc": _format_ts_utc(created_ts),
-                "schedule": _build_task_schedule_meta(payload, row.trigger_type),
-            }
+            "requested_job_id": job_id or None,
+            "current_only": bool(current_only),
+            "task": task if (current_only or job_id) else None,
+            "tasks": tasks,
         }
 
 def _task_inherit(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:

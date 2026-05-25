@@ -24,7 +24,6 @@ DEFAULT_SYSTEM_AUTO_CONTROL: Dict[str, Any] = {
 }
 
 TASK_RUNTIME_REQUIRED_TOOLS = {
-    "task.get_current",
     "task.complete",
     "task.inherit",
     "task.list",

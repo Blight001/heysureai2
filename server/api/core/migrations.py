@@ -151,7 +151,7 @@ def _migrate_user(
         "task.create",
         ["task.update", "task.delete"],
     )
-    _remove_role_permission_tool_item(cursor, "task.wait_all")
+    _remove_role_permission_tool_item(cursor, "task.get_current")
 
 
 def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
@@ -210,7 +210,7 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
         "OR digital_member_role NOT IN ('manager', 'member')"
     )
     _remove_json_array_item(cursor, "assistantaiconfig", "mcp_tools", "ai.reply_message")
-    _remove_json_array_item(cursor, "assistantaiconfig", "mcp_tools", "task.wait_all")
+    _remove_json_array_item(cursor, "assistantaiconfig", "mcp_tools", "task.get_current")
     _collapse_json_array_items(
         cursor,
         "assistantaiconfig",

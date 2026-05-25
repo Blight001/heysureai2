@@ -16,7 +16,6 @@ export const DEFAULT_MCP_TOOLS = [
   'task.update',
   'task.delete',
   'task.list',
-  'task.get_current',
   'task.inherit',
   'task.complete',
   'prompt.list_targets',

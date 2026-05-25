@@ -500,7 +500,7 @@ def _extract_first_complete_mcp_call(assistant_text: str):
     # Fallback: accept fenced JSON tool call format.
     # Example:
     # ```json
-    # {"tool":"task.get_current","arguments":{"job_id":"job_xxx"}}
+    # {"tool":"task.list","arguments":{"job_id":"job_xxx"}}
     # ```
     fence_pattern = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
     for fm in fence_pattern.finditer(assistant_text or ""):

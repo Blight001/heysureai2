@@ -99,8 +99,7 @@ const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag
   'task.create': { label: '创建任务', description: '统一创建入口；用 mode 选择 immediate 立即执行、scheduled 定时执行、recurring 循环运行。', tag: '计划与记忆' },
   'task.update': { label: '编辑任务', description: '管理员接管任务时修改标题、说明、优先级、状态或定时配置。', tag: '计划与记忆' },
   'task.delete': { label: '删除任务', description: '硬删除任务并停止相关运行，清理对应任务会话。', tag: '计划与记忆' },
-  'task.list': { label: '任务队列', description: '查看当前 AI 的任务队列情况。', tag: '计划与记忆' },
-  'task.get_current': { label: '当前任务', description: '读取当前执行中的任务详情。', tag: '计划与记忆' },
+  'task.list': { label: '任务队列', description: '查看当前 AI 的任务队列情况；传 current_only=true 可只读取当前任务。', tag: '计划与记忆' },
   'task.inherit': { label: '提交传承', description: '提交任务传承摘要与上下文。', tag: '计划与记忆' },
   'task.complete': { label: '标记完成', description: '将当前任务标记为完成。', tag: '计划与记忆' },
   'prompt.list_targets': { label: 'Prompt 目标', description: '列出当前 AI 基础 prompt 目标与全局/系统 prompt 模板键。', tag: 'Prompt' },
@@ -325,7 +324,6 @@ const TASK_TOOL_ORDER = [
   'task.update',
   'task.delete',
   'task.list',
-  'task.get_current',
   'task.inherit',
   'task.complete',
 ]

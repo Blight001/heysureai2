@@ -44,7 +44,6 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # Workspace access is command-only. AI should use shell commands for file operations.
     "workspace.run_command": ROLE_MANAGER,
     # Task — members run their own task; orchestration is manager+.
-    "task.get_current": ROLE_MEMBER,
     "task.complete": ROLE_MEMBER,
     "task.inherit": ROLE_MEMBER,
     "task.list": ROLE_MEMBER,
