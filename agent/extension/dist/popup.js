@@ -760,9 +760,7 @@
     }
   }
   function getConnectedAiShortLabel() {
-    const name = String(memberById(selectedMemberId)?.name || auth.userName || auth.account || "AI").trim();
-    const shortName = name.slice(0, 2) || "AI";
-    return `${shortName}.,,`;
+    return String(memberById(selectedMemberId)?.name || auth.userName || auth.account || "Agent").trim();
   }
   function hasBrowserMcpPermission(m) {
     if (m.mcp_enabled === false)
@@ -933,6 +931,8 @@
       renderSettingsViews();
       if (useServerChat())
         await refreshServerSessionsAndHistory();
+      closeLoginModal();
+      openMembersModal();
     } catch (err) {
       loginFeedback.textContent = `\u767B\u5F55\u5931\u8D25\uFF1A${err?.message || err}`;
       loginFeedback.style.color = "var(--error)";

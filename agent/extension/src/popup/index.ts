@@ -190,9 +190,7 @@ function toolCount(m: MemberConfig): number {
   try { const a = JSON.parse(m.mcp_tools || '[]'); return Array.isArray(a) ? a.length : 0 } catch { return 0 }
 }
 function getConnectedAiShortLabel(): string {
-  const name = String(memberById(selectedMemberId)?.name || auth.userName || auth.account || 'AI').trim()
-  const shortName = name.slice(0, 2) || 'AI'
-  return `${shortName}.,,`
+  return String(memberById(selectedMemberId)?.name || auth.userName || auth.account || 'Agent').trim()
 }
 function hasBrowserMcpPermission(m: MemberConfig): boolean {
   if (m.mcp_enabled === false) return false
@@ -356,6 +354,8 @@ async function doLogin() {
     syncSelectedAiToBackground(true)
     renderSettingsViews()
     if (useServerChat()) await refreshServerSessionsAndHistory()
+    closeLoginModal()
+    openMembersModal()
   } catch (err: any) {
     loginFeedback.textContent = `登录失败：${err?.message || err}`
     loginFeedback.style.color = 'var(--error)'
