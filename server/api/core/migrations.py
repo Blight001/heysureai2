@@ -137,6 +137,21 @@ def _migrate_user(
         "WHERE ui_font_size IS NULL OR ui_font_size = '' "
         "OR ui_font_size NOT IN ('sm', 'md', 'lg')"
     )
+    _collapse_role_permission_tool_items(
+        cursor,
+        [
+            "task.create_immediate",
+            "task.create_scheduled",
+            "task.create_recurring",
+        ],
+        "task.create",
+    )
+    _append_role_permission_tool_items_after_anchor(
+        cursor,
+        "task.create",
+        ["task.update", "task.delete"],
+    )
+    _remove_role_permission_tool_item(cursor, "task.wait_all")
 
 
 def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
@@ -195,6 +210,25 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
         "OR digital_member_role NOT IN ('manager', 'member')"
     )
     _remove_json_array_item(cursor, "assistantaiconfig", "mcp_tools", "ai.reply_message")
+    _remove_json_array_item(cursor, "assistantaiconfig", "mcp_tools", "task.wait_all")
+    _collapse_json_array_items(
+        cursor,
+        "assistantaiconfig",
+        "mcp_tools",
+        [
+            "task.create_immediate",
+            "task.create_scheduled",
+            "task.create_recurring",
+        ],
+        "task.create",
+    )
+    _append_json_array_items_after_anchor(
+        cursor,
+        "assistantaiconfig",
+        "mcp_tools",
+        "task.create",
+        ["task.update", "task.delete"],
+    )
 
 
 def _migrate_aitaskjob(cursor: sqlite3.Cursor) -> None:
@@ -220,6 +254,191 @@ def _remove_json_array_item(cursor: sqlite3.Cursor, table: str, column: str, ite
         cursor.execute(
             f"UPDATE {table} SET {column} = ? WHERE id = ?",
             (json.dumps(next_items, ensure_ascii=False), row_id),
+        )
+
+
+def _collapse_json_array_items(
+    cursor: sqlite3.Cursor,
+    table: str,
+    column: str,
+    old_items: list[str],
+    new_item: str,
+) -> None:
+    old_set = set(old_items)
+    if not old_set:
+        return
+    like = " OR ".join([f"{column} LIKE ?" for _ in old_items])
+    cursor.execute(
+        f"SELECT id, {column} FROM {table} WHERE {like}",
+        tuple(f"%{item}%" for item in old_items),
+    )
+    rows = cursor.fetchall()
+    for row_id, raw_value in rows:
+        try:
+            import json
+            parsed = json.loads(raw_value or "[]")
+        except Exception:
+            continue
+        if not isinstance(parsed, list):
+            continue
+        next_items: list[str] = []
+        seen: set[str] = set()
+        needs_new_item = False
+        changed = False
+        for value in parsed:
+            if value in old_set:
+                needs_new_item = True
+                changed = True
+                continue
+            if value not in seen:
+                next_items.append(value)
+                seen.add(value)
+        if needs_new_item and new_item not in seen:
+            next_items.append(new_item)
+        if not changed:
+            continue
+        cursor.execute(
+            f"UPDATE {table} SET {column} = ? WHERE id = ?",
+            (json.dumps(next_items, ensure_ascii=False), row_id),
+        )
+
+
+def _collapse_role_permission_tool_items(
+    cursor: sqlite3.Cursor,
+    old_items: list[str],
+    new_item: str,
+) -> None:
+    old_set = set(old_items)
+    cursor.execute("SELECT id, role_mcp_permissions FROM user WHERE role_mcp_permissions LIKE '%task.create_%'")
+    rows = cursor.fetchall()
+    for row_id, raw_value in rows:
+        try:
+            import json
+            parsed = json.loads(raw_value or "{}")
+        except Exception:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        changed = False
+        next_permissions = {}
+        for role, tools in parsed.items():
+            if not isinstance(tools, list):
+                next_permissions[role] = tools
+                continue
+            next_tools: list[str] = []
+            seen: set[str] = set()
+            needs_new_item = False
+            for tool in tools:
+                if tool in old_set:
+                    needs_new_item = True
+                    changed = True
+                    continue
+                if tool not in seen:
+                    next_tools.append(tool)
+                    seen.add(tool)
+            if needs_new_item and new_item not in seen:
+                next_tools.append(new_item)
+            next_permissions[role] = next_tools
+        if not changed:
+            continue
+        cursor.execute(
+            "UPDATE user SET role_mcp_permissions = ? WHERE id = ?",
+            (json.dumps(next_permissions, ensure_ascii=False), row_id),
+        )
+
+
+def _remove_role_permission_tool_item(cursor: sqlite3.Cursor, item: str) -> None:
+    cursor.execute("SELECT id, role_mcp_permissions FROM user WHERE role_mcp_permissions LIKE ?", (f"%{item}%",))
+    rows = cursor.fetchall()
+    for row_id, raw_value in rows:
+        try:
+            import json
+            parsed = json.loads(raw_value or "{}")
+        except Exception:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        changed = False
+        next_permissions = {}
+        for role, tools in parsed.items():
+            if not isinstance(tools, list):
+                next_permissions[role] = tools
+                continue
+            next_tools = [tool for tool in tools if tool != item]
+            if next_tools != tools:
+                changed = True
+            next_permissions[role] = next_tools
+        if not changed:
+            continue
+        cursor.execute(
+            "UPDATE user SET role_mcp_permissions = ? WHERE id = ?",
+            (json.dumps(next_permissions, ensure_ascii=False), row_id),
+        )
+
+
+def _append_json_array_items_after_anchor(
+    cursor: sqlite3.Cursor,
+    table: str,
+    column: str,
+    anchor_item: str,
+    new_items: list[str],
+) -> None:
+    cursor.execute(f"SELECT id, {column} FROM {table} WHERE {column} LIKE ?", (f"%{anchor_item}%",))
+    rows = cursor.fetchall()
+    for row_id, raw_value in rows:
+        try:
+            import json
+            parsed = json.loads(raw_value or "[]")
+        except Exception:
+            continue
+        if not isinstance(parsed, list) or anchor_item not in parsed:
+            continue
+        next_items = list(parsed)
+        changed = False
+        for item in new_items:
+            if item not in next_items:
+                next_items.append(item)
+                changed = True
+        if not changed:
+            continue
+        cursor.execute(
+            f"UPDATE {table} SET {column} = ? WHERE id = ?",
+            (json.dumps(next_items, ensure_ascii=False), row_id),
+        )
+
+
+def _append_role_permission_tool_items_after_anchor(
+    cursor: sqlite3.Cursor,
+    anchor_item: str,
+    new_items: list[str],
+) -> None:
+    cursor.execute("SELECT id, role_mcp_permissions FROM user WHERE role_mcp_permissions LIKE ?", (f"%{anchor_item}%",))
+    rows = cursor.fetchall()
+    for row_id, raw_value in rows:
+        try:
+            import json
+            parsed = json.loads(raw_value or "{}")
+        except Exception:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        changed = False
+        next_permissions = {}
+        for role, tools in parsed.items():
+            if not isinstance(tools, list) or anchor_item not in tools:
+                next_permissions[role] = tools
+                continue
+            next_tools = list(tools)
+            for item in new_items:
+                if item not in next_tools:
+                    next_tools.append(item)
+                    changed = True
+            next_permissions[role] = next_tools
+        if not changed:
+            continue
+        cursor.execute(
+            "UPDATE user SET role_mcp_permissions = ? WHERE id = ?",
+            (json.dumps(next_permissions, ensure_ascii=False), row_id),
         )
 
 

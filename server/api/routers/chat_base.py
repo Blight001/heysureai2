@@ -27,7 +27,4 @@ _TASK_RUNTIME_SECTION_TITLES: tuple[str, ...] = (
 )
 _TASK_CREATE_TOOL_NAMES: set[str] = {
     "task.create",
-    "task.create_immediate",
-    "task.create_scheduled",
-    "task.create_recurring",
 }

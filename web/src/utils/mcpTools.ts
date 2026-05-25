@@ -96,15 +96,13 @@ const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag
   'project.create_project': { label: '创建项目', description: '创建新的项目记录。', tag: '管理与项目' },
   'project.update_project': { label: '更新项目', description: '更新项目信息与成员绑定。', tag: '管理与项目' },
   'project.delete_project': { label: '删除项目', description: '删除项目记录，请谨慎操作。', tag: '管理与项目' },
-  'task.create_immediate': { label: '创建即时任务', description: '立即执行任务；不使用任何定时参数。核心参数：title、instruction。', tag: '计划与记忆' },
-  'task.create_scheduled': { label: '创建定时任务', description: '一次性定时任务；使用 schedule_at 或 schedule_duration_minutes（二选一）。', tag: '计划与记忆' },
-  'task.create_recurring': { label: '创建循环任务', description: '循环任务；使用 schedule_duration_minutes 作为间隔，可选 schedule_run_immediately 首次立即执行。', tag: '计划与记忆' },
-  'task.create': { label: '创建任务(兼容)', description: '兼容入口，建议优先使用上面三类创建工具。', tag: '计划与记忆' },
+  'task.create': { label: '创建任务', description: '统一创建入口；用 mode 选择 immediate 立即执行、scheduled 定时执行、recurring 循环运行。', tag: '计划与记忆' },
+  'task.update': { label: '编辑任务', description: '管理员接管任务时修改标题、说明、优先级、状态或定时配置。', tag: '计划与记忆' },
+  'task.delete': { label: '删除任务', description: '硬删除任务并停止相关运行，清理对应任务会话。', tag: '计划与记忆' },
   'task.list': { label: '任务队列', description: '查看当前 AI 的任务队列情况。', tag: '计划与记忆' },
   'task.get_current': { label: '当前任务', description: '读取当前执行中的任务详情。', tag: '计划与记忆' },
   'task.inherit': { label: '提交传承', description: '提交任务传承摘要与上下文。', tag: '计划与记忆' },
   'task.complete': { label: '标记完成', description: '将当前任务标记为完成。', tag: '计划与记忆' },
-  'task.wait_all': { label: '等待子任务', description: '阻塞等待指定子任务全部完成或超时后返回各自结果摘要，常用于并行编排。', tag: '计划与记忆' },
   'prompt.list_targets': { label: 'Prompt 目标', description: '列出当前 AI 基础 prompt 目标与全局/系统 prompt 模板键。', tag: 'Prompt' },
   'prompt.read_ai': { label: '读取 AI Prompt', description: '读取指定 AI 实际使用的基础 prompt；未指定时读取当前 AI。', tag: 'Prompt' },
   'prompt.write_ai': { label: '修改 AI Prompt', description: '按行修改指定 AI 的 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
@@ -321,6 +319,36 @@ export const getMcpToolZhLabel = (name: string) => MCP_TOOL_ZH_META[name]?.label
 
 const getMcpToolZhTag = (name: string) => MCP_TOOL_ZH_META[name]?.tag || getMcpToolFallbackTag(name)
 
+const PLAN_MEMORY_PREFIX_ORDER = ['task', 'memory', 'librarian']
+const TASK_TOOL_ORDER = [
+  'task.create',
+  'task.update',
+  'task.delete',
+  'task.list',
+  'task.get_current',
+  'task.inherit',
+  'task.complete',
+]
+
+const getPlanMemoryToolRank = (name: string) => {
+  const prefix = name.split(/[._]/)[0] || ''
+  const prefixRank = PLAN_MEMORY_PREFIX_ORDER.includes(prefix)
+    ? PLAN_MEMORY_PREFIX_ORDER.indexOf(prefix)
+    : PLAN_MEMORY_PREFIX_ORDER.length
+  const toolRank = TASK_TOOL_ORDER.includes(name) ? TASK_TOOL_ORDER.indexOf(name) : 999
+  return { prefixRank, toolRank }
+}
+
+const compareMcpToolByZh = (a: string, b: string, tag = '') => {
+  if (tag === '计划与记忆') {
+    const ar = getPlanMemoryToolRank(a)
+    const br = getPlanMemoryToolRank(b)
+    if (ar.prefixRank !== br.prefixRank) return ar.prefixRank - br.prefixRank
+    if (ar.toolRank !== br.toolRank) return ar.toolRank - br.toolRank
+  }
+  return getMcpToolZhLabel(a).localeCompare(getMcpToolZhLabel(b), 'zh-Hans-CN')
+}
+
 export const groupMcpToolsByZhTag = (tools: string[]): McpToolGroup[] => {
   const groups = new Map<string, string[]>()
   for (const tool of tools) {
@@ -334,7 +362,7 @@ export const groupMcpToolsByZhTag = (tools: string[]): McpToolGroup[] => {
   return Array.from(groups.entries())
     .map(([tag, rows]) => ({
       tag,
-      tools: rows.sort((a, b) => getMcpToolZhLabel(a).localeCompare(getMcpToolZhLabel(b), 'zh-Hans-CN')),
+      tools: rows.sort((a, b) => compareMcpToolByZh(a, b, tag)),
     }))
     .sort((a, b) => {
       const aRank = MCP_TOOL_TAG_ORDER.includes(a.tag) ? MCP_TOOL_TAG_ORDER.indexOf(a.tag) : MCP_TOOL_TAG_ORDER.length
@@ -402,7 +430,7 @@ export const groupMcpToolsBySource = (tools: string[]): McpToolSourceGroup[] => 
   }
   return (['server', 'desktop', 'browser'] as const)
     .map(source => {
-      const sourceTools = Array.from(new Set(buckets[source])).sort((a, b) => getMcpToolZhLabel(a).localeCompare(getMcpToolZhLabel(b), 'zh-Hans-CN'))
+      const sourceTools = Array.from(new Set(buckets[source])).sort((a, b) => compareMcpToolByZh(a, b))
       const groups = groupMcpToolsByZhTag(sourceTools)
       return {
         source,

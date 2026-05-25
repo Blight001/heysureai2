@@ -14,7 +14,6 @@ from api.models import AssistantAIConfig, DEFAULT_MCP_FORMAT_ERROR_HINT
 from api.services.desktop_agent_tools import endpoint_bridge_tools_for_config
 from api.services.task_system import (
     DEFAULT_SYSTEM_AUTO_CONTROL,
-    with_task_create_compat,
     with_workspace_read_by_name_compat,
 )
 from .chat_base import (
@@ -121,7 +120,6 @@ def _parse_allowed_tools_for_cfg(cfg: Optional[AssistantAIConfig]) -> set[str]:
         if not isinstance(parsed, list):
             return set()
         raw_tools = {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
-        raw_tools = with_task_create_compat(raw_tools)
         raw_tools = with_workspace_read_by_name_compat(raw_tools)
         raw_tools.update(endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
         return raw_tools
@@ -230,62 +228,16 @@ def _render_mcp_tool_item(tool_info: Dict[str, Any]) -> str:
     field_limit = 100 if name in _TASK_CREATE_TOOL_NAMES else (30 if name.startswith("task.") else 6)
 
     example_args: Dict[str, Any] = {}
-    if name == "task.create_immediate":
-        if "title" in props:
-            example_args["title"] = "整理今日待办并更新任务看板"
-        elif "name" in props:
-            example_args["name"] = "整理今日待办并更新任务看板"
-        if "instruction" in props:
-            example_args["instruction"] = "梳理当前分支未完成事项，按高/中/低优先级输出到 doc/daily-plan.md。"
-        elif "content" in props:
-            example_args["content"] = "梳理当前分支未完成事项，按高/中/低优先级输出到 doc/daily-plan.md。"
-        if "priority" in props:
-            example_args["priority"] = 7
-    elif name == "task.create_scheduled":
+    if name == "task.create":
+        example_args["mode"] = "scheduled"
         if "title" in props:
             example_args["title"] = "两小时后执行代码健康巡检"
-        elif "name" in props:
-            example_args["name"] = "两小时后执行代码健康巡检"
         if "instruction" in props:
-            example_args["instruction"] = "运行 python -m compileall server/api 与前端类型检查，记录失败项和修复建议到 doc/ops/health-check.md。"
-        elif "content" in props:
-            example_args["content"] = "运行 python -m compileall server/api 与前端类型检查，记录失败项和修复建议到 doc/ops/health-check.md。"
+            example_args["instruction"] = "运行后端语法检查与前端类型检查，记录失败项和修复建议到 doc/ops/health-check.md。"
         if "priority" in props:
             example_args["priority"] = 6
         if "schedule_at" in props:
             example_args["schedule_at"] = _example_schedule_iso(2)
-        elif "schedule_duration_minutes" in props:
-            example_args["schedule_duration_minutes"] = 120
-    elif name == "task.create_recurring":
-        if "title" in props:
-            example_args["title"] = "每30分钟检查CI构建状态"
-        elif "name" in props:
-            example_args["name"] = "每30分钟检查CI构建状态"
-        if "instruction" in props:
-            example_args["instruction"] = "读取最新一次构建结果；若失败，整理失败任务与报错摘要到 doc/ops/ci-watch.md。"
-        elif "content" in props:
-            example_args["content"] = "读取最新一次构建结果；若失败，整理失败任务与报错摘要到 doc/ops/ci-watch.md。"
-        if "priority" in props:
-            example_args["priority"] = 5
-        if "schedule_duration_minutes" in props:
-            example_args["schedule_duration_minutes"] = 30
-        if "schedule_run_immediately" in props:
-            example_args["schedule_run_immediately"] = True
-    elif name == "task.create":
-        if "title" in props:
-            example_args["title"] = "兼容入口：今晚例行巡检"
-        elif "name" in props:
-            example_args["name"] = "兼容入口：今晚例行巡检"
-        if "instruction" in props:
-            example_args["instruction"] = "按巡检清单完成日志检查、错误归档与明日风险提示。"
-        elif "content" in props:
-            example_args["content"] = "按巡检清单完成日志检查、错误归档与明日风险提示。"
-        if "priority" in props:
-            example_args["priority"] = 6
-        if "schedule_enabled" in props:
-            example_args["schedule_enabled"] = True
-        if "schedule_at" in props:
-            example_args["schedule_at"] = _example_schedule_iso(3)
     else:
         seed_names = required_names[:3] if required_names else optional_names[:1]
         for key in seed_names:
@@ -297,16 +249,12 @@ def _render_mcp_tool_item(tool_info: Dict[str, Any]) -> str:
         separators=(",", ":"),
     )
     format_hint = ""
-    if name in {"task.create_scheduled", "task.create"}:
+    if name == "task.create":
         format_hint = (
             "\n"
-            "  时间格式: `schedule_at` 仅支持 Unix 秒或带时区 ISO-8601（必须包含 `+08:00` 或 `Z`），"
-            "不要使用无时区时间。"
-        )
-    elif name == "task.create_recurring":
-        format_hint = (
-            "\n"
-            "  时间格式: 循环任务不要传 `schedule_at`，仅使用 `schedule_duration_minutes`（分钟间隔）。"
+            "  mode: `immediate` 立即执行；`scheduled` 一次性定时；`recurring` 循环运行。\n"
+            "  时间格式: mode=scheduled 的 `schedule_at` 仅支持 Unix 秒或带时区 ISO-8601（必须包含 `+08:00` 或 `Z`）；"
+            "mode=recurring 不传 `schedule_at`，仅使用 `schedule_duration_minutes`（分钟间隔）。"
         )
     return (
         f"- {name} (必填: {_compact_fields(required_desc, field_limit)}; 可选: {_compact_fields(optional_desc, field_limit)})\n"
@@ -431,7 +379,6 @@ def _build_mcp_stream_warning(
             parsed_allowed = json.loads(cfg.mcp_tools or "[]")
             if isinstance(parsed_allowed, list):
                 allowed_tools = {str(v).strip() for v in parsed_allowed if isinstance(v, str) and str(v).strip()}
-                allowed_tools = with_task_create_compat(allowed_tools)
                 allowed_tools = with_workspace_read_by_name_compat(allowed_tools)
         except Exception:
             allowed_tools = set()

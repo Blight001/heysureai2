@@ -153,5 +153,11 @@ export const put = <T = unknown>(
   options: Omit<RequestOptions, 'method' | 'body'> = {},
 ) => request<T>(path, { ...options, method: 'PUT', body })
 
+export const patch = <T = unknown>(
+  path: string,
+  body?: unknown,
+  options: Omit<RequestOptions, 'method' | 'body'> = {},
+) => request<T>(path, { ...options, method: 'PATCH', body })
+
 export const del = <T = unknown>(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}) =>
   request<T>(path, { ...options, method: 'DELETE' })

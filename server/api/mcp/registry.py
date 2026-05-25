@@ -14,13 +14,11 @@ from .tools.projects import (
 from .tools.tasks import (
     _task_complete,
     _task_create,
-    _task_create_immediate,
-    _task_create_recurring,
-    _task_create_scheduled,
+    _task_delete,
     _task_get_current,
     _task_inherit,
     _task_list,
-    _task_wait_all,
+    _task_update,
 )
 from .tools.prompts import (
     _prompt_list_targets,
@@ -146,106 +144,31 @@ registry.register(MCPTool(
     destructive=True,
 ))
 registry.register(MCPTool(
-    name="task.create_immediate",
-    description="Create an immediate queued task (manual trigger). Best for tasks that should start as soon as scheduler picks it.",
+    name="task.create",
+    description=(
+        "Create a task with explicit mode. mode=immediate runs as soon as the scheduler picks it; "
+        "mode=scheduled creates a one-time scheduled task using schedule_at or schedule_duration_minutes; "
+        "mode=recurring creates a loop task using schedule_duration_minutes and optional schedule_run_immediately. "
+        "schedule_at must be Unix seconds or timezone-aware ISO-8601."
+    ),
     input_schema={
         "type": "object",
         "properties": {
-            "title": {"type": "string", "description": "任务标题。"},
-            "instruction": {"type": "string", "description": "任务执行说明/要求。"},
-            "priority": {"type": "integer", "description": "优先级 1-10，默认 5。"},
-            "template_id": {"type": "string", "description": "可选模板 ID。"},
-            "target_ai_config_id": {"type": "integer", "description": "assistant_admin 代理投递目标 AI 配置 ID。"},
-        },
-        "required": ["title", "instruction"],
-    },
-    handler=_task_create_immediate,
-    destructive=True,
-))
-registry.register(MCPTool(
-    name="task.create_scheduled",
-    description="Create a one-time scheduled task (non-loop). schedule_at OR schedule_duration_minutes (exactly one).",
-    input_schema={
-        "type": "object",
-        "properties": {
+            "mode": {
+                "type": "string",
+                "enum": ["immediate", "scheduled", "recurring"],
+                "description": "任务类型：immediate=立即执行，scheduled=一次性定时，recurring=循环运行。",
+            },
             "title": {"type": "string", "description": "任务标题。"},
             "instruction": {"type": "string", "description": "任务执行说明/要求。"},
             "priority": {"type": "integer", "description": "优先级 1-10，默认 5。"},
             "schedule_at": {"type": ["number", "string"], "description": "一次性执行时间。支持 Unix 秒，或带时区的 ISO-8601（必须包含 +08:00 或 Z）。"},
-            "schedule_duration_minutes": {"type": "integer", "description": "当未提供 schedule_at 时，使用 now + 该分钟数。默认 30。"},
+            "schedule_duration_minutes": {"type": "integer", "description": "scheduled: now + 该分钟数；recurring: 循环间隔（分钟）。默认 30。"},
+            "schedule_run_immediately": {"type": "boolean", "description": "mode=recurring 时是否首次立即执行。"},
             "template_id": {"type": "string", "description": "可选模板 ID。"},
             "target_ai_config_id": {"type": "integer", "description": "assistant_admin 代理投递目标 AI 配置 ID。"},
         },
-        "required": ["title", "instruction"],
-    },
-    handler=_task_create_scheduled,
-    destructive=True,
-))
-registry.register(MCPTool(
-    name="task.create_recurring",
-    description="Create a recurring scheduled task (loop). Use schedule_duration_minutes only; schedule_at is not allowed. Optional schedule_run_immediately for first run.",
-    input_schema={
-        "type": "object",
-        "properties": {
-            "title": {"type": "string", "description": "任务标题。"},
-            "instruction": {"type": "string", "description": "任务执行说明/要求。"},
-            "priority": {"type": "integer", "description": "优先级 1-10，默认 5。"},
-            "schedule_duration_minutes": {"type": "integer", "description": "循环间隔（分钟）。默认 30。"},
-            "schedule_run_immediately": {"type": "boolean", "description": "是否首次立即执行（仅首次有效）。"},
-            "template_id": {"type": "string", "description": "可选模板 ID。"},
-            "target_ai_config_id": {"type": "integer", "description": "assistant_admin 代理投递目标 AI 配置 ID。"},
-        },
-        "required": ["title", "instruction"],
-    },
-    handler=_task_create_recurring,
-    destructive=True,
-))
-registry.register(MCPTool(
-    name="task.create",
-    description="Create a queued task (legacy mixed mode). Prefer task.create_immediate / task.create_scheduled / task.create_recurring for clearer intent. If schedule_at is used, it must be unix seconds or timezone-aware ISO-8601.",
-    input_schema={
-        "type": "object",
-        "properties": {
-            "title": {"type": "string"},
-            "name": {"type": "string"},
-            "task_name": {"type": "string"},
-            "instruction": {"type": "string"},
-            "content": {"type": "string"},
-            "priority": {"type": "integer"},
-            "level": {"type": "string"},
-            "schedule_enabled": {"type": "boolean"},
-            "schedule_at": {"type": ["number", "string"]},
-            "run_at": {"type": ["number", "string"]},
-            "schedule_time": {"type": ["number", "string"]},
-            "schedule_duration_minutes": {"type": "integer"},
-            "duration_minutes": {"type": "integer"},
-            "interval_minutes": {"type": "integer"},
-            "schedule_loop_enabled": {"type": "boolean"},
-            "loop": {"type": "boolean"},
-            "repeat": {"type": "boolean"},
-            "schedule_run_immediately": {"type": "boolean"},
-            "run_now": {"type": "boolean"},
-            "schedule": {
-                "type": "object",
-                "properties": {
-                    "enabled": {"type": "boolean"},
-                    "schedule_at": {"type": ["number", "string"]},
-                    "run_at": {"type": ["number", "string"]},
-                    "schedule_time": {"type": ["number", "string"]},
-                    "duration_minutes": {"type": "integer"},
-                    "interval_minutes": {"type": "integer"},
-                    "loop_enabled": {"type": "boolean"},
-                    "loop": {"type": "boolean"},
-                    "repeat": {"type": "boolean"},
-                    "run_immediately": {"type": "boolean"},
-                    "run_now": {"type": "boolean"},
-                },
-            },
-            "template_id": {"type": "string"},
-            "target_ai_config_id": {"type": "integer"},
-            "target_config_id": {"type": "integer"},
-        },
-        "required": [],
+        "required": ["mode", "title", "instruction"],
     },
     handler=_task_create,
     destructive=True,
@@ -263,24 +186,46 @@ registry.register(MCPTool(
     handler=_task_list,
 ))
 registry.register(MCPTool(
-    name="task.wait_all",
+    name="task.update",
     description=(
-        "Orchestrator primitive: block until all listed subtasks finish (or "
-        "timeout), then return each task's final status and result summary. Use "
-        "after fanning out subtasks to multiple digital_members (a manager can "
-        "create subtasks for other members via target_ai_config_id), which run "
-        "in parallel."
+        "Admin/manager takeover tool: update an existing task job's title, instruction, priority, status, "
+        "or schedule metadata. status is limited to queued/paused; running task prompt text is not rewritten."
     ),
     input_schema={
         "type": "object",
         "properties": {
-            "job_ids": {"type": "array", "items": {"type": "string"}, "description": "Subtask job_ids to wait for."},
-            "timeout_seconds": {"type": "integer", "description": "Max wait, 5-1800 (default 300)."},
-            "poll_interval_seconds": {"type": "integer", "description": "Poll interval, 1-30 (default 3)."},
+            "job_id": {"type": "string", "description": "Task job id to update."},
+            "title": {"type": "string", "description": "New task title."},
+            "instruction": {"type": "string", "description": "New task instruction."},
+            "priority": {"type": "integer", "description": "Priority 1-10."},
+            "status": {"type": "string", "enum": ["queued", "paused"], "description": "Optional takeover state."},
+            "mode": {"type": "string", "enum": ["immediate", "scheduled", "recurring"], "description": "Optional schedule mode update."},
+            "schedule_at": {"type": ["number", "string"], "description": "For mode=scheduled. Unix seconds or timezone-aware ISO-8601."},
+            "schedule_duration_minutes": {"type": "integer", "description": "For scheduled/recurring."},
+            "schedule_run_immediately": {"type": "boolean", "description": "For mode=recurring first run."},
+            "target_ai_config_id": {"type": "integer", "description": "assistant_admin/manager proxy target AI config id."},
         },
-        "required": ["job_ids"],
+        "required": ["job_id"],
     },
-    handler=_task_wait_all,
+    handler=_task_update,
+    destructive=True,
+))
+registry.register(MCPTool(
+    name="task.delete",
+    description=(
+        "Admin/manager takeover tool: hard delete a task job. Active runs are stopped and related task "
+        "conversation messages/sessions are removed."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "job_id": {"type": "string", "description": "Task job id to hard delete."},
+            "target_ai_config_id": {"type": "integer", "description": "assistant_admin/manager proxy target AI config id."},
+        },
+        "required": ["job_id"],
+    },
+    handler=_task_delete,
+    destructive=True,
 ))
 registry.register(MCPTool(
     name="task.get_current",

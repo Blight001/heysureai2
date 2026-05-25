@@ -12,7 +12,7 @@ from sqlmodel import Session, select
 from api.database import engine
 from api.mcp import get_project_root, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, User
-from api.services.task_system import parse_generation_from_session_id, with_task_create_compat, with_workspace_read_by_name_compat
+from api.services.task_system import parse_generation_from_session_id, with_workspace_read_by_name_compat
 from .chat_base import _RUN_LIVE_STATE, _RUN_STATE_LOCK
 from .chat_prompt_utils import (
     _append_prompt_section,
@@ -80,7 +80,6 @@ def _parse_allowed_tools(raw: Optional[str]) -> set[str]:
         if not isinstance(parsed, list):
             return set()
         raw_tools = {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
-        raw_tools = with_task_create_compat(raw_tools)
         return with_workspace_read_by_name_compat(raw_tools)
     except Exception:
         return set()

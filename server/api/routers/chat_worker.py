@@ -26,7 +26,6 @@ from api.services.task_system import (
     TASK_RUNTIME_REQUIRED_TOOLS,
     normalize_system_auto_control,
     parse_generation_from_session_id,
-    with_task_create_compat,
     with_workspace_read_by_name_compat,
 )
 from .chat_prompt_utils import (
@@ -486,7 +485,6 @@ def _run_worker(
                         effective_tool_allowlist = {
                             str(tool).strip() for tool in tools if isinstance(tool, str) and str(tool).strip()
                         }
-                        effective_tool_allowlist = with_task_create_compat(effective_tool_allowlist)
                         effective_tool_allowlist = with_workspace_read_by_name_compat(effective_tool_allowlist)
                         effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user_id))
                         if ai_config_id is not None:

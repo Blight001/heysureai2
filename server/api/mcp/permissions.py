@@ -48,11 +48,9 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "task.complete": ROLE_MEMBER,
     "task.inherit": ROLE_MEMBER,
     "task.list": ROLE_MEMBER,
-    "task.wait_all": ROLE_MANAGER,
     "task.create": ROLE_MANAGER,
-    "task.create_immediate": ROLE_MANAGER,
-    "task.create_scheduled": ROLE_MANAGER,
-    "task.create_recurring": ROLE_MANAGER,
+    "task.update": ROLE_MANAGER,
+    "task.delete": ROLE_MANAGER,
     # Memory — every tier; archiving (soft-delete) is manager+.
     "memory.write": ROLE_MEMBER,
     "memory.search": ROLE_MEMBER,

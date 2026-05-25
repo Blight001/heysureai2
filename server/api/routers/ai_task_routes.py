@@ -293,6 +293,118 @@ async def get_ai_task_jobs(
         )
     return {"ai_config_id": config_id, "jobs": out}
 
+@router.patch("/configs/{config_id}/task-jobs/{job_id}")
+async def update_ai_task_job(
+    config_id: int,
+    job_id: str,
+    body: dict,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    cfg = session.get(AssistantAIConfig, config_id)
+    if not cfg or cfg.user_id != user.id:
+        raise HTTPException(status_code=404, detail="AI config not found")
+
+    job = session.exec(
+        select(AITaskJob).where(
+            AITaskJob.user_id == user.id,
+            AITaskJob.ai_config_id == config_id,
+            AITaskJob.job_id == job_id,
+        )
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Task job not found")
+
+    payload_body = body if isinstance(body, dict) else {}
+    previous_status = str(job.status or "")
+    if "title" in payload_body:
+        title = str(payload_body.get("title") or "").strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="title cannot be empty")
+        job.title = title
+    if "instruction" in payload_body:
+        instruction = str(payload_body.get("instruction") or "").strip()
+        if not instruction:
+            raise HTTPException(status_code=400, detail="instruction cannot be empty")
+        job.instruction = instruction
+    if "priority" in payload_body:
+        try:
+            job.priority = max(1, min(10, int(payload_body.get("priority") or 5)))
+        except Exception:
+            raise HTTPException(status_code=400, detail="priority must be an integer 1-10")
+    if "status" in payload_body:
+        status = str(payload_body.get("status") or "").strip().lower()
+        if status not in {"queued", "paused"}:
+            raise HTTPException(status_code=400, detail="status can only be queued or paused")
+        if previous_status in {"completed", "cancelled", "stopped", "error"}:
+            raise HTTPException(status_code=400, detail="Cannot update a finished task status")
+        job.status = status
+        if status == "queued":
+            job.finished_at = None
+
+    schedule_keys = {
+        "schedule_enabled",
+        "schedule_loop_enabled",
+        "schedule_run_immediately",
+        "schedule_duration_minutes",
+        "schedule_at",
+        "mode",
+    }
+    existing_payload = decode_task_payload(job.task_payload)
+    if any(key in payload_body for key in schedule_keys):
+        schedule_source = dict(payload_body)
+        mode = str(schedule_source.get("mode") or "").strip().lower()
+        if mode == "immediate":
+            schedule_source["schedule_enabled"] = False
+            schedule_source["schedule_loop_enabled"] = False
+            schedule_source["schedule_run_immediately"] = False
+        elif mode == "scheduled":
+            schedule_source["schedule_enabled"] = True
+            schedule_source["schedule_loop_enabled"] = False
+            schedule_source["schedule_run_immediately"] = False
+        elif mode == "recurring":
+            schedule_source["schedule_enabled"] = True
+            schedule_source["schedule_loop_enabled"] = True
+        elif mode:
+            raise HTTPException(status_code=400, detail="mode must be immediate, scheduled, or recurring")
+        patch_payload = extract_task_payload(schedule_source)
+        existing_payload["schedule"] = patch_payload.get("schedule", {})
+        schedule = existing_payload.get("schedule") if isinstance(existing_payload, dict) else {}
+        if isinstance(schedule, dict) and schedule.get("enabled"):
+            try:
+                duration_minutes = max(1, int(schedule.get("duration_minutes") or 30))
+            except Exception:
+                duration_minutes = 30
+            try:
+                schedule_at = float(schedule.get("schedule_at") or 0)
+            except Exception:
+                schedule_at = 0.0
+            if bool(schedule.get("loop_enabled")) and bool(schedule.get("run_immediately")):
+                schedule_at = float(time.time())
+            elif schedule_at <= 0:
+                schedule_at = float(time.time() + duration_minutes * 60)
+            schedule["duration_minutes"] = duration_minutes
+            schedule["schedule_at"] = schedule_at
+    job.task_payload = json.dumps(existing_payload, ensure_ascii=False)
+    schedule = existing_payload.get("schedule") if isinstance(existing_payload, dict) else {}
+    job.trigger_type = "schedule" if isinstance(schedule, dict) and bool(schedule.get("enabled")) else "manual"
+    job.updated_at = time.time()
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+    return {
+        "success": True,
+        "job_id": job.job_id,
+        "previous_status": previous_status,
+        "title": job.title,
+        "instruction": job.instruction,
+        "priority": job.priority,
+        "status": job.status,
+        "trigger_type": job.trigger_type,
+        "task_payload": decode_task_payload(job.task_payload),
+    }
+
 @router.post("/configs/{config_id}/task-jobs/{job_id}/stop")
 async def stop_ai_task_job(
     config_id: int,

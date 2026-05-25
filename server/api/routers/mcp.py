@@ -21,7 +21,7 @@ from api.models import AssistantAIConfig
 from api.routers.auth import get_current_user
 from api.services.agent_dispatch import dispatch_endpoint_tool_and_wait
 from api.services.desktop_agent_tools import endpoint_bridge_tools_for_config, is_endpoint_agent_tool
-from api.services.task_system import with_task_create_compat, with_workspace_read_by_name_compat
+from api.services.task_system import with_workspace_read_by_name_compat
 
 router = APIRouter()
 PREFIX = "/api/mcp"
@@ -84,7 +84,6 @@ async def call_mcp_tool(
             if not isinstance(parsed_allowed, list):
                 raise ValueError("mcp_tools must be a JSON array")
             allowed_tools = {str(item).strip() for item in parsed_allowed if isinstance(item, str) and str(item).strip()}
-            allowed_tools = with_task_create_compat(allowed_tools)
             allowed_tools = with_workspace_read_by_name_compat(allowed_tools)
             allowed_tools.update(endpoint_bridge_tools_for_config(req.ai_config_id, user.id))
         except Exception:

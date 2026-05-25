@@ -124,24 +124,34 @@ def _send_new_feishu_reply_segments(
             after_message_id=after_message_id,
         ):
             return after_message_id, False
-        assistant_msgs = session.exec(
+        rows = session.exec(
             select(ChatMessage).where(
                 ChatMessage.user_id == user_id,
                 ChatMessage.ai_config_id == ai_config_id,
                 ChatMessage.ai_kind == ai_kind,
                 ChatMessage.session_id == session_id,
-                ChatMessage.role == "assistant",
                 ChatMessage.id > after_message_id,
             ).order_by(ChatMessage.id.asc())
         ).all()
+        reply_segments = []
+        prefix = ""
+        for msg in rows:
+            msg_id = int(msg.id or 0)
+            if msg.tags == "mcp_tool_call":
+                prefix += "🧰"
+                continue
+            if msg.role != "assistant":
+                continue
+            if str(msg.think or "").strip():
+                prefix += "🤔"
+            segment = str(msg.content or "").strip()
+            if segment:
+                reply_segments.append((msg_id, f"{prefix}{segment}" if prefix else segment))
+                prefix = ""
 
     last_message_id = after_message_id
     sent_any = False
-    for msg in assistant_msgs:
-        msg_id = int(msg.id or 0)
-        segment = str(msg.content or "").strip()
-        if msg_id:
-            last_message_id = msg_id
+    for msg_id, segment in reply_segments:
         if not segment:
             continue
         if not _send_feishu_text(
@@ -152,6 +162,8 @@ def _send_new_feishu_reply_segments(
             text=segment,
         ):
             return last_message_id, sent_any
+        if msg_id:
+            last_message_id = msg_id
         sent_any = True
     return last_message_id, sent_any
 

@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from ...database import engine
-from ...models import AITaskJob, AssistantAIConfig, ChatMessage
+from ...models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, ChatSession
 from ...services.governance import assert_can_manage_or_legacy
 from ...services.task_system import extract_task_payload
 
@@ -262,7 +262,7 @@ def _task_create_impl(
     ai_config_id: Optional[int],
     *,
     source_tool: str,
-    mode: str = "auto",
+    mode: str,
 ) -> Dict[str, Any]:
     title = str(args.get("title") or args.get("name") or args.get("task_name") or "").strip()
     instruction = str(args.get("instruction") or args.get("content") or "").strip()
@@ -287,7 +287,13 @@ def _task_create_impl(
     if has_schedule_at_input and parsed_schedule_at is not None:
         normalized_args = _normalize_schedule_at_arg(normalized_args, parsed_schedule_at)
 
-    if mode == "scheduled":
+    if mode == "immediate":
+        if has_schedule_at_input or has_duration_input:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{source_tool}: mode=immediate 不接受定时参数，请移除 schedule_at/schedule_duration_minutes。",
+            )
+    elif mode == "scheduled":
         if has_schedule_at_input and has_duration_input:
             raise HTTPException(
                 status_code=400,
@@ -304,13 +310,19 @@ def _task_create_impl(
                     "避免默认时间导致错位执行。"
                 ),
             )
-    if mode == "recurring" and has_schedule_at_input:
+    elif mode == "recurring":
+        if has_schedule_at_input:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{source_tool}: mode=recurring 不支持 schedule_at，请仅使用 schedule_duration_minutes，"
+                    "可选 schedule_run_immediately。"
+                ),
+            )
+    else:
         raise HTTPException(
             status_code=400,
-            detail=(
-                f"{source_tool}: 循环任务不支持 schedule_at，请仅使用 schedule_duration_minutes，"
-                "可选 schedule_run_immediately。"
-            ),
+            detail=f"{source_tool}: mode 必须是 immediate、scheduled 或 recurring。",
         )
 
     priority = _task_priority_from_args(normalized_args)
@@ -473,6 +485,25 @@ def _build_task_schedule_meta(task_payload: Dict[str, Any], trigger_type: str) -
         "schedule_run_immediately": run_immediately,
     }
 
+def _task_job_payload(row: AITaskJob) -> Dict[str, Any]:
+    payload = _safe_decode_task_payload(row.task_payload)
+    created_ts = _safe_timestamp(row.created_at)
+    return {
+        "job_id": row.job_id,
+        "title": row.title,
+        "instruction": row.instruction,
+        "task_payload": payload,
+        "priority": row.priority,
+        "status": row.status,
+        "trigger_type": row.trigger_type,
+        "session_id": row.session_id,
+        "template_id": row.template_id,
+        "created_at_unix": created_ts,
+        "created_at_local": _format_ts_local(created_ts),
+        "created_at_utc": _format_ts_utc(created_ts),
+        "schedule": _build_task_schedule_meta(payload, row.trigger_type),
+    }
+
 def _resolve_task_runtime_owner(
     session: Session,
     user_id: int,
@@ -550,17 +581,210 @@ def _resolve_task_runtime_owner(
     )
     return manager or candidates[0]
 
+def _load_task_job_for_owner(
+    session: Session,
+    user_id: int,
+    owner_cfg: AssistantAIConfig,
+    job_id: str,
+) -> AITaskJob:
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id is required")
+    row = session.exec(
+        select(AITaskJob).where(
+            AITaskJob.user_id == user_id,
+            AITaskJob.ai_config_id == int(owner_cfg.id),
+            AITaskJob.job_id == job_id,
+        )
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Task job not found")
+    return row
+
+def _merge_task_payload_for_update(existing_payload: Dict[str, Any], args: Dict[str, Any]) -> Dict[str, Any]:
+    payload = dict(existing_payload or {})
+    has_schedule_update = any(
+        key in args
+        for key in (
+            "mode",
+            "schedule_enabled",
+            "schedule_at",
+            "run_at",
+            "schedule_time",
+            "schedule_duration_minutes",
+            "duration_minutes",
+            "interval_minutes",
+            "schedule_loop_enabled",
+            "loop",
+            "repeat",
+            "schedule_run_immediately",
+            "run_now",
+            "schedule",
+        )
+    )
+    if has_schedule_update:
+        mode = str(args.get("mode") or "").strip().lower()
+        if mode in {"now", "manual"}:
+            mode = "immediate"
+        elif mode in {"once", "schedule"}:
+            mode = "scheduled"
+        elif mode in {"loop", "repeat"}:
+            mode = "recurring"
+        patch_payload, _ = _build_task_payload_from_args(args)
+        schedule = patch_payload.get("schedule") if isinstance(patch_payload, dict) else {}
+        if not isinstance(schedule, dict):
+            schedule = {}
+        if mode == "immediate":
+            _enforce_task_schedule_mode(schedule_payload := {"schedule": schedule}, enabled=False, loop_enabled=False, run_immediately=False)
+            schedule = schedule_payload["schedule"]
+        elif mode == "scheduled":
+            _enforce_task_schedule_mode(schedule_payload := {"schedule": schedule}, enabled=True, loop_enabled=False, run_immediately=False)
+            schedule = schedule_payload["schedule"]
+        elif mode == "recurring":
+            _enforce_task_schedule_mode(
+                schedule_payload := {"schedule": schedule},
+                enabled=True,
+                loop_enabled=True,
+                run_immediately=_resolve_schedule_run_immediately(args, False),
+            )
+            schedule = schedule_payload["schedule"]
+        elif mode:
+            raise HTTPException(status_code=400, detail="mode must be immediate, scheduled, or recurring")
+        payload["schedule"] = schedule
+    return payload
+
 def _task_create(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    return _task_create_impl(user_id, args, ai_config_id, source_tool="task.create", mode="auto")
+    mode = str((args or {}).get("mode") or "").strip().lower()
+    if not mode:
+        raise HTTPException(
+            status_code=400,
+            detail="task.create: mode is required: immediate, scheduled, or recurring",
+        )
+    mode_aliases = {
+        "now": "immediate",
+        "manual": "immediate",
+        "once": "scheduled",
+        "schedule": "scheduled",
+        "loop": "recurring",
+        "repeat": "recurring",
+    }
+    mode = mode_aliases.get(mode, mode)
+    return _task_create_impl(user_id, args, ai_config_id, source_tool="task.create", mode=mode)
 
-def _task_create_immediate(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    return _task_create_impl(user_id, args, ai_config_id, source_tool="task.create_immediate", mode="immediate")
+def _task_update(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    job_id = str(args.get("job_id") or "").strip()
+    with Session(engine) as session:
+        owner_cfg = _resolve_task_runtime_owner(session, user_id, ai_config_id, args)
+        row = _load_task_job_for_owner(session, user_id, owner_cfg, job_id)
+        previous_status = str(row.status or "")
 
-def _task_create_scheduled(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    return _task_create_impl(user_id, args, ai_config_id, source_tool="task.create_scheduled", mode="scheduled")
+        title_provided = "title" in args or "name" in args or "task_name" in args
+        instruction_provided = "instruction" in args or "content" in args
+        if title_provided:
+            title = str(args.get("title") or args.get("name") or args.get("task_name") or "").strip()
+            if not title:
+                raise HTTPException(status_code=400, detail="title cannot be empty")
+            row.title = title
+        if instruction_provided:
+            instruction = str(args.get("instruction") or args.get("content") or "").strip()
+            if not instruction:
+                raise HTTPException(status_code=400, detail="instruction cannot be empty")
+            row.instruction = instruction
+        if "priority" in args or "level" in args:
+            row.priority = _task_priority_from_args(args)
+        if "status" in args:
+            status = str(args.get("status") or "").strip().lower()
+            if status not in {"queued", "paused"}:
+                raise HTTPException(status_code=400, detail="status can only be queued or paused")
+            if previous_status in _FINISHED_STATUSES:
+                raise HTTPException(status_code=400, detail="Cannot update a finished task status")
+            row.status = status
+            if status == "queued":
+                row.finished_at = None
 
-def _task_create_recurring(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    return _task_create_impl(user_id, args, ai_config_id, source_tool="task.create_recurring", mode="recurring")
+        payload = _merge_task_payload_for_update(_safe_decode_task_payload(row.task_payload), args)
+        row.task_payload = json.dumps(payload, ensure_ascii=False)
+        schedule = payload.get("schedule") if isinstance(payload, dict) else {}
+        row.trigger_type = "schedule" if isinstance(schedule, dict) and bool(schedule.get("enabled")) else "manual"
+        row.updated_at = time.time()
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return {
+            "updated": True,
+            "previous_status": previous_status,
+            "owner_ai_config_id": owner_cfg.id,
+            "owner_ai_name": owner_cfg.name,
+            "task": _task_job_payload(row),
+            "runtime_note": "If the task is already running, title/instruction edits affect persisted metadata but not the active prompt.",
+        }
+
+def _delete_task_job_records(session: Session, user_id: int, config_id: int, job: AITaskJob) -> int:
+    deleted_messages = 0
+    now = time.time()
+    prefixes = [f"session_task_{job.job_id}"]
+    sid = str(job.session_id or "").strip()
+    if sid and sid not in prefixes:
+        prefixes.append(sid)
+
+    for session_prefix in prefixes:
+        run_rows = session.exec(
+            select(ChatRun).where(
+                ChatRun.user_id == user_id,
+                ChatRun.ai_config_id == config_id,
+                ChatRun.ai_kind == "core",
+                ChatRun.session_id.like(f"{session_prefix}%"),
+            )
+        ).all()
+        for row in run_rows:
+            row.stop_requested = True
+            if row.status in {"queued", "running"}:
+                row.status = "stopped"
+            if row.finished_at is None:
+                row.finished_at = now
+            row.updated_at = now
+            session.add(row)
+
+        msg_rows = session.exec(
+            select(ChatMessage).where(
+                ChatMessage.user_id == user_id,
+                ChatMessage.ai_config_id == config_id,
+                ChatMessage.ai_kind == "core",
+                ChatMessage.session_id.like(f"{session_prefix}%"),
+            )
+        ).all()
+        deleted_messages += len(msg_rows)
+        for msg in msg_rows:
+            session.delete(msg)
+
+        session_rows = session.exec(
+            select(ChatSession).where(
+                ChatSession.user_id == user_id,
+                ChatSession.ai_config_id == config_id,
+                ChatSession.ai_kind == "core",
+                ChatSession.session_id.like(f"{session_prefix}%"),
+            )
+        ).all()
+        for row in session_rows:
+            session.delete(row)
+    return deleted_messages
+
+def _task_delete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    job_id = str(args.get("job_id") or "").strip()
+    with Session(engine) as session:
+        owner_cfg = _resolve_task_runtime_owner(session, user_id, ai_config_id, args)
+        row = _load_task_job_for_owner(session, user_id, owner_cfg, job_id)
+        previous_status = str(row.status or "")
+        deleted_messages = _delete_task_job_records(session, user_id, int(owner_cfg.id), row)
+        session.delete(row)
+        session.commit()
+        return {
+            "deleted": True,
+            "job_id": job_id,
+            "previous_status": previous_status,
+            "deleted_messages": deleted_messages,
+            "owner_ai_config_id": owner_cfg.id,
+            "owner_ai_name": owner_cfg.name,
+        }
 
 def _task_list(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     with Session(engine) as session:
@@ -718,95 +942,6 @@ def _task_inherit(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int
             "title": row.title,
             "summary": summary,
         }
-
-def _job_result_summary(session: Session, user_id: int, job: AITaskJob) -> str:
-    sid = str(job.session_id or "").strip()
-    if not sid:
-        return ""
-    msg = session.exec(
-        select(ChatMessage).where(
-            ChatMessage.user_id == user_id,
-            ChatMessage.ai_config_id == job.ai_config_id,
-            ChatMessage.ai_kind == "core",
-            ChatMessage.session_id == sid,
-            ChatMessage.role == "assistant",
-        ).order_by(ChatMessage.created_at.desc())
-    ).first()
-    if msg and msg.content:
-        return str(msg.content)[-1500:]
-    return ""
-
-def _task_wait_all(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    """Orchestrator primitive: block until all given subtasks finish (or timeout).
-
-    Intended for a manager that has fanned out subtasks to other digital_members
-    (each runs in parallel on its own AI config). Returns each task's final
-    status plus a short result summary.
-    """
-    raw_ids = args.get("job_ids")
-    if isinstance(raw_ids, str):
-        raw_ids = [piece.strip() for piece in raw_ids.split(",")]
-    if not isinstance(raw_ids, list) or not raw_ids:
-        raise HTTPException(status_code=400, detail="job_ids (non-empty list) is required for task.wait_all")
-    job_ids = [str(jid).strip() for jid in raw_ids if str(jid).strip()]
-    if not job_ids:
-        raise HTTPException(status_code=400, detail="job_ids must contain at least one valid id")
-
-    try:
-        timeout_seconds = int(args.get("timeout_seconds") or 300)
-    except Exception:
-        timeout_seconds = 300
-    timeout_seconds = max(5, min(1800, timeout_seconds))
-    try:
-        poll_interval = int(args.get("poll_interval_seconds") or 3)
-    except Exception:
-        poll_interval = 3
-    poll_interval = max(1, min(30, poll_interval))
-
-    start_ts = time.time()
-    deadline = start_ts + timeout_seconds
-    while True:
-        with Session(engine) as session:
-            rows = session.exec(
-                select(AITaskJob).where(
-                    AITaskJob.user_id == user_id,
-                    AITaskJob.job_id.in_(job_ids),
-                )
-            ).all()
-            found = {str(row.job_id): row for row in rows}
-            all_done = True
-            results: List[Dict[str, Any]] = []
-            for jid in job_ids:
-                row = found.get(jid)
-                if not row:
-                    results.append({"job_id": jid, "status": "not_found", "finished": True, "summary": ""})
-                    continue
-                status = str(row.status or "")
-                finished = status in _FINISHED_STATUSES
-                if not finished:
-                    all_done = False
-                results.append({
-                    "job_id": jid,
-                    "title": row.title,
-                    "status": status,
-                    "finished": finished,
-                    "summary": _job_result_summary(session, user_id, row) if finished else "",
-                })
-        if all_done:
-            return {
-                "all_done": True,
-                "timed_out": False,
-                "waited_seconds": round(time.time() - start_ts, 2),
-                "results": results,
-            }
-        if time.time() >= deadline:
-            return {
-                "all_done": False,
-                "timed_out": True,
-                "waited_seconds": round(time.time() - start_ts, 2),
-                "results": results,
-            }
-        time.sleep(poll_interval)
 
 def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     if not ai_config_id:

@@ -28,19 +28,8 @@ TASK_RUNTIME_REQUIRED_TOOLS = {
     "task.complete",
     "task.inherit",
     "task.list",
-    "task.wait_all",
     "ai.send_message",
 }
-TASK_TOOLSET_FOR_CREATE_COMPAT = {"task.list", "task.get_current", "task.inherit", "task.complete"}
-TASK_CREATE_TOOLS = {"task.create", "task.create_immediate", "task.create_scheduled", "task.create_recurring"}
-def with_task_create_compat(tools: set[str]) -> set[str]:
-    normalized = {str(item).strip() for item in (tools or set()) if str(item).strip()}
-    if normalized.intersection(TASK_CREATE_TOOLS):
-        normalized.update(TASK_CREATE_TOOLS)
-        return normalized
-    if normalized.intersection(TASK_TOOLSET_FOR_CREATE_COMPAT):
-        normalized.update(TASK_CREATE_TOOLS)
-    return normalized
 
 
 def with_workspace_read_by_name_compat(tools: set[str]) -> set[str]:
