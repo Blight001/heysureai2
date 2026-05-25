@@ -760,7 +760,9 @@
     }
   }
   function getConnectedAiShortLabel() {
-    return String(memberById(selectedMemberId)?.name || auth.userName || auth.account || "Agent").trim();
+    const name = String(memberById(selectedMemberId)?.name || auth.userName || auth.account || "AI").trim();
+    const shortName = Array.from(name).slice(0, 2).join("") || "AI";
+    return `${shortName}...`;
   }
   function hasBrowserMcpPermission(m) {
     if (m.mcp_enabled === false)

@@ -190,7 +190,9 @@ function toolCount(m: MemberConfig): number {
   try { const a = JSON.parse(m.mcp_tools || '[]'); return Array.isArray(a) ? a.length : 0 } catch { return 0 }
 }
 function getConnectedAiShortLabel(): string {
-  return String(memberById(selectedMemberId)?.name || auth.userName || auth.account || 'Agent').trim()
+  const name = String(memberById(selectedMemberId)?.name || auth.userName || auth.account || 'AI').trim()
+  const shortName = Array.from(name).slice(0, 2).join('') || 'AI'
+  return `${shortName}...`
 }
 function hasBrowserMcpPermission(m: MemberConfig): boolean {
   if (m.mcp_enabled === false) return false

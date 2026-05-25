@@ -304,15 +304,6 @@ def _run_feishu_worker_and_notify(worker_kwargs: Dict[str, Any], notify_kwargs: 
     }
     idle_deadline = 0.0
     while True:
-        next_message_id, did_send = _send_new_feishu_reply_segments(
-            **send_kwargs,
-            after_message_id=last_sent_message_id,
-        )
-        if did_send:
-            sent_any = True
-        if next_message_id > last_sent_message_id:
-            last_sent_message_id = next_message_id
-
         active = _feishu_session_has_live_run(
             user_id=send_kwargs["user_id"],
             ai_config_id=send_kwargs["ai_config_id"],
@@ -329,6 +320,20 @@ def _run_feishu_worker_and_notify(worker_kwargs: Dict[str, Any], notify_kwargs: 
             ai_config_id=send_kwargs["ai_config_id"],
             session_id=send_kwargs["session_id"],
         )
+        # Wait until the current AI turn has finished before auto-returning
+        # assistant text to Feishu. During a tool-calling turn the assistant
+        # message is saved before the MCP result bubble; sending it immediately
+        # can race with user.send_message and produce duplicate Feishu messages.
+        if not active:
+            next_message_id, did_send = _send_new_feishu_reply_segments(
+                **send_kwargs,
+                after_message_id=last_sent_message_id,
+            )
+            if did_send:
+                sent_any = True
+            if next_message_id > last_sent_message_id:
+                last_sent_message_id = next_message_id
+
         if active or pending_ai_reply or recent_ai_activity:
             idle_deadline = time.time() + 3
         elif idle_deadline <= 0:
@@ -382,6 +387,7 @@ def handle_feishu_event_payload(config_id: int, payload: Dict[str, Any], verify_
 
         chat_id = event.get("chat_id") or ""
         open_id = event.get("open_id") or ""
+        feishu_message_id = event.get("message_id") or ""
         ai_kind = "assistant" if cfg.ai_role == "assistant_admin" else "core"
         session_key = chat_id or open_id or "unknown"
         session_id = f"feishu_{config_id}_{session_key}"
@@ -394,6 +400,34 @@ def handle_feishu_event_payload(config_id: int, payload: Dict[str, Any], verify_
             raise HTTPException(status_code=404, detail="User not found")
         _, _, _, _, system_prompt = _resolve_ai_runtime(session, user, ai_kind, cfg.id)
         merged_system_prompt = _build_feishu_runtime_prompt(system_prompt, event)
+        inbound_tag = f"feishu_inbound:{feishu_message_id}" if feishu_message_id else "feishu_inbound"
+
+        if feishu_message_id:
+            existing_inbound = session.exec(
+                select(ChatMessage).where(
+                    ChatMessage.user_id == cfg.user_id,
+                    ChatMessage.ai_config_id == cfg.id,
+                    ChatMessage.ai_kind == ai_kind,
+                    ChatMessage.session_id == session_id,
+                    ChatMessage.tags == inbound_tag,
+                )
+            ).first()
+            if existing_inbound:
+                active = session.exec(
+                    select(ChatRun).where(
+                        ChatRun.user_id == cfg.user_id,
+                        ChatRun.ai_config_id == cfg.id,
+                        ChatRun.ai_kind == ai_kind,
+                        ChatRun.session_id == session_id,
+                        ChatRun.status.in_(["queued", "running"]),
+                    ).order_by(ChatRun.updated_at.desc())
+                ).first()
+                return {
+                    "success": True,
+                    "duplicate": True,
+                    "message_id": feishu_message_id,
+                    "run_id": active.run_id if active else None,
+                }
 
         inbound_msg = _save_message(
             session,
@@ -405,7 +439,7 @@ def handle_feishu_event_payload(config_id: int, payload: Dict[str, Any], verify_
                 ai_kind=ai_kind,
                 session_id=session_id,
                 session_name=session_name,
-                tags="feishu_inbound",
+                tags=inbound_tag,
                 total_tokens=0,
             ),
         )
