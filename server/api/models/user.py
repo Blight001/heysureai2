@@ -74,6 +74,9 @@ class User(SQLModel, table=True):
     ui_mcp_icon: str = Field(default=DEFAULT_UI_MCP_ICON)
     ui_mcp_success_icon: str = Field(default=DEFAULT_UI_MCP_SUCCESS_ICON)
     ui_mcp_error_icon: str = Field(default=DEFAULT_UI_MCP_ERROR_ICON)
+    ui_thinking_icon_enabled: bool = Field(default=True)
+    ui_mcp_success_icon_enabled: bool = Field(default=True)
+    ui_mcp_error_icon_enabled: bool = Field(default=True)
 
 
 class UserCreate(SQLModel):
@@ -124,6 +127,9 @@ class UserRead(SQLModel):
     ui_mcp_icon: str
     ui_mcp_success_icon: str
     ui_mcp_error_icon: str
+    ui_thinking_icon_enabled: bool
+    ui_mcp_success_icon_enabled: bool
+    ui_mcp_error_icon_enabled: bool
 
 
 class UserUpdate(SQLModel):
@@ -161,6 +167,9 @@ class UserUpdate(SQLModel):
     ui_mcp_icon: Optional[str] = None
     ui_mcp_success_icon: Optional[str] = None
     ui_mcp_error_icon: Optional[str] = None
+    ui_thinking_icon_enabled: Optional[bool] = None
+    ui_mcp_success_icon_enabled: Optional[bool] = None
+    ui_mcp_error_icon_enabled: Optional[bool] = None
 
 
 class Token(SQLModel):

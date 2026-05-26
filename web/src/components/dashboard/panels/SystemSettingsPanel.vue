@@ -26,6 +26,9 @@ interface Props {
   thinkingIcon: string
   mcpSuccessIcon: string
   mcpErrorIcon: string
+  thinkingIconEnabled: boolean
+  mcpSuccessIconEnabled: boolean
+  mcpErrorIconEnabled: boolean
   tavilyApiKey: string
   modelPresets: ModelPreset[]
   mcpMaxSteps: number
@@ -57,6 +60,9 @@ const emit = defineEmits<{
   (e: 'update:thinkingIcon', value: string): void
   (e: 'update:mcpSuccessIcon', value: string): void
   (e: 'update:mcpErrorIcon', value: string): void
+  (e: 'update:thinkingIconEnabled', value: boolean): void
+  (e: 'update:mcpSuccessIconEnabled', value: boolean): void
+  (e: 'update:mcpErrorIconEnabled', value: boolean): void
   (e: 'update:tavilyApiKey', value: string): void
   (e: 'update:modelPresets', value: ModelPreset[]): void
   (e: 'update:mcpMaxSteps', value: number): void
@@ -111,14 +117,26 @@ const thinkingIconValue = computed({
   get: () => props.thinkingIcon,
   set: value => emit('update:thinkingIcon', value)
 })
+const thinkingIconEnabledValue = computed({
+  get: () => props.thinkingIconEnabled,
+  set: value => emit('update:thinkingIconEnabled', value)
+})
 
 const mcpSuccessIconValue = computed({
   get: () => props.mcpSuccessIcon,
   set: value => emit('update:mcpSuccessIcon', value)
 })
+const mcpSuccessIconEnabledValue = computed({
+  get: () => props.mcpSuccessIconEnabled,
+  set: value => emit('update:mcpSuccessIconEnabled', value)
+})
 const mcpErrorIconValue = computed({
   get: () => props.mcpErrorIcon,
   set: value => emit('update:mcpErrorIcon', value)
+})
+const mcpErrorIconEnabledValue = computed({
+  get: () => props.mcpErrorIconEnabled,
+  set: value => emit('update:mcpErrorIconEnabled', value)
 })
 
 const tavilyApiKeyValue = computed({
@@ -373,30 +391,51 @@ watch(() => props.show, visible => {
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-700">
               <div>
-                <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">深度思考图标</div>
+                <label class="mb-1 flex items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  <span>深度思考图标</span>
+                  <span class="flex items-center gap-1 text-[11px]">
+                    <input v-model="thinkingIconEnabledValue" type="checkbox" />
+                    <span>开启</span>
+                  </span>
+                </label>
                 <input
                   v-model="thinkingIconValue"
                   maxlength="8"
                   class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
                   placeholder="🤔"
+                  :disabled="!thinkingIconEnabledValue"
                 />
               </div>
               <div>
-                <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">MCP 成功图标</div>
+                <label class="mb-1 flex items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  <span>MCP 成功图标</span>
+                  <span class="flex items-center gap-1 text-[11px]">
+                    <input v-model="mcpSuccessIconEnabledValue" type="checkbox" />
+                    <span>开启</span>
+                  </span>
+                </label>
                 <input
                   v-model="mcpSuccessIconValue"
                   maxlength="8"
                   class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
                   placeholder="🧰"
+                  :disabled="!mcpSuccessIconEnabledValue"
                 />
               </div>
               <div>
-                <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">MCP 失败图标</div>
+                <label class="mb-1 flex items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  <span>MCP 失败图标</span>
+                  <span class="flex items-center gap-1 text-[11px]">
+                    <input v-model="mcpErrorIconEnabledValue" type="checkbox" />
+                    <span>开启</span>
+                  </span>
+                </label>
                 <input
                   v-model="mcpErrorIconValue"
                   maxlength="8"
                   class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
-                  placeholder="🧰"
+                  placeholder="❌"
+                  :disabled="!mcpErrorIconEnabledValue"
                 />
               </div>
             </div>

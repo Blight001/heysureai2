@@ -35,6 +35,7 @@ _KB_DIR = "KnowledgeBase"
 _TOPICS_DIR = "topics"
 _ARCHIVE_DIR = "archives"
 _INDEX_FILE = "index.json"
+_INTRINSIC_PROPERTIES_OVERRIDES_FILE = "intrinsic_properties_overrides.json"
 _MAX_SUMMARY_LEN = 240
 _VALID_STATUSES = {"pending", "active", "archived", "rejected"}
 _BUILTIN_UPDATED_AT = 1893456000.0  # 2030-01-01, keeps built-in categories at the top.
@@ -59,6 +60,147 @@ _BUILTIN_ENTRIES = {
         "triggers": ["传承工具", "Markdown文件", "工具沉淀"],
         "summary": "预留给后续沉淀的 Markdown 工具文档，目前为空。",
     },
+}
+
+_INTRINSIC_TOOL_DESCRIPTIONS_ZH = {
+    "admin.get_overview": "获取当前工作区概览，包括连接中的 socket Agent、受管 AI 配置和运行状态。",
+    "admin.list_agents": "列出当前用户连接中的 socket Agent 和受管 AI 配置。",
+    "ai.send_message": "向同一数字社会中的另一个 AI 发送消息，可用于询问、回复、通知或闲聊，并支持按需等待答复。",
+    "conversation.create": "为当前 AI 作用域创建一个新的空聊天会话。",
+    "conversation.delete": "删除当前 AI 作用域内指定聊天会话及其中所有消息。",
+    "conversation.find": "查找或列出当前 AI 作用域内的聊天会话，可按会话名、会话 ID 或消息内容搜索。",
+    "conversation.forget_before_current": "删除当前活跃会话中当前用户消息之前的历史消息，用于按用户要求遗忘此前上下文。",
+    "evolution.input": "提交一条系统进化建议，供核心管理员评审 prompt、工具或工作流改进。",
+    "evolution.list": "列出已提交的系统进化建议，可按评审状态筛选。",
+    "evolution.review": "评审系统进化建议，可执行接受、拒绝或应用，并记录应用位置。",
+    "librarian.archive": "归档一条流程知识，使其不再出现在默认知识检索中，仅限图书管理员角色使用。",
+    "librarian.consult": "按自由文本向图书管理员查询相关流程知识，返回最多 k 条完整步骤。",
+    "librarian.list_topics": "列出流程知识标题、触发词和摘要，用于先浏览再按需读取全文。",
+    "librarian.propose": "向图书管理员知识库提交新的流程沉淀申请，初始为待审批，用户通过后才可检索。",
+    "librarian.read": "根据 memory_id 读取指定流程知识的完整 Markdown 正文。",
+    "mcp.describe_tool": "按精确工具名读取一个已允许 MCP 工具的完整说明和参数 schema。",
+    "mcp.list_tools": "列出当前 AI 可用的 MCP 能力，默认只返回命名空间，也可展开指定栏目或全部工具。",
+    "memory.archive": "归档一条长期记忆，使其不再出现在默认搜索结果中。",
+    "memory.list": "列出已保存的长期记忆，可按类型或项目过滤。",
+    "memory.search": "按自由文本、类型、项目或标签搜索长期记忆。",
+    "memory.update": "更新一条长期记忆的内容、标签、类型或置信度。",
+    "memory.write": "写入一条高价值结构化长期记忆，供后续检索和复用。",
+    "project.create_project": "创建一个项目，并可设置状态和关联 AI 成员 ID。",
+    "project.delete_project": "按 id 或 project_id 删除项目，并清理已关联 AI 配置上的项目关系。",
+    "project.list_projects": "列出当前用户的全部进化项目。",
+    "project.update_project": "按 id 或 project_id 更新项目字段。",
+    "prompt.list_targets": "列出当前 AI prompt 目标和全局/系统 prompt 键；当前 AI 基础 prompt 位于 AI 配置中。",
+    "prompt.read_ai": "读取一个 AI 配置实际使用的基础 prompt；未指定目标时读取当前 AI。",
+    "prompt.read_system": "读取当前用户的全局/系统 prompt 模板；当前 AI 基础 prompt 请使用 prompt.read_ai。",
+    "prompt.write_ai": "按行编辑一个 AI 配置的 prompt；未指定目标时编辑当前 AI。",
+    "prompt.write_system": "按行编辑一个全局/系统 prompt 模板；主要用于运行时注入模板或旧版兜底模板。",
+    "task.complete": "将当前任务标记为已完成，并可附带完成摘要。",
+    "task.create": "创建任务，支持立即执行、一次性定时或循环任务。",
+    "task.delete": "管理员或管理者接管工具：硬删除任务，停止活跃运行并清理相关任务会话消息。",
+    "task.inherit": "在任务轮换到下一代之前提交传承摘要。",
+    "task.list": "列出任务；默认返回排队、运行和暂停任务，也可查看当前任务或历史任务。",
+    "task.update": "管理员或管理者接管工具：更新任务标题、说明、优先级、状态或调度信息。",
+    "user.send_message": "通过绑定的飞书或 QQ 机器人向人类用户发送文本或媒体消息。",
+    "web.search": "使用 Tavily 搜索公网信息，适合查询外部信息或实时信息。",
+    "workspace.run_command": "在当前用户工作区沙箱内执行 shell 命令，禁止越界路径和危险路径写法。",
+}
+
+_INTRINSIC_PARAM_DESCRIPTIONS_ZH = {
+    "ai_config_id": "目标 AI 配置 ID；未提供时默认使用当前 AI。",
+    "ai_kind": "AI 类型；未提供时默认使用当前运行或 assistant。",
+    "ai_member_ids": "项目关联的 AI 成员 ID 列表。",
+    "all": "为 true 时等同于 mode=all，展开全部工具。",
+    "applied_to": "应用该进化建议的位置或对象。",
+    "channel": "发送渠道；默认使用 AI 配置中的机器人渠道。",
+    "chat_id": "receive_id 的别名。",
+    "command": "要在工作区沙箱内执行的命令。",
+    "confidence": "置信度，范围 0.0 到 1.0。",
+    "content": "正文内容。",
+    "current": "current_only 的别名。",
+    "current_message_id": "当前用户消息 ID；未提供时默认使用活跃运行中的当前用户消息。",
+    "current_session_id": "当前会话 ID；运行时通常会自动补充。",
+    "current_only": "仅返回当前任务，优先运行中任务，其次排队或暂停任务。",
+    "cwd": "工作区内的相对工作目录。",
+    "decision": "评审决定，例如接受、拒绝或应用。",
+    "description": "描述文本。",
+    "duration": "媒体时长，单位毫秒，飞书视频上传时可用。",
+    "edits": "批量行编辑列表；每项可包含 mode、line、start_line、end_line、text/content/prompt。",
+    "end_line": "范围结束行号，从 1 开始。",
+    "evidence": "证据或来源信息。",
+    "evolution_input_id": "要评审的系统进化建议 ID。",
+    "file_name": "上传媒体时使用的文件名。",
+    "generation": "任务或 AI 代数。",
+    "gotchas": "注意事项、已知坑或风险点列表。",
+    "history": "include_history 的别名。",
+    "history_only": "仅返回已完成、已取消、已停止或错误等历史任务。",
+    "id": "目标记录 ID。",
+    "image_path": "media_path 的图片别名。",
+    "image_url": "media_url 的图片别名。",
+    "include_answer": "是否让 Tavily 返回生成式答案。",
+    "include_archived": "是否包含已归档记录。",
+    "include_history": "是否在活跃任务之外同时包含已结束历史任务。",
+    "include_images": "是否包含图片搜索结果。",
+    "include_messages": "是否包含匹配会话中的完整消息。",
+    "include_raw_content": "是否包含可用的网页原始内容。",
+    "instruction": "任务执行说明或要求。",
+    "job_id": "任务 job_id。",
+    "k": "最多返回结果数，默认 5。",
+    "key": "系统 prompt 键；省略时读取全部。",
+    "keyword": "query 的别名。",
+    "kind": "记忆类型。",
+    "limit": "返回数量上限。",
+    "line": "目标行号，从 1 开始。",
+    "line_number": "line 的别名。",
+    "max_results": "最大搜索结果数，范围 1 到 20，默认 5。",
+    "media_path": "服务端本地图片或视频路径。",
+    "media_type": "显式媒体类型。",
+    "media_url": "图片或视频的 HTTP(S) URL，服务器会下载后发送。",
+    "memory_id": "知识或记忆条目的 memory_id。",
+    "message_type": "消息语义类型：inquiry=询问并期望答复，reply=回复上一条询问，notify=单向通知，chitchat=闲聊。",
+    "mode": "操作模式。",
+    "name": "名称；在部分工具中也是 tool 的别名。",
+    "namespace": "MCP 命名空间过滤，例如 workspace、task、prompt。",
+    "open_id": "receive_id 的飞书 open_id 别名。",
+    "priority": "优先级，范围 1 到 10。",
+    "project_id": "项目 ID。",
+    "prompt": "prompt 文本；仅在 mode=replace_all 时作为完整 prompt 覆盖使用。",
+    "proposal": "系统进化建议内容。",
+    "query": "查询文本。",
+    "receive_id": "接收方 ID；默认使用 AI 配置中的默认接收方。",
+    "receive_id_type": "接收方 ID 类型；QQ 可使用 c2c、group、channel 或 dm。",
+    "reply_to_message_id": "回复的原始 AI 消息 ID，用于保持消息线程上下文。",
+    "require_reply": "是否同步等待对方回复；普通 AI 协作建议保持 false。",
+    "review_status": "评审状态过滤条件。",
+    "risk": "风险说明。",
+    "schedule_at": "一次性执行时间，支持 Unix 秒或带时区的 ISO-8601。",
+    "schedule_duration_minutes": "定时延迟或循环间隔，单位分钟。",
+    "schedule_run_immediately": "循环任务是否首次立即执行。",
+    "scenario": "流程适用场景或触发条件。",
+    "scope": "知识作用域。",
+    "scope_target": "非全局作用域的目标 ID。",
+    "search_depth": "Tavily 搜索深度，默认 advanced。",
+    "session_id": "会话 ID。",
+    "session_name": "name 的别名。",
+    "source": "来源信息，例如聊天消息 ID 或文件路径。",
+    "start_line": "范围起始行号，从 1 开始。",
+    "status": "状态过滤或目标状态。",
+    "steps": "按顺序执行的步骤列表。",
+    "tags": "标签列表。",
+    "target_ai_config_id": "代理操作的目标 AI 配置 ID。",
+    "target_config_id": "target_ai_config_id 的别名。",
+    "target_id": "QQ 目标 ID 别名。",
+    "target_scope": "建议影响的目标范围。",
+    "target_type": "QQ 目标类型。",
+    "text": "文本内容。",
+    "timeout": "命令超时时间，单位秒，最高 60 秒。",
+    "timeout_seconds": "require_reply=true 时最多等待的秒数；默认最长等待 24 小时。",
+    "title": "标题。",
+    "to_ai_config_id": "目标 AI 的 ai_config_id。",
+    "tool": "要查看的精确 MCP 工具名。",
+    "triggers": "未来任务自动匹配时使用的关键词列表。",
+    "type": "类型。",
+    "video_path": "media_path 的视频别名。",
+    "video_url": "media_url 的视频别名。",
 }
 
 
@@ -326,7 +468,7 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
     }
     if with_body:
         if memory_id == "builtin.intrinsic_properties":
-            intrinsic = _intrinsic_properties_payload()
+            intrinsic = _intrinsic_properties_payload(int(user_id or 0))
             out["intrinsic_properties"] = intrinsic
             out["body"] = _render_intrinsic_properties_body(intrinsic)
         elif memory_id == "builtin.intrinsic_personas":
@@ -340,7 +482,7 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
     return out
 
 
-def _intrinsic_properties_payload() -> Dict[str, Any]:
+def _intrinsic_properties_payload(user_id: int = 0) -> Dict[str, Any]:
     from ..mcp import registry
 
     tools = sorted(registry.list_tools(), key=lambda item: str(item.get("name") or ""))
@@ -355,6 +497,7 @@ def _intrinsic_properties_payload() -> Dict[str, Any]:
             "inputSchema": input_schema,
             "parameters": _mcp_schema_parameter_rows(input_schema),
             "destructive": bool(tool.get("destructive")),
+            "source": "server",
         })
 
     categories = [
@@ -366,7 +509,7 @@ def _intrinsic_properties_payload() -> Dict[str, Any]:
         for namespace, items in sorted(grouped.items())
     ]
     return {
-        "description": "系统当前固定注册的 MCP 工具及其描述如下。",
+        "description": "系统当前固定注册的服务端 MCP 工具定义如下；工具描述和参数 schema 与真实 mcp.describe_tool 返回源保持一致。",
         "total": len(tools),
         "categories": categories,
     }
@@ -386,14 +529,53 @@ def _mcp_schema_parameter_rows(schema: Dict[str, Any]) -> List[Dict[str, Any]]:
             type_name = " | ".join(str(item) for item in raw_type if str(item).strip())
         else:
             type_name = str(raw_type or "").strip()
+        param_name = str(name)
         rows.append({
-            "name": str(name),
+            "name": param_name,
             "type": type_name or "any",
-            "required": str(name) in required_set,
+            "required": param_name in required_set,
             "description": str(cfg.get("description") or "").strip(),
         })
     rows.sort(key=lambda item: (not bool(item.get("required")), str(item.get("name") or "")))
     return rows
+
+
+def _intrinsic_tool_description(name: str, raw: str) -> str:
+    mapped = _INTRINSIC_TOOL_DESCRIPTIONS_ZH.get(str(name or "").strip(), "")
+    if mapped:
+        return mapped
+    return raw if raw else "该工具暂无详细说明，请根据工具名和参数 schema 判断用途。"
+
+
+def _intrinsic_param_description(tool_name: str, name: str, raw: str) -> str:
+    mapped = _INTRINSIC_PARAM_DESCRIPTIONS_ZH.get(str(name or "").strip(), "")
+    if mapped:
+        return mapped
+    return raw if raw else f"{name} 参数。"
+
+
+def _intrinsic_properties_overrides_path(user_id: int) -> str:
+    return os.path.join(_kb_root(user_id), _INTRINSIC_PROPERTIES_OVERRIDES_FILE)
+
+
+def _load_intrinsic_properties_overrides(user_id: int) -> Dict[str, Any]:
+    if not user_id:
+        return {}
+    path = _intrinsic_properties_overrides_path(user_id)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        tools = data.get("tools") if isinstance(data, dict) else {}
+        return tools if isinstance(tools, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        print(f"[librarian._load_intrinsic_properties_overrides] {exc}")
+        return {}
+
+
+def save_intrinsic_properties_overrides(*, user_id: int, tools: List[Dict[str, Any]]) -> Dict[str, Any]:
+    raise ValueError("固有属性来自真实 MCP 工具定义，知识库不再单独保存覆盖描述。请修改对应 MCP 注册定义。")
 
 
 def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None) -> str:
@@ -440,6 +622,7 @@ def _intrinsic_personas_payload(user_id: int) -> Dict[str, Any]:
     agents: List[Dict[str, Any]] = []
     for cfg in rows:
         auto_prompts: List[Dict[str, str]] = []
+        parsed: Any = None
         try:
             parsed = json.loads(cfg.system_auto_control or "{}")
             if isinstance(parsed, dict):
@@ -451,8 +634,7 @@ def _intrinsic_personas_payload(user_id: int) -> Dict[str, Any]:
                 }
                 for key, label in labels.items():
                     value = str(parsed.get(key) or "").strip()
-                    if value:
-                        auto_prompts.append({"key": key, "label": label, "content": value})
+                    auto_prompts.append({"key": key, "label": label, "content": value})
         except Exception:
             raw = str(cfg.system_auto_control or "").strip()
             if raw:
@@ -470,6 +652,8 @@ def _intrinsic_personas_payload(user_id: int) -> Dict[str, Any]:
             "platform": cfg.platform,
             "generation": cfg.generation,
             "prompt": str(cfg.prompt or "").strip(),
+            "system_auto_control_raw": str(cfg.system_auto_control or ""),
+            "auto_control_enabled": bool(parsed.get("enabled")) if isinstance(parsed, dict) else False,
             "auto_prompts": auto_prompts,
             "updated_at": cfg.updated_at,
         })

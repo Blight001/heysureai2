@@ -59,6 +59,9 @@ const {
   thinkingIcon,
   mcpSuccessIcon,
   mcpErrorIcon,
+  thinkingIconEnabled,
+  mcpSuccessIconEnabled,
+  mcpErrorIconEnabled,
   tavilyApiKey,
   modelPresets,
   mcpMaxSteps,
@@ -91,6 +94,10 @@ const {
   onRefreshUser: user => emit('refreshUser', user),
   mcpRoleMeta,
 })
+
+const effectiveThinkingIcon = computed(() => thinkingIconEnabled.value ? thinkingIcon.value : '')
+const effectiveMcpSuccessIcon = computed(() => mcpSuccessIconEnabled.value ? mcpSuccessIcon.value : '')
+const effectiveMcpErrorIcon = computed(() => mcpErrorIconEnabled.value ? mcpErrorIcon.value : '')
 
 let resolveMcpAutoApprove = (_configId?: number) => false
 const {
@@ -620,10 +627,10 @@ onUnmounted(() => {
               :aiConfigId="chatTarget.aiConfigId"
               :aiKind="chatTargetAiKind"
               :mcpAutoApprove="!!chatTarget.mcpAutoApprove"
-              :thinkingIcon="thinkingIcon"
-              :mcpIcon="mcpSuccessIcon"
-              :mcpSuccessIcon="mcpSuccessIcon"
-              :mcpErrorIcon="mcpErrorIcon"
+              :thinkingIcon="effectiveThinkingIcon"
+              :mcpIcon="effectiveMcpSuccessIcon"
+              :mcpSuccessIcon="effectiveMcpSuccessIcon"
+              :mcpErrorIcon="effectiveMcpErrorIcon"
               :selectedFiles="selectedFiles"
               :allFiles="allFiles"
               @update:selectedFiles="selectedFiles = $event"
@@ -677,6 +684,9 @@ onUnmounted(() => {
       v-model:thinkingIcon="thinkingIcon"
       v-model:mcpSuccessIcon="mcpSuccessIcon"
       v-model:mcpErrorIcon="mcpErrorIcon"
+      v-model:thinkingIconEnabled="thinkingIconEnabled"
+      v-model:mcpSuccessIconEnabled="mcpSuccessIconEnabled"
+      v-model:mcpErrorIconEnabled="mcpErrorIconEnabled"
       v-model:tavilyApiKey="tavilyApiKey"
       v-model:modelPresets="modelPresets"
       v-model:mcpMaxSteps="mcpMaxSteps"

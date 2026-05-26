@@ -51,6 +51,9 @@ export const createAiConfig = (payload: AiConfigUpsertPayload) =>
 export const updateAiConfig = (configId: number, payload: AiConfigUpsertPayload) =>
   put<AiConfigRow>(`/api/ai/configs/${configId}`, payload, { fallbackError: 'AI 更新失败' })
 
+export const updateAiConfigFields = (configId: number, payload: Partial<AiConfigUpsertPayload> & Record<string, any>) =>
+  put<AiConfigRow>(`/api/ai/configs/${configId}`, payload, { fallbackError: 'AI 更新失败' })
+
 export const deleteAiConfig = (configId: number) =>
   del<void>(`/api/ai/configs/${configId}`, { fallbackError: 'AI 删除失败' })
 

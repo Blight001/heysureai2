@@ -161,6 +161,9 @@ def _migrate_user(
     _add_column(cursor, "user", "ui_mcp_icon", f"TEXT DEFAULT '{_quote(ui_mcp_icon)}'", existing)
     _add_column(cursor, "user", "ui_mcp_success_icon", f"TEXT DEFAULT '{_quote(ui_mcp_success_icon)}'", existing)
     _add_column(cursor, "user", "ui_mcp_error_icon", f"TEXT DEFAULT '{_quote(ui_mcp_error_icon)}'", existing)
+    _add_column(cursor, "user", "ui_thinking_icon_enabled", "BOOLEAN DEFAULT 1", existing)
+    _add_column(cursor, "user", "ui_mcp_success_icon_enabled", "BOOLEAN DEFAULT 1", existing)
+    _add_column(cursor, "user", "ui_mcp_error_icon_enabled", "BOOLEAN DEFAULT 1", existing)
 
     cursor.execute(
         f"UPDATE user SET ui_theme_mode = '{ui_theme_mode}' "

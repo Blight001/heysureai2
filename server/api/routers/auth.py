@@ -18,6 +18,21 @@ from datetime import timedelta
 router = APIRouter()
 PREFIX = "/api/auth"
 
+
+def _parse_bool_setting(value, default: bool = True) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"0", "false", "off", "no"}:
+        return False
+    if text in {"1", "true", "on", "yes"}:
+        return True
+    return default
+
 def ensure_user_workspace(user_id: int) -> None:
     """Ensure the per-user workspace directory and its standard subfolders exist."""
     user_dir = user_workspace_dir(user_id)
@@ -145,11 +160,18 @@ async def update_profile(
     if "ui_brain_view_mode" in update_data:
         raw_mode = str(update_data.get("ui_brain_view_mode") or "").lower()
         update_data["ui_brain_view_mode"] = raw_mode if raw_mode in {"sections", "all"} else "sections"
+    for enabled_key in {
+        "ui_thinking_icon_enabled",
+        "ui_mcp_success_icon_enabled",
+        "ui_mcp_error_icon_enabled",
+    }:
+        if enabled_key in update_data:
+            update_data[enabled_key] = _parse_bool_setting(update_data.get(enabled_key), True)
     for icon_key, fallback in {
         "ui_thinking_icon": "🤔",
         "ui_mcp_icon": "🧰",
         "ui_mcp_success_icon": "🧰",
-        "ui_mcp_error_icon": "🧰",
+        "ui_mcp_error_icon": "❌",
     }.items():
         if icon_key in update_data:
             value = str(update_data.get(icon_key) or "").strip()

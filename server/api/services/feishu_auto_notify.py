@@ -168,10 +168,23 @@ def _is_feishu_visible_assistant_message(message: ChatMessage) -> bool:
 
 def _user_ui_icons(session: Session, user_id: int) -> dict[str, str]:
     user = session.get(User, int(user_id))
+    def enabled(name: str) -> bool:
+        value = getattr(user, name, True)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        text = str(value).strip().lower()
+        if text in {"0", "false", "off", "no"}:
+            return False
+        if text in {"1", "true", "on", "yes"}:
+            return True
+        return bool(value)
+
     return {
-        "thinking": str(getattr(user, "ui_thinking_icon", "") or "🤔"),
-        "mcp_success": str(getattr(user, "ui_mcp_success_icon", "") or getattr(user, "ui_mcp_icon", "") or "🧰"),
-        "mcp_error": str(getattr(user, "ui_mcp_error_icon", "") or getattr(user, "ui_mcp_icon", "") or "🧰"),
+        "thinking": str(getattr(user, "ui_thinking_icon", "") or "🤔") if enabled("ui_thinking_icon_enabled") else "",
+        "mcp_success": str(getattr(user, "ui_mcp_success_icon", "") or getattr(user, "ui_mcp_icon", "") or "🧰") if enabled("ui_mcp_success_icon_enabled") else "",
+        "mcp_error": str(getattr(user, "ui_mcp_error_icon", "") or "❌") if enabled("ui_mcp_error_icon_enabled") else "",
     }
 
 

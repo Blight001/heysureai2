@@ -14,7 +14,7 @@ DEFAULT_UI_BRAIN_VIEW_MODE = "sections"
 DEFAULT_UI_THINKING_ICON = "🤔"
 DEFAULT_UI_MCP_ICON = "🧰"
 DEFAULT_UI_MCP_SUCCESS_ICON = "🧰"
-DEFAULT_UI_MCP_ERROR_ICON = "🧰"
+DEFAULT_UI_MCP_ERROR_ICON = "❌"
 
 DEFAULT_MODEL_PRESETS = """[{"id":"deepseek-chat","name":"DeepSeek Chat","api_key":"sk-cb40bc0b0b894934919907913e337927","base_url":"https://api.deepseek.com/chat/completions","model":"deepseek-chat"}]"""
 

@@ -22,6 +22,9 @@ export interface User {
   ui_mcp_icon?: string
   ui_mcp_success_icon?: string
   ui_mcp_error_icon?: string
+  ui_thinking_icon_enabled?: boolean
+  ui_mcp_success_icon_enabled?: boolean
+  ui_mcp_error_icon_enabled?: boolean
   tavily_api_key?: string
   model_presets?: string
   mcp_max_steps?: number

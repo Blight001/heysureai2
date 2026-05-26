@@ -84,6 +84,15 @@ const stripLegacyOneToolRule = (raw: unknown) =>
     .join('\n')
     .trim()
 
+const settingEnabled = (raw: unknown, fallback = true) => {
+  if (raw === undefined || raw === null || raw === '') return fallback
+  if (raw === false || raw === 0) return false
+  const text = String(raw).trim().toLowerCase()
+  if (text === 'false' || text === '0' || text === 'off') return false
+  if (text === 'true' || text === '1' || text === 'on') return true
+  return Boolean(raw)
+}
+
 export const useDashboardSystemSettings = (options: UseDashboardSystemSettingsOptions) => {
   const themeMode = ref<ThemeMode>('dark')
   const fontSize = ref<FontSize>('md')
@@ -91,7 +100,10 @@ export const useDashboardSystemSettings = (options: UseDashboardSystemSettingsOp
   const thinkingIcon = ref('🤔')
   const mcpIcon = ref('🧰')
   const mcpSuccessIcon = ref('🧰')
-  const mcpErrorIcon = ref('🧰')
+  const mcpErrorIcon = ref('❌')
+  const thinkingIconEnabled = ref(true)
+  const mcpSuccessIconEnabled = ref(true)
+  const mcpErrorIconEnabled = ref(true)
   const tavilyApiKey = ref('')
   const modelPresets = ref<ModelPreset[]>([])
   const mcpMaxSteps = ref(48)
@@ -308,6 +320,9 @@ Rules:
         ui_mcp_icon: mcpSuccessIcon.value,
         ui_mcp_success_icon: mcpSuccessIcon.value,
         ui_mcp_error_icon: mcpErrorIcon.value,
+        ui_thinking_icon_enabled: thinkingIconEnabled.value,
+        ui_mcp_success_icon_enabled: mcpSuccessIconEnabled.value,
+        ui_mcp_error_icon_enabled: mcpErrorIconEnabled.value,
       })
       void options.alert({ message: '系统设置已保存', type: 'success' })
       options.onRefreshUser(updatedUser)
@@ -359,6 +374,9 @@ Rules:
       if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_thinking_icon')) {
         thinkingIcon.value = String(rawUser.ui_thinking_icon || '🤔')
       }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_thinking_icon_enabled')) {
+        thinkingIconEnabled.value = settingEnabled(rawUser.ui_thinking_icon_enabled, true)
+      }
       if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_mcp_icon')) {
         mcpIcon.value = String(rawUser.ui_mcp_icon || '🧰')
       }
@@ -368,9 +386,15 @@ Rules:
         mcpSuccessIcon.value = mcpIcon.value || '🧰'
       }
       if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_mcp_error_icon')) {
-        mcpErrorIcon.value = String(rawUser.ui_mcp_error_icon || '🧰')
+        mcpErrorIcon.value = String(rawUser.ui_mcp_error_icon || '❌')
       } else {
-        mcpErrorIcon.value = mcpIcon.value || '🧰'
+        mcpErrorIcon.value = '❌'
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_mcp_success_icon_enabled')) {
+        mcpSuccessIconEnabled.value = settingEnabled(rawUser.ui_mcp_success_icon_enabled, true)
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_mcp_error_icon_enabled')) {
+        mcpErrorIconEnabled.value = settingEnabled(rawUser.ui_mcp_error_icon_enabled, true)
       }
       if (Object.prototype.hasOwnProperty.call(rawUser, 'mcp_call_method')) {
         globalMcpCallMethod.value = stripLegacyOneToolRule(rawUser.mcp_call_method)
@@ -451,6 +475,9 @@ Rules:
     thinkingIcon,
     mcpSuccessIcon,
     mcpErrorIcon,
+    thinkingIconEnabled,
+    mcpSuccessIconEnabled,
+    mcpErrorIconEnabled,
     tavilyApiKey,
     modelPresets,
     globalMcpCallMethod,

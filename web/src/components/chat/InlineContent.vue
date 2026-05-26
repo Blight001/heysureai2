@@ -104,10 +104,10 @@ const blockSignature = (block: any) => {
 };
 
 const getMcpBlockIcon = (block: any) => {
-  if (!isApplied(block)) return props.mcpSuccessIcon || props.mcpIcon || '🧰';
+  if (!isApplied(block)) return props.mcpSuccessIcon ?? props.mcpIcon ?? '🧰';
   return isFailed(block)
-    ? (props.mcpErrorIcon || props.mcpIcon || '🧰')
-    : (props.mcpSuccessIcon || props.mcpIcon || '🧰');
+    ? (props.mcpErrorIcon ?? props.mcpIcon ?? '🧰')
+    : (props.mcpSuccessIcon ?? props.mcpIcon ?? '🧰');
 };
 
 const getBlockInfo = (block: any) => {
@@ -161,7 +161,7 @@ const isApplied = (block: any) => {
           <MarkdownText v-if="chunk.kind === 'plain'" :text="chunk.content" />
           <div v-else class="mcp-text-bubble">
             <div class="mcp-text-header">MCP 操作</div>
-            <div class="mcp-text-content font-mono text-[11px] leading-5">
+            <div class="mcp-text-content font-mono text-[11px] leading-4">
               <div
                 v-for="(line, lineIdx) in mcpLines(chunk.content)"
                 :key="`mcp-line-${idx}-${chunkIdx}-${lineIdx}`"
@@ -174,9 +174,9 @@ const isApplied = (block: any) => {
           </div>
         </template>
       </template>
-      <div v-else-if="item.type === 'block' && item.block" class="block my-2">
+      <div v-else-if="item.type === 'block' && item.block" class="block my-1.5">
         <div
-          class="flex flex-col gap-2 px-2 py-2 rounded-lg text-xs border transition-all max-w-full"
+          class="flex flex-col gap-1.5 px-2 py-1.5 rounded-lg text-xs border transition-all max-w-full"
           :class="isApplied(item.block)
             ? (isFailed(item.block)
               ? 'border-red-200 bg-red-50 dark:border-red-900/30 dark:bg-red-900/10 text-red-700 dark:text-red-400'
@@ -184,7 +184,9 @@ const isApplied = (block: any) => {
             : 'border-indigo-200 bg-indigo-50 dark:border-indigo-900/30 dark:bg-indigo-900/10 text-indigo-700 dark:text-indigo-400'"
         >
           <div class="flex items-center gap-2">
-            <span class="font-medium">{{ getBlockInfo(item.block).icon }} {{ getBlockInfo(item.block).label }}:</span>
+            <span class="font-medium">
+              {{ getBlockInfo(item.block).icon ? `${getBlockInfo(item.block).icon} ` : '' }}{{ getBlockInfo(item.block).label }}:
+            </span>
             <span class="font-mono text-[10px] truncate max-w-[180px]">{{ getBlockInfo(item.block).target }}</span>
             <button
               v-if="!isApplied(item.block)"
@@ -204,10 +206,10 @@ const isApplied = (block: any) => {
 
           <div
             v-if="getActionResult(item.block)"
-            class="rounded-md border border-zinc-200/70 dark:border-zinc-700/70 bg-white/80 dark:bg-zinc-900/60 p-2"
+            class="rounded-md border border-zinc-200/70 dark:border-zinc-700/70 bg-white/80 dark:bg-zinc-900/60 p-1.5"
           >
-            <div class="text-[10px] font-semibold mb-1 text-zinc-500 dark:text-zinc-400">执行结果</div>
-            <div class="result-view font-mono text-[11px] leading-5 text-zinc-700 dark:text-zinc-200">
+            <div class="text-[10px] font-semibold mb-0.5 text-zinc-500 dark:text-zinc-400">执行结果</div>
+            <div class="result-view font-mono text-[11px] leading-4 text-zinc-700 dark:text-zinc-200">
               {{ getActionResult(item.block) }}
             </div>
           </div>
@@ -219,7 +221,7 @@ const isApplied = (block: any) => {
 
 <style scoped>
 .inline-content-wrapper {
-  line-height: 1.6;
+  line-height: 1.45;
 }
 .result-view {
   max-height: 240px;
@@ -229,7 +231,7 @@ const isApplied = (block: any) => {
 }
 
 .mcp-text-bubble {
-  margin: 0.4rem 0;
+  margin: 0.25rem 0;
   border: 1px solid rgba(14, 165, 233, 0.35);
   background: linear-gradient(180deg, rgba(14, 165, 233, 0.1), rgba(3, 105, 161, 0.05));
   border-radius: 0.75rem;
@@ -237,7 +239,8 @@ const isApplied = (block: any) => {
 }
 
 .mcp-text-header {
-  padding: 0.35rem 0.6rem;
+  padding: 0.25rem 0.55rem;
+  line-height: 1.2;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -255,7 +258,7 @@ const isApplied = (block: any) => {
 .mcp-text-content {
   max-height: 260px;
   overflow-y: auto;
-  padding: 0.5rem 0.65rem;
+  padding: 0.35rem 0.55rem;
   color: rgb(39, 39, 42);
 }
 
@@ -269,6 +272,6 @@ const isApplied = (block: any) => {
 }
 
 .mcp-line-empty {
-  min-height: 0.85rem;
+  min-height: 0.65rem;
 }
 </style>

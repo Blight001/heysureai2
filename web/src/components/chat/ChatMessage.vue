@@ -79,9 +79,9 @@ const mcpToolDetails = computed(() => {
 })
 
 const mcpToolIcon = computed(() => {
-  if (mcpToolSummary.value.status === '失败') return props.mcpErrorIcon || props.mcpIcon || '🧰'
-  if (mcpToolSummary.value.status === '成功') return props.mcpSuccessIcon || props.mcpIcon || '🧰'
-  return props.mcpSuccessIcon || props.mcpIcon || '🧰'
+  if (mcpToolSummary.value.status === '失败') return props.mcpErrorIcon ?? props.mcpIcon ?? '🧰'
+  if (mcpToolSummary.value.status === '成功') return props.mcpSuccessIcon ?? props.mcpIcon ?? '🧰'
+  return props.mcpSuccessIcon ?? props.mcpIcon ?? '🧰'
 })
 
 const copiedTarget = ref('')
@@ -141,12 +141,12 @@ const frontPromptDetailsText = computed(() => {
       :class="isPlainAssistantMessage ? 'sm:max-w-[92%]' : 'sm:max-w-[85%]'"
     >
       <!-- Think Block -->
-      <div v-if="props.message.think" class="mb-1.5">
+      <div v-if="props.message.think" class="mb-1">
         <details class="transition-all">
-          <summary class="py-1 text-[11px] text-zinc-500 font-medium cursor-pointer hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-300 transition-colors select-none">
-            {{ props.thinkingIcon || '🤔' }} 深度思考
+          <summary class="py-0.5 text-[11px] leading-4 text-zinc-500 font-medium cursor-pointer hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-300 transition-colors select-none">
+            {{ props.thinkingIcon ? `${props.thinkingIcon} ` : '' }}深度思考
           </summary>
-          <div class="pt-1 text-[11px] text-zinc-500 leading-relaxed italic dark:text-zinc-400 whitespace-pre-wrap">
+          <div class="pt-0.5 text-[11px] text-zinc-500 leading-snug italic dark:text-zinc-400 whitespace-pre-wrap">
             {{ props.message.think }}
           </div>
         </details>
@@ -226,11 +226,11 @@ const frontPromptDetailsText = computed(() => {
         
         <div
           v-if="isMcpToolMessage"
-          class="text-[13px] leading-relaxed"
+          class="text-[13px] leading-snug"
         >
           <details class="mcp-details">
-            <summary class="flex items-center gap-2 whitespace-nowrap cursor-pointer select-none list-none">
-              <span class="text-[12px] font-semibold text-sky-700 dark:text-sky-300">{{ mcpToolIcon }} MCP 工具</span>
+            <summary class="flex items-center gap-1.5 whitespace-nowrap cursor-pointer select-none list-none leading-5">
+              <span class="text-[12px] font-semibold text-sky-700 dark:text-sky-300">{{ mcpToolIcon ? `${mcpToolIcon} ` : '' }}MCP 工具</span>
               <span class="min-w-0 truncate font-mono text-[11px] text-sky-600 dark:text-sky-300">
                 {{ mcpToolSummary.tool }}
               </span>
@@ -242,9 +242,9 @@ const frontPromptDetailsText = computed(() => {
               </span>
               <span class="ml-auto shrink-0 text-[11px] text-zinc-500 hover:text-sky-700 dark:text-zinc-400 dark:hover:text-sky-300">详情</span>
             </summary>
-            <div class="relative mt-2 max-h-72 overflow-y-auto rounded-lg bg-zinc-950 px-3 py-2 pr-12 font-mono text-[11px] leading-5 text-zinc-100 whitespace-pre-wrap break-words">
+            <div class="relative mt-1 max-h-72 overflow-y-auto rounded-lg bg-zinc-950 px-2.5 py-1.5 pr-11 font-mono text-[11px] leading-4 text-zinc-100 whitespace-pre-wrap break-words">
               <button
-                class="sticky top-0 float-right -mr-9 ml-2 w-7 h-7 rounded bg-zinc-800/90 text-zinc-200 border border-zinc-700 flex items-center justify-center hover:bg-zinc-700 hover:text-white transition-colors"
+                class="sticky top-0 float-right -mr-8 ml-2 w-6 h-6 rounded bg-zinc-800/90 text-zinc-200 border border-zinc-700 flex items-center justify-center hover:bg-zinc-700 hover:text-white transition-colors"
                 :title="copiedTarget === `mcp-${props.idx}` ? '已复制' : '复制全部 MCP 信息'"
                 @click.stop.prevent="copyText(mcpToolDetails, `mcp-${props.idx}`)"
               >
@@ -271,9 +271,9 @@ const frontPromptDetailsText = computed(() => {
           <template v-if="normalizedInlineContent.length > 0">
             <InlineContent 
               :content="normalizedInlineContent"
-              :mcpIcon="props.mcpIcon || '🧰'"
-              :mcpSuccessIcon="props.mcpSuccessIcon || props.mcpIcon || '🧰'"
-              :mcpErrorIcon="props.mcpErrorIcon || props.mcpIcon || '🧰'"
+              :mcpIcon="props.mcpIcon"
+              :mcpSuccessIcon="props.mcpSuccessIcon"
+              :mcpErrorIcon="props.mcpErrorIcon"
               :appliedEdits="props.appliedEdits"
               :appliedSignatures="props.appliedSignatures"
               :actionResults="props.actionResults"

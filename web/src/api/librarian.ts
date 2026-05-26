@@ -36,6 +36,7 @@ export interface KnowledgeEntryItem {
           description: string
         }>
         destructive?: boolean
+        source?: 'server' | 'endpoint'
       }>
     }>
   }
@@ -54,6 +55,8 @@ export interface KnowledgeEntryItem {
       platform: string
       generation: number
       prompt: string
+      system_auto_control_raw?: string
+      auto_control_enabled?: boolean
       auto_prompts: Array<{
         key: string
         label: string
@@ -99,3 +102,17 @@ export const readEntry = (token: string, memoryId: string) =>
     token,
     fallbackError: '条目加载失败',
   })
+
+export const saveIntrinsicProperties = (
+  token: string,
+  tools: Array<{
+    name: string
+    description: string
+    parameters?: Array<{ name: string; description: string }>
+  }>,
+) =>
+  post<KnowledgeEntryItem>(
+    '/api/librarian/intrinsic-properties',
+    { tools },
+    { token, fallbackError: '固有属性保存失败' },
+  )

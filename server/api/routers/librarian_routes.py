@@ -7,7 +7,7 @@
 - GET  /api/librarian/entries/{memory_id}  → 读全文
 """
 
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
@@ -28,6 +28,16 @@ class ApproveBody(BaseModel):
 
 class RejectBody(BaseModel):
     reason: Optional[str] = None
+
+
+class IntrinsicPropertyToolBody(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    parameters: Optional[List[Dict[str, Any]]] = None
+
+
+class IntrinsicPropertiesBody(BaseModel):
+    tools: List[IntrinsicPropertyToolBody] = []
 
 
 @router.get("/proposals")
@@ -104,6 +114,20 @@ async def read_entry(
         return librarian_service.read(user_id=user.id, memory_id=memory_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/intrinsic-properties")
+async def save_intrinsic_properties(
+    body: IntrinsicPropertiesBody,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    try:
+        tools = [item.model_dump() for item in body.tools]
+        return librarian_service.save_intrinsic_properties_overrides(user_id=user.id, tools=tools)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/entries/{memory_id}/archive")
