@@ -5,6 +5,7 @@ import { updateProfile } from '@/api/auth'
 
 type ThemeMode = 'light' | 'dark'
 type FontSize = 'sm' | 'md' | 'lg'
+type BrainViewMode = 'sections' | 'all'
 type MessageType = 'info' | 'success' | 'warning' | 'error'
 type AlertFn = (options: string | { message: string; type?: MessageType }) => Promise<void>
 
@@ -86,6 +87,11 @@ const stripLegacyOneToolRule = (raw: unknown) =>
 export const useDashboardSystemSettings = (options: UseDashboardSystemSettingsOptions) => {
   const themeMode = ref<ThemeMode>('dark')
   const fontSize = ref<FontSize>('md')
+  const brainViewMode = ref<BrainViewMode>('sections')
+  const thinkingIcon = ref('🤔')
+  const mcpIcon = ref('🧰')
+  const mcpSuccessIcon = ref('🧰')
+  const mcpErrorIcon = ref('🧰')
   const tavilyApiKey = ref('')
   const modelPresets = ref<ModelPreset[]>([])
   const mcpMaxSteps = ref(48)
@@ -297,12 +303,31 @@ Rules:
         prompt_user_message_notice: promptUserMessageNotice.value,
         ui_theme_mode: themeMode.value,
         ui_font_size: fontSize.value,
+        ui_brain_view_mode: brainViewMode.value,
+        ui_thinking_icon: thinkingIcon.value,
+        ui_mcp_icon: mcpSuccessIcon.value,
+        ui_mcp_success_icon: mcpSuccessIcon.value,
+        ui_mcp_error_icon: mcpErrorIcon.value,
       })
       void options.alert({ message: '系统设置已保存', type: 'success' })
       options.onRefreshUser(updatedUser)
     } catch (err: any) {
       console.error('Failed to save settings:', err)
       void options.alert({ message: `保存失败: ${err?.message || '未知错误'}`, type: 'error' })
+    }
+  }
+
+  const saveBrainViewMode = async (mode: BrainViewMode) => {
+    const next = mode === 'all' ? 'all' : 'sections'
+    brainViewMode.value = next
+    const currentUser = options.getCurrentUser()
+    if (!currentUser) return
+    try {
+      const updatedUser = await updateProfile({ ui_brain_view_mode: next })
+      options.onRefreshUser(updatedUser)
+    } catch (err) {
+      console.error('Failed to save brain view mode:', err)
+      void options.alert({ message: '智囊团查看方式保存失败', type: 'error' })
     }
   }
 
@@ -326,6 +351,26 @@ Rules:
       if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_font_size')) {
         const rawFont = String(rawUser.ui_font_size ?? '').toLowerCase()
         fontSize.value = rawFont === 'sm' || rawFont === 'lg' ? rawFont : 'md'
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_brain_view_mode')) {
+        const rawMode = String(rawUser.ui_brain_view_mode ?? '').toLowerCase()
+        brainViewMode.value = rawMode === 'all' ? 'all' : 'sections'
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_thinking_icon')) {
+        thinkingIcon.value = String(rawUser.ui_thinking_icon || '🤔')
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_mcp_icon')) {
+        mcpIcon.value = String(rawUser.ui_mcp_icon || '🧰')
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_mcp_success_icon')) {
+        mcpSuccessIcon.value = String(rawUser.ui_mcp_success_icon || '🧰')
+      } else {
+        mcpSuccessIcon.value = mcpIcon.value || '🧰'
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_mcp_error_icon')) {
+        mcpErrorIcon.value = String(rawUser.ui_mcp_error_icon || '🧰')
+      } else {
+        mcpErrorIcon.value = mcpIcon.value || '🧰'
       }
       if (Object.prototype.hasOwnProperty.call(rawUser, 'mcp_call_method')) {
         globalMcpCallMethod.value = stripLegacyOneToolRule(rawUser.mcp_call_method)
@@ -402,6 +447,10 @@ Rules:
   return {
     themeMode,
     fontSize,
+    brainViewMode,
+    thinkingIcon,
+    mcpSuccessIcon,
+    mcpErrorIcon,
     tavilyApiKey,
     modelPresets,
     globalMcpCallMethod,
@@ -423,6 +472,7 @@ Rules:
     promptUserMessageNotice,
     normalizeSystemAutoControl,
     saveSystemSettings,
+    saveBrainViewMode,
     roleMcpPermissions,
     isRoleToolAllowed,
     toggleRoleTool,

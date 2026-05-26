@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from ..chat_runtime.mcp_parser import MCP_CALL_BLOCK_RE
 from ..integrations.feishu.service import send_feishu_text_message
 from ..integrations.qq.service import send_qq_text_message
-from ..models import ChatMessage, FeishuSessionRoute, QQSessionRoute
+from ..models import ChatMessage, FeishuSessionRoute, QQSessionRoute, User
 
 
 FEISHU_TEXT_MAX_CHARS = 1800
@@ -166,10 +166,31 @@ def _is_feishu_visible_assistant_message(message: ChatMessage) -> bool:
     return bool(_feishu_visible_content(message))
 
 
+def _user_ui_icons(session: Session, user_id: int) -> dict[str, str]:
+    user = session.get(User, int(user_id))
+    return {
+        "thinking": str(getattr(user, "ui_thinking_icon", "") or "🤔"),
+        "mcp_success": str(getattr(user, "ui_mcp_success_icon", "") or getattr(user, "ui_mcp_icon", "") or "🧰"),
+        "mcp_error": str(getattr(user, "ui_mcp_error_icon", "") or getattr(user, "ui_mcp_icon", "") or "🧰"),
+    }
+
+
+def _mcp_tool_icon_for_message(row: ChatMessage, icons: dict[str, str]) -> str:
+    text = str(row.content or "")
+    status_match = re.search(r"^状态[：:]\s*(.+)$", text, flags=re.MULTILINE)
+    status = str(status_match.group(1) if status_match else "").strip()
+    if status == "失败":
+        return icons["mcp_error"]
+    if status == "成功":
+        return icons["mcp_success"]
+    return icons["mcp_success"]
+
+
 def _feishu_assistant_prefix(session: Session, message: ChatMessage) -> str:
+    icons = _user_ui_icons(session, int(message.user_id))
     message_id = int(message.id or 0)
     if not message_id:
-        return "🤔" if str(message.think or "").strip() else ""
+        return icons["thinking"] if str(message.think or "").strip() else ""
 
     previous_assistants = session.exec(
         select(ChatMessage).where(
@@ -201,9 +222,9 @@ def _feishu_assistant_prefix(session: Session, message: ChatMessage) -> str:
     parts = []
     for row in rows:
         if row.tags == "mcp_tool_call":
-            parts.append("🧰")
+            parts.append(_mcp_tool_icon_for_message(row, icons))
         if row.role == "assistant" and str(row.think or "").strip():
-            parts.append("🤔")
+            parts.append(icons["thinking"])
     return "".join(parts)
 
 

@@ -26,6 +26,10 @@ const props = defineProps<{
   actionResultsBySignature: Record<string, string>
   idx: number
   readonly?: boolean
+  thinkingIcon?: string
+  mcpIcon?: string
+  mcpSuccessIcon?: string
+  mcpErrorIcon?: string
 }>()
 
 const isFrontPromptMessage = computed(() => {
@@ -72,6 +76,12 @@ const mcpToolSummary = computed(() => {
 const mcpToolDetails = computed(() => {
   const text = String(props.message.display_text || props.message.content || '').trim()
   return text.replace(/^\[MCP工具\]\s*/i, '').trim()
+})
+
+const mcpToolIcon = computed(() => {
+  if (mcpToolSummary.value.status === '失败') return props.mcpErrorIcon || props.mcpIcon || '🧰'
+  if (mcpToolSummary.value.status === '成功') return props.mcpSuccessIcon || props.mcpIcon || '🧰'
+  return props.mcpSuccessIcon || props.mcpIcon || '🧰'
 })
 
 const copiedTarget = ref('')
@@ -134,7 +144,7 @@ const frontPromptDetailsText = computed(() => {
       <div v-if="props.message.think" class="mb-1.5">
         <details class="transition-all">
           <summary class="py-1 text-[11px] text-zinc-500 font-medium cursor-pointer hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-300 transition-colors select-none">
-            深度思考
+            {{ props.thinkingIcon || '🤔' }} 深度思考
           </summary>
           <div class="pt-1 text-[11px] text-zinc-500 leading-relaxed italic dark:text-zinc-400 whitespace-pre-wrap">
             {{ props.message.think }}
@@ -220,7 +230,7 @@ const frontPromptDetailsText = computed(() => {
         >
           <details class="mcp-details">
             <summary class="flex items-center gap-2 whitespace-nowrap cursor-pointer select-none list-none">
-              <span class="text-[12px] font-semibold text-sky-700 dark:text-sky-300">MCP 工具</span>
+              <span class="text-[12px] font-semibold text-sky-700 dark:text-sky-300">{{ mcpToolIcon }} MCP 工具</span>
               <span class="min-w-0 truncate font-mono text-[11px] text-sky-600 dark:text-sky-300">
                 {{ mcpToolSummary.tool }}
               </span>
@@ -261,6 +271,9 @@ const frontPromptDetailsText = computed(() => {
           <template v-if="normalizedInlineContent.length > 0">
             <InlineContent 
               :content="normalizedInlineContent"
+              :mcpIcon="props.mcpIcon || '🧰'"
+              :mcpSuccessIcon="props.mcpSuccessIcon || props.mcpIcon || '🧰'"
+              :mcpErrorIcon="props.mcpErrorIcon || props.mcpIcon || '🧰'"
               :appliedEdits="props.appliedEdits"
               :appliedSignatures="props.appliedSignatures"
               :actionResults="props.actionResults"

@@ -34,7 +34,7 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
   const projectFilterOpen = ref(false)
   const projectFilter = ref<'all' | 'active' | 'inactive'>('all')
   const knowledgeFilterOpen = ref(false)
-  const knowledgeFilter = ref<'all' | 'inheritance' | 'system' | 'business'>('all')
+  const knowledgeFilter = ref<'all' | 'intrinsic' | 'personas' | 'skills' | 'tools' | 'inheritance' | 'system' | 'business'>('all')
   const userMenuOpen = ref(false)
 
   const clampContextMenuPosition = (x: number, y: number) => {
@@ -218,6 +218,18 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
     if (knowledgeFilter.value === 'all') return knowledgeBase.value
     if (knowledgeFilter.value === 'inheritance') {
       return knowledgeBase.value.filter(item => item.tags.includes('传承'))
+    }
+    if (knowledgeFilter.value === 'intrinsic') {
+      return knowledgeBase.value.filter(item => item.tags.includes('固有属性'))
+    }
+    if (knowledgeFilter.value === 'personas') {
+      return knowledgeBase.value.filter(item => item.tags.includes('固有人格'))
+    }
+    if (knowledgeFilter.value === 'skills') {
+      return knowledgeBase.value.filter(item => item.tags.includes('传承技能'))
+    }
+    if (knowledgeFilter.value === 'tools') {
+      return knowledgeBase.value.filter(item => item.tags.includes('传承工具'))
     }
     if (knowledgeFilter.value === 'system') {
       return knowledgeBase.value.filter(item => item.tags.includes('系统'))

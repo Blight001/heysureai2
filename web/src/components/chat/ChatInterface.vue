@@ -53,6 +53,10 @@ interface Props {
   aiConfigId?: number
   aiKind?: 'assistant' | 'core'
   mcpAutoApprove?: boolean
+  thinkingIcon?: string
+  mcpIcon?: string
+  mcpSuccessIcon?: string
+  mcpErrorIcon?: string
   selectedFiles: string[]
   allFiles: string[]
 }
@@ -951,10 +955,18 @@ const safeJson = (value: unknown, maxLen = 8000) => {
   return `${text.slice(0, maxLen)}\n...<truncated>`
 }
 
+const isMcpCallFailed = (data: any) => {
+  return data?.success === false
+    || data?.mcp?.success === false
+    || data?.result?.success === false
+    || data?.mcp?.result?.success === false
+}
+
 const buildMcpDisplayResult = (block: ActionBlock, data: any) => {
   const toolName = block.tool || ''
+  const status = isMcpCallFailed(data) ? '失败' : '成功'
   const result = safeJson(data?.result ?? data?.mcp?.result ?? data, 12000)
-  return [`工具: ${toolName}`, '', result].join('\n')
+  return [`工具: ${toolName}`, `状态: ${status}`, '', result].join('\n')
 }
 
 const executeAction = async (msgIdx: number, blockIdx: number) => {
@@ -1191,6 +1203,10 @@ onBeforeUnmount(() => {
         :baseMessages="chatMessages"
         :sessionActive="!!currentSessionId"
         :frontPromptPlaceholder="'（当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt）'"
+        :thinkingIcon="props.thinkingIcon || '🤔'"
+        :mcpIcon="props.mcpIcon || '🧰'"
+        :mcpSuccessIcon="props.mcpSuccessIcon || props.mcpIcon || '🧰'"
+        :mcpErrorIcon="props.mcpErrorIcon || props.mcpIcon || '🧰'"
         :liveText="liveAssistantText"
         :liveThinking="liveThinkingText"
         :appliedEdits="appliedEditsArray"

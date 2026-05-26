@@ -24,6 +24,10 @@ defineProps<{
   thinkingText?: string
   isEmpty: boolean
   readonly?: boolean
+  thinkingIcon?: string
+  mcpIcon?: string
+  mcpSuccessIcon?: string
+  mcpErrorIcon?: string
 }>()
 
 const emit = defineEmits<{
@@ -52,6 +56,10 @@ const emit = defineEmits<{
         :actionResultsBySignature="actionResultsBySignature"
         :idx="idx"
         :readonly="readonly"
+        :thinkingIcon="thinkingIcon || '🤔'"
+        :mcpIcon="mcpIcon || '🧰'"
+        :mcpSuccessIcon="mcpSuccessIcon || mcpIcon || '🧰'"
+        :mcpErrorIcon="mcpErrorIcon || mcpIcon || '🧰'"
         @delete="(i) => emit('delete', i)"
         @recall="(i) => emit('recall', i)"
         @apply="(msgIdx, blockIdx) => emit('apply', msgIdx, blockIdx)"

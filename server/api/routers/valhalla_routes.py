@@ -1,10 +1,9 @@
-"""英灵殿（Valhalla）只读浏览接口。
+"""英灵殿（Valhalla）浏览接口。
 
 设计意图：
 - 前端 ValhallaPanel 改为读这里的数据，而不再依赖永远为空的
   `lifecycle_status='dead'` 过滤。
-- 写入由 chat_worker / chat_scheduler 的副作用钩子自动完成，
-  这里只提供"看"的能力。
+- 写入由 chat_worker / chat_scheduler 的副作用钩子自动完成。
 """
 
 from typing import Optional
@@ -50,3 +49,24 @@ async def read_valhalla_entry(
         return valhalla_service.read_entry_file(user_id=user.id, entry_id=entry_id)
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Valhalla entry not found")
+
+
+@router.delete("/entries")
+async def delete_valhalla_entries(
+    entry_ids: str,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    ids = []
+    for raw in str(entry_ids or "").split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            ids.append(int(raw))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="entry_ids must be comma-separated integers")
+    if not ids:
+        raise HTTPException(status_code=400, detail="entry_ids is required")
+    return valhalla_service.delete_entries(user_id=user.id, entry_ids=ids)

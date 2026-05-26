@@ -1,5 +1,6 @@
 type ThemeMode = 'light' | 'dark'
 type FontSize = 'sm' | 'md' | 'lg'
+export type BrainViewMode = 'sections' | 'all'
 
 export interface ModelPreset {
   id: string
@@ -16,6 +17,11 @@ export interface User {
   avatar?: string
   ui_theme_mode?: ThemeMode
   ui_font_size?: FontSize
+  ui_brain_view_mode?: BrainViewMode
+  ui_thinking_icon?: string
+  ui_mcp_icon?: string
+  ui_mcp_success_icon?: string
+  ui_mcp_error_icon?: string
   tavily_api_key?: string
   model_presets?: string
   mcp_max_steps?: number

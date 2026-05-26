@@ -528,7 +528,9 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
         return {
           id: entry.memory_id,
           title: entry.title,
-          author: entry.source_job_id ? `任务传承 · 第 ${entry.source_generation || 1} 代` : '图书管理员',
+          author: entry.memory_id.startsWith('builtin.')
+            ? '系统内置'
+            : (entry.source_job_id ? `任务传承 · 第 ${entry.source_generation || 1} 代` : '图书管理员'),
           time: formatKnowledgeTime(entry.updated_at || entry.created_at),
           tags: tags.length ? tags : ['知识'],
         }

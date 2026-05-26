@@ -34,8 +34,13 @@ def run_pending_migrations() -> None:
         DEFAULT_RESUME_TASK_PROMPT,
         DEFAULT_START_TASK_PROMPT,
         DEFAULT_SUPERVISION_PROMPT,
+        DEFAULT_UI_BRAIN_VIEW_MODE,
         DEFAULT_UI_FONT_SIZE,
+        DEFAULT_UI_MCP_ERROR_ICON,
+        DEFAULT_UI_MCP_ICON,
+        DEFAULT_UI_MCP_SUCCESS_ICON,
         DEFAULT_UI_THEME_MODE,
+        DEFAULT_UI_THINKING_ICON,
         DEFAULT_USER_MESSAGE_NOTICE,
     )
 
@@ -62,6 +67,11 @@ def run_pending_migrations() -> None:
             user_message_notice=DEFAULT_USER_MESSAGE_NOTICE,
             ui_theme_mode=DEFAULT_UI_THEME_MODE,
             ui_font_size=DEFAULT_UI_FONT_SIZE,
+            ui_brain_view_mode=DEFAULT_UI_BRAIN_VIEW_MODE,
+            ui_thinking_icon=DEFAULT_UI_THINKING_ICON,
+            ui_mcp_icon=DEFAULT_UI_MCP_ICON,
+            ui_mcp_success_icon=DEFAULT_UI_MCP_SUCCESS_ICON,
+            ui_mcp_error_icon=DEFAULT_UI_MCP_ERROR_ICON,
             model_presets=DEFAULT_MODEL_PRESETS,
         )
         _migrate_assistantaiconfig(cursor)
@@ -116,6 +126,11 @@ def _migrate_user(
     user_message_notice: str,
     ui_theme_mode: str,
     ui_font_size: str,
+    ui_brain_view_mode: str,
+    ui_thinking_icon: str,
+    ui_mcp_icon: str,
+    ui_mcp_success_icon: str,
+    ui_mcp_error_icon: str,
     model_presets: str,
 ) -> None:
     existing = _existing_columns(cursor, "user")
@@ -141,6 +156,11 @@ def _migrate_user(
     _add_column(cursor, "user", "prompt_user_message_notice", f"TEXT DEFAULT '{_quote(user_message_notice)}'", existing)
     _add_column(cursor, "user", "ui_theme_mode", f"TEXT DEFAULT '{ui_theme_mode}'", existing)
     _add_column(cursor, "user", "ui_font_size", f"TEXT DEFAULT '{ui_font_size}'", existing)
+    _add_column(cursor, "user", "ui_brain_view_mode", f"TEXT DEFAULT '{ui_brain_view_mode}'", existing)
+    _add_column(cursor, "user", "ui_thinking_icon", f"TEXT DEFAULT '{_quote(ui_thinking_icon)}'", existing)
+    _add_column(cursor, "user", "ui_mcp_icon", f"TEXT DEFAULT '{_quote(ui_mcp_icon)}'", existing)
+    _add_column(cursor, "user", "ui_mcp_success_icon", f"TEXT DEFAULT '{_quote(ui_mcp_success_icon)}'", existing)
+    _add_column(cursor, "user", "ui_mcp_error_icon", f"TEXT DEFAULT '{_quote(ui_mcp_error_icon)}'", existing)
 
     cursor.execute(
         f"UPDATE user SET ui_theme_mode = '{ui_theme_mode}' "
@@ -151,6 +171,11 @@ def _migrate_user(
         f"UPDATE user SET ui_font_size = '{ui_font_size}' "
         "WHERE ui_font_size IS NULL OR ui_font_size = '' "
         "OR ui_font_size NOT IN ('sm', 'md', 'lg')"
+    )
+    cursor.execute(
+        f"UPDATE user SET ui_brain_view_mode = '{ui_brain_view_mode}' "
+        "WHERE ui_brain_view_mode IS NULL OR ui_brain_view_mode = '' "
+        "OR ui_brain_view_mode NOT IN ('sections', 'all')"
     )
     _collapse_role_permission_tool_items(
         cursor,

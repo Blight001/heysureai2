@@ -30,6 +30,10 @@ const props = withDefaults(defineProps<{
   showFrontPromptPlaceholder?: boolean
   frontPromptText?: string
   frontPromptPlaceholder?: string
+  thinkingIcon?: string
+  mcpIcon?: string
+  mcpSuccessIcon?: string
+  mcpErrorIcon?: string
   liveText?: string
   liveThinking?: string
   isTyping?: boolean
@@ -45,6 +49,10 @@ const props = withDefaults(defineProps<{
   showFrontPromptPlaceholder: true,
   frontPromptText: '',
   frontPromptPlaceholder: '（当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt）',
+  thinkingIcon: '🤔',
+  mcpIcon: '🧰',
+  mcpSuccessIcon: '🧰',
+  mcpErrorIcon: '🧰',
   liveText: '',
   liveThinking: '',
   isTyping: false,
@@ -425,6 +433,10 @@ const onRevert = (msgIdx: number, blockIdx: number) => {
     :thinkingText="typingThinkingText"
     :isEmpty="renderMessages.length === 0"
     :readonly="readonly"
+    :thinkingIcon="thinkingIcon"
+    :mcpIcon="mcpIcon"
+    :mcpSuccessIcon="mcpSuccessIcon"
+    :mcpErrorIcon="mcpErrorIcon"
     @delete="onDelete"
     @recall="onRecall"
     @apply="onApply"

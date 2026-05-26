@@ -42,17 +42,21 @@ interface Props {
   currentUserId?: number
   adminAgents: Agent[]
   memberAgents: Agent[]
+  brainViewMode: 'sections' | 'all'
   knowledgeItems: KnowledgeItem[]
   knowledgeTotalCount: number
+  librarianPendingCount: number
   knowledgeFilterOpen: boolean
-  knowledgeFilterValue: 'all' | 'inheritance' | 'system' | 'business'
+  knowledgeFilterValue: 'all' | 'intrinsic' | 'personas' | 'skills' | 'tools' | 'inheritance' | 'system' | 'business'
 }
 
 defineProps<Props>()
 const emit = defineEmits<{
   (e: 'context', payload: { agent: Agent; x: number; y: number }): void
+  (e: 'update:brain-view-mode', value: Props['brainViewMode']): void
   (e: 'update:knowledgeFilterOpen', value: boolean): void
   (e: 'update:knowledgeFilterValue', value: Props['knowledgeFilterValue']): void
+  (e: 'open-proposal-review'): void
   (e: 'show-tools', agent: Agent): void
   (e: 'show-context', agent: Agent): void
   (e: 'show-tasks', agent: Agent): void
@@ -99,6 +103,8 @@ const activeTab = ref<'brain' | 'knowledge'>('brain')
           no-glass
           :admin-agents="adminAgents"
           :member-agents="memberAgents"
+          :view-mode="brainViewMode"
+          @update:view-mode="emit('update:brain-view-mode', $event)"
           @context="emit('context', $event)"
           @show-tools="emit('show-tools', $event)"
           @show-context="emit('show-context', $event)"
@@ -114,10 +120,12 @@ const activeTab = ref<'brain' | 'knowledge'>('brain')
           no-glass
           :items="knowledgeItems"
           :total-count="knowledgeTotalCount"
+          :librarian-pending-count="librarianPendingCount"
           :filter-open="knowledgeFilterOpen"
           :filter-value="knowledgeFilterValue"
           @update:filter-open="emit('update:knowledgeFilterOpen', $event)"
           @update:filter-value="emit('update:knowledgeFilterValue', $event)"
+          @open-proposal-review="emit('open-proposal-review')"
         />
       </Transition>
     </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import AgentCard from '../cards/AgentCard.vue'
 
 interface Agent {
@@ -32,10 +32,11 @@ interface Agent {
 interface Props {
   adminAgents: Agent[]
   memberAgents: Agent[]
+  viewMode: 'sections' | 'all'
   noGlass?: boolean
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'context', payload: { agent: Agent; x: number; y: number }): void
   (e: 'show-tools', agent: Agent): void
@@ -45,9 +46,16 @@ const emit = defineEmits<{
   (e: 'chat', agent: Agent): void
   (e: 'settings', agent: Agent): void
   (e: 'create-ai'): void
+  (e: 'update:view-mode', value: Props['viewMode']): void
 }>()
 
 const activeSection = ref<'admins' | 'members'>('admins')
+const allAgents = computed(() => [...props.adminAgents, ...props.memberAgents])
+const isAllView = computed(() => props.viewMode === 'all')
+
+const toggleViewMode = () => {
+  emit('update:view-mode', isAllView.value ? 'sections' : 'all')
+}
 </script>
 
 <template>
@@ -62,10 +70,15 @@ const activeSection = ref<'admins' | 'members'>('admins')
       <div v-else class="flex items-center gap-2">
         <span class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">智囊团核心</span>
       </div>
-      <button class="text-xs px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700" @click="emit('create-ai')">+ 新建 AI</button>
+      <div class="flex items-center gap-2">
+        <button class="text-xs px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700" @click="toggleViewMode">
+          {{ isAllView ? '切换栏目查看' : '一栏查看全部' }}
+        </button>
+        <button class="text-xs px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700" @click="emit('create-ai')">+ 新建 AI</button>
+      </div>
     </div>
 
-    <div class="grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800/80">
+    <div v-if="!isAllView" class="grid grid-cols-2 gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800/80">
       <button
         type="button"
         class="h-8 rounded-md px-2 text-xs font-semibold transition-colors"
@@ -89,7 +102,30 @@ const activeSection = ref<'admins' | 'members'>('admins')
     </div>
 
     <div class="flex-1 min-h-0 overflow-hidden">
-      <section v-if="activeSection === 'admins'" class="h-full min-h-0 min-w-0 flex flex-col">
+      <section v-if="isAllView" class="h-full min-h-0 min-w-0 flex flex-col">
+        <div class="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">全部 AI · {{ allAgents.length }}</div>
+
+        <div v-if="allAgents.length === 0" class="p-4 text-xs text-zinc-400 text-center rounded border border-dashed border-zinc-200 dark:border-zinc-700 dark:text-zinc-500">
+          暂无 AI 配置
+        </div>
+
+        <TransitionGroup v-else name="list" tag="div" class="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto overflow-x-visible pr-2 pt-2 pb-1">
+          <AgentCard
+            v-for="agent in allAgents"
+            :key="agent.id"
+            :agent="agent"
+            @context="emit('context', $event)"
+            @show-tools="emit('show-tools', $event)"
+            @show-context="emit('show-context', $event)"
+            @show-tasks="emit('show-tasks', $event)"
+            @show-task-detail="emit('show-task-detail', $event)"
+            @chat="emit('chat', $event)"
+            @settings="emit('settings', $event)"
+          />
+        </TransitionGroup>
+      </section>
+
+      <section v-else-if="activeSection === 'admins'" class="h-full min-h-0 min-w-0 flex flex-col">
         <div class="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">数字社会核心管理员</div>
 
         <div v-if="adminAgents.length === 0" class="p-4 bg-red-50 text-red-600 text-sm rounded border border-red-100 animate-pulse dark:bg-red-500/10 dark:border-red-500/20">

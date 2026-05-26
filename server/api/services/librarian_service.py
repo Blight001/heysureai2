@@ -37,6 +37,29 @@ _ARCHIVE_DIR = "archives"
 _INDEX_FILE = "index.json"
 _MAX_SUMMARY_LEN = 240
 _VALID_STATUSES = {"pending", "active", "archived", "rejected"}
+_BUILTIN_UPDATED_AT = 1893456000.0  # 2030-01-01, keeps built-in categories at the top.
+_BUILTIN_ENTRIES = {
+    "builtin.intrinsic_properties": {
+        "title": "固有属性",
+        "triggers": ["固有属性", "固定MCP", "MCP工具"],
+        "summary": "系统固定 MCP 工具清单及其描述。",
+    },
+    "builtin.intrinsic_personas": {
+        "title": "固有人格",
+        "triggers": ["固有人格", "AI人格", "Prompt"],
+        "summary": "当前所有 AI 的人格 prompt 与自动控制 prompt 内容。",
+    },
+    "builtin.inheritance_skills": {
+        "title": "传承技能",
+        "triggers": ["传承技能", "Python脚本", "技能沉淀"],
+        "summary": "预留给后续沉淀的 Python 脚本技能，目前为空。",
+    },
+    "builtin.inheritance_tools": {
+        "title": "传承工具",
+        "triggers": ["传承工具", "Markdown文件", "工具沉淀"],
+        "summary": "预留给后续沉淀的 Markdown 工具文档，目前为空。",
+    },
+}
 
 
 # ---------- 路径与工具 ----------
@@ -263,6 +286,227 @@ def _rebuild_index(user_id: int) -> None:
 
 def _split_csv(value: str) -> List[str]:
     return [piece.strip() for piece in str(value or "").split(",") if piece.strip()]
+
+
+def _builtin_entries(*, user_id: Optional[int] = None, with_body: bool = False) -> List[Dict[str, Any]]:
+    return [
+        item
+        for memory_id in (
+            "builtin.intrinsic_properties",
+            "builtin.intrinsic_personas",
+            "builtin.inheritance_skills",
+            "builtin.inheritance_tools",
+        )
+        if (item := _builtin_entry(memory_id, user_id=user_id, with_body=with_body)) is not None
+    ]
+
+
+def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: bool = False) -> Optional[Dict[str, Any]]:
+    meta = _BUILTIN_ENTRIES.get(str(memory_id or ""))
+    if not meta:
+        return None
+    out: Dict[str, Any] = {
+        "memory_id": memory_id,
+        "title": meta["title"],
+        "triggers": list(meta["triggers"]),
+        "scope": "global",
+        "scope_target": None,
+        "status": "active",
+        "confidence": 1.0,
+        "use_count": 0,
+        "last_used_at": None,
+        "file_path": "",
+        "summary": meta["summary"],
+        "source_job_id": None,
+        "source_generation": None,
+        "source_ai_config_id": None,
+        "source_message_id": None,
+        "created_at": _BUILTIN_UPDATED_AT,
+        "updated_at": _BUILTIN_UPDATED_AT,
+    }
+    if with_body:
+        if memory_id == "builtin.intrinsic_properties":
+            intrinsic = _intrinsic_properties_payload()
+            out["intrinsic_properties"] = intrinsic
+            out["body"] = _render_intrinsic_properties_body(intrinsic)
+        elif memory_id == "builtin.intrinsic_personas":
+            personas = _intrinsic_personas_payload(int(user_id or 0))
+            out["intrinsic_personas"] = personas
+            out["body"] = _render_intrinsic_personas_body(personas)
+        elif memory_id == "builtin.inheritance_skills":
+            out["body"] = ""
+        elif memory_id == "builtin.inheritance_tools":
+            out["body"] = ""
+    return out
+
+
+def _intrinsic_properties_payload() -> Dict[str, Any]:
+    from ..mcp import registry
+
+    tools = sorted(registry.list_tools(), key=lambda item: str(item.get("name") or ""))
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for tool in tools:
+        name = str(tool.get("name") or "").strip()
+        namespace = name.split(".", 1)[0] if "." in name else "other"
+        input_schema = tool.get("inputSchema") if isinstance(tool.get("inputSchema"), dict) else {}
+        grouped.setdefault(namespace, []).append({
+            "name": name,
+            "description": str(tool.get("description") or "").strip(),
+            "inputSchema": input_schema,
+            "parameters": _mcp_schema_parameter_rows(input_schema),
+            "destructive": bool(tool.get("destructive")),
+        })
+
+    categories = [
+        {
+            "namespace": namespace,
+            "count": len(items),
+            "tools": items,
+        }
+        for namespace, items in sorted(grouped.items())
+    ]
+    return {
+        "description": "系统当前固定注册的 MCP 工具及其描述如下。",
+        "total": len(tools),
+        "categories": categories,
+    }
+
+
+def _mcp_schema_parameter_rows(schema: Dict[str, Any]) -> List[Dict[str, Any]]:
+    properties = schema.get("properties") if isinstance(schema, dict) else {}
+    if not isinstance(properties, dict):
+        properties = {}
+    required = schema.get("required") if isinstance(schema, dict) else []
+    required_set = {str(item) for item in required if str(item).strip()} if isinstance(required, list) else set()
+    rows: List[Dict[str, Any]] = []
+    for name, config in properties.items():
+        cfg = config if isinstance(config, dict) else {}
+        raw_type = cfg.get("type", "")
+        if isinstance(raw_type, list):
+            type_name = " | ".join(str(item) for item in raw_type if str(item).strip())
+        else:
+            type_name = str(raw_type or "").strip()
+        rows.append({
+            "name": str(name),
+            "type": type_name or "any",
+            "required": str(name) in required_set,
+            "description": str(cfg.get("description") or "").strip(),
+        })
+    rows.sort(key=lambda item: (not bool(item.get("required")), str(item.get("name") or "")))
+    return rows
+
+
+def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None) -> str:
+    data = payload or _intrinsic_properties_payload()
+    lines = [
+        "# 固有属性",
+        "",
+        str(data.get("description") or ""),
+        "",
+        f"工具总数：{int(data.get('total') or 0)}",
+        "",
+    ]
+    for category in data.get("categories") or []:
+        namespace = str(category.get("namespace") or "")
+        lines.append(f"## {namespace}")
+        lines.append("")
+        for tool in category.get("tools") or []:
+            name = str(tool.get("name") or "").strip()
+            description = str(tool.get("description") or "").strip() or "（无描述）"
+            destructive = "（可能产生写入/变更）" if tool.get("destructive") else ""
+            lines.append(f"- `{name}`{destructive}: {description}")
+            params = tool.get("parameters") if isinstance(tool.get("parameters"), list) else []
+            if params:
+                for param in params:
+                    required = "必填" if param.get("required") else "可选"
+                    param_name = str(param.get("name") or "").strip()
+                    param_type = str(param.get("type") or "any").strip()
+                    param_desc = str(param.get("description") or "").strip() or "（无描述）"
+                    lines.append(f"  - 参数 `{param_name}` ({param_type}, {required}): {param_desc}")
+            else:
+                lines.append("  - 参数：无")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def _intrinsic_personas_payload(user_id: int) -> Dict[str, Any]:
+    with Session(engine) as session:
+        rows = session.exec(
+            select(AssistantAIConfig)
+            .where(AssistantAIConfig.user_id == user_id)
+            .order_by(AssistantAIConfig.sort_order.asc(), AssistantAIConfig.created_at.asc())
+        ).all()
+
+    agents: List[Dict[str, Any]] = []
+    for cfg in rows:
+        auto_prompts: List[Dict[str, str]] = []
+        try:
+            parsed = json.loads(cfg.system_auto_control or "{}")
+            if isinstance(parsed, dict):
+                labels = {
+                    "start_task_prompt": "任务启动 Prompt",
+                    "resume_task_prompt": "任务恢复 Prompt",
+                    "supervision_prompt": "监督 Prompt",
+                    "inheritance_notice": "传承提醒 Prompt",
+                }
+                for key, label in labels.items():
+                    value = str(parsed.get(key) or "").strip()
+                    if value:
+                        auto_prompts.append({"key": key, "label": label, "content": value})
+        except Exception:
+            raw = str(cfg.system_auto_control or "").strip()
+            if raw:
+                auto_prompts.append({"key": "system_auto_control", "label": "自动控制 Prompt 原文", "content": raw})
+
+        agents.append({
+            "id": cfg.id,
+            "name": cfg.name,
+            "description": cfg.description,
+            "role": cfg.ai_role,
+            "digital_member_role": cfg.digital_member_role,
+            "is_librarian": bool(cfg.is_librarian),
+            "enabled": bool(cfg.enabled),
+            "model": cfg.model,
+            "platform": cfg.platform,
+            "generation": cfg.generation,
+            "prompt": str(cfg.prompt or "").strip(),
+            "auto_prompts": auto_prompts,
+            "updated_at": cfg.updated_at,
+        })
+
+    return {
+        "description": "当前用户下所有 AI 的固定人格与系统自动控制 prompt 内容如下。",
+        "total": len(agents),
+        "agents": agents,
+    }
+
+
+def _render_intrinsic_personas_body(payload: Dict[str, Any]) -> str:
+    lines = [
+        "# 固有人格",
+        "",
+        str(payload.get("description") or ""),
+        "",
+        f"AI 总数：{int(payload.get('total') or 0)}",
+        "",
+    ]
+    for agent in payload.get("agents") or []:
+        lines.append(f"## {agent.get('name') or agent.get('id')}")
+        lines.append("")
+        lines.append(f"- ID：{agent.get('id')}")
+        lines.append(f"- 角色：{agent.get('role') or ''}")
+        lines.append(f"- 模型：{agent.get('model') or ''}")
+        lines.append("")
+        lines.append("### 人格 Prompt")
+        lines.append("")
+        lines.append(str(agent.get("prompt") or "（空）"))
+        lines.append("")
+        for prompt in agent.get("auto_prompts") or []:
+            lines.append(f"### {prompt.get('label') or prompt.get('key')}")
+            lines.append("")
+            lines.append(str(prompt.get("content") or "（空）"))
+            lines.append("")
+    return "\n".join(lines).strip()
 
 
 # ---------- 公共接口 ----------
@@ -502,12 +746,14 @@ def list_topics(
     target_status = status or "active"
     if target_status not in _VALID_STATUSES and target_status != "all":
         raise ValueError(f"invalid status: {target_status}")
+    out: List[Dict[str, Any]] = []
+    if target_status in {"active", "all"} and (scope in {None, "", "global"}):
+        out.extend(_builtin_entries(user_id=user_id, with_body=False))
     with Session(engine) as session:
         stmt = select(KnowledgeEntry).where(KnowledgeEntry.user_id == user_id)
         if target_status != "all":
             stmt = stmt.where(KnowledgeEntry.status == target_status)
         rows = session.exec(stmt.order_by(KnowledgeEntry.updated_at.desc())).all()
-        out: List[Dict[str, Any]] = []
         for r in rows:
             if not _scope_match(r, scope, None):
                 continue
@@ -593,6 +839,9 @@ def read(
     user_id: int,
     memory_id: str,
 ) -> Dict[str, Any]:
+    builtin = _builtin_entry(memory_id, user_id=user_id, with_body=True)
+    if builtin is not None:
+        return builtin
     with Session(engine) as session:
         row = session.exec(
             select(KnowledgeEntry).where(

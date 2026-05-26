@@ -1,4 +1,4 @@
-import { get } from './http'
+import { del, get } from './http'
 
 export interface ValhallaEntry {
   id: number
@@ -44,4 +44,11 @@ export const readValhallaEntry = (token: string, entryId: number) =>
   get<ValhallaEntryDetail>(`/api/valhalla/entries/${entryId}`, {
     token,
     fallbackError: '英灵殿遗言加载失败',
+  })
+
+export const deleteValhallaEntries = (token: string, entryIds: number[]) =>
+  del<{ deleted: number; missing: number[]; deleted_ids: number[] }>('/api/valhalla/entries', {
+    token,
+    query: { entry_ids: entryIds.join(',') },
+    fallbackError: '英灵殿条目删除失败',
   })

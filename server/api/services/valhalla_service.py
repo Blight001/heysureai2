@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import time
 from typing import Any, Dict, List, Optional
 
@@ -354,6 +355,22 @@ def _append_to_registry(root: str, entry_meta: Dict[str, Any]) -> None:
     _write_registry(root, data)
 
 
+def _remove_from_registry(root: str, entry_ids: List[int]) -> None:
+    if not entry_ids:
+        return
+    removed = set(int(x) for x in entry_ids)
+    data = _read_registry(root)
+    entries = data.get("entries")
+    if not isinstance(entries, list):
+        return
+    data["entries"] = [
+        entry for entry in entries
+        if int((entry or {}).get("entry_id") or 0) not in removed
+    ]
+    data["updated_at"] = time.time()
+    _write_registry(root, data)
+
+
 def _write_job_meta_once(job_dir: str, job: AITaskJob, cfg: AssistantAIConfig) -> None:
     path = os.path.join(job_dir, "job_meta.json")
     if os.path.exists(path):
@@ -607,6 +624,64 @@ def read_entry_file(
             "content": content,
             "sidecars": sidecars,
         }
+
+
+def delete_entries(
+    *,
+    user_id: int,
+    entry_ids: List[int],
+) -> Dict[str, Any]:
+    ids = [int(x) for x in entry_ids if int(x) > 0]
+    if not ids:
+        return {"deleted": 0, "missing": [], "deleted_ids": []}
+
+    deleted_ids: List[int] = []
+    missing: List[int] = []
+    registry_updates: Dict[int, List[int]] = {}
+
+    with Session(engine) as session:
+        for entry_id in ids:
+            row = session.get(ValhallaEntry, entry_id)
+            if not row or row.user_id != user_id:
+                missing.append(entry_id)
+                continue
+
+            root = _valhalla_root(user_id, row.ai_config_id)
+            abs_path = safe_join(root, row.file_path)
+            gen_dir = os.path.dirname(abs_path)
+            rel_dir = os.path.dirname(row.file_path.replace("/", os.sep))
+            file_path = row.file_path
+            ai_config_id = row.ai_config_id
+
+            session.delete(row)
+            deleted_ids.append(entry_id)
+            registry_updates.setdefault(ai_config_id, []).append(entry_id)
+
+            try:
+                if os.path.exists(abs_path):
+                    os.remove(abs_path)
+                siblings = session.exec(
+                    select(ValhallaEntry).where(
+                        ValhallaEntry.user_id == user_id,
+                        ValhallaEntry.ai_config_id == ai_config_id,
+                        ValhallaEntry.file_path != file_path,
+                    )
+                ).all()
+                has_same_dir_entry = any(
+                    os.path.dirname(s.file_path.replace("/", os.sep)) == rel_dir
+                    for s in siblings
+                )
+                if not has_same_dir_entry and os.path.isdir(gen_dir):
+                    shutil.rmtree(gen_dir, ignore_errors=True)
+            except Exception as exc:
+                print(f"[valhalla.delete_entries] file cleanup failed for {entry_id}: {exc}")
+
+        session.commit()
+
+    for ai_config_id, removed_ids in registry_updates.items():
+        _remove_from_registry(_valhalla_root(user_id, ai_config_id), removed_ids)
+
+    return {"deleted": len(deleted_ids), "missing": missing, "deleted_ids": deleted_ids}
 
 
 def _entry_to_dict(row: ValhallaEntry) -> Dict[str, Any]:

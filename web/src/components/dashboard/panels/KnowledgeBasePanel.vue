@@ -14,8 +14,9 @@ interface KnowledgeItem {
 interface Props {
   items: KnowledgeItem[]
   totalCount: number
+  librarianPendingCount: number
   filterOpen: boolean
-  filterValue: 'all' | 'inheritance' | 'system' | 'business'
+  filterValue: 'all' | 'intrinsic' | 'personas' | 'skills' | 'tools' | 'inheritance' | 'system' | 'business'
   noGlass?: boolean
 }
 
@@ -23,6 +24,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'update:filterOpen', value: boolean): void
   (e: 'update:filterValue', value: Props['filterValue']): void
+  (e: 'open-proposal-review'): void
 }>()
 
 const detailOpen = ref(false)
@@ -32,6 +34,11 @@ const selectedItem = ref<KnowledgeItem | null>(null)
 const currentDetail = ref<KnowledgeEntryItem | null>(null)
 
 const detailContent = computed(() => currentDetail.value?.body || currentDetail.value?.summary || '（无内容）')
+const intrinsicProperties = computed(() => currentDetail.value?.intrinsic_properties || null)
+const intrinsicPersonas = computed(() => currentDetail.value?.intrinsic_personas || null)
+
+const toolParameters = (tool: { parameters?: Array<{ name: string; type: string; required: boolean; description: string }> }) =>
+  Array.isArray(tool.parameters) ? tool.parameters : []
 
 const toggleFilter = () => {
   emit('update:filterOpen', !props.filterOpen)
@@ -85,6 +92,17 @@ const closeDetail = () => {
         <span class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">传承知识库</span>
       </div>
       <div class="flex items-center gap-2 relative">
+        <button
+          class="relative px-2 py-0.5 rounded border border-zinc-200 bg-white text-xs text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 transition-colors dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300"
+          type="button"
+          @click.stop="emit('open-proposal-review')"
+        >
+          沉淀审批
+          <span
+            v-if="librarianPendingCount > 0"
+            class="ml-1 inline-flex min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] leading-4 justify-center"
+          >{{ librarianPendingCount }}</span>
+        </button>
         <span class="text-xs bg-zinc-100 px-2 py-0.5 rounded-full text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300">{{ totalCount }} 条目</span>
         <button class="px-2 py-0.5 rounded border border-zinc-200 bg-white text-xs text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 transition-colors dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300" @click.stop="toggleFilter">
           筛选
@@ -94,14 +112,17 @@ const closeDetail = () => {
             <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" :class="filterValue === 'all' ? 'text-indigo-600 dark:text-indigo-300' : ''" @click="applyFilter('all')">
               全部
             </button>
-            <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" :class="filterValue === 'inheritance' ? 'text-indigo-600 dark:text-indigo-300' : ''" @click="applyFilter('inheritance')">
-              传承
+            <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" :class="filterValue === 'intrinsic' ? 'text-indigo-600 dark:text-indigo-300' : ''" @click="applyFilter('intrinsic')">
+              固有属性
             </button>
-            <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" :class="filterValue === 'system' ? 'text-indigo-600 dark:text-indigo-300' : ''" @click="applyFilter('system')">
-              系统
+            <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" :class="filterValue === 'personas' ? 'text-indigo-600 dark:text-indigo-300' : ''" @click="applyFilter('personas')">
+              固有人格
             </button>
-            <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" :class="filterValue === 'business' ? 'text-indigo-600 dark:text-indigo-300' : ''" @click="applyFilter('business')">
-              业务
+            <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" :class="filterValue === 'skills' ? 'text-indigo-600 dark:text-indigo-300' : ''" @click="applyFilter('skills')">
+              传承技能
+            </button>
+            <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" :class="filterValue === 'tools' ? 'text-indigo-600 dark:text-indigo-300' : ''" @click="applyFilter('tools')">
+              传承知识
             </button>
           </div>
         </Transition>
@@ -180,8 +201,122 @@ const closeDetail = () => {
               </div>
             </div>
 
-            <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">具体内容</div>
-            <pre class="whitespace-pre-wrap font-mono text-xs leading-relaxed text-zinc-700 dark:text-zinc-200 bg-zinc-50 dark:bg-zinc-800/40 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800">{{ detailContent }}</pre>
+            <template v-if="intrinsicProperties">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                <div class="md:col-span-2 rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800/40">
+                  <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">前置描述</div>
+                  <div class="text-xs leading-relaxed text-zinc-700 dark:text-zinc-200">{{ intrinsicProperties.description }}</div>
+                </div>
+                <div class="rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800/40">
+                  <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">总数</div>
+                  <div class="text-2xl font-bold text-indigo-600 dark:text-indigo-300">{{ intrinsicProperties.total }}</div>
+                </div>
+              </div>
+
+              <div class="space-y-4">
+                <div
+                  v-for="category in intrinsicProperties.categories"
+                  :key="category.namespace"
+                  class="rounded-lg border border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/40 overflow-hidden"
+                >
+                  <div class="flex items-center justify-between px-3 py-2 border-b border-zinc-100 dark:border-zinc-800">
+                    <div class="text-xs font-semibold text-zinc-700 dark:text-zinc-200">工具总栏目：{{ category.namespace }}</div>
+                    <div class="text-[11px] text-zinc-500 dark:text-zinc-400">{{ category.count }} 个工具</div>
+                  </div>
+                  <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    <div
+                      v-for="tool in category.tools"
+                      :key="tool.name"
+                      class="px-3 py-3"
+                    >
+                      <div class="grid grid-cols-1 md:grid-cols-[13rem_1fr] gap-2">
+                        <div>
+                          <div class="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 mb-0.5">调用工具</div>
+                          <code class="text-[11px] text-indigo-600 dark:text-indigo-300 break-all">{{ tool.name }}</code>
+                        </div>
+                        <div>
+                          <div class="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 mb-0.5">工具描述</div>
+                          <div class="text-xs leading-relaxed text-zinc-700 dark:text-zinc-200">
+                            {{ tool.description || '（无描述）' }}
+                            <span v-if="tool.destructive" class="ml-1 text-amber-600 dark:text-amber-300">可能产生写入/变更</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="mt-2">
+                        <div class="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 mb-1">参数说明</div>
+                        <div v-if="toolParameters(tool).length" class="overflow-hidden rounded border border-zinc-100 dark:border-zinc-700">
+                          <div
+                            v-for="param in toolParameters(tool)"
+                            :key="`${tool.name}-${param.name}`"
+                            class="grid grid-cols-1 md:grid-cols-[11rem_6rem_4rem_1fr] gap-2 px-2 py-1.5 text-[11px] border-b last:border-b-0 border-zinc-100 dark:border-zinc-700"
+                          >
+                            <code class="text-zinc-700 dark:text-zinc-200 break-all">{{ param.name }}</code>
+                            <span class="text-zinc-500 dark:text-zinc-400">{{ param.type || 'any' }}</span>
+                            <span :class="param.required ? 'text-rose-600 dark:text-rose-300' : 'text-zinc-400 dark:text-zinc-500'">
+                              {{ param.required ? '必填' : '可选' }}
+                            </span>
+                            <span class="text-zinc-600 dark:text-zinc-300">{{ param.description || '（无描述）' }}</span>
+                          </div>
+                        </div>
+                        <div v-else class="text-[11px] text-zinc-500 dark:text-zinc-400">无参数</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <template v-else-if="intrinsicPersonas">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                <div class="md:col-span-2 rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800/40">
+                  <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">前置描述</div>
+                  <div class="text-xs leading-relaxed text-zinc-700 dark:text-zinc-200">{{ intrinsicPersonas.description }}</div>
+                </div>
+                <div class="rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800/40">
+                  <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">AI 总数</div>
+                  <div class="text-2xl font-bold text-indigo-600 dark:text-indigo-300">{{ intrinsicPersonas.total }}</div>
+                </div>
+              </div>
+
+              <div class="space-y-4">
+                <div
+                  v-for="agent in intrinsicPersonas.agents"
+                  :key="agent.id || agent.name"
+                  class="rounded-lg border border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/40 overflow-hidden"
+                >
+                  <div class="px-3 py-2 border-b border-zinc-100 dark:border-zinc-800">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{{ agent.name }}</div>
+                      <div class="flex flex-wrap gap-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+                        <span class="px-1.5 py-0.5 rounded bg-white dark:bg-zinc-900">ID {{ agent.id }}</span>
+                        <span class="px-1.5 py-0.5 rounded bg-white dark:bg-zinc-900">{{ agent.role }}</span>
+                        <span v-if="agent.is_librarian" class="px-1.5 py-0.5 rounded bg-white dark:bg-zinc-900">图书管理员</span>
+                        <span class="px-1.5 py-0.5 rounded bg-white dark:bg-zinc-900">{{ agent.enabled ? '启用' : '停用' }}</span>
+                      </div>
+                    </div>
+                    <div class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                      {{ agent.platform }} · 第 {{ agent.generation }} 代 · {{ agent.model || '未设置模型' }}
+                    </div>
+                  </div>
+                  <div class="p-3 space-y-3">
+                    <div>
+                      <div class="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 mb-1">人格 Prompt</div>
+                      <pre class="whitespace-pre-wrap font-mono text-xs leading-relaxed text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900/70 p-3 rounded border border-zinc-100 dark:border-zinc-700">{{ agent.prompt || '（空）' }}</pre>
+                    </div>
+                    <div
+                      v-for="prompt in agent.auto_prompts"
+                      :key="`${agent.id}-${prompt.key}`"
+                    >
+                      <div class="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 mb-1">{{ prompt.label }}</div>
+                      <pre class="whitespace-pre-wrap font-mono text-xs leading-relaxed text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900/70 p-3 rounded border border-zinc-100 dark:border-zinc-700">{{ prompt.content || '（空）' }}</pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+            <template v-else>
+              <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">具体内容</div>
+              <pre class="whitespace-pre-wrap font-mono text-xs leading-relaxed text-zinc-700 dark:text-zinc-200 bg-zinc-50 dark:bg-zinc-800/40 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800">{{ detailContent }}</pre>
+            </template>
 
             <div v-if="currentDetail.source_job_id" class="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
               来源任务：{{ currentDetail.source_job_id }} · 第 {{ currentDetail.source_generation || 1 }} 代

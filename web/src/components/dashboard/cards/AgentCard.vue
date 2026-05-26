@@ -161,7 +161,9 @@ const statusDisplay = computed(() => {
 })
 
 const cardBorderClass = computed(() => {
-  if (props.agent.role === 'admin') return 'border-amber-200 ring-1 ring-amber-100 dark:border-amber-500/40 dark:ring-amber-500/30'
+  if (props.agent.aiRole === 'assistant_admin') return 'border-2 border-violet-300 ring-1 ring-inset ring-violet-200/80 shadow-[0_0_14px_rgba(196,181,253,0.5)] dark:border-violet-400/70 dark:ring-violet-500/35 dark:shadow-[0_0_16px_rgba(139,92,246,0.22)]'
+  if (props.agent.aiRole === 'digital_member' && props.agent.digitalMemberRole === 'manager') return 'border-2 border-amber-300 ring-1 ring-inset ring-amber-200/80 shadow-[0_0_14px_rgba(252,211,77,0.5)] dark:border-amber-400/70 dark:ring-amber-500/35 dark:shadow-[0_0_16px_rgba(245,158,11,0.22)]'
+  if (props.agent.aiRole === 'digital_member') return 'border-2 border-sky-300 ring-1 ring-inset ring-sky-200/80 shadow-[0_0_14px_rgba(125,211,252,0.5)] hover:border-sky-400 dark:border-sky-400/70 dark:ring-sky-500/35 dark:shadow-[0_0_16px_rgba(14,165,233,0.22)]'
   if (props.agent.status === 'dead') return 'border-zinc-200 opacity-75 grayscale'
   return 'border-zinc-200 hover:border-indigo-300'
 })
@@ -201,6 +203,31 @@ const showTaskSnapshotBlock = computed(() => {
 })
 const showWorkspaceContextButton = computed(() => {
   return props.agent.aiRole === 'digital_member' && props.agent.digitalMemberRole === 'manager'
+})
+
+const roleBadge = computed(() => {
+  if (props.agent.aiRole === 'assistant_admin') {
+    return {
+      text: '辅助管理员',
+      icon: '◆',
+      class: 'bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-500/20 dark:text-violet-300 dark:border-violet-500/40',
+    }
+  }
+  if (props.agent.aiRole === 'digital_member' && props.agent.digitalMemberRole === 'manager') {
+    return {
+      text: '数字社会管理员',
+      icon: '👑',
+      class: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40',
+    }
+  }
+  if (props.agent.aiRole === 'digital_member') {
+    return {
+      text: '数字成员',
+      icon: '●',
+      class: 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-500/20 dark:text-sky-300 dark:border-sky-500/40',
+    }
+  }
+  return null
 })
 
 const governanceBadge = computed(() => {
@@ -450,6 +477,14 @@ const formatTaskSchedule = (task?: AgentTaskSnapshot | null) => {
   if (task.scheduleDurationMinutes) parts.push(`${task.scheduleDurationMinutes}分钟`)
   return parts.join(' · ')
 }
+
+const onCardDblClick = (event: MouseEvent) => {
+  const target = event.target as HTMLElement | null
+  if (target?.closest('button,a,input,textarea,select,label,[role="button"],[data-card-action]')) {
+    return
+  }
+  emit('chat', props.agent)
+}
 </script>
 
 <template>
@@ -457,10 +492,15 @@ const formatTaskSchedule = (task?: AgentTaskSnapshot | null) => {
     class="relative bg-white rounded-xl p-4 transition-all duration-300 border shadow-sm hover:shadow-lg hover:-translate-y-1 w-full min-w-0 dark:bg-zinc-900/90 dark:border-zinc-700/50 backdrop-blur-sm group cursor-pointer"
     :class="cardBorderClass"
     @contextmenu.prevent="emit('context', { agent, x: $event.clientX, y: $event.clientY })"
+    @dblclick="onCardDblClick"
   >
     <!-- 角色徽章 -->
-    <div v-if="agent.role === 'admin'" class="absolute top-2 right-12 bg-amber-100 text-amber-700 text-xs px-2 py-1 rounded-full border border-amber-200 shadow-sm flex items-center gap-1 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40 z-20">
-      <span>👑</span> 数字社会核心管理员
+    <div
+      v-if="roleBadge"
+      class="absolute top-2 right-12 text-xs px-2 py-1 rounded-full border shadow-sm flex items-center gap-1 z-20"
+      :class="roleBadge.class"
+    >
+      <span>{{ roleBadge.icon }}</span> {{ roleBadge.text }}
     </div>
 
     <!-- 头部信息 -->

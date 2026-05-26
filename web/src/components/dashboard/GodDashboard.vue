@@ -55,6 +55,10 @@ const mcpRoleMeta = ref<McpRoleMeta>({ order: [], labels: {}, defaults: {}, opti
 const {
   themeMode,
   fontSize,
+  brainViewMode,
+  thinkingIcon,
+  mcpSuccessIcon,
+  mcpErrorIcon,
   tavilyApiKey,
   modelPresets,
   mcpMaxSteps,
@@ -76,6 +80,7 @@ const {
   promptUserMessageNotice,
   normalizeSystemAutoControl,
   saveSystemSettings,
+  saveBrainViewMode,
   roleMcpPermissions,
   toggleRoleTool,
   setRoleAllTools,
@@ -99,6 +104,7 @@ const {
   syncChatTokensToAgents,
   loadProjectContext,
   loadAIAgents,
+  loadValhallaEntries,
   valhallaEntries,
   librarianPending,
   createProject,
@@ -421,17 +427,6 @@ onUnmounted(() => {
            <span class="text-xs text-zinc-400 uppercase font-semibold">文明代数</span>
            <span class="text-lg font-bold text-emerald-600 leading-none">Gen {{ globalGeneration }}</span>
         </div>
-        <button
-          class="relative ml-2 w-8 h-8 md:w-9 md:h-9 rounded-full border border-zinc-200 bg-white text-zinc-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition-colors dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300 shadow-sm hover:shadow-md flex items-center justify-center"
-          title="图书管理员 · 沉淀审批"
-          @click.stop="proposalReviewOpen = true; closeContextMenu()"
-        >
-          <span class="block text-xs md:text-base">📚</span>
-          <span
-            v-if="librarianPending.length > 0"
-            class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] leading-[18px] text-center"
-          >{{ librarianPending.length }}</span>
-        </button>
         <button class="ml-2 w-8 h-8 md:w-9 md:h-9 rounded-full border border-zinc-200 bg-white text-zinc-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition-colors dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300 shadow-sm hover:shadow-md flex items-center justify-center" @click.stop="settingsOpen = true; closeContextMenu()">
           <span class="block hover:rotate-90 transition-transform duration-300 text-xs md:text-base">⚙️</span>
         </button>
@@ -486,13 +481,17 @@ onUnmounted(() => {
           <LeftSidebarPanel
             :admin-agents="adminAgents"
             :member-agents="sidebarMemberAgents"
+            :brain-view-mode="brainViewMode"
             :knowledge-items="filteredKnowledgeBase"
             :knowledge-total-count="filteredKnowledgeBase.length"
+            :librarian-pending-count="librarianPending.length"
             :knowledge-filter-open="knowledgeFilterOpen"
             :knowledge-filter-value="knowledgeFilter"
             @context="openContextMenu"
+            @update:brain-view-mode="saveBrainViewMode"
             @update:knowledge-filter-open="knowledgeFilterOpen = $event"
             @update:knowledge-filter-value="knowledgeFilter = $event"
+            @open-proposal-review="proposalReviewOpen = true; closeContextMenu()"
             @show-tools="showAgentTools"
             @show-context="openAgentWorkspaceContext"
             @show-tasks="openAgentTaskList"
@@ -536,7 +535,12 @@ onUnmounted(() => {
           英灵殿
         </div>
         <div v-else class="flex flex-col gap-4 h-auto lg:h-full">
-          <ValhallaPanel :entries="valhallaEntries" :active-agents="activeAgents" :connected-agents="connectedAgents" />
+          <ValhallaPanel
+            :entries="valhallaEntries"
+            :active-agents="activeAgents"
+            :connected-agents="connectedAgents"
+            @refresh="loadValhallaEntries"
+          />
         </div>
       </section>
 
@@ -616,6 +620,10 @@ onUnmounted(() => {
               :aiConfigId="chatTarget.aiConfigId"
               :aiKind="chatTargetAiKind"
               :mcpAutoApprove="!!chatTarget.mcpAutoApprove"
+              :thinkingIcon="thinkingIcon"
+              :mcpIcon="mcpSuccessIcon"
+              :mcpSuccessIcon="mcpSuccessIcon"
+              :mcpErrorIcon="mcpErrorIcon"
               :selectedFiles="selectedFiles"
               :allFiles="allFiles"
               @update:selectedFiles="selectedFiles = $event"
@@ -666,6 +674,9 @@ onUnmounted(() => {
       v-model:promptUserMessageNotice="promptUserMessageNotice"
       v-model:themeMode="themeMode"
       v-model:fontSize="fontSize"
+      v-model:thinkingIcon="thinkingIcon"
+      v-model:mcpSuccessIcon="mcpSuccessIcon"
+      v-model:mcpErrorIcon="mcpErrorIcon"
       v-model:tavilyApiKey="tavilyApiKey"
       v-model:modelPresets="modelPresets"
       v-model:mcpMaxSteps="mcpMaxSteps"

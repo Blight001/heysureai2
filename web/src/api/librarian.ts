@@ -19,6 +19,49 @@ export interface KnowledgeEntryItem {
   created_at: number
   updated_at: number
   body?: string
+  intrinsic_properties?: {
+    description: string
+    total: number
+    categories: Array<{
+      namespace: string
+      count: number
+      tools: Array<{
+        name: string
+        description: string
+        inputSchema?: Record<string, any>
+        parameters?: Array<{
+          name: string
+          type: string
+          required: boolean
+          description: string
+        }>
+        destructive?: boolean
+      }>
+    }>
+  }
+  intrinsic_personas?: {
+    description: string
+    total: number
+    agents: Array<{
+      id: number | null
+      name: string
+      description: string
+      role: string
+      digital_member_role: string
+      is_librarian: boolean
+      enabled: boolean
+      model: string
+      platform: string
+      generation: number
+      prompt: string
+      auto_prompts: Array<{
+        key: string
+        label: string
+        content: string
+      }>
+      updated_at: number
+    }>
+  }
 }
 
 export const listProposals = (token: string) =>

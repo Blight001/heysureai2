@@ -23,6 +23,9 @@ interface Props {
   promptUserMessageNotice: string
   themeMode: 'light' | 'dark'
   fontSize: 'sm' | 'md' | 'lg'
+  thinkingIcon: string
+  mcpSuccessIcon: string
+  mcpErrorIcon: string
   tavilyApiKey: string
   modelPresets: ModelPreset[]
   mcpMaxSteps: number
@@ -51,6 +54,9 @@ const emit = defineEmits<{
   (e: 'update:promptUserMessageNotice', value: string): void
   (e: 'update:themeMode', value: 'light' | 'dark'): void
   (e: 'update:fontSize', value: 'sm' | 'md' | 'lg'): void
+  (e: 'update:thinkingIcon', value: string): void
+  (e: 'update:mcpSuccessIcon', value: string): void
+  (e: 'update:mcpErrorIcon', value: string): void
   (e: 'update:tavilyApiKey', value: string): void
   (e: 'update:modelPresets', value: ModelPreset[]): void
   (e: 'update:mcpMaxSteps', value: number): void
@@ -99,6 +105,20 @@ const themeModeValue = computed({
 const fontSizeValue = computed({
   get: () => props.fontSize,
   set: value => emit('update:fontSize', value)
+})
+
+const thinkingIconValue = computed({
+  get: () => props.thinkingIcon,
+  set: value => emit('update:thinkingIcon', value)
+})
+
+const mcpSuccessIconValue = computed({
+  get: () => props.mcpSuccessIcon,
+  set: value => emit('update:mcpSuccessIcon', value)
+})
+const mcpErrorIconValue = computed({
+  get: () => props.mcpErrorIcon,
+  set: value => emit('update:mcpErrorIcon', value)
 })
 
 const tavilyApiKeyValue = computed({
@@ -248,7 +268,7 @@ const promptUserMessageNoticeValue = computed({
   set: value => emit('update:promptUserMessageNotice', value)
 })
 
-type SettingsDialog = '' | 'roles' | 'prompts'
+type SettingsDialog = '' | 'models' | 'roles' | 'prompts'
 
 const settingsDialog = ref<SettingsDialog>('')
 const selectedRole = ref('')
@@ -268,6 +288,7 @@ const openRoleDialog = (role: string) => {
 }
 
 const settingsDialogTitles: Record<Exclude<SettingsDialog, ''>, string> = {
+  models: '服务器模型',
   roles: 'MCP 角色权限',
   prompts: '提示词配置',
 }
@@ -350,74 +371,48 @@ watch(() => props.show, visible => {
               <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">范围 1-999。连续调用 MCP 工具时，每次模型生成和工具返回后的继续执行都会消耗一步。</p>
               </div>
             </div>
-          </div>
-
-          <div class="p-4 bg-zinc-50 rounded-xl dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
-            <div class="flex items-center justify-between gap-3 mb-3">
-              <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">服务器模型</h4>
-              <button
-                class="px-2 py-1 rounded-lg border border-zinc-200 text-zinc-600 bg-white text-[11px] hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"
-                @click="addModelPreset"
-              >
-                新增模型
-              </button>
-            </div>
-            <div class="space-y-3">
-              <div
-                v-for="(preset, index) in modelPresetsValue"
-                :key="preset.id || index"
-                class="rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950/60 overflow-hidden"
-              >
-                <button
-                  type="button"
-                  class="w-full px-3 py-2.5 flex items-center justify-between gap-3 text-left hover:bg-zinc-50 dark:hover:bg-zinc-900"
-                  @click="setModelPresetExpanded(preset, index, !isModelPresetExpanded(preset, index))"
-                >
-                  <span class="min-w-0">
-                    <span class="block text-xs font-semibold text-zinc-800 dark:text-zinc-100 truncate">
-                      {{ preset.name || preset.model || '未命名模型' }}
-                    </span>
-                    <span v-if="!isModelPresetComplete(preset)" class="block mt-0.5 text-[10px] text-amber-600 dark:text-amber-300">配置未完成</span>
-                  </span>
-                  <span class="text-xs text-zinc-400 dark:text-zinc-500">
-                    {{ isModelPresetExpanded(preset, index) ? '收起' : '修改' }}
-                  </span>
-                </button>
-                <div v-if="isModelPresetExpanded(preset, index)" class="px-3 pb-3 border-t border-zinc-100 dark:border-zinc-800">
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3">
-                    <div>
-                      <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">显示名称</div>
-                      <input :value="preset.name" @input="updateModelPreset(index, { name: ($event.target as HTMLInputElement).value })" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
-                    </div>
-                    <div>
-                      <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">模型名</div>
-                      <input :value="preset.model" @input="updateModelPreset(index, { model: ($event.target as HTMLInputElement).value, id: preset.id || ($event.target as HTMLInputElement).value })" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
-                    </div>
-                    <div>
-                      <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">API Key</div>
-                      <input :value="preset.api_key" type="password" autocomplete="off" @input="updateModelPreset(index, { api_key: ($event.target as HTMLInputElement).value })" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
-                    </div>
-                    <div>
-                      <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">Base URL</div>
-                      <input :value="preset.base_url" @input="updateModelPreset(index, { base_url: ($event.target as HTMLInputElement).value })" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="https://.../chat/completions" />
-                    </div>
-                  </div>
-                  <div class="mt-2 flex justify-end gap-2">
-                    <button class="text-[11px] px-2 py-1 rounded border border-red-200 text-red-600 bg-red-50 dark:border-red-500/30 dark:bg-red-900/20 dark:text-red-300" @click="removeModelPreset(index)">删除</button>
-                    <button
-                      class="text-[11px] px-2 py-1 rounded border border-zinc-200 text-zinc-600 bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
-                      @click="setModelPresetExpanded(preset, index, false); emit('save')"
-                    >
-                      完成并保存
-                    </button>
-                  </div>
-                </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-700">
+              <div>
+                <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">深度思考图标</div>
+                <input
+                  v-model="thinkingIconValue"
+                  maxlength="8"
+                  class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
+                  placeholder="🤔"
+                />
               </div>
-              <div v-if="modelPresetsValue.length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">暂无模型，请先新增一个服务器模型。</div>
+              <div>
+                <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">MCP 成功图标</div>
+                <input
+                  v-model="mcpSuccessIconValue"
+                  maxlength="8"
+                  class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
+                  placeholder="🧰"
+                />
+              </div>
+              <div>
+                <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">MCP 失败图标</div>
+                <input
+                  v-model="mcpErrorIconValue"
+                  maxlength="8"
+                  class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
+                  placeholder="🧰"
+                />
+              </div>
             </div>
           </div>
 
           <div class="grid grid-cols-1 gap-3">
+            <button
+              class="settings-entry"
+              @click="openSettingsDialog('models')"
+            >
+              <span>
+                <span class="settings-entry-title">服务器模型</span>
+                <span class="settings-entry-desc">已配置 {{ modelPresetsValue.length }} 个模型，点击查看和编辑具体 API 配置</span>
+              </span>
+              <span class="settings-entry-arrow">›</span>
+            </button>
             <button
               class="settings-entry"
               @click="openSettingsDialog('roles')"
@@ -466,7 +461,77 @@ watch(() => props.show, visible => {
             </div>
 
             <div class="flex-1 overflow-y-auto px-5 py-4">
-              <div v-if="settingsDialog === 'roles'" class="space-y-4">
+              <div v-if="settingsDialog === 'models'" class="space-y-4">
+                <div class="flex items-center justify-between gap-3">
+                  <p class="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                    服务器模型会作为 AI 配置中的可选模型来源。修改后点击“完成并保存”写入系统设置。
+                  </p>
+                  <button
+                    class="shrink-0 px-3 py-1.5 rounded-lg border border-zinc-200 text-zinc-600 bg-white text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"
+                    @click="addModelPreset"
+                  >
+                    新增模型
+                  </button>
+                </div>
+                <div class="space-y-3">
+                  <div
+                    v-for="(preset, index) in modelPresetsValue"
+                    :key="preset.id || index"
+                    class="rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950/60 overflow-hidden"
+                  >
+                    <button
+                      type="button"
+                      class="w-full px-3 py-2.5 flex items-center justify-between gap-3 text-left hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                      @click="setModelPresetExpanded(preset, index, !isModelPresetExpanded(preset, index))"
+                    >
+                      <span class="min-w-0">
+                        <span class="block text-xs font-semibold text-zinc-800 dark:text-zinc-100 truncate">
+                          {{ preset.name || preset.model || '未命名模型' }}
+                        </span>
+                        <span class="block mt-0.5 text-[10px] text-zinc-500 dark:text-zinc-400 truncate">
+                          {{ preset.base_url || '未配置 Base URL' }}
+                        </span>
+                        <span v-if="!isModelPresetComplete(preset)" class="block mt-0.5 text-[10px] text-amber-600 dark:text-amber-300">配置未完成</span>
+                      </span>
+                      <span class="text-xs text-zinc-400 dark:text-zinc-500">
+                        {{ isModelPresetExpanded(preset, index) ? '收起' : '修改' }}
+                      </span>
+                    </button>
+                    <div v-if="isModelPresetExpanded(preset, index)" class="px-3 pb-3 border-t border-zinc-100 dark:border-zinc-800">
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3">
+                        <div>
+                          <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">显示名称</div>
+                          <input :value="preset.name" @input="updateModelPreset(index, { name: ($event.target as HTMLInputElement).value })" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
+                        </div>
+                        <div>
+                          <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">模型名</div>
+                          <input :value="preset.model" @input="updateModelPreset(index, { model: ($event.target as HTMLInputElement).value, id: preset.id || ($event.target as HTMLInputElement).value })" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
+                        </div>
+                        <div>
+                          <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">API Key</div>
+                          <input :value="preset.api_key" type="password" autocomplete="off" @input="updateModelPreset(index, { api_key: ($event.target as HTMLInputElement).value })" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
+                        </div>
+                        <div>
+                          <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">Base URL</div>
+                          <input :value="preset.base_url" @input="updateModelPreset(index, { base_url: ($event.target as HTMLInputElement).value })" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="https://.../chat/completions" />
+                        </div>
+                      </div>
+                      <div class="mt-2 flex justify-end gap-2">
+                        <button class="text-[11px] px-2 py-1 rounded border border-red-200 text-red-600 bg-red-50 dark:border-red-500/30 dark:bg-red-900/20 dark:text-red-300" @click="removeModelPreset(index)">删除</button>
+                        <button
+                          class="text-[11px] px-2 py-1 rounded border border-zinc-200 text-zinc-600 bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                          @click="setModelPresetExpanded(preset, index, false); emit('save')"
+                        >
+                          完成并保存
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div v-if="modelPresetsValue.length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">暂无模型，请先新增一个服务器模型。</div>
+                </div>
+              </div>
+
+              <div v-else-if="settingsDialog === 'roles'" class="space-y-4">
                 <div class="flex items-center justify-between">
                   <p class="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed pr-2">
                     为每类角色设置可用的 MCP 工具范围。每个角色都可查看全部 MCP 工具，默认只勾选适合该角色的常用工具；各 AI 成员保存配置时会自动收敛到所属角色允许的工具。
