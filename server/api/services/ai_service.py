@@ -7,44 +7,101 @@ from sqlmodel import Session, select
 
 from ..database import engine
 from ..models import AIRuntimeStatus, AssistantAIConfig, ChatMessage, TokenUsageSnapshot
+from ..core.config import DATA_DIR
 
 
 GENERIC_ASSISTANT_PROMPT = "你是一个辅助管理员，帮助用户处理项目任务。"
 
 
-def switch_file_path(user_id: int) -> str:
-    server_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(server_dir, "data", "workspace", str(user_id), "SystemSetting", "ai_switches.json")
+def _legacy_switch_file_paths(user_id: int) -> list[str]:
+    server_dir = os.path.dirname(DATA_DIR)
+    return [
+        os.path.join(DATA_DIR, "workspace", str(user_id), "SystemSetting", "ai_switches.json"),
+        os.path.join(server_dir, "api", "data", "workspace", str(user_id), "SystemSetting", "ai_switches.json"),
+    ]
 
 
-def sync_switch_file(user_id: int, switch_key: str, enabled: bool, mcp_enabled: bool) -> None:
-    path = switch_file_path(user_id)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    payload = {}
-    if os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                payload = json.load(f)
-        except Exception:
-            payload = {}
-    payload[switch_key] = {"enabled": enabled, "mcp_enabled": mcp_enabled, "updated_at": time.time()}
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+def migrate_legacy_switch_files_to_db() -> dict:
+    """Import old ai_switches.json files once, then remove them.
 
+    Runtime state now lives in AssistantAIConfig and AIRuntimeStatus. This
+    migration keeps existing deployments from losing a manual switch-file edit.
+    """
+    workspace_root = os.path.join(DATA_DIR, "workspace")
+    api_workspace_root = os.path.join(os.path.dirname(DATA_DIR), "api", "data", "workspace")
+    user_ids: set[int] = set()
+    for root in (workspace_root, api_workspace_root):
+        if not os.path.exists(root):
+            continue
+        for name in os.listdir(root):
+            if name.isdigit():
+                user_ids.add(int(name))
 
-def remove_switch_key(user_id: int, switch_key: str) -> None:
-    path = switch_file_path(user_id)
-    if not os.path.exists(path):
-        return
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-    except Exception:
-        payload = {}
-    if switch_key in payload:
-        del payload[switch_key]
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
+    imported = 0
+    removed = 0
+    with Session(engine) as session:
+        for user_id in sorted(user_ids):
+            configs = session.exec(
+                select(AssistantAIConfig).where(AssistantAIConfig.user_id == user_id)
+            ).all()
+            cfg_map = {cfg.switch_key: cfg for cfg in configs}
+            changed = False
+
+            for switch_path in _legacy_switch_file_paths(user_id):
+                if not os.path.exists(switch_path):
+                    continue
+                try:
+                    with open(switch_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:
+                    data = {}
+
+                if isinstance(data, dict):
+                    for key, value in data.items():
+                        if not isinstance(value, dict):
+                            continue
+                        cfg = cfg_map.get(str(key))
+                        if not cfg:
+                            continue
+                        enabled = bool(value.get("enabled", cfg.enabled))
+                        mcp_enabled = bool(value.get("mcp_enabled", cfg.mcp_enabled))
+                        if cfg.enabled != enabled or cfg.mcp_enabled != mcp_enabled:
+                            cfg.enabled = enabled
+                            cfg.mcp_enabled = mcp_enabled
+                            cfg.updated_at = time.time()
+                            session.add(cfg)
+                            changed = True
+                            imported += 1
+
+                        status = session.exec(
+                            select(AIRuntimeStatus).where(
+                                AIRuntimeStatus.user_id == user_id,
+                                AIRuntimeStatus.ai_config_id == cfg.id,
+                                AIRuntimeStatus.ai_kind == "assistant",
+                            )
+                        ).first()
+                        if not status:
+                            status = AIRuntimeStatus(
+                                user_id=user_id,
+                                ai_config_id=cfg.id,
+                                ai_kind="assistant",
+                            )
+                        status.running = enabled
+                        status.mcp_enabled = mcp_enabled
+                        status.updated_at = time.time()
+                        session.add(status)
+                        changed = True
+
+                try:
+                    os.remove(switch_path)
+                    removed += 1
+                except FileNotFoundError:
+                    pass
+
+            if changed:
+                session.commit()
+
+    return {"imported": imported, "removed": removed}
 
 
 def _default_ai_specs():
@@ -113,10 +170,6 @@ def ensure_default_configs(session: Session, user_id: int) -> list[AssistantAICo
         pass
     else:
         # Seed defaults only for first-time bootstrap.
-        # If switch file already exists and user has no AI configs, we treat that as
-        # an intentional state (e.g. user deleted all AI configs) and do not re-create.
-        if os.path.exists(switch_file_path(user_id)):
-            return []
         for spec in _default_ai_specs():
             row = AssistantAIConfig(
                 user_id=user_id,
@@ -170,68 +223,8 @@ def ensure_default_ai_for_user(session: Session, user_id: int) -> None:
             )
             session.add(status)
             changed = True
-        sync_switch_file(user_id, cfg.switch_key, cfg.enabled, cfg.mcp_enabled)
     if changed:
         session.commit()
-
-
-def scan_and_sync_switch_files() -> None:
-    server_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    workspace_root = os.path.join(server_dir, "data", "workspace")
-    if not os.path.exists(workspace_root):
-        return
-
-    with Session(engine) as session:
-        for user_dir_name in os.listdir(workspace_root):
-            if not user_dir_name.isdigit():
-                continue
-            user_id = int(user_dir_name)
-            switch_path = switch_file_path(user_id)
-            if not os.path.exists(switch_path):
-                continue
-            try:
-                with open(switch_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            except Exception:
-                continue
-
-            configs = session.exec(select(AssistantAIConfig).where(AssistantAIConfig.user_id == user_id)).all()
-            cfg_map = {cfg.switch_key: cfg for cfg in configs}
-            changed = False
-            for key, value in data.items():
-                cfg = cfg_map.get(key)
-                if not cfg:
-                    continue
-                enabled = bool(value.get("enabled", cfg.enabled))
-                mcp_enabled = bool(value.get("mcp_enabled", cfg.mcp_enabled))
-                if cfg.enabled != enabled or cfg.mcp_enabled != mcp_enabled:
-                    cfg.enabled = enabled
-                    cfg.mcp_enabled = mcp_enabled
-                    cfg.updated_at = time.time()
-                    session.add(cfg)
-                    changed = True
-
-                status = session.exec(
-                    select(AIRuntimeStatus).where(
-                        AIRuntimeStatus.user_id == user_id,
-                        AIRuntimeStatus.ai_config_id == cfg.id,
-                        AIRuntimeStatus.ai_kind == "assistant",
-                    )
-                ).first()
-                if not status:
-                    status = AIRuntimeStatus(
-                        user_id=user_id,
-                        ai_config_id=cfg.id,
-                        ai_kind="assistant",
-                    )
-                status.running = enabled
-                status.mcp_enabled = mcp_enabled
-                status.updated_at = time.time()
-                session.add(status)
-                changed = True
-
-            if changed:
-                session.commit()
 
 
 def align_token_snapshots_with_history() -> dict:

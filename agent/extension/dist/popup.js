@@ -545,7 +545,7 @@
     return { reasoning, parts: refined };
   }
   function renderChatEvent(event) {
-    return `<div class="chat-mcp-card"><div class="chat-mcp-title">${esc(event.label)}</div>` + (event.detail ? `<pre class="chat-mcp-pre">${esc(event.detail)}</pre>` : "") + `</div>`;
+    return `<div class="chat-mcp-card"><div class="chat-mcp-title">${esc(event.label)}</div>` + (event.imageUrl ? `<img class="chat-tool-image" src="${esc(event.imageUrl)}" alt="browser screenshot" />` : "") + (event.detail ? `<pre class="chat-mcp-pre">${esc(event.detail)}</pre>` : "") + `</div>`;
   }
   function renderMcpBlockHtml(payload) {
     return `<div class="chat-mcp-card"><div class="chat-mcp-title">\u{1F9F0} MCP \u8C03\u7528</div><pre class="chat-mcp-pre">${esc(payload)}</pre></div>`;
@@ -2034,7 +2034,7 @@
           const reply = msg.text || "\u5B8C\u6210";
           chatHistory.push({ role: "assistant", content: reply });
           const el = appendChatMsg("ai", "", chatHistory.length - 1);
-          setBubble(el, renderChatContent(reply, { toolsUsed: msg.toolsUsed || [] }));
+          setBubble(el, renderChatFrame(reply, { toolsUsed: msg.toolsUsed || [], events: msg.toolEvents || [] }));
           void syncChatHistory();
           if (msg.toolsUsed?.length) {
             addEntry({ id: Date.now().toString(), type: "task", status: "success", message: `AI \u4F7F\u7528\u5DE5\u5177: ${msg.toolsUsed.join(", ")}`, timestamp: Date.now() });

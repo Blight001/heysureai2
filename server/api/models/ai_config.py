@@ -4,8 +4,8 @@ from typing import Optional
 from sqlmodel import Field, SQLModel
 
 _DEFAULT_MCP_TOOLS = (
-    '["web.search","workspace.run_command",'
-    '"admin.list_agents","admin.get_overview","admin.dispatch_flow",'
+    '["mcp.list_tools","mcp.describe_tool","web.search","workspace.run_command",'
+    '"admin.list_agents","admin.get_overview",'
     '"project.list_projects","project.create_project","project.update_project",'
     '"project.delete_project","task.create","task.update","task.delete","task.list",'
     '"task.inherit","task.complete",'
@@ -13,7 +13,8 @@ _DEFAULT_MCP_TOOLS = (
     '"prompt.write_system","memory.write","memory.search","memory.list","memory.update",'
     '"memory.archive","evolution.input","evolution.list","evolution.review",'
     '"librarian.propose","librarian.consult","librarian.list_topics","librarian.read",'
-    '"librarian.archive","user.send_message","ai.send_message"]'
+    '"librarian.archive","user.send_message","conversation.forget_before_current",'
+    '"conversation.find","conversation.create","conversation.delete","ai.send_message"]'
 )
 
 _DEFAULT_SYSTEM_AUTO_CONTROL = (
@@ -34,6 +35,7 @@ class AssistantAIConfig(SQLModel, table=True):
     api_key: str = Field(default="")
     base_url: str = Field(default="")
     model: str = Field(default="")
+    model_preset_id: str = Field(default="", index=True)
     prompt: str = Field(default="")
 
     ai_role: str = Field(default="digital_member", index=True)  # assistant_admin / digital_member
@@ -87,6 +89,7 @@ class AssistantAIConfigCreate(SQLModel):
     api_key: Optional[str] = ""
     base_url: Optional[str] = ""
     model: Optional[str] = ""
+    model_preset_id: Optional[str] = ""
     prompt: Optional[str] = ""
     ai_role: Optional[str] = "digital_member"
     digital_member_role: Optional[str] = "member"
@@ -131,6 +134,7 @@ class AssistantAIConfigUpdate(SQLModel):
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     model: Optional[str] = None
+    model_preset_id: Optional[str] = None
     prompt: Optional[str] = None
     ai_role: Optional[str] = None
     digital_member_role: Optional[str] = None

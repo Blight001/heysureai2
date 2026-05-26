@@ -17,6 +17,7 @@ Usage in chat_worker.py:
 """
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -89,6 +90,30 @@ def _to_anthropic_messages(convo: List[Dict]) -> tuple:
             continue
 
         if role == "user":
+            if isinstance(content, list):
+                blocks: List[Dict] = []
+                for item in content:
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("type") == "text":
+                        blocks.append({"type": "text", "text": str(item.get("text") or "")})
+                    elif item.get("type") == "image_url":
+                        url = ((item.get("image_url") or {}).get("url") or "")
+                        m = re.match(r"^data:([^;,]+);base64,(.+)$", str(url))
+                        if m:
+                            blocks.append({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": m.group(1) or "image/png",
+                                    "data": m.group(2) or "",
+                                },
+                            })
+                messages.append({
+                    "role": "user",
+                    "content": blocks or [{"type": "text", "text": ""}],
+                })
+                continue
             messages.append({
                 "role": "user",
                 "content": [{"type": "text", "text": str(content)}],

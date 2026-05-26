@@ -1,6 +1,7 @@
 IS_ROUTER_ENTRY = False
 
 import time
+from typing import Optional
 
 from fastapi import Depends, Header, HTTPException
 from sqlmodel import Session, select
@@ -15,7 +16,8 @@ from api.models import (
     AssistantAIConfigUpdate,
 )
 from api.routers.auth import get_current_user
-from api.services.ai_service import ensure_default_ai_for_user, sync_switch_file
+from api.services.ai_service import ensure_default_ai_for_user
+from api.services.model_presets import normalize_model_presets
 from api.services.task_system import normalize_workspace_root
 from .ai_base import (
     _default_system_auto_control_for_user,
@@ -28,6 +30,27 @@ from .ai_base import (
 def _normalize_bot_channel(value) -> str:
     channel = str(value or "feishu").strip().lower()
     return channel if channel in {"feishu", "qq"} else "feishu"
+
+
+def _resolve_config_model_fields(user, preset_id: Optional[str], fallback_model: Optional[str] = None) -> dict:
+    presets = normalize_model_presets(getattr(user, "model_presets", ""), user)
+    requested_id = str(preset_id or "").strip()
+    selected = None
+    if requested_id:
+        selected = next((item for item in presets if item["id"] == requested_id), None)
+    if selected is None and fallback_model:
+        model_name = str(fallback_model or "").strip()
+        selected = next((item for item in presets if item["model"] == model_name or item["id"] == model_name), None)
+    if selected is None and presets and not requested_id:
+        selected = presets[0]
+    if selected is None:
+        raise HTTPException(status_code=400, detail="Selected model preset not found")
+    return {
+        "api_key": selected["api_key"],
+        "base_url": selected["base_url"],
+        "model": selected["model"],
+        "model_preset_id": selected["id"],
+    }
 
 
 @router.get("/configs")
@@ -59,6 +82,7 @@ async def create_ai_config(
     if role == "assistant_admin" and workspace_root is None:
         workspace_root = "."
     bot_channel = _normalize_bot_channel(body.bot_channel)
+    model_fields = _resolve_config_model_fields(user, body.model_preset_id, body.model)
     raw_mcp_tools = body.mcp_tools or AssistantAIConfig.model_fields["mcp_tools"].default
     tier = config_role_tier(
         AssistantAIConfig(ai_role=role, digital_member_role=member_role)
@@ -68,9 +92,10 @@ async def create_ai_config(
         user_id=user.id,
         name=body.name,
         description=body.description or "",
-        api_key=body.api_key or "",
-        base_url=body.base_url or "",
-        model=body.model or "",
+        api_key=model_fields["api_key"],
+        base_url=model_fields["base_url"],
+        model=model_fields["model"],
+        model_preset_id=model_fields["model_preset_id"],
         prompt=body.prompt or "",
         ai_role=role,
         digital_member_role=member_role,
@@ -107,7 +132,6 @@ async def create_ai_config(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
-    sync_switch_file(user.id, cfg.switch_key, cfg.enabled, cfg.mcp_enabled)
     try:
         start_feishu_long_connection_clients()
     except Exception as exc:
@@ -126,6 +150,14 @@ async def update_ai_config(
     if not cfg or cfg.user_id != user.id:
         raise HTTPException(status_code=404, detail="AI config not found")
     updates = body.model_dump(exclude_unset=True)
+    if "model_preset_id" in updates or "model" in updates:
+        updates.update(
+            _resolve_config_model_fields(
+                user,
+                updates.get("model_preset_id", cfg.model_preset_id),
+                updates.get("model", cfg.model),
+            )
+        )
     if "bot_channel" in updates:
         updates["bot_channel"] = _normalize_bot_channel(updates.get("bot_channel"))
     next_bot_channel = updates.get("bot_channel", cfg.bot_channel)
@@ -173,7 +205,6 @@ async def update_ai_config(
     status.updated_at = time.time()
     session.add(status)
     session.commit()
-    sync_switch_file(user.id, cfg.switch_key, cfg.enabled, cfg.mcp_enabled)
     return cfg
 
 @router.post("/configs/{config_id}/toggle-run")
@@ -202,7 +233,6 @@ async def toggle_ai_run(
     status.updated_at = time.time()
     session.add(status)
     session.commit()
-    sync_switch_file(user.id, cfg.switch_key, cfg.enabled, cfg.mcp_enabled)
     return cfg
 
 def _compute_root_manager(session: Session, user_id: int, cfg: AssistantAIConfig) -> int:
@@ -349,6 +379,7 @@ async def clone_ai_config(
         api_key=src.api_key,
         base_url=src.base_url,
         model=src.model,
+        model_preset_id=src.model_preset_id,
         prompt=src.prompt,
         ai_role=src.ai_role,
         digital_member_role=src.digital_member_role,
@@ -376,7 +407,6 @@ async def clone_ai_config(
     session.add(new_cfg)
     session.commit()
     session.refresh(new_cfg)
-    sync_switch_file(user.id, new_cfg.switch_key, new_cfg.enabled, new_cfg.mcp_enabled)
     return new_cfg
 
 
@@ -406,5 +436,4 @@ async def toggle_ai_mcp(
     status.updated_at = time.time()
     session.add(status)
     session.commit()
-    sync_switch_file(user.id, cfg.switch_key, cfg.enabled, cfg.mcp_enabled)
     return cfg

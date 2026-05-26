@@ -1,3 +1,5 @@
+import os
+import re
 import subprocess
 from typing import Any, Dict, List, Optional
 
@@ -6,25 +8,134 @@ from sqlmodel import Session, select
 
 from ...database import engine
 from ...models import AIRuntimeStatus, AssistantAIConfig
-from ...sio import agents, sio
-from ..core import generate_file_tree, get_project_root
+from ...sio import agents
+from ..core import generate_file_tree, get_project_root, safe_join
+
+
+MAX_COMMAND_LENGTH = 2000
+DEFAULT_COMMAND_TIMEOUT = 30
+MAX_COMMAND_TIMEOUT = 60
+PATH_ESCAPE_RE = re.compile(r'(^|[\s"\'`=])([a-zA-Z]:[\\/]|\\\\|~|\.{2}([\\/]|$))')
+ENV_EXPANSION_RE = re.compile(r'(%[^%\s]+%|\$env:|\$\{|\$[a-zA-Z_][a-zA-Z0-9_]*)', re.IGNORECASE)
+BLOCKED_COMMAND_RE = re.compile(
+    r'\b('
+    r'format|diskpart|mountvol|bcdedit|regedit|'
+    r'takeown|icacls|net\s+user|net\s+localgroup|'
+    r'shutdown|restart-computer|stop-computer|'
+    r'start-process|invoke-expression|iex|'
+    r'ssh|scp|ftp|telnet'
+    r')\b',
+    re.IGNORECASE,
+)
+
+
+def _ensure_inside_workspace(root: str, path: str) -> str:
+    abs_root = os.path.abspath(root)
+    abs_path = os.path.abspath(path)
+    try:
+        common = os.path.commonpath([abs_root, abs_path])
+    except ValueError:
+        common = ""
+    if common != abs_root:
+        raise HTTPException(status_code=403, detail="Access denied: path outside workspace")
+    return abs_path
+
+
+def _resolve_command_cwd(project_root: str, cwd: Optional[str]) -> str:
+    if not cwd:
+        return project_root
+    cwd_text = str(cwd).strip()
+    if not cwd_text or cwd_text == ".":
+        return project_root
+    if os.path.isabs(cwd_text):
+        raise HTTPException(status_code=400, detail="cwd must be relative to workspace")
+
+    resolved = safe_join(project_root, cwd_text)
+    if not os.path.isdir(resolved):
+        raise HTTPException(status_code=400, detail="cwd does not exist or is not a directory")
+    return _ensure_inside_workspace(project_root, resolved)
+
+
+def _validate_command(command: str) -> None:
+    if not isinstance(command, str) or not command.strip():
+        raise HTTPException(status_code=400, detail="Missing command")
+    if len(command) > MAX_COMMAND_LENGTH:
+        raise HTTPException(status_code=400, detail="Command is too long")
+    if "\x00" in command:
+        raise HTTPException(status_code=400, detail="Command contains invalid characters")
+    if PATH_ESCAPE_RE.search(command):
+        raise HTTPException(
+            status_code=403,
+            detail="Command cannot use absolute paths, network paths, home paths, or '..'",
+        )
+    if ENV_EXPANSION_RE.search(command):
+        raise HTTPException(status_code=403, detail="Command cannot use environment variable expansion")
+    if BLOCKED_COMMAND_RE.search(command):
+        raise HTTPException(status_code=403, detail="Command is blocked in the workspace sandbox")
+
+
+def _sandbox_env(project_root: str) -> Dict[str, str]:
+    sandbox_home = os.path.join(project_root, ".sandbox_home")
+    sandbox_tmp = os.path.join(project_root, ".sandbox_tmp")
+    os.makedirs(sandbox_home, exist_ok=True)
+    os.makedirs(sandbox_tmp, exist_ok=True)
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        "PATHEXT": os.environ.get("PATHEXT", ""),
+        "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+        "WINDIR": os.environ.get("WINDIR", ""),
+        "COMSPEC": os.environ.get("COMSPEC", ""),
+        "TEMP": sandbox_tmp,
+        "TMP": sandbox_tmp,
+        "USERPROFILE": sandbox_home,
+        "HOME": sandbox_home,
+        "SANDBOX_ROOT": project_root,
+    }
+    return {key: value for key, value in env.items() if value}
+
+
+def _coerce_timeout(value: Any) -> int:
+    try:
+        seconds = int(value or DEFAULT_COMMAND_TIMEOUT)
+    except Exception:
+        seconds = DEFAULT_COMMAND_TIMEOUT
+    return max(1, min(MAX_COMMAND_TIMEOUT, seconds))
 
 
 def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     command = args.get("command")
-    if not command:
-        raise HTTPException(status_code=400, detail="Missing command")
+    _validate_command(command)
 
     project_root = get_project_root(user_id, ai_config_id)
-    result = subprocess.run(
-        command,
-        shell=True,
-        cwd=project_root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    command_cwd = _resolve_command_cwd(project_root, args.get("cwd"))
+    timeout = _coerce_timeout(args.get("timeout"))
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            cwd=command_cwd,
+            env=_sandbox_env(project_root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        output = exc.stdout or ""
+        if exc.stderr:
+            output += f"\nError:\n{exc.stderr}"
+        output += f"\nError:\nCommand timed out after {timeout} seconds"
+        return {
+            "command": command,
+            "success": False,
+            "exit_code": None,
+            "output": output,
+            "cwd": os.path.relpath(command_cwd, project_root),
+            "workspace_root": project_root,
+            "sandboxed": True,
+        }
+
     output = result.stdout
     if result.stderr:
         output += f"\nError:\n{result.stderr}"
@@ -34,6 +145,9 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
         "success": result.returncode == 0,
         "exit_code": result.returncode,
         "output": output,
+        "cwd": os.path.relpath(command_cwd, project_root),
+        "workspace_root": project_root,
+        "sandboxed": True,
     }
 
 def _list_connected_socket_agents() -> List[Dict[str, Any]]:
@@ -120,20 +234,3 @@ def _get_overview(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int
         "managed_agent_count": len(managed_agents),
     }
 
-async def _dispatch_flow(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    agent_id = args.get("agentId")
-    flow_data = args.get("flowData")
-    if not agent_id or not flow_data:
-        raise HTTPException(status_code=400, detail="Missing agentId or flowData")
-
-    target_sid = None
-    for sid, agent in agents.items():
-        if agent.get("id") == agent_id:
-            target_sid = sid
-            break
-
-    if not target_sid:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    await sio.emit("flow:run", flow_data, to=target_sid)
-    return {"success": True, "agentId": agent_id, "message": "Flow dispatched"}

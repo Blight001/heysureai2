@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   onTaskResult: (cb: (data: any) => void) => {
     ipcRenderer.on('task:result', (_, data) => cb(data))
   },
+  onAuthExpired: (cb: (reason: string) => void) => {
+    ipcRenderer.on('auth:expired', (_, reason) => cb(reason))
+  },
   // Theme
   setTheme: (theme: 'dark' | 'light') => ipcRenderer.invoke('theme:set', theme),
   // Connection test

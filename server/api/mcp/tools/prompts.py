@@ -12,6 +12,7 @@ from ...services.governance import assert_can_manage_or_legacy
 SYSTEM_PROMPT_FIELDS = {
     "admin_prompt": "旧版/兜底管理员 prompt",
     "mcp_call_method": "全局 MCP 调用方法 prompt",
+    "mcp_namespace_hints": "MCP namespace 说明配置",
     "mcp_format_error_hint": "MCP 格式错误提示 prompt",
     "prompt_ai_message_notify": "AI 间消息·通知模板（notify / 单向通知）",
     "prompt_ai_message_inquiry": "AI 间消息·询问模板（inquiry）",
@@ -27,7 +28,8 @@ SYSTEM_PROMPT_FIELDS = {
 
 SYSTEM_PROMPT_USAGE = {
     "admin_prompt": "仅用于没有指定 AI 配置的旧版管理员运行路径；当前 AI 卡片/飞书/任务运行通常不直接使用它。",
-    "mcp_call_method": "会在运行时合并到当前 AI 的有效 prompt 中，用于说明 MCP 调用格式和可用工具。",
+    "mcp_call_method": "旧版文本 MCP 调用模板；当前默认不再注入运行 prompt，工具通过 native schema 动态暴露。",
+    "mcp_namespace_hints": "JSON 对象，配置 {MCP} 占位符渲染第一层 namespace 时的说明文本。",
     "mcp_format_error_hint": "当模型输出的 MCP 调用格式无效时，作为系统纠错提示模板使用。",
     "prompt_ai_message_notify": "message_type=\"notify\" 时注入。系统会自动签收，模板应明确告知 AI 不要回应。",
     "prompt_ai_message_inquiry": "message_type=\"inquiry\" 时注入。模板可提示对方用 ai.send_message(message_type=\"reply\") 答复。",
@@ -237,7 +239,7 @@ def _prompt_read_ai(user_id: int, args: dict, ai_config_id: Optional[int] = None
             "runtime_injected_sections": [
                 "AI 工作目录",
                 "AI 数据库连接（当该 AI 配置了 database_uri 时）",
-                "全局MCP调用方法（来自 user.mcp_call_method，会按当前 AI 的 MCP 白名单渲染工具列表）",
+                "MCP native tools schema（初始仅暴露 mcp.list_tools / mcp.describe_tool，按需动态增加目标工具）",
                 "任务运行时附加提示（仅任务运行场景）",
                 "飞书通知前置模板（仅飞书事件场景）",
             ],
@@ -310,7 +312,7 @@ def _prompt_read_system(user_id: int, args: dict, ai_config_id: Optional[int] = 
             ],
             "note": (
                 "这些不是每个 AI 卡片当前运行的基础 prompt。当前 AI 基础 prompt 请用 prompt.read_ai 读取；"
-                "其中 mcp_call_method 会被合并进有效运行 prompt，任务/监督/传承字段只在对应任务流程中注入。"
+                "其中 mcp_call_method 是旧版文本 MCP 模板，当前默认不再合并进有效运行 prompt；任务/监督/传承字段只在对应任务流程中注入。"
             ),
         }
 

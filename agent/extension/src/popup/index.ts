@@ -1441,7 +1441,7 @@ function initPort() {
         const reply = msg.text || '完成'
         chatHistory.push({ role: 'assistant', content: reply })
         const el = appendChatMsg('ai', '', chatHistory.length - 1)
-        setBubble(el, renderChatContent(reply, { toolsUsed: msg.toolsUsed || [] }))
+        setBubble(el, renderChatFrame(reply, { toolsUsed: msg.toolsUsed || [], events: msg.toolEvents || [] }))
         void syncChatHistory()
         if (msg.toolsUsed?.length) {
           addEntry({ id: Date.now().toString(), type: 'task', status: 'success', message: `AI 使用工具: ${msg.toolsUsed.join(', ')}`, timestamp: Date.now() })

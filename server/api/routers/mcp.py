@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 
 from api.database import get_session
 from api.mcp import registry
+from api.mcp.core import MCP_INTROSPECTION_TOOLS
 from api.mcp.permissions import (
     CONFIGURABLE_ROLES,
     ROLE_LABELS_ZH,
@@ -85,6 +86,7 @@ async def call_mcp_tool(
                 raise ValueError("mcp_tools must be a JSON array")
             allowed_tools = {str(item).strip() for item in parsed_allowed if isinstance(item, str) and str(item).strip()}
             allowed_tools = with_workspace_read_by_name_compat(allowed_tools)
+            allowed_tools.update(MCP_INTROSPECTION_TOOLS)
             allowed_tools.update(endpoint_bridge_tools_for_config(req.ai_config_id, user.id))
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid AI MCP tool config")

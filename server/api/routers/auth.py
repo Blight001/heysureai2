@@ -10,6 +10,8 @@ from api.core.config import (
     user_workspace_dir,
 )
 from api.models import User, UserCreate, UserLogin, UserRead, Token, UserUpdate
+from api.models.defaults import DEFAULT_MCP_NAMESPACE_HINTS
+from api.services.model_presets import model_presets_json
 from api.auth import get_password_hash, verify_password, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, decode_access_token
 from datetime import timedelta
 
@@ -153,6 +155,29 @@ async def update_profile(
             )
         except Exception:
             update_data["ai_message_inquiry_reminder_seconds"] = 3
+    if "model_presets" in update_data:
+        update_data["model_presets"] = model_presets_json(update_data.get("model_presets"), user)
+    if "mcp_call_method" in update_data:
+        update_data["mcp_call_method"] = "\n".join(
+            line for line in str(update_data.get("mcp_call_method") or "").splitlines()
+            if "Call exactly one tool per <mcp-call> block; never join two tool names into one name." not in line
+        ).strip()
+    if "mcp_namespace_hints" in update_data:
+        raw_hints = str(update_data.get("mcp_namespace_hints") or "").strip()
+        if raw_hints:
+            import json
+            try:
+                parsed = json.loads(raw_hints)
+                if not isinstance(parsed, dict):
+                    raise ValueError("mcp_namespace_hints must be a JSON object")
+                update_data["mcp_namespace_hints"] = json.dumps(
+                    {str(k).strip(): str(v).strip() for k, v in parsed.items() if str(k).strip() and str(v).strip()},
+                    ensure_ascii=False,
+                )
+            except Exception:
+                raise HTTPException(status_code=400, detail="mcp_namespace_hints must be a JSON object")
+        else:
+            update_data["mcp_namespace_hints"] = DEFAULT_MCP_NAMESPACE_HINTS
     
     if "password" in update_data:
         password = update_data.pop("password")

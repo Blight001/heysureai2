@@ -6,7 +6,7 @@
 //      or MAX_ITER is hit.
 
 import { AgentSettings, ChatMessage, DispatchedTask, TaskResult } from '../types'
-import { callAI } from '../ai'
+import { callAI, screenshotToolContent } from '../ai'
 import { BROWSER_TOOLS } from './definitions'
 import { executeBrowserTool } from './router'
 
@@ -108,11 +108,7 @@ export async function executeTask(task: DispatchedTask, settings: AgentSettings)
           let content: any = typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult)
           // For screenshots, include image data for vision models
           if (tu.name === 'browser_screenshot' && toolResult?.dataUrl) {
-            const b64 = toolResult.dataUrl.replace(/^data:image\/png;base64,/, '')
-            content = [
-              { type: 'image', source: { type: 'base64', media_type: 'image/png', data: b64 } },
-              { type: 'text', text: `Screenshot of: ${toolResult.url || 'current page'}` },
-            ]
+            content = screenshotToolContent(toolResult)
           }
           toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content })
         } catch (err: any) {

@@ -1,6 +1,7 @@
 IS_ROUTER_ENTRY = False
 
 import asyncio
+import base64
 import copy
 import json
 import os
@@ -13,6 +14,7 @@ from sqlmodel import Session, select
 
 from api.database import engine
 from api.mcp import registry, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
+from api.mcp.core import MCP_INTROSPECTION_TOOLS
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.services import ai_message_service, valhalla_service
 from api.services.agent_dispatch import dispatch_endpoint_tool_and_wait, set_run_session_context
@@ -422,6 +424,68 @@ def _reset_convo_after_forget(
     convo.append({"role": "user", "content": follow_up})
 
 
+def _browser_screenshot_image_message(tool: str, tool_result: Dict[str, object]) -> Optional[Dict[str, object]]:
+    if tool != "browser_screenshot" or not isinstance(tool_result, dict):
+        return None
+    result_payload = tool_result.get("result", tool_result)
+    if not isinstance(result_payload, dict):
+        return None
+    data_url = str(result_payload.get("dataUrl") or "").strip()
+    if not data_url.startswith("data:image/"):
+        server_path = str(result_payload.get("server_path") or "").strip()
+        if server_path and os.path.isfile(server_path):
+            ext = os.path.splitext(server_path)[1].lower().lstrip(".")
+            media_type = {
+                "jpg": "image/jpeg",
+                "jpeg": "image/jpeg",
+                "png": "image/png",
+                "webp": "image/webp",
+            }.get(ext, "image/png")
+            try:
+                with open(server_path, "rb") as fh:
+                    data_url = f"data:{media_type};base64,{base64.b64encode(fh.read()).decode('ascii')}"
+            except Exception:
+                data_url = ""
+    if not data_url.startswith("data:image/"):
+        return None
+    detail = "\n".join(
+        part for part in [
+            "浏览器截图已捕获。你已经收到这张图片，请直接查看视觉内容并继续，不要让用户打开本地路径。",
+            f"URL: {result_payload.get('url') or ''}".strip(),
+            f"Method: {result_payload.get('method') or ''}".strip(),
+        ]
+        if part and not part.endswith(":")
+    )
+    return {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": detail},
+            {"type": "image_url", "image_url": {"url": data_url}},
+        ],
+    }
+
+
+def _model_visible_tool_result(tool: str, tool_result: Dict[str, object]) -> object:
+    result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else tool_result
+    if tool != "browser_screenshot" or not isinstance(result_payload, dict):
+        return result_payload
+    cleaned = {
+        key: value
+        for key, value in result_payload.items()
+        if key not in {
+            "dataUrl",
+            "data_url",
+            "imageDataUrl",
+            "screenshotDataUrl",
+            "server_path",
+            "workspace_path",
+        }
+    }
+    cleaned["screenshot_attached_to_model"] = True
+    cleaned["instruction"] = "The screenshot image is attached in the next user message. Analyze the image directly; do not ask the user to open a local path."
+    return cleaned
+
+
 def _append_mcp_disabled_feedback(
     *,
     bg: Session,
@@ -515,6 +579,7 @@ def _run_worker(
             task_job = _load_task_job_by_session(bg, user_id, ai_config_id, session_id)
             is_task_runtime = bool(task_payload) or str(session_id or "").startswith("session_task_")
             effective_tool_allowlist = _parse_allowed_tools(cfg.mcp_tools if cfg else None)
+            effective_tool_allowlist.update(MCP_INTROSPECTION_TOOLS)
             effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user_id))
             if ai_config_id is not None:
                 # System-injected AI-to-AI messages must remain answerable even
@@ -550,6 +615,9 @@ def _run_worker(
             # Task runtime must always allow task system tools.
             if is_task_runtime:
                 effective_tool_allowlist.update(TASK_RUNTIME_REQUIRED_TOOLS)
+            # Dynamic MCP discovery must remain available even when task runtime
+            # narrows the operational tool allowlist.
+            effective_tool_allowlist.update(MCP_INTROSPECTION_TOOLS)
             if merged_system_prompt:
                 system_prompt = merged_system_prompt
             if is_task_runtime:
@@ -599,9 +667,11 @@ def _run_worker(
             rejected_repeat = 0
             consecutive_ai_errors = 0
 
-            # Build native tool_use payload once (allowlist is fixed for this run).
+            # Native tool schemas are exposed progressively. Keep the full
+            # allowlist as the execution boundary, but initially show only MCP
+            # self-inspection tools to the model.
             mcp_active = bool(cfg and cfg.mcp_enabled and effective_tool_allowlist)
-            step_tools, native_tool_name_map = _build_native_tools_payload(effective_tool_allowlist) if mcp_active else ([], {})
+            exposed_tool_allowlist = set(MCP_INTROSPECTION_TOOLS) & set(effective_tool_allowlist)
             provider = _detect_provider(base_url)
 
             # Expose session context to MCP tools (e.g. admin.dispatch_task) so
@@ -679,6 +749,12 @@ def _run_worker(
                     convo,
                     "Synthetic tool result inserted before request because the previous tool call did not receive a tool response.",
                 )
+                if mcp_active:
+                    current_exposed_tools = set(exposed_tool_allowlist) & set(effective_tool_allowlist)
+                    current_exposed_tools.update(set(MCP_INTROSPECTION_TOOLS) & set(effective_tool_allowlist))
+                    step_tools, native_tool_name_map = _build_native_tools_payload(current_exposed_tools)
+                else:
+                    step_tools, native_tool_name_map = [], {}
                 start_at = time.time()
                 try:
                     if provider == "anthropic":
@@ -1202,6 +1278,12 @@ def _run_worker(
                     failed=tool_failed,
                 )
 
+                if (not tool_failed) and tool == "mcp.describe_tool":
+                    described_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
+                    described_tool = str((described_payload or {}).get("name") or "").strip()
+                    if described_tool and described_tool in effective_tool_allowlist:
+                        exposed_tool_allowlist.add(described_tool)
+
                 if (not tool_failed) and tool == "conversation.forget_before_current":
                     current_user_content = _load_current_user_content(
                         bg,
@@ -1385,25 +1467,37 @@ def _run_worker(
                     _run_set_status(run_id, "completed", finished=True)
                     return
                 else:
+                    screenshot_message = _browser_screenshot_image_message(tool, tool_result)
                     if _has_native_tc:
                         # Native path: use tool role so model sees structured result.
                         convo.append({
                             "role": "tool",
                             "tool_call_id": _tc_id or "call_0",
-                            "content": _safe_json(tool_result.get("result", tool_result)),
+                            "content": _safe_json(_model_visible_tool_result(tool, tool_result)),
                         })
+                        if screenshot_message:
+                            convo.append(screenshot_message)
                     else:
-                        follow_up = (
+                        follow_up_text = (
                             f"[MCP执行{'失败' if tool_failed else '确认'}]\n"
                             f"系统已执行工具：{tool}\n"
                             f"执行状态：{'失败' if tool_failed else '成功'}\n\n"
                             "[工具参数]\n"
                             f"{_safe_json(arguments)}\n\n"
                             "[工具执行结果]\n"
-                            f"{_safe_json(tool_result.get('result', tool_result))}\n\n"
+                            f"{_safe_json(_model_visible_tool_result(tool, tool_result))}\n\n"
                             "请基于以上结果继续完成任务。"
                         )
-                        convo.append({"role": "user", "content": follow_up})
+                        if screenshot_message:
+                            convo.append({
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": follow_up_text},
+                                    *screenshot_message["content"],
+                                ],
+                            })
+                        else:
+                            convo.append({"role": "user", "content": follow_up_text})
                 _set_run_live_phase(run_id, "generating")
 
             notice = (

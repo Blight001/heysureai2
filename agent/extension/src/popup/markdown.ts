@@ -229,12 +229,13 @@ function splitInlineContent(text: string): { reasoning: string[]; parts: InlineP
 }
 
 // ── Chat content rendering ───────────────────────────────────────────────────
-export type ChatLiveEvent = { key: string; label: string; detail?: string }
+export type ChatLiveEvent = { key: string; label: string; detail?: string; imageUrl?: string }
 
 function renderChatEvent(event: ChatLiveEvent): string {
   return (
     `<div class="chat-mcp-card">` +
     `<div class="chat-mcp-title">${esc(event.label)}</div>` +
+    (event.imageUrl ? `<img class="chat-tool-image" src="${esc(event.imageUrl)}" alt="browser screenshot" />` : '') +
     (event.detail ? `<pre class="chat-mcp-pre">${esc(event.detail)}</pre>` : '') +
     `</div>`
   )

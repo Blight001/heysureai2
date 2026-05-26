@@ -12,12 +12,12 @@ from sqlmodel import Session, select
 from api.database import engine
 from api.mcp import get_project_root, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, User
+from api.services.model_presets import resolve_model_preset
 from api.services.task_system import parse_generation_from_session_id, with_workspace_read_by_name_compat
 from .chat_base import _RUN_LIVE_STATE, _RUN_STATE_LOCK
 from .chat_prompt_utils import (
     _append_prompt_section,
     _clear_run_live_text,
-    _merge_global_mcp_method,
     _strip_runtime_injected_sections,
 )
 
@@ -43,9 +43,7 @@ def _resolve_ai_runtime(session: Session, user: User, ai_kind: str, ai_config_id
             raise HTTPException(status_code=400, detail="No available assistant AI config")
         if not cfg.enabled:
             raise HTTPException(status_code=400, detail="Selected assistant AI is stopped")
-        api_key = cfg.api_key
-        base_url = cfg.base_url
-        model = cfg.model
+        api_key, base_url, model = resolve_model_preset(user, cfg)
         # Strip auto-injected runtime sections before appending current effective values.
         system_prompt = _strip_runtime_injected_sections(cfg.prompt or "")
         # Show the effective runtime workspace (absolute path), not only raw config text like ".".
@@ -53,9 +51,7 @@ def _resolve_ai_runtime(session: Session, user: User, ai_kind: str, ai_config_id
         if cfg.database_uri:
             system_prompt = _append_prompt_section(system_prompt, "AI 数据库连接", cfg.database_uri)
     else:
-        api_key = user.admin_api_key
-        base_url = user.admin_base_url
-        model = user.admin_model
+        api_key, base_url, model = resolve_model_preset(user, None)
         system_prompt = _strip_runtime_injected_sections(user.admin_prompt or "")
     if not api_key:
         raise HTTPException(status_code=400, detail="Admin API key not configured")
@@ -69,9 +65,6 @@ def _resolve_ai_runtime(session: Session, user: User, ai_kind: str, ai_config_id
             "MCP状态",
             "当前 AI 的 MCP 功能未启用。不要调用 MCP 工具；如果任务必须使用 MCP，请说明需要先在该 AI 配置中开启 MCP。",
         )
-    else:
-        global_mcp_method = str(getattr(user, "mcp_call_method", "") or "").strip()
-        system_prompt = _merge_global_mcp_method(system_prompt, global_mcp_method, cfg)
     return cfg, api_key, base_url, model, system_prompt
 
 def _parse_allowed_tools(raw: Optional[str]) -> set[str]:

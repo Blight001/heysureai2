@@ -10,8 +10,10 @@ from .defaults import (
     DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
     DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
     DEFAULT_INHERITANCE_NOTICE,
+    DEFAULT_MODEL_PRESETS,
     DEFAULT_MCP_CALL_METHOD,
     DEFAULT_MCP_FORMAT_ERROR_HINT,
+    DEFAULT_MCP_NAMESPACE_HINTS,
     DEFAULT_RESUME_TASK_PROMPT,
     DEFAULT_START_TASK_PROMPT,
     DEFAULT_SUPERVISION_PROMPT,
@@ -35,6 +37,7 @@ class User(SQLModel, table=True):
     admin_prompt: str = Field(default="你是一个全能的管理员，负责管理和协调整个项目。")
 
     mcp_call_method: str = Field(default=DEFAULT_MCP_CALL_METHOD)
+    mcp_namespace_hints: str = Field(default=DEFAULT_MCP_NAMESPACE_HINTS)
     mcp_format_error_hint: str = Field(default=DEFAULT_MCP_FORMAT_ERROR_HINT)
     mcp_max_steps: int = Field(default=48)
     # Per-role MCP allow-list configured by the admin. JSON object mapping a role
@@ -42,6 +45,7 @@ class User(SQLModel, table=True):
     # list of allowed tool names. Empty string means "use the per-role default".
     role_mcp_permissions: str = Field(default="")
     tavily_api_key: str = Field(default="")
+    model_presets: str = Field(default=DEFAULT_MODEL_PRESETS)
 
     default_start_task_prompt: str = Field(default=DEFAULT_START_TASK_PROMPT)
     default_resume_task_prompt: str = Field(default=DEFAULT_RESUME_TASK_PROMPT)
@@ -84,10 +88,12 @@ class UserRead(SQLModel):
     admin_model: str
     admin_prompt: str
     mcp_call_method: str
+    mcp_namespace_hints: str
     mcp_format_error_hint: str
     mcp_max_steps: int
     role_mcp_permissions: str
     tavily_api_key: str
+    model_presets: str
     default_start_task_prompt: str
     default_resume_task_prompt: str
     default_supervision_prompt: str
@@ -114,10 +120,12 @@ class UserUpdate(SQLModel):
     admin_model: Optional[str] = None
     admin_prompt: Optional[str] = None
     mcp_call_method: Optional[str] = None
+    mcp_namespace_hints: Optional[str] = None
     mcp_format_error_hint: Optional[str] = None
     mcp_max_steps: Optional[int] = None
     role_mcp_permissions: Optional[str] = None
     tavily_api_key: Optional[str] = None
+    model_presets: Optional[str] = None
     default_start_task_prompt: Optional[str] = None
     default_resume_task_prompt: Optional[str] = None
     default_supervision_prompt: Optional[str] = None

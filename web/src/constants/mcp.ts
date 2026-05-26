@@ -4,11 +4,12 @@
  * is empty.
  */
 export const DEFAULT_MCP_TOOLS = [
+  'mcp.list_tools',
+  'mcp.describe_tool',
   'web.search',
   'workspace.run_command',
   'admin.list_agents',
   'admin.get_overview',
-  'admin.dispatch_flow',
   'project.list_projects',
   'project.create_project',
   'project.update_project',
@@ -27,4 +28,7 @@ export const DEFAULT_MCP_TOOLS = [
   'user.send_message',
   'ai.send_message',
   'conversation.forget_before_current',
+  'conversation.find',
+  'conversation.create',
+  'conversation.delete',
 ] as const

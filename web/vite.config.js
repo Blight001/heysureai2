@@ -11,7 +11,7 @@ export default defineConfig({
     },
     server: {
         host: '0.0.0.0',
-        port: 5173,
+        port: 58150,
         proxy: {
             '/api': {
                 target: process.env.SERVER_URL || 'http://localhost:3000',

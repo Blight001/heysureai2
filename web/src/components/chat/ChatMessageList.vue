@@ -9,6 +9,7 @@ interface Message {
   think?: string
   display_text?: string
   inlineContent?: InlineContentType[]
+  front_prompt_details?: string
   id?: number
   created_at?: number
 }

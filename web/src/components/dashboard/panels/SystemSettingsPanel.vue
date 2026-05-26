@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { getMcpToolZhLabel, groupMcpToolsBySource } from '@/utils/mcpTools'
-import type { McpRoleMeta } from '@/types'
+import type { McpRoleMeta, ModelPreset } from '@/types'
 
 interface Props {
   show: boolean
   globalMcpCallMethod: string
+  mcpNamespaceHints: string
   globalMcpFormatErrorHint: string
   defaultStartTaskPrompt: string
   defaultResumeTaskPrompt: string
@@ -23,6 +24,7 @@ interface Props {
   themeMode: 'light' | 'dark'
   fontSize: 'sm' | 'md' | 'lg'
   tavilyApiKey: string
+  modelPresets: ModelPreset[]
   mcpMaxSteps: number
   mcpRoleMeta: McpRoleMeta
   roleMcpPermissions: Record<string, string[]>
@@ -32,6 +34,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'update:show', value: boolean): void
   (e: 'update:globalMcpCallMethod', value: string): void
+  (e: 'update:mcpNamespaceHints', value: string): void
   (e: 'update:globalMcpFormatErrorHint', value: string): void
   (e: 'update:defaultStartTaskPrompt', value: string): void
   (e: 'update:defaultResumeTaskPrompt', value: string): void
@@ -49,6 +52,7 @@ const emit = defineEmits<{
   (e: 'update:themeMode', value: 'light' | 'dark'): void
   (e: 'update:fontSize', value: 'sm' | 'md' | 'lg'): void
   (e: 'update:tavilyApiKey', value: string): void
+  (e: 'update:modelPresets', value: ModelPreset[]): void
   (e: 'update:mcpMaxSteps', value: number): void
   (e: 'viewAllMcp'): void
   (e: 'toggleRoleTool', payload: { role: string; tool: string; checked: boolean }): void
@@ -102,6 +106,63 @@ const tavilyApiKeyValue = computed({
   set: value => emit('update:tavilyApiKey', value)
 })
 
+const modelPresetsValue = computed({
+  get: () => props.modelPresets || [],
+  set: value => emit('update:modelPresets', value)
+})
+
+const expandedModelPresetIds = ref<Set<string>>(new Set())
+const isModelPresetComplete = (preset: ModelPreset) =>
+  !!String(preset.name || '').trim()
+  && !!String(preset.model || '').trim()
+  && !!String(preset.api_key || '').trim()
+  && !!String(preset.base_url || '').trim()
+const modelPresetKey = (preset: ModelPreset, index: number) => preset.id || `model_${index}`
+const isModelPresetExpanded = (preset: ModelPreset, index: number) =>
+  expandedModelPresetIds.value.has(modelPresetKey(preset, index)) || !isModelPresetComplete(preset)
+const setModelPresetExpanded = (preset: ModelPreset, index: number, expanded: boolean) => {
+  const next = new Set(expandedModelPresetIds.value)
+  const key = modelPresetKey(preset, index)
+  if (expanded) next.add(key)
+  else next.delete(key)
+  expandedModelPresetIds.value = next
+}
+
+const addModelPreset = () => {
+  const id = `model_${Date.now()}`
+  const next = new Set(expandedModelPresetIds.value)
+  next.add(id)
+  expandedModelPresetIds.value = next
+  modelPresetsValue.value = [
+    ...modelPresetsValue.value,
+    { id, name: '新模型', api_key: '', base_url: '', model: '' },
+  ]
+}
+
+const updateModelPreset = (index: number, patch: Partial<ModelPreset>) => {
+  modelPresetsValue.value = modelPresetsValue.value.map((item, idx) => {
+    if (idx !== index) return item
+    const next = { ...item, ...patch }
+    if (!next.id) next.id = next.model || `model_${index + 1}`
+    if (isModelPresetComplete(next) && !isModelPresetComplete(item)) {
+      const expanded = new Set(expandedModelPresetIds.value)
+      expanded.delete(modelPresetKey(next, index))
+      expandedModelPresetIds.value = expanded
+    }
+    return next
+  })
+}
+
+const removeModelPreset = (index: number) => {
+  const target = modelPresetsValue.value[index]
+  if (target) {
+    const expanded = new Set(expandedModelPresetIds.value)
+    expanded.delete(modelPresetKey(target, index))
+    expandedModelPresetIds.value = expanded
+  }
+  modelPresetsValue.value = modelPresetsValue.value.filter((_, idx) => idx !== index)
+}
+
 const mcpMaxStepsValue = computed({
   get: () => Number(props.mcpMaxSteps || 48),
   set: value => emit('update:mcpMaxSteps', Math.max(1, Math.min(999, Math.floor(Number(value) || 48))))
@@ -110,6 +171,11 @@ const mcpMaxStepsValue = computed({
 const globalMcpCallMethodValue = computed({
   get: () => props.globalMcpCallMethod,
   set: value => emit('update:globalMcpCallMethod', value)
+})
+
+const mcpNamespaceHintsValue = computed({
+  get: () => props.mcpNamespaceHints,
+  set: value => emit('update:mcpNamespaceHints', value)
 })
 
 const globalMcpFormatErrorHintValue = computed({
@@ -215,6 +281,7 @@ watch(() => props.show, visible => {
   if (!visible) {
     settingsDialog.value = ''
     selectedRole.value = ''
+    expandedModelPresetIds.value = new Set()
   }
 })
 </script>
@@ -282,6 +349,71 @@ watch(() => props.show, visible => {
               />
               <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">范围 1-999。连续调用 MCP 工具时，每次模型生成和工具返回后的继续执行都会消耗一步。</p>
               </div>
+            </div>
+          </div>
+
+          <div class="p-4 bg-zinc-50 rounded-xl dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
+            <div class="flex items-center justify-between gap-3 mb-3">
+              <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">服务器模型</h4>
+              <button
+                class="px-2 py-1 rounded-lg border border-zinc-200 text-zinc-600 bg-white text-[11px] hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-300"
+                @click="addModelPreset"
+              >
+                新增模型
+              </button>
+            </div>
+            <div class="space-y-3">
+              <div
+                v-for="(preset, index) in modelPresetsValue"
+                :key="preset.id || index"
+                class="rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-950/60 overflow-hidden"
+              >
+                <button
+                  type="button"
+                  class="w-full px-3 py-2.5 flex items-center justify-between gap-3 text-left hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                  @click="setModelPresetExpanded(preset, index, !isModelPresetExpanded(preset, index))"
+                >
+                  <span class="min-w-0">
+                    <span class="block text-xs font-semibold text-zinc-800 dark:text-zinc-100 truncate">
+                      {{ preset.name || preset.model || '未命名模型' }}
+                    </span>
+                    <span v-if="!isModelPresetComplete(preset)" class="block mt-0.5 text-[10px] text-amber-600 dark:text-amber-300">配置未完成</span>
+                  </span>
+                  <span class="text-xs text-zinc-400 dark:text-zinc-500">
+                    {{ isModelPresetExpanded(preset, index) ? '收起' : '修改' }}
+                  </span>
+                </button>
+                <div v-if="isModelPresetExpanded(preset, index)" class="px-3 pb-3 border-t border-zinc-100 dark:border-zinc-800">
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3">
+                    <div>
+                      <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">显示名称</div>
+                      <input :value="preset.name" @input="updateModelPreset(index, { name: ($event.target as HTMLInputElement).value })" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
+                    </div>
+                    <div>
+                      <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">模型名</div>
+                      <input :value="preset.model" @input="updateModelPreset(index, { model: ($event.target as HTMLInputElement).value, id: preset.id || ($event.target as HTMLInputElement).value })" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
+                    </div>
+                    <div>
+                      <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">API Key</div>
+                      <input :value="preset.api_key" type="password" autocomplete="off" @input="updateModelPreset(index, { api_key: ($event.target as HTMLInputElement).value })" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
+                    </div>
+                    <div>
+                      <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">Base URL</div>
+                      <input :value="preset.base_url" @input="updateModelPreset(index, { base_url: ($event.target as HTMLInputElement).value })" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="https://.../chat/completions" />
+                    </div>
+                  </div>
+                  <div class="mt-2 flex justify-end gap-2">
+                    <button class="text-[11px] px-2 py-1 rounded border border-red-200 text-red-600 bg-red-50 dark:border-red-500/30 dark:bg-red-900/20 dark:text-red-300" @click="removeModelPreset(index)">删除</button>
+                    <button
+                      class="text-[11px] px-2 py-1 rounded border border-zinc-200 text-zinc-600 bg-white dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                      @click="setModelPresetExpanded(preset, index, false); emit('save')"
+                    >
+                      完成并保存
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div v-if="modelPresetsValue.length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">暂无模型，请先新增一个服务器模型。</div>
             </div>
           </div>
 
@@ -396,6 +528,16 @@ watch(() => props.show, visible => {
                       class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs leading-relaxed font-mono"
                       placeholder="粘贴全局 MCP 调用方法模板，例如包含 <mcp-call> ... </mcp-call>、Available MCP tools include: {MCP} 和 Rules"
                     ></textarea>
+                  </div>
+                  <div>
+                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">MCP namespace 说明（JSON）</div>
+                    <textarea
+                      v-model="mcpNamespaceHintsValue"
+                      rows="8"
+                      class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs leading-relaxed font-mono"
+                      placeholder='{"task":"任务系统。用于查看、创建、更新、删除、传承和完成任务。"}'
+                    ></textarea>
+                    <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">用于渲染 {MCP} 的第一层 namespace 说明；key 是 namespace，value 是说明文本。</p>
                   </div>
                   <div>
                     <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">MCP 格式错误提示</div>

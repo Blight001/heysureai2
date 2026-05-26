@@ -1,6 +1,9 @@
 from .core import MCPRegistry, MCPTool
+from .tools.introspection import (
+    _mcp_describe_tool,
+    _mcp_list_tools,
+)
 from .tools.workspace import (
-    _dispatch_flow,
     _get_overview,
     _list_agents,
     _run_command,
@@ -40,7 +43,12 @@ from .tools.communication import (
     _ai_send_message,
     _user_send_message,
 )
-from .tools.conversation import _forget_before_current
+from .tools.conversation import (
+    _create_conversation,
+    _delete_conversation,
+    _find_conversation,
+    _forget_before_current,
+)
 from .tools.librarian import (
     _librarian_archive,
     _librarian_consult,
@@ -51,6 +59,37 @@ from .tools.librarian import (
 from .tools.web_search import _web_search
 
 registry = MCPRegistry()
+
+registry.register(MCPTool(
+    name="mcp.list_tools",
+    description="List currently allowed MCP capabilities. Default returns namespaces only; pass namespace for one namespace or mode=all to return all tools.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "namespace": {"type": "string", "description": "Optional namespace filter, e.g. workspace, task, prompt."},
+            "mode": {
+                "type": "string",
+                "enum": ["namespaces", "namespace", "all"],
+                "description": "namespaces=first-level only (default), namespace=expand one namespace, all=expand all namespaces.",
+            },
+            "all": {"type": "boolean", "description": "Alias for mode=all when true."},
+        },
+    },
+    handler=_mcp_list_tools,
+))
+registry.register(MCPTool(
+    name="mcp.describe_tool",
+    description="Read the full description and input schema for one allowed MCP tool by exact name.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "tool": {"type": "string", "description": "Exact MCP tool name to inspect."},
+            "name": {"type": "string", "description": "Alias of tool."},
+        },
+        "required": ["tool"],
+    },
+    handler=_mcp_describe_tool,
+))
 
 registry.register(MCPTool(
     name="web.search",
@@ -76,10 +115,23 @@ registry.register(MCPTool(
 
 registry.register(MCPTool(
     name="workspace.run_command",
-    description="Run a shell command in the current user's workspace.",
+    description=(
+        "Run a sandboxed shell command in the current user's workspace. "
+        "Commands cannot use absolute paths, '..', home paths, or environment-variable expansion."
+    ),
     input_schema={
         "type": "object",
-        "properties": {"command": {"type": "string"}},
+        "properties": {
+            "command": {"type": "string", "description": "Command to run from the workspace sandbox."},
+            "cwd": {
+                "type": "string",
+                "description": "Optional relative working directory inside the workspace.",
+            },
+            "timeout": {
+                "type": "integer",
+                "description": "Optional timeout in seconds, capped at 60.",
+            },
+        },
         "required": ["command"],
     },
     handler=_run_command,
@@ -96,20 +148,6 @@ registry.register(MCPTool(
     description="Get admin overview of workspace state plus connected socket agents and managed AI configs.",
     input_schema={"type": "object", "properties": {}},
     handler=_get_overview,
-))
-registry.register(MCPTool(
-    name="admin.dispatch_flow",
-    description="Dispatch a flow payload to a connected agent.",
-    input_schema={
-        "type": "object",
-        "properties": {
-            "agentId": {"type": "string"},
-            "flowData": {"type": "object"},
-        },
-        "required": ["agentId", "flowData"],
-    },
-    handler=_dispatch_flow,
-    destructive=True,
 ))
 registry.register(MCPTool(
     name="project.list_projects",
@@ -365,6 +403,62 @@ registry.register(MCPTool(
     destructive=True,
 ))
 
+registry.register(MCPTool(
+    name="conversation.find",
+    description=(
+        "Find/list chat sessions for the current AI scope. Search by session name, session id, "
+        "or message content. Omit query to list recent sessions."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "Optional keyword to search in session name, id, and message content."},
+            "keyword": {"type": "string", "description": "Alias of query."},
+            "session_id": {"type": "string", "description": "Optional exact session id."},
+            "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
+            "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run or assistant."},
+            "limit": {"type": "integer", "description": "Maximum sessions to return, 1-100. Defaults to 20."},
+            "include_messages": {"type": "boolean", "description": "Include full messages for matched sessions."},
+        },
+        "required": [],
+    },
+    handler=_find_conversation,
+))
+
+registry.register(MCPTool(
+    name="conversation.create",
+    description="Create a new empty chat session for the current AI scope.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Session name. Defaults to 未命名会话."},
+            "session_name": {"type": "string", "description": "Alias of name."},
+            "session_id": {"type": "string", "description": "Optional explicit session id. Usually omit this."},
+            "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
+            "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run or assistant."},
+        },
+        "required": [],
+    },
+    handler=_create_conversation,
+    destructive=True,
+))
+
+registry.register(MCPTool(
+    name="conversation.delete",
+    description="Delete a chat session and all messages in it for the current AI scope.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "session_id": {"type": "string", "description": "Session id to delete. Defaults to active run session when available."},
+            "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
+            "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run or assistant."},
+        },
+        "required": [],
+    },
+    handler=_delete_conversation,
+    destructive=True,
+))
+
 # ---------- AI 间通信 ----------
 registry.register(MCPTool(
     name="ai.send_message",
@@ -613,6 +707,7 @@ registry.register(MCPTool(
                 "enum": [
                     "admin_prompt",
                     "mcp_call_method",
+                    "mcp_namespace_hints",
                     "mcp_format_error_hint",
                     "default_start_task_prompt",
                     "default_resume_task_prompt",
@@ -641,6 +736,7 @@ registry.register(MCPTool(
                 "enum": [
                     "admin_prompt",
                     "mcp_call_method",
+                    "mcp_namespace_hints",
                     "mcp_format_error_hint",
                     "default_start_task_prompt",
                     "default_resume_task_prompt",

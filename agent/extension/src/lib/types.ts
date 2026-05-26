@@ -98,6 +98,13 @@ export interface AIToolUse {
   input: Record<string, any>
 }
 
+export interface ChatToolEvent {
+  key: string
+  label: string
+  detail?: string
+  imageUrl?: string
+}
+
 // ── Popup <-> Background messages ────────────────────────────────────────
 export type PopupMsg =
   | { type: 'agent:connect' }
@@ -117,7 +124,7 @@ export type BgMsg =
   | { type: 'task:start';      data: any }
   | { type: 'task:result';     data: any }
   | { type: 'settings:data';   settings: AgentSettings }
-  | { type: 'chat:response';   text: string; toolsUsed?: string[]; requestId?: string }
+  | { type: 'chat:response';   text: string; toolsUsed?: string[]; toolEvents?: ChatToolEvent[]; requestId?: string }
   | { type: 'chat:error';      error: string; requestId?: string }
   | { type: 'connection:result'; result: any }
   | { type: 'card:progress';   cardId: string; index: number; total: number; note: string; tool: string; status: string; error?: string }

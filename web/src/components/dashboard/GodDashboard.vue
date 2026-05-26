@@ -56,8 +56,10 @@ const {
   themeMode,
   fontSize,
   tavilyApiKey,
+  modelPresets,
   mcpMaxSteps,
   globalMcpCallMethod,
+  mcpNamespaceHints,
   globalMcpFormatErrorHint,
   defaultStartTaskPrompt,
   defaultResumeTaskPrompt,
@@ -194,6 +196,7 @@ const {
   defaultMcpTools,
   mcpToolMetaByName,
   mcpRoleMeta,
+  modelPresets,
   normalizeSystemAutoControl,
   alert,
   onToggleAiRunByConfigId: toggleAiRunByConfigId,
@@ -634,6 +637,7 @@ onUnmounted(() => {
       :available-workspace-dirs="availableWorkspaceDirs"
       :workspace-dirs-loading="workspaceDirsLoading"
       :workspace-dirs-error="workspaceDirsError"
+      :model-presets="modelPresets"
       :on-close="() => aiConfigModalOpen = false"
       :on-toggle-settings-section="toggleAiConfigSettingsSection"
       :on-tool-checkbox-change="onToolCheckboxChange"
@@ -645,6 +649,7 @@ onUnmounted(() => {
     <SystemSettingsPanel
       v-model:show="settingsOpen"
       v-model:globalMcpCallMethod="globalMcpCallMethod"
+      v-model:mcpNamespaceHints="mcpNamespaceHints"
       v-model:globalMcpFormatErrorHint="globalMcpFormatErrorHint"
       v-model:defaultStartTaskPrompt="defaultStartTaskPrompt"
       v-model:defaultResumeTaskPrompt="defaultResumeTaskPrompt"
@@ -662,6 +667,7 @@ onUnmounted(() => {
       v-model:themeMode="themeMode"
       v-model:fontSize="fontSize"
       v-model:tavilyApiKey="tavilyApiKey"
+      v-model:modelPresets="modelPresets"
       v-model:mcpMaxSteps="mcpMaxSteps"
       :mcp-role-meta="mcpRoleMeta"
       :role-mcp-permissions="roleMcpPermissions"

@@ -5,9 +5,10 @@ import { getSettings, saveSettings, pushActivity, getActivity, getCard, getAuth 
 import { listConfigs, MemberConfig } from './lib/client'
 import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS, runCardSteps, setCardProgress, runScheduledCard } from './lib/tools'
 import { callAI } from './lib/ai'
+import { screenshotToolContent } from './lib/ai'
 import {
   AgentStatus, DispatchedTask, ActivityEntry,
-  PopupMsg, BgMsg, ChatMessage,
+  PopupMsg, BgMsg, ChatMessage, ChatToolEvent,
 } from './lib/types'
 
 // ── State ─────────────────────────────────────────────────────────────────
@@ -310,11 +311,12 @@ failedStep, diagnose it, fix that step with card_update_step, and run again unti
 When asked to complete tasks, use the available tools systematically and summarize what you did.
 Respond in the same language as the user. For factual questions, search the web if needed.`
 
-async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUsed: string[] }> {
+async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUsed: string[]; toolEvents: ChatToolEvent[] }> {
   const settings = await getSettings()
   if (!settings.aiKey) throw new Error('未配置 AI Key')
 
   const toolsUsed: string[] = []
+  const toolEvents: ChatToolEvent[] = []
   let iter = 0
   const MAX = 12
 
@@ -322,7 +324,7 @@ async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUs
     const resp = await callAI(settings.aiBaseUrl, settings.aiKey, settings.aiModel, messages, BROWSER_TOOLS, CHAT_SYSTEM)
 
     if (!resp.toolUses?.length) {
-      return { text: resp.text || '完成', toolsUsed }
+      return { text: resp.text || '完成', toolsUsed, toolEvents }
     }
 
     messages.push({ role: 'assistant', content: resp.toolUses as any[] })
@@ -335,11 +337,13 @@ async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUs
         const result = await executeBrowserTool(tu.name, tu.input)
         let content: any = typeof result === 'string' ? result : JSON.stringify(result)
         if (tu.name === 'browser_screenshot' && result?.dataUrl) {
-          const b64 = result.dataUrl.replace(/^data:image\/png;base64,/, '')
-          content = [
-            { type: 'image', source: { type: 'base64', media_type: 'image/png', data: b64 } },
-            { type: 'text', text: `Page: ${result.url || ''}` },
-          ]
+          content = screenshotToolContent(result)
+          toolEvents.push({
+            key: `${tu.id || tu.name}:${toolEvents.length}`,
+            label: '浏览器截图',
+            detail: [result.url, result.method].filter(Boolean).join('\n'),
+            imageUrl: result.dataUrl,
+          })
         }
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content })
         log('task', 'success', `完成: ${tu.name}`)
@@ -351,7 +355,7 @@ async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUs
     messages.push({ role: 'user', content: toolResults })
     iter++
   }
-  return { text: '已达到最大迭代次数', toolsUsed }
+  return { text: '已达到最大迭代次数', toolsUsed, toolEvents }
 }
 
 // ── Memory card execution ─────────────────────────────────────────────────
@@ -461,7 +465,7 @@ chrome.runtime.onConnect.addListener((port) => {
         const requestId = msg.requestId
         try {
           const result = await runChat(msg.messages)
-          port.postMessage({ type: 'chat:response', text: result.text, toolsUsed: result.toolsUsed, requestId })
+          port.postMessage({ type: 'chat:response', text: result.text, toolsUsed: result.toolsUsed, toolEvents: result.toolEvents, requestId })
         } catch (err: any) {
           port.postMessage({ type: 'chat:error', error: err.message, requestId })
         }

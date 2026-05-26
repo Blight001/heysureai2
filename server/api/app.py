@@ -12,13 +12,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from .sio import sio
 from .socket_events import register_socket_events
 from .database import create_db_and_tables
-from .services.ai_service import scan_and_sync_switch_files, align_token_snapshots_with_history
+from .services.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
 from .integrations.feishu.long_connection import start_feishu_long_connection_clients
 from .routers.chat import process_task_scheduler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
+    try:
+        result = migrate_legacy_switch_files_to_db()
+        if result.get("imported") or result.get("removed"):
+            print(
+                "[migrate_legacy_switch_files_to_db] "
+                f"imported={result.get('imported', 0)} "
+                f"removed={result.get('removed', 0)}"
+            )
+    except Exception as exc:
+        print(f"[migrate_legacy_switch_files_to_db] {exc}")
     try:
         result = align_token_snapshots_with_history()
         if result.get("changed_rows") or result.get("deleted_rows"):
@@ -37,10 +47,6 @@ async def lifespan(app: FastAPI):
                 start_feishu_long_connection_clients()
             except Exception as exc:
                 print(f"[start_feishu_long_connection_clients] {exc}")
-            try:
-                scan_and_sync_switch_files()
-            except Exception as exc:
-                print(f"[scan_and_sync_switch_files] {exc}")
             try:
                 process_task_scheduler()
             except Exception as exc:

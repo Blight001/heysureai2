@@ -10,7 +10,14 @@ import requests
 from fastapi import HTTPException
 
 from api.mcp import registry
+from api.mcp.core import MCP_INTROSPECTION_TOOLS
 from api.models import AssistantAIConfig, DEFAULT_MCP_FORMAT_ERROR_HINT
+from api.models.defaults import DEFAULT_MCP_NAMESPACE_HINTS
+from api.chat_runtime.mcp_parser import (
+    MCP_CALL_BLOCK_RE,
+    extract_first_complete_mcp_call,
+    parse_mcp_payload,
+)
 from api.services.desktop_agent_tools import endpoint_bridge_tools_for_config
 from api.services.task_system import (
     DEFAULT_SYSTEM_AUTO_CONTROL,
@@ -25,49 +32,8 @@ from .chat_base import (
     _TASK_RUNTIME_SECTION_TITLES,
 )
 
-MCP_CALL_BLOCK_RE = re.compile(
-    r"<mcp[-_]call>\s*([\s\S]*?)\s*</\s*(?:mcp[-_]call|[\uFF5C|]*\s*DSML\s*[\uFF5C|]*\s*(?:invoke|tool[-_]?calls?))\s*>",
-    re.IGNORECASE,
-)
-
-
 def _parse_mcp_payload(raw: str):
-    body = (raw or "").strip()
-    if not body:
-        return None
-
-    try:
-        payload = json.loads(body)
-        tool = str(payload.get("tool", "")).strip()
-        if not tool:
-            return None
-        args = payload.get("arguments", {})
-        if not isinstance(args, dict):
-            args = {}
-        return {"tool": tool, "arguments": args}
-    except Exception:
-        pass
-
-    tool_match = re.search(r"<tool>\s*([\s\S]*?)\s*</tool>", body, re.IGNORECASE)
-    if not tool_match:
-        return None
-    tool = str(tool_match.group(1) or "").strip()
-    if not tool:
-        return None
-
-    args_match = re.search(r"<arguments>\s*([\s\S]*?)\s*</arguments>", body, re.IGNORECASE)
-    if not args_match:
-        return {"tool": tool, "arguments": {}}
-    args_raw = str(args_match.group(1) or "").strip()
-    if not args_raw:
-        return {"tool": tool, "arguments": {}}
-    try:
-        args = json.loads(args_raw)
-        if isinstance(args, dict):
-            return {"tool": tool, "arguments": args}
-        return {"tool": tool, "arguments": {}}
-    except Exception:
-        return None
+    return parse_mcp_payload(raw)
 
 def _strip_prompt_section(text: str, section_title: str) -> str:
     src = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
@@ -121,6 +87,7 @@ def _parse_allowed_tools_for_cfg(cfg: Optional[AssistantAIConfig]) -> set[str]:
             return set()
         raw_tools = {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
         raw_tools = with_workspace_read_by_name_compat(raw_tools)
+        raw_tools.update(MCP_INTROSPECTION_TOOLS)
         raw_tools.update(endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
         return raw_tools
     except Exception:
@@ -262,41 +229,75 @@ def _render_mcp_tool_item(tool_info: Dict[str, Any]) -> str:
         f"{format_hint}"
     )
 
+def _tool_namespace(name: str) -> str:
+    if "." in name:
+        return name.split(".", 1)[0]
+    if "_" in name:
+        return name.split("_", 1)[0]
+    return "other"
+
 def _render_mcp_tool_lines(cfg: Optional[AssistantAIConfig]) -> str:
-    all_tools = registry.list_tools()
-    allowed = _parse_allowed_tools_for_cfg(cfg)
     if cfg is not None:
         if not getattr(cfg, "mcp_enabled", True):
             return "- （MCP 未启用）"
-        if not allowed:
-            return "- （空）"
-        tool_items = [item for item in all_tools if str(item.get("name") or "").strip() in allowed]
-    else:
-        tool_items = all_tools
-    if not tool_items:
+    return _render_mcp_namespace_lines(cfg, DEFAULT_MCP_NAMESPACE_HINTS)
+
+def _parse_namespace_hints(raw: str) -> Dict[str, str]:
+    try:
+        parsed = json.loads(str(raw or "").strip() or DEFAULT_MCP_NAMESPACE_HINTS)
+    except Exception:
+        parsed = json.loads(DEFAULT_MCP_NAMESPACE_HINTS)
+    if not isinstance(parsed, dict):
+        parsed = json.loads(DEFAULT_MCP_NAMESPACE_HINTS)
+    fallback = json.loads(DEFAULT_MCP_NAMESPACE_HINTS)
+    out: Dict[str, str] = {str(k): str(v) for k, v in fallback.items()}
+    for key, value in parsed.items():
+        namespace = str(key or "").strip()
+        hint = str(value or "").strip()
+        if namespace and hint:
+            out[namespace] = hint
+    return out
+
+def _render_mcp_namespace_lines(cfg: Optional[AssistantAIConfig], namespace_hints: str) -> str:
+    if cfg is not None and not getattr(cfg, "mcp_enabled", True):
+        return "- （MCP 未启用）"
+    allowed = _parse_allowed_tools_for_cfg(cfg)
+    if cfg is None:
+        allowed = {str(item.get("name") or "").strip() for item in registry.list_tools() if item.get("name")}
+    if not allowed:
         return "- （空）"
-    lines: List[str] = []
-    for item in tool_items:
-        line = _render_mcp_tool_item(item)
-        if line:
-            lines.append(line)
+    namespaces = sorted({_tool_namespace(name) for name in allowed if name})
+    hints = _parse_namespace_hints(namespace_hints)
+    lines = []
+    for namespace in namespaces:
+        hint = hints.get(namespace, "该 namespace 下存在可用 MCP 工具；需要展开时调用 mcp.list_tools 并传 namespace。")
+        lines.append(f"- {namespace}：{hint}")
     return "\n".join(lines) if lines else "- （空）"
 
 def _inject_mcp_placeholder(template: str, cfg: Optional[AssistantAIConfig]) -> str:
+    return _inject_mcp_placeholder_with_hints(template, cfg, DEFAULT_MCP_NAMESPACE_HINTS)
+
+def _inject_mcp_placeholder_with_hints(template: str, cfg: Optional[AssistantAIConfig], namespace_hints: str) -> str:
     text = str(template or "")
     if "{MCP}" not in text:
         return text
-    return text.replace("{MCP}", _render_mcp_tool_lines(cfg))
+    return text.replace("{MCP}", _render_mcp_namespace_lines(cfg, namespace_hints))
 
-def _merge_global_mcp_method(system_prompt: str, global_mcp_method: str, cfg: Optional[AssistantAIConfig]) -> str:
+def _merge_global_mcp_method(
+    system_prompt: str,
+    global_mcp_method: str,
+    cfg: Optional[AssistantAIConfig],
+    namespace_hints: str = DEFAULT_MCP_NAMESPACE_HINTS,
+) -> str:
     base = _strip_legacy_global_mcp_block(system_prompt)
-    method = _inject_mcp_placeholder(str(global_mcp_method or "").strip(), cfg)
+    method = _inject_mcp_placeholder_with_hints(str(global_mcp_method or "").strip(), cfg, namespace_hints)
     method = str(method or "").replace("\r\n", "\n").replace("\r", "\n")
     if not method:
         return base
-    one_tool_rule = "- Call exactly one tool per <mcp-call> block; never join two tool names into one name."
-    if "never join two tool names into one name" not in method:
-        method = f"{method.rstrip()}\n{one_tool_rule}"
+    method = "\n".join(
+        line for line in method.splitlines()
+        if "Call exactly one tool per <mcp-call> block; never join two tool names into one name." not in line
+    ).strip()
     # Legacy bug compatibility: global MCP template was once persisted to admin_prompt directly.
     if _looks_like_mcp_template(base) and method:
         base = ""
@@ -459,9 +460,22 @@ def _block_signature(tool: str, arguments: dict) -> str:
     ])
     return f"sig_{_simple_hash(raw)}"
 
+def _sanitize_large_media(value):
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            if key == "dataUrl" and isinstance(item, str) and item.startswith("data:image/"):
+                out[key] = f"<image data URL omitted, {len(item)} chars>"
+            else:
+                out[key] = _sanitize_large_media(item)
+        return out
+    if isinstance(value, list):
+        return [_sanitize_large_media(item) for item in value]
+    return value
+
 def _safe_json(value, max_len: int = 12000) -> str:
     try:
-        text = json.dumps(value, ensure_ascii=False, indent=2)
+        text = json.dumps(_sanitize_large_media(value), ensure_ascii=False, indent=2)
     except Exception:
         text = str(value)
     if len(text) <= max_len:
@@ -491,24 +505,7 @@ def _extract_first_mcp_call(assistant_text: str):
     return payload
 
 def _extract_first_complete_mcp_call(assistant_text: str):
-    m = MCP_CALL_BLOCK_RE.search(assistant_text or "")
-    if m:
-        payload = _parse_mcp_payload(m.group(1))
-        if payload:
-            return payload, m
-
-    # Fallback: accept fenced JSON tool call format.
-    # Example:
-    # ```json
-    # {"tool":"task.list","arguments":{"job_id":"job_xxx"}}
-    # ```
-    fence_pattern = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
-    for fm in fence_pattern.finditer(assistant_text or ""):
-        payload = _parse_mcp_payload(fm.group(1))
-        if payload:
-            return payload, fm
-
-    return None, None
+    return extract_first_complete_mcp_call(assistant_text)
 
 def _extract_delta_text(delta) -> str:
     if not delta:

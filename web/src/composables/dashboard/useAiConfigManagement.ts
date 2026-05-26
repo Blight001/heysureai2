@@ -1,5 +1,5 @@
 import { computed, ref, watch, type Ref } from 'vue'
-import type { Agent, McpRoleMeta, McpToolDefinition } from '@/types'
+import type { Agent, McpRoleMeta, McpToolDefinition, ModelPreset } from '@/types'
 import { BROWSER_AGENT_MCP_TOOLS, DESKTOP_AGENT_MCP_TOOLS, ENDPOINT_AGENT_MCP_TOOLS } from '@/utils/mcpTools'
 import { getAuthToken } from '@/api/http'
 import { listWorkspaceFiles } from '@/api/workspace'
@@ -18,6 +18,7 @@ interface UseAiConfigManagementOptions {
   defaultMcpTools: string[]
   mcpToolMetaByName: Ref<Record<string, McpToolDefinition>>
   mcpRoleMeta: Ref<McpRoleMeta>
+  modelPresets: Ref<ModelPreset[]>
   normalizeSystemAutoControl: (raw: unknown) => any
   alert?: (options: { title?: string; message: string; type?: 'info' | 'success' | 'warning' | 'error' }) => Promise<void>
   onToggleAiRunByConfigId: (configId?: number) => Promise<void>
@@ -34,6 +35,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     defaultMcpTools,
     mcpToolMetaByName,
     mcpRoleMeta,
+    modelPresets,
     normalizeSystemAutoControl,
     alert,
     onToggleAiRunByConfigId,
@@ -120,9 +122,8 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     platform: role === 'assistant_admin' ? 'Server-Node' : 'Ubuntu-Worker',
     token_limit: role === 'assistant_admin' ? 0 : 10000,
     workspace_root: role === 'assistant_admin' ? '.' : '',
-    api_key: '',
-    base_url: '',
-    model: '',
+    model_preset_id: modelPresets.value[0]?.id || '',
+    model: modelPresets.value[0]?.model || '',
     prompt: '',
     mcp_tools: [...defaultMcpTools],
     mcp_auto_approve: false,
@@ -142,6 +143,13 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     qq_default_target_type: 'c2c',
     system_auto_control: normalizeSystemAutoControl({}),
   })
+
+  const presetIdForModel = (presetId?: string, model?: string) => {
+    const id = String(presetId || '').trim()
+    if (id && modelPresets.value.some(item => item.id === id)) return id
+    const modelName = String(model || '').trim()
+    return modelPresets.value.find(item => item.model === modelName || item.id === modelName)?.id || id
+  }
 
   const normalizeWorkspacePath = (path: string) => {
     return (path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
@@ -294,8 +302,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       platform: cfg.platform || aiConfigForm.value.platform,
       token_limit: cfg.token_limit ?? aiConfigForm.value.token_limit,
       workspace_root: normalizeWorkspacePath(cfg.workspace_root || ''),
-      api_key: cfg.api_key || '',
-      base_url: cfg.base_url ?? aiConfigForm.value.base_url,
+      model_preset_id: presetIdForModel(cfg.model_preset_id, cfg.model),
       model: cfg.model ?? aiConfigForm.value.model,
       prompt: cfg.prompt || '',
       enabled: !!cfg.enabled,
@@ -345,8 +352,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       platform: agent.platform,
       token_limit: agent.aiRole === 'assistant_admin' ? 0 : agent.tokenLimit,
       workspace_root: agent.aiRole === 'assistant_admin' ? '.' : '',
-      api_key: '',
-      base_url: '',
+      model_preset_id: presetIdForModel('', agent.model),
       model: agent.model || '',
       prompt: '',
       enabled: !!agent.enabled,
@@ -388,6 +394,15 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     if (!getAuthToken()) return false
     const normalizedWorkspaceRoot = normalizeWorkspacePath(aiConfigForm.value.workspace_root || '')
     const selectedBotChannel = aiConfigForm.value.bot_channel === 'qq' ? 'qq' : 'feishu'
+    const selectedPreset = modelPresets.value.find(item => item.id === aiConfigForm.value.model_preset_id)
+    if (!selectedPreset) {
+      await alert?.({
+        title: '保存失败',
+        message: '请先选择一个已保存的服务器模型。',
+        type: 'warning',
+      })
+      return false
+    }
 
     const payload: AiConfigUpsertPayload = {
       name: aiConfigForm.value.name,
@@ -401,9 +416,8 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
         ? 0
         : (Number(aiConfigForm.value.token_limit) || 10000),
       workspace_root: normalizedWorkspaceRoot || null,
-      api_key: aiConfigForm.value.api_key,
-      base_url: aiConfigForm.value.base_url,
-      model: aiConfigForm.value.model,
+      model: selectedPreset.model,
+      model_preset_id: selectedPreset.id,
       prompt: aiConfigForm.value.prompt,
       mcp_tools: JSON.stringify(aiConfigForm.value.mcp_tools || []),
       bot_channel: selectedBotChannel,
@@ -514,6 +528,16 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       if (!aiConfigForm.value || role === prevRole) return
       if (aiConfigForm.value.ai_role_group === 'digital_member') clampFormToolsToRole()
     }
+  )
+
+  watch(
+    modelPresets,
+    presets => {
+      if (!aiConfigForm.value || aiConfigForm.value.model_preset_id) return
+      aiConfigForm.value.model_preset_id = presets[0]?.id || ''
+      aiConfigForm.value.model = presets[0]?.model || ''
+    },
+    { deep: true }
   )
 
   return {

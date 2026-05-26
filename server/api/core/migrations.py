@@ -29,6 +29,8 @@ def run_pending_migrations() -> None:
         DEFAULT_INHERITANCE_NOTICE,
         DEFAULT_MCP_CALL_METHOD,
         DEFAULT_MCP_FORMAT_ERROR_HINT,
+        DEFAULT_MCP_NAMESPACE_HINTS,
+        DEFAULT_MODEL_PRESETS,
         DEFAULT_RESUME_TASK_PROMPT,
         DEFAULT_START_TASK_PROMPT,
         DEFAULT_SUPERVISION_PROMPT,
@@ -45,6 +47,7 @@ def run_pending_migrations() -> None:
         _migrate_user(
             cursor,
             mcp_call_method=DEFAULT_MCP_CALL_METHOD,
+            mcp_namespace_hints=DEFAULT_MCP_NAMESPACE_HINTS,
             mcp_format_error_hint=DEFAULT_MCP_FORMAT_ERROR_HINT,
             start_task_prompt=DEFAULT_START_TASK_PROMPT,
             resume_task_prompt=DEFAULT_RESUME_TASK_PROMPT,
@@ -59,6 +62,7 @@ def run_pending_migrations() -> None:
             user_message_notice=DEFAULT_USER_MESSAGE_NOTICE,
             ui_theme_mode=DEFAULT_UI_THEME_MODE,
             ui_font_size=DEFAULT_UI_FONT_SIZE,
+            model_presets=DEFAULT_MODEL_PRESETS,
         )
         _migrate_assistantaiconfig(cursor)
         _migrate_qqsessionroute(cursor)
@@ -97,6 +101,7 @@ def _migrate_user(
     cursor: sqlite3.Cursor,
     *,
     mcp_call_method: str,
+    mcp_namespace_hints: str,
     mcp_format_error_hint: str,
     start_task_prompt: str,
     resume_task_prompt: str,
@@ -111,13 +116,16 @@ def _migrate_user(
     user_message_notice: str,
     ui_theme_mode: str,
     ui_font_size: str,
+    model_presets: str,
 ) -> None:
     existing = _existing_columns(cursor, "user")
     _add_column(cursor, "user", "mcp_call_method", f"TEXT DEFAULT '{_quote(mcp_call_method)}'", existing)
+    _add_column(cursor, "user", "mcp_namespace_hints", f"TEXT DEFAULT '{_quote(mcp_namespace_hints)}'", existing)
     _add_column(cursor, "user", "mcp_format_error_hint", f"TEXT DEFAULT '{_quote(mcp_format_error_hint)}'", existing)
     _add_column(cursor, "user", "mcp_max_steps", "INTEGER DEFAULT 48", existing)
     _add_column(cursor, "user", "role_mcp_permissions", "TEXT DEFAULT ''", existing)
     _add_column(cursor, "user", "tavily_api_key", "TEXT DEFAULT ''", existing)
+    _add_column(cursor, "user", "model_presets", f"TEXT DEFAULT '{_quote(model_presets)}'", existing)
     _add_column(cursor, "user", "default_start_task_prompt", f"TEXT DEFAULT '{_quote(start_task_prompt)}'", existing)
     _add_column(cursor, "user", "default_resume_task_prompt", f"TEXT DEFAULT '{_quote(resume_task_prompt)}'", existing)
     _add_column(cursor, "user", "default_supervision_prompt", f"TEXT DEFAULT '{_quote(supervision_prompt)}'", existing)
@@ -163,7 +171,23 @@ def _migrate_user(
         "workspace.run_command",
         ["web.search"],
     )
+    _append_role_permission_tool_items_after_anchor(
+        cursor,
+        "conversation.forget_before_current",
+        ["conversation.find", "conversation.create", "conversation.delete"],
+    )
+    _append_role_permission_tool_items_after_anchor(
+        cursor,
+        "user.send_message",
+        [
+            "conversation.forget_before_current",
+            "conversation.find",
+            "conversation.create",
+            "conversation.delete",
+        ],
+    )
     _remove_role_permission_tool_item(cursor, "task.get_current")
+    _remove_role_permission_tool_item(cursor, "admin.dispatch_flow")
 
 
 def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
@@ -195,6 +219,8 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
     _add_column(cursor, "assistantaiconfig", "project_id", "TEXT", existing)
     _add_column(cursor, "assistantaiconfig", "project_name", "TEXT", existing)
     _add_column(cursor, "assistantaiconfig", "sort_order", "INTEGER DEFAULT 100", existing)
+    _add_column(cursor, "assistantaiconfig", "model_preset_id", "TEXT DEFAULT ''", existing)
+    _backfill_model_presets_from_ai_configs(cursor)
 
     if "system_auto_control" not in existing:
         default_auto = (
@@ -230,6 +256,7 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
     )
     _remove_json_array_item(cursor, "assistantaiconfig", "mcp_tools", "ai.reply_message")
     _remove_json_array_item(cursor, "assistantaiconfig", "mcp_tools", "task.get_current")
+    _remove_json_array_item(cursor, "assistantaiconfig", "mcp_tools", "admin.dispatch_flow")
     _collapse_json_array_items(
         cursor,
         "assistantaiconfig",
@@ -255,6 +282,25 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
         "workspace.run_command",
         ["web.search"],
     )
+    _append_json_array_items_after_anchor(
+        cursor,
+        "assistantaiconfig",
+        "mcp_tools",
+        "conversation.forget_before_current",
+        ["conversation.find", "conversation.create", "conversation.delete"],
+    )
+    _append_json_array_items_after_anchor(
+        cursor,
+        "assistantaiconfig",
+        "mcp_tools",
+        "user.send_message",
+        [
+            "conversation.forget_before_current",
+            "conversation.find",
+            "conversation.create",
+            "conversation.delete",
+        ],
+    )
     cursor.execute(
         "UPDATE assistantaiconfig SET bot_channel = 'feishu' "
         "WHERE bot_channel IS NULL OR bot_channel = '' "
@@ -265,6 +311,93 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
         "WHERE qq_default_target_type IS NULL OR qq_default_target_type = '' "
         "OR qq_default_target_type NOT IN ('c2c', 'group', 'channel', 'dm')"
     )
+
+
+def _backfill_model_presets_from_ai_configs(cursor: sqlite3.Cursor) -> None:
+    import json
+
+    user_columns = _existing_columns(cursor, "user")
+    config_columns = _existing_columns(cursor, "assistantaiconfig")
+    required_user = {"id", "model_presets"}
+    required_config = {"id", "user_id", "api_key", "base_url", "model", "model_preset_id"}
+    if not required_user.issubset(user_columns) or not required_config.issubset(config_columns):
+        return
+
+    cursor.execute("SELECT id, model_presets FROM user")
+    users = cursor.fetchall()
+    for user_id, raw_presets in users:
+        try:
+            parsed = json.loads(raw_presets or "[]")
+        except Exception:
+            parsed = []
+        presets = parsed if isinstance(parsed, list) else []
+        normalized: list[dict] = []
+        seen_ids: set[str] = set()
+        seen_keys: dict[tuple[str, str, str], str] = {}
+        for index, item in enumerate(presets):
+            if not isinstance(item, dict):
+                continue
+            api_key = str(item.get("api_key") or "").strip()
+            base_url = str(item.get("base_url") or "").strip()
+            model = str(item.get("model") or "").strip()
+            if not api_key or not base_url or not model:
+                continue
+            preset_id = str(item.get("id") or model or f"model_{index + 1}").strip()
+            if not preset_id or preset_id in seen_ids:
+                preset_id = f"{model}_{index + 1}"
+            seen_ids.add(preset_id)
+            seen_keys[(api_key, base_url, model)] = preset_id
+            normalized.append(
+                {
+                    "id": preset_id,
+                    "name": str(item.get("name") or model).strip() or model,
+                    "api_key": api_key,
+                    "base_url": base_url,
+                    "model": model,
+                }
+            )
+
+        cursor.execute(
+            "SELECT id, api_key, base_url, model, model_preset_id FROM assistantaiconfig WHERE user_id = ?",
+            (user_id,),
+        )
+        configs = cursor.fetchall()
+        for cfg_id, api_key, base_url, model, model_preset_id in configs:
+            api_key = str(api_key or "").strip()
+            base_url = str(base_url or "").strip()
+            model = str(model or "").strip()
+            if not api_key or not base_url or not model:
+                continue
+            key = (api_key, base_url, model)
+            preset_id = seen_keys.get(key)
+            if not preset_id:
+                base_id = model
+                preset_id = base_id
+                suffix = 2
+                while preset_id in seen_ids:
+                    preset_id = f"{base_id}_{suffix}"
+                    suffix += 1
+                seen_ids.add(preset_id)
+                seen_keys[key] = preset_id
+                normalized.append(
+                    {
+                        "id": preset_id,
+                        "name": model,
+                        "api_key": api_key,
+                        "base_url": base_url,
+                        "model": model,
+                    }
+                )
+            if not str(model_preset_id or "").strip():
+                cursor.execute(
+                    "UPDATE assistantaiconfig SET model_preset_id = ? WHERE id = ?",
+                    (preset_id, cfg_id),
+                )
+
+        cursor.execute(
+            "UPDATE user SET model_presets = ? WHERE id = ?",
+            (json.dumps(normalized, ensure_ascii=False), user_id),
+        )
 
 
 def _migrate_qqsessionroute(cursor: sqlite3.Cursor) -> None:

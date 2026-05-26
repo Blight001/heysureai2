@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import ChatMessageList from './ChatMessageList.vue'
 import { parseChatResponseInline, type ActionBlock, type InlineContent as InlineContentType } from '@/utils/chatParser'
+import { stripMcpCallBlocks } from '@/utils/mcpFormat'
+import { listMcpTools } from '@/api/mcp'
 
 interface ConversationInputMessage {
   id?: number
@@ -13,6 +15,7 @@ interface ConversationInputMessage {
   blocks?: ActionBlock[]
   tags?: string
   system_prompt?: string
+  front_prompt_details?: string
   created_at?: number
 }
 
@@ -74,9 +77,7 @@ const parseMcpToolNameFromMessage = (msg?: ConversationInputMessage | Conversati
 }
 
 const stripMcpCallFormatText = (raw?: string) => {
-  return String(raw || '')
-    .replace(/<mcp[-_]call>\s*[\s\S]*?\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*(?:invoke|tool[-_]?calls?))\s*>/gi, '')
-    .trim()
+  return stripMcpCallBlocks(raw)
 }
 
 const stripMcpCallInlineText = (items?: InlineContentType[]) => {
@@ -313,6 +314,49 @@ const effectiveFrontPrompt = computed(() => {
   return ''
 })
 
+const frontPromptToolSchemas = ref<any[]>([])
+const frontPromptToolSchemaError = ref('')
+const initialNativeToolNames = ['mcp.list_tools', 'mcp.describe_tool']
+
+const loadFrontPromptToolSchemas = async () => {
+  try {
+    const response = await listMcpTools()
+    const tools = Array.isArray(response.tools) ? response.tools : []
+    frontPromptToolSchemas.value = tools
+      .filter((tool: any) => initialNativeToolNames.includes(String(tool?.name || '').trim()))
+      .map((tool: any) => ({
+        name: tool.name,
+        description: tool.description || '',
+        inputSchema: tool.inputSchema || {},
+        destructive: !!tool.destructive,
+      }))
+      .sort((a: any, b: any) => initialNativeToolNames.indexOf(a.name) - initialNativeToolNames.indexOf(b.name))
+    frontPromptToolSchemaError.value = ''
+  } catch (error: any) {
+    frontPromptToolSchemas.value = []
+    frontPromptToolSchemaError.value = error?.message || 'MCP schema 加载失败'
+  }
+}
+
+onMounted(() => {
+  void loadFrontPromptToolSchemas()
+})
+
+const frontPromptDetails = computed(() => {
+  const prompt = effectiveFrontPrompt.value
+  const details = {
+    prompt_source: prompt ? 'message.system_prompt' : 'placeholder',
+    prompt,
+    mcp_schema_mode: 'dynamic_native_tools',
+    initial_native_tools: frontPromptToolSchemas.value.length > 0
+      ? frontPromptToolSchemas.value
+      : initialNativeToolNames.map(name => ({ name })),
+    dynamic_rule: '初始只向模型暴露 mcp.list_tools / mcp.describe_tool；mcp.describe_tool 成功后，后端才把被描述的目标工具 schema 加入下一轮请求。',
+    schema_error: frontPromptToolSchemaError.value || undefined,
+  }
+  return JSON.stringify(details, null, 2)
+})
+
 const frontPromptMessage = computed<ConversationMessage | null>(() => {
   if (!props.showFrontPrompt || !props.sessionActive) return null
   const prompt = effectiveFrontPrompt.value
@@ -325,6 +369,7 @@ const frontPromptMessage = computed<ConversationMessage | null>(() => {
     role: 'system',
     content,
     display_text: content,
+    front_prompt_details: frontPromptDetails.value,
   }
 })
 

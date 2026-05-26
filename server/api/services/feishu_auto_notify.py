@@ -4,16 +4,13 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
+from ..chat_runtime.mcp_parser import MCP_CALL_BLOCK_RE
 from ..integrations.feishu.service import send_feishu_text_message
 from ..integrations.qq.service import send_qq_text_message
 from ..models import ChatMessage, FeishuSessionRoute, QQSessionRoute
 
 
 FEISHU_TEXT_MAX_CHARS = 1800
-MCP_CALL_RE = re.compile(
-    r"<mcp[-_]call>\s*[\s\S]*?\s*</\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*(?:invoke|tool[-_]?calls?))\s*>",
-    re.IGNORECASE,
-)
 
 
 def register_feishu_session_route(
@@ -157,7 +154,7 @@ def _feishu_visible_content(message: ChatMessage) -> str:
     content = str(message.content or "")
     if not content:
         return ""
-    content = MCP_CALL_RE.sub("", content)
+    content = MCP_CALL_BLOCK_RE.sub("", content)
     content = re.sub(r"<mcp[-_]call\b[\s\S]*$", "", content, flags=re.IGNORECASE)
     content = re.sub(r"\n{3,}", "\n\n", content)
     return content.strip()

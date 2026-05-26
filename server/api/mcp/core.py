@@ -16,6 +16,7 @@ _MCP_RUNTIME_OVERRIDES: contextvars.ContextVar[Optional[Dict[str, Any]]] = conte
     "mcp_runtime_overrides",
     default=None,
 )
+MCP_INTROSPECTION_TOOLS = {"mcp.list_tools", "mcp.describe_tool"}
 _IGNORED_WORKSPACE_DIRS = {".git", "__pycache__", "venv", "node_modules", ".aider"}
 def set_mcp_runtime_overrides(overrides: Optional[Dict[str, Any]]):
     return _MCP_RUNTIME_OVERRIDES.set(overrides or None)
@@ -28,6 +29,25 @@ def get_mcp_runtime_overrides() -> Optional[Dict[str, Any]]:
 
 def _resolve_ai_workspace(user_id: int, ai_config_id: Optional[int]) -> str:
     default_root = user_workspace_dir(user_id)
+
+    def bounded_workspace(raw_workspace: str) -> str:
+        raw = str(raw_workspace or "").strip()
+        if not raw or raw == ".":
+            candidate = default_root
+        elif os.path.isabs(raw):
+            candidate = os.path.abspath(raw)
+        else:
+            candidate = os.path.abspath(os.path.join(default_root, raw))
+
+        abs_default = os.path.abspath(default_root)
+        try:
+            common = os.path.commonpath([abs_default, candidate])
+        except ValueError:
+            common = ""
+        if common != abs_default:
+            raise HTTPException(status_code=403, detail="Workspace root outside user workspace is not allowed")
+        return candidate
+
     runtime_overrides = get_mcp_runtime_overrides() or {}
     override_uid = runtime_overrides.get("user_id")
     override_cfg = runtime_overrides.get("ai_config_id")
@@ -37,11 +57,7 @@ def _resolve_ai_workspace(user_id: int, ai_config_id: Optional[int]) -> str:
         and (override_uid is None or int(override_uid) == int(user_id))
         and (override_cfg is None or int(override_cfg) == int(ai_config_id or 0))
     ):
-        if override_ws == ".":
-            return default_root
-        if os.path.isabs(override_ws):
-            return os.path.abspath(override_ws)
-        return os.path.abspath(os.path.join(default_root, override_ws))
+        return bounded_workspace(override_ws)
 
     if not ai_config_id:
         return default_root
@@ -55,11 +71,7 @@ def _resolve_ai_workspace(user_id: int, ai_config_id: Optional[int]) -> str:
     if not cfg or not cfg.workspace_root:
         return default_root
     raw = cfg.workspace_root.strip()
-    if not raw:
-        return default_root
-    if os.path.isabs(raw):
-        return os.path.abspath(raw)
-    return os.path.abspath(os.path.join(default_root, raw))
+    return bounded_workspace(raw)
 
 def get_project_root(user_id: int, ai_config_id: Optional[int] = None) -> str:
     workspace_dir = _resolve_ai_workspace(user_id, ai_config_id)
@@ -74,7 +86,11 @@ def get_project_root(user_id: int, ai_config_id: Optional[int] = None) -> str:
 def safe_join(root: str, *paths: str) -> str:
     abs_root = os.path.abspath(root)
     joined = os.path.abspath(os.path.join(abs_root, *paths))
-    if not joined.startswith(abs_root):
+    try:
+        common = os.path.commonpath([abs_root, joined])
+    except ValueError:
+        common = ""
+    if common != abs_root:
         raise HTTPException(status_code=403, detail="Access denied: path outside workspace")
     return joined
 

@@ -5,6 +5,7 @@
 import { net } from 'electron'
 import { normalizeServerUrl } from '../server-url'
 import type { AgentSettings } from '../store'
+import { clearStoredAuthSession } from './auth-state'
 
 const DEFAULT_TIMEOUT_MS = 10_000
 
@@ -45,15 +46,21 @@ export function requireAuthWithAi(settings: AgentSettings): {
   return { base, token, aiConfigId: Number(settings.selectedAiConfigId) }
 }
 
-async function readJson(res: Response, fallback: string): Promise<any> {
+async function readJson(res: Response, fallback: string, wasAuthenticated = false): Promise<any> {
   const text = await res.text()
   let data: any = {}
   if (text) {
     try { data = JSON.parse(text) } catch { data = { detail: text } }
   }
   if (!res.ok) {
+    const message = res.status === 401 && wasAuthenticated
+      ? '登录已过期，请重新登录'
+      : data?.detail || data?.error || `${fallback} (${res.status})`
+    if (res.status === 401 && wasAuthenticated) {
+      clearStoredAuthSession()
+    }
     throw new ServerError(
-      data?.detail || data?.error || `${fallback} (${res.status})`,
+      message,
       res.status,
       data,
     )
@@ -78,7 +85,7 @@ export async function serverFetch<T = any>(
     signal: AbortSignal.timeout(opts.timeoutMs || DEFAULT_TIMEOUT_MS),
   })
 
-  return readJson(res, opts.failureMessage || `请求失败`)
+  return readJson(res, opts.failureMessage || `请求失败`, !!opts.token)
 }
 
 // Health-probe used by the "test connection" button. Falls back to the root

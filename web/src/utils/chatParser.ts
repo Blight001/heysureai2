@@ -1,3 +1,5 @@
+import { createMcpCallBlockPattern } from './mcpFormat';
+
 export interface ActionBlock {
   id: string;
   type: 'edit' | 'create' | 'delete' | 'run' | 'mcp';
@@ -50,9 +52,6 @@ const parseMcpPayload = (raw: string): { tool: string; arguments: Record<string,
   return { tool, arguments: {} };
 };
 
-const mcpCallBlockPattern = () =>
-  /<mcp[-_]call>\s*([\s\S]*?)\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*(?:invoke|tool[-_]?calls?))\s*>/gi;
-
 export function parseChatResponseInline(text: string) {
   const thinkPattern = /<think>\s*([\s\S]*?)\s*<\/think>/gi;
   const legacyThinkPattern = /<\/think>([\s\S]*?)<\/think>/gi;
@@ -70,7 +69,7 @@ export function parseChatResponseInline(text: string) {
   };
 
   const matches: { index: number; length: number; block: ActionBlock }[] = [];
-  const mcpPattern = mcpCallBlockPattern();
+  const mcpPattern = createMcpCallBlockPattern();
 
   let mcpMatch;
   while ((mcpMatch = mcpPattern.exec(cleanedText)) !== null) {

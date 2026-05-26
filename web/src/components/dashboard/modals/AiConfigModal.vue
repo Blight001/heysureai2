@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { getMcpToolZhLabel, groupMcpToolsBySource } from '@/utils/mcpTools'
+import type { ModelPreset } from '@/types'
 
 type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'bot'
 
@@ -14,6 +15,7 @@ interface Props {
   availableWorkspaceDirs: string[]
   workspaceDirsLoading: boolean
   workspaceDirsError: string
+  modelPresets: ModelPreset[]
   onClose: () => void
   onToggleSettingsSection: (section: SettingsSection) => void
   onToolCheckboxChange: (tool: string, event: Event) => void
@@ -52,6 +54,10 @@ const closePromptDetail = () => {
 
 const groupedAvailableMcpTools = computed(() => groupMcpToolsBySource(props.availableMcpTools))
 const selectedBotName = computed(() => props.form?.bot_channel === 'qq' ? 'QQ机器人' : '飞书机器人')
+const selectedModelPreset = computed(() => {
+  const selectedId = String(props.form?.model_preset_id || '')
+  return (props.modelPresets || []).find(item => item.id === selectedId) || null
+})
 const selectedBotEnabled = computed(() => props.form?.bot_channel === 'qq' ? !!props.form?.qq_enabled : !!props.form?.feishu_enabled)
 const isToolSelected = (tool: string) => Array.isArray(props.form?.mcp_tools) && props.form.mcp_tools.includes(tool)
 const selectedAvailableMcpToolCount = computed(() => props.availableMcpTools.filter(tool => isToolSelected(tool)).length)
@@ -63,6 +69,12 @@ const onToolGroupChange = (tools: string[], event: Event) => {
   const target = event.target as HTMLInputElement | null
   const checked = !!target?.checked
   tools.forEach(tool => emitToolSelection(tool, checked))
+}
+
+const onModelPresetChange = () => {
+  if (!props.form) return
+  const preset = selectedModelPreset.value
+  props.form.model = preset?.model || ''
 }
 </script>
 
@@ -102,7 +114,22 @@ const onToolGroupChange = (tools: string[], event: Event) => {
           </div>
           <div>
             <label class="block text-xs text-zinc-500 mb-1">模型</label>
-            <input v-model="form.model" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100" />
+            <select
+              v-model="form.model_preset_id"
+              class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100"
+              @change="onModelPresetChange"
+            >
+              <option value="">请选择服务器模型</option>
+              <option v-for="preset in modelPresets" :key="preset.id" :value="preset.id">
+                {{ preset.name || preset.model }}（{{ preset.model }}）
+              </option>
+            </select>
+            <div v-if="selectedModelPreset" class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+              {{ selectedModelPreset.base_url }}
+            </div>
+            <div v-else class="mt-1 text-[11px] text-amber-600 dark:text-amber-300">
+              请先在系统设置中保存服务器模型。
+            </div>
           </div>
           <div>
             <label class="block text-xs text-zinc-500 mb-1">Token 上限</label>
@@ -119,14 +146,6 @@ const onToolGroupChange = (tools: string[], event: Event) => {
             >
               辅助管理员无 Token 上限（仅用于与用户对话）
             </div>
-          </div>
-          <div>
-            <label class="block text-xs text-zinc-500 mb-1">API Key</label>
-            <input v-model="form.api_key" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100" />
-          </div>
-          <div>
-            <label class="block text-xs text-zinc-500 mb-1">Base URL</label>
-            <input v-model="form.base_url" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100" />
           </div>
           <div class="md:col-span-2">
             <div class="mb-1 flex items-center justify-between gap-2">

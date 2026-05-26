@@ -16,13 +16,13 @@ from api.database import get_session
 from api.mcp import get_project_root, registry
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatMessageUpdate, ChatRun
 from api.routers.auth import get_current_user
+from api.services.model_presets import resolve_model_preset
 from .chat_base import _RUN_LIVE_STATE, _RUN_STATE_LOCK, _RUN_THREADS, router
 from api.services.chat_persistence import _append_usage_snapshot, _rebuild_usage_snapshots, _save_message, _upsert_session
 from .chat_prompt_utils import (
     _append_prompt_section,
     _build_mcp_stream_warning,
     _clear_run_live_text,
-    _merge_global_mcp_method,
     _strip_runtime_injected_sections,
 )
 from .chat_runtime_helpers import _resolve_ai_runtime
@@ -451,7 +451,16 @@ async def execute_action(
             raise HTTPException(status_code=410, detail="File edit/create/delete actions have been removed. Use workspace.run_command instead.")
 
         if action == "run":
-            result = await registry.call("workspace.run_command", user.id, {"command": req.get("command")}, req.get("ai_config_id"))
+            result = await registry.call(
+                "workspace.run_command",
+                user.id,
+                {
+                    "command": req.get("command"),
+                    "cwd": req.get("cwd"),
+                    "timeout": req.get("timeout"),
+                },
+                req.get("ai_config_id"),
+            )
             return {
                 "success": result["result"]["success"],
                 "message": f"Command executed with exit code {result['result']['exit_code']}",
@@ -503,21 +512,14 @@ async def stream_chat(
             raise HTTPException(status_code=400, detail="No available assistant AI config")
         if not cfg.enabled:
             raise HTTPException(status_code=400, detail="Selected assistant AI is stopped")
-        api_key = cfg.api_key
-        base_url = cfg.base_url
-        model = cfg.model
+        api_key, base_url, model = resolve_model_preset(user, cfg)
         system_prompt = _strip_runtime_injected_sections(cfg.prompt or "")
         system_prompt = _append_prompt_section(system_prompt, "AI 工作目录", get_project_root(user.id, cfg.id))
         if cfg.database_uri:
             system_prompt = _append_prompt_section(system_prompt, "AI 数据库连接", cfg.database_uri)
     else:
-        api_key = user.admin_api_key
-        base_url = user.admin_base_url
-        model = user.admin_model
+        api_key, base_url, model = resolve_model_preset(user, None)
         system_prompt = _strip_runtime_injected_sections(user.admin_prompt or "")
-    global_mcp_method = str(getattr(user, "mcp_call_method", "") or "").strip()
-    system_prompt = _merge_global_mcp_method(system_prompt, global_mcp_method, cfg)
-    
     if not api_key:
         raise HTTPException(status_code=400, detail="Admin API key not configured")
     if not base_url:

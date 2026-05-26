@@ -19,7 +19,8 @@ from api.models import (
     TokenUsageSnapshot,
 )
 from api.routers.auth import get_current_user
-from api.services.ai_service import ensure_default_ai_for_user, remove_switch_key
+from api.services.ai_service import ensure_default_ai_for_user
+from api.services.model_presets import resolve_model_preset
 from api.services.task_system import decode_task_payload, parse_generation_from_session_id
 from .ai_base import router
 
@@ -81,7 +82,6 @@ async def delete_ai_config(
 
     session.delete(cfg)
     session.commit()
-    remove_switch_key(user.id, cfg.switch_key)
     return {"success": True}
 
 @router.get("/runtime-status")
@@ -439,12 +439,14 @@ async def list_ai_cards(
         feishu_status = _build_feishu_status(cfg)
         qq_status = _build_qq_status(cfg)
         bot_channel = str(cfg.bot_channel or "feishu")
+        _, _, effective_model = resolve_model_preset(user, cfg)
         cards.append(
             {
                 "id": cfg.id,
                 "name": cfg.name,
                 "description": cfg.description,
-                "model": cfg.model,
+                "model": effective_model or cfg.model,
+                "model_preset_id": cfg.model_preset_id,
                 "ai_role": cfg.ai_role,
                 "digital_member_role": cfg.digital_member_role,
                 "platform": cfg.platform,

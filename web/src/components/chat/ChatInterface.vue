@@ -695,6 +695,31 @@ const fetchRunHistoryIncrementalOnce = async () => {
   }
 }
 
+const deleteSessions = async (sessionIds: string[]) => {
+  const ids = Array.from(new Set(sessionIds.map(id => String(id || '').trim()).filter(Boolean)))
+  if (ids.length === 0) return
+  if (!(await confirm({ message: `确定删除选中的 ${ids.length} 个对话记录吗？`, type: 'warning' }))) return
+  if (!getAuthToken()) return
+  const deleted = new Set<string>()
+  for (const sid of ids) {
+    try {
+      await chatApi.deleteChatSession(chatCtx.value, sid)
+      deleted.add(sid)
+    } catch {
+      // keep deleting the rest
+    }
+  }
+  await loadSessions()
+  if (deleted.has(currentSessionId.value)) {
+    currentSessionId.value = pickPreferredSessionId(sessionList.value)
+    if (currentSessionId.value) await loadChatHistory(currentSessionId.value)
+    else chatMessages.value = []
+  }
+  if (deleted.size > 0) {
+    alert({ message: `已删除 ${deleted.size} 个对话记录`, type: 'success' })
+  }
+}
+
 const pollSessionSync = async (epoch: number) => {
   if (epoch !== sessionSyncPollEpoch) return
   try {
@@ -1140,6 +1165,7 @@ onBeforeUnmount(() => {
         @change="loadChatHistory"
         @create="createSessionFromButton"
         @delete="deleteSession"
+        @batch-delete="deleteSessions"
         @rename="renameSession"
       />
       <div class="flex items-center gap-2">

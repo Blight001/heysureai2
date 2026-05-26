@@ -5470,6 +5470,100 @@ ${code}
   }
 
   // src/lib/ai.ts
+  function dataUrlParts(dataUrl) {
+    const m = String(dataUrl || "").match(/^data:([^;,]+);base64,(.+)$/);
+    if (!m)
+      return null;
+    return { mediaType: m[1] || "image/png", data: m[2] || "" };
+  }
+  function anthropicMessages(messages) {
+    return messages;
+  }
+  function stringifyToolContent(content) {
+    if (typeof content === "string")
+      return content;
+    if (Array.isArray(content)) {
+      return content.filter((item) => item?.type !== "image").map((item) => item?.type === "text" ? String(item.text || "") : JSON.stringify(item)).filter(Boolean).join("\n");
+    }
+    try {
+      return JSON.stringify(content);
+    } catch {
+      return String(content);
+    }
+  }
+  function openAiMessages(messages) {
+    const out = [];
+    for (const msg of messages) {
+      if (msg.role === "assistant" && Array.isArray(msg.content) && msg.content.some((b) => b?.type === "tool_use")) {
+        const toolCalls = msg.content.filter((b) => b?.type === "tool_use").map((tu) => ({
+          id: tu.id,
+          type: "function",
+          function: {
+            name: tu.name,
+            arguments: JSON.stringify(tu.input || {})
+          }
+        }));
+        out.push({ role: "assistant", content: null, tool_calls: toolCalls });
+        continue;
+      }
+      if (msg.role === "user" && Array.isArray(msg.content) && msg.content.some((b) => b?.type === "tool_result")) {
+        const imageMessages = [];
+        for (const tr of msg.content) {
+          if (tr?.type !== "tool_result")
+            continue;
+          const content = tr.content;
+          out.push({
+            role: "tool",
+            tool_call_id: tr.tool_use_id || "call_0",
+            content: stringifyToolContent(content)
+          });
+          const blocks = Array.isArray(content) ? content : [];
+          const image = blocks.find((b) => b?.type === "image");
+          if (image?.source?.type === "base64" && image.source.data) {
+            const mediaType = image.source.media_type || "image/png";
+            const dataUrl = `data:${mediaType};base64,${image.source.data}`;
+            const text = blocks.find((b) => b?.type === "text")?.text || "Screenshot captured by browser_screenshot.";
+            imageMessages.push({
+              role: "user",
+              content: [
+                { type: "text", text },
+                { type: "image_url", image_url: { url: dataUrl } }
+              ]
+            });
+          }
+        }
+        out.push(...imageMessages);
+        continue;
+      }
+      if (msg.role === "user" && Array.isArray(msg.content)) {
+        const parts2 = [];
+        for (const item of msg.content) {
+          if (item?.type === "text")
+            parts2.push({ type: "text", text: String(item.text || "") });
+          else if (item?.type === "image" && item.source?.type === "base64") {
+            const dataUrl = `data:${item.source.media_type || "image/png"};base64,${item.source.data || ""}`;
+            parts2.push({ type: "image_url", image_url: { url: dataUrl } });
+          } else if (item?.type === "image_url") {
+            parts2.push(item);
+          }
+        }
+        out.push({ role: msg.role, content: parts2.length ? parts2 : stringifyToolContent(msg.content) });
+        continue;
+      }
+      out.push({ role: msg.role, content: typeof msg.content === "string" ? msg.content : stringifyToolContent(msg.content) });
+    }
+    return out;
+  }
+  function screenshotToolContent(result) {
+    const parsed = dataUrlParts(result?.dataUrl || "");
+    if (!parsed)
+      return typeof result === "string" ? result : JSON.stringify(result);
+    return [
+      { type: "image", source: { type: "base64", media_type: parsed.mediaType, data: parsed.data } },
+      { type: "text", text: `Screenshot of: ${result.url || "current page"}
+Method: ${result.method || "browser_screenshot"}` }
+    ];
+  }
   async function callAI(baseUrl, apiKey, model, messages, tools, systemPrompt) {
     if (!apiKey)
       throw new Error("AI Key is not configured");
@@ -5484,14 +5578,14 @@ ${code}
     }
     let body;
     if (isAnthropic) {
-      body = { model, max_tokens: 4096, messages };
+      body = { model, max_tokens: 4096, messages: anthropicMessages(messages) };
       if (tools?.length)
         body.tools = tools;
       if (systemPrompt)
         body.system = systemPrompt;
     } else {
-      const openAiMessages = systemPrompt ? [{ role: "system", content: systemPrompt }, ...messages] : messages;
-      body = { model, max_tokens: 4096, messages: openAiMessages };
+      const oaMessages = systemPrompt ? [{ role: "system", content: systemPrompt }, ...openAiMessages(messages)] : openAiMessages(messages);
+      body = { model, max_tokens: 4096, messages: oaMessages };
       if (tools?.length) {
         body.tools = tools.map((t) => ({
           type: "function",
@@ -5623,11 +5717,7 @@ Always:
             const toolResult = await executeBrowserTool(tu.name, tu.input);
             let content = typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult);
             if (tu.name === "browser_screenshot" && toolResult?.dataUrl) {
-              const b64 = toolResult.dataUrl.replace(/^data:image\/png;base64,/, "");
-              content = [
-                { type: "image", source: { type: "base64", media_type: "image/png", data: b64 } },
-                { type: "text", text: `Screenshot of: ${toolResult.url || "current page"}` }
-              ];
+              content = screenshotToolContent(toolResult);
             }
             toolResults.push({ type: "tool_result", tool_use_id: tu.id, content });
           } catch (err) {
@@ -5928,12 +6018,13 @@ Respond in the same language as the user. For factual questions, search the web 
     if (!settings.aiKey)
       throw new Error("\u672A\u914D\u7F6E AI Key");
     const toolsUsed = [];
+    const toolEvents = [];
     let iter = 0;
     const MAX = 12;
     while (iter < MAX) {
       const resp = await callAI(settings.aiBaseUrl, settings.aiKey, settings.aiModel, messages, BROWSER_TOOLS, CHAT_SYSTEM);
       if (!resp.toolUses?.length) {
-        return { text: resp.text || "\u5B8C\u6210", toolsUsed };
+        return { text: resp.text || "\u5B8C\u6210", toolsUsed, toolEvents };
       }
       messages.push({ role: "assistant", content: resp.toolUses });
       const toolResults = [];
@@ -5944,11 +6035,13 @@ Respond in the same language as the user. For factual questions, search the web 
           const result = await executeBrowserTool(tu.name, tu.input);
           let content = typeof result === "string" ? result : JSON.stringify(result);
           if (tu.name === "browser_screenshot" && result?.dataUrl) {
-            const b64 = result.dataUrl.replace(/^data:image\/png;base64,/, "");
-            content = [
-              { type: "image", source: { type: "base64", media_type: "image/png", data: b64 } },
-              { type: "text", text: `Page: ${result.url || ""}` }
-            ];
+            content = screenshotToolContent(result);
+            toolEvents.push({
+              key: `${tu.id || tu.name}:${toolEvents.length}`,
+              label: "\u6D4F\u89C8\u5668\u622A\u56FE",
+              detail: [result.url, result.method].filter(Boolean).join("\n"),
+              imageUrl: result.dataUrl
+            });
           }
           toolResults.push({ type: "tool_result", tool_use_id: tu.id, content });
           log("task", "success", `\u5B8C\u6210: ${tu.name}`);
@@ -5960,7 +6053,7 @@ Respond in the same language as the user. For factual questions, search the web 
       messages.push({ role: "user", content: toolResults });
       iter++;
     }
-    return { text: "\u5DF2\u8FBE\u5230\u6700\u5927\u8FED\u4EE3\u6B21\u6570", toolsUsed };
+    return { text: "\u5DF2\u8FBE\u5230\u6700\u5927\u8FED\u4EE3\u6B21\u6570", toolsUsed, toolEvents };
   }
   var cardRunning = false;
   var cardStopRequested = false;
@@ -6057,7 +6150,7 @@ Respond in the same language as the user. For factual questions, search the web 
           const requestId = msg.requestId;
           try {
             const result = await runChat(msg.messages);
-            port.postMessage({ type: "chat:response", text: result.text, toolsUsed: result.toolsUsed, requestId });
+            port.postMessage({ type: "chat:response", text: result.text, toolsUsed: result.toolsUsed, toolEvents: result.toolEvents, requestId });
           } catch (err) {
             port.postMessage({ type: "chat:error", error: err.message, requestId });
           }

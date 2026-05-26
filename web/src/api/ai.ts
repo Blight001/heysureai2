@@ -18,9 +18,8 @@ export interface AiConfigUpsertPayload {
   platform: string
   token_limit: number
   workspace_root: string | null
-  api_key?: string
-  base_url?: string
   model?: string
+  model_preset_id?: string
   prompt?: string
   mcp_tools: string
   bot_channel: 'feishu' | 'qq'

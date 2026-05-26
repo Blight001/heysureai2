@@ -41,6 +41,9 @@ DEFAULT_MIN_ROLE = ROLE_MEMBER
 # map default to DEFAULT_MIN_ROLE (available to everyone). Sensitive tools are
 # raised so they can only be granted to the appropriate tiers.
 MCP_TOOL_MIN_ROLE: Dict[str, str] = {
+    # MCP self-inspection — available to every tier and forced into runtime allow-lists.
+    "mcp.list_tools": ROLE_MEMBER,
+    "mcp.describe_tool": ROLE_MEMBER,
     # Web search — external read-only lookup, available to every tier by default.
     "web.search": ROLE_MEMBER,
     # Workspace access is command-only. AI should use shell commands for file operations.
@@ -67,12 +70,14 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "prompt.write_system": ROLE_ASSISTANT_ADMIN,
     # User outbound — every tier by default.
     "user.send_message": ROLE_MEMBER,
-    # Conversation maintenance — every tier can trim its own active session.
+    # Conversation maintenance — every tier can manage its own scoped sessions.
     "conversation.forget_before_current": ROLE_MEMBER,
+    "conversation.find": ROLE_MEMBER,
+    "conversation.create": ROLE_MEMBER,
+    "conversation.delete": ROLE_MEMBER,
     # Admin / governance — assistant_admin only.
     "admin.list_agents": ROLE_ASSISTANT_ADMIN,
     "admin.get_overview": ROLE_ASSISTANT_ADMIN,
-    "admin.dispatch_flow": ROLE_ASSISTANT_ADMIN,
     # Project lifecycle — listing is manager+; mutations are assistant_admin only.
     "project.list_projects": ROLE_MANAGER,
     "project.create_project": ROLE_ASSISTANT_ADMIN,

@@ -11,6 +11,7 @@ interface Window {
     onActivityLog: (cb: (entry: any) => void) => void
     onTaskStart: (cb: (data: any) => void) => void
     onTaskResult: (cb: (data: any) => void) => void
+    onAuthExpired: (cb: (reason: string) => void) => void
     setTheme: (theme: 'dark' | 'light') => Promise<void>
     testConnection: () => Promise<{ success: boolean; status?: number; ms?: number; error?: string }>
     sendChat: (content: string) => Promise<{ text: string; sessionId?: string }>
@@ -1291,6 +1292,16 @@ function openAiSelectModal() {
 function closeAiSelectModal() {
   aiSelectModal.classList.add('hidden')
 }
+
+window.heysureAPI.onAuthExpired(async reason => {
+  const s = await window.heysureAPI.getSettings()
+  updateUserChip(s)
+  selectedAiConfigId = null
+  currentAiDisplayName = ''
+  updateAiSelectTarget()
+  openLoginModal()
+  showLoginError(reason || '登录已过期，请重新登录')
+})
 
 async function doLogin() {
   clearLoginError()

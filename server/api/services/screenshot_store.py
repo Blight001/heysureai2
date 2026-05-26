@@ -88,8 +88,4 @@ def attach_persisted_screenshot(
     next_result["file_name"] = saved["file_name"]
     next_result["media_type"] = saved["media_type"]
     next_result["bytes"] = saved["bytes"]
-    next_result["send_to_user_hint"] = (
-        "可用 user.send_message 发送给飞书/QQ，例如 "
-        f'{{"image_path":"{saved["server_path"]}"}}'
-    )
     return next_result

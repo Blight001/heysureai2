@@ -88,11 +88,12 @@ export const ENDPOINT_AGENT_MCP_TOOLS = [
 ]
 
 const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag: string }> = {
+  'mcp.list_tools': { label: 'MCP 结构树', description: '按命名空间查看当前 AI 可用 MCP 工具树。', tag: 'MCP' },
+  'mcp.describe_tool': { label: 'MCP 工具详情', description: '读取某个 MCP 工具的完整说明和参数 schema。', tag: 'MCP' },
   'web.search': { label: '联网搜索', description: '使用 Tavily 搜索互联网，适合查询实时信息、外部资料和网页结果。', tag: '工作区' },
   'workspace.run_command': { label: '执行命令', description: '在工作目录中执行终端命令。', tag: '工作区' },
   'admin.list_agents': { label: '列出智能体', description: '查看系统中的 AI 成员列表。', tag: '管理' },
   'admin.get_overview': { label: '管理总览', description: '获取系统运行状态与关键统计。', tag: '管理' },
-  'admin.dispatch_flow': { label: '分派流程', description: '向指定 AI 下发流程或任务。', tag: '管理' },
   'project.list_projects': { label: '项目列表', description: '查看当前用户下的项目信息。', tag: '项目' },
   'project.create_project': { label: '创建项目', description: '创建新的项目记录。', tag: '项目' },
   'project.update_project': { label: '更新项目', description: '更新项目信息与成员绑定。', tag: '项目' },
@@ -110,6 +111,9 @@ const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag
   'prompt.write_system': { label: '修改系统 Prompt', description: '按行修改全局注入模板/旧版兜底 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
   'user.send_message': { label: '发送用户消息', description: '向用户发送文本、图片或视频；默认通过当前 AI 绑定的飞书或 QQ 机器人投递。', tag: '协作' },
   'conversation.forget_before_current': { label: '忘记前文', description: '删除当前会话里当前用户消息之前的内容，保留当前消息及之后内容。', tag: '协作' },
+  'conversation.find': { label: '查找对话', description: '按关键词、会话名、会话 ID 或消息内容查找当前 AI 范围内的对话。', tag: '协作' },
+  'conversation.create': { label: '新建对话', description: '为当前 AI 新建一个空白对话会话。', tag: '协作' },
+  'conversation.delete': { label: '删除对话', description: '删除指定对话及其中所有消息，请谨慎操作。', tag: '协作' },
   'ai.send_message': { label: '发送 AI 消息', description: '向另一个 AI 发送消息；必须填写 message_type：inquiry 询问、reply 回复、notify 通知。', tag: '协作' },
   'memory.write': { label: '写入记忆', description: '沉淀高价值的结构化记忆（事实/决策/经验/待办/风险/模板）供后续检索。', tag: '记忆' },
   'memory.search': { label: '检索记忆', description: '按关键词、类型、项目或标签搜索已存储的记忆。', tag: '记忆' },
@@ -211,6 +215,7 @@ const normalizeMcpSchemaType = (rawType: unknown) => {
 }
 
 const MCP_TOOL_TAG_ORDER = [
+  'MCP',
   '工作区',
   '管理',
   '项目',
