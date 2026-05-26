@@ -51,7 +51,7 @@ const parseMcpPayload = (raw: string): { tool: string; arguments: Record<string,
 };
 
 const mcpCallBlockPattern = () =>
-  /<mcp[-_]call>\s*([\s\S]*?)\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*invoke)\s*>/gi;
+  /<mcp[-_]call>\s*([\s\S]*?)\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*(?:invoke|tool[-_]?calls?))\s*>/gi;
 
 export function parseChatResponseInline(text: string) {
   const thinkPattern = /<think>\s*([\s\S]*?)\s*<\/think>/gi;

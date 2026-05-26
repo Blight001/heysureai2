@@ -75,7 +75,7 @@ const parseMcpToolNameFromMessage = (msg?: ConversationInputMessage | Conversati
 
 const stripMcpCallFormatText = (raw?: string) => {
   return String(raw || '')
-    .replace(/<mcp[-_]call>\s*[\s\S]*?\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*invoke)\s*>/gi, '')
+    .replace(/<mcp[-_]call>\s*[\s\S]*?\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*(?:invoke|tool[-_]?calls?))\s*>/gi, '')
     .trim()
 }
 

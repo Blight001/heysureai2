@@ -11,7 +11,7 @@ from ..models import ChatMessage, FeishuSessionRoute, QQSessionRoute
 
 FEISHU_TEXT_MAX_CHARS = 1800
 MCP_CALL_RE = re.compile(
-    r"<mcp[-_]call>\s*[\s\S]*?\s*</\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*invoke)\s*>",
+    r"<mcp[-_]call>\s*[\s\S]*?\s*</\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*(?:invoke|tool[-_]?calls?))\s*>",
     re.IGNORECASE,
 )
 

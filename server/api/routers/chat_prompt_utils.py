@@ -26,7 +26,7 @@ from .chat_base import (
 )
 
 MCP_CALL_BLOCK_RE = re.compile(
-    r"<mcp[-_]call>\s*([\s\S]*?)\s*</\s*(?:mcp[-_]call|[\uFF5C|]*\s*DSML\s*[\uFF5C|]*\s*invoke)\s*>",
+    r"<mcp[-_]call>\s*([\s\S]*?)\s*</\s*(?:mcp[-_]call|[\uFF5C|]*\s*DSML\s*[\uFF5C|]*\s*(?:invoke|tool[-_]?calls?))\s*>",
     re.IGNORECASE,
 )
 
