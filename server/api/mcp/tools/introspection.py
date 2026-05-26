@@ -83,6 +83,7 @@ def _resolve_tool_alias(name: str, allowed: set[str]) -> str:
 def _mcp_list_tools(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int] = None):
     from ..registry import registry
     from ...services.desktop_agent_tools import endpoint_tool_description, is_endpoint_agent_tool
+    from ...services.librarian_service import intrinsic_tool_description
 
     allowed = _allowed_tool_names(user_id, ai_config_id)
     namespace_filter = str(args.get("namespace") or "").strip()
@@ -106,7 +107,7 @@ def _mcp_list_tools(user_id: int, args: Dict[str, Any], ai_config_id: Optional[i
         groups.setdefault(namespace, []).append(
             {
                 "name": name,
-                "description": str(item.get("description") or ""),
+                "description": intrinsic_tool_description(user_id, name, str(item.get("description") or "")),
                 "destructive": bool(item.get("destructive")),
             }
         )
@@ -119,7 +120,7 @@ def _mcp_list_tools(user_id: int, args: Dict[str, Any], ai_config_id: Optional[i
         groups.setdefault(namespace, []).append(
             {
                 "name": name,
-                "description": endpoint_tool_description(name),
+                "description": intrinsic_tool_description(user_id, name, endpoint_tool_description(name)),
                 "destructive": True,
             }
         )
@@ -166,6 +167,7 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
         endpoint_tool_input_schema,
         is_endpoint_agent_tool,
     )
+    from ...services.librarian_service import intrinsic_input_schema, intrinsic_tool_description
 
     name = str(args.get("tool") or args.get("name") or "").strip()
     if not name:
@@ -179,8 +181,8 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
         return {
             "name": name,
             "requested_name": requested_name,
-            "description": endpoint_tool_description(name),
-            "inputSchema": endpoint_tool_input_schema(name),
+            "description": intrinsic_tool_description(user_id, name, endpoint_tool_description(name)),
+            "inputSchema": intrinsic_input_schema(user_id, name, endpoint_tool_input_schema(name)),
             "destructive": True,
             "call_format": {
                 "tool": name,
@@ -191,8 +193,8 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
     return {
         "name": tool.name,
         "requested_name": requested_name,
-        "description": tool.description,
-        "inputSchema": tool.input_schema,
+        "description": intrinsic_tool_description(user_id, tool.name, tool.description),
+        "inputSchema": intrinsic_input_schema(user_id, tool.name, tool.input_schema),
         "destructive": tool.destructive,
         "call_format": {
             "tool": tool.name,

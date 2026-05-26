@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import os
 import re
@@ -485,17 +486,23 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
 def _intrinsic_properties_payload(user_id: int = 0) -> Dict[str, Any]:
     from ..mcp import registry
 
+    overrides = _load_intrinsic_properties_overrides(user_id) if user_id else {}
     tools = sorted(registry.list_tools(), key=lambda item: str(item.get("name") or ""))
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for tool in tools:
         name = str(tool.get("name") or "").strip()
         namespace = name.split(".", 1)[0] if "." in name else "other"
         input_schema = tool.get("inputSchema") if isinstance(tool.get("inputSchema"), dict) else {}
+        override = overrides.get(name) if isinstance(overrides.get(name), dict) else {}
         grouped.setdefault(namespace, []).append({
             "name": name,
-            "description": str(tool.get("description") or "").strip(),
-            "inputSchema": input_schema,
-            "parameters": _mcp_schema_parameter_rows(input_schema),
+            "description": intrinsic_tool_description(user_id, name, str(tool.get("description") or "").strip()),
+            "inputSchema": intrinsic_input_schema(user_id, name, input_schema),
+            "parameters": _mcp_schema_parameter_rows(
+                name,
+                input_schema,
+                override.get("parameters") if override else None,
+            ),
             "destructive": bool(tool.get("destructive")),
             "source": "server",
         })
@@ -509,13 +516,13 @@ def _intrinsic_properties_payload(user_id: int = 0) -> Dict[str, Any]:
         for namespace, items in sorted(grouped.items())
     ]
     return {
-        "description": "系统当前固定注册的服务端 MCP 工具定义如下；工具描述和参数 schema 与真实 mcp.describe_tool 返回源保持一致。",
+        "description": "系统当前固定注册的服务端 MCP 工具定义如下；默认中文展示，编辑后会同步影响 mcp.list_tools 与 mcp.describe_tool 的返回。",
         "total": len(tools),
         "categories": categories,
     }
 
 
-def _mcp_schema_parameter_rows(schema: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _mcp_schema_parameter_rows(tool_name: str, schema: Dict[str, Any], overrides: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     properties = schema.get("properties") if isinstance(schema, dict) else {}
     if not isinstance(properties, dict):
         properties = {}
@@ -530,14 +537,48 @@ def _mcp_schema_parameter_rows(schema: Dict[str, Any]) -> List[Dict[str, Any]]:
         else:
             type_name = str(raw_type or "").strip()
         param_name = str(name)
+        override_description = ""
+        if isinstance(overrides, dict):
+            override_description = str(overrides.get(param_name) or "").strip()
         rows.append({
             "name": param_name,
             "type": type_name or "any",
             "required": param_name in required_set,
-            "description": str(cfg.get("description") or "").strip(),
+            "description": override_description or _intrinsic_param_description(tool_name, param_name, str(cfg.get("description") or "").strip()),
         })
     rows.sort(key=lambda item: (not bool(item.get("required")), str(item.get("name") or "")))
     return rows
+
+
+def intrinsic_tool_description(user_id: int, name: str, raw: str) -> str:
+    override = _load_intrinsic_properties_overrides(user_id).get(str(name or "").strip()) if user_id else {}
+    if isinstance(override, dict):
+        description = str(override.get("description") or "").strip()
+        if description:
+            return description
+    return _intrinsic_tool_description(name, raw)
+
+
+def intrinsic_input_schema(user_id: int, tool_name: str, schema: Dict[str, Any]) -> Dict[str, Any]:
+    out = copy.deepcopy(schema) if isinstance(schema, dict) else {}
+    properties = out.get("properties")
+    if not isinstance(properties, dict):
+        return out
+    override = _load_intrinsic_properties_overrides(user_id).get(str(tool_name or "").strip()) if user_id else {}
+    param_overrides = override.get("parameters") if isinstance(override, dict) else None
+    for name, config in properties.items():
+        if not isinstance(config, dict):
+            continue
+        param_name = str(name)
+        override_description = ""
+        if isinstance(param_overrides, dict):
+            override_description = str(param_overrides.get(param_name) or "").strip()
+        config["description"] = override_description or _intrinsic_param_description(
+            tool_name,
+            param_name,
+            str(config.get("description") or "").strip(),
+        )
+    return out
 
 
 def _intrinsic_tool_description(name: str, raw: str) -> str:
@@ -575,7 +616,33 @@ def _load_intrinsic_properties_overrides(user_id: int) -> Dict[str, Any]:
 
 
 def save_intrinsic_properties_overrides(*, user_id: int, tools: List[Dict[str, Any]]) -> Dict[str, Any]:
-    raise ValueError("固有属性来自真实 MCP 工具定义，知识库不再单独保存覆盖描述。请修改对应 MCP 注册定义。")
+    current = _load_intrinsic_properties_overrides(user_id)
+    for item in tools or []:
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        parameters_raw = item.get("parameters")
+        parameters: Dict[str, str] = {}
+        if isinstance(parameters_raw, list):
+            for param in parameters_raw:
+                if not isinstance(param, dict):
+                    continue
+                param_name = str(param.get("name") or "").strip()
+                if param_name:
+                    parameters[param_name] = str(param.get("description") or "").strip()
+        elif isinstance(parameters_raw, dict):
+            parameters = {
+                str(key).strip(): str(value or "").strip()
+                for key, value in parameters_raw.items()
+                if str(key).strip()
+            }
+        current[name] = {
+            "description": str(item.get("description") or "").strip(),
+            "parameters": parameters,
+        }
+    with open(_intrinsic_properties_overrides_path(user_id), "w", encoding="utf-8") as f:
+        json.dump({"tools": current, "updated_at": time.time()}, f, ensure_ascii=False, indent=2)
+    return _builtin_entry("builtin.intrinsic_properties", user_id=user_id, with_body=True) or {}
 
 
 def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None) -> str:

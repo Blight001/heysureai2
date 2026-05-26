@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, useAttrs } from 'vue'
-import { readEntry, type KnowledgeEntryItem } from '@/api/librarian'
+import { readEntry, saveIntrinsicProperties, type KnowledgeEntryItem } from '@/api/librarian'
 import { getAuthToken } from '@/api/http'
 import { updateAiConfigFields } from '@/api/ai'
 
@@ -48,6 +48,15 @@ const personaEditError = ref('')
 const personaEditNotice = ref('')
 const personaDraftPrompt = ref('')
 const personaDraftAutoPrompts = ref<Record<string, string>>({})
+const editingPropertyCategory = ref<string | null>(null)
+const savingPropertyCategory = ref<string | null>(null)
+const propertyEditError = ref('')
+const propertyEditNotice = ref('')
+const propertyDraftTools = ref<Array<{
+  name: string
+  description: string
+  parameters: Array<{ name: string; description: string }>
+}>>([])
 
 const detailContent = computed(() => currentDetail.value?.body || currentDetail.value?.summary || '（无内容）')
 const intrinsicProperties = computed(() => currentDetail.value?.intrinsic_properties || null)
@@ -57,6 +66,7 @@ const toolParameters = (tool: { parameters?: Array<{ name: string; type: string;
   Array.isArray(tool.parameters) ? tool.parameters : []
 
 type IntrinsicPersonaAgent = NonNullable<KnowledgeEntryItem['intrinsic_personas']>['agents'][number]
+type IntrinsicPropertyCategory = NonNullable<KnowledgeEntryItem['intrinsic_properties']>['categories'][number]
 
 const autoPromptValue = (key: string) => personaDraftAutoPrompts.value[key] ?? ''
 
@@ -145,6 +155,69 @@ const savePersona = async (agent: IntrinsicPersonaAgent) => {
   }
 }
 
+const startEditPropertyCategory = (category: IntrinsicPropertyCategory) => {
+  editingPropertyCategory.value = category.namespace
+  propertyEditError.value = ''
+  propertyEditNotice.value = ''
+  propertyDraftTools.value = (category.tools || []).map(tool => ({
+    name: tool.name,
+    description: tool.description || '',
+    parameters: toolParameters(tool).map(param => ({
+      name: param.name,
+      description: param.description || '',
+    })),
+  }))
+}
+
+const cancelEditPropertyCategory = () => {
+  editingPropertyCategory.value = null
+  propertyEditError.value = ''
+  propertyDraftTools.value = []
+}
+
+const updateDraftToolDescription = (toolName: string, value: string) => {
+  propertyDraftTools.value = propertyDraftTools.value.map(tool =>
+    tool.name === toolName ? { ...tool, description: value } : tool,
+  )
+}
+
+const updateDraftParamDescription = (toolName: string, paramName: string, value: string) => {
+  propertyDraftTools.value = propertyDraftTools.value.map(tool => {
+    if (tool.name !== toolName) return tool
+    return {
+      ...tool,
+      parameters: tool.parameters.map(param =>
+        param.name === paramName ? { ...param, description: value } : param,
+      ),
+    }
+  })
+}
+
+const propertyDraftTool = (toolName: string) => propertyDraftTools.value.find(tool => tool.name === toolName)
+
+const propertyDraftToolDescription = (toolName: string) => propertyDraftTool(toolName)?.description ?? ''
+
+const propertyDraftParamDescription = (toolName: string, paramName: string) =>
+  propertyDraftTool(toolName)?.parameters.find(param => param.name === paramName)?.description ?? ''
+
+const savePropertyCategory = async (category: IntrinsicPropertyCategory) => {
+  savingPropertyCategory.value = category.namespace
+  propertyEditError.value = ''
+  propertyEditNotice.value = ''
+  try {
+    const token = getAuthToken()
+    const updated = await saveIntrinsicProperties(token, propertyDraftTools.value)
+    currentDetail.value = updated
+    editingPropertyCategory.value = null
+    propertyDraftTools.value = []
+    propertyEditNotice.value = `${category.namespace} 已保存`
+  } catch (err) {
+    propertyEditError.value = (err as Error).message || '保存失败'
+  } finally {
+    savingPropertyCategory.value = null
+  }
+}
+
 const toggleFilter = () => {
   emit('update:filterOpen', !props.filterOpen)
 }
@@ -169,6 +242,9 @@ const openDetail = async (item: KnowledgeItem) => {
   editingPersonaId.value = null
   personaEditError.value = ''
   personaEditNotice.value = ''
+  editingPropertyCategory.value = null
+  propertyEditError.value = ''
+  propertyEditNotice.value = ''
   try {
     const token = getAuthToken()
     currentDetail.value = await readEntry(token, item.id)
@@ -190,6 +266,11 @@ const closeDetail = () => {
   personaEditNotice.value = ''
   personaDraftPrompt.value = ''
   personaDraftAutoPrompts.value = {}
+  editingPropertyCategory.value = null
+  savingPropertyCategory.value = null
+  propertyEditError.value = ''
+  propertyEditNotice.value = ''
+  propertyDraftTools.value = []
 }
 </script>
 
@@ -331,11 +412,18 @@ const closeDetail = () => {
 
               <div class="space-y-4">
                 <div class="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800 rounded-lg px-3 py-2">
-                  固有属性只读展示真实 MCP 工具定义；修改工具描述请更新对应 MCP 注册定义。
+                  固有属性默认使用中文描述；编辑保存后会同步影响 AI 通过 mcp.list_tools 和 mcp.describe_tool 获取到的描述。
+                </div>
+                <div v-if="propertyEditNotice" class="text-xs text-emerald-600 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 rounded-lg px-3 py-2">
+                  {{ propertyEditNotice }}
+                </div>
+                <div v-if="propertyEditError" class="text-xs text-rose-600 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900 rounded-lg px-3 py-2">
+                  {{ propertyEditError }}
                 </div>
                 <details
                   v-for="category in intrinsicProperties.categories"
                   :key="category.namespace"
+                  :open="editingPropertyCategory === category.namespace || undefined"
                   class="group rounded-lg border border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/40 overflow-hidden"
                 >
                   <summary class="list-none cursor-pointer px-3 py-2 border-b border-zinc-100 dark:border-zinc-800 select-none">
@@ -346,6 +434,14 @@ const closeDetail = () => {
                       </div>
                       <div class="flex shrink-0 items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
                         <span>{{ category.count }} 个工具</span>
+                        <button
+                          v-if="editingPropertyCategory !== category.namespace"
+                          type="button"
+                          class="px-2 py-0.5 rounded border border-indigo-200 bg-white text-[10px] text-indigo-600 hover:bg-indigo-50 dark:bg-zinc-900 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+                          @click.stop.prevent="startEditPropertyCategory(category)"
+                        >
+                          编辑
+                        </button>
                       </div>
                     </div>
                   </summary>
@@ -362,7 +458,14 @@ const closeDetail = () => {
                         </div>
                         <div>
                           <div class="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 mb-0.5">工具描述</div>
-                          <div class="text-xs leading-relaxed text-zinc-700 dark:text-zinc-200">
+                          <textarea
+                            v-if="editingPropertyCategory === category.namespace"
+                            :value="propertyDraftToolDescription(tool.name)"
+                            rows="3"
+                            class="w-full resize-y text-xs leading-relaxed text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900/70 p-2 rounded border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-800"
+                            @input="updateDraftToolDescription(tool.name, ($event.target as HTMLTextAreaElement).value)"
+                          />
+                          <div v-else class="text-xs leading-relaxed text-zinc-700 dark:text-zinc-200">
                             {{ tool.description || '（无描述）' }}
                             <span v-if="tool.destructive" class="ml-1 text-amber-600 dark:text-amber-300">可能产生写入/变更</span>
                           </div>
@@ -381,11 +484,36 @@ const closeDetail = () => {
                             <span :class="param.required ? 'text-rose-600 dark:text-rose-300' : 'text-zinc-400 dark:text-zinc-500'">
                               {{ param.required ? '必填' : '可选' }}
                             </span>
-                            <span class="text-zinc-600 dark:text-zinc-300">{{ param.description || '（无描述）' }}</span>
+                            <textarea
+                              v-if="editingPropertyCategory === category.namespace"
+                              :value="propertyDraftParamDescription(tool.name, param.name)"
+                              rows="2"
+                              class="w-full resize-y text-[11px] leading-relaxed text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900/70 px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-800"
+                              @input="updateDraftParamDescription(tool.name, param.name, ($event.target as HTMLTextAreaElement).value)"
+                            />
+                            <span v-else class="text-zinc-600 dark:text-zinc-300">{{ param.description || '（无描述）' }}</span>
                           </div>
                         </div>
                         <div v-else class="text-[11px] text-zinc-500 dark:text-zinc-400">无参数</div>
                       </div>
+                    </div>
+                    <div v-if="editingPropertyCategory === category.namespace" class="flex justify-end gap-2 px-3 py-3">
+                      <button
+                        type="button"
+                        class="px-3 py-1.5 rounded border border-zinc-200 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        :disabled="savingPropertyCategory === category.namespace"
+                        @click="cancelEditPropertyCategory"
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        class="px-3 py-1.5 rounded bg-indigo-600 text-xs text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        :disabled="savingPropertyCategory === category.namespace"
+                        @click="savePropertyCategory(category)"
+                      >
+                        {{ savingPropertyCategory === category.namespace ? '保存中…' : '保存' }}
+                      </button>
                     </div>
                   </div>
                 </details>
