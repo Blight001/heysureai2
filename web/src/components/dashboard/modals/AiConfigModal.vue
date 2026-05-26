@@ -430,7 +430,7 @@ const onToolGroupChange = (tools: string[], event: Event) => {
                   </div>
                 </div>
                 <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
-                  QQ 回调地址配置为 <span class="font-mono">/api/qq/events/{AI配置ID}</span>。官方接口使用 AppID + AppSecret 获取调用凭证，回调签名使用 AppSecret，启用入站对话需在 QQ 开放平台订阅 C2C/群聊/频道消息事件。
+                  QQ 回调地址需使用公网 HTTPS，并配置为 <span class="font-mono">/api/qq/events/{AI配置ID}</span>。QQ 只允许 80、443、8080、8443 端口；启用入站对话需在 QQ 开放平台订阅 C2C/群聊/频道消息事件。
                 </div>
                 </template>
               </div>

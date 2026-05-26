@@ -320,6 +320,8 @@ async def list_ai_cards(
         return (schedule_at if schedule_at > 0 else float("inf"), -_task_activity_ts(item))
 
     def _build_feishu_status(cfg: AssistantAIConfig) -> Dict[str, str]:
+        if str(cfg.bot_channel or "feishu").strip().lower() != "feishu":
+            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "当前机器人类型不是飞书"}
         if not cfg.feishu_enabled:
             return {"status": "disabled", "mode": "off", "label": "未启用", "message": "飞书机器人未启用"}
         app_id = str(cfg.feishu_app_id or "").strip()
@@ -350,6 +352,8 @@ async def list_ai_cards(
         return {"status": "failed", "mode": "none", "label": "失败", "message": "未配置 App ID/Secret 或 Webhook URL"}
 
     def _build_qq_status(cfg: AssistantAIConfig) -> Dict[str, str]:
+        if str(cfg.bot_channel or "feishu").strip().lower() != "qq":
+            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "当前机器人类型不是 QQ"}
         if not cfg.qq_enabled:
             return {"status": "disabled", "mode": "off", "label": "未启用", "message": "QQ机器人未启用"}
         app_id = str(cfg.qq_app_id or "").strip()
@@ -363,10 +367,10 @@ async def list_ai_cards(
             }
         mode = "sandbox_webhook" if bool(cfg.qq_sandbox) else "webhook"
         return {
-            "status": "success",
+            "status": "pending",
             "mode": mode,
-            "label": "成功",
-            "message": "QQ 使用 Webhook 回调，不会建立长连接；请在 QQ 开放平台配置公网 HTTPS 回调 /api/qq/events/{AI配置ID}",
+            "label": "待回调",
+            "message": "QQ 使用 Webhook 回调，不会建立长连接；接收消息需要在 QQ 开放平台配置公网 HTTPS 回调 /api/qq/events/{AI配置ID}，端口只能使用 80、443、8080、8443，并订阅 C2C/群聊/频道消息事件",
         }
 
     cards = []

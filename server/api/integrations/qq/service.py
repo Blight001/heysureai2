@@ -71,6 +71,8 @@ def _load_qq_config(user_id: int, ai_config_id: Optional[int]) -> AssistantAICon
         ).first()
     if not cfg:
         raise HTTPException(status_code=404, detail="AI config not found")
+    if str(cfg.bot_channel or "feishu").strip().lower() != "qq":
+        raise HTTPException(status_code=400, detail="QQ bot is not the active channel for this AI")
     if not cfg.qq_enabled:
         raise HTTPException(status_code=400, detail="QQ bot is not enabled for this AI")
     if not cfg.qq_app_id or not cfg.qq_app_secret:

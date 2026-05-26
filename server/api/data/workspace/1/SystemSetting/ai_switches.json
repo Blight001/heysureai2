@@ -2,21 +2,21 @@
   "assistant_default": {
     "enabled": true,
     "mcp_enabled": true,
-    "updated_at": 1779757903.3212073
+    "updated_at": 1779762959.3213189
   },
   "assistant_1774175016654": {
     "enabled": true,
     "mcp_enabled": true,
-    "updated_at": 1779757903.3237183
+    "updated_at": 1779762959.3248353
   },
   "assistant_1779415453071": {
     "enabled": true,
     "mcp_enabled": true,
-    "updated_at": 1779757903.3294659
+    "updated_at": 1779762959.3283474
   },
   "assistant_1779460852198": {
     "enabled": true,
     "mcp_enabled": true,
-    "updated_at": 1779757903.3324482
+    "updated_at": 1779762959.330859
   }
 }

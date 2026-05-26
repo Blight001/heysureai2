@@ -77,6 +77,8 @@ def _load_feishu_config(user_id: int, ai_config_id: Optional[int]) -> AssistantA
         ).first()
     if not cfg:
         raise HTTPException(status_code=404, detail="AI config not found")
+    if str(cfg.bot_channel or "feishu").strip().lower() != "feishu":
+        raise HTTPException(status_code=400, detail="Feishu bot is not the active channel for this AI")
     if not cfg.feishu_enabled:
         raise HTTPException(status_code=400, detail="Feishu bot is not enabled for this AI")
     if not cfg.feishu_webhook_url and (not cfg.feishu_app_id or not cfg.feishu_app_secret):

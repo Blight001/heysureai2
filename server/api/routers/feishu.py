@@ -176,6 +176,8 @@ def handle_feishu_event_payload(config_id: int, payload: Dict[str, Any], verify_
         cfg = session.get(AssistantAIConfig, config_id)
         if not cfg:
             raise HTTPException(status_code=404, detail="AI config not found")
+        if str(cfg.bot_channel or "feishu").strip().lower() != "feishu":
+            raise HTTPException(status_code=400, detail="Feishu bot is not the active channel for this AI")
         if not cfg.feishu_enabled:
             raise HTTPException(status_code=400, detail="Feishu bot is disabled for this AI")
         if verify_token:

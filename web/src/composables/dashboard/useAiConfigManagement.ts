@@ -387,6 +387,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     if (!aiConfigForm.value) return false
     if (!getAuthToken()) return false
     const normalizedWorkspaceRoot = normalizeWorkspacePath(aiConfigForm.value.workspace_root || '')
+    const selectedBotChannel = aiConfigForm.value.bot_channel === 'qq' ? 'qq' : 'feishu'
 
     const payload: AiConfigUpsertPayload = {
       name: aiConfigForm.value.name,
@@ -405,15 +406,15 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       model: aiConfigForm.value.model,
       prompt: aiConfigForm.value.prompt,
       mcp_tools: JSON.stringify(aiConfigForm.value.mcp_tools || []),
-      bot_channel: aiConfigForm.value.bot_channel === 'qq' ? 'qq' : 'feishu',
-      feishu_enabled: !!aiConfigForm.value.feishu_enabled,
+      bot_channel: selectedBotChannel,
+      feishu_enabled: selectedBotChannel === 'feishu' && !!aiConfigForm.value.feishu_enabled,
       feishu_webhook_url: aiConfigForm.value.feishu_webhook_url || '',
       feishu_app_id: aiConfigForm.value.feishu_app_id || '',
       feishu_app_secret: aiConfigForm.value.feishu_app_secret || '',
       feishu_verification_token: aiConfigForm.value.feishu_verification_token || '',
       feishu_default_receive_id: aiConfigForm.value.feishu_default_receive_id || '',
       feishu_default_receive_id_type: aiConfigForm.value.feishu_default_receive_id_type || 'chat_id',
-      qq_enabled: !!aiConfigForm.value.qq_enabled,
+      qq_enabled: selectedBotChannel === 'qq' && !!aiConfigForm.value.qq_enabled,
       qq_app_id: aiConfigForm.value.qq_app_id || '',
       qq_app_secret: aiConfigForm.value.qq_app_secret || '',
       qq_sandbox: aiConfigForm.value.qq_sandbox !== false,

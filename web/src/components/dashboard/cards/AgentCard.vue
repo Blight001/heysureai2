@@ -237,6 +237,13 @@ const botConnection = computed(() => {
       title: [message || `${name}机器人状态成功`, receiveId ? `默认接收：${receiveId}` : ''].filter(Boolean).join('；'),
     }
   }
+  if (status === 'pending') {
+    return {
+      text: `${name}待回调 · ${modeText}`,
+      class: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300',
+      title: [message || `${name}机器人等待回调`, receiveId ? `默认接收：${receiveId}` : ''].filter(Boolean).join('；'),
+    }
+  }
   return {
     text: `${name}失败 · ${modeText}`,
     class: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300',
@@ -587,15 +594,7 @@ const formatTaskSchedule = (task?: AgentTaskSnapshot | null) => {
                 {{ taskSnapshotDisplay.isCurrent ? `代数: ${taskGenerationText(taskSnapshotDisplay.task)}` : `总共代数: ${taskTotalGenerations(taskSnapshotDisplay.task)}` }}
               </div>
             </div>
-            <span
-              v-if="taskSnapshotDisplay.isCurrent"
-              class="shrink-0 text-[10px] px-1.5 py-0.5 rounded border"
-              :class="taskStatusClass(taskSnapshotDisplay.task.effectiveStatus || taskSnapshotDisplay.task.status)"
-            >
-              {{ taskStatusLabel(taskSnapshotDisplay.task.effectiveStatus || taskSnapshotDisplay.task.status) }}
-            </span>
             <button
-              v-else
               class="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors dark:border-indigo-500/40 dark:text-indigo-300 dark:hover:bg-indigo-500/10"
               @click.stop="taskSnapshotDisplay.task.jobId
                 ? emit('show-task-detail', { agent, jobId: taskSnapshotDisplay.task.jobId })
@@ -603,6 +602,13 @@ const formatTaskSchedule = (task?: AgentTaskSnapshot | null) => {
             >
               对话详情
             </button>
+          </div>
+          <div
+            v-if="taskSnapshotDisplay.isCurrent"
+            class="mt-1.5 inline-flex text-[10px] px-1.5 py-0.5 rounded border"
+            :class="taskStatusClass(taskSnapshotDisplay.task.effectiveStatus || taskSnapshotDisplay.task.status)"
+          >
+            {{ taskStatusLabel(taskSnapshotDisplay.task.effectiveStatus || taskSnapshotDisplay.task.status) }}
           </div>
         </div>
 

@@ -241,6 +241,8 @@ def handle_qq_event_payload(
         cfg = session.get(AssistantAIConfig, config_id)
         if not cfg:
             raise HTTPException(status_code=404, detail="AI config not found")
+        if str(cfg.bot_channel or "feishu").strip().lower() != "qq":
+            raise HTTPException(status_code=400, detail="QQ bot is not the active channel for this AI")
         if not cfg.qq_enabled:
             raise HTTPException(status_code=400, detail="QQ bot is disabled for this AI")
         op = int(payload.get("op") or 0)
