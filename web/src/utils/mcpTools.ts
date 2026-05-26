@@ -148,7 +148,7 @@ const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag
   'process.list': { label: '列出进程', description: '列出当前系统中的进程。', tag: '进程' },
   'process.kill': { label: '结束进程', description: '按名称或 PID 结束进程。', tag: '进程' },
   'browser_navigate': { label: '跳转页面', description: '打开或跳转到指定 URL；可选择在新标签页中打开。', tag: '浏览器导航' },
-  'browser_screenshot': { label: '截取屏幕', description: '截取当前标签页可见区域的 PNG 截图。', tag: '浏览器页面' },
+  'browser_screenshot': { label: '浏览器截图', description: '截取当前标签页、整页、元素或指定区域的截图。', tag: '浏览器页面' },
   'browser_click': { label: '点击元素', description: '通过 CSS 选择器、文本或坐标点击页面元素。', tag: '浏览器交互' },
   'browser_type': { label: '输入内容', description: '向输入框或文本区域输入文本。', tag: '浏览器交互' },
   'browser_get_content': { label: '读取内容', description: '读取当前页面的可见文本、标题、地址和基础元信息。', tag: '浏览器页面' },

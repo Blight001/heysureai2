@@ -21,7 +21,51 @@ const entries = [
   { in: 'src/popup/index.ts',   out: 'dist/popup.js' },
 ]
 
-if (!fs.existsSync('dist')) fs.mkdirSync('dist', { recursive: true })
+const staticDirs = ['icons', 'avatars']
+
+function ensureDist() {
+  if (!fs.existsSync('dist')) fs.mkdirSync('dist', { recursive: true })
+}
+
+function stripDistPrefix(path) {
+  return typeof path === 'string' ? path.replace(/^dist\//, '') : path
+}
+
+function writeDistManifest() {
+  const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'))
+
+  if (manifest.background?.service_worker) {
+    manifest.background.service_worker = stripDistPrefix(manifest.background.service_worker)
+  }
+
+  for (const script of manifest.content_scripts ?? []) {
+    if (Array.isArray(script.js)) script.js = script.js.map(stripDistPrefix)
+    if (Array.isArray(script.css)) script.css = script.css.map(stripDistPrefix)
+  }
+
+  fs.writeFileSync('dist/manifest.json', `${JSON.stringify(manifest, null, 2)}\n`)
+}
+
+function writeDistPopup() {
+  const html = fs.readFileSync('popup.html', 'utf8')
+    .replace(/<script\s+src=["']dist\/popup\.js["']><\/script>/, '<script src="popup.js"></script>')
+
+  fs.writeFileSync('dist/popup.html', html)
+}
+
+function copyStaticAssets() {
+  ensureDist()
+  writeDistManifest()
+  writeDistPopup()
+
+  for (const dir of staticDirs) {
+    if (!fs.existsSync(dir)) continue
+    fs.rmSync(`dist/${dir}`, { recursive: true, force: true })
+    fs.cpSync(dir, `dist/${dir}`, { recursive: true })
+  }
+}
+
+ensureDist()
 
 if (watch) {
   const ctx = await esbuild.context({
@@ -29,6 +73,7 @@ if (watch) {
     entryPoints: entries.map(e => e.in),
     outdir: 'dist',
   })
+  copyStaticAssets()
   await ctx.watch()
   console.log('[esbuild] watching for changes…')
 } else {
@@ -36,5 +81,6 @@ if (watch) {
     await esbuild.build({ ...sharedOpts, entryPoints: [entry.in], outfile: entry.out })
     console.log(`  built ${entry.in} → ${entry.out}`)
   }
+  copyStaticAssets()
   console.log('[esbuild] build complete ✓')
 }

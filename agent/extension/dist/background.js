@@ -1413,11 +1413,11 @@
      */
     _resetPingTimeout() {
       this.clearTimeoutFn(this._pingTimeoutTimer);
-      const delay = this._pingInterval + this._pingTimeout;
-      this._pingTimeoutTime = Date.now() + delay;
+      const delay2 = this._pingInterval + this._pingTimeout;
+      this._pingTimeoutTime = Date.now() + delay2;
       this._pingTimeoutTimer = this.setTimeoutFn(() => {
         this._onClose("ping timeout");
-      }, delay);
+      }, delay2);
       if (this.opts.autoUnref) {
         this._pingTimeoutTimer.unref();
       }
@@ -3334,7 +3334,7 @@
         this.emitReserved("reconnect_failed");
         this._reconnecting = false;
       } else {
-        const delay = this.backoff.duration();
+        const delay2 = this.backoff.duration();
         this._reconnecting = true;
         const timer = this.setTimeoutFn(() => {
           if (self2.skipReconnect)
@@ -3351,7 +3351,7 @@
               self2.onreconnect();
             }
           });
-        }, delay);
+        }, delay2);
         if (this.opts.autoUnref) {
           timer.unref();
         }
@@ -3524,8 +3524,36 @@
     },
     {
       name: "browser_screenshot",
-      description: "Capture a screenshot of the current tab. Returns a base64 PNG data URL, or a readable disabled/permission error if screenshots are not allowed.",
-      input_schema: { type: "object", properties: {} }
+      description: "Capture a screenshot of the current tab, full page, a CSS/text-matched element, or a rectangular region. Returns a base64 image data URL, or a readable disabled/permission error if screenshots are not allowed.",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "CSS selector of an element to screenshot." },
+          text: { type: "string", description: "Visible text used to find an element to screenshot when selector is omitted." },
+          full_page: { type: "boolean", description: "Capture the full scrollable page." },
+          x: { type: "number", description: "Region left coordinate. Defaults to viewport coordinates unless coordinate_space is page." },
+          y: { type: "number", description: "Region top coordinate. Defaults to viewport coordinates unless coordinate_space is page." },
+          width: { type: "number", description: "Region width in CSS pixels." },
+          height: { type: "number", description: "Region height in CSS pixels." },
+          clip: { type: "object", description: "Alternative region object: {x,y,width,height,coordinate_space?}." },
+          coordinate_space: { type: "string", enum: ["viewport", "page"], description: "Coordinate space for x/y/clip. Default viewport." },
+          margin: { type: "number", description: "Extra CSS pixels around selector/text element screenshots." },
+          scroll_into_view: { type: "boolean", description: "Scroll selector/text target into view before measuring it. Default true." },
+          format: { type: "string", enum: ["png", "jpeg", "webp"], description: "Image format. Default png." },
+          quality: { type: "number", description: "JPEG/WebP quality, 0-100." },
+          scale: { type: "number", description: "CDP clip scale. Default 1." },
+          max_area: { type: "number", description: "Maximum screenshot area in CSS pixels. Default 25000000." },
+          retries: { type: "number", description: "Retry count for simple visible-tab capture on transient active-tab/rate-limit failures. Default 1." },
+          timeout_ms: { type: "number", description: "Overall per-stage screenshot timeout in milliseconds. Default 8000 for visible capture and 12000 for CDP." },
+          visible_timeout_ms: { type: "number", description: "Timeout for chrome.tabs.captureVisibleTab in milliseconds. Default 8000." },
+          cdp_timeout_ms: { type: "number", description: "Timeout for each Chrome DevTools Protocol screenshot command in milliseconds. Default 12000." },
+          content_timeout_ms: { type: "number", description: "Timeout for measuring selector/text target in the page. Default 5000." },
+          max_data_url_chars: { type: "number", description: "Maximum data URL payload length returned over Socket.IO. Default 8000000." },
+          allow_large_data_url: { type: "boolean", description: "Allow returning a screenshot payload larger than max_data_url_chars. Default false." },
+          task_timeout_ms: { type: "number", description: "Endpoint agent hard timeout for this dispatched screenshot task. Default 35000." },
+          fallback_visible: { type: "boolean", description: "For element/region/full-page screenshots, fall back to visible-tab screenshot if precise CDP capture fails. Default false." }
+        }
+      }
     },
     {
       name: "browser_click",
@@ -4272,22 +4300,318 @@
     await waitForTabLoad(tab.id);
     return { success: true, url: url2.href, tabId: tab.id };
   }
-  async function toolScreenshot() {
-    const tab = await getActiveTab();
+  function unsupportedScreenshotReason(url2) {
+    const raw = String(url2 || "");
+    if (/^(chrome|edge|brave|vivaldi|opera|chrome-extension):\/\//i.test(raw)) {
+      return "\u6D4F\u89C8\u5668\u5185\u90E8\u9875\u9762\u6216\u6269\u5C55\u9875\u9762\u4E0D\u5141\u8BB8\u6269\u5C55\u622A\u56FE\u3002\u8BF7\u5207\u6362\u5230\u666E\u901A http/https \u9875\u9762\u540E\u91CD\u8BD5\u3002";
+    }
+    if (/^https:\/\/chromewebstore\.google\.com\//i.test(raw)) {
+      return "Chrome \u7F51\u4E0A\u5E94\u7528\u5E97\u9875\u9762\u4E0D\u5141\u8BB8\u6269\u5C55\u622A\u56FE\u3002";
+    }
+    return "";
+  }
+  function isRetryableCaptureError(message) {
+    return /quota|too many|rate|active|visible|tab|capture|pending|loading/i.test(message);
+  }
+  async function delay(ms) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  async function withTimeout(promise, ms, label) {
+    let timer = null;
     try {
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
-      return { success: true, dataUrl, tabId: tab.id, url: tab.url };
-    } catch (err) {
-      const message = err?.message || String(err);
+      return await Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+        })
+      ]);
+    } finally {
+      if (timer)
+        clearTimeout(timer);
+    }
+  }
+  function boundedTimeout(value2, fallback, min = 1e3, max = 3e4) {
+    const n = Number(value2);
+    if (!Number.isFinite(n))
+      return fallback;
+    return Math.min(max, Math.max(min, Math.round(n)));
+  }
+  function screenshotFormat(args) {
+    const format = String(args.format || "png").toLowerCase();
+    return ["png", "jpeg", "webp"].includes(format) ? format : "png";
+  }
+  function screenshotQuality(args) {
+    const quality = Number(args.quality);
+    if (!Number.isFinite(quality))
+      return void 0;
+    return Math.min(100, Math.max(0, Math.round(quality)));
+  }
+  function maxDataUrlChars(args) {
+    const n = Number(args.max_data_url_chars);
+    if (Number.isFinite(n) && n > 0)
+      return Math.min(2e7, Math.max(1e5, Math.round(n)));
+    return 8e6;
+  }
+  async function ensureScreenshotPayloadSize(dataUrl, args, retryCompressed) {
+    const maxChars = maxDataUrlChars(args);
+    if (dataUrl.length <= maxChars || args.allow_large_data_url === true) {
+      return { dataUrl, warning: "" };
+    }
+    if (retryCompressed && screenshotFormat(args) !== "jpeg") {
+      const compressed = await retryCompressed();
+      if (compressed.length <= maxChars || args.allow_large_data_url === true) {
+        return {
+          dataUrl: compressed,
+          warning: `Original screenshot payload was ${dataUrl.length} chars; returned compressed JPEG payload ${compressed.length} chars.`
+        };
+      }
+      throw new Error(`Screenshot payload is too large after JPEG compression: ${compressed.length} chars > max_data_url_chars ${maxChars}`);
+    }
+    throw new Error(`Screenshot payload is too large: ${dataUrl.length} chars > max_data_url_chars ${maxChars}`);
+  }
+  function clipArea(clip) {
+    return Math.max(0, clip.width) * Math.max(0, clip.height);
+  }
+  function assertValidClip(clip, maxArea) {
+    if (!Number.isFinite(clip.x) || !Number.isFinite(clip.y) || !Number.isFinite(clip.width) || !Number.isFinite(clip.height)) {
+      throw new Error("clip/x/y/width/height must be finite numbers");
+    }
+    if (clip.width <= 0 || clip.height <= 0)
+      throw new Error("clip width and height must be greater than 0");
+    if (clipArea(clip) > maxArea) {
+      throw new Error(`Screenshot area is too large: ${Math.round(clipArea(clip))} CSS pixels > max_area ${maxArea}`);
+    }
+  }
+  async function captureVisibleTab(windowId, args, retries = 1) {
+    let lastErr;
+    const timeoutMs = boundedTimeout(args.visible_timeout_ms ?? args.timeout_ms, 8e3);
+    for (let i = 0; i <= retries; i++) {
+      try {
+        return await withTimeout(
+          chrome.tabs.captureVisibleTab(windowId, {
+            format: screenshotFormat(args) === "jpeg" ? "jpeg" : "png",
+            quality: screenshotQuality(args)
+          }),
+          timeoutMs,
+          "chrome.tabs.captureVisibleTab"
+        );
+      } catch (err) {
+        lastErr = err;
+        const message = err?.message || String(err);
+        if (i >= retries || !isRetryableCaptureError(message))
+          break;
+        await delay(300);
+      }
+    }
+    throw lastErr;
+  }
+  async function pageClipFromArgs(tab, args) {
+    const maxArea = Math.max(1, Number(args.max_area || 25e6));
+    const scale = Number(args.scale || 1);
+    const contentTimeoutMs = boundedTimeout(args.content_timeout_ms ?? args.timeout_ms, 5e3);
+    const cdpTimeoutMs = boundedTimeout(args.cdp_timeout_ms ?? args.timeout_ms, 12e3);
+    if (args.selector || args.text) {
+      const target = await withTimeout(
+        contentMsg(tab.id, {
+          action: "screenshot_target_info",
+          selector: args.selector,
+          text: args.text,
+          margin: args.margin ?? args.padding,
+          scroll_into_view: args.scroll_into_view,
+          block: args.block,
+          inline: args.inline
+        }),
+        contentTimeoutMs,
+        "screenshot target measurement"
+      );
+      const rect = target?.rect?.page;
+      const clip2 = {
+        x: Number(rect?.x),
+        y: Number(rect?.y),
+        width: Number(rect?.width),
+        height: Number(rect?.height),
+        scale
+      };
+      assertValidClip(clip2, maxArea);
+      return clip2;
+    }
+    const rawClip = args.clip && typeof args.clip === "object" ? args.clip : args;
+    const hasRegion = rawClip.x !== void 0 && rawClip.y !== void 0 && rawClip.width !== void 0 && rawClip.height !== void 0;
+    if (!hasRegion)
+      return null;
+    const coordinateSpace = String(args.coordinate_space || rawClip.coordinate_space || "viewport");
+    let x = Number(rawClip.x);
+    let y = Number(rawClip.y);
+    if (coordinateSpace !== "page") {
+      const metrics = await withTimeout(
+        chrome.debugger.sendCommand({ tabId: tab.id }, "Page.getLayoutMetrics"),
+        cdpTimeoutMs,
+        "CDP Page.getLayoutMetrics"
+      );
+      const viewport = metrics?.cssLayoutViewport || metrics?.layoutViewport;
+      x += Number(viewport?.pageX || 0);
+      y += Number(viewport?.pageY || 0);
+    }
+    const clip = {
+      x: Math.max(0, x),
+      y: Math.max(0, y),
+      width: Number(rawClip.width),
+      height: Number(rawClip.height),
+      scale
+    };
+    assertValidClip(clip, maxArea);
+    return clip;
+  }
+  async function captureWithDebugger(tab, args = {}) {
+    const target = { tabId: tab.id };
+    let attached = false;
+    const timeoutMs = boundedTimeout(args.cdp_timeout_ms ?? args.timeout_ms, 12e3);
+    try {
+      await withTimeout(chrome.debugger.attach(target, "1.3"), timeoutMs, "CDP attach");
+      attached = true;
+      await withTimeout(chrome.debugger.sendCommand(target, "Page.enable"), timeoutMs, "CDP Page.enable");
+      const format = screenshotFormat(args);
+      const params = { format, fromSurface: args.from_surface !== false };
+      const quality = screenshotQuality(args);
+      if (format !== "png" && quality !== void 0)
+        params.quality = quality;
+      const maxArea = Math.max(1, Number(args.max_area || 25e6));
+      const clip = await pageClipFromArgs(tab, args);
+      if (clip) {
+        params.captureBeyondViewport = true;
+        params.clip = clip;
+      } else if (args.full_page) {
+        const metrics = await withTimeout(
+          chrome.debugger.sendCommand(target, "Page.getLayoutMetrics"),
+          timeoutMs,
+          "CDP Page.getLayoutMetrics"
+        );
+        const size = metrics?.cssContentSize || metrics?.contentSize;
+        if (size?.width && size?.height) {
+          const fullClip = {
+            x: 0,
+            y: 0,
+            width: Math.ceil(size.width),
+            height: Math.ceil(size.height),
+            scale: Number(args.scale || 1)
+          };
+          assertValidClip(fullClip, maxArea);
+          params.captureBeyondViewport = true;
+          params.clip = fullClip;
+        }
+      }
+      const result = await withTimeout(
+        chrome.debugger.sendCommand(target, "Page.captureScreenshot", params),
+        timeoutMs,
+        "CDP Page.captureScreenshot"
+      );
+      if (!result?.data)
+        throw new Error("CDP Page.captureScreenshot returned no image data");
+      return `data:image/${format === "jpeg" ? "jpeg" : format};base64,${result.data}`;
+    } finally {
+      if (attached) {
+        try {
+          await chrome.debugger.detach(target);
+        } catch {
+        }
+      }
+    }
+  }
+  async function toolScreenshot(args = {}) {
+    const tab = await getActiveTab();
+    const unsupported = unsupportedScreenshotReason(tab.url);
+    if (unsupported) {
       return {
         success: false,
-        disabled: /disabled|permission|not allowed|cannot|capture/i.test(message),
-        error: message,
+        disabled: true,
+        unsupported: true,
+        error: unsupported,
         tabId: tab.id,
         url: tab.url,
-        hint: "\u622A\u56FE\u4E0D\u53EF\u7528\u3002\u8BF7\u786E\u8BA4\u7BA1\u7406\u5458\u5DF2\u5206\u914D browser_screenshot \u5DE5\u5177\uFF0C\u4E14\u6269\u5C55\u62E5\u6709\u5F53\u524D\u9875\u9762\u7684\u6355\u83B7\u6743\u9650\u3002"
+        hint: unsupported
       };
     }
+    const wantsDebuggerCapture = !!(args.full_page || args.selector || args.text || args.clip || args.x !== void 0 && args.y !== void 0 && args.width !== void 0 && args.height !== void 0);
+    const attempts = [];
+    if (wantsDebuggerCapture) {
+      try {
+        const dataUrl = await captureWithDebugger(tab, args);
+        const optimized = await ensureScreenshotPayloadSize(dataUrl, args, () => captureWithDebugger(tab, {
+          ...args,
+          format: "jpeg",
+          quality: args.quality ?? 70
+        }));
+        return {
+          success: true,
+          dataUrl: optimized.dataUrl,
+          tabId: tab.id,
+          url: tab.url,
+          method: args.full_page ? "debugger.Page.captureScreenshot.fullPage" : args.selector || args.text ? "debugger.Page.captureScreenshot.element" : "debugger.Page.captureScreenshot.clip",
+          warning: optimized.warning || void 0
+        };
+      } catch (err) {
+        attempts.push(`debugger.Page.captureScreenshot: ${err?.message || String(err)}`);
+      }
+      if (args.fallback_visible !== true) {
+        const message2 = attempts.join("; ");
+        return {
+          success: false,
+          disabled: /disabled|permission|not allowed|cannot|restricted|debugger/i.test(message2),
+          error: message2,
+          tabId: tab.id,
+          url: tab.url,
+          hint: "\u7CBE\u786E\u622A\u56FE\u5931\u8D25\u3002\u8BF7\u68C0\u67E5 selector/text/clip \u53C2\u6570\uFF1B\u82E5\u8981\u5931\u8D25\u65F6\u9000\u56DE\u53EF\u89C6\u533A\u57DF\u622A\u56FE\uFF0C\u8BF7\u4F20 fallback_visible:true\u3002"
+        };
+      }
+    }
+    try {
+      const dataUrl = await captureVisibleTab(tab.windowId, args, Number(args.retries ?? 1));
+      const optimized = await ensureScreenshotPayloadSize(dataUrl, args, () => captureVisibleTab(tab.windowId, {
+        ...args,
+        format: "jpeg",
+        quality: args.quality ?? 70,
+        retries: 0
+      }, 0));
+      return {
+        success: true,
+        dataUrl: optimized.dataUrl,
+        tabId: tab.id,
+        url: tab.url,
+        method: "captureVisibleTab",
+        warning: [attempts.length ? attempts.join("; ") : "", optimized.warning].filter(Boolean).join("; ") || void 0
+      };
+    } catch (err) {
+      attempts.push(`captureVisibleTab: ${err?.message || String(err)}`);
+    }
+    if (!wantsDebuggerCapture) {
+      try {
+        const dataUrl = await captureWithDebugger(tab, args);
+        const optimized = await ensureScreenshotPayloadSize(dataUrl, args, () => captureWithDebugger(tab, {
+          ...args,
+          format: "jpeg",
+          quality: args.quality ?? 70
+        }));
+        return {
+          success: true,
+          dataUrl: optimized.dataUrl,
+          tabId: tab.id,
+          url: tab.url,
+          method: "debugger.Page.captureScreenshot",
+          warning: [attempts.join("; "), optimized.warning].filter(Boolean).join("; ")
+        };
+      } catch (err) {
+        attempts.push(`debugger.Page.captureScreenshot: ${err?.message || String(err)}`);
+      }
+    }
+    const message = attempts.join("; ");
+    return {
+      success: false,
+      disabled: /disabled|permission|not allowed|cannot|restricted|debugger/i.test(message),
+      error: message,
+      tabId: tab.id,
+      url: tab.url,
+      hint: "\u622A\u56FE\u4E0D\u53EF\u7528\u3002\u8BF7\u786E\u8BA4\u6269\u5C55\u62E5\u6709\u5F53\u524D\u9875\u9762\u6743\u9650\uFF1B\u82E5\u9875\u9762\u662F\u6D4F\u89C8\u5668\u5185\u90E8\u9875\u3001\u6269\u5C55\u9875\u3001Chrome \u7F51\u4E0A\u5E94\u7528\u5E97\u6216\u53D7 DRM \u4FDD\u62A4\u5185\u5BB9\uFF0CChrome \u4F1A\u963B\u6B62\u622A\u56FE\u3002"
+    };
   }
   async function toolSearch(args) {
     const query = String(args.query || "");
@@ -4683,7 +5007,7 @@ ${code}
         case "browser_navigate":
           return toolNavigate(args);
         case "browser_screenshot":
-          return toolScreenshot();
+          return toolScreenshot(args);
         case "browser_click":
           return toolClick(args);
         case "browser_type":
@@ -5325,6 +5649,28 @@ Always:
   var taskOutcomes = /* @__PURE__ */ new Map();
   var popupPorts = /* @__PURE__ */ new Set();
   var _machineId = null;
+  async function withTaskTimeout(promise, ms, label) {
+    let timer = null;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+        })
+      ]);
+    } finally {
+      if (timer)
+        clearTimeout(timer);
+    }
+  }
+  function taskTimeoutMs(task) {
+    const fromArgs = Number(task.args?.task_timeout_ms || task.args?.timeout_seconds && Number(task.args.timeout_seconds) * 1e3);
+    if (Number.isFinite(fromArgs) && fromArgs > 0)
+      return Math.min(11e4, Math.max(5e3, Math.round(fromArgs)));
+    if (task.tool === "browser_screenshot")
+      return 35e3;
+    return 9e4;
+  }
   function mkEntry(type, status, message, data) {
     return { id: Math.random().toString(36).slice(2), type, status, message, data, timestamp: Date.now() };
   }
@@ -5517,7 +5863,8 @@ Always:
     socket?.emit("task:progress", { taskId, progress: 0, message: `\u6267\u884C ${tool}...` });
     try {
       const settings = await getSettings();
-      const outcome = await executeTask(task, settings);
+      const timeoutMs = taskTimeoutMs(task);
+      const outcome = await withTaskTimeout(executeTask(task, settings), timeoutMs, `Endpoint task ${tool}`);
       const payload = {
         taskId,
         userId: task.userId,

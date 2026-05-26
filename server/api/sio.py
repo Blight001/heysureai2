@@ -8,7 +8,15 @@ from .core.config import AGENT_TOKEN
 from .database import engine
 
 # Socket.IO Server
-sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
+# Browser screenshots are transported as base64 data URLs before the server
+# persists them to the workspace. Complex pages can exceed Socket.IO's small
+# default payload limit, which makes the agent result disappear and leaves the
+# caller waiting until the dispatch timeout.
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins='*',
+    max_http_buffer_size=20_000_000,
+)
 
 # Connected desktop/browser agents: sid -> agent info dict.
 agents = {}

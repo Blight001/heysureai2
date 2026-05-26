@@ -373,6 +373,11 @@ async def dispatch_endpoint_tool_and_wait(
     if not agent_id:
         return {"success": False, "error": "Connected endpoint agent has no id"}
 
+    effective_timeout_seconds = _endpoint_timeout_seconds(
+        tool_name,
+        args or {},
+        timeout_seconds,
+    )
     run_ctx = get_run_session_context() or {}
     return await dispatch_task_to_agent(
         agent_id=agent_id,
@@ -387,8 +392,32 @@ async def dispatch_endpoint_tool_and_wait(
         args=args or {},
         allowed_tools=[tool_name],
         wait_for_result=True,
-        timeout_seconds=timeout_seconds,
+        timeout_seconds=effective_timeout_seconds,
         suppress_session_message=True,
     )
+
+
+def _endpoint_timeout_seconds(tool: str, args: Dict[str, Any], fallback: int) -> int:
+    """Resolve server-side wait timeout from endpoint tool args.
+
+    Screenshot pages can wedge inside Chrome or lose a large socket payload.
+    Tool-level timeouts inside the browser extension do not help if the
+    extension never replies, so the dispatch waiter must honor timeout args too.
+    """
+    candidates = [
+        args.get("timeout_seconds"),
+        (float(args["task_timeout_ms"]) / 1000.0) if args.get("task_timeout_ms") is not None else None,
+        (float(args["timeout_ms"]) / 1000.0) if args.get("timeout_ms") is not None else None,
+    ]
+    for value in candidates:
+        try:
+            parsed = int(float(value))
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            return max(1, min(300, parsed))
+    if str(tool or "") == "browser_screenshot":
+        return max(1, min(60, int(fallback or 35)))
+    return max(1, int(fallback or 120))
 
 

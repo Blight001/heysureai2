@@ -95,21 +95,353 @@ async function toolNavigate(args: any): Promise<any> {
   return { success: true, url: url.href, tabId: tab.id }
 }
 
-async function toolScreenshot(): Promise<any> {
-  const tab = await getActiveTab()
+function unsupportedScreenshotReason(url?: string) {
+  const raw = String(url || '')
+  if (/^(chrome|edge|brave|vivaldi|opera|chrome-extension):\/\//i.test(raw)) {
+    return '浏览器内部页面或扩展页面不允许扩展截图。请切换到普通 http/https 页面后重试。'
+  }
+  if (/^https:\/\/chromewebstore\.google\.com\//i.test(raw)) {
+    return 'Chrome 网上应用店页面不允许扩展截图。'
+  }
+  return ''
+}
+
+function isRetryableCaptureError(message: string) {
+  return /quota|too many|rate|active|visible|tab|capture|pending|loading/i.test(message)
+}
+
+async function delay(ms: number) {
+  await new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null
   try {
-    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId!, { format: 'png' })
-    return { success: true, dataUrl, tabId: tab.id, url: tab.url }
-  } catch (err: any) {
-    const message = err?.message || String(err)
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+function boundedTimeout(value: any, fallback: number, min = 1000, max = 30000) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return fallback
+  return Math.min(max, Math.max(min, Math.round(n)))
+}
+
+type ScreenshotFormat = 'png' | 'jpeg' | 'webp'
+
+type ScreenshotClip = {
+  x: number
+  y: number
+  width: number
+  height: number
+  scale?: number
+}
+
+function screenshotFormat(args: any): ScreenshotFormat {
+  const format = String(args.format || 'png').toLowerCase()
+  return ['png', 'jpeg', 'webp'].includes(format) ? format as ScreenshotFormat : 'png'
+}
+
+function screenshotQuality(args: any) {
+  const quality = Number(args.quality)
+  if (!Number.isFinite(quality)) return undefined
+  return Math.min(100, Math.max(0, Math.round(quality)))
+}
+
+function maxDataUrlChars(args: any) {
+  const n = Number(args.max_data_url_chars)
+  if (Number.isFinite(n) && n > 0) return Math.min(20_000_000, Math.max(100_000, Math.round(n)))
+  return 8_000_000
+}
+
+async function ensureScreenshotPayloadSize(
+  dataUrl: string,
+  args: any,
+  retryCompressed?: () => Promise<string>,
+) {
+  const maxChars = maxDataUrlChars(args)
+  if (dataUrl.length <= maxChars || args.allow_large_data_url === true) {
+    return { dataUrl, warning: '' }
+  }
+
+  if (retryCompressed && screenshotFormat(args) !== 'jpeg') {
+    const compressed = await retryCompressed()
+    if (compressed.length <= maxChars || args.allow_large_data_url === true) {
+      return {
+        dataUrl: compressed,
+        warning: `Original screenshot payload was ${dataUrl.length} chars; returned compressed JPEG payload ${compressed.length} chars.`,
+      }
+    }
+    throw new Error(`Screenshot payload is too large after JPEG compression: ${compressed.length} chars > max_data_url_chars ${maxChars}`)
+  }
+
+  throw new Error(`Screenshot payload is too large: ${dataUrl.length} chars > max_data_url_chars ${maxChars}`)
+}
+
+function clipArea(clip: ScreenshotClip) {
+  return Math.max(0, clip.width) * Math.max(0, clip.height)
+}
+
+function assertValidClip(clip: ScreenshotClip, maxArea: number) {
+  if (!Number.isFinite(clip.x) || !Number.isFinite(clip.y) || !Number.isFinite(clip.width) || !Number.isFinite(clip.height)) {
+    throw new Error('clip/x/y/width/height must be finite numbers')
+  }
+  if (clip.width <= 0 || clip.height <= 0) throw new Error('clip width and height must be greater than 0')
+  if (clipArea(clip) > maxArea) {
+    throw new Error(`Screenshot area is too large: ${Math.round(clipArea(clip))} CSS pixels > max_area ${maxArea}`)
+  }
+}
+
+async function captureVisibleTab(windowId: number, args: any, retries = 1) {
+  let lastErr: any
+  const timeoutMs = boundedTimeout(args.visible_timeout_ms ?? args.timeout_ms, 8000)
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await withTimeout(
+        chrome.tabs.captureVisibleTab(windowId, {
+          format: screenshotFormat(args) === 'jpeg' ? 'jpeg' : 'png',
+          quality: screenshotQuality(args),
+        }),
+        timeoutMs,
+        'chrome.tabs.captureVisibleTab',
+      )
+    } catch (err: any) {
+      lastErr = err
+      const message = err?.message || String(err)
+      if (i >= retries || !isRetryableCaptureError(message)) break
+      await delay(300)
+    }
+  }
+  throw lastErr
+}
+
+async function pageClipFromArgs(tab: chrome.tabs.Tab, args: any): Promise<ScreenshotClip | null> {
+  const maxArea = Math.max(1, Number(args.max_area || 25_000_000))
+  const scale = Number(args.scale || 1)
+  const contentTimeoutMs = boundedTimeout(args.content_timeout_ms ?? args.timeout_ms, 5000)
+  const cdpTimeoutMs = boundedTimeout(args.cdp_timeout_ms ?? args.timeout_ms, 12000)
+
+  if (args.selector || args.text) {
+    const target = await withTimeout(
+      contentMsg(tab.id!, {
+        action: 'screenshot_target_info',
+        selector: args.selector,
+        text: args.text,
+        margin: args.margin ?? args.padding,
+        scroll_into_view: args.scroll_into_view,
+        block: args.block,
+        inline: args.inline,
+      }),
+      contentTimeoutMs,
+      'screenshot target measurement',
+    )
+    const rect = target?.rect?.page
+    const clip = {
+      x: Number(rect?.x),
+      y: Number(rect?.y),
+      width: Number(rect?.width),
+      height: Number(rect?.height),
+      scale,
+    }
+    assertValidClip(clip, maxArea)
+    return clip
+  }
+
+  const rawClip = args.clip && typeof args.clip === 'object' ? args.clip : args
+  const hasRegion = rawClip.x !== undefined && rawClip.y !== undefined && rawClip.width !== undefined && rawClip.height !== undefined
+  if (!hasRegion) return null
+
+  const coordinateSpace = String(args.coordinate_space || rawClip.coordinate_space || 'viewport')
+  let x = Number(rawClip.x)
+  let y = Number(rawClip.y)
+  if (coordinateSpace !== 'page') {
+    const metrics: any = await withTimeout(
+      chrome.debugger.sendCommand({ tabId: tab.id! }, 'Page.getLayoutMetrics'),
+      cdpTimeoutMs,
+      'CDP Page.getLayoutMetrics',
+    )
+    const viewport = metrics?.cssLayoutViewport || metrics?.layoutViewport
+    x += Number(viewport?.pageX || 0)
+    y += Number(viewport?.pageY || 0)
+  }
+
+  const clip = {
+    x: Math.max(0, x),
+    y: Math.max(0, y),
+    width: Number(rawClip.width),
+    height: Number(rawClip.height),
+    scale,
+  }
+  assertValidClip(clip, maxArea)
+  return clip
+}
+
+async function captureWithDebugger(tab: chrome.tabs.Tab, args: any = {}) {
+  const target = { tabId: tab.id! }
+  let attached = false
+  const timeoutMs = boundedTimeout(args.cdp_timeout_ms ?? args.timeout_ms, 12000)
+  try {
+    await withTimeout(chrome.debugger.attach(target, '1.3'), timeoutMs, 'CDP attach')
+    attached = true
+
+    await withTimeout(chrome.debugger.sendCommand(target, 'Page.enable'), timeoutMs, 'CDP Page.enable')
+    const format = screenshotFormat(args)
+    const params: any = { format, fromSurface: args.from_surface !== false }
+    const quality = screenshotQuality(args)
+    if (format !== 'png' && quality !== undefined) params.quality = quality
+
+    const maxArea = Math.max(1, Number(args.max_area || 25_000_000))
+    const clip = await pageClipFromArgs(tab, args)
+
+    if (clip) {
+      params.captureBeyondViewport = true
+      params.clip = clip
+    } else if (args.full_page) {
+      const metrics: any = await withTimeout(
+        chrome.debugger.sendCommand(target, 'Page.getLayoutMetrics'),
+        timeoutMs,
+        'CDP Page.getLayoutMetrics',
+      )
+      const size = metrics?.cssContentSize || metrics?.contentSize
+      if (size?.width && size?.height) {
+        const fullClip = {
+          x: 0,
+          y: 0,
+          width: Math.ceil(size.width),
+          height: Math.ceil(size.height),
+          scale: Number(args.scale || 1),
+        }
+        assertValidClip(fullClip, maxArea)
+        params.captureBeyondViewport = true
+        params.clip = fullClip
+      }
+    }
+
+    const result: any = await withTimeout(
+      chrome.debugger.sendCommand(target, 'Page.captureScreenshot', params),
+      timeoutMs,
+      'CDP Page.captureScreenshot',
+    )
+    if (!result?.data) throw new Error('CDP Page.captureScreenshot returned no image data')
+    return `data:image/${format === 'jpeg' ? 'jpeg' : format};base64,${result.data}`
+  } finally {
+    if (attached) {
+      try { await chrome.debugger.detach(target) } catch { /* tab may have closed */ }
+    }
+  }
+}
+
+async function toolScreenshot(args: any = {}): Promise<any> {
+  const tab = await getActiveTab()
+  const unsupported = unsupportedScreenshotReason(tab.url)
+  if (unsupported) {
     return {
       success: false,
-      disabled: /disabled|permission|not allowed|cannot|capture/i.test(message),
-      error: message,
+      disabled: true,
+      unsupported: true,
+      error: unsupported,
       tabId: tab.id,
       url: tab.url,
-      hint: '截图不可用。请确认管理员已分配 browser_screenshot 工具，且扩展拥有当前页面的捕获权限。',
+      hint: unsupported,
     }
+  }
+
+  const wantsDebuggerCapture = !!(args.full_page || args.selector || args.text || args.clip || (
+    args.x !== undefined && args.y !== undefined && args.width !== undefined && args.height !== undefined
+  ))
+  const attempts: string[] = []
+  if (wantsDebuggerCapture) {
+    try {
+      const dataUrl = await captureWithDebugger(tab, args)
+      const optimized = await ensureScreenshotPayloadSize(dataUrl, args, () => captureWithDebugger(tab, {
+        ...args,
+        format: 'jpeg',
+        quality: args.quality ?? 70,
+      }))
+      return {
+        success: true,
+        dataUrl: optimized.dataUrl,
+        tabId: tab.id,
+        url: tab.url,
+        method: args.full_page
+          ? 'debugger.Page.captureScreenshot.fullPage'
+          : args.selector || args.text
+            ? 'debugger.Page.captureScreenshot.element'
+            : 'debugger.Page.captureScreenshot.clip',
+        warning: optimized.warning || undefined,
+      }
+    } catch (err: any) {
+      attempts.push(`debugger.Page.captureScreenshot: ${err?.message || String(err)}`)
+    }
+    if (args.fallback_visible !== true) {
+      const message = attempts.join('; ')
+      return {
+        success: false,
+        disabled: /disabled|permission|not allowed|cannot|restricted|debugger/i.test(message),
+        error: message,
+        tabId: tab.id,
+        url: tab.url,
+        hint: '精确截图失败。请检查 selector/text/clip 参数；若要失败时退回可视区域截图，请传 fallback_visible:true。',
+      }
+    }
+  }
+
+  try {
+    const dataUrl = await captureVisibleTab(tab.windowId!, args, Number(args.retries ?? 1))
+    const optimized = await ensureScreenshotPayloadSize(dataUrl, args, () => captureVisibleTab(tab.windowId!, {
+      ...args,
+      format: 'jpeg',
+      quality: args.quality ?? 70,
+      retries: 0,
+    }, 0))
+    return {
+      success: true,
+      dataUrl: optimized.dataUrl,
+      tabId: tab.id,
+      url: tab.url,
+      method: 'captureVisibleTab',
+      warning: [attempts.length ? attempts.join('; ') : '', optimized.warning].filter(Boolean).join('; ') || undefined,
+    }
+  } catch (err: any) {
+    attempts.push(`captureVisibleTab: ${err?.message || String(err)}`)
+  }
+
+  if (!wantsDebuggerCapture) {
+    try {
+      const dataUrl = await captureWithDebugger(tab, args)
+      const optimized = await ensureScreenshotPayloadSize(dataUrl, args, () => captureWithDebugger(tab, {
+        ...args,
+        format: 'jpeg',
+        quality: args.quality ?? 70,
+      }))
+      return {
+        success: true,
+        dataUrl: optimized.dataUrl,
+        tabId: tab.id,
+        url: tab.url,
+        method: 'debugger.Page.captureScreenshot',
+        warning: [attempts.join('; '), optimized.warning].filter(Boolean).join('; '),
+      }
+    } catch (err: any) {
+      attempts.push(`debugger.Page.captureScreenshot: ${err?.message || String(err)}`)
+    }
+  }
+
+  const message = attempts.join('; ')
+  return {
+    success: false,
+    disabled: /disabled|permission|not allowed|cannot|restricted|debugger/i.test(message),
+    error: message,
+    tabId: tab.id,
+    url: tab.url,
+    hint: '截图不可用。请确认扩展拥有当前页面权限；若页面是浏览器内部页、扩展页、Chrome 网上应用店或受 DRM 保护内容，Chrome 会阻止截图。',
   }
 }
 
@@ -529,7 +861,7 @@ export async function executeBrowserOnly(name: string, args: any): Promise<any> 
   try {
     switch (name) {
       case 'browser_navigate':         return toolNavigate(args)
-      case 'browser_screenshot':       return toolScreenshot()
+      case 'browser_screenshot':       return toolScreenshot(args)
       case 'browser_click':            return toolClick(args)
       case 'browser_type':             return toolType(args)
       case 'browser_get_content':      return toolGetContent(args)

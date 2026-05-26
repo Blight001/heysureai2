@@ -17,6 +17,27 @@ const taskOutcomes = new Map<string, any>()
 const popupPorts   = new Set<chrome.runtime.Port>()
 let _machineId:    string | null = null
 
+async function withTaskTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
+function taskTimeoutMs(task: DispatchedTask) {
+  const fromArgs = Number(task.args?.task_timeout_ms || task.args?.timeout_seconds && Number(task.args.timeout_seconds) * 1000)
+  if (Number.isFinite(fromArgs) && fromArgs > 0) return Math.min(110000, Math.max(5000, Math.round(fromArgs)))
+  if (task.tool === 'browser_screenshot') return 35000
+  return 90000
+}
+
 // ── Activity logging ──────────────────────────────────────────────────────
 function mkEntry(type: string, status: string, message: string, data?: any): ActivityEntry {
   return { id: Math.random().toString(36).slice(2), type, status, message, data, timestamp: Date.now() }
@@ -228,7 +249,8 @@ async function handleTask(task: DispatchedTask) {
 
   try {
     const settings = await getSettings()
-    const outcome  = await executeTask(task, settings)
+    const timeoutMs = taskTimeoutMs(task)
+    const outcome  = await withTaskTimeout(executeTask(task, settings), timeoutMs, `Endpoint task ${tool}`)
     const payload  = {
       taskId,
       userId:      task.userId,

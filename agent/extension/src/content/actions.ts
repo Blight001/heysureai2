@@ -503,6 +503,54 @@ export function performanceInfo() {
   }
 }
 
+export async function screenshotTargetInfo(msg: any) {
+  const margin = Math.max(0, Number(msg.margin ?? msg.padding ?? 0))
+  let el: Element | null = null
+
+  if (msg.selector || msg.text) {
+    el = findEl(msg.selector, msg.text)
+    if (!el) throw new Error(`Element not found: selector=${msg.selector || ''} text=${msg.text || ''}`)
+    if (msg.scroll_into_view !== false) {
+      el.scrollIntoView({ block: msg.block || 'center', inline: msg.inline || 'center', behavior: 'auto' })
+      await waitScrollSettle(250)
+    }
+  } else if (msg.x !== undefined && msg.y !== undefined) {
+    const space = String(msg.coordinate_space || 'viewport')
+    const vx = space === 'page' ? Number(msg.x) - window.scrollX : Number(msg.x)
+    const vy = space === 'page' ? Number(msg.y) - window.scrollY : Number(msg.y)
+    el = document.elementFromPoint(vx, vy)
+  }
+
+  if (!el) throw new Error('selector, text, or x/y is required for screenshot target info')
+
+  const rect = (el as HTMLElement).getBoundingClientRect()
+  const viewportRect = {
+    x: Math.max(0, rect.left - margin),
+    y: Math.max(0, rect.top - margin),
+    width: Math.min(window.innerWidth, rect.right + margin) - Math.max(0, rect.left - margin),
+    height: Math.min(window.innerHeight, rect.bottom + margin) - Math.max(0, rect.top - margin),
+  }
+  const pageRect = {
+    x: Math.max(0, rect.left + window.scrollX - margin),
+    y: Math.max(0, rect.top + window.scrollY - margin),
+    width: Math.min(document.documentElement.scrollWidth, rect.right + window.scrollX + margin) - Math.max(0, rect.left + window.scrollX - margin),
+    height: Math.min(document.documentElement.scrollHeight, rect.bottom + window.scrollY + margin) - Math.max(0, rect.top + window.scrollY - margin),
+  }
+
+  return {
+    success: true,
+    selector: cssPath(el),
+    tag: el.tagName,
+    text: textOf(el, 160),
+    visible: isVisible(el),
+    devicePixelRatio: window.devicePixelRatio,
+    scroll: { x: window.scrollX, y: window.scrollY },
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    page: { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight },
+    rect: { viewport: viewportRect, page: pageRect },
+  }
+}
+
 export function fileUpload(msg: any) {
   const input = document.querySelector(String(msg.selector || 'input[type="file"]')) as HTMLInputElement | null
   if (!input || input.type !== 'file') throw new Error(`File input not found: ${msg.selector || 'input[type="file"]'}`)
