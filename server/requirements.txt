@@ -3,6 +3,7 @@ uvicorn
 lark-oapi>=1.4.23
 python-socketio
 sqlmodel
+psycopg[binary]>=3.2.0
 passlib
 bcrypt==3.2.0
 python-multipart

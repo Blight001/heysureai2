@@ -15,6 +15,20 @@ WORKSPACE_DIR = os.path.join(DATA_DIR, "workspace")
 SQLITE_FILE = os.path.join(DATA_DIR, "heysure.db")
 SQLITE_URL = f"sqlite:///{SQLITE_FILE}"
 
+# ---------- Database ----------
+# DATABASE_URL overrides SQLITE_URL. Supports both sqlite:// and postgresql://.
+# Default keeps the historical SQLite path so single-machine dev keeps working
+# without any env setup.
+DATABASE_URL = os.environ.get("DATABASE_URL", SQLITE_URL).strip() or SQLITE_URL
+
+
+def database_dialect() -> str:
+    """Return 'sqlite' or 'postgresql' based on DATABASE_URL scheme."""
+    url = DATABASE_URL.lower()
+    if url.startswith("postgres"):
+        return "postgresql"
+    return "sqlite"
+
 USER_WORKSPACE_SUBFOLDERS = (
     "Valhalla",
     "BrainCore",
