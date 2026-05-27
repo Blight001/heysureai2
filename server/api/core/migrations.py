@@ -60,6 +60,7 @@ def run_pending_migrations() -> None:
         cursor = conn.cursor()
 
         _migrate_chatmessage(cursor)
+        _migrate_chatrun(cursor)
         _migrate_user(
             cursor,
             mcp_call_method=DEFAULT_MCP_CALL_METHOD,
@@ -117,6 +118,18 @@ def _migrate_chatmessage(cursor: sqlite3.Cursor) -> None:
     _add_column(cursor, "chatmessage", "ai_config_id", "INTEGER", existing)
     _add_column(cursor, "chatmessage", "ai_kind", "TEXT DEFAULT 'assistant'", existing)
     _add_column(cursor, "chatmessage", "cache_read_tokens", "INTEGER", existing)
+
+
+def _migrate_chatrun(cursor: sqlite3.Cursor) -> None:
+    # ``heartbeat_at`` was added when ai-runtime was split out; older SQLite
+    # files predate it. The watchdog checks this column to reap dead runs.
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='chatrun'"
+    )
+    if not cursor.fetchone():
+        return
+    existing = _existing_columns(cursor, "chatrun")
+    _add_column(cursor, "chatrun", "heartbeat_at", "REAL", existing)
 
 
 def _migrate_user(

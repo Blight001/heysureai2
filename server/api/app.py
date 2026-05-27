@@ -13,6 +13,7 @@ from .sio import sio
 from .socket_events import register_socket_events
 from .database import create_db_and_tables
 from .mcp.loader import load_plugins_on_startup
+from .runtime import heartbeat as heartbeat_module
 from .services.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
 from .integrations.feishu.long_connection import start_feishu_long_connection_clients
 from .routers.chat import process_task_scheduler
@@ -53,6 +54,8 @@ async def lifespan(app: FastAPI):
         print(f"[align_token_snapshots_with_history] {exc}")
     stop_event = asyncio.Event()
 
+    watchdog_counter = {"ticks": 0}
+
     async def periodic_scan():
         while not stop_event.is_set():
             try:
@@ -63,6 +66,16 @@ async def lifespan(app: FastAPI):
                 process_task_scheduler()
             except Exception as exc:
                 print(f"[process_task_scheduler] {exc}")
+            # Reap stale ChatRun heartbeats every ~30s to avoid scanning
+            # the table on every 3s tick.
+            watchdog_counter["ticks"] += 1
+            if watchdog_counter["ticks"] % 10 == 0:
+                try:
+                    reaped = heartbeat_module.reap_stale_runs()
+                    if reaped:
+                        print(f"[watchdog] reaped stale runs: {reaped}")
+                except Exception as exc:
+                    print(f"[watchdog] reap failed: {exc}")
             await asyncio.sleep(3)
 
     task = asyncio.create_task(periodic_scan())

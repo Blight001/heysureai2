@@ -83,5 +83,9 @@ class ChatRun(SQLModel, table=True):
     error_message: Optional[str] = None
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
+    # Updated by the worker every few seconds while a run is running. The
+    # watchdog in api-gateway marks rows with status='running' and a stale
+    # heartbeat as 'error' so dead workers don't leave ghost runs.
+    heartbeat_at: Optional[float] = None
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)

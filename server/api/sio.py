@@ -1,3 +1,4 @@
+import os
 from typing import Optional, Tuple
 
 import socketio
@@ -7,16 +8,88 @@ from .auth import decode_access_token
 from .core.config import AGENT_TOKEN
 from .database import engine
 
-# Socket.IO Server
-# Browser screenshots are transported as base64 data URLs before the server
-# persists them to the workspace. Complex pages can exceed Socket.IO's small
-# default payload limit, which makes the agent result disappear and leaves the
-# caller waiting until the dispatch timeout.
-sio = socketio.AsyncServer(
-    async_mode='asgi',
-    cors_allowed_origins='*',
-    max_http_buffer_size=20_000_000,
-)
+
+# Process role decides whether this process owns a real Socket.IO server or
+# is a "leaf" that needs to forward emits to the api-gateway over HTTP.
+#   gateway          — full Socket.IO server (default; current monolith)
+#   worker | mcp     — no server, emits forwarded via HEYSURE_API_GATEWAY_URL
+#   connector        — full Socket.IO server for /agent namespace (Phase 4)
+HEYSURE_SERVICE_ROLE = os.environ.get("HEYSURE_SERVICE_ROLE", "gateway").strip().lower()
+_HAS_LOCAL_SIO_SERVER = HEYSURE_SERVICE_ROLE in ("gateway", "connector")
+
+
+class _RemoteSio:
+    """Stand-in for ``socketio.AsyncServer`` used in ai-runtime / mcp-runtime.
+
+    Forwards ``.emit(...)`` over HTTP to the api-gateway's
+    ``/internal/socket/emit`` so existing call sites that do
+    ``await sio.emit(...)`` keep working unchanged.
+
+    Other server methods (``enter_room``, ``on``, etc.) collapse to no-ops
+    because workers do not accept Socket.IO connections themselves.
+    """
+
+    def __init__(self, gateway_url: str) -> None:
+        self._gateway_url = (gateway_url or "").rstrip("/")
+        self._client = None
+
+    async def _ensure_client(self):
+        if self._client is None:
+            import httpx  # local import — only needed in split mode
+            from .runtime.internal_http import internal_headers
+            self._client = httpx.AsyncClient(
+                base_url=self._gateway_url,
+                headers=internal_headers(),
+                timeout=10.0,
+            )
+        return self._client
+
+    async def emit(self, event, data=None, to=None, room=None, namespace=None, **_):
+        if not self._gateway_url:
+            # No gateway configured (likely misconfiguration). Drop silently
+            # rather than crash the worker over a UI nicety.
+            return
+        try:
+            client = await self._ensure_client()
+            await client.post(
+                "/internal/socket/emit",
+                json={
+                    "event": event,
+                    "data": data,
+                    "to": to,
+                    "room": room,
+                    "namespace": namespace,
+                },
+            )
+        except Exception as exc:
+            # Logging only — emit failures should never break the worker.
+            print(f"[sio-proxy] forward failed event={event}: {exc}")
+
+    async def enter_room(self, *_, **__):
+        return None
+
+    async def leave_room(self, *_, **__):
+        return None
+
+    def on(self, *_, **__):
+        # Returns a decorator no-op so registration calls remain side-effect free.
+        def _decorator(fn):
+            return fn
+        return _decorator
+
+
+if _HAS_LOCAL_SIO_SERVER:
+    # Browser screenshots are transported as base64 data URLs before the
+    # server persists them to the workspace. Complex pages can exceed
+    # Socket.IO's small default payload limit, which makes the agent result
+    # disappear and leaves the caller waiting until the dispatch timeout.
+    sio = socketio.AsyncServer(
+        async_mode='asgi',
+        cors_allowed_origins='*',
+        max_http_buffer_size=20_000_000,
+    )
+else:
+    sio = _RemoteSio(os.environ.get("HEYSURE_API_GATEWAY_URL", "").strip())
 
 # Connected desktop/browser agents: sid -> agent info dict.
 agents = {}

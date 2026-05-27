@@ -83,14 +83,22 @@ def _send_feishu_text(
 
 
 def _start_feishu_worker(worker_kwargs: Dict[str, Any]) -> str:
+    from .chat_action_routes import _ai_dispatch_mode
+    from api.runtime.ai_worker_service import notify_queue
+
+    run_id = str(worker_kwargs["run_id"])
+    if _ai_dispatch_mode() == "remote":
+        notify_queue(run_id)
+        return run_id
+
     worker = threading.Thread(
         target=_run_worker,
         kwargs=worker_kwargs,
         daemon=True,
     )
-    _RUN_THREADS[str(worker_kwargs["run_id"])] = worker
+    _RUN_THREADS[run_id] = worker
     worker.start()
-    return str(worker_kwargs["run_id"])
+    return run_id
 
 
 def _feishu_session_has_live_run(

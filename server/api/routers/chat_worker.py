@@ -245,6 +245,36 @@ def _joined_tool_skip_reason(tool_name: str, arguments: dict, allowed_tools: set
     return ""
 
 
+async def _call_mcp_via_runtime(
+    runtime_url: str,
+    tool: str,
+    user_id: int,
+    arguments: dict,
+    ai_config_id: Optional[int],
+) -> Dict[str, object]:
+    """Forward an MCP tool call to ``mcp-runtime`` over HTTP.
+
+    Lazy-imports httpx so the in-process path keeps zero overhead. Uses the
+    INTERNAL_TOKEN Bearer header from ``runtime.internal_http.internal_headers``.
+    """
+    import httpx
+    from api.runtime.internal_http import internal_headers
+
+    async with httpx.AsyncClient(base_url=runtime_url.rstrip("/"), timeout=120.0) as client:
+        resp = await client.post(
+            "/internal/mcp/call",
+            headers=internal_headers(),
+            json={
+                "tool": tool,
+                "user_id": user_id,
+                "ai_config_id": ai_config_id,
+                "arguments": arguments,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
 async def _call_mcp_or_endpoint_tool(
     tool: str,
     user_id: int,
@@ -262,6 +292,9 @@ async def _call_mcp_or_endpoint_tool(
                 args=arguments,
             ),
         }
+    runtime_url = os.environ.get("MCP_RUNTIME_URL", "").strip()
+    if runtime_url:
+        return await _call_mcp_via_runtime(runtime_url, tool, user_id, arguments, ai_config_id)
     return await registry.call(tool, user_id, arguments, ai_config_id)
 
 
