@@ -28,6 +28,7 @@ def run_pending_migrations() -> None:
         DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
         DEFAULT_INHERITANCE_NOTICE,
         DEFAULT_MCP_CALL_METHOD,
+        DEFAULT_MCP_DYNAMIC_RULE,
         DEFAULT_MCP_FORMAT_ERROR_HINT,
         DEFAULT_MCP_NAMESPACE_HINTS,
         DEFAULT_MODEL_PRESETS,
@@ -53,6 +54,7 @@ def run_pending_migrations() -> None:
             cursor,
             mcp_call_method=DEFAULT_MCP_CALL_METHOD,
             mcp_namespace_hints=DEFAULT_MCP_NAMESPACE_HINTS,
+            mcp_dynamic_rule=DEFAULT_MCP_DYNAMIC_RULE,
             mcp_format_error_hint=DEFAULT_MCP_FORMAT_ERROR_HINT,
             start_task_prompt=DEFAULT_START_TASK_PROMPT,
             resume_task_prompt=DEFAULT_RESUME_TASK_PROMPT,
@@ -112,6 +114,7 @@ def _migrate_user(
     *,
     mcp_call_method: str,
     mcp_namespace_hints: str,
+    mcp_dynamic_rule: str,
     mcp_format_error_hint: str,
     start_task_prompt: str,
     resume_task_prompt: str,
@@ -136,6 +139,7 @@ def _migrate_user(
     existing = _existing_columns(cursor, "user")
     _add_column(cursor, "user", "mcp_call_method", f"TEXT DEFAULT '{_quote(mcp_call_method)}'", existing)
     _add_column(cursor, "user", "mcp_namespace_hints", f"TEXT DEFAULT '{_quote(mcp_namespace_hints)}'", existing)
+    _add_column(cursor, "user", "mcp_dynamic_rule", f"TEXT DEFAULT '{_quote(mcp_dynamic_rule)}'", existing)
     _add_column(cursor, "user", "mcp_format_error_hint", f"TEXT DEFAULT '{_quote(mcp_format_error_hint)}'", existing)
     _add_column(cursor, "user", "mcp_max_steps", "INTEGER DEFAULT 48", existing)
     _add_column(cursor, "user", "role_mcp_permissions", "TEXT DEFAULT ''", existing)

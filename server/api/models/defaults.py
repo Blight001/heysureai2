@@ -20,6 +20,8 @@ DEFAULT_MODEL_PRESETS = """[{"id":"deepseek-chat","name":"DeepSeek Chat","api_ke
 
 DEFAULT_MCP_NAMESPACE_HINTS = """{"mcp":"MCP 自省入口。先用 mcp.list_tools 查看命名空间；需要参数时用 mcp.describe_tool。","task":"任务系统。用于查看、创建、更新、删除、传承和完成任务。","workspace":"工作区与命令执行。用于检查文件、运行只读诊断命令或执行用户明确要求的工作区操作。","admin":"系统与 Agent 总览。用于查看在线智能体、运行状态和系统概况。","prompt":"Prompt 管理。用于读取或按权限修改 AI / 系统 prompt。","conversation":"会话管理。用于查找、新建、删除会话或按请求清理上下文。","ai":"AI 间通信。用于向其他 AI 发送询问、回复、通知或协作消息。","user":"用户通知。用于向用户发送异步消息。","web":"联网搜索。用于查询外部或实时信息。","memory":"长期记忆。用于写入、检索、更新和归档结构化记忆。","librarian":"知识流程库。用于咨询、提交、读取和归档可复用流程。","evolution":"系统进化建议。用于提交、列出和评审改进建议。","project":"项目管理。用于查看或维护项目记录。"}"""
 
+DEFAULT_MCP_DYNAMIC_RULE = "初始只向模型暴露 mcp.list_tools / mcp.describe_tool；mcp.describe_tool 成功后，后端才把被描述的目标工具 schema 加入下一轮请求。"
+
 DEFAULT_MCP_CALL_METHOD = """When you want to call a tool, output one or more blocks using EXACTLY this format and do not wrap them in markdown code fences:
 <mcp-call>
 {"tool":"workspace.run_command","arguments":{"command":"dir"}}

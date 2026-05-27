@@ -40,6 +40,15 @@ class IntrinsicPropertiesBody(BaseModel):
     tools: List[IntrinsicPropertyToolBody] = []
 
 
+class SystemPromptBody(BaseModel):
+    key: str
+    content: Any = ""
+
+
+class SystemPromptsBody(BaseModel):
+    prompts: List[SystemPromptBody] = []
+
+
 @router.get("/proposals")
 async def list_proposals(
     session: Session = Depends(get_session),
@@ -126,6 +135,20 @@ async def save_intrinsic_properties(
     try:
         tools = [item.model_dump() for item in body.tools]
         return librarian_service.save_intrinsic_properties_overrides(user_id=user.id, tools=tools)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/system-prompts")
+async def save_system_prompts(
+    body: SystemPromptsBody,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    try:
+        prompts = [item.model_dump() for item in body.prompts]
+        return librarian_service.save_system_prompts(user_id=user.id, prompts=prompts)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

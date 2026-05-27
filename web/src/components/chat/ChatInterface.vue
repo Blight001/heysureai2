@@ -57,6 +57,7 @@ interface Props {
   mcpIcon?: string
   mcpSuccessIcon?: string
   mcpErrorIcon?: string
+  mcpDynamicRule?: string
   selectedFiles: string[]
   allFiles: string[]
 }
@@ -1207,6 +1208,7 @@ onBeforeUnmount(() => {
         :mcpIcon="props.mcpIcon"
         :mcpSuccessIcon="props.mcpSuccessIcon"
         :mcpErrorIcon="props.mcpErrorIcon"
+        :mcpDynamicRule="props.mcpDynamicRule"
         :liveText="liveAssistantText"
         :liveThinking="liveThinkingText"
         :appliedEdits="appliedEditsArray"

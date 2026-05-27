@@ -75,6 +75,11 @@ interface AgentProps {
     desktopAgentName?: string
     desktopAgentPlatform?: string
     desktopAgentCapabilities?: string[]
+    browserAgentConnected?: boolean
+    browserAgentId?: string
+    browserAgentName?: string
+    browserAgentPlatform?: string
+    browserAgentCapabilities?: string[]
     runtimeStatus?: string
     runtimeTool?: string
     activeRunStatus?: string
@@ -168,6 +173,14 @@ const cardBorderClass = computed(() => {
   return 'border-zinc-200 hover:border-indigo-300'
 })
 
+const cardGlowClass = computed(() => {
+  if (props.agent.status === 'dead') return 'agent-card-glow-dead'
+  if (props.agent.aiRole === 'assistant_admin') return 'agent-card-glow-assistant'
+  if (props.agent.aiRole === 'digital_member' && props.agent.digitalMemberRole === 'manager') return 'agent-card-glow-manager'
+  if (props.agent.aiRole === 'digital_member') return 'agent-card-glow-member'
+  return 'agent-card-glow-default'
+})
+
 const canControl = computed(() => typeof props.agent.aiConfigId === 'number')
 const showLifecycle = computed(() => props.agent.aiRole !== 'assistant_admin')
 const isAssistantAdmin = computed(() => props.agent.aiRole === 'assistant_admin')
@@ -230,18 +243,6 @@ const roleBadge = computed(() => {
   return null
 })
 
-const governanceBadge = computed(() => {
-  if (typeof props.agent.parentAiConfigId === 'number') {
-    return { text: '受管', title: `直属上级 AI #${props.agent.parentAiConfigId}` }
-  }
-  const scope = String(props.agent.managementScope || 'self')
-  if (props.agent.digitalMemberRole === 'manager' && scope !== 'self') {
-    const label = scope === 'project' ? '管辖·项目' : scope === 'global' ? '管辖·全局' : '管辖·下属'
-    return { text: label, title: `管理范围: ${scope}` }
-  }
-  return null
-})
-
 const botConnection = computed(() => {
   const channel = props.agent.botChannel === 'qq' ? 'qq' : 'feishu'
   const enabled = channel === 'qq' ? props.agent.qqEnabled : props.agent.feishuEnabled
@@ -287,6 +288,18 @@ const desktopConnection = computed(() => {
     text: '桌面已连接',
     class: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-300',
     title: [name ? `桌面 Agent：${name}` : '', platform ? `平台：${platform}` : '', id ? `ID：${id}` : ''].filter(Boolean).join('；') || '桌面 Agent 已连接',
+  }
+})
+
+const browserConnection = computed(() => {
+  if (!props.agent.browserAgentConnected) return null
+  const name = String(props.agent.browserAgentName || props.agent.name || '').trim()
+  const platform = String(props.agent.browserAgentPlatform || 'Browser Extension').trim()
+  const id = String(props.agent.browserAgentId || '').trim()
+  return {
+    text: '浏览器已连接',
+    class: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-300',
+    title: [name ? `浏览器 Agent：${name}` : '', platform ? `平台：${platform}` : '', id ? `ID：${id}` : ''].filter(Boolean).join('；') || '浏览器 Agent 已连接',
   }
 })
 
@@ -489,8 +502,8 @@ const onCardDblClick = (event: MouseEvent) => {
 
 <template>
   <div 
-    class="relative bg-white rounded-xl p-4 transition-all duration-300 border shadow-sm hover:shadow-lg hover:-translate-y-1 w-full min-w-0 dark:bg-zinc-900/90 dark:border-zinc-700/50 backdrop-blur-sm group cursor-pointer"
-    :class="cardBorderClass"
+    class="agent-card-shell relative bg-white rounded-xl p-4 transition-all duration-300 border shadow-sm hover:shadow-lg hover:-translate-y-1 w-full min-w-0 dark:bg-zinc-900/90 dark:border-zinc-700/50 backdrop-blur-sm group cursor-pointer"
+    :class="[cardBorderClass, cardGlowClass]"
     @contextmenu.prevent="emit('context', { agent, x: $event.clientX, y: $event.clientY })"
     @dblclick="onCardDblClick"
   >
@@ -520,7 +533,7 @@ const onCardDblClick = (event: MouseEvent) => {
           </span>
         </h3>
         <div
-          v-if="botConnection || desktopConnection || governanceBadge"
+          v-if="botConnection || desktopConnection || browserConnection"
           class="mt-2 flex flex-wrap items-center justify-start gap-1.5"
         >
           <span
@@ -540,11 +553,12 @@ const onCardDblClick = (event: MouseEvent) => {
             {{ desktopConnection.text }}
           </span>
           <span
-            v-if="governanceBadge"
-            class="shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium leading-none text-violet-700 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-300"
-            :title="governanceBadge.title"
+            v-if="browserConnection"
+            class="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-none"
+            :class="browserConnection.class"
+            :title="browserConnection.title"
           >
-            {{ governanceBadge.text }}
+            {{ browserConnection.text }}
           </span>
         </div>
       </div>
@@ -699,6 +713,73 @@ const onCardDblClick = (event: MouseEvent) => {
 </template>
 
 <style scoped>
+.agent-card-shell {
+  isolation: isolate;
+}
+
+.agent-card-shell::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  z-index: -1;
+  border-radius: 1rem;
+  background: transparent;
+  border: 2px solid var(--agent-glow-color, rgba(99, 102, 241, 0.34));
+  box-shadow: 0 0 16px var(--agent-glow-color, rgba(99, 102, 241, 0.34));
+  filter: blur(7px);
+  opacity: 0.42;
+  transform: scale(0.985);
+  animation: agent-card-glow-pulse 3.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.agent-card-shell:hover::before {
+  opacity: 0.72;
+  filter: blur(9px);
+  box-shadow: 0 0 22px var(--agent-glow-color, rgba(99, 102, 241, 0.34));
+  animation-duration: 2.2s;
+}
+
+.agent-card-glow-assistant {
+  --agent-glow-color: rgba(139, 92, 246, 0.5);
+}
+
+.agent-card-glow-manager {
+  --agent-glow-color: rgba(245, 158, 11, 0.5);
+}
+
+.agent-card-glow-member {
+  --agent-glow-color: rgba(14, 165, 233, 0.48);
+}
+
+.agent-card-glow-default {
+  --agent-glow-color: rgba(99, 102, 241, 0.42);
+}
+
+.agent-card-glow-dead::before {
+  opacity: 0.14;
+  animation: none;
+  --agent-glow-color: rgba(113, 113, 122, 0.32);
+}
+
+@keyframes agent-card-glow-pulse {
+  0%, 100% {
+    opacity: 0.32;
+    transform: scale(0.985);
+  }
+
+  50% {
+    opacity: 0.66;
+    transform: scale(1.018);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-card-shell::before {
+    animation: none;
+  }
+}
+
 .task-thinking-viewport {
   min-height: 4.25em;
   max-height: 4.25em;

@@ -181,14 +181,12 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
 
     return base.map(project => {
       const activeAgentsByProject = agents.value.filter(
-        agent => agent.role === 'worker'
-          && agent.status !== 'dead'
+        agent => agent.status !== 'dead'
           && (agent.projectId || unassignedProjectId) === project.id
-          && (project.id !== unassignedProjectId || hasAssignedWork(agent))
+          && (project.id !== unassignedProjectId || (agent.role === 'worker' && hasAssignedWork(agent)))
       )
       const deadAgentsByProject = agents.value.filter(
-        agent => agent.role === 'worker'
-          && agent.status === 'dead'
+        agent => agent.status === 'dead'
           && (agent.projectId || unassignedProjectId) === project.id
           && project.id !== unassignedProjectId
       )
@@ -229,7 +227,7 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
       return knowledgeBase.value.filter(item => item.tags.includes('传承技能'))
     }
     if (knowledgeFilter.value === 'tools') {
-      return knowledgeBase.value.filter(item => item.tags.includes('传承工具'))
+      return knowledgeBase.value.filter(item => item.tags.includes('传承思想'))
     }
     if (knowledgeFilter.value === 'system') {
       return knowledgeBase.value.filter(item => item.tags.includes('系统'))

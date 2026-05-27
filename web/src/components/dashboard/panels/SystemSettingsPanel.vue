@@ -7,6 +7,7 @@ interface Props {
   show: boolean
   globalMcpCallMethod: string
   mcpNamespaceHints: string
+  mcpDynamicRule: string
   globalMcpFormatErrorHint: string
   defaultStartTaskPrompt: string
   defaultResumeTaskPrompt: string
@@ -41,6 +42,7 @@ const emit = defineEmits<{
   (e: 'update:show', value: boolean): void
   (e: 'update:globalMcpCallMethod', value: string): void
   (e: 'update:mcpNamespaceHints', value: string): void
+  (e: 'update:mcpDynamicRule', value: string): void
   (e: 'update:globalMcpFormatErrorHint', value: string): void
   (e: 'update:defaultStartTaskPrompt', value: string): void
   (e: 'update:defaultResumeTaskPrompt', value: string): void
@@ -214,6 +216,11 @@ const globalMcpCallMethodValue = computed({
 const mcpNamespaceHintsValue = computed({
   get: () => props.mcpNamespaceHints,
   set: value => emit('update:mcpNamespaceHints', value)
+})
+
+const mcpDynamicRuleValue = computed({
+  get: () => props.mcpDynamicRule,
+  set: value => emit('update:mcpDynamicRule', value)
 })
 
 const globalMcpFormatErrorHintValue = computed({
@@ -642,6 +649,14 @@ watch(() => props.show, visible => {
                       placeholder='{"task":"任务系统。用于查看、创建、更新、删除、传承和完成任务。"}'
                     ></textarea>
                     <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">用于渲染 {MCP} 的第一层 namespace 说明；key 是 namespace，value 是说明文本。</p>
+                  </div>
+                  <div>
+                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">MCP 动态工具暴露规则</div>
+                    <textarea
+                      v-model="mcpDynamicRuleValue"
+                      rows="3"
+                      class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs leading-relaxed"
+                    ></textarea>
                   </div>
                   <div>
                     <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">MCP 格式错误提示</div>

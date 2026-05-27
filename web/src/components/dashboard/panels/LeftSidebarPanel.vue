@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import BrainCorePanel from './BrainCorePanel.vue'
 import KnowledgeBasePanel from './KnowledgeBasePanel.vue'
+import type { User } from '@/types'
 
 interface Agent {
   id: string
@@ -57,6 +58,7 @@ const emit = defineEmits<{
   (e: 'update:knowledgeFilterOpen', value: boolean): void
   (e: 'update:knowledgeFilterValue', value: Props['knowledgeFilterValue']): void
   (e: 'open-proposal-review'): void
+  (e: 'refresh-user', user: User): void
   (e: 'show-tools', agent: Agent): void
   (e: 'show-context', agent: Agent): void
   (e: 'show-tasks', agent: Agent): void
@@ -126,6 +128,7 @@ const activeTab = ref<'brain' | 'knowledge'>('brain')
           @update:filter-open="emit('update:knowledgeFilterOpen', $event)"
           @update:filter-value="emit('update:knowledgeFilterValue', $event)"
           @open-proposal-review="emit('open-proposal-review')"
+          @refresh-user="emit('refresh-user', $event)"
         />
       </Transition>
     </div>

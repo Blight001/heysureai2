@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, useAttrs } from 'vue'
-import { readEntry, saveIntrinsicProperties, type KnowledgeEntryItem } from '@/api/librarian'
+import { readEntry, saveIntrinsicProperties, saveSystemPrompts, type KnowledgeEntryItem } from '@/api/librarian'
 import { getAuthToken } from '@/api/http'
 import { updateAiConfigFields } from '@/api/ai'
+import { me } from '@/api/auth'
+import type { User } from '@/types'
 
 defineOptions({
   inheritAttrs: false,
@@ -30,6 +32,7 @@ const emit = defineEmits<{
   (e: 'update:filterOpen', value: boolean): void
   (e: 'update:filterValue', value: Props['filterValue']): void
   (e: 'open-proposal-review'): void
+  (e: 'refresh-user', user: User): void
 }>()
 
 const attrs = useAttrs()
@@ -57,10 +60,16 @@ const propertyDraftTools = ref<Array<{
   description: string
   parameters: Array<{ name: string; description: string }>
 }>>([])
+const editingPromptSection = ref<string | null>(null)
+const savingPromptSection = ref<string | null>(null)
+const promptEditError = ref('')
+const promptEditNotice = ref('')
+const promptDraftItems = ref<Array<{ key: string; content: string | number }>>([])
 
 const detailContent = computed(() => currentDetail.value?.body || currentDetail.value?.summary || '（无内容）')
 const intrinsicProperties = computed(() => currentDetail.value?.intrinsic_properties || null)
 const intrinsicPersonas = computed(() => currentDetail.value?.intrinsic_personas || null)
+const systemPrompts = computed(() => currentDetail.value?.system_prompts || null)
 
 const toolParameters = (tool: { parameters?: Array<{ name: string; type: string; required: boolean; description: string }> }) =>
   Array.isArray(tool.parameters) ? tool.parameters : []
@@ -218,6 +227,55 @@ const savePropertyCategory = async (category: IntrinsicPropertyCategory) => {
   }
 }
 
+type SystemPromptSection = NonNullable<KnowledgeEntryItem['system_prompts']>['sections'][number]
+
+const startEditPromptSection = (section: SystemPromptSection) => {
+  editingPromptSection.value = section.key
+  promptEditError.value = ''
+  promptEditNotice.value = ''
+  promptDraftItems.value = section.items.map(item => ({
+    key: item.key,
+    content: item.type === 'number' ? Number(item.content || 0) : item.content || '',
+  }))
+}
+
+const cancelEditPromptSection = () => {
+  editingPromptSection.value = null
+  promptEditError.value = ''
+  promptDraftItems.value = []
+}
+
+const promptDraftValue = (key: string) =>
+  promptDraftItems.value.find(item => item.key === key)?.content ?? ''
+
+const updatePromptDraftValue = (key: string, value: string | number) => {
+  promptDraftItems.value = promptDraftItems.value.map(item =>
+    item.key === key ? { ...item, content: value } : item,
+  )
+}
+
+const savePromptSection = async (section: SystemPromptSection) => {
+  savingPromptSection.value = section.key
+  promptEditError.value = ''
+  promptEditNotice.value = ''
+  try {
+    const token = getAuthToken()
+    const updated = await saveSystemPrompts(token, promptDraftItems.value)
+    currentDetail.value = updated
+    if (token) {
+      const refreshedUser = await me(token)
+      emit('refresh-user', refreshedUser)
+    }
+    editingPromptSection.value = null
+    promptDraftItems.value = []
+    promptEditNotice.value = `${section.title} 已保存`
+  } catch (err) {
+    promptEditError.value = (err as Error).message || '保存失败'
+  } finally {
+    savingPromptSection.value = null
+  }
+}
+
 const toggleFilter = () => {
   emit('update:filterOpen', !props.filterOpen)
 }
@@ -245,6 +303,9 @@ const openDetail = async (item: KnowledgeItem) => {
   editingPropertyCategory.value = null
   propertyEditError.value = ''
   propertyEditNotice.value = ''
+  editingPromptSection.value = null
+  promptEditError.value = ''
+  promptEditNotice.value = ''
   try {
     const token = getAuthToken()
     currentDetail.value = await readEntry(token, item.id)
@@ -271,6 +332,11 @@ const closeDetail = () => {
   propertyEditError.value = ''
   propertyEditNotice.value = ''
   propertyDraftTools.value = []
+  editingPromptSection.value = null
+  savingPromptSection.value = null
+  promptEditError.value = ''
+  promptEditNotice.value = ''
+  promptDraftItems.value = []
 }
 </script>
 
@@ -360,11 +426,48 @@ const closeDetail = () => {
       <div class="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl w-[calc(100vw-2rem)] max-w-6xl h-[88vh] flex flex-col border border-zinc-200 dark:border-zinc-800">
         <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-100 dark:border-zinc-800">
           <div class="min-w-0">
-            <div class="text-sm font-semibold text-zinc-700 dark:text-zinc-200 truncate">
-              {{ currentDetail?.title || selectedItem?.title || '知识库详情' }}
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="text-sm font-semibold text-zinc-700 dark:text-zinc-200 truncate">
+                {{ currentDetail?.title || selectedItem?.title || '知识库详情' }}
+              </div>
+              <template v-if="intrinsicProperties">
+                <span class="px-1.5 py-0.5 rounded bg-zinc-100 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                  {{ intrinsicProperties.total }} 个工具
+                </span>
+                <span class="text-[10px] text-zinc-500 dark:text-zinc-400">
+                  默认中文描述；保存后同步 mcp.list_tools / mcp.describe_tool
+                </span>
+              </template>
+              <template v-else-if="intrinsicPersonas">
+                <span class="px-1.5 py-0.5 rounded bg-zinc-100 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                  {{ intrinsicPersonas.total }} 个 AI
+                </span>
+                <span class="text-[10px] text-zinc-500 dark:text-zinc-400">
+                  人格 Prompt 与自动控制 Prompt，保存后同步 AI 配置
+                </span>
+              </template>
+              <template v-else-if="systemPrompts">
+                <span class="px-1.5 py-0.5 rounded bg-zinc-100 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                  {{ systemPrompts.total }} 项配置
+                </span>
+                <span class="text-[10px] text-zinc-500 dark:text-zinc-400">
+                  系统设置提示词，保存后同步系统设置
+                </span>
+              </template>
             </div>
             <div class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400 truncate">
-              {{ currentDetail?.memory_id || selectedItem?.id }}
+              <template v-if="intrinsicProperties">
+                {{ currentDetail?.summary || intrinsicProperties.description }}
+              </template>
+              <template v-else-if="intrinsicPersonas">
+                {{ currentDetail?.summary || intrinsicPersonas.description }}
+              </template>
+              <template v-else-if="systemPrompts">
+                {{ currentDetail?.summary || systemPrompts.description }}
+              </template>
+              <template v-else>
+                {{ currentDetail?.memory_id || selectedItem?.id }}
+              </template>
             </div>
           </div>
           <button class="ml-3 text-zinc-400 hover:text-zinc-600 text-xl leading-none" @click="closeDetail">×</button>
@@ -391,7 +494,7 @@ const closeDetail = () => {
               </span>
             </div>
 
-            <div v-if="currentDetail.summary" class="mb-4">
+            <div v-if="currentDetail.summary && !intrinsicProperties && !intrinsicPersonas && !systemPrompts" class="mb-4">
               <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">摘要</div>
               <div class="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300 bg-zinc-50 dark:bg-zinc-800/40 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800">
                 {{ currentDetail.summary }}
@@ -399,21 +502,7 @@ const closeDetail = () => {
             </div>
 
             <template v-if="intrinsicProperties">
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-                <div class="md:col-span-2 rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800/40">
-                  <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">前置描述</div>
-                  <div class="text-xs leading-relaxed text-zinc-700 dark:text-zinc-200">{{ intrinsicProperties.description }}</div>
-                </div>
-                <div class="rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800/40">
-                  <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">总数</div>
-                  <div class="text-2xl font-bold text-indigo-600 dark:text-indigo-300">{{ intrinsicProperties.total }}</div>
-                </div>
-              </div>
-
               <div class="space-y-4">
-                <div class="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800 rounded-lg px-3 py-2">
-                  固有属性默认使用中文描述；编辑保存后会同步影响 AI 通过 mcp.list_tools 和 mcp.describe_tool 获取到的描述。
-                </div>
                 <div v-if="propertyEditNotice" class="text-xs text-emerald-600 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 rounded-lg px-3 py-2">
                   {{ propertyEditNotice }}
                 </div>
@@ -520,17 +609,6 @@ const closeDetail = () => {
               </div>
             </template>
             <template v-else-if="intrinsicPersonas">
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-                <div class="md:col-span-2 rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800/40">
-                  <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">前置描述</div>
-                  <div class="text-xs leading-relaxed text-zinc-700 dark:text-zinc-200">{{ intrinsicPersonas.description }}</div>
-                </div>
-                <div class="rounded-lg border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-800/40">
-                  <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">AI 总数</div>
-                  <div class="text-2xl font-bold text-indigo-600 dark:text-indigo-300">{{ intrinsicPersonas.total }}</div>
-                </div>
-              </div>
-
               <div class="space-y-4">
                 <div v-if="personaEditNotice" class="text-xs text-emerald-600 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 rounded-lg px-3 py-2">
                   {{ personaEditNotice }}
@@ -611,6 +689,89 @@ const closeDetail = () => {
                         @click="savePersona(agent)"
                       >
                         {{ savingPersonaId === agent.id ? '保存中…' : '保存' }}
+                      </button>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </template>
+            <template v-else-if="systemPrompts">
+              <div class="space-y-4">
+                <div v-if="promptEditNotice" class="text-xs text-emerald-600 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 rounded-lg px-3 py-2">
+                  {{ promptEditNotice }}
+                </div>
+                <div v-if="promptEditError" class="text-xs text-rose-600 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900 rounded-lg px-3 py-2">
+                  {{ promptEditError }}
+                </div>
+                <details
+                  v-for="section in systemPrompts.sections"
+                  :key="section.key"
+                  :open="editingPromptSection === section.key || undefined"
+                  class="group rounded-lg border border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/40 overflow-hidden"
+                >
+                  <summary class="list-none cursor-pointer px-3 py-2 border-b border-zinc-100 dark:border-zinc-800 select-none">
+                    <div class="flex items-center justify-between gap-3">
+                      <div class="flex min-w-0 items-center gap-2">
+                        <span class="text-zinc-400 transition-transform group-open:rotate-90">›</span>
+                        <div class="truncate text-xs font-semibold text-zinc-700 dark:text-zinc-200">{{ section.title }}</div>
+                      </div>
+                      <div class="flex shrink-0 items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+                        <span>{{ section.count }} 项</span>
+                        <button
+                          v-if="editingPromptSection !== section.key"
+                          type="button"
+                          class="px-2 py-0.5 rounded border border-indigo-200 bg-white text-[10px] text-indigo-600 hover:bg-indigo-50 dark:bg-zinc-900 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+                          @click.stop.prevent="startEditPromptSection(section)"
+                        >
+                          编辑
+                        </button>
+                      </div>
+                    </div>
+                  </summary>
+                  <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    <div
+                      v-for="item in section.items"
+                      :key="item.key"
+                      class="px-3 py-3"
+                    >
+                      <div class="flex items-center justify-between gap-3 mb-1">
+                        <div class="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">{{ item.label }}</div>
+                        <code class="text-[10px] text-zinc-400 dark:text-zinc-500">{{ item.key }}</code>
+                      </div>
+                      <input
+                        v-if="editingPromptSection === section.key && item.type === 'number'"
+                        :value="promptDraftValue(item.key)"
+                        type="number"
+                        min="0"
+                        max="3600"
+                        class="w-full text-xs text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900/70 px-2 py-1.5 rounded border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-800"
+                        @input="updatePromptDraftValue(item.key, Number(($event.target as HTMLInputElement).value || 0))"
+                      />
+                      <textarea
+                        v-else-if="editingPromptSection === section.key"
+                        :value="promptDraftValue(item.key)"
+                        rows="6"
+                        class="w-full resize-y whitespace-pre-wrap font-mono text-xs leading-relaxed text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900/70 p-3 rounded border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-800"
+                        @input="updatePromptDraftValue(item.key, ($event.target as HTMLTextAreaElement).value)"
+                      />
+                      <pre v-else class="whitespace-pre-wrap font-mono text-xs leading-relaxed text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900/70 p-3 rounded border border-zinc-100 dark:border-zinc-700">{{ item.content || '（空）' }}</pre>
+                    </div>
+                    <div v-if="editingPromptSection === section.key" class="flex justify-end gap-2 px-3 py-3">
+                      <button
+                        type="button"
+                        class="px-3 py-1.5 rounded border border-zinc-200 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        :disabled="savingPromptSection === section.key"
+                        @click="cancelEditPromptSection"
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        class="px-3 py-1.5 rounded bg-indigo-600 text-xs text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        :disabled="savingPromptSection === section.key"
+                        @click="savePromptSection(section)"
+                      >
+                        {{ savingPromptSection === section.key ? '保存中…' : '保存' }}
                       </button>
                     </div>
                   </div>

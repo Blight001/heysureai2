@@ -28,7 +28,7 @@ from sqlmodel import Session, select
 
 from ..database import engine
 from ..mcp.core import _resolve_ai_workspace, safe_join
-from ..models import AssistantAIConfig, KnowledgeEntry
+from ..models import AssistantAIConfig, KnowledgeEntry, User
 from ..sio import sio
 
 
@@ -51,15 +51,20 @@ _BUILTIN_ENTRIES = {
         "triggers": ["固有人格", "AI人格", "Prompt"],
         "summary": "当前所有 AI 的人格 prompt 与自动控制 prompt 内容。",
     },
+    "builtin.system_prompts": {
+        "title": "固有思路",
+        "triggers": ["固有思路", "提示词配置", "Prompt"],
+        "summary": "系统设置中的 MCP、任务和 AI 通信提示词配置。",
+    },
     "builtin.inheritance_skills": {
         "title": "传承技能",
         "triggers": ["传承技能", "Python脚本", "技能沉淀"],
         "summary": "预留给后续沉淀的 Python 脚本技能，目前为空。",
     },
     "builtin.inheritance_tools": {
-        "title": "传承工具",
-        "triggers": ["传承工具", "Markdown文件", "工具沉淀"],
-        "summary": "预留给后续沉淀的 Markdown 工具文档，目前为空。",
+        "title": "传承思想",
+        "triggers": ["传承思想", "Markdown文件", "思想沉淀"],
+        "summary": "预留给后续沉淀的 Markdown 思想文档，目前为空。",
     },
 }
 
@@ -437,6 +442,7 @@ def _builtin_entries(*, user_id: Optional[int] = None, with_body: bool = False) 
         for memory_id in (
             "builtin.intrinsic_properties",
             "builtin.intrinsic_personas",
+            "builtin.system_prompts",
             "builtin.inheritance_skills",
             "builtin.inheritance_tools",
         )
@@ -476,6 +482,10 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
             personas = _intrinsic_personas_payload(int(user_id or 0))
             out["intrinsic_personas"] = personas
             out["body"] = _render_intrinsic_personas_body(personas)
+        elif memory_id == "builtin.system_prompts":
+            prompts = _system_prompts_payload(int(user_id or 0))
+            out["system_prompts"] = prompts
+            out["body"] = _render_system_prompts_body(prompts)
         elif memory_id == "builtin.inheritance_skills":
             out["body"] = ""
         elif memory_id == "builtin.inheritance_tools":
@@ -756,6 +766,148 @@ def _render_intrinsic_personas_body(payload: Dict[str, Any]) -> str:
             lines.append(f"### {prompt.get('label') or prompt.get('key')}")
             lines.append("")
             lines.append(str(prompt.get("content") or "（空）"))
+            lines.append("")
+    return "\n".join(lines).strip()
+
+
+_SYSTEM_PROMPT_SECTIONS = [
+    {
+        "key": "mcp",
+        "title": "MCP 提示词",
+        "items": [
+            ("mcp_call_method", "全局 MCP 调用规范", "text"),
+            ("mcp_namespace_hints", "MCP namespace 说明（JSON）", "text"),
+            ("mcp_dynamic_rule", "MCP 动态工具暴露规则", "text"),
+            ("mcp_format_error_hint", "MCP 格式错误提示", "text"),
+        ],
+    },
+    {
+        "key": "task",
+        "title": "默认任务提示词",
+        "items": [
+            ("default_start_task_prompt", "启动执行任务提示词", "text"),
+            ("default_resume_task_prompt", "继续被暂停任务提示词", "text"),
+            ("default_supervision_prompt", "任务监督提示词", "text"),
+            ("default_supervision_idle_seconds", "AI 停止思考提醒秒数", "number"),
+            ("default_inheritance_notice", "传承提示文案", "text"),
+        ],
+    },
+    {
+        "key": "communication",
+        "title": "AI 通信提示词",
+        "items": [
+            ("prompt_ai_message_notify", "AI 间消息·通知模板", "text"),
+            ("prompt_ai_message_inquiry", "AI 间消息·询问模板", "text"),
+            ("ai_message_inquiry_reminder_seconds", "询问未回复提醒秒数", "number"),
+            ("prompt_ai_message_inquiry_reminder", "AI 间询问未回复提醒模板", "text"),
+            ("prompt_ai_message_reply", "AI 间消息·回复模板", "text"),
+            ("prompt_ai_message_chitchat", "AI 间消息·闲聊模板", "text"),
+            ("prompt_ai_message_reply_success", "AI 间消息回复成功提示", "text"),
+            ("prompt_user_message_notice", "用户消息发送提示", "text"),
+        ],
+    },
+]
+
+
+def _system_prompts_payload(user_id: int) -> Dict[str, Any]:
+    with Session(engine) as session:
+        user = session.get(User, user_id)
+        if not user:
+            return {"description": "系统设置中的提示词配置。", "total": 0, "sections": []}
+        sections: List[Dict[str, Any]] = []
+        total = 0
+        for section in _SYSTEM_PROMPT_SECTIONS:
+            items: List[Dict[str, Any]] = []
+            for field, label, value_type in section["items"]:
+                value = getattr(user, field, "")
+                items.append({
+                    "key": field,
+                    "label": label,
+                    "type": value_type,
+                    "content": str(value if value is not None else ""),
+                })
+            total += len(items)
+            sections.append({
+                "key": section["key"],
+                "title": section["title"],
+                "count": len(items),
+                "items": items,
+            })
+        return {
+            "description": "系统设置中的 MCP、默认任务和 AI 通信提示词配置如下；编辑保存后会同步系统设置。",
+            "total": total,
+            "sections": sections,
+        }
+
+
+def save_system_prompts(*, user_id: int, prompts: List[Dict[str, Any]]) -> Dict[str, Any]:
+    allowed: Dict[str, str] = {
+        field: value_type
+        for section in _SYSTEM_PROMPT_SECTIONS
+        for field, _label, value_type in section["items"]
+    }
+    with Session(engine) as session:
+        user = session.get(User, user_id)
+        if not user:
+            raise ValueError("user not found")
+        for item in prompts or []:
+            key = str(item.get("key") or "").strip()
+            if key not in allowed:
+                continue
+            raw = item.get("content")
+            if allowed[key] == "number":
+                try:
+                    value = int(raw if raw not in {None, ""} else 0)
+                except Exception:
+                    value = 0
+                if key == "default_supervision_idle_seconds":
+                    value = max(5, min(3600, value or 25))
+                elif key == "ai_message_inquiry_reminder_seconds":
+                    value = max(0, min(3600, value))
+                setattr(user, key, value)
+            elif key == "mcp_namespace_hints":
+                raw_text = str(raw or "").strip()
+                if raw_text:
+                    try:
+                        parsed = json.loads(raw_text)
+                        if not isinstance(parsed, dict):
+                            raise ValueError("mcp_namespace_hints must be a JSON object")
+                        raw_text = json.dumps(
+                            {str(k).strip(): str(v).strip() for k, v in parsed.items() if str(k).strip() and str(v).strip()},
+                            ensure_ascii=False,
+                        )
+                    except Exception:
+                        raise ValueError("mcp_namespace_hints must be a JSON object")
+                setattr(user, key, raw_text)
+            elif key == "mcp_call_method":
+                text = "\n".join(
+                    line for line in str(raw or "").splitlines()
+                    if "Call exactly one tool per <mcp-call> block; never join two tool names into one name." not in line
+                ).strip()
+                setattr(user, key, text)
+            else:
+                setattr(user, key, str(raw or ""))
+        session.add(user)
+        session.commit()
+    return _builtin_entry("builtin.system_prompts", user_id=user_id, with_body=True) or {}
+
+
+def _render_system_prompts_body(payload: Dict[str, Any]) -> str:
+    lines = [
+        "# 固有思路",
+        "",
+        str(payload.get("description") or ""),
+        "",
+        f"配置项总数：{int(payload.get('total') or 0)}",
+        "",
+    ]
+    for section in payload.get("sections") or []:
+        lines.append(f"## {section.get('title') or section.get('key')}")
+        lines.append("")
+        for item in section.get("items") or []:
+            lines.append(f"### {item.get('label') or item.get('key')}")
+            lines.append("")
+            lines.append(str(item.get("content") or "（空）"))
             lines.append("")
     return "\n".join(lines).strip()
 

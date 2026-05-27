@@ -5,6 +5,8 @@ import { parseChatResponseInline, type ActionBlock, type InlineContent as Inline
 import { stripMcpCallBlocks } from '@/utils/mcpFormat'
 import { listMcpTools } from '@/api/mcp'
 
+const DEFAULT_MCP_DYNAMIC_RULE = '初始只向模型暴露 mcp.list_tools / mcp.describe_tool；mcp.describe_tool 成功后，后端才把被描述的目标工具 schema 加入下一轮请求。'
+
 interface ConversationInputMessage {
   id?: number
   role?: string
@@ -34,6 +36,7 @@ const props = withDefaults(defineProps<{
   mcpIcon?: string
   mcpSuccessIcon?: string
   mcpErrorIcon?: string
+  mcpDynamicRule?: string
   liveText?: string
   liveThinking?: string
   isTyping?: boolean
@@ -53,6 +56,7 @@ const props = withDefaults(defineProps<{
   mcpIcon: '🧰',
   mcpSuccessIcon: '🧰',
   mcpErrorIcon: '🧰',
+  mcpDynamicRule: DEFAULT_MCP_DYNAMIC_RULE,
   liveText: '',
   liveThinking: '',
   isTyping: false,
@@ -359,7 +363,7 @@ const frontPromptDetails = computed(() => {
     initial_native_tools: frontPromptToolSchemas.value.length > 0
       ? frontPromptToolSchemas.value
       : initialNativeToolNames.map(name => ({ name })),
-    dynamic_rule: '初始只向模型暴露 mcp.list_tools / mcp.describe_tool；mcp.describe_tool 成功后，后端才把被描述的目标工具 schema 加入下一轮请求。',
+    dynamic_rule: String(props.mcpDynamicRule || DEFAULT_MCP_DYNAMIC_RULE),
     schema_error: frontPromptToolSchemaError.value || undefined,
   }
   return JSON.stringify(details, null, 2)

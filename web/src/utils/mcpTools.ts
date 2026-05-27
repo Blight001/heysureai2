@@ -471,9 +471,9 @@ export const withMcpToolLocale = (tool: McpToolDefinition): McpToolDefinition =>
     if (isBrowserCapability) return '浏览器插件上报的执行能力，可用于网页导航、点击、输入、滚动、标签页管理、弹窗处理和页面数据读取。服务端 AI 可直接调用并在已连接浏览器插件执行。'
     return ''
   })()
-  const zhDescription = meta?.description
-    || sourceSpecificDescription
+  const zhDescription = sourceSpecificDescription
     || rawDescription
+    || meta?.description
     || '暂无中文说明'
   const tags = sourceTag ? [sourceTag] : [getMcpToolZhTag(tool.name)]
   if (tool.destructive) tags.push('高风险')

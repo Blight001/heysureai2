@@ -65,6 +65,21 @@ export interface KnowledgeEntryItem {
       updated_at: number
     }>
   }
+  system_prompts?: {
+    description: string
+    total: number
+    sections: Array<{
+      key: string
+      title: string
+      count: number
+      items: Array<{
+        key: string
+        label: string
+        type: 'text' | 'number'
+        content: string
+      }>
+    }>
+  }
 }
 
 export const listProposals = (token: string) =>
@@ -115,4 +130,14 @@ export const saveIntrinsicProperties = (
     '/api/librarian/intrinsic-properties',
     { tools },
     { token, fallbackError: '固有属性保存失败' },
+  )
+
+export const saveSystemPrompts = (
+  token: string,
+  prompts: Array<{ key: string; content: string | number }>,
+) =>
+  post<KnowledgeEntryItem>(
+    '/api/librarian/system-prompts',
+    { prompts },
+    { token, fallbackError: '固有思路保存失败' },
   )

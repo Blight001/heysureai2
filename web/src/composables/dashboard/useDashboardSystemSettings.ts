@@ -50,6 +50,8 @@ const DEFAULT_MCP_NAMESPACE_HINTS = JSON.stringify({
   project: '项目管理。用于查看或维护项目记录。',
 }, null, 2)
 
+const DEFAULT_MCP_DYNAMIC_RULE = '初始只向模型暴露 mcp.list_tools / mcp.describe_tool；mcp.describe_tool 成功后，后端才把被描述的目标工具 schema 加入下一轮请求。'
+
 const normalizeModelPresets = (raw: unknown): ModelPreset[] => {
   let parsed = raw
   if (typeof raw === 'string') {
@@ -108,6 +110,7 @@ export const useDashboardSystemSettings = (options: UseDashboardSystemSettingsOp
   const modelPresets = ref<ModelPreset[]>([])
   const mcpMaxSteps = ref(48)
   const mcpNamespaceHints = ref(DEFAULT_MCP_NAMESPACE_HINTS)
+  const mcpDynamicRule = ref(DEFAULT_MCP_DYNAMIC_RULE)
   const globalMcpCallMethod = ref(`When you want to call a tool, output one or more blocks using EXACTLY this format and do not wrap them in markdown code fences:
 <mcp-call>
 {"tool":"workspace.run_command","arguments":{"command":"dir"}}
@@ -293,6 +296,7 @@ Rules:
       const updatedUser = await updateProfile({
         mcp_call_method: stripLegacyOneToolRule(globalMcpCallMethod.value),
         mcp_namespace_hints: mcpNamespaceHints.value,
+        mcp_dynamic_rule: mcpDynamicRule.value,
         mcp_format_error_hint: globalMcpFormatErrorHint.value,
         tavily_api_key: tavilyApiKey.value,
         model_presets: JSON.stringify(normalizeModelPresets(modelPresets.value)),
@@ -402,6 +406,9 @@ Rules:
       if (Object.prototype.hasOwnProperty.call(rawUser, 'mcp_namespace_hints')) {
         mcpNamespaceHints.value = String(rawUser.mcp_namespace_hints || DEFAULT_MCP_NAMESPACE_HINTS)
       }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'mcp_dynamic_rule')) {
+        mcpDynamicRule.value = String(rawUser.mcp_dynamic_rule || DEFAULT_MCP_DYNAMIC_RULE)
+      }
       if (Object.prototype.hasOwnProperty.call(rawUser, 'tavily_api_key')) {
         tavilyApiKey.value = String(rawUser.tavily_api_key ?? '')
       }
@@ -482,6 +489,7 @@ Rules:
     modelPresets,
     globalMcpCallMethod,
     mcpNamespaceHints,
+    mcpDynamicRule,
     globalMcpFormatErrorHint,
     mcpMaxSteps,
     defaultStartTaskPrompt,

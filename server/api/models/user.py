@@ -12,6 +12,7 @@ from .defaults import (
     DEFAULT_INHERITANCE_NOTICE,
     DEFAULT_MODEL_PRESETS,
     DEFAULT_MCP_CALL_METHOD,
+    DEFAULT_MCP_DYNAMIC_RULE,
     DEFAULT_MCP_FORMAT_ERROR_HINT,
     DEFAULT_MCP_NAMESPACE_HINTS,
     DEFAULT_RESUME_TASK_PROMPT,
@@ -43,6 +44,7 @@ class User(SQLModel, table=True):
 
     mcp_call_method: str = Field(default=DEFAULT_MCP_CALL_METHOD)
     mcp_namespace_hints: str = Field(default=DEFAULT_MCP_NAMESPACE_HINTS)
+    mcp_dynamic_rule: str = Field(default=DEFAULT_MCP_DYNAMIC_RULE)
     mcp_format_error_hint: str = Field(default=DEFAULT_MCP_FORMAT_ERROR_HINT)
     mcp_max_steps: int = Field(default=48)
     # Per-role MCP allow-list configured by the admin. JSON object mapping a role
@@ -102,6 +104,7 @@ class UserRead(SQLModel):
     admin_prompt: str
     mcp_call_method: str
     mcp_namespace_hints: str
+    mcp_dynamic_rule: str
     mcp_format_error_hint: str
     mcp_max_steps: int
     role_mcp_permissions: str
@@ -142,6 +145,7 @@ class UserUpdate(SQLModel):
     admin_prompt: Optional[str] = None
     mcp_call_method: Optional[str] = None
     mcp_namespace_hints: Optional[str] = None
+    mcp_dynamic_rule: Optional[str] = None
     mcp_format_error_hint: Optional[str] = None
     mcp_max_steps: Optional[int] = None
     role_mcp_permissions: Optional[str] = None

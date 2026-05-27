@@ -30,6 +30,7 @@ export interface User {
   mcp_max_steps?: number
   mcp_call_method?: string
   mcp_namespace_hints?: string
+  mcp_dynamic_rule?: string
   mcp_format_error_hint?: string
   role_mcp_permissions?: string
   prompt_ai_message_notify?: string

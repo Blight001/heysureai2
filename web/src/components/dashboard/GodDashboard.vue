@@ -67,6 +67,7 @@ const {
   mcpMaxSteps,
   globalMcpCallMethod,
   mcpNamespaceHints,
+  mcpDynamicRule,
   globalMcpFormatErrorHint,
   defaultStartTaskPrompt,
   defaultResumeTaskPrompt,
@@ -499,6 +500,7 @@ onUnmounted(() => {
             @update:knowledge-filter-open="knowledgeFilterOpen = $event"
             @update:knowledge-filter-value="knowledgeFilter = $event"
             @open-proposal-review="proposalReviewOpen = true; closeContextMenu()"
+            @refresh-user="emit('refreshUser', $event)"
             @show-tools="showAgentTools"
             @show-context="openAgentWorkspaceContext"
             @show-tasks="openAgentTaskList"
@@ -631,6 +633,7 @@ onUnmounted(() => {
               :mcpIcon="effectiveMcpSuccessIcon"
               :mcpSuccessIcon="effectiveMcpSuccessIcon"
               :mcpErrorIcon="effectiveMcpErrorIcon"
+              :mcpDynamicRule="mcpDynamicRule"
               :selectedFiles="selectedFiles"
               :allFiles="allFiles"
               @update:selectedFiles="selectedFiles = $event"
@@ -665,6 +668,7 @@ onUnmounted(() => {
       v-model:show="settingsOpen"
       v-model:globalMcpCallMethod="globalMcpCallMethod"
       v-model:mcpNamespaceHints="mcpNamespaceHints"
+      v-model:mcpDynamicRule="mcpDynamicRule"
       v-model:globalMcpFormatErrorHint="globalMcpFormatErrorHint"
       v-model:defaultStartTaskPrompt="defaultStartTaskPrompt"
       v-model:defaultResumeTaskPrompt="defaultResumeTaskPrompt"
