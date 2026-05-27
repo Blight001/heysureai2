@@ -477,6 +477,14 @@ const taskTotalGenerations = (task?: AgentTaskSnapshot | null) => {
   return Math.max(1, Number(task.generationCount) || 1)
 }
 
+const DOUBLE_TAP_DELAY = 320
+let lastTouchTapAt = 0
+
+const isInteractiveCardTarget = (target: EventTarget | null) => {
+  const element = target as HTMLElement | null
+  return !!element?.closest('button,a,input,textarea,select,label,[role="button"],[data-card-action]')
+}
+
 const formatTaskSchedule = (task?: AgentTaskSnapshot | null) => {
   if (!task) return ''
   const parts: string[] = []
@@ -492,20 +500,34 @@ const formatTaskSchedule = (task?: AgentTaskSnapshot | null) => {
 }
 
 const onCardDblClick = (event: MouseEvent) => {
-  const target = event.target as HTMLElement | null
-  if (target?.closest('button,a,input,textarea,select,label,[role="button"],[data-card-action]')) {
+  if (isInteractiveCardTarget(event.target)) {
     return
   }
+  emit('chat', props.agent)
+}
+
+const onCardPointerUp = (event: PointerEvent) => {
+  if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return
+  if (isInteractiveCardTarget(event.target)) return
+
+  const now = Date.now()
+  if (now - lastTouchTapAt > DOUBLE_TAP_DELAY) {
+    lastTouchTapAt = now
+    return
+  }
+
+  lastTouchTapAt = 0
   emit('chat', props.agent)
 }
 </script>
 
 <template>
   <div 
-    class="agent-card-shell relative bg-white rounded-xl p-4 transition-all duration-300 border shadow-sm hover:shadow-lg hover:-translate-y-1 w-full min-w-0 dark:bg-zinc-900/90 dark:border-zinc-700/50 backdrop-blur-sm group cursor-pointer"
+    class="agent-card-shell relative bg-white rounded-xl p-4 transition-all duration-300 border shadow-sm hover:shadow-lg hover:-translate-y-1 w-full min-w-0 dark:bg-zinc-900/90 dark:border-zinc-700/50 backdrop-blur-sm group cursor-pointer touch-manipulation"
     :class="[cardBorderClass, cardGlowClass]"
     @contextmenu.prevent="emit('context', { agent, x: $event.clientX, y: $event.clientY })"
     @dblclick="onCardDblClick"
+    @pointerup="onCardPointerUp"
   >
     <!-- 角色徽章 -->
     <div
