@@ -55,6 +55,24 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day
 AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "").strip()
 
 
+# ---------- Internal service mesh ----------
+# Shared Bearer secret for /internal/* endpoints across split services.
+# Empty value means "monolith deployment" — internal endpoints stay reachable
+# in-process and the network token check is skipped only for in-process
+# callers. External HTTP calls always require the token.
+INTERNAL_TOKEN = os.environ.get("HEYSURE_INTERNAL_TOKEN", "").strip()
+
+# When set, ``ai-runtime`` / ``api-gateway`` forward MCP tool execution and
+# tool-catalog reads to the mcp-runtime service over HTTP instead of using
+# the in-process registry. Leave unset for the monolith deployment.
+MCP_RUNTIME_URL = os.environ.get("MCP_RUNTIME_URL", "").strip()
+
+# When set, ``ai-runtime`` / ``api-gateway`` forward agent task dispatch and
+# outbound connector messages to connector-runtime. Leave unset for the
+# monolith deployment.
+CONNECTOR_RUNTIME_URL = os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
+
+
 # ---------- Chat worker tunables ----------
 def _coerce_max_steps(value: object, default: int) -> int:
     try:

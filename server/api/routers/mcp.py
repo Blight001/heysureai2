@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 from api.database import get_session
 from api.mcp import registry
 from api.mcp.core import MCP_INTROSPECTION_TOOLS
+from api.mcp.loader import reload_registry
 from api.mcp.permissions import (
     CONFIGURABLE_ROLES,
     ROLE_LABELS_ZH,
@@ -20,6 +21,7 @@ from api.mcp.permissions import (
 )
 from api.models import AssistantAIConfig
 from api.routers.auth import get_current_user
+from api.runtime.internal_http import require_internal_token
 from api.services.agent_dispatch import dispatch_endpoint_tool_and_wait
 from api.services.desktop_agent_tools import endpoint_bridge_tools_for_config, is_endpoint_agent_tool
 from api.services.librarian_service import intrinsic_input_schema, intrinsic_tool_description
@@ -123,3 +125,17 @@ async def call_mcp_tool(
         }
 
     return await registry.call(req.tool, user.id, req.arguments, req.ai_config_id)
+
+
+@router.post("/internal/reload", dependencies=[Depends(require_internal_token)])
+def admin_reload_registry() -> Dict[str, Any]:
+    """Reload MCP tools + plugins on the in-process registry.
+
+    Admin-only via ``HEYSURE_INTERNAL_TOKEN`` Bearer header. End-user routes
+    above remain user-scoped — this endpoint never touches per-user data,
+    it only refreshes globally-shared tool code.
+    """
+    result = reload_registry()
+    if not result.get("ok"):
+        raise HTTPException(status_code=503, detail=result)
+    return result

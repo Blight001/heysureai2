@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .sio import sio
 from .socket_events import register_socket_events
 from .database import create_db_and_tables
+from .mcp.loader import load_plugins_on_startup
 from .services.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
 from .integrations.feishu.long_connection import start_feishu_long_connection_clients
 from .routers.chat import process_task_scheduler
@@ -19,6 +20,17 @@ from .routers.chat import process_task_scheduler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
+    try:
+        plugin_boot = load_plugins_on_startup()
+        for entry in plugin_boot.get("plugin_errors") or []:
+            print(f"[mcp-plugins] failed to load {entry.get('plugin')}: {entry.get('error')}")
+        if plugin_boot.get("loaded"):
+            print(
+                f"[mcp-plugins] loaded {plugin_boot['loaded']} plugin module(s); "
+                f"registry version={plugin_boot.get('version')}"
+            )
+    except Exception as exc:
+        print(f"[mcp-plugins] startup discovery failed: {exc}")
     try:
         result = migrate_legacy_switch_files_to_db()
         if result.get("imported") or result.get("removed"):
