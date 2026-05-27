@@ -35,6 +35,15 @@ from . import heartbeat
 QUEUE_CHANNEL = "ai_run_queued"
 POLL_INTERVAL_SECONDS = 2.0  # SQLite fallback only
 
+# Cap on simultaneous in-flight runs per ai-runtime instance. Each run holds
+# a thread + Python stack + an LLM HTTP connection, so unbounded growth from
+# a NOTIFY burst would exhaust the process. Override via env if you scale
+# vertically.
+_MAX_CONCURRENT_RUNS = max(
+    1, int(os.environ.get("HEYSURE_AI_RUNTIME_MAX_CONCURRENT", "16") or "16")
+)
+_run_slots = threading.Semaphore(_MAX_CONCURRENT_RUNS)
+
 
 def notify_queue(run_id: str) -> None:
     """Best-effort NOTIFY for Postgres; no-op on SQLite.
@@ -98,19 +107,31 @@ def _claim_one_queued_run() -> Optional[ChatRun]:
 def _load_worker_kwargs(run: ChatRun) -> Dict[str, Any]:
     """Re-derive the kwargs needed by ``_run_worker`` from a ChatRun row.
 
-    A subset of fields that ``start_chat_run`` originally passed
-    (``model_user_content`` / ``merged_system_prompt`` / ``current_user_message_id``)
-    are not persisted on ChatRun; ``_run_worker`` recovers them from the
-    most recent user message in the session.
+    Reads ``worker_kwargs_json`` for caller-provided overrides
+    (``merged_system_prompt`` built with Feishu runtime guidance,
+    custom ``max_steps``, etc.). Anything missing from the JSON blob is
+    rebuilt from the chat session + AI config defaults so older rows or
+    callers that didn't persist extras still work.
     """
+    import json as _json
+
     from ..routers.chat_runtime_helpers import _resolve_ai_runtime
     from ..models import ChatMessage, User
+
+    extras: Dict[str, Any] = {}
+    if run.worker_kwargs_json:
+        try:
+            parsed = _json.loads(run.worker_kwargs_json)
+            if isinstance(parsed, dict):
+                extras = parsed
+        except Exception:
+            extras = {}
 
     with Session(engine) as session:
         user = session.get(User, run.user_id)
         if not user:
             raise RuntimeError(f"user {run.user_id} not found for run {run.run_id}")
-        _, _, _, _, system_prompt = _resolve_ai_runtime(
+        _, _, _, _, default_system_prompt = _resolve_ai_runtime(
             session, user, run.ai_kind, run.ai_config_id
         )
         last_user_msg = session.exec(
@@ -123,6 +144,7 @@ def _load_worker_kwargs(run: ChatRun) -> Dict[str, Any]:
             )
             .order_by(ChatMessage.created_at.desc())
         ).first()
+
     return {
         "run_id": run.run_id,
         "user_id": run.user_id,
@@ -130,9 +152,12 @@ def _load_worker_kwargs(run: ChatRun) -> Dict[str, Any]:
         "ai_kind": run.ai_kind,
         "session_id": run.session_id,
         "session_name": run.session_name or "",
-        "model_user_content": last_user_msg.content if last_user_msg else "",
-        "merged_system_prompt": system_prompt,
-        "current_user_message_id": last_user_msg.id if last_user_msg else None,
+        "model_user_content": extras.get("model_user_content")
+            or (last_user_msg.content if last_user_msg else ""),
+        "merged_system_prompt": extras.get("merged_system_prompt") or default_system_prompt,
+        "max_steps": extras.get("max_steps"),
+        "current_user_message_id": extras.get("current_user_message_id")
+            or (last_user_msg.id if last_user_msg else None),
     }
 
 
@@ -172,15 +197,31 @@ def _execute_run(run: ChatRun) -> None:
                 session.commit()
 
 
+def _execute_run_with_slot(run: ChatRun) -> None:
+    try:
+        _execute_run(run)
+    finally:
+        _run_slots.release()
+
+
 def _drain_dispatcher(limit: int = 32) -> int:
-    """Claim and dispatch as many queued runs as we can find in one sweep."""
+    """Claim and dispatch as many queued runs as we can find in one sweep,
+    bounded by the concurrency semaphore so a burst of NOTIFYs cannot
+    spawn more worker threads than the process can sustain.
+    """
     dispatched = 0
     while dispatched < limit:
+        # Non-blocking acquire — if we've hit the cap, leave the rest in
+        # the queue. The next NOTIFY (or the next poll tick) will pick them
+        # up when a slot frees up.
+        if not _run_slots.acquire(blocking=False):
+            return dispatched
         run = _claim_one_queued_run()
         if not run:
+            _run_slots.release()
             return dispatched
         th = threading.Thread(
-            target=_execute_run,
+            target=_execute_run_with_slot,
             args=(run,),
             name=f"runworker-{run.run_id}",
             daemon=True,
@@ -190,8 +231,33 @@ def _drain_dispatcher(limit: int = 32) -> int:
     return dispatched
 
 
+def _retry_tick_loop(stop_evt: threading.Event) -> None:
+    """Periodic safety-net dispatcher tick.
+
+    Without this, a NOTIFY burst could leave queued rows stranded once the
+    concurrency cap is reached: subsequent NOTIFYs wake us but already-claimed
+    rows that finish freeing slots don't re-trigger drain. A cheap timer-based
+    drain ensures backlogged rows are picked up within ``RETRY_TICK_SECONDS``.
+    """
+    RETRY_TICK_SECONDS = 10.0
+    while not stop_evt.is_set():
+        if stop_evt.wait(RETRY_TICK_SECONDS):
+            return
+        try:
+            _drain_dispatcher()
+        except Exception as exc:
+            print(f"[ai-runtime] retry-tick drain failed: {exc}")
+
+
 def _listen_postgres(stop_evt: threading.Event) -> None:
     import psycopg
+
+    # Run the retry tick alongside LISTEN so slot-release backlogs aren't
+    # stranded waiting for the next NOTIFY.
+    retry_thread = threading.Thread(
+        target=_retry_tick_loop, args=(stop_evt,), name="ai-runtime-retry-tick", daemon=True,
+    )
+    retry_thread.start()
 
     backoff = 1.0
     while not stop_evt.is_set():

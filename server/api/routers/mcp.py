@@ -124,6 +124,29 @@ async def call_mcp_tool(
             ),
         }
 
+    # In split deployments, route via mcp-runtime so the user-facing test
+    # path uses the same registry version the AI worker uses. Without this,
+    # admins who reload mcp-runtime would still see stale tool behavior in
+    # the UI "test tool" feature.
+    import os as _os
+    runtime_url = _os.environ.get("MCP_RUNTIME_URL", "").strip()
+    if runtime_url:
+        import httpx
+        from api.runtime.internal_http import internal_headers
+        async with httpx.AsyncClient(base_url=runtime_url.rstrip("/"), timeout=120.0) as client:
+            resp = await client.post(
+                "/internal/mcp/call",
+                headers=internal_headers(),
+                json={
+                    "tool": req.tool,
+                    "user_id": user.id,
+                    "ai_config_id": req.ai_config_id,
+                    "arguments": req.arguments or {},
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()
+
     return await registry.call(req.tool, user.id, req.arguments, req.ai_config_id)
 
 

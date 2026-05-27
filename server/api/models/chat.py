@@ -87,5 +87,12 @@ class ChatRun(SQLModel, table=True):
     # watchdog in api-gateway marks rows with status='running' and a stale
     # heartbeat as 'error' so dead workers don't leave ghost runs.
     heartbeat_at: Optional[float] = None
+    # JSON-encoded kwargs that the dispatcher (start_chat_run / Feishu /
+    # scheduler) wanted to hand to _run_worker — e.g. ``merged_system_prompt``
+    # built with Feishu-runtime guidance, or ``max_steps`` overridden for a
+    # particular task. In remote dispatch mode ai-runtime reads this column
+    # so it can rebuild the worker call identically to what the dispatcher
+    # intended. Empty / NULL means "use defaults".
+    worker_kwargs_json: Optional[str] = None
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)

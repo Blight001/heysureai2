@@ -130,6 +130,7 @@ def _migrate_chatrun(cursor: sqlite3.Cursor) -> None:
         return
     existing = _existing_columns(cursor, "chatrun")
     _add_column(cursor, "chatrun", "heartbeat_at", "REAL", existing)
+    _add_column(cursor, "chatrun", "worker_kwargs_json", "TEXT", existing)
 
 
 def _migrate_user(

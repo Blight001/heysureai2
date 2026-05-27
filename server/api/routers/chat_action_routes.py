@@ -93,6 +93,12 @@ async def start_chat_run(
         ),
     )
     run_id = f"run_{uuid.uuid4().hex}"
+    worker_extras = {
+        "model_user_content": model_content,
+        "merged_system_prompt": merged_system_prompt,
+        "max_steps": req.get("max_steps"),
+        "current_user_message_id": user_msg.id,
+    }
     row = ChatRun(
         run_id=run_id,
         user_id=user.id,
@@ -102,6 +108,7 @@ async def start_chat_run(
         session_name=session_name,
         status="queued",
         stop_requested=False,
+        worker_kwargs_json=json.dumps(worker_extras, ensure_ascii=False),
     )
     session.add(row)
     session.commit()

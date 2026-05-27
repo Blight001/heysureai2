@@ -59,8 +59,8 @@ async def _lifespan(app: FastAPI):
 
     # Reap any dispatch rows whose original Future died with a previous
     # connector-runtime process. The poller would otherwise wait forever.
+    from ...services.agent_dispatch import expire_orphan_dispatches
     try:
-        from ...services.agent_dispatch import expire_orphan_dispatches
         expired = expire_orphan_dispatches()
         if expired:
             print(f"[connector-runtime] expired {expired} orphan dispatch rows")
@@ -82,15 +82,33 @@ async def _lifespan(app: FastAPI):
             except asyncio.TimeoutError:
                 continue
 
+    async def _orphan_sweeper() -> None:
+        # Periodic sweep — startup pass alone isn't enough for a process
+        # that runs for days without a restart.
+        while not stop_event.is_set():
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=60.0)
+                return  # stop_event set
+            except asyncio.TimeoutError:
+                pass
+            try:
+                expired_now = expire_orphan_dispatches()
+                if expired_now:
+                    print(f"[connector-runtime] expired {expired_now} orphan dispatch rows")
+            except Exception as exc:
+                print(f"[connector-runtime] periodic orphan sweep failed: {exc}")
+
     keepalive_task = asyncio.create_task(_feishu_keepalive())
+    sweep_task = asyncio.create_task(_orphan_sweeper())
     print("[connector-runtime] ready (Socket.IO + /internal/* + feishu keepalive)")
     try:
         yield
     finally:
         stop_event.set()
-        keepalive_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await keepalive_task
+        for task in (keepalive_task, sweep_task):
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 def create_app() -> FastAPI:

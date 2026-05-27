@@ -198,6 +198,11 @@ def _start_task_run(
         ),
     )
     run_id = f"run_{uuid.uuid4().hex}"
+    worker_extras = {
+        "model_user_content": user_msg.content,
+        "merged_system_prompt": None,
+        "max_steps": None,
+    }
     row = ChatRun(
         run_id=run_id,
         user_id=cfg.user_id,
@@ -207,6 +212,7 @@ def _start_task_run(
         session_name=sname,
         status="queued",
         stop_requested=False,
+        worker_kwargs_json=json.dumps(worker_extras, ensure_ascii=False),
     )
     session.add(row)
     job.status = "running"

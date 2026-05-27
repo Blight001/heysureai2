@@ -33,6 +33,24 @@ from api.runtime.ai_worker_service import run_dispatcher_forever  # noqa: E402
 
 
 def main() -> int:
+    # Warn loudly if the gateway URL is missing — without it _RemoteSio drops
+    # every emit silently and the UI never updates while AI runs progress.
+    if not os.environ.get("HEYSURE_API_GATEWAY_URL", "").strip():
+        print(
+            "[ai-runtime] WARNING: HEYSURE_API_GATEWAY_URL not set. "
+            "Socket.IO events from this worker will be dropped — UI status "
+            "updates will be missing. Set HEYSURE_API_GATEWAY_URL=http://api-gateway:3000 "
+            "in your environment.",
+            flush=True,
+        )
+    if not os.environ.get("HEYSURE_INTERNAL_TOKEN", "").strip():
+        print(
+            "[ai-runtime] WARNING: HEYSURE_INTERNAL_TOKEN not set. "
+            "Cross-service calls will fall back to loopback-only auth, which "
+            "will fail in containerized deployments.",
+            flush=True,
+        )
+
     create_db_and_tables()
 
     stop_evt = threading.Event()

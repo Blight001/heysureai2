@@ -83,11 +83,35 @@ def _send_feishu_text(
 
 
 def _start_feishu_worker(worker_kwargs: Dict[str, Any]) -> str:
+    import json as _json
     from .chat_action_routes import _ai_dispatch_mode
     from api.runtime.ai_worker_service import notify_queue
 
     run_id = str(worker_kwargs["run_id"])
     if _ai_dispatch_mode() == "remote":
+        # Persist non-default kwargs so ai-runtime can rebuild the call.
+        # Feishu specifically computes a custom merged_system_prompt from the
+        # inbound event — losing that would change AI behavior.
+        extras = {
+            k: worker_kwargs.get(k)
+            for k in (
+                "model_user_content",
+                "merged_system_prompt",
+                "max_steps",
+                "current_user_message_id",
+            )
+            if worker_kwargs.get(k) is not None
+        }
+        if extras:
+            try:
+                with Session(engine) as bg:
+                    row = bg.exec(select(ChatRun).where(ChatRun.run_id == run_id)).first()
+                    if row:
+                        row.worker_kwargs_json = _json.dumps(extras, ensure_ascii=False)
+                        bg.add(row)
+                        bg.commit()
+            except Exception as exc:
+                print(f"[feishu] persist worker_kwargs failed for {run_id}: {exc}")
         notify_queue(run_id)
         return run_id
 

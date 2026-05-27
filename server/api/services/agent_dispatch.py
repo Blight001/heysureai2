@@ -82,16 +82,23 @@ def _finalize_dispatch_row(
     result: Any = None,
     error: Optional[str] = None,
 ) -> None:
-    """Mark a dispatch row finished. Idempotent — re-finalizing a row that
-    already left ``pending`` is a no-op so out-of-order updates can't
-    overwrite the final answer."""
+    """Mark a dispatch row finished.
+
+    Idempotent for rows that already terminated as ``completed`` or ``error``
+    (real result of an agent reply). Allows overwriting a ``timeout`` row —
+    if the agent eventually replies after the orphan sweep marked it timed
+    out, we preserve the actual result for audit even though the chat_worker
+    has already moved on.
+    """
     try:
         with Session(engine) as session:
             row = session.exec(
                 select(AgentDispatchTask).where(AgentDispatchTask.task_id == task_id)
             ).first()
-            if not row or row.status != "pending":
+            if not row:
                 return
+            if row.status in {"completed", "error"}:
+                return  # Real outcome already recorded; don't overwrite.
             row.status = status
             row.success = success
             row.summary = summary

@@ -321,14 +321,32 @@ async def _dispatch_endpoint_via_runtime(
             }
 
         deadline = _asyncio.get_running_loop().time() + max(1, int(timeout_seconds))
+        consecutive_missing = 0
         while True:
+            row: Dict[str, Any]
             try:
                 resp = await client.get(
                     f"/internal/agent/dispatch/result/{task_id}",
                     headers=headers,
                 )
-                resp.raise_for_status()
-                row = resp.json()
+                if resp.status_code == 404:
+                    # Row should exist (we just POSTed) — a 404 means the
+                    # connector-runtime restart wiped our row between the
+                    # POST and our first GET, or some other race we should
+                    # not paper over indefinitely.
+                    consecutive_missing += 1
+                    if consecutive_missing >= 3:
+                        return {
+                            "success": False,
+                            "taskId": task_id,
+                            "tool": tool,
+                            "error": "dispatch row missing after retries (connector-runtime restart?)",
+                        }
+                    row = {"status": "pending"}
+                else:
+                    resp.raise_for_status()
+                    row = resp.json()
+                    consecutive_missing = 0
             except Exception as exc:
                 # Transient HTTP failure: keep polling until the deadline.
                 row = {"status": "pending", "error": f"poll error: {exc}"}
