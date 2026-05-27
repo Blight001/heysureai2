@@ -275,6 +275,39 @@ async def _call_mcp_via_runtime(
         return resp.json()
 
 
+async def _dispatch_endpoint_via_runtime(
+    runtime_url: str,
+    tool: str,
+    user_id: int,
+    arguments: dict,
+    ai_config_id: Optional[int],
+) -> Dict[str, object]:
+    """Forward an endpoint-agent tool dispatch to ``connector-runtime``.
+
+    The connector-runtime process holds the Socket.IO session for the agent,
+    so the synchronous wait for ``task:result`` must happen there. We POST
+    and block on the HTTP response.
+    """
+    import httpx
+    from api.runtime.internal_http import internal_headers
+
+    async with httpx.AsyncClient(base_url=runtime_url.rstrip("/"), timeout=180.0) as client:
+        resp = await client.post(
+            "/internal/agent/dispatch",
+            headers=internal_headers(),
+            json={
+                "user_id": user_id,
+                "ai_config_id": ai_config_id,
+                "tool": tool,
+                "arguments": arguments,
+                "timeout_seconds": 120,
+            },
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        return body.get("result") if isinstance(body, dict) else body
+
+
 async def _call_mcp_or_endpoint_tool(
     tool: str,
     user_id: int,
@@ -282,6 +315,15 @@ async def _call_mcp_or_endpoint_tool(
     ai_config_id: Optional[int],
 ) -> Dict[str, object]:
     if is_endpoint_agent_tool(tool):
+        connector_url = os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
+        if connector_url:
+            return {
+                "tool": tool,
+                "destructive": True,
+                "result": await _dispatch_endpoint_via_runtime(
+                    connector_url, tool, user_id, arguments, ai_config_id
+                ),
+            }
         return {
             "tool": tool,
             "destructive": True,
