@@ -17,11 +17,12 @@ user's UI room so the frontend updates live.
 
 import contextvars
 import asyncio
+import json
 import time
 import uuid
 from typing import Any, Dict, List, Optional
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from ..database import engine
 from .desktop_agent_tools import (
@@ -32,9 +33,107 @@ from .desktop_agent_tools import (
     is_endpoint_agent_tool,
 )
 from .screenshot_store import attach_persisted_screenshot
-from ..models import ChatMessageCreate
+from ..models import AgentDispatchTask, ChatMessageCreate
 from ..sio import agents, sio
 from .chat_persistence import _save_message
+
+
+def _persist_dispatch(
+    *,
+    task_id: str,
+    user_id: int,
+    ai_config_id: Optional[int],
+    ai_kind: str,
+    session_id: str,
+    session_name: Optional[str],
+    agent_id: str,
+    tool: str,
+    instruction: str,
+) -> None:
+    """Insert a ``pending`` row so connector-runtime restarts can still
+    deliver the eventual result to whoever is polling by ``task_id``."""
+    try:
+        with Session(engine) as session:
+            session.add(AgentDispatchTask(
+                task_id=task_id,
+                user_id=user_id,
+                ai_config_id=ai_config_id,
+                ai_kind=ai_kind or "assistant",
+                session_id=session_id,
+                session_name=session_name,
+                agent_id=agent_id,
+                tool=tool or "",
+                instruction=instruction or "",
+                status="pending",
+            ))
+            session.commit()
+    except Exception as exc:
+        # Persistence failure is non-fatal for the in-memory dispatch path,
+        # but it does defeat the restart-resilience guarantee. Log loudly.
+        print(f"[agent-dispatch] persist failed task={task_id}: {exc}")
+
+
+def _finalize_dispatch_row(
+    task_id: str,
+    *,
+    status: str,
+    success: Optional[bool] = None,
+    summary: Optional[str] = None,
+    result: Any = None,
+    error: Optional[str] = None,
+) -> None:
+    """Mark a dispatch row finished. Idempotent — re-finalizing a row that
+    already left ``pending`` is a no-op so out-of-order updates can't
+    overwrite the final answer."""
+    try:
+        with Session(engine) as session:
+            row = session.exec(
+                select(AgentDispatchTask).where(AgentDispatchTask.task_id == task_id)
+            ).first()
+            if not row or row.status != "pending":
+                return
+            row.status = status
+            row.success = success
+            row.summary = summary
+            if result is not None:
+                try:
+                    row.result_json = json.dumps(result, ensure_ascii=False, default=str)
+                except Exception:
+                    row.result_json = str(result)
+            row.error = error
+            row.completed_at = time.time()
+            session.add(row)
+            session.commit()
+    except Exception as exc:
+        print(f"[agent-dispatch] finalize failed task={task_id}: {exc}")
+
+
+def expire_orphan_dispatches(older_than_seconds: float = 300.0) -> int:
+    """Mark pending rows that have been waiting too long as ``timeout``.
+
+    Called on connector-runtime startup to clean up rows whose original
+    Future died with a previous process — pollers were stuck looking at
+    them.
+    """
+    cutoff = time.time() - older_than_seconds
+    expired = 0
+    try:
+        with Session(engine) as session:
+            rows = session.exec(
+                select(AgentDispatchTask).where(AgentDispatchTask.status == "pending")
+            ).all()
+            for row in rows:
+                if (row.created_at or 0) < cutoff:
+                    row.status = "timeout"
+                    row.error = row.error or "orphaned across connector-runtime restart"
+                    row.completed_at = time.time()
+                    session.add(row)
+                    expired += 1
+            if expired:
+                session.commit()
+    except Exception as exc:
+        print(f"[agent-dispatch] orphan sweep failed: {exc}")
+    return expired
 
 # Per-run session context so MCP tools (running inside the worker thread) can
 # attach dispatched-task results to the correct chat session. asyncio.run()
@@ -151,6 +250,19 @@ async def dispatch_task_to_agent(
         "created_at": time.time(),
         "suppress_session_message": bool(suppress_session_message),
     }
+    # Persist before emit so a crash between emit and the result handler
+    # still leaves a recoverable trail for the chat_worker poll path.
+    _persist_dispatch(
+        task_id=task_id,
+        user_id=user_id,
+        ai_config_id=ai_config_id,
+        ai_kind=ai_kind,
+        session_id=session_id,
+        session_name=session_name,
+        agent_id=agent_id,
+        tool=tool or "",
+        instruction=instruction or "",
+    )
     waiter = None
     if wait_for_result:
         loop = asyncio.get_running_loop()
@@ -275,6 +387,14 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
     if not bool(ctx.get("suppress_session_message")):
         _save_agent_message(ctx, content, "agent_task_result")
     _update_agent_task_state(agent_id, status="success" if success else "failed", task_id=task_id)
+    _finalize_dispatch_row(
+        task_id,
+        status="completed" if success else "error",
+        success=success,
+        summary=summary,
+        result=result,
+        error=None if success else summary or "agent reported failure",
+    )
     waiter = _PENDING_DISPATCH_WAITERS.get(task_id)
     waiter_payload = {
         "success": success,
@@ -316,6 +436,12 @@ async def handle_task_error(data: Dict[str, Any]) -> None:
     if not bool(ctx.get("suppress_session_message")):
         _save_agent_message(ctx, content, "agent_task_error")
     _update_agent_task_state(agent_id, status="error", task_id=task_id, error=error)
+    _finalize_dispatch_row(
+        task_id,
+        status="error",
+        success=False,
+        error=error,
+    )
     waiter = _PENDING_DISPATCH_WAITERS.get(task_id)
     if waiter:
         loop = waiter.get("loop")
@@ -344,6 +470,55 @@ def _safe_dump(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False, indent=2)
     except Exception:
         return str(value)
+
+
+async def dispatch_endpoint_tool(
+    *,
+    user_id: int,
+    ai_config_id: Optional[int],
+    tool: str,
+    args: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """Fire-and-forget variant of :func:`dispatch_endpoint_tool_and_wait`.
+
+    Emits ``task:dispatch`` to the right agent and returns the ``task_id``
+    immediately. The dispatch row is persisted before the emit so the
+    caller can poll ``AgentDispatchTask`` by ``task_id`` and survive a
+    connector-runtime restart. Returns ``None`` when no agent is bound.
+    """
+    tool_name = str(tool or "").strip()
+    if not is_endpoint_agent_tool(tool_name) or not ai_config_id:
+        return None
+
+    if is_browser_tool(tool_name):
+        agent = get_connected_browser_agent(ai_config_id, user_id)
+    elif is_desktop_tool(tool_name):
+        agent = get_connected_desktop_agent(ai_config_id, user_id)
+    else:
+        agent = None
+    if not agent:
+        return None
+    agent_id = str(agent.get("id") or "").strip()
+    if not agent_id:
+        return None
+
+    run_ctx = get_run_session_context() or {}
+    result = await dispatch_task_to_agent(
+        agent_id=agent_id,
+        user_id=user_id,
+        ai_config_id=ai_config_id,
+        ai_kind=str(run_ctx.get("ai_kind") or "assistant"),
+        session_id=str(run_ctx.get("session_id") or ""),
+        session_name=run_ctx.get("session_name"),
+        model=run_ctx.get("model"),
+        instruction=f"Run endpoint MCP tool {tool_name}",
+        tool=tool_name,
+        args=args or {},
+        allowed_tools=[tool_name],
+        wait_for_result=False,
+        suppress_session_message=True,
+    )
+    return str(result.get("taskId") or "") or None
 
 
 async def dispatch_endpoint_tool_and_wait(

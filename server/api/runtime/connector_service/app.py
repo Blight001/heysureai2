@@ -19,7 +19,8 @@ JWT auth as the monolith.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from typing import Any, Dict, Optional
 
 import socketio
@@ -27,8 +28,9 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from ...database import create_db_and_tables
+from ...integrations.feishu.long_connection import start_feishu_long_connection_clients
 from ...sio import sio
-from ...socket_events import register_socket_events
+from ...socket_events import register_agent_socket_events
 from ..internal_http import require_internal_token
 
 
@@ -51,12 +53,44 @@ class FeishuSendRequest(BaseModel):
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     create_db_and_tables()
-    # Register Socket.IO handlers on the local server. agent:register /
-    # task:result / etc. are wired here so agents that connect on the
-    # connector-runtime port get the same behavior as the monolith.
-    register_socket_events()
-    print("[connector-runtime] ready (Socket.IO + /internal/*)")
-    yield
+    # Register Socket.IO handlers on the local server. Only agent-side
+    # events live here; user-side (ui:join) stays on api-gateway.
+    register_agent_socket_events()
+
+    # Reap any dispatch rows whose original Future died with a previous
+    # connector-runtime process. The poller would otherwise wait forever.
+    try:
+        from ...services.agent_dispatch import expire_orphan_dispatches
+        expired = expire_orphan_dispatches()
+        if expired:
+            print(f"[connector-runtime] expired {expired} orphan dispatch rows")
+    except Exception as exc:
+        print(f"[connector-runtime] orphan sweep failed: {exc}")
+
+    # Maintain Feishu long connections from this process. Owning the
+    # upstream here means api-gateway restarts no longer drop Feishu.
+    stop_event = asyncio.Event()
+
+    async def _feishu_keepalive() -> None:
+        while not stop_event.is_set():
+            try:
+                start_feishu_long_connection_clients()
+            except Exception as exc:
+                print(f"[connector-runtime] feishu keepalive failed: {exc}")
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=3.0)
+            except asyncio.TimeoutError:
+                continue
+
+    keepalive_task = asyncio.create_task(_feishu_keepalive())
+    print("[connector-runtime] ready (Socket.IO + /internal/* + feishu keepalive)")
+    try:
+        yield
+    finally:
+        stop_event.set()
+        keepalive_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await keepalive_task
 
 
 def create_app() -> FastAPI:
@@ -71,20 +105,52 @@ def create_app() -> FastAPI:
 
     @router.post("/agent/dispatch")
     async def agent_dispatch(req: AgentDispatchRequest) -> Dict[str, Any]:
-        # Lazy import keeps connector_service importable even when the
-        # full chat/agent pipeline is not loaded (e.g. minimal smoke tests).
-        from ...services.agent_dispatch import dispatch_endpoint_tool_and_wait
+        # Non-blocking: emit task:dispatch to the agent + persist a pending
+        # row. The caller polls /agent/dispatch/result/{task_id} for the
+        # outcome so connector-runtime restarts don't strand the request.
+        from ...services.agent_dispatch import dispatch_endpoint_tool
         try:
-            result = await dispatch_endpoint_tool_and_wait(
+            task_id = await dispatch_endpoint_tool(
                 user_id=req.user_id,
                 ai_config_id=req.ai_config_id,
                 tool=req.tool,
                 args=req.arguments,
-                timeout_seconds=req.timeout_seconds,
             )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"dispatch failed: {exc}")
-        return {"ok": True, "result": result}
+        if not task_id:
+            raise HTTPException(status_code=503, detail="no agent connected for this tool")
+        return {"ok": True, "task_id": task_id, "status": "pending"}
+
+    @router.get("/agent/dispatch/result/{task_id}")
+    def agent_dispatch_result(task_id: str) -> Dict[str, Any]:
+        # DB-backed lookup so connector-runtime restarts don't lose state.
+        from sqlmodel import Session, select
+        from ...database import engine
+        from ...models import AgentDispatchTask
+        with Session(engine) as session:
+            row = session.exec(
+                select(AgentDispatchTask).where(AgentDispatchTask.task_id == task_id)
+            ).first()
+        if not row:
+            raise HTTPException(status_code=404, detail="task not found")
+        payload: Dict[str, Any] = {
+            "task_id": row.task_id,
+            "status": row.status,
+            "success": row.success,
+            "summary": row.summary,
+            "error": row.error,
+            "result": None,
+            "agent_id": row.agent_id,
+            "tool": row.tool,
+        }
+        if row.result_json:
+            import json as _json
+            try:
+                payload["result"] = _json.loads(row.result_json)
+            except Exception:
+                payload["result"] = row.result_json
+        return payload
 
     @router.post("/feishu/send")
     def feishu_send(req: FeishuSendRequest) -> Dict[str, Any]:

@@ -136,22 +136,9 @@ def _load_worker_kwargs(run: ChatRun) -> Dict[str, Any]:
     }
 
 
-def _start_heartbeat(run_id: str, stop_evt: threading.Event) -> threading.Thread:
-    def loop() -> None:
-        while not stop_evt.is_set():
-            try:
-                heartbeat.tick(run_id)
-            except Exception:
-                pass
-            if stop_evt.wait(heartbeat.TICK_INTERVAL_SECONDS):
-                return
-
-    th = threading.Thread(target=loop, name=f"hb-{run_id}", daemon=True)
-    th.start()
-    return th
-
-
 def _execute_run(run: ChatRun) -> None:
+    # ``_run_worker`` now spawns its own heartbeat thread, so the dispatcher
+    # just needs to materialize the kwargs and call it.
     from ..routers.chat_worker import _run_worker
 
     try:
@@ -170,8 +157,6 @@ def _execute_run(run: ChatRun) -> None:
                 session.commit()
         return
 
-    stop_evt = threading.Event()
-    hb = _start_heartbeat(run.run_id, stop_evt)
     try:
         _run_worker(**kwargs)
     except Exception as exc:
@@ -185,9 +170,6 @@ def _execute_run(run: ChatRun) -> None:
                 row.updated_at = time.time()
                 session.add(row)
                 session.commit()
-    finally:
-        stop_evt.set()
-        hb.join(timeout=1.0)
 
 
 def _drain_dispatcher(limit: int = 32) -> int:
