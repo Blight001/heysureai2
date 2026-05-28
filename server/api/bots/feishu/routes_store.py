@@ -1,25 +1,64 @@
-"""Feishu-specific session-route bookkeeping.
+"""Feishu-specific reads/writes against the unified ``BotSessionRoute`` table.
 
-A ``FeishuSessionRoute`` row binds ``(user, ai_config, ai_kind, session_id)``
-to the upstream Feishu addressing (``receive_id`` + ``receive_id_type``).
-The router calls :func:`register_feishu_session_route` when an inbound
-event arrives; the notify orchestrator looks the row back up to know
-where to deliver the AI's reply.
+``register_feishu_session_route`` upserts a row keyed by
+``(channel='feishu', user, ai_config, ai_kind, session_id)`` and stores
+the Feishu addressing payload (``receive_id`` + ``receive_id_type``) in
+``target_json``. ``load_feishu_route`` reverses that and returns a small
+typed view object so the notify orchestrator can keep using
+``route.receive_id`` / ``route.receive_id_type`` without parsing JSON
+itself.
 """
 
 from __future__ import annotations
 
+import json
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import select
 
-from .models import FeishuSessionRoute
+from ...models import BotSessionRoute
 
 if TYPE_CHECKING:
     from sqlmodel import Session
 
     from ...models import ChatMessage
+
+
+CHANNEL = "feishu"
+
+
+@dataclass
+class FeishuRouteView:
+    """Lightweight read-only view of a Feishu route row.
+
+    The notify orchestrator + adapter consume ``receive_id`` /
+    ``receive_id_type``; we materialize them once here so callers don't
+    have to deal with the JSON envelope.
+    """
+
+    user_id: int
+    ai_config_id: int
+    ai_kind: str
+    session_id: str
+    receive_id: str
+    receive_id_type: str
+
+
+def _to_view(row: BotSessionRoute) -> FeishuRouteView:
+    try:
+        target = json.loads(row.target_json or "{}")
+    except Exception:
+        target = {}
+    return FeishuRouteView(
+        user_id=int(row.user_id),
+        ai_config_id=int(row.ai_config_id),
+        ai_kind=str(row.ai_kind or "core"),
+        session_id=str(row.session_id or ""),
+        receive_id=str(target.get("receive_id", "") or ""),
+        receive_id_type=str(target.get("receive_id_type", "chat_id") or "chat_id"),
+    )
 
 
 def register_feishu_session_route(
@@ -38,36 +77,40 @@ def register_feishu_session_route(
     if not session_id or not receive_id:
         return
     row = session.exec(
-        select(FeishuSessionRoute).where(
-            FeishuSessionRoute.user_id == int(user_id),
-            FeishuSessionRoute.ai_config_id == int(ai_config_id),
-            FeishuSessionRoute.ai_kind == str(ai_kind or "core"),
-            FeishuSessionRoute.session_id == session_id,
+        select(BotSessionRoute).where(
+            BotSessionRoute.channel == CHANNEL,
+            BotSessionRoute.user_id == int(user_id),
+            BotSessionRoute.ai_config_id == int(ai_config_id),
+            BotSessionRoute.ai_kind == str(ai_kind or "core"),
+            BotSessionRoute.session_id == session_id,
         )
     ).first()
+    target_json = json.dumps(
+        {"receive_id": receive_id, "receive_id_type": receive_id_type},
+        ensure_ascii=False,
+    )
     now = time.time()
     if row is None:
-        row = FeishuSessionRoute(
+        row = BotSessionRoute(
+            channel=CHANNEL,
             user_id=int(user_id),
             ai_config_id=int(ai_config_id),
             ai_kind=str(ai_kind or "core"),
             session_id=session_id,
-            receive_id=receive_id,
-            receive_id_type=receive_id_type,
+            target_json=target_json,
         )
     else:
-        row.receive_id = receive_id
-        row.receive_id_type = receive_id_type
+        row.target_json = target_json
         row.updated_at = now
     session.add(row)
     session.commit()
 
 
-def _route_from_session_id(message: "ChatMessage") -> Optional[FeishuSessionRoute]:
-    """Reconstruct a route from a ``feishu_<cfg>_<receive_id>`` session string.
+def _route_from_session_id(message: "ChatMessage") -> Optional[FeishuRouteView]:
+    """Synthesize a route from a legacy ``feishu_<cfg>_<receive_id>`` session id.
 
-    Older messages predate the DB-backed route table — the session id itself
-    encoded the receive_id. We keep the parser so those threads still deliver.
+    Older messages predate the route table — the session id itself encoded
+    the receive_id. We keep the parser so those threads still deliver.
     """
     session_id = str(message.session_id or "")
     ai_config_id = int(message.ai_config_id or 0)
@@ -77,7 +120,7 @@ def _route_from_session_id(message: "ChatMessage") -> Optional[FeishuSessionRout
     receive_id = session_id[len(prefix):].strip()
     if not receive_id:
         return None
-    return FeishuSessionRoute(
+    return FeishuRouteView(
         user_id=int(message.user_id),
         ai_config_id=ai_config_id,
         ai_kind=str(message.ai_kind or "core"),
@@ -89,15 +132,18 @@ def _route_from_session_id(message: "ChatMessage") -> Optional[FeishuSessionRout
 
 def load_feishu_route(
     session: "Session", message: "ChatMessage"
-) -> Optional[FeishuSessionRoute]:
+) -> Optional[FeishuRouteView]:
     if not message.ai_config_id:
         return None
     row = session.exec(
-        select(FeishuSessionRoute).where(
-            FeishuSessionRoute.user_id == int(message.user_id),
-            FeishuSessionRoute.ai_config_id == int(message.ai_config_id),
-            FeishuSessionRoute.ai_kind == str(message.ai_kind or "core"),
-            FeishuSessionRoute.session_id == str(message.session_id or ""),
+        select(BotSessionRoute).where(
+            BotSessionRoute.channel == CHANNEL,
+            BotSessionRoute.user_id == int(message.user_id),
+            BotSessionRoute.ai_config_id == int(message.ai_config_id),
+            BotSessionRoute.ai_kind == str(message.ai_kind or "core"),
+            BotSessionRoute.session_id == str(message.session_id or ""),
         )
     ).first()
-    return row or _route_from_session_id(message)
+    if row is not None:
+        return _to_view(row)
+    return _route_from_session_id(message)

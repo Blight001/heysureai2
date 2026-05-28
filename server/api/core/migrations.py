@@ -12,6 +12,7 @@ or are seeded from the SQLite -> Postgres migration script (which also
 runs ``create_all`` against Postgres after copying rows).
 """
 
+import json
 import os
 import sqlite3
 
@@ -20,6 +21,111 @@ from .config import DATABASE_URL, SQLITE_FILE, database_dialect
 # Imported lazily inside ``run_pending_migrations`` to avoid a hard dependency
 # on the models package at import time (the package itself is loaded before
 # ``SQLModel.metadata.create_all``).
+
+
+def run_data_consolidations(engine) -> None:
+    """Dialect-agnostic data migrations executed via SQLAlchemy engine.
+
+    Unlike ``run_pending_migrations`` (legacy SQLite-only ALTER TABLE
+    patches) these run on every backend — copying rows out of deprecated
+    per-bot tables into ``botsessionroute`` etc.
+    """
+    _consolidate_bot_session_routes(engine)
+
+
+def _consolidate_bot_session_routes(engine) -> None:
+    """Copy legacy ``feishusessionroute`` + ``qqsessionroute`` rows into the
+    unified ``botsessionroute`` table.
+
+    Idempotent: rows whose (channel, user, ai_config, ai_kind, session_id)
+    already exist in the new table are skipped, so repeat boots do not
+    duplicate. The legacy tables are NOT dropped — they stay as a safety
+    net until a separate cleanup pass removes them.
+    """
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    existing_tables = set(insp.get_table_names())
+    if "botsessionroute" not in existing_tables:
+        return  # create_all hasn't materialized the new table yet
+
+    def _copy(channel: str, src_table: str, build_target: callable) -> None:
+        if src_table not in existing_tables:
+            return
+        with engine.begin() as conn:
+            rows = conn.execute(text(f"SELECT * FROM {src_table}")).mappings().all()
+            for row in rows:
+                exists = conn.execute(
+                    text(
+                        "SELECT id FROM botsessionroute "
+                        "WHERE channel = :channel AND user_id = :uid "
+                        "AND ai_config_id = :cid AND ai_kind = :kind "
+                        "AND session_id = :sid LIMIT 1"
+                    ),
+                    {
+                        "channel": channel,
+                        "uid": row["user_id"],
+                        "cid": row["ai_config_id"],
+                        "kind": row["ai_kind"],
+                        "sid": row["session_id"],
+                    },
+                ).first()
+                if exists:
+                    continue
+                target_json, extras = build_target(row)
+                conn.execute(
+                    text(
+                        "INSERT INTO botsessionroute "
+                        "(channel, user_id, ai_config_id, ai_kind, session_id, target_json, "
+                        " source_message_id, source_event_id, next_msg_seq, created_at, updated_at) "
+                        "VALUES (:channel, :uid, :cid, :kind, :sid, :tj, "
+                        " :smid, :seid, :seq, :ca, :ua)"
+                    ),
+                    {
+                        "channel": channel,
+                        "uid": row["user_id"],
+                        "cid": row["ai_config_id"],
+                        "kind": row["ai_kind"],
+                        "sid": row["session_id"],
+                        "tj": target_json,
+                        "smid": extras.get("source_message_id", ""),
+                        "seid": extras.get("source_event_id", ""),
+                        "seq": extras.get("next_msg_seq", 1),
+                        "ca": row.get("created_at"),
+                        "ua": row.get("updated_at"),
+                    },
+                )
+
+    def _build_feishu(row) -> tuple[str, dict]:
+        return (
+            json.dumps(
+                {
+                    "receive_id": row.get("receive_id", "") or "",
+                    "receive_id_type": row.get("receive_id_type", "chat_id") or "chat_id",
+                },
+                ensure_ascii=False,
+            ),
+            {},
+        )
+
+    def _build_qq(row) -> tuple[str, dict]:
+        return (
+            json.dumps(
+                {
+                    "target_id": row.get("target_id", "") or "",
+                    "target_type": row.get("target_type", "c2c") or "c2c",
+                },
+                ensure_ascii=False,
+            ),
+            {
+                "source_message_id": row.get("source_message_id", "") or "",
+                "source_event_id": row.get("source_event_id", "") or "",
+                "next_msg_seq": int(row.get("next_msg_seq", 1) or 1),
+            },
+        )
+
+    _copy("feishu", "feishusessionroute", _build_feishu)
+    _copy("qq", "qqsessionroute", _build_qq)
 
 
 def run_pending_migrations() -> None:

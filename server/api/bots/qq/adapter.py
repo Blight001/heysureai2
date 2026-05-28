@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from sqlmodel import Session
 
     from ...models import AssistantAIConfig, ChatMessage
-    from .models import QQSessionRoute
+    from .routes_store import QQRouteHandle
 
 
 class QQBot(BotAdapter):
@@ -97,7 +97,7 @@ class QQBot(BotAdapter):
 
     def load_session_route(
         self, session: "Session", message: "ChatMessage"
-    ) -> Optional["QQSessionRoute"]:
+    ) -> Optional["QQRouteHandle"]:
         from .routes_store import load_qq_route
         return load_qq_route(session, message)
 
@@ -110,25 +110,26 @@ class QQBot(BotAdapter):
         route: Any,
     ) -> None:
         from .service import send_qq_text_message
-        from sqlmodel import Session as _Session  # noqa: F401 — for type, route mutation only
 
-        msg_seq = max(1, int(getattr(route, "next_msg_seq", 1) or 1))
+        # ``route`` is a QQRouteHandle (see routes_store). Its ``.row`` is the
+        # live BotSessionRoute we mutate to bump msg_seq atomically.
+        msg_seq = max(1, int(route.next_msg_seq or 1))
         try:
             send_qq_text_message(
                 int(message.user_id),
                 int(message.ai_config_id or 0),
                 text=rendered_content,
-                target_id=str(getattr(route, "target_id", "") or ""),
-                target_type=str(getattr(route, "target_type", "") or "c2c"),
-                msg_id=str(getattr(route, "source_message_id", "") or ""),
-                event_id=str(getattr(route, "source_event_id", "") or ""),
-                msg_seq=msg_seq if getattr(route, "source_message_id", "") else None,
+                target_id=route.target_id,
+                target_type=route.target_type or "c2c",
+                msg_id=route.source_message_id,
+                event_id=route.source_event_id,
+                msg_seq=msg_seq if route.source_message_id else None,
             )
             # Bump the per-conversation sequence so the next reply lands
             # in order even when QQ enforces strict msg_seq ordering.
-            route.next_msg_seq = msg_seq + 1
-            route.updated_at = time.time()
-            session.add(route)
+            route.row.next_msg_seq = msg_seq + 1
+            route.row.updated_at = time.time()
+            session.add(route.row)
             session.commit()
         except Exception as exc:
             print(f"[qq_auto_notify] send failed message_id={message.id}: {exc}")

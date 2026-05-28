@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from sqlmodel import Session
 
     from ...models import AssistantAIConfig, ChatMessage
-    from .models import FeishuSessionRoute
+    from .routes_store import FeishuRouteView
 
 
 # Feishu's open API caps single text messages at ~2KB; we chunk well below
@@ -121,7 +121,7 @@ class FeishuBot(BotAdapter):
 
     def load_session_route(
         self, session: "Session", message: "ChatMessage"
-    ) -> Optional["FeishuSessionRoute"]:
+    ) -> Optional["FeishuRouteView"]:
         from .routes_store import load_feishu_route
         return load_feishu_route(session, message)
 

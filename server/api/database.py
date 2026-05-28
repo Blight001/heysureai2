@@ -12,7 +12,7 @@ Schema bootstrap is split in two phases:
 from sqlmodel import Session, SQLModel, create_engine
 
 from .core.config import DATABASE_URL, database_dialect
-from .core.migrations import run_pending_migrations
+from .core.migrations import run_data_consolidations, run_pending_migrations
 
 # Importing the models package side-effect populates ``SQLModel.metadata``.
 from . import models  # noqa: F401
@@ -29,6 +29,7 @@ else:
 def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
     run_pending_migrations()
+    run_data_consolidations(engine)
 
 
 def get_session():
