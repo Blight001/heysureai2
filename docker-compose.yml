@@ -1,5 +1,20 @@
 services:
-  server:
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=heysure
+      - POSTGRES_PASSWORD=heysure
+      - POSTGRES_DB=heysure
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heysure"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api-gateway:
     build: ./server
     ports:
       - "3000:3000"
@@ -7,7 +22,79 @@ services:
       - ./server/uploads:/app/uploads
       - ./server/data:/app/data
     environment:
-      - NODE_ENV=production
+      - HEYSURE_SERVICE_ROLE=gateway
+      - DATABASE_URL=postgresql://heysure:heysure@db:5432/heysure
+      - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:?Set HEYSURE_INTERNAL_TOKEN in .env or shell}
+      - MCP_RUNTIME_URL=http://mcp-runtime:3001
+      - CONNECTOR_RUNTIME_URL=http://connector-runtime:3002
+      - AI_DISPATCH_MODE=remote
+    command: ["uvicorn", "api.app:sio_app", "--host", "0.0.0.0", "--port", "3000"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ai-runtime:
+    build: ./server
+    volumes:
+      - ./server/uploads:/app/uploads
+      - ./server/data:/app/data
+    environment:
+      - HEYSURE_SERVICE_ROLE=worker
+      - DATABASE_URL=postgresql://heysure:heysure@db:5432/heysure
+      - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:?Set HEYSURE_INTERNAL_TOKEN in .env or shell}
+      - HEYSURE_API_GATEWAY_URL=http://api-gateway:3000
+      - MCP_RUNTIME_URL=http://mcp-runtime:3001
+      - CONNECTOR_RUNTIME_URL=http://connector-runtime:3002
+    command: ["python", "main_ai_runtime.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+      api-gateway:
+        condition: service_started
+      mcp-runtime:
+        condition: service_started
+    restart: unless-stopped
+
+  mcp-runtime:
+    build: ./server
+    # Intentionally NOT mapped to the host: only api-gateway / ai-runtime
+    # reach it on the compose network.
+    expose:
+      - "3001"
+    volumes:
+      - ./server/uploads:/app/uploads
+      - ./server/data:/app/data
+    environment:
+      - HEYSURE_SERVICE_ROLE=mcp
+      - DATABASE_URL=postgresql://heysure:heysure@db:5432/heysure
+      - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:?Set HEYSURE_INTERNAL_TOKEN in .env or shell}
+      - HEYSURE_API_GATEWAY_URL=http://api-gateway:3000
+    command: ["python", "main_mcp_runtime.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  connector-runtime:
+    build: ./server
+    # Exposed to host because external desktop agents / browser plugins
+    # connect here over Socket.IO. The /internal/* HTTP routes share the
+    # same port but require INTERNAL_TOKEN.
+    ports:
+      - "3002:3002"
+    volumes:
+      - ./server/uploads:/app/uploads
+      - ./server/data:/app/data
+    environment:
+      - HEYSURE_SERVICE_ROLE=connector
+      - DATABASE_URL=postgresql://heysure:heysure@db:5432/heysure
+      - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:?Set HEYSURE_INTERNAL_TOKEN in .env or shell}
+      - HEYSURE_API_GATEWAY_URL=http://api-gateway:3000
+    command: ["python", "main_connector_runtime.py"]
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
   web:
@@ -15,7 +102,10 @@ services:
     ports:
       - "58150:58150"
     environment:
-      - SERVER_URL=http://server:3000
+      - SERVER_URL=http://api-gateway:3000
     depends_on:
-      - server
+      - api-gateway
     restart: unless-stopped
+
+volumes:
+  pgdata:

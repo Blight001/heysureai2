@@ -28,6 +28,33 @@ class AIRuntimeStatus(SQLModel, table=True):
     updated_at: float = Field(default_factory=time.time)
 
 
+class AgentDispatchTask(SQLModel, table=True):
+    """One pending/finished agent (desktop / browser plugin) tool dispatch.
+
+    Persisted so connector-runtime restarts don't lose tasks in-flight: the
+    chat_worker polls this table by ``task_id`` until ``status`` leaves
+    ``pending``. ``result_json`` / ``error`` carry the agent's reply for
+    consumption by the caller and for UI auditing.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    task_id: str = Field(index=True, unique=True)
+    user_id: int = Field(index=True)
+    ai_config_id: Optional[int] = Field(default=None, index=True)
+    ai_kind: str = Field(default="assistant")
+    session_id: Optional[str] = Field(default=None)
+    session_name: Optional[str] = None
+    agent_id: str = Field(default="")
+    tool: str = Field(default="")
+    instruction: str = Field(default="")
+    status: str = Field(default="pending", index=True)  # pending/completed/error/timeout
+    success: Optional[bool] = None
+    summary: Optional[str] = None
+    result_json: Optional[str] = None  # JSON-encoded payload from agent
+    error: Optional[str] = None
+    created_at: float = Field(default_factory=time.time, index=True)
+    completed_at: Optional[float] = None
+
+
 class AITaskJob(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     job_id: str = Field(index=True, unique=True)

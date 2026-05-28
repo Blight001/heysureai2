@@ -126,9 +126,23 @@ class MCPTool:
 class MCPRegistry:
     def __init__(self) -> None:
         self._tools: Dict[str, MCPTool] = {}
+        # Bumped every time the live tool set changes (initial load + reload).
+        # Callers can cheaply cache derived tool catalogs keyed by version.
+        self.version: int = 1
 
     def register(self, tool: MCPTool) -> None:
         self._tools[tool.name] = tool
+
+    def replace_tools(self, new_tools: Dict[str, MCPTool]) -> None:
+        """Atomically swap the live tool table.
+
+        Keeps the registry object identity stable so callers that did
+        ``from api.mcp.registry import registry`` see the updated tools
+        through their existing reference. Version is bumped so that any
+        cached payloads can be invalidated.
+        """
+        self._tools = dict(new_tools)
+        self.version += 1
 
     def list_tools(self) -> List[Dict[str, Any]]:
         return [

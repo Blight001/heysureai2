@@ -33,11 +33,35 @@ def _ai_config_belongs_to_user(ai_config_id, user_id: int) -> bool:
         return bool(cfg and cfg.user_id == user_id)
 
 
-def register_socket_events():
+def register_user_socket_events():
+    """User-side handlers — what the browser/web client triggers.
+
+    Currently only ``ui:join`` because user → server flows mostly go through
+    REST. Browser ``connect`` / ``disconnect`` are still useful for visibility
+    in logs even when no behavior depends on them.
+    """
     @sio.on('connect')
     async def connect(sid, environ):
         print('Client connected:', sid)
 
+    @sio.on('ui:join')
+    async def ui_join(sid, data):
+        user_id = data.get("userId") if isinstance(data, dict) else None
+        if user_id is None:
+            return
+        await sio.enter_room(sid, f"user_{user_id}")
+        # Opportunistically clean up dispatches whose agent vanished.
+        purge_stale_dispatches()
+        await sio.emit('agent:list', list(agents.values()), to=sid)
+
+
+def register_agent_socket_events():
+    """Agent-side handlers — what desktop / browser agents trigger.
+
+    Lives on connector-runtime in split deployments so agent connections
+    survive api-gateway restarts. The monolith registers BOTH this and the
+    user-side block on the same sio instance.
+    """
     @sio.on('agent:register')
     async def agent_register(sid, info):
         info = info if isinstance(info, dict) else {}
@@ -132,18 +156,15 @@ def register_socket_events():
         await handle_task_error(data if isinstance(data, dict) else {})
         await sio.emit('agent:list', list(agents.values()))
 
-    @sio.on('ui:join')
-    async def ui_join(sid, data):
-        user_id = data.get("userId") if isinstance(data, dict) else None
-        if user_id is None:
-            return
-        await sio.enter_room(sid, f"user_{user_id}")
-        # Opportunistically clean up dispatches whose agent vanished.
-        purge_stale_dispatches()
-        await sio.emit('agent:list', list(agents.values()), to=sid)
-
     @sio.on('disconnect')
     async def disconnect(sid):
         if sid in agents:
             del agents[sid]
             await sio.emit('agent:list', list(agents.values()))
+
+
+def register_socket_events():
+    """Register both halves. Used by the monolith and (for safety) when
+    the deployment is intentionally collapsed into one process."""
+    register_user_socket_events()
+    register_agent_socket_events()

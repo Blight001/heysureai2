@@ -15,6 +15,20 @@ WORKSPACE_DIR = os.path.join(DATA_DIR, "workspace")
 SQLITE_FILE = os.path.join(DATA_DIR, "heysure.db")
 SQLITE_URL = f"sqlite:///{SQLITE_FILE}"
 
+# ---------- Database ----------
+# DATABASE_URL overrides SQLITE_URL. Supports both sqlite:// and postgresql://.
+# Default keeps the historical SQLite path so single-machine dev keeps working
+# without any env setup.
+DATABASE_URL = os.environ.get("DATABASE_URL", SQLITE_URL).strip() or SQLITE_URL
+
+
+def database_dialect() -> str:
+    """Return 'sqlite' or 'postgresql' based on DATABASE_URL scheme."""
+    url = DATABASE_URL.lower()
+    if url.startswith("postgres"):
+        return "postgresql"
+    return "sqlite"
+
 USER_WORKSPACE_SUBFOLDERS = (
     "Valhalla",
     "BrainCore",
@@ -39,6 +53,24 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day
 
 # ---------- Socket.IO ----------
 AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "").strip()
+
+
+# ---------- Internal service mesh ----------
+# Shared Bearer secret for /internal/* endpoints across split services.
+# Empty value means "monolith deployment" — internal endpoints stay reachable
+# in-process and the network token check is skipped only for in-process
+# callers. External HTTP calls always require the token.
+INTERNAL_TOKEN = os.environ.get("HEYSURE_INTERNAL_TOKEN", "").strip()
+
+# When set, ``ai-runtime`` / ``api-gateway`` forward MCP tool execution and
+# tool-catalog reads to the mcp-runtime service over HTTP instead of using
+# the in-process registry. Leave unset for the monolith deployment.
+MCP_RUNTIME_URL = os.environ.get("MCP_RUNTIME_URL", "").strip()
+
+# When set, ``ai-runtime`` / ``api-gateway`` forward agent task dispatch and
+# outbound connector messages to connector-runtime. Leave unset for the
+# monolith deployment.
+CONNECTOR_RUNTIME_URL = os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
 
 
 # ---------- Chat worker tunables ----------

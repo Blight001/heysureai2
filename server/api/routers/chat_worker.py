@@ -245,6 +245,131 @@ def _joined_tool_skip_reason(tool_name: str, arguments: dict, allowed_tools: set
     return ""
 
 
+async def _call_mcp_via_runtime(
+    runtime_url: str,
+    tool: str,
+    user_id: int,
+    arguments: dict,
+    ai_config_id: Optional[int],
+) -> Dict[str, object]:
+    """Forward an MCP tool call to ``mcp-runtime`` over HTTP.
+
+    Lazy-imports httpx so the in-process path keeps zero overhead. Uses the
+    INTERNAL_TOKEN Bearer header from ``runtime.internal_http.internal_headers``.
+    """
+    import httpx
+    from api.runtime.internal_http import internal_headers
+
+    async with httpx.AsyncClient(base_url=runtime_url.rstrip("/"), timeout=120.0) as client:
+        resp = await client.post(
+            "/internal/mcp/call",
+            headers=internal_headers(),
+            json={
+                "tool": tool,
+                "user_id": user_id,
+                "ai_config_id": ai_config_id,
+                "arguments": arguments,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def _dispatch_endpoint_via_runtime(
+    runtime_url: str,
+    tool: str,
+    user_id: int,
+    arguments: dict,
+    ai_config_id: Optional[int],
+    timeout_seconds: int = 120,
+    poll_interval: float = 1.0,
+) -> Dict[str, object]:
+    """Forward an endpoint-agent tool dispatch to ``connector-runtime`` and
+    poll the persisted task row until it finishes.
+
+    Polling (vs blocking HTTP) is what makes the dispatch survive a
+    connector-runtime restart: once the row is in the DB, any subsequent
+    poll picks up the agent's eventual reply even if the original wait
+    process was wiped.
+    """
+    import asyncio as _asyncio
+    import httpx
+    from api.runtime.internal_http import internal_headers
+
+    headers = internal_headers()
+    base = runtime_url.rstrip("/")
+
+    async with httpx.AsyncClient(base_url=base, timeout=30.0) as client:
+        post_resp = await client.post(
+            "/internal/agent/dispatch",
+            headers=headers,
+            json={
+                "user_id": user_id,
+                "ai_config_id": ai_config_id,
+                "tool": tool,
+                "arguments": arguments,
+            },
+        )
+        post_resp.raise_for_status()
+        post_body = post_resp.json()
+        task_id = str(post_body.get("task_id") or "")
+        if not task_id:
+            return {
+                "success": False,
+                "tool": tool,
+                "error": "connector-runtime returned no task_id",
+            }
+
+        deadline = _asyncio.get_running_loop().time() + max(1, int(timeout_seconds))
+        consecutive_missing = 0
+        while True:
+            row: Dict[str, Any]
+            try:
+                resp = await client.get(
+                    f"/internal/agent/dispatch/result/{task_id}",
+                    headers=headers,
+                )
+                if resp.status_code == 404:
+                    # Row should exist (we just POSTed) — a 404 means the
+                    # connector-runtime restart wiped our row between the
+                    # POST and our first GET, or some other race we should
+                    # not paper over indefinitely.
+                    consecutive_missing += 1
+                    if consecutive_missing >= 3:
+                        return {
+                            "success": False,
+                            "taskId": task_id,
+                            "tool": tool,
+                            "error": "dispatch row missing after retries (connector-runtime restart?)",
+                        }
+                    row = {"status": "pending"}
+                else:
+                    resp.raise_for_status()
+                    row = resp.json()
+                    consecutive_missing = 0
+            except Exception as exc:
+                # Transient HTTP failure: keep polling until the deadline.
+                row = {"status": "pending", "error": f"poll error: {exc}"}
+            status = str(row.get("status") or "pending")
+            if status != "pending":
+                return {
+                    "success": bool(row.get("success", status == "completed")),
+                    "taskId": task_id,
+                    "tool": row.get("tool") or tool,
+                    "summary": row.get("summary"),
+                    "result": row.get("result"),
+                    "error": row.get("error"),
+                }
+            if _asyncio.get_running_loop().time() >= deadline:
+                return {
+                    "success": False,
+                    "taskId": task_id,
+                    "tool": tool,
+                    "error": f"Endpoint agent result timeout after {timeout_seconds}s",
+                }
+            await _asyncio.sleep(poll_interval)
+
+
 async def _call_mcp_or_endpoint_tool(
     tool: str,
     user_id: int,
@@ -252,6 +377,15 @@ async def _call_mcp_or_endpoint_tool(
     ai_config_id: Optional[int],
 ) -> Dict[str, object]:
     if is_endpoint_agent_tool(tool):
+        connector_url = os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
+        if connector_url:
+            return {
+                "tool": tool,
+                "destructive": True,
+                "result": await _dispatch_endpoint_via_runtime(
+                    connector_url, tool, user_id, arguments, ai_config_id
+                ),
+            }
         return {
             "tool": tool,
             "destructive": True,
@@ -262,6 +396,9 @@ async def _call_mcp_or_endpoint_tool(
                 args=arguments,
             ),
         }
+    runtime_url = os.environ.get("MCP_RUNTIME_URL", "").strip()
+    if runtime_url:
+        return await _call_mcp_via_runtime(runtime_url, tool, user_id, arguments, ai_config_id)
     return await registry.call(tool, user_id, arguments, ai_config_id)
 
 
@@ -546,6 +683,57 @@ def _append_mcp_disabled_feedback(
 
 
 def _run_worker(
+    *,
+    run_id: str,
+    user_id: int,
+    ai_config_id: Optional[int],
+    ai_kind: str,
+    session_id: str,
+    session_name: str,
+    model_user_content: Optional[str] = None,
+    merged_system_prompt: Optional[str] = None,
+    max_steps: Optional[int] = None,
+    current_user_message_id: Optional[int] = None,
+):
+    """Public worker entry. Wraps the implementation with heartbeat lifecycle
+    so every caller (monolith thread, ai-runtime dispatcher, scheduler) gets
+    watchdog protection without needing to spawn its own heartbeat thread.
+    """
+    import threading as _threading
+    from api.runtime import heartbeat as _hb
+
+    _stop_hb = _threading.Event()
+
+    def _tick_loop() -> None:
+        while not _stop_hb.is_set():
+            try:
+                _hb.tick(run_id)
+            except Exception:
+                pass
+            if _stop_hb.wait(_hb.TICK_INTERVAL_SECONDS):
+                return
+
+    _hb_thread = _threading.Thread(target=_tick_loop, name=f"hb-{run_id}", daemon=True)
+    _hb_thread.start()
+    try:
+        _run_worker_impl(
+            run_id=run_id,
+            user_id=user_id,
+            ai_config_id=ai_config_id,
+            ai_kind=ai_kind,
+            session_id=session_id,
+            session_name=session_name,
+            model_user_content=model_user_content,
+            merged_system_prompt=merged_system_prompt,
+            max_steps=max_steps,
+            current_user_message_id=current_user_message_id,
+        )
+    finally:
+        _stop_hb.set()
+        _hb_thread.join(timeout=1.0)
+
+
+def _run_worker_impl(
     *,
     run_id: str,
     user_id: int,

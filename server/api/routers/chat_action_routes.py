@@ -16,6 +16,7 @@ from api.database import get_session
 from api.mcp import get_project_root, registry
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatMessageUpdate, ChatRun
 from api.routers.auth import get_current_user
+from api.runtime.ai_worker_service import notify_queue
 from api.services.model_presets import resolve_model_preset
 from .chat_base import _RUN_LIVE_STATE, _RUN_STATE_LOCK, _RUN_THREADS, router
 from api.services.chat_persistence import _append_usage_snapshot, _rebuild_usage_snapshots, _save_message, _upsert_session
@@ -27,6 +28,17 @@ from .chat_prompt_utils import (
 )
 from .chat_runtime_helpers import _resolve_ai_runtime
 from .chat_worker import _raise_for_upstream_error, _run_worker
+
+
+def _ai_dispatch_mode() -> str:
+    """Return 'remote' when a dedicated ai-runtime service consumes the queue.
+
+    In 'remote' mode, api-gateway only enqueues queued ChatRun rows + NOTIFY;
+    it does NOT spawn a local thread to run the worker. In 'local' mode
+    (the historical monolith), api-gateway spawns a worker thread itself.
+    """
+    raw = (os.environ.get("AI_DISPATCH_MODE") or "local").strip().lower()
+    return "remote" if raw == "remote" else "local"
 
 
 @router.post("/run/start")
@@ -81,6 +93,12 @@ async def start_chat_run(
         ),
     )
     run_id = f"run_{uuid.uuid4().hex}"
+    worker_extras = {
+        "model_user_content": model_content,
+        "merged_system_prompt": merged_system_prompt,
+        "max_steps": req.get("max_steps"),
+        "current_user_message_id": user_msg.id,
+    }
     row = ChatRun(
         run_id=run_id,
         user_id=user.id,
@@ -90,9 +108,15 @@ async def start_chat_run(
         session_name=session_name,
         status="queued",
         stop_requested=False,
+        worker_kwargs_json=json.dumps(worker_extras, ensure_ascii=False),
     )
     session.add(row)
     session.commit()
+
+    if _ai_dispatch_mode() == "remote":
+        # ai-runtime will pick the row up via NOTIFY/poll. Skip local thread.
+        notify_queue(run_id)
+        return {"run_id": run_id, "status": "queued", "user_message_id": user_msg.id}
 
     worker = threading.Thread(
         target=_run_worker,

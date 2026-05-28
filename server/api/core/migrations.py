@@ -5,11 +5,17 @@ only runs when the target column is missing. This lets the server boot
 against an existing on-disk database that predates new model fields,
 without requiring a real migration framework. Add new entries below; keep
 them short and one-purpose so review is easy.
+
+These migrations target SQLite only — Postgres deployments either start
+from a clean ``create_all`` (which produces the current schema directly)
+or are seeded from the SQLite -> Postgres migration script (which also
+runs ``create_all`` against Postgres after copying rows).
 """
 
+import os
 import sqlite3
 
-from .config import SQLITE_FILE
+from .config import DATABASE_URL, SQLITE_FILE, database_dialect
 
 # Imported lazily inside ``run_pending_migrations`` to avoid a hard dependency
 # on the models package at import time (the package itself is loaded before
@@ -17,7 +23,11 @@ from .config import SQLITE_FILE
 
 
 def run_pending_migrations() -> None:
-    if not SQLITE_FILE.endswith(".db"):
+    # Only run for SQLite. Postgres deployments either start fresh or are
+    # seeded by the migration script, both of which produce a current schema.
+    if database_dialect() != "sqlite":
+        return
+    if not SQLITE_FILE.endswith(".db") or not os.path.exists(SQLITE_FILE):
         return
     from ..models.defaults import (
         DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,
@@ -50,6 +60,7 @@ def run_pending_migrations() -> None:
         cursor = conn.cursor()
 
         _migrate_chatmessage(cursor)
+        _migrate_chatrun(cursor)
         _migrate_user(
             cursor,
             mcp_call_method=DEFAULT_MCP_CALL_METHOD,
@@ -107,6 +118,19 @@ def _migrate_chatmessage(cursor: sqlite3.Cursor) -> None:
     _add_column(cursor, "chatmessage", "ai_config_id", "INTEGER", existing)
     _add_column(cursor, "chatmessage", "ai_kind", "TEXT DEFAULT 'assistant'", existing)
     _add_column(cursor, "chatmessage", "cache_read_tokens", "INTEGER", existing)
+
+
+def _migrate_chatrun(cursor: sqlite3.Cursor) -> None:
+    # ``heartbeat_at`` was added when ai-runtime was split out; older SQLite
+    # files predate it. The watchdog checks this column to reap dead runs.
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='chatrun'"
+    )
+    if not cursor.fetchone():
+        return
+    existing = _existing_columns(cursor, "chatrun")
+    _add_column(cursor, "chatrun", "heartbeat_at", "REAL", existing)
+    _add_column(cursor, "chatrun", "worker_kwargs_json", "TEXT", existing)
 
 
 def _migrate_user(
