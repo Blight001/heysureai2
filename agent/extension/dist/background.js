@@ -3411,6 +3411,8 @@
   // src/lib/types.ts
   var SETTING_DEFAULTS = {
     serverUrl: "http://localhost:3000",
+    agentServerUrl: "",
+    lastWorkingAgentUrl: "",
     agentToken: "",
     agentId: "",
     agentName: "Browser Agent",
@@ -5739,6 +5741,8 @@ Always:
   var taskOutcomes = /* @__PURE__ */ new Map();
   var popupPorts = /* @__PURE__ */ new Set();
   var _machineId = null;
+  var connecting = false;
+  var activeSocketUrl = null;
   async function withTaskTimeout(promise, ms, label) {
     let timer = null;
     try {
@@ -5805,9 +5809,100 @@ Always:
     _machineId = id;
     return id;
   }
+  function buildAgentCandidates(serverUrl, override, cached) {
+    const list = [];
+    const push = (raw) => {
+      const trimmed = String(raw || "").trim();
+      if (!trimmed)
+        return;
+      try {
+        const u = new URL(trimmed);
+        const href = u.href.replace(/\/+$/, "");
+        if (!list.includes(href))
+          list.push(href);
+      } catch {
+      }
+    };
+    if (override.trim()) {
+      push(override);
+      return list;
+    }
+    push(cached);
+    push(serverUrl);
+    try {
+      const base = new URL(serverUrl);
+      for (const port of ["3002", "3001"]) {
+        const alt = new URL(base.href);
+        alt.port = port;
+        push(alt.href);
+      }
+    } catch {
+    }
+    return list;
+  }
+  function probeRegister(url2, timeoutMs) {
+    return new Promise((resolve) => {
+      const probe = lookup2(url2, {
+        transports: ["websocket"],
+        reconnection: false,
+        timeout: timeoutMs,
+        forceNew: true,
+        autoConnect: true
+      });
+      let settled = false;
+      const settle = (outcome) => {
+        if (settled)
+          return;
+        settled = true;
+        clearTimeout(timer);
+        if (outcome.kind === "registered") {
+          resolve(outcome);
+        } else {
+          try {
+            probe.removeAllListeners();
+            probe.disconnect();
+          } catch {
+          }
+          resolve(outcome);
+        }
+      };
+      const timer = setTimeout(() => settle({ kind: "failed", reason: "\u6CE8\u518C\u8D85\u65F6\uFF08\u65E0\u54CD\u5E94\uFF09" }), timeoutMs);
+      probe.on("connect", () => {
+        void emitRegisterOn(probe);
+      });
+      probe.on("connect_error", (err) => settle({ kind: "failed", reason: err?.message || "connect_error" }));
+      probe.on("disconnect", (reason) => settle({ kind: "failed", reason: `disconnected: ${reason}` }));
+      probe.on("agent:registered", () => settle({ kind: "registered", socket: probe }));
+      probe.on("agent:register_rejected", (data) => settle({ kind: "rejected", reason: data?.reason || "\u6CE8\u518C\u88AB\u670D\u52A1\u5668\u62D2\u7EDD" }));
+    });
+  }
+  async function emitRegisterOn(s) {
+    const settings = await getSettings();
+    const auth = await getAuth();
+    if (settings.offlineMode)
+      return;
+    const id = settings.agentId || await getMachineId();
+    const selectedAiConfigId = auth.token ? settings.selectedAiConfigId || null : null;
+    s.emit("agent:register", {
+      id,
+      aiConfigId: selectedAiConfigId,
+      name: settings.agentName || "Browser Agent",
+      group: settings.agentGroup || "",
+      platform: `browser-extension (${navigator?.userAgent?.split(" ").pop() || "chrome"})`,
+      os: { platform: "browser", arch: "unknown", release: "1.0", hostname: id },
+      capabilities: BROWSER_CAPABILITIES,
+      version: "1.0.0",
+      token: auth.token || settings.agentToken || "",
+      userId: auth.userId ?? null,
+      workspaceRoot: "",
+      lifecycle: "registered",
+      isWindowsDesktop: false,
+      isBrowserExtension: true
+    });
+  }
   async function connect() {
     const settings = await getSettings();
-    if (socket?.connected)
+    if (socket?.connected || connecting)
       return;
     if (settings.offlineMode) {
       log("system", "info", "\u79BB\u7EBF\u6A21\u5F0F\u5DF2\u5F00\u542F\uFF0C\u8DF3\u8FC7\u670D\u52A1\u5668\u8FDE\u63A5");
@@ -5819,9 +5914,8 @@ Always:
       log("system", "warn", "\u672A\u767B\u5F55\uFF0C\u5DF2\u963B\u6B62\u8FDE\u63A5\u670D\u52A1\u5668\uFF08\u8BF7\u5148\u767B\u5F55\u8D26\u53F7\uFF09");
       return;
     }
-    let url2;
     try {
-      url2 = new URL(settings.serverUrl);
+      new URL(settings.serverUrl);
     } catch {
       log("system", "error", "\u670D\u52A1\u5668 URL \u683C\u5F0F\u65E0\u6548");
       return;
@@ -5830,38 +5924,94 @@ Always:
       socket.removeAllListeners();
       socket.disconnect();
       socket = null;
+      activeSocketUrl = null;
     }
+    const candidates = buildAgentCandidates(
+      settings.serverUrl,
+      settings.agentServerUrl || "",
+      settings.lastWorkingAgentUrl || ""
+    );
+    if (!candidates.length) {
+      log("system", "error", "\u6CA1\u6709\u53EF\u7528\u7684 Agent \u670D\u52A1\u5668\u5730\u5740");
+      return;
+    }
+    connecting = true;
     setStatus("connecting");
-    log("system", "info", `\u8FDE\u63A5\u5230 ${url2.href}...`);
-    socket = lookup2(url2.href, {
-      transports: ["websocket"],
-      // XHR polling unavailable in service workers
-      reconnectionDelay: 2e3,
-      reconnectionAttempts: Infinity,
-      autoConnect: true
-    });
-    socket.on("connect", async () => {
+    try {
+      let winner = null;
+      let winnerUrl = "";
+      let rejected = null;
+      const failures = [];
+      for (const candidate of candidates) {
+        log("system", "info", `\u63A2\u6D4B Agent \u670D\u52A1\u5668: ${candidate}`);
+        const outcome = await probeRegister(candidate, 6e3);
+        if (outcome.kind === "registered" && outcome.socket) {
+          winner = outcome.socket;
+          winnerUrl = candidate;
+          break;
+        }
+        if (outcome.kind === "rejected") {
+          rejected = outcome.reason || "\u6CE8\u518C\u88AB\u670D\u52A1\u5668\u62D2\u7EDD";
+          break;
+        }
+        failures.push({ url: candidate, reason: outcome.reason || "\u672A\u77E5\u5931\u8D25" });
+      }
+      if (rejected) {
+        setStatus("error", rejected);
+        log("system", "error", `\u6CE8\u518C\u88AB\u62D2\u7EDD: ${rejected}`);
+        return;
+      }
+      if (!winner) {
+        setStatus("error", "\u65E0\u6CD5\u8FDE\u63A5\u5230 Agent \u670D\u52A1\u5668");
+        log(
+          "system",
+          "error",
+          `\u65E0\u6CD5\u8FDE\u63A5\u5230 Agent \u670D\u52A1\u5668\uFF0C\u5C1D\u8BD5\u8FC7\uFF1A
+${failures.map((f) => `\xB7 ${f.url} \u2014 ${f.reason}`).join("\n")}
+\u8BF7\u68C0\u67E5\u670D\u52A1\u5668\u662F\u5426\u542F\u52A8\uFF1B\u5982\u670D\u52A1\u7AEF\u62C6\u5206\u90E8\u7F72\uFF0C\u8BF7\u5728\u8BBE\u7F6E\u4E2D\u586B\u5199 Agent \u670D\u52A1\u5668 URL\uFF08\u5982 http://your-host:3002\uFF09\u3002`,
+          failures
+        );
+        return;
+      }
+      winner.removeAllListeners();
+      socket = winner;
+      activeSocketUrl = winnerUrl;
+      setStatus("registered");
+      log("system", "success", `\u5DF2\u8FDE\u63A5\u5E76\u6CE8\u518C\u5230 ${winnerUrl}`);
+      if (settings.lastWorkingAgentUrl !== winnerUrl) {
+        await saveSettings({ lastWorkingAgentUrl: winnerUrl });
+      }
+      attachOperationalListeners(socket, settings.agentName || "Browser Agent");
+    } finally {
+      connecting = false;
+    }
+  }
+  function attachOperationalListeners(s, agentName) {
+    s.io.reconnection(true);
+    s.io.reconnectionDelay(2e3);
+    s.io.reconnectionAttempts(Infinity);
+    s.on("connect", async () => {
       setStatus("connected");
       log("system", "info", "\u5DF2\u8FDE\u63A5\u5230\u670D\u52A1\u5668");
       await register();
     });
-    socket.on("disconnect", (reason) => {
+    s.on("disconnect", (reason) => {
       setStatus("disconnected", reason);
       log("system", "warn", `\u8FDE\u63A5\u65AD\u5F00: ${reason}`);
     });
-    socket.on("connect_error", (err) => {
+    s.on("connect_error", (err) => {
       setStatus("error", err.message);
       log("system", "error", `\u8FDE\u63A5\u5931\u8D25: ${err.message}`);
     });
-    socket.on("agent:registered", (data) => {
+    s.on("agent:registered", (data) => {
       setStatus("registered");
-      log("system", "success", `\u5DF2\u6CE8\u518C: ${data?.name || settings.agentName}`);
+      log("system", "success", `\u5DF2\u6CE8\u518C: ${data?.name || agentName}`);
     });
-    socket.on("agent:register_rejected", (data) => {
+    s.on("agent:register_rejected", (data) => {
       setStatus("error", data?.reason);
       log("system", "error", `\u6CE8\u518C\u88AB\u62D2\u7EDD: ${data?.reason}`);
     });
-    socket.on("task:dispatch", (task) => {
+    s.on("task:dispatch", (task) => {
       void handleTask(task);
     });
   }
@@ -5872,36 +6022,20 @@ Always:
       log("system", "info", "\u79BB\u7EBF\u6A21\u5F0F\u5DF2\u5F00\u542F\uFF0C\u8DF3\u8FC7\u6CE8\u518C");
       return;
     }
-    const id = settings.agentId || await getMachineId();
+    if (!socket)
+      return;
     const selectedAiConfigId = auth.token ? settings.selectedAiConfigId || null : null;
     if (!auth.token && settings.selectedAiConfigId) {
       await saveSettings({ selectedAiConfigId: null });
       log("system", "warn", "\u672A\u767B\u5F55\uFF0C\u5DF2\u53D6\u6D88 AI \u6210\u5458\u81EA\u52A8\u6CE8\u518C\u9009\u62E9");
     }
     log("system", "info", `\u6CE8\u518C agent (AI=${selectedAiConfigId ?? "\u672A\u9009\u62E9"})`);
-    socket?.emit("agent:register", {
-      id,
-      aiConfigId: selectedAiConfigId,
-      name: settings.agentName || "Browser Agent",
-      group: settings.agentGroup || "",
-      platform: `browser-extension (${navigator?.userAgent?.split(" ").pop() || "chrome"})`,
-      os: { platform: "browser", arch: "unknown", release: "1.0", hostname: id },
-      capabilities: BROWSER_CAPABILITIES,
-      version: "1.0.0",
-      // The server requires a valid user JWT here. Falling back to the
-      // legacy agentToken shared secret only matters in deployments that set
-      // AGENT_TOKEN explicitly.
-      token: auth.token || settings.agentToken || "",
-      userId: auth.userId ?? null,
-      workspaceRoot: "",
-      lifecycle: "registered",
-      isWindowsDesktop: false,
-      isBrowserExtension: true
-    });
+    await emitRegisterOn(socket);
   }
   function disconnect() {
     socket?.disconnect();
     socket = null;
+    activeSocketUrl = null;
     setStatus("disconnected");
   }
   async function refreshServerAiSelectionOnStartup() {
@@ -5988,13 +6122,47 @@ Always:
       return { success: false, error: "URL \u683C\u5F0F\u65E0\u6548" };
     }
     const base = url2.href.replace(/\/$/, "");
+    let httpResult = null;
     try {
       const start = Date.now();
-      const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5e3) }).catch(() => fetch(base, { signal: AbortSignal.timeout(5e3) }));
-      return { success: true, status: res.status, ms: Date.now() - start };
+      const res = await fetch(`${base}/`, { signal: AbortSignal.timeout(5e3) }).catch(() => fetch(base, { signal: AbortSignal.timeout(5e3) }));
+      httpResult = { success: true, status: res.status, ms: Date.now() - start };
     } catch (err) {
-      return { success: false, error: err.message };
+      httpResult = { success: false, error: err.message };
     }
+    const candidates = buildAgentCandidates(
+      settings.serverUrl,
+      settings.agentServerUrl || "",
+      settings.lastWorkingAgentUrl || ""
+    );
+    const auth = await getAuth();
+    const agentProbes = [];
+    let agentOkUrl = "";
+    if (auth.token) {
+      for (const candidate of candidates) {
+        const outcome = await probeRegister(candidate, 5e3);
+        if (outcome.kind === "registered") {
+          agentProbes.push({ url: candidate, ok: true });
+          agentOkUrl = candidate;
+          try {
+            outcome.socket?.removeAllListeners();
+            outcome.socket?.disconnect();
+          } catch {
+          }
+          break;
+        }
+        agentProbes.push({ url: candidate, ok: false, reason: outcome.reason });
+        if (outcome.kind === "rejected")
+          break;
+      }
+    }
+    return {
+      success: httpResult.success,
+      http: httpResult,
+      agentProbes,
+      agentOkUrl,
+      needsLogin: !auth.token
+    };
   }
   var CHAT_SYSTEM = `You are HeySure AI, a browser automation assistant running as a Chrome extension.
 You can navigate pages, click, double-click, right-click, type, drag, press keys, scroll, take
@@ -6117,7 +6285,7 @@ Respond in the same language as the user. For factual questions, search the web 
         }
         case "auth:logout": {
           disconnect();
-          await saveSettings({ selectedAiConfigId: null });
+          await saveSettings({ selectedAiConfigId: null, lastWorkingAgentUrl: "" });
           break;
         }
         case "settings:get": {
@@ -6126,9 +6294,23 @@ Respond in the same language as the user. For factual questions, search the web 
           break;
         }
         case "settings:save": {
-          await saveSettings(msg.payload);
-          if (msg.payload.offlineMode === true && socket?.connected) {
+          const prev = await getSettings();
+          const payload = { ...msg.payload };
+          const serverUrlChanged = payload.serverUrl !== void 0 && payload.serverUrl !== prev.serverUrl;
+          const agentUrlChanged = payload.agentServerUrl !== void 0 && payload.agentServerUrl !== prev.agentServerUrl;
+          if ((serverUrlChanged || agentUrlChanged) && payload.lastWorkingAgentUrl === void 0) {
+            payload.lastWorkingAgentUrl = "";
+          }
+          await saveSettings(payload);
+          if (payload.offlineMode === true && socket?.connected) {
             disconnect();
+          }
+          if ((serverUrlChanged || agentUrlChanged) && socket) {
+            const wasConnected = !!socket;
+            disconnect();
+            if (wasConnected && !payload.offlineMode) {
+              void connect();
+            }
           }
           break;
         }

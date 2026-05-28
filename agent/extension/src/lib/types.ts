@@ -2,6 +2,14 @@ export type AgentStatus = 'disconnected' | 'connecting' | 'connected' | 'registe
 
 export interface AgentSettings {
   serverUrl:    string
+  // Optional manual override for the agent Socket.IO endpoint.
+  // When the server is split (api-gateway + connector-runtime) the agent
+  // socket lives on a different port/host than the HTTP API. Empty means
+  // auto-detect: try serverUrl first, then common alternatives.
+  agentServerUrl: string
+  // Cached URL that successfully registered last time. Used as the first
+  // probe candidate so reconnects don't re-scan after the topology is known.
+  lastWorkingAgentUrl: string
   agentToken:   string
   agentId:      string
   agentName:    string
@@ -18,6 +26,8 @@ export interface AgentSettings {
 
 export const SETTING_DEFAULTS: AgentSettings = {
   serverUrl:   'http://localhost:3000',
+  agentServerUrl:      '',
+  lastWorkingAgentUrl: '',
   agentToken:  '',
   agentId:     '',
   agentName:   'Browser Agent',

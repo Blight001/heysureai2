@@ -93,6 +93,7 @@ const testConnBtn  = $('test-conn-btn')
 const testResult   = $('test-result')
 const saveFeedback = $('save-feedback')
 const cfgServer    = $('cfg-server')  as HTMLInputElement
+const cfgAgentServer = $('cfg-agent-server') as HTMLInputElement
 const cfgAiKey     = $('cfg-ai-key')  as HTMLInputElement
 const cfgAiBase    = $('cfg-ai-base') as HTMLInputElement
 const cfgAiModel   = $('cfg-ai-model') as HTMLInputElement
@@ -1336,6 +1337,7 @@ function loadSettings(s: AgentSettings) {
   serverUrl = s.serverUrl || ''
   selectedMemberId = s.selectedAiConfigId || null
   cfgServer.value   = s.serverUrl   || ''
+  cfgAgentServer.value = s.agentServerUrl || ''
   cfgAiKey.value    = s.aiKey       || ''
   cfgAiBase.value   = s.aiBaseUrl   || ''
   cfgAiModel.value  = s.aiModel     || ''
@@ -1379,13 +1381,14 @@ cfgMouseFx.addEventListener('change', () => {
 
 $('save-btn')!.addEventListener('click', () => {
   const payload: Partial<AgentSettings> = {
-    serverUrl:   cfgServer.value.trim(),
-    aiKey:       cfgAiKey.value.trim(),
-    aiBaseUrl:   cfgAiBase.value.trim() || 'https://api.anthropic.com',
-    aiModel:     cfgAiModel.value.trim() || 'claude-sonnet-4-5',
-    autoConnect: cfgAutoConn.checked,
-    offlineMode: cfgOfflineMode.checked,
-    mouseFx:     cfgMouseFx.checked,
+    serverUrl:      cfgServer.value.trim(),
+    agentServerUrl: cfgAgentServer.value.trim(),
+    aiKey:          cfgAiKey.value.trim(),
+    aiBaseUrl:      cfgAiBase.value.trim() || 'https://api.anthropic.com',
+    aiModel:        cfgAiModel.value.trim() || 'claude-sonnet-4-5',
+    autoConnect:    cfgAutoConn.checked,
+    offlineMode:    cfgOfflineMode.checked,
+    mouseFx:        cfgMouseFx.checked,
   }
   serverUrl = payload.serverUrl || ''
   offlineMode = !!payload.offlineMode
@@ -1463,9 +1466,26 @@ function initPort() {
         break
       }
       case 'connection:result': {
-        const r = msg.result
-        testResult.textContent = r.success ? `✓ ${r.status} · ${r.ms}ms` : `✗ ${r.error}`
-        testResult.className   = `test-result ${r.success ? 'ok' : 'fail'}`
+        const r = msg.result || {}
+        const http = r.http || (typeof r.status !== 'undefined' ? r : null)
+        const lines: string[] = []
+        if (http) {
+          lines.push(http.success
+            ? `HTTP ✓ ${http.status} · ${http.ms}ms`
+            : `HTTP ✗ ${http.error}`)
+        }
+        if (Array.isArray(r.agentProbes) && r.agentProbes.length) {
+          for (const p of r.agentProbes) {
+            lines.push(p.ok ? `Agent ✓ ${p.url}` : `Agent ✗ ${p.url} — ${p.reason || ''}`)
+          }
+          if (r.agentOkUrl) lines.push(`将连接到：${r.agentOkUrl}`)
+        } else if (r.needsLogin) {
+          lines.push('Agent: 未登录，跳过探测')
+        }
+        const ok = !!(http?.success && (!r.agentProbes?.length || r.agentOkUrl))
+        testResult.textContent = lines.join('\n') || (ok ? '✓ 已连接' : '✗ 未连接')
+        testResult.className = `test-result ${ok ? 'ok' : 'fail'}`
+        ;(testResult as HTMLElement).style.whiteSpace = 'pre-line'
         break
       }
       case 'card:progress': {
