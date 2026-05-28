@@ -1,13 +1,17 @@
 IS_ROUTER_ENTRY = False
 
+import asyncio
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Depends, Header, HTTPException
 from sqlmodel import Session, select
 
+from api.core.config import CONNECTOR_RUNTIME_URL
 from api.database import get_session
 from api.integrations.feishu.long_connection import get_feishu_long_connection_state
+from api.integrations.qq.long_connection import get_qq_long_connection_state
+from api.runtime.internal_http import InternalClient
 from api.models import (
     AITaskJob,
     AIRuntimeStatus,
@@ -23,6 +27,47 @@ from api.services.ai_service import ensure_default_ai_for_user
 from api.services.model_presets import resolve_model_preset
 from api.services.task_system import decode_task_payload, parse_generation_from_session_id
 from .ai_base import router
+
+
+def _load_connector_runtime_bot_statuses() -> Tuple[Dict[str, Dict[int, Dict[str, str]]], Optional[str]]:
+    if not CONNECTOR_RUNTIME_URL:
+        return {"feishu": {}, "qq": {}}, None
+    client = InternalClient(CONNECTOR_RUNTIME_URL, timeout=8.0)
+    try:
+        payload = client.get("/internal/bot/statuses")
+    except Exception as exc:
+        return {"feishu": {}, "qq": {}}, str(exc)
+    finally:
+        client.close()
+
+    feishu_statuses: Dict[int, Dict[str, str]] = {}
+    qq_statuses: Dict[int, Dict[str, str]] = {}
+    if isinstance(payload, dict):
+        for raw_id, state in (payload.get("feishu_statuses") or {}).items():
+            try:
+                config_id = int(raw_id)
+            except Exception:
+                continue
+            if isinstance(state, dict):
+                feishu_statuses[config_id] = {
+                    "status": str(state.get("status") or "failed"),
+                    "mode": str(state.get("mode") or "long_connection"),
+                    "label": str(state.get("label") or ""),
+                    "message": str(state.get("message") or ""),
+                }
+        for raw_id, state in (payload.get("qq_statuses") or {}).items():
+            try:
+                config_id = int(raw_id)
+            except Exception:
+                continue
+            if isinstance(state, dict):
+                qq_statuses[config_id] = {
+                    "status": str(state.get("status") or "failed"),
+                    "mode": str(state.get("mode") or "long_connection"),
+                    "label": str(state.get("label") or ""),
+                    "message": str(state.get("message") or ""),
+                }
+    return {"feishu": feishu_statuses, "qq": qq_statuses}, None
 
 
 @router.post("/configs/{config_id}/clear-tokens")
@@ -319,6 +364,8 @@ async def list_ai_cards(
             schedule_at = 0.0
         return (schedule_at if schedule_at > 0 else float("inf"), -_task_activity_ts(item))
 
+    remote_bot_statuses, remote_status_error = await asyncio.to_thread(_load_connector_runtime_bot_statuses)
+
     def _build_feishu_status(cfg: AssistantAIConfig) -> Dict[str, str]:
         if str(cfg.bot_channel or "feishu").strip().lower() != "feishu":
             return {"status": "disabled", "mode": "off", "label": "未启用", "message": "当前机器人类型不是飞书"}
@@ -335,7 +382,16 @@ async def list_ai_cards(
                     "label": "失败",
                     "message": "App ID / Secret 配置不完整",
                 }
-            state = get_feishu_long_connection_state(int(cfg.id or 0))
+            state = remote_bot_statuses.get("feishu", {}).get(int(cfg.id or 0))
+            if state is None:
+                if CONNECTOR_RUNTIME_URL and remote_status_error:
+                    return {
+                        "status": "failed",
+                        "mode": "long_connection",
+                        "label": "失败",
+                        "message": f"connector-runtime 状态不可用: {remote_status_error}",
+                    }
+                state = get_feishu_long_connection_state(int(cfg.id or 0))
             return {
                 "status": state.get("status") or "failed",
                 "mode": "long_connection",
@@ -347,9 +403,9 @@ async def list_ai_cards(
                 "status": "success",
                 "mode": "webhook",
                 "label": "成功",
-                "message": "Webhook 发送配置已完成",
+                "message": "仅通知发送配置已完成",
             }
-        return {"status": "failed", "mode": "none", "label": "失败", "message": "未配置 App ID/Secret 或 Webhook URL"}
+        return {"status": "failed", "mode": "none", "label": "失败", "message": "未配置 App ID/Secret 或 仅通知 URL"}
 
     def _build_qq_status(cfg: AssistantAIConfig) -> Dict[str, str]:
         if str(cfg.bot_channel or "feishu").strip().lower() != "qq":
@@ -361,16 +417,28 @@ async def list_ai_cards(
         if not app_id or not app_secret:
             return {
                 "status": "failed",
-                "mode": "webhook",
+                "mode": "long_connection",
                 "label": "失败",
                 "message": "App ID / Secret 配置不完整",
             }
-        mode = "sandbox_webhook" if bool(cfg.qq_sandbox) else "webhook"
+        state = remote_bot_statuses.get("qq", {}).get(int(cfg.id or 0))
+        if state is None:
+            if CONNECTOR_RUNTIME_URL and remote_status_error:
+                return {
+                    "status": "failed",
+                    "mode": "long_connection",
+                    "label": "失败",
+                    "message": f"connector-runtime 状态不可用: {remote_status_error}",
+                }
+            state = get_qq_long_connection_state(int(cfg.id or 0))
+        label = "成功" if state.get("status") == "success" and "启动中" not in str(state.get("message") or "") else "失败"
+        if "启动中" in str(state.get("message") or ""):
+            label = "启动中"
         return {
-            "status": "pending",
-            "mode": mode,
-            "label": "待回调",
-            "message": "QQ 使用 Webhook 回调，不会建立长连接；接收消息需要在 QQ 开放平台配置公网 HTTPS 回调 /api/qq/events/{AI配置ID}，端口只能使用 80、443、8080、8443，并订阅 C2C/群聊/频道消息事件",
+            "status": state.get("status") or "failed",
+            "mode": "long_connection",
+            "label": label,
+            "message": state.get("message") or "botpy 长连接未运行",
         }
 
     cards = []
@@ -447,6 +515,7 @@ async def list_ai_cards(
                 "description": cfg.description,
                 "model": effective_model or cfg.model,
                 "model_preset_id": cfg.model_preset_id,
+                "strip_markdown_symbols": cfg.strip_markdown_symbols,
                 "ai_role": cfg.ai_role,
                 "digital_member_role": cfg.digital_member_role,
                 "platform": cfg.platform,

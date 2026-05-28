@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 
 from api.database import get_session
 from api.integrations.feishu.long_connection import start_feishu_long_connection_clients
+from api.integrations.qq.long_connection import start_qq_long_connection_clients
 from api.mcp.permissions import clamp_tools_json, config_role_tier
 from api.models import (
     AIRuntimeStatus,
@@ -97,6 +98,7 @@ async def create_ai_config(
         model=model_fields["model"],
         model_preset_id=model_fields["model_preset_id"],
         prompt=body.prompt or "",
+        strip_markdown_symbols=bool(body.strip_markdown_symbols),
         ai_role=role,
         digital_member_role=member_role,
         platform=body.platform or "Server-Core",
@@ -117,7 +119,7 @@ async def create_ai_config(
         qq_enabled=bool(body.qq_enabled) and bot_channel == "qq",
         qq_app_id=body.qq_app_id or "",
         qq_app_secret=body.qq_app_secret or "",
-        qq_sandbox=body.qq_sandbox if body.qq_sandbox is not None else True,
+        qq_sandbox=body.qq_sandbox if body.qq_sandbox is not None else False,
         qq_default_target_id=body.qq_default_target_id or "",
         qq_default_target_type=body.qq_default_target_type or "c2c",
         project_id=body.project_id,
@@ -136,6 +138,10 @@ async def create_ai_config(
         start_feishu_long_connection_clients()
     except Exception as exc:
         print(f"[start_feishu_long_connection_clients] {exc}")
+    try:
+        start_qq_long_connection_clients()
+    except Exception as exc:
+        print(f"[start_qq_long_connection_clients] {exc}")
     return cfg
 
 @router.put("/configs/{config_id}")
@@ -190,6 +196,10 @@ async def update_ai_config(
         start_feishu_long_connection_clients()
     except Exception as exc:
         print(f"[start_feishu_long_connection_clients] {exc}")
+    try:
+        start_qq_long_connection_clients()
+    except Exception as exc:
+        print(f"[start_qq_long_connection_clients] {exc}")
 
     status = session.exec(
         select(AIRuntimeStatus).where(

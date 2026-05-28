@@ -37,6 +37,7 @@ class AssistantAIConfig(SQLModel, table=True):
     model: str = Field(default="")
     model_preset_id: str = Field(default="", index=True)
     prompt: str = Field(default="")
+    strip_markdown_symbols: bool = Field(default=False)
 
     ai_role: str = Field(default="digital_member", index=True)  # assistant_admin / digital_member
     digital_member_role: str = Field(default="member")  # manager / member
@@ -91,6 +92,7 @@ class AssistantAIConfigCreate(SQLModel):
     model: Optional[str] = ""
     model_preset_id: Optional[str] = ""
     prompt: Optional[str] = ""
+    strip_markdown_symbols: Optional[bool] = False
     ai_role: Optional[str] = "digital_member"
     digital_member_role: Optional[str] = "member"
     is_librarian: Optional[bool] = False
@@ -136,6 +138,7 @@ class AssistantAIConfigUpdate(SQLModel):
     model: Optional[str] = None
     model_preset_id: Optional[str] = None
     prompt: Optional[str] = None
+    strip_markdown_symbols: Optional[bool] = None
     ai_role: Optional[str] = None
     digital_member_role: Optional[str] = None
     is_librarian: Optional[bool] = None

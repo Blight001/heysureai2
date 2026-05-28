@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { stripMarkdownFormatting } from '@/utils/chatMarkdown'
 
 const props = defineProps<{
   text: string
+  plainTextMode?: boolean
 }>()
 
 const escapeHtml = (raw: string) => String(raw || '')
@@ -154,10 +156,12 @@ const renderBlocks = (raw: string) => {
 }
 
 const renderedHtml = computed(() => renderBlocks(props.text))
+const plainTextContent = computed(() => stripMarkdownFormatting(props.text))
 </script>
 
 <template>
-  <div class="markdown-text" v-html="renderedHtml"></div>
+  <div v-if="!props.plainTextMode" class="markdown-text" v-html="renderedHtml"></div>
+  <div v-else class="markdown-text markdown-text-plain">{{ plainTextContent }}</div>
 </template>
 
 <style scoped>
@@ -165,6 +169,12 @@ const renderedHtml = computed(() => renderBlocks(props.text))
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.markdown-text-plain {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .markdown-text :deep(p) {

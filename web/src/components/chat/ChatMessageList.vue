@@ -22,6 +22,7 @@ defineProps<{
   actionResultsBySignature: Record<string, string>
   isTyping: boolean
   thinkingText?: string
+  stripMarkdownSymbols?: boolean
   isEmpty: boolean
   readonly?: boolean
   thinkingIcon?: string
@@ -44,8 +45,8 @@ const emit = defineEmits<{
       <span class="text-4xl">💭</span>
       <span class="text-sm">开始一场智慧的碰撞吧...</span>
     </div>
-    
-    <TransitionGroup name="fade" tag="div" class="space-y-4">
+
+    <div class="space-y-4">
       <ChatMessage 
         v-for="(msg, idx) in messages" 
         :key="msg.id !== undefined ? `msg-${msg.id}` : `tmp-${idx}`" 
@@ -56,6 +57,7 @@ const emit = defineEmits<{
         :actionResultsBySignature="actionResultsBySignature"
         :idx="idx"
         :readonly="readonly"
+        :plainTextMode="stripMarkdownSymbols"
         :thinkingIcon="thinkingIcon"
         :mcpIcon="mcpIcon"
         :mcpSuccessIcon="mcpSuccessIcon"
@@ -65,8 +67,8 @@ const emit = defineEmits<{
         @apply="(msgIdx, blockIdx) => emit('apply', msgIdx, blockIdx)"
         @revert="(msgIdx, blockIdx) => emit('revert', msgIdx, blockIdx)"
       />
-    </TransitionGroup>
+    </div>
 
-    <TypingIndicator :isTyping="isTyping" :thinkingText="thinkingText" />
+    <TypingIndicator :isTyping="isTyping" :thinkingText="thinkingText" :plainTextMode="stripMarkdownSymbols" />
   </div>
 </template>

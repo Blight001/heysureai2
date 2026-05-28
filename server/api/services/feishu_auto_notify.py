@@ -5,7 +5,9 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from ..chat_runtime.mcp_parser import MCP_CALL_BLOCK_RE
+from ..integrations.feishu.service import normalize_feishu_text
 from ..integrations.feishu.service import send_feishu_text_message
+from ..integrations.qq.service import normalize_qq_text
 from ..integrations.qq.service import send_qq_text_message
 from ..models import ChatMessage, FeishuSessionRoute, QQSessionRoute, User
 
@@ -188,6 +190,32 @@ def _user_ui_icons(session: Session, user_id: int) -> dict[str, str]:
     }
 
 
+def _plain_text_output_enabled(session: Session, user_id: int) -> bool:
+    user = session.get(User, int(user_id))
+    value = getattr(user, "ui_plain_text_output_enabled", False)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"0", "false", "off", "no"}:
+        return False
+    if text in {"1", "true", "on", "yes"}:
+        return True
+    return bool(value)
+
+
+def _format_bot_content(session: Session, message: ChatMessage, content: str, channel: str) -> str:
+    raw = str(content or "")
+    if not raw:
+        return ""
+    if not _plain_text_output_enabled(session, int(message.user_id)):
+        return raw.strip()
+    if channel == "qq":
+        return normalize_qq_text(raw, strip_markdown=True)
+    return normalize_feishu_text(raw, strip_markdown=True)
+
+
 def _mcp_tool_icon_for_message(row: ChatMessage, icons: dict[str, str]) -> str:
     text = str(row.content or "")
     status_match = re.search(r"^状态[：:]\s*(.+)$", text, flags=re.MULTILINE)
@@ -252,6 +280,7 @@ def notify_saved_assistant_message(session: Session, message: ChatMessage) -> No
             return
         prefix = _feishu_assistant_prefix(session, message)
         content = f"{prefix}{content}" if prefix else content
+        content = _format_bot_content(session, message, content, "qq")
         msg_seq = max(1, int(route.next_msg_seq or 1))
         try:
             send_qq_text_message(
@@ -279,6 +308,7 @@ def notify_saved_assistant_message(session: Session, message: ChatMessage) -> No
         return
     prefix = _feishu_assistant_prefix(session, message)
     content = f"{prefix}{content}" if prefix else content
+    content = _format_bot_content(session, message, content, "feishu")
     for start in range(0, len(content), FEISHU_TEXT_MAX_CHARS):
         chunk = content[start:start + FEISHU_TEXT_MAX_CHARS].strip()
         if not chunk:

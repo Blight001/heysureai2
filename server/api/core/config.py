@@ -29,6 +29,19 @@ def database_dialect() -> str:
         return "postgresql"
     return "sqlite"
 
+
+def psycopg_dsn() -> str:
+    """Return a libpq-compatible Postgres URL for psycopg.
+
+    SQLAlchemy accepts URLs like ``postgresql+psycopg://...``. psycopg's own
+    connect API does not, so we normalize the driver suffix away here.
+    """
+    if DATABASE_URL.lower().startswith("postgresql+"):
+        return "postgresql://" + DATABASE_URL.split("://", 1)[1]
+    if DATABASE_URL.lower().startswith("postgres+"):
+        return "postgresql://" + DATABASE_URL.split("://", 1)[1]
+    return DATABASE_URL
+
 USER_WORKSPACE_SUBFOLDERS = (
     "Valhalla",
     "BrainCore",

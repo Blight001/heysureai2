@@ -99,6 +99,7 @@ export const useDashboardSystemSettings = (options: UseDashboardSystemSettingsOp
   const themeMode = ref<ThemeMode>('dark')
   const fontSize = ref<FontSize>('md')
   const brainViewMode = ref<BrainViewMode>('sections')
+  const plainTextOutputEnabled = ref(false)
   const thinkingIcon = ref('🤔')
   const mcpIcon = ref('🧰')
   const mcpSuccessIcon = ref('🧰')
@@ -320,6 +321,7 @@ Rules:
         ui_theme_mode: themeMode.value,
         ui_font_size: fontSize.value,
         ui_brain_view_mode: brainViewMode.value,
+        ui_plain_text_output_enabled: plainTextOutputEnabled.value,
         ui_thinking_icon: thinkingIcon.value,
         ui_mcp_icon: mcpSuccessIcon.value,
         ui_mcp_success_icon: mcpSuccessIcon.value,
@@ -374,6 +376,9 @@ Rules:
       if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_brain_view_mode')) {
         const rawMode = String(rawUser.ui_brain_view_mode ?? '').toLowerCase()
         brainViewMode.value = rawMode === 'all' ? 'all' : 'sections'
+      }
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_plain_text_output_enabled')) {
+        plainTextOutputEnabled.value = settingEnabled(rawUser.ui_plain_text_output_enabled, false)
       }
       if (Object.prototype.hasOwnProperty.call(rawUser, 'ui_thinking_icon')) {
         thinkingIcon.value = String(rawUser.ui_thinking_icon || '🤔')
@@ -479,6 +484,7 @@ Rules:
     themeMode,
     fontSize,
     brainViewMode,
+    plainTextOutputEnabled,
     thinkingIcon,
     mcpSuccessIcon,
     mcpErrorIcon,

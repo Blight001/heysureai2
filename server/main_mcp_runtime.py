@@ -12,6 +12,11 @@ import os
 
 import uvicorn
 
+
+# Force the MCP worker role before importing the api package so any shared
+# Socket.IO helpers stay in proxy mode instead of binding a local server.
+os.environ.setdefault("HEYSURE_SERVICE_ROLE", "mcp")
+
 from api.runtime.mcp_service import create_app
 
 app = create_app()

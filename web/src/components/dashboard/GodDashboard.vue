@@ -56,6 +56,7 @@ const {
   themeMode,
   fontSize,
   brainViewMode,
+  plainTextOutputEnabled,
   thinkingIcon,
   mcpSuccessIcon,
   mcpErrorIcon,
@@ -691,6 +692,7 @@ onUnmounted(() => {
       v-model:thinkingIconEnabled="thinkingIconEnabled"
       v-model:mcpSuccessIconEnabled="mcpSuccessIconEnabled"
       v-model:mcpErrorIconEnabled="mcpErrorIconEnabled"
+      v-model:plainTextOutputEnabled="plainTextOutputEnabled"
       v-model:tavilyApiKey="tavilyApiKey"
       v-model:modelPresets="modelPresets"
       v-model:mcpMaxSteps="mcpMaxSteps"

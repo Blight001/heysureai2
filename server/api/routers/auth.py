@@ -164,9 +164,13 @@ async def update_profile(
         "ui_thinking_icon_enabled",
         "ui_mcp_success_icon_enabled",
         "ui_mcp_error_icon_enabled",
+        "ui_plain_text_output_enabled",
     }:
         if enabled_key in update_data:
-            update_data[enabled_key] = _parse_bool_setting(update_data.get(enabled_key), True)
+            update_data[enabled_key] = _parse_bool_setting(
+                update_data.get(enabled_key),
+                False if enabled_key == "ui_plain_text_output_enabled" else True,
+            )
     for icon_key, fallback in {
         "ui_thinking_icon": "🤔",
         "ui_mcp_icon": "🧰",

@@ -2,6 +2,7 @@
 import InlineContent from './InlineContent.vue'
 import type { InlineContent as InlineContentType } from '@/utils/chatParser'
 import { computed, ref } from 'vue'
+import { stripMarkdownFormatting } from '@/utils/chatMarkdown'
 
 const emit = defineEmits<{
   (e: 'delete', idx: number): void
@@ -26,6 +27,7 @@ const props = defineProps<{
   actionResultsBySignature: Record<string, string>
   idx: number
   readonly?: boolean
+  plainTextMode?: boolean
   thinkingIcon?: string
   mcpIcon?: string
   mcpSuccessIcon?: string
@@ -129,6 +131,12 @@ const normalizedInlineContent = computed<InlineContentType[]>(() => {
 const frontPromptDetailsText = computed(() => {
   return String(props.message.front_prompt_details || '')
 })
+
+const renderedThinkText = computed(() => {
+  const think = String(props.message.think || '')
+  if (!props.plainTextMode) return think
+  return stripMarkdownFormatting(think)
+})
 </script>
 
 <template>
@@ -141,20 +149,19 @@ const frontPromptDetailsText = computed(() => {
       :class="isPlainAssistantMessage ? 'sm:max-w-[92%]' : 'sm:max-w-[85%]'"
     >
       <!-- Think Block -->
-      <div v-if="props.message.think" class="mb-1">
+      <div v-if="renderedThinkText" class="mb-1">
         <details class="transition-all">
           <summary class="py-0.5 text-[11px] leading-4 text-zinc-500 font-medium cursor-pointer hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-300 transition-colors select-none">
             {{ props.thinkingIcon ? `${props.thinkingIcon} ` : '' }}深度思考
           </summary>
           <div class="pt-0.5 text-[11px] text-zinc-500 leading-snug italic dark:text-zinc-400 whitespace-pre-wrap">
-            {{ props.message.think }}
+            {{ renderedThinkText }}
           </div>
         </details>
       </div>
       
       <!-- Main Content -->
       <div
-        class="transition-all duration-300"
         :class="[
           isPlainAssistantMessage
             ? 'px-0 py-1 border-0 bg-transparent text-zinc-800 shadow-none hover:shadow-none dark:text-zinc-200'
@@ -278,6 +285,7 @@ const frontPromptDetailsText = computed(() => {
               :appliedSignatures="props.appliedSignatures"
               :actionResults="props.actionResults"
               :actionResultsBySignature="props.actionResultsBySignature"
+              :plainTextMode="props.plainTextMode"
               @apply="(blockIdx) => emit('apply', props.idx, blockIdx)"
               @revert="(blockIdx) => emit('revert', props.idx, blockIdx)"
             />

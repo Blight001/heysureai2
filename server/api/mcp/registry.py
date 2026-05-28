@@ -369,6 +369,30 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
                 "open_id": {"type": "string", "description": "Alias of receive_id."},
                 "target_id": {"type": "string", "description": "QQ target id alias."},
                 "target_type": {"type": "string", "enum": ["c2c", "group", "channel", "dm"], "description": "QQ target type."},
+                "qq_message_format": {
+                    "type": "string",
+                    "enum": ["text", "markdown"],
+                    "description": "QQ only. Use markdown to send QQ markdown payload instead of plain text.",
+                },
+                "markdown_content": {
+                    "type": "string",
+                    "description": "QQ markdown body. Used when qq_message_format=markdown.",
+                },
+                "markdown_template_id": {
+                    "type": "string",
+                    "description": "Optional QQ markdown template id for template-based markdown.",
+                },
+                "markdown_params": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string"},
+                            "values": {"type": "array", "items": {"type": "string"}},
+                        },
+                    },
+                    "description": "Optional QQ markdown template parameters.",
+                },
                 "media_url": {"type": "string", "description": "HTTP(S) URL of an image or video for the server to fetch and send."},
                 "media_path": {"type": "string", "description": "Server-local image or video path to send."},
                 "media_type": {"type": "string", "enum": ["image", "video"], "description": "Optional explicit media type."},

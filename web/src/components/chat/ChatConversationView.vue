@@ -40,6 +40,7 @@ const props = withDefaults(defineProps<{
   liveText?: string
   liveThinking?: string
   isTyping?: boolean
+  stripMarkdownSymbols?: boolean
   readonly?: boolean
   appliedEdits?: string[]
   appliedSignatures?: string[]
@@ -60,6 +61,7 @@ const props = withDefaults(defineProps<{
   liveText: '',
   liveThinking: '',
   isTyping: false,
+  stripMarkdownSymbols: false,
   readonly: false,
   appliedEdits: () => [],
   appliedSignatures: () => [],
@@ -435,6 +437,7 @@ const onRevert = (msgIdx: number, blockIdx: number) => {
     :actionResultsBySignature="mergedActionResultsBySignature"
     :isTyping="isTyping"
     :thinkingText="typingThinkingText"
+    :stripMarkdownSymbols="stripMarkdownSymbols"
     :isEmpty="renderMessages.length === 0"
     :readonly="readonly"
     :thinkingIcon="thinkingIcon"

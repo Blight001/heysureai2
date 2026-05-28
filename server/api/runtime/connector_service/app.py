@@ -29,6 +29,10 @@ from pydantic import BaseModel, Field
 
 from ...database import create_db_and_tables
 from ...integrations.feishu.long_connection import start_feishu_long_connection_clients
+from ...integrations.feishu.long_connection import get_feishu_long_connection_state
+from ...integrations.qq.long_connection import start_qq_long_connection_clients
+from ...integrations.qq.long_connection import get_qq_long_connection_state
+from ...models import AssistantAIConfig
 from ...sio import sio
 from ...socket_events import register_agent_socket_events
 from ..internal_http import require_internal_token
@@ -82,6 +86,17 @@ async def _lifespan(app: FastAPI):
             except asyncio.TimeoutError:
                 continue
 
+    async def _qq_keepalive() -> None:
+        while not stop_event.is_set():
+            try:
+                start_qq_long_connection_clients()
+            except Exception as exc:
+                print(f"[connector-runtime] qq keepalive failed: {exc}")
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=3.0)
+            except asyncio.TimeoutError:
+                continue
+
     async def _orphan_sweeper() -> None:
         # Periodic sweep — startup pass alone isn't enough for a process
         # that runs for days without a restart.
@@ -99,13 +114,14 @@ async def _lifespan(app: FastAPI):
                 print(f"[connector-runtime] periodic orphan sweep failed: {exc}")
 
     keepalive_task = asyncio.create_task(_feishu_keepalive())
+    qq_keepalive_task = asyncio.create_task(_qq_keepalive())
     sweep_task = asyncio.create_task(_orphan_sweeper())
-    print("[connector-runtime] ready (Socket.IO + /internal/* + feishu keepalive)")
+    print("[connector-runtime] ready (Socket.IO + /internal/* + feishu/qq keepalive)")
     try:
         yield
     finally:
         stop_event.set()
-        for task in (keepalive_task, sweep_task):
+        for task in (keepalive_task, qq_keepalive_task, sweep_task):
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
@@ -120,6 +136,27 @@ def create_app() -> FastAPI:
     def health() -> Dict[str, Any]:
         from ...sio import agents
         return {"ok": True, "agents": len(agents)}
+
+    @router.get("/bot/statuses")
+    def bot_statuses() -> Dict[str, Any]:
+        from sqlmodel import Session, select
+        from ...database import engine
+
+        feishu_statuses: Dict[str, Dict[str, str]] = {}
+        qq_statuses: Dict[str, Dict[str, str]] = {}
+        with Session(engine) as session:
+            configs = session.exec(select(AssistantAIConfig)).all()
+        for cfg in configs:
+            config_id = int(cfg.id or 0)
+            if not config_id:
+                continue
+            feishu_statuses[str(config_id)] = get_feishu_long_connection_state(config_id)
+            qq_statuses[str(config_id)] = get_qq_long_connection_state(config_id)
+        return {
+            "ok": True,
+            "feishu_statuses": feishu_statuses,
+            "qq_statuses": qq_statuses,
+        }
 
     @router.post("/agent/dispatch")
     async def agent_dispatch(req: AgentDispatchRequest) -> Dict[str, Any]:

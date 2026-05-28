@@ -10,11 +10,13 @@ const props = withDefaults(defineProps<{
   actionResults: Record<string, string>;
   actionResultsBySignature: Record<string, string>;
   enableMcpTextBubble?: boolean;
+  plainTextMode?: boolean;
   mcpIcon?: string;
   mcpSuccessIcon?: string;
   mcpErrorIcon?: string;
 }>(), {
   enableMcpTextBubble: true,
+  plainTextMode: false,
   mcpIcon: '🧰',
   mcpSuccessIcon: '🧰',
   mcpErrorIcon: '🧰',
@@ -158,7 +160,7 @@ const isApplied = (block: any) => {
     <template v-for="(item, idx) in content" :key="idx">
       <template v-if="item.type === 'text'">
         <template v-for="(chunk, chunkIdx) in splitTextChunks(item.content || '')" :key="`txt-${idx}-${chunkIdx}`">
-          <MarkdownText v-if="chunk.kind === 'plain'" :text="chunk.content" />
+          <MarkdownText v-if="chunk.kind === 'plain'" :text="chunk.content" :plainTextMode="props.plainTextMode" />
           <div v-else class="mcp-text-bubble">
             <div class="mcp-text-header">MCP 操作</div>
             <div class="mcp-text-content font-mono text-[11px] leading-4">

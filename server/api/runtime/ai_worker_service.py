@@ -26,7 +26,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from sqlmodel import Session, select
 
-from ..core.config import database_dialect, DATABASE_URL
+from ..core.config import DATABASE_URL, database_dialect, psycopg_dsn
 from ..database import engine
 from ..models import ChatRun
 from . import heartbeat
@@ -60,8 +60,9 @@ def notify_queue(run_id: str) -> None:
     except Exception:
         return
     try:
-        # psycopg accepts ``postgresql://`` URLs directly.
-        with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+        # psycopg does not understand SQLAlchemy's ``postgresql+psycopg://``
+        # form, so use a normalized libpq DSN here.
+        with psycopg.connect(psycopg_dsn(), autocommit=True) as conn:
             # Channel/payload identifiers are constants; payload is the
             # run_id which we sanitize defensively.
             safe_payload = str(run_id or "").replace("'", "")
@@ -77,15 +78,14 @@ def _claim_one_queued_run() -> Optional[ChatRun]:
         if dialect == "postgresql":
             from sqlalchemy import text
 
-            row_proxy = session.exec(
+            row_id = session.exec(
                 text(
                     "SELECT id FROM chatrun WHERE status = 'queued' "
                     "ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1"
                 )
-            ).first()
-            if not row_proxy:
+            ).scalar_one_or_none()
+            if row_id is None:
                 return None
-            row_id = row_proxy[0] if isinstance(row_proxy, tuple) else row_proxy
             run = session.get(ChatRun, int(row_id))
         else:
             run = session.exec(
@@ -262,16 +262,18 @@ def _listen_postgres(stop_evt: threading.Event) -> None:
     backoff = 1.0
     while not stop_evt.is_set():
         try:
-            with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+            with psycopg.connect(psycopg_dsn(), autocommit=True) as conn:
                 conn.execute(f"LISTEN {QUEUE_CHANNEL}")
                 # Drain anything that landed before we started listening.
                 _drain_dispatcher()
                 backoff = 1.0
-                gen = conn.notifies()
-                for _notify in gen:
-                    if stop_evt.is_set():
-                        return
-                    _drain_dispatcher()
+                while not stop_evt.is_set():
+                    # Give the loop a bounded wait so Ctrl+C can unwind
+                    # promptly instead of blocking forever on notifies().
+                    for _notify in conn.notifies(timeout=1.0):
+                        if stop_evt.is_set():
+                            return
+                        _drain_dispatcher()
         except Exception as exc:
             print(f"[ai-runtime] listen loop failed, retrying: {exc}")
             if stop_evt.wait(backoff):

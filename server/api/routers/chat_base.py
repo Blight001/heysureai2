@@ -11,6 +11,7 @@ STATE_PREFIX = "__HS_MCP_STATE__="
 
 _RUN_THREADS: Dict[str, threading.Thread] = {}
 _RUN_LIVE_STATE: Dict[str, Dict[str, object]] = {}
+_RUN_LIVE_META: Dict[str, Dict[str, object]] = {}
 _RUN_STATE_LOCK = threading.Lock()
 MAX_AUTO_SUPERVISION_ROUNDS = 2
 _AUTO_RUNTIME_SECTION_TITLES: tuple[str, ...] = (

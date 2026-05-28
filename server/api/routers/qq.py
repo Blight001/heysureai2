@@ -10,7 +10,8 @@ from sqlmodel import Session, select
 
 from api.database import get_session
 from api.database import engine
-from api.integrations.qq.service import diagnose_qq_config, parse_qq_text_event, send_qq_text_message
+from api.integrations.qq.long_connection import get_qq_long_connection_state
+from api.integrations.qq.service import diagnose_qq_config, parse_qq_text_event, send_qq_markdown_message, send_qq_text_message
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.routers.auth import get_current_user
 from api.routers.chat_base import _RUN_THREADS
@@ -232,9 +233,15 @@ async def diagnose_qq_bot(
     if not cfg or cfg.user_id != user.id:
         raise HTTPException(status_code=404, detail="AI config not found")
     out = diagnose_qq_config(user.id, config_id)
+    out["bot_status"] = get_qq_long_connection_state(config_id)
+    out["status"] = out["bot_status"].get("status") or out.get("status") or "failed"
     out["callback_path"] = f"/api/qq/events/{config_id}"
     out["last_callback"] = _LAST_CALLBACKS.get(config_id)
-    out["note"] = "QQ uses Webhook callbacks, not a persistent connection. Configure this callback path on a public HTTPS URL in QQ Open Platform."
+    out["connection_mode"] = "botpy_websocket"
+    out["note"] = (
+        "QQ uses a botpy WebSocket long connection for inbound events. "
+        "The webhook path is kept only for compatibility and diagnostics."
+    )
     return out
 
 
@@ -249,13 +256,32 @@ async def diagnose_qq_send_test(
     cfg = session.get(AssistantAIConfig, config_id)
     if not cfg or cfg.user_id != user.id:
         raise HTTPException(status_code=404, detail="AI config not found")
-    result = send_qq_text_message(
-        user.id,
-        config_id,
-        text=str(body.get("text") or "HeySure QQ bot send test").strip(),
-        target_id=str(body.get("target_id") or "").strip(),
-        target_type=str(body.get("target_type") or "").strip(),
-    )
+    message_format = str(body.get("qq_message_format") or body.get("message_format") or "").strip().lower()
+    target_id = str(body.get("target_id") or "").strip()
+    target_type = str(body.get("target_type") or "").strip()
+    if message_format == "markdown" or str(body.get("markdown_template_id") or "").strip():
+        result = send_qq_markdown_message(
+            user.id,
+            config_id,
+            markdown_content=str(
+                body.get("markdown_content")
+                or body.get("markdown")
+                or body.get("text")
+                or "HeySure QQ bot send test"
+            ).strip(),
+            markdown_template_id=str(body.get("markdown_template_id") or "").strip(),
+            markdown_params=body.get("markdown_params") if isinstance(body.get("markdown_params"), list) else [],
+            target_id=target_id,
+            target_type=target_type,
+        )
+    else:
+        result = send_qq_text_message(
+            user.id,
+            config_id,
+            text=str(body.get("text") or "HeySure QQ bot send test").strip(),
+            target_id=target_id,
+            target_type=target_type,
+        )
     return {"success": True, "send_result": result}
 
 

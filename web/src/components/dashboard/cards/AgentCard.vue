@@ -256,24 +256,25 @@ const botConnection = computed(() => {
     : String(props.agent.feishuDefaultReceiveId || '').trim()
   const name = channel === 'qq' ? 'QQ' : '飞书'
   const modeText = channel === 'qq'
-    ? (mode === 'sandbox_webhook' ? '沙箱Webhook' : mode === 'webhook' ? 'Webhook' : '未配置')
-    : (mode === 'long_connection' ? '长连接' : mode === 'webhook' ? 'Webhook' : '未配置')
+    ? (mode === 'long_connection' ? '长连接' : mode === 'sandbox_webhook' ? '沙箱仅通知' : mode === 'webhook' ? '仅通知' : '未配置')
+    : (mode === 'long_connection' ? '长连接' : mode === 'webhook' ? '仅通知' : '未配置')
+  const botName = `${name}机器人`
   if (status === 'success') {
     return {
-      text: `${name}成功 · ${modeText}`,
+      text: `${botName} · ${modeText}`,
       class: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300',
       title: [message || `${name}机器人状态成功`, receiveId ? `默认接收：${receiveId}` : ''].filter(Boolean).join('；'),
     }
   }
   if (status === 'pending') {
     return {
-      text: `${name}待回调 · ${modeText}`,
+      text: `${botName}待回调 · ${modeText}`,
       class: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300',
       title: [message || `${name}机器人等待回调`, receiveId ? `默认接收：${receiveId}` : ''].filter(Boolean).join('；'),
     }
   }
   return {
-    text: `${name}失败 · ${modeText}`,
+    text: `${botName}失败 · ${modeText}`,
     class: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300',
     title: message || `${name}机器人状态失败`,
   }

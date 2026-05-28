@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 
 from ...database import engine
 from ...integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
-from ...models import AssistantAIConfig
+from ...models import AssistantAIConfig, User
 
 QQ_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
 QQ_API_BASE = "https://api.sgroup.qq.com"
@@ -18,7 +18,15 @@ QQ_SANDBOX_API_BASE = "https://sandbox.api.sgroup.qq.com"
 _TOKEN_CACHE: Dict[int, Dict[str, Any]] = {}
 
 
-def normalize_qq_text(text: str) -> str:
+def _should_strip_markdown(user_id: int) -> bool:
+    with Session(engine) as session:
+        user = session.get(User, user_id)
+    return bool(getattr(user, "ui_plain_text_output_enabled", False))
+
+
+def normalize_qq_text(text: str, *, strip_markdown: bool = True) -> str:
+    if not strip_markdown:
+        return str(text or "").strip()
     body = str(text or "")
     if not body:
         return ""
@@ -40,7 +48,7 @@ def normalize_qq_text(text: str) -> str:
     body = re.sub(r"\[\s*[xX ]\s*\]\s*", "", body)
     body = re.sub(r"\\([\\`*_{}\[\]()#+\-.!|>])", r"\1", body)
     body = re.sub(r"[ \t]{2,}", " ", body)
-    body = re.sub(r"\n{3,}", "\n\n", body)
+    body = re.sub(r"\n{2,}", "\n", body)
     return body.strip()
 
 
@@ -127,6 +135,32 @@ def _qq_headers(cfg: AssistantAIConfig, token: str) -> Dict[str, str]:
     }
 
 
+def _send_qq_message(
+    cfg: AssistantAIConfig,
+    *,
+    token: str,
+    target_id: str,
+    target_type: str,
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    res = requests.post(
+        _message_endpoint(cfg, target_type, target_id),
+        headers=_qq_headers(cfg, token),
+        json=payload,
+        timeout=20,
+    )
+    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
+    if not res.ok or (isinstance(data, dict) and data.get("code") not in (None, 0)):
+        raise HTTPException(status_code=502, detail=f"QQ send_message failed: {data or res.text}")
+    return {
+        "success": True,
+        "target_id": target_id,
+        "target_type": target_type,
+        "message_id": data.get("id") if isinstance(data, dict) else None,
+        "raw": data,
+    }
+
+
 def _qq_media_file_endpoint(cfg: AssistantAIConfig, target_type: str, target_id: str) -> str:
     base = _qq_api_base(cfg)
     if target_type == "c2c":
@@ -188,7 +222,7 @@ def send_qq_text_message(
     msg_seq: Optional[int] = None,
 ) -> Dict[str, Any]:
     cfg = _load_qq_config(user_id, ai_config_id)
-    body = normalize_qq_text(text)
+    body = normalize_qq_text(text, strip_markdown=_should_strip_markdown(user_id))
     if not body:
         raise HTTPException(status_code=400, detail="QQ message text is required")
     final_target_id = str(target_id or cfg.qq_default_target_id or "").strip()
@@ -205,22 +239,63 @@ def send_qq_text_message(
         payload["event_id"] = str(event_id)
 
     token = get_qq_access_token(user_id, ai_config_id)
-    res = requests.post(
-        _message_endpoint(cfg, final_target_type, final_target_id),
-        headers=_qq_headers(cfg, token),
-        json=payload,
-        timeout=20,
+    return _send_qq_message(
+        cfg,
+        token=token,
+        target_id=final_target_id,
+        target_type=final_target_type,
+        payload=payload,
     )
-    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
-    if not res.ok or (isinstance(data, dict) and data.get("code") not in (None, 0)):
-        raise HTTPException(status_code=502, detail=f"QQ send_message failed: {data or res.text}")
-    return {
-        "success": True,
-        "target_id": final_target_id,
-        "target_type": final_target_type,
-        "message_id": data.get("id") if isinstance(data, dict) else None,
-        "raw": data,
-    }
+
+
+def send_qq_markdown_message(
+    user_id: int,
+    ai_config_id: Optional[int],
+    *,
+    markdown_content: str = "",
+    markdown_template_id: str = "",
+    markdown_params: Optional[list[Dict[str, Any]]] = None,
+    target_id: str = "",
+    target_type: str = "",
+    msg_id: str = "",
+    event_id: str = "",
+    msg_seq: Optional[int] = None,
+) -> Dict[str, Any]:
+    cfg = _load_qq_config(user_id, ai_config_id)
+    final_target_id = str(target_id or cfg.qq_default_target_id or "").strip()
+    final_target_type = _normalize_target_type(target_type or cfg.qq_default_target_type or "c2c")
+    if not final_target_id:
+        raise HTTPException(status_code=400, detail="QQ target_id is required")
+
+    markdown_payload: Dict[str, Any] = {}
+    template_id = str(markdown_template_id or "").strip()
+    content = str(markdown_content or "").strip()
+    params = markdown_params or []
+    if template_id:
+        markdown_payload["custom_template_id"] = template_id
+        if params:
+            markdown_payload["params"] = params
+    else:
+        if not content:
+            raise HTTPException(status_code=400, detail="QQ markdown content is required")
+        markdown_payload["content"] = content
+
+    payload: Dict[str, Any] = {"markdown": markdown_payload}
+    if msg_id:
+        payload["msg_id"] = str(msg_id)
+        if msg_seq is not None:
+            payload["msg_seq"] = int(msg_seq)
+    if event_id and not msg_id:
+        payload["event_id"] = str(event_id)
+
+    token = get_qq_access_token(user_id, ai_config_id)
+    return _send_qq_message(
+        cfg,
+        token=token,
+        target_id=final_target_id,
+        target_type=final_target_type,
+        payload=payload,
+    )
 
 
 def diagnose_qq_config(user_id: int, ai_config_id: Optional[int]) -> Dict[str, Any]:
@@ -286,7 +361,7 @@ def send_qq_media_message(
         "msg_type": 7,
         "media": {"file_info": file_info},
     }
-    content = normalize_qq_text(text)
+    content = normalize_qq_text(text, strip_markdown=_should_strip_markdown(user_id))
     if content:
         payload["content"] = content
     if msg_id:

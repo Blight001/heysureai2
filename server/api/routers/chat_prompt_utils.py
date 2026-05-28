@@ -1,5 +1,6 @@
 IS_ROUTER_ENTRY = False
 
+import asyncio
 import json
 import re
 import time
@@ -27,10 +28,12 @@ from .chat_base import (
     STATE_PREFIX,
     _AUTO_RUNTIME_SECTION_TITLES,
     _RUN_LIVE_STATE,
+    _RUN_LIVE_META,
     _RUN_STATE_LOCK,
     _TASK_CREATE_TOOL_NAMES,
     _TASK_RUNTIME_SECTION_TITLES,
 )
+from api.sio import sio
 
 def _parse_mcp_payload(raw: str):
     return parse_mcp_payload(raw)
@@ -524,6 +527,7 @@ def _extract_delta_text(delta) -> str:
 def _set_run_live_text(run_id: str, text: str):
     with _RUN_STATE_LOCK:
         prev = _RUN_LIVE_STATE.get(run_id) or {}
+        meta = _RUN_LIVE_META.get(run_id) or {}
         _RUN_LIVE_STATE[run_id] = {
             "text": text,
             "reasoning": prev.get("reasoning", ""),
@@ -534,10 +538,13 @@ def _set_run_live_text(run_id: str, text: str):
             "pending_total_tokens": int(prev.get("pending_total_tokens") or 0),
             "updated_at": time.time(),
         }
+        _RUN_LIVE_META[run_id] = meta
+    _emit_run_live_update(run_id)
 
 def _set_run_live_reasoning(run_id: str, reasoning: str):
     with _RUN_STATE_LOCK:
         prev = _RUN_LIVE_STATE.get(run_id) or {}
+        meta = _RUN_LIVE_META.get(run_id) or {}
         _RUN_LIVE_STATE[run_id] = {
             "text": prev.get("text", ""),
             "reasoning": reasoning,
@@ -548,10 +555,13 @@ def _set_run_live_reasoning(run_id: str, reasoning: str):
             "pending_total_tokens": int(prev.get("pending_total_tokens") or 0),
             "updated_at": time.time(),
         }
+        _RUN_LIVE_META[run_id] = meta
+    _emit_run_live_update(run_id)
 
 def _set_run_live_phase(run_id: str, phase: str, current_tool: str = ""):
     with _RUN_STATE_LOCK:
         prev = _RUN_LIVE_STATE.get(run_id) or {}
+        meta = _RUN_LIVE_META.get(run_id) or {}
         _RUN_LIVE_STATE[run_id] = {
             "text": prev.get("text", ""),
             "reasoning": prev.get("reasoning", ""),
@@ -562,6 +572,8 @@ def _set_run_live_phase(run_id: str, phase: str, current_tool: str = ""):
             "pending_total_tokens": int(prev.get("pending_total_tokens") or 0),
             "updated_at": time.time(),
         }
+        _RUN_LIVE_META[run_id] = meta
+    _emit_run_live_update(run_id)
 
 def _set_run_live_usage(
     run_id: str,
@@ -571,6 +583,7 @@ def _set_run_live_usage(
 ):
     with _RUN_STATE_LOCK:
         prev = _RUN_LIVE_STATE.get(run_id) or {}
+        meta = _RUN_LIVE_META.get(run_id) or {}
         _RUN_LIVE_STATE[run_id] = {
             "text": prev.get("text", ""),
             "reasoning": prev.get("reasoning", ""),
@@ -581,10 +594,60 @@ def _set_run_live_usage(
             "pending_total_tokens": max(0, int(total_tokens or 0)),
             "updated_at": time.time(),
         }
+        _RUN_LIVE_META[run_id] = meta
+    _emit_run_live_update(run_id)
 
 def _clear_run_live_text(run_id: str):
     with _RUN_STATE_LOCK:
         _RUN_LIVE_STATE.pop(run_id, None)
+        _RUN_LIVE_META.pop(run_id, None)
+
+def _set_run_live_meta(run_id: str, **meta: object) -> None:
+    with _RUN_STATE_LOCK:
+        current = dict(_RUN_LIVE_META.get(run_id) or {})
+        current.update({k: v for k, v in meta.items() if v is not None})
+        _RUN_LIVE_META[run_id] = current
+
+def _emit_run_live_update(run_id: str) -> None:
+    with _RUN_STATE_LOCK:
+        live = dict(_RUN_LIVE_STATE.get(run_id) or {})
+        meta = dict(_RUN_LIVE_META.get(run_id) or {})
+        last_emit_at = float(meta.get("last_emit_at") or 0.0)
+        now = time.time()
+        if now - last_emit_at < 0.08:
+            meta["last_emit_at"] = last_emit_at
+            _RUN_LIVE_META[run_id] = meta
+            return
+        meta["last_emit_at"] = now
+        _RUN_LIVE_META[run_id] = meta
+    user_id = meta.get("user_id")
+    if user_id is None:
+        return
+
+    payload = {
+        "run_id": run_id,
+        "user_id": user_id,
+        "text": str(live.get("text") or ""),
+        "reasoning": str(live.get("reasoning") or ""),
+        "phase": str(live.get("phase") or "generating"),
+        "current_tool": str(live.get("current_tool") or ""),
+        "prompt_tokens": int(live.get("pending_prompt_tokens") or 0),
+        "completion_tokens": int(live.get("pending_completion_tokens") or 0),
+        "total_tokens": int(live.get("pending_total_tokens") or 0),
+        "updated_at": live.get("updated_at"),
+    }
+
+    async def _do_emit():
+        try:
+            await sio.emit("chat:run_live", payload, room=f"user_{int(user_id)}")
+        except Exception as exc:
+            print(f"[chat_live_emit] {run_id}: {exc}")
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_do_emit())
+    except RuntimeError:
+        asyncio.run(_do_emit())
 
 def _split_tags(raw: Optional[str]) -> Tuple[str, str]:
     text = str(raw or "")

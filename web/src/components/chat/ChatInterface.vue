@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { io, type Socket } from 'socket.io-client'
 import { useMessage } from '@/composables/useMessage'
+import { me } from '@/api/auth'
 import ChatHeader from './ChatHeader.vue'
 import ChatConversationView from './ChatConversationView.vue'
 import ChatInput from './ChatInput.vue'
@@ -58,6 +60,7 @@ interface Props {
   mcpSuccessIcon?: string
   mcpErrorIcon?: string
   mcpDynamicRule?: string
+  stripMarkdownSymbols?: boolean
   selectedFiles: string[]
   allFiles: string[]
 }
@@ -84,11 +87,13 @@ const liveThinkingText = ref('')
 const liveAssistantText = ref('')
 const liveTargetText = ref('')
 const liveCursor = ref(0)
+const liveSocketSynced = ref(false)
 const shownRunErrorIds = ref<Set<string>>(new Set())
 let runLivePollTimer: number | null = null
 let runHistoryPollTimer: number | null = null
 let sessionSyncPollTimer: number | null = null
 let liveTypingFrame: number | null = null
+let chatSocket: Socket | null = null
 let liveRenderLength = 0
 let liveRenderVelocity = 0
 let liveLastFrameTs = 0
@@ -383,24 +388,12 @@ const runLiveTypingFrame = (ts: number) => {
 const updateLiveAssistantView = (text: string) => {
   const nextTarget = text || ''
   liveTargetText.value = nextTarget
-
-  if (!nextTarget) {
-    liveRenderLength = 0
-    applyLiveAssistantText('')
-    stopLiveTypingLoop()
-    return
-  }
-
-  const current = liveAssistantText.value
-  if (!nextTarget.startsWith(current) || liveRenderLength > nextTarget.length) {
-    // Backend may occasionally send full text snapshots. Keep UI text coherent first.
-    applyLiveAssistantText(nextTarget)
-    liveRenderLength = nextTarget.length
-    liveRenderVelocity = 0
-  }
-
-  if (liveTypingFrame === null && liveAssistantText.value !== liveTargetText.value) {
-    liveTypingFrame = window.requestAnimationFrame(runLiveTypingFrame)
+  stopLiveTypingLoop()
+  liveRenderLength = nextTarget.length
+  liveRenderVelocity = 0
+  applyLiveAssistantText(nextTarget)
+  if (nextTarget) {
+    maybeAutoScrollDuringLive(Date.now())
   }
 }
 
@@ -412,6 +405,49 @@ const clearLiveAssistantView = () => {
   liveRenderLength = 0
   liveLastScrollTs = 0
   stopLiveTypingLoop()
+}
+
+const disconnectChatSocket = () => {
+  if (!chatSocket) return
+  chatSocket.off('chat:run_live')
+  chatSocket.disconnect()
+  chatSocket = null
+  liveSocketSynced.value = false
+}
+
+const connectChatSocket = async () => {
+  if (!getAuthToken()) return
+  let profile
+  try {
+    profile = await me()
+  } catch {
+    return
+  }
+  const userId = Number((profile as any)?.id || 0)
+  if (!Number.isFinite(userId) || userId <= 0) return
+
+  disconnectChatSocket()
+  const socket = io('/', { transports: ['websocket', 'polling'] })
+  socket.on('connect', () => {
+    socket.emit('ui:join', { userId })
+  })
+  socket.on('chat:run_live', (payload: any) => {
+    if (!payload || String(payload.run_id || '') !== currentRunId.value) return
+    liveSocketSynced.value = true
+    currentRunStatus.value = 'running'
+    currentRunPhase.value = String(payload.phase || 'generating') as 'idle' | 'generating' | 'waiting_mcp'
+    currentMcpTool.value = String(payload.current_tool || '')
+    liveThinkingText.value = String(payload.reasoning || '')
+    const nextText = String(payload.text || '')
+    if (nextText) updateLiveAssistantView(nextText)
+    isTyping.value = true
+  })
+  socket.on('disconnect', () => {
+    if (chatSocket === socket) {
+      chatSocket = null
+    }
+  })
+  chatSocket = socket
 }
 
 const stopRunPolling = () => {
@@ -799,12 +835,14 @@ const pollRunLive = async (epoch: number) => {
     currentRunStatus.value = run.status || 'running'
     currentRunPhase.value = (run.live_phase || 'generating')
     currentMcpTool.value = String(run.current_tool || '')
-    liveThinkingText.value = String(run.live_reasoning || '')
     const delta = String(run.live_delta || '')
-    if (delta) {
-      updateLiveAssistantView(liveTargetText.value + delta)
-    } else {
-      updateLiveAssistantView(String(run.live_text || ''))
+    if (!liveSocketSynced.value) {
+      liveThinkingText.value = String(run.live_reasoning || '')
+      if (delta) {
+        updateLiveAssistantView(liveTargetText.value + delta)
+      } else {
+        updateLiveAssistantView(String(run.live_text || ''))
+      }
     }
     if (Number.isFinite(Number(run.live_len))) {
       liveCursor.value = Number(run.live_len)
@@ -837,6 +875,7 @@ const pollRunLive = async (epoch: number) => {
 const startRunPolling = () => {
   stopRunPolling()
   lastRealtimeTokenSyncAt = 0
+  liveSocketSynced.value = false
   const epoch = runPollEpoch
   liveCursor.value = liveTargetText.value.length
   void pollRunLive(epoch)
@@ -860,6 +899,7 @@ const checkActiveRun = async () => {
   liveThinkingText.value = String(data.run.live_reasoning || '')
   updateLiveAssistantView(String(data.run.live_text || ''))
   liveCursor.value = Number(data.run.live_len || String(data.run.live_text || '').length || 0)
+  liveSocketSynced.value = false
   isTyping.value = ['queued', 'running'].includes(currentRunStatus.value)
   if (isTyping.value) {
     startRunPolling()
@@ -1084,6 +1124,7 @@ const sendChat = async (overrideContent?: string, options: { silent?: boolean } 
   currentRunStatus.value = 'queued'
   currentRunPhase.value = 'generating'
   currentMcpTool.value = ''
+  liveSocketSynced.value = false
   clearLiveAssistantView()
 
   try {
@@ -1119,6 +1160,7 @@ const initializeSessions = async () => {
   currentRunStatus.value = 'idle'
   currentRunPhase.value = 'idle'
   currentMcpTool.value = ''
+  liveSocketSynced.value = false
   clearLiveAssistantView()
   isTyping.value = false
   await loadSessions()
@@ -1140,6 +1182,7 @@ watch(() => props.aiConfigId, async () => {
   currentSessionId.value = ''
   currentRunPhase.value = 'idle'
   currentMcpTool.value = ''
+  liveSocketSynced.value = false
   clearLiveAssistantView()
   await initializeSessions()
 }, { immediate: false })
@@ -1152,6 +1195,7 @@ watch(currentSessionId, async (sid, oldSid) => {
   currentRunStatus.value = 'idle'
   currentRunPhase.value = 'idle'
   currentMcpTool.value = ''
+  liveSocketSynced.value = false
   clearLiveAssistantView()
   isTyping.value = false
   await checkActiveRun()
@@ -1159,12 +1203,14 @@ watch(currentSessionId, async (sid, oldSid) => {
 })
 
 onMounted(async () => {
+  void connectChatSocket()
   await initializeSessions()
 })
 
 onBeforeUnmount(() => {
   stopRunPolling()
   stopSessionSyncPolling()
+  disconnectChatSocket()
   clearLiveAssistantView()
 })
 </script>
@@ -1216,6 +1262,7 @@ onBeforeUnmount(() => {
         :actionResults="actionResults"
         :actionResultsBySignature="actionResultsBySignature"
         :isTyping="isTyping"
+        :stripMarkdownSymbols="!!props.stripMarkdownSymbols"
         @delete="onConversationDelete"
         @recall="onConversationRecall"
         @apply="onConversationApply"

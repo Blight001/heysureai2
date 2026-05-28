@@ -23,6 +23,8 @@ from .config import DATABASE_URL, SQLITE_FILE, database_dialect
 
 
 def run_pending_migrations() -> None:
+    _migrate_assistantaiconfig_strip_markdown_symbols()
+    _migrate_user_ui_plain_text_output_enabled()
     # Only run for SQLite. Postgres deployments either start fresh or are
     # seeded by the migration script, both of which produce a current schema.
     if database_dialect() != "sqlite":
@@ -95,6 +97,64 @@ def run_pending_migrations() -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def _migrate_assistantaiconfig_strip_markdown_symbols() -> None:
+    # Add the column on every supported backend so existing databases keep
+    # working after the schema bump.
+    from ..database import engine
+
+    if database_dialect() == "sqlite":
+        with engine.begin() as conn:
+            result = conn.exec_driver_sql("PRAGMA table_info(assistantaiconfig)")
+            existing = {row[1] for row in result.fetchall()}
+            if "strip_markdown_symbols" not in existing:
+                conn.exec_driver_sql(
+                    "ALTER TABLE assistantaiconfig ADD COLUMN strip_markdown_symbols BOOLEAN DEFAULT 0"
+                )
+            conn.exec_driver_sql(
+                "UPDATE assistantaiconfig SET strip_markdown_symbols = 0 "
+                "WHERE strip_markdown_symbols IS NULL"
+            )
+        return
+
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "ALTER TABLE assistantaiconfig "
+            "ADD COLUMN IF NOT EXISTS strip_markdown_symbols BOOLEAN DEFAULT FALSE"
+        )
+        conn.exec_driver_sql(
+            "UPDATE assistantaiconfig SET strip_markdown_symbols = FALSE "
+            "WHERE strip_markdown_symbols IS NULL"
+        )
+
+
+def _migrate_user_ui_plain_text_output_enabled() -> None:
+    from ..database import engine
+
+    if database_dialect() == "sqlite":
+        with engine.begin() as conn:
+            result = conn.exec_driver_sql("PRAGMA table_info(user)")
+            existing = {row[1] for row in result.fetchall()}
+            if "ui_plain_text_output_enabled" not in existing:
+                conn.exec_driver_sql(
+                    "ALTER TABLE user ADD COLUMN ui_plain_text_output_enabled BOOLEAN DEFAULT 0"
+                )
+            conn.exec_driver_sql(
+                "UPDATE user SET ui_plain_text_output_enabled = 0 "
+                "WHERE ui_plain_text_output_enabled IS NULL"
+            )
+        return
+
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            'ALTER TABLE "user" '
+            "ADD COLUMN IF NOT EXISTS ui_plain_text_output_enabled BOOLEAN DEFAULT FALSE"
+        )
+        conn.exec_driver_sql(
+            'UPDATE "user" SET ui_plain_text_output_enabled = FALSE '
+            "WHERE ui_plain_text_output_enabled IS NULL"
+        )
 
 
 def _quote(value: str) -> str:
@@ -276,6 +336,7 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
     _add_column(cursor, "assistantaiconfig", "project_name", "TEXT", existing)
     _add_column(cursor, "assistantaiconfig", "sort_order", "INTEGER DEFAULT 100", existing)
     _add_column(cursor, "assistantaiconfig", "model_preset_id", "TEXT DEFAULT ''", existing)
+    _add_column(cursor, "assistantaiconfig", "strip_markdown_symbols", "BOOLEAN DEFAULT 0", existing)
     _backfill_model_presets_from_ai_configs(cursor)
 
     if "system_auto_control" not in existing:
@@ -309,6 +370,10 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
         "UPDATE assistantaiconfig SET digital_member_role = 'member' "
         "WHERE digital_member_role IS NULL OR digital_member_role = '' "
         "OR digital_member_role NOT IN ('manager', 'member')"
+    )
+    cursor.execute(
+        "UPDATE assistantaiconfig SET strip_markdown_symbols = 0 "
+        "WHERE strip_markdown_symbols IS NULL"
     )
     _remove_json_array_item(cursor, "assistantaiconfig", "mcp_tools", "ai.reply_message")
     _remove_json_array_item(cursor, "assistantaiconfig", "mcp_tools", "task.get_current")

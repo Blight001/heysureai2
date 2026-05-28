@@ -10,6 +10,8 @@ export type AiCardRow = Record<string, any>
 
 export type AiConfigRow = Record<string, any>
 
+export type QqDiagnoseRow = Record<string, any>
+
 export interface AiConfigUpsertPayload {
   name: string
   description?: string
@@ -35,7 +37,6 @@ export interface AiConfigUpsertPayload {
   qq_app_secret?: string
   qq_sandbox?: boolean
   qq_default_target_id?: string
-  qq_default_target_type?: string
   system_auto_control: string
 }
 
@@ -60,4 +61,14 @@ export const deleteAiConfig = (configId: number) =>
 export const toggleAiRun = (configId: number) =>
   post<void>(`/api/ai/configs/${configId}/toggle-run`, undefined, {
     fallbackError: 'AI 启停切换失败',
+  })
+
+export const diagnoseQqBot = (configId: number) =>
+  get<QqDiagnoseRow>(`/api/qq/diagnose/${configId}`, {
+    fallbackError: 'QQ 诊断失败',
+  })
+
+export const sendQqBotTest = (configId: number, payload: Record<string, any> = {}) =>
+  post<QqDiagnoseRow>(`/api/qq/diagnose/${configId}/send-test`, payload, {
+    fallbackError: 'QQ 测试发送失败',
   })

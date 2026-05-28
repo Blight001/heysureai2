@@ -1,22 +1,17 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-rem Load repository root .env into this session so the server uses Postgres
-rem instead of falling back to the legacy SQLite file.
-set "ROOT_DIR=%~dp0.."
-set "ENV_FILE=%ROOT_DIR%\.env"
+rem Aggregated launcher: start the gateway, MCP runtime, connector runtime,
+rem and AI worker in separate consoles.
+set "SCRIPT_DIR=%~dp0"
 
-if exist "%ENV_FILE%" (
-  for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%ENV_FILE%") do (
-    if not "%%A"=="" set "%%A=%%B"
-  )
-)
+rem When the split AI runtime is launched, route chat runs to the queue so the
+rem ai-runtime console actually consumes them and shows its debug output.
+if not defined AI_DISPATCH_MODE set "AI_DISPATCH_MODE=remote"
 
-cd /d "%~dp0"
-call venv\Scripts\activate
+start "HeySure Gateway" /D "%SCRIPT_DIR%" cmd /k "call run_gateway.bat"
+start "HeySure MCP Runtime" /D "%SCRIPT_DIR%" cmd /k "call run_mcp.bat"
+start "HeySure Connector Runtime" /D "%SCRIPT_DIR%" cmd /k "call run_connector.bat"
+start "HeySure AI Runtime" /D "%SCRIPT_DIR%" cmd /c "call run_ai.bat"
 
-rem Keep the dev server stable unless you explicitly enable reload yourself.
-set "HEYSURE_SERVER_RELOAD=0"
-
-python main.py
 pause

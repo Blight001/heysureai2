@@ -16,6 +16,7 @@ from .mcp.loader import load_plugins_on_startup
 from .runtime import heartbeat as heartbeat_module
 from .services.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
 from .integrations.feishu.long_connection import start_feishu_long_connection_clients
+from .integrations.qq.long_connection import start_qq_long_connection_clients
 from .routers.chat import process_task_scheduler
 
 @asynccontextmanager
@@ -58,6 +59,7 @@ async def lifespan(app: FastAPI):
     # When a dedicated connector-runtime is configured, it owns the Feishu
     # long connection so api-gateway restarts don't drop the upstream.
     _feishu_in_gateway = not os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
+    _qq_in_gateway = not os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
 
     async def periodic_scan():
         while not stop_event.is_set():
@@ -66,6 +68,11 @@ async def lifespan(app: FastAPI):
                     start_feishu_long_connection_clients()
                 except Exception as exc:
                     print(f"[start_feishu_long_connection_clients] {exc}")
+            if _qq_in_gateway:
+                try:
+                    start_qq_long_connection_clients()
+                except Exception as exc:
+                    print(f"[start_qq_long_connection_clients] {exc}")
             try:
                 process_task_scheduler()
             except Exception as exc:

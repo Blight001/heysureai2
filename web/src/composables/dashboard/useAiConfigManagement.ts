@@ -138,9 +138,8 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     qq_enabled: false,
     qq_app_id: '',
     qq_app_secret: '',
-    qq_sandbox: true,
+    qq_sandbox: false,
     qq_default_target_id: '',
-    qq_default_target_type: 'c2c',
     system_auto_control: normalizeSystemAutoControl({}),
   })
 
@@ -321,7 +320,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       qq_app_secret: cfg.qq_app_secret || '',
       qq_sandbox: cfg.qq_sandbox !== false,
       qq_default_target_id: cfg.qq_default_target_id || '',
-      qq_default_target_type: cfg.qq_default_target_type || 'c2c',
       system_auto_control: normalizeSystemAutoControl((() => {
         try { return JSON.parse(cfg.system_auto_control || '{}') } catch { return {} }
       })()),
@@ -369,9 +367,8 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       qq_enabled: false,
       qq_app_id: '',
       qq_app_secret: '',
-      qq_sandbox: true,
+      qq_sandbox: false,
       qq_default_target_id: '',
-      qq_default_target_type: 'c2c',
       system_auto_control: normalizeSystemAutoControl({}),
     }
     void loadWorkspaceDirs()
@@ -433,7 +430,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       qq_app_secret: aiConfigForm.value.qq_app_secret || '',
       qq_sandbox: aiConfigForm.value.qq_sandbox !== false,
       qq_default_target_id: aiConfigForm.value.qq_default_target_id || '',
-      qq_default_target_type: aiConfigForm.value.qq_default_target_type || 'c2c',
       system_auto_control: JSON.stringify(
         normalizeSystemAutoControl(
           aiConfigForm.value.system_auto_control || {},

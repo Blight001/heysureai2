@@ -18,6 +18,7 @@ export interface User {
   ui_theme_mode?: ThemeMode
   ui_font_size?: FontSize
   ui_brain_view_mode?: BrainViewMode
+  ui_plain_text_output_enabled?: boolean
   ui_thinking_icon?: string
   ui_mcp_icon?: string
   ui_mcp_success_icon?: string

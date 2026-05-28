@@ -10,18 +10,26 @@ from sqlmodel import Session, select
 
 from ...database import engine
 from ...integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
-from ...models import AssistantAIConfig
+from ...models import AssistantAIConfig, User
 
 FEISHU_OPEN_API_BASE = "https://open.feishu.cn/open-apis"
 _TOKEN_CACHE: Dict[int, Dict[str, Any]] = {}
 
 
-def normalize_feishu_text(text: str) -> str:
+def _should_strip_markdown(user_id: int) -> bool:
+    with Session(engine) as session:
+        user = session.get(User, user_id)
+    return bool(getattr(user, "ui_plain_text_output_enabled", False))
+
+
+def normalize_feishu_text(text: str, *, strip_markdown: bool = True) -> str:
     """Convert common Markdown punctuation into plain Feishu text.
 
     Feishu text messages do not need Markdown syntax. Keep the readable
     content while removing formatting markers that otherwise leak to users.
     """
+    if not strip_markdown:
+        return str(text or "").strip()
     body = str(text or "")
     if not body:
         return ""
@@ -61,7 +69,7 @@ def normalize_feishu_text(text: str) -> str:
 
     # Avoid symbols stuck to CJK/ASCII after marker removal.
     body = re.sub(r"[ \t]{2,}", " ", body)
-    body = re.sub(r"\n{3,}", "\n\n", body)
+    body = re.sub(r"\n{2,}", "\n", body)
     return body.strip()
 
 
@@ -82,7 +90,7 @@ def _load_feishu_config(user_id: int, ai_config_id: Optional[int]) -> AssistantA
     if not cfg.feishu_enabled:
         raise HTTPException(status_code=400, detail="Feishu bot is not enabled for this AI")
     if not cfg.feishu_webhook_url and (not cfg.feishu_app_id or not cfg.feishu_app_secret):
-        raise HTTPException(status_code=400, detail="Feishu webhook_url or app_id/app_secret not configured")
+        raise HTTPException(status_code=400, detail="Feishu 仅通知 URL 或 app_id/app_secret 未配置")
     return cfg
 
 
@@ -119,7 +127,7 @@ def send_feishu_text_message(
     receive_id_type: str = "",
 ) -> Dict[str, Any]:
     cfg = _load_feishu_config(user_id, ai_config_id)
-    text = normalize_feishu_text(text)
+    text = normalize_feishu_text(text, strip_markdown=_should_strip_markdown(user_id))
     target_id = str(receive_id or cfg.feishu_default_receive_id or "").strip()
     target_type = str(receive_id_type or cfg.feishu_default_receive_id_type or "chat_id").strip()
     can_send_to_target = bool(target_id and cfg.feishu_app_id and cfg.feishu_app_secret)
@@ -133,7 +141,7 @@ def send_feishu_text_message(
         data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
         code = data.get("code", data.get("StatusCode", 0)) if isinstance(data, dict) else 0
         if not res.ok or int(code or 0) != 0:
-            raise HTTPException(status_code=502, detail=f"Feishu webhook send failed: {data or res.text}")
+            raise HTTPException(status_code=502, detail=f"Feishu 仅通知发送失败: {data or res.text}")
         return {"success": True, "mode": "webhook", "raw": data}
 
     if not target_id:
@@ -285,14 +293,14 @@ def send_feishu_media_message(
         token = get_tenant_access_token(user_id, ai_config_id)
         if kind == "image":
             image_key = upload_feishu_image(user_id, ai_config_id, source)
-            return _send_feishu_open_message(
-                cfg,
-                token=token,
-                receive_id=target_id,
-                receive_id_type=target_type,
-                msg_type="image",
-                content={"image_key": image_key},
-            )
+        return _send_feishu_open_message(
+            cfg,
+            token=token,
+            receive_id=target_id,
+            receive_id_type=target_type,
+            msg_type="image",
+            content={"image_key": image_key},
+        )
         file_key = upload_feishu_file(
             user_id,
             ai_config_id,

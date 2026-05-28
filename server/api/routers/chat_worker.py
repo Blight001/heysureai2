@@ -6,8 +6,10 @@ import copy
 import json
 import os
 import re
+import sys
 import time
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 import requests
 from sqlmodel import Session, select
@@ -42,6 +44,7 @@ from .chat_prompt_utils import (
     _extract_mcp_error,
     _render_inheritance_notice,
     _safe_json,
+    _set_run_live_meta,
     _set_run_live_phase,
     _set_run_live_text,
     _set_run_live_usage,
@@ -65,6 +68,73 @@ from .chat_runtime_helpers import (
 from .chat_scheduler import _start_task_run
 
 from api.core.config import DEFAULT_CHAT_MAX_STEPS
+
+
+def _ai_debug_enabled() -> bool:
+    raw = os.environ.get("HEYSURE_AI_DEBUG", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _ai_debug_color_enabled() -> bool:
+    raw = os.environ.get("HEYSURE_AI_DEBUG_COLOR", "").strip().lower()
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if os.environ.get("NO_COLOR"):
+        return False
+    try:
+        return bool(sys.stdout.isatty())
+    except Exception:
+        return False
+
+
+def _ai_color(text: str, code: str) -> str:
+    if not _ai_debug_color_enabled():
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+def _ai_short(value: Any, limit: int = 48) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "-"
+    if len(text) <= limit:
+        return text
+    return f"{text[: max(1, limit - 1)]}…"
+
+
+def _ai_short_run_id(run_id: str) -> str:
+    text = str(run_id or "").strip()
+    if not text:
+        return "-"
+    if text.startswith("run_") and len(text) > 12:
+        return f"run_{text[4:12]}"
+    return _ai_short(text, 16)
+
+
+def _ai_short_base_url(base_url: str) -> str:
+    text = str(base_url or "").strip()
+    if not text:
+        return "-"
+    parsed = urlparse(text)
+    if not parsed.netloc:
+        return _ai_short(text, 48)
+    path = parsed.path.rstrip("/")
+    if path:
+        return f"{parsed.netloc}{path}"
+    return parsed.netloc
+
+
+def _ai_debug_log(message: str) -> None:
+    if _ai_debug_enabled():
+        print(f"[ai-debug] {message}", flush=True)
+
+
+def _ai_debug_stage(stage: str, message: str, color: str = "36") -> None:
+    _ai_debug_log(f"{_ai_color(stage, color)} {message}")
+
+
 def _normalize_ai_message_type(value: Any, require_reply: bool) -> str:
     text = str(value or "").strip().lower()
     if text in {"inquiry", "reply", "chitchat", "notify"}:
@@ -750,6 +820,20 @@ def _run_worker_impl(
         _run_set_status(run_id, "stopped", finished=True)
         return
     _run_set_status(run_id, "running")
+    _set_run_live_meta(
+        run_id,
+        user_id=user_id,
+        ai_config_id=ai_config_id,
+        ai_kind=ai_kind,
+        session_id=session_id,
+        session_name=session_name,
+    )
+    _ai_debug_stage(
+        "START",
+        f"{_ai_short_run_id(run_id)} u={user_id} cfg={ai_config_id if ai_config_id is not None else '-'} "
+        f"kind={ai_kind} sess={_ai_short(session_id, 24)}",
+        "36",
+    )
     try:
         with Session(engine) as bg:
             user = bg.get(User, user_id)
@@ -861,6 +945,13 @@ def _run_worker_impl(
             mcp_active = bool(cfg and cfg.mcp_enabled and effective_tool_allowlist)
             exposed_tool_allowlist = set(MCP_INTROSPECTION_TOOLS) & set(effective_tool_allowlist)
             provider = _detect_provider(base_url)
+            _ai_debug_stage(
+                "INIT",
+                f"{_ai_short_run_id(run_id)} {provider} {model} host={_ai_short_base_url(base_url)} "
+                f"hist={len(history)} tools={len(effective_tool_allowlist)}/{len(exposed_tool_allowlist)} "
+                f"mcp={'on' if mcp_active else 'off'}",
+                "34",
+            )
 
             # Expose session context to MCP tools (e.g. admin.dispatch_task) so
             # async desktop-agent results can be appended to this session. The
@@ -876,7 +967,7 @@ def _run_worker_impl(
             })
 
             pending_ai_reply_message_id = ""
-            for _ in range(max_steps):
+            for step_index in range(max_steps):
                 if _run_should_stop(run_id):
                     _run_set_status(run_id, "stopped", finished=True)
                     return
@@ -944,6 +1035,13 @@ def _run_worker_impl(
                 else:
                     step_tools, native_tool_name_map = [], {}
                 start_at = time.time()
+                _ai_debug_stage(
+                    "TURN",
+                    f"{_ai_short_run_id(run_id)} #{step_index + 1}/{max_steps} "
+                    f"start msgs={len(convo)} tools={len(step_tools)} "
+                    f"reply={'y' if pending_ai_reply_message_id else 'n'}",
+                    "33",
+                )
                 try:
                     if provider == "anthropic":
                         sr = stream_turn_anthropic(
@@ -993,6 +1091,12 @@ def _run_worker_impl(
                 except Exception as ai_exc:
                     consecutive_ai_errors += 1
                     error_text = _extract_mcp_error(ai_exc)
+                    _ai_debug_stage(
+                        "ERR",
+                        f"{_ai_short_run_id(run_id)} #{step_index + 1}/{max_steps} "
+                        f"x{consecutive_ai_errors} {_ai_short(error_text, 140)}",
+                        "31",
+                    )
                     repaired_ids = _append_missing_tool_responses(convo, error_text)
                     if repaired_ids:
                         consecutive_ai_errors = 0
@@ -1067,6 +1171,19 @@ def _run_worker_impl(
                 _tc_name = sr.tc_name
                 _tc_args = sr.tc_args
                 latency = time.time() - start_at
+                token_triplet = (
+                    f"{int(usage.get('prompt_tokens') or 0)}/"
+                    f"{int(usage.get('completion_tokens') or 0)}/"
+                    f"{int(usage.get('total_tokens') or 0)}"
+                )
+                tc_name = _tc_name or (payload_call or {}).get("tool") or "-"
+                _ai_debug_stage(
+                    "DONE",
+                    f"{_ai_short_run_id(run_id)} #{step_index + 1}/{max_steps} "
+                    f"{finish_reason or 'stop'} {int(latency * 1000)}ms tok={token_triplet} "
+                    f"tc={'native:' if _has_native_tc else ''}{_ai_short(tc_name, 32)}",
+                    "32",
+                )
                 if not payload_call and not _has_native_tc:
                     payload_call = _extract_first_mcp_call(assistant_text)
                 assistant_tags = "mcp_assistant_call" if (payload_call or _has_native_tc) else ""

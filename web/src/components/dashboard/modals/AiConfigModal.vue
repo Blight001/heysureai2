@@ -381,7 +381,7 @@ const onModelPresetChange = () => {
                 </label>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div class="md:col-span-2">
-                    <label class="block text-[11px] text-zinc-500 mb-1">自定义群机器人 Webhook URL（仅主动通知）</label>
+                    <label class="block text-[11px] text-zinc-500 mb-1">自定义群机器人 仅通知 URL</label>
                     <input v-model="form.feishu_webhook_url" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." />
                   </div>
                   <div>
@@ -412,7 +412,7 @@ const onModelPresetChange = () => {
                   </div>
                 </div>
                 <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
-                  Webhook URL 只能让 AI 主动发通知；飞书用户主动与 AI 对话需要配置自建应用 App ID / Secret，并在飞书开放平台的事件订阅里选择“使用长连接接收事件”。启用后请在 MCP 工具权限中勾选 <span class="font-mono">user.send_message</span>。
+                  仅通知 URL 只能让 AI 主动发通知；飞书用户主动与 AI 对话需要配置自建应用 App ID / Secret，并在飞书开放平台的事件订阅里选择“使用长连接接收事件”。启用后请在 MCP 工具权限中勾选 <span class="font-mono">user.send_message</span>。
                 </div>
                 </template>
 
@@ -435,21 +435,12 @@ const onModelPresetChange = () => {
                     <input type="checkbox" v-model="form.qq_sandbox" />
                   </label>
                   <div>
-                    <label class="block text-[11px] text-zinc-500 mb-1">默认目标类型</label>
-                    <select v-model="form.qq_default_target_type" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs">
-                      <option value="c2c">单聊 openid</option>
-                      <option value="group">群聊 group_openid</option>
-                      <option value="channel">频道 channel_id</option>
-                      <option value="dm">频道私信 guild_id</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label class="block text-[11px] text-zinc-500 mb-1">默认目标 ID</label>
+                    <label class="block text-[11px] text-zinc-500 mb-1">主动发送目标 ID（可选）</label>
                     <input v-model="form.qq_default_target_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="openid / group_openid / channel_id" />
                   </div>
                 </div>
                 <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
-                  QQ 回调地址需使用公网 HTTPS，并配置为 <span class="font-mono">/api/qq/events/{AI配置ID}</span>。QQ 只允许 80、443、8080、8443 端口；启用入站对话需在 QQ 开放平台订阅 C2C/群聊/频道消息事件。
+                  QQ 入站现在由服务端的 botpy 长连接托管，不需要单独配置回调地址。如果未连接，请先确认 App ID / Secret 和机器人权限配置正确。
                 </div>
                 </template>
               </div>
