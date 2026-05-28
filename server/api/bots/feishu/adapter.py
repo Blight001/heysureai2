@@ -165,6 +165,54 @@ class FeishuBot(BotAdapter):
                 logger.exception(f"send failed message_id={message.id}: {exc}")
                 return
 
+    # ---- diagnostics ------------------------------------------------------
+
+    def diagnose(self, cfg: "AssistantAIConfig", *, user_id: int) -> Dict[str, Any]:
+        """End-to-end check: config completeness + access-token fetch + state."""
+        from .long_connection import get_feishu_long_connection_state
+        from .service import get_tenant_access_token
+
+        bot_cfg = self.read_config(cfg)
+        app_id = str(bot_cfg.get("app_id") or "").strip()
+        app_secret = str(bot_cfg.get("app_secret") or "").strip()
+        webhook_url = str(bot_cfg.get("webhook_url") or "").strip()
+
+        out: Dict[str, Any] = {
+            "supported": True,
+            "ai_config_id": int(cfg.id or 0),
+            "bot_channel": str(cfg.bot_channel or ""),
+            "feishu_enabled": bool(bot_cfg.get("enabled")),
+            "app_id_configured": bool(app_id),
+            "app_secret_configured": bool(app_secret),
+            "webhook_only": bool(webhook_url and not (app_id and app_secret)),
+            "default_receive_id_configured": bool(str(bot_cfg.get("default_receive_id") or "").strip()),
+            "default_receive_id_type": str(bot_cfg.get("default_receive_id_type") or "chat_id"),
+            "callback_path": f"/api/feishu/events/{int(cfg.id or 0)}",
+            "connection_mode": "lark_websocket" if (app_id and app_secret) else ("webhook" if webhook_url else "none"),
+        }
+
+        if app_id and app_secret:
+            try:
+                token = get_tenant_access_token(user_id, int(cfg.id or 0))
+                out["token_ok"] = bool(token)
+                out["token_preview"] = f"{token[:6]}..." if token else ""
+            except Exception as exc:
+                out["token_ok"] = False
+                out["error"] = str(exc)
+            bot_state = get_feishu_long_connection_state(int(cfg.id or 0))
+            out["bot_status"] = bot_state
+            out["status"] = bot_state.get("status") or "failed"
+            out["ok"] = bool(out.get("token_ok") and bot_state.get("status") == "success")
+        elif webhook_url:
+            out["bot_status"] = {"status": "success", "message": "webhook-only mode"}
+            out["status"] = "success"
+            out["ok"] = True
+        else:
+            out["bot_status"] = {"status": "failed", "message": "未配置 App ID/Secret 或 webhook"}
+            out["status"] = "failed"
+            out["ok"] = False
+        return out
+
     # ---- runtime tool requirements ---------------------------------------
 
     def extra_required_mcp_tools(self) -> set:

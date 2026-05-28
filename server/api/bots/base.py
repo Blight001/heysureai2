@@ -118,6 +118,26 @@ class BotAdapter(ABC):
         ``duration``. Adapters pick the fields relevant to their channel.
         """
 
+    # ---- diagnostics ------------------------------------------------------
+
+    def diagnose(self, cfg: "AssistantAIConfig", *, user_id: int) -> Dict[str, Any]:
+        """Return a structured self-check for this bot's config.
+
+        Subclasses override to validate credentials end-to-end (token
+        fetch, endpoint reachability, addressing fields populated, …).
+        The default returns ``{"supported": False}`` so unregistered or
+        diagnostics-less bots don't crash the unified endpoint.
+
+        Convention: include at least ``ok: bool`` so the UI can light a
+        single status dot; richer detail goes into channel-specific keys
+        the adapter knows about.
+        """
+        return {
+            "ok": False,
+            "supported": False,
+            "message": f"diagnose not implemented for channel '{self.channel}'",
+        }
+
     # ---- runtime tool requirements ----------------------------------------
 
     def extra_required_mcp_tools(self) -> Set[str]:

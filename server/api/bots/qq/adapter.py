@@ -146,6 +146,28 @@ class QQBot(BotAdapter):
         except Exception as exc:
             logger.exception(f"send failed message_id={message.id}: {exc}")
 
+    # ---- diagnostics ------------------------------------------------------
+
+    def diagnose(self, cfg: "AssistantAIConfig", *, user_id: int) -> Dict[str, Any]:
+        """End-to-end check: config presence + access-token fetch + state."""
+        from .long_connection import get_qq_long_connection_state
+        from .service import diagnose_qq_config
+
+        out: Dict[str, Any] = {"supported": True}
+        try:
+            out.update(diagnose_qq_config(user_id, int(cfg.id or 0)))
+        except Exception as exc:
+            # Surface but don't raise — the UI should still get a structured
+            # result even when token fetch fails.
+            out.update({"success": False, "error": str(exc)})
+        bot_state = get_qq_long_connection_state(int(cfg.id or 0))
+        out["bot_status"] = bot_state
+        out["status"] = bot_state.get("status") or out.get("status") or "failed"
+        out["connection_mode"] = "botpy_websocket"
+        out["callback_path"] = f"/api/qq/events/{int(cfg.id or 0)}"
+        out["ok"] = bool(out.get("success") and bot_state.get("status") == "success")
+        return out
+
     # ---- status -----------------------------------------------------------
 
     def build_status(
