@@ -17,11 +17,11 @@ import uvicorn
 # Socket.IO helpers stay in proxy mode instead of binding a local server.
 os.environ.setdefault("HEYSURE_SERVICE_ROLE", "mcp")
 
+from api.core.settings import settings  # noqa: E402
 from mcp_runtime.app import create_app  # noqa: E402
 
 app = create_app()
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("MCP_RUNTIME_PORT", "3001"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=settings.mcp_runtime_port)

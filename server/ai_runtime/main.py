@@ -28,6 +28,7 @@ import threading
 # worker process.
 os.environ.setdefault("HEYSURE_SERVICE_ROLE", "worker")
 
+from api.core.settings import settings  # noqa: E402
 from api.database import create_db_and_tables  # noqa: E402
 from ai_runtime.worker import run_dispatcher_forever  # noqa: E402
 
@@ -35,7 +36,7 @@ from ai_runtime.worker import run_dispatcher_forever  # noqa: E402
 def main() -> int:
     # Warn loudly if the gateway URL is missing — without it _RemoteSio drops
     # every emit silently and the UI never updates while AI runs progress.
-    if not os.environ.get("HEYSURE_API_GATEWAY_URL", "").strip():
+    if not settings.api_gateway_url:
         print(
             "[ai-runtime] WARNING: HEYSURE_API_GATEWAY_URL not set. "
             "Socket.IO events from this worker will be dropped — UI status "
@@ -43,7 +44,7 @@ def main() -> int:
             "in your environment.",
             flush=True,
         )
-    if not os.environ.get("HEYSURE_INTERNAL_TOKEN", "").strip():
+    if not settings.internal_token:
         print(
             "[ai-runtime] WARNING: HEYSURE_INTERNAL_TOKEN not set. "
             "Cross-service calls will fall back to loopback-only auth, which "

@@ -68,19 +68,18 @@ from .chat_runtime_helpers import (
 from .chat_scheduler import _start_task_run
 
 from api.core.config import DEFAULT_CHAT_MAX_STEPS
+from api.core.settings import settings
 
 
 def _ai_debug_enabled() -> bool:
-    raw = os.environ.get("HEYSURE_AI_DEBUG", "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    return bool(settings.ai_debug)
 
 
 def _ai_debug_color_enabled() -> bool:
-    raw = os.environ.get("HEYSURE_AI_DEBUG_COLOR", "").strip().lower()
-    if raw in {"0", "false", "no", "off"}:
+    # ai_debug_color defaults True, so honor NO_COLOR (standard convention)
+    # and TTY autodetect on top of the explicit setting.
+    if not settings.ai_debug_color:
         return False
-    if raw in {"1", "true", "yes", "on"}:
-        return True
     if os.environ.get("NO_COLOR"):
         return False
     try:
@@ -447,7 +446,7 @@ async def _call_mcp_or_endpoint_tool(
     ai_config_id: Optional[int],
 ) -> Dict[str, object]:
     if is_endpoint_agent_tool(tool):
-        connector_url = os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
+        connector_url = settings.connector_runtime_url
         if connector_url:
             return {
                 "tool": tool,
@@ -466,7 +465,7 @@ async def _call_mcp_or_endpoint_tool(
                 args=arguments,
             ),
         }
-    runtime_url = os.environ.get("MCP_RUNTIME_URL", "").strip()
+    runtime_url = settings.mcp_runtime_url
     if runtime_url:
         return await _call_mcp_via_runtime(runtime_url, tool, user_id, arguments, ai_config_id)
     return await registry.call(tool, user_id, arguments, ai_config_id)

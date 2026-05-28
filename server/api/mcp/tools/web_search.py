@@ -1,9 +1,9 @@
-import os
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
+from ...core.settings import settings
 from ...database import engine
 from ...models import User
 
@@ -12,7 +12,7 @@ def _get_tavily_api_key(user_id: int) -> str:
     with Session(engine) as session:
         user = session.exec(select(User).where(User.id == user_id)).first()
     key = str(getattr(user, "tavily_api_key", "") or "").strip()
-    return key or str(os.getenv("TAVILY_API_KEY") or "").strip()
+    return key or settings.tavily_api_key
 
 
 async def _web_search(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int] = None) -> Dict[str, Any]:

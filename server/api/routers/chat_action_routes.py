@@ -17,6 +17,7 @@ from api.mcp import get_project_root, registry
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatMessageUpdate, ChatRun
 from api.routers.auth import get_current_user
 from ai_runtime.worker import notify_queue
+from api.core.settings import settings
 from api.services.model_presets import resolve_model_preset
 from .chat_base import _RUN_LIVE_STATE, _RUN_STATE_LOCK, _RUN_THREADS, router
 from api.services.chat_persistence import _append_usage_snapshot, _rebuild_usage_snapshots, _save_message, _upsert_session
@@ -37,8 +38,7 @@ def _ai_dispatch_mode() -> str:
     it does NOT spawn a local thread to run the worker. In 'local' mode
     (the historical monolith), api-gateway spawns a worker thread itself.
     """
-    raw = (os.environ.get("AI_DISPATCH_MODE") or "local").strip().lower()
-    return "remote" if raw == "remote" else "local"
+    return "remote" if settings.ai_dispatch_mode == "remote" else "local"
 
 
 @router.post("/run/start")

@@ -18,7 +18,6 @@ next NOTIFY.
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 import traceback
@@ -26,10 +25,21 @@ from typing import Any, Callable, Dict, List, Optional
 
 from sqlmodel import Session, select
 
-from api.core.config import DATABASE_URL, database_dialect, psycopg_dsn
+from api.core.settings import settings
 from api.database import engine
 from api.models import ChatRun
 from api.runtime import heartbeat
+
+
+DATABASE_URL = settings.database_url
+
+
+def database_dialect() -> str:
+    return settings.database_dialect
+
+
+def psycopg_dsn() -> str:
+    return settings.psycopg_dsn
 
 
 QUEUE_CHANNEL = "ai_run_queued"
@@ -39,9 +49,7 @@ POLL_INTERVAL_SECONDS = 2.0  # SQLite fallback only
 # a thread + Python stack + an LLM HTTP connection, so unbounded growth from
 # a NOTIFY burst would exhaust the process. Override via env if you scale
 # vertically.
-_MAX_CONCURRENT_RUNS = max(
-    1, int(os.environ.get("HEYSURE_AI_RUNTIME_MAX_CONCURRENT", "16") or "16")
-)
+_MAX_CONCURRENT_RUNS = max(1, settings.ai_runtime_max_concurrent)
 _run_slots = threading.Semaphore(_MAX_CONCURRENT_RUNS)
 
 

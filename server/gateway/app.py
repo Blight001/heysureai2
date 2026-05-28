@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.bots import iter_bots
+from api.core.settings import settings
 from api.sio import sio
 from api.socket_events import register_agent_socket_events, register_user_socket_events
 from api.database import create_db_and_tables
@@ -63,7 +64,7 @@ async def lifespan(app: FastAPI):
     watchdog_counter = {"ticks": 0}
     # In split deployments the dedicated connector-runtime owns every bot's
     # long-connection client so api-gateway restarts don't drop upstream.
-    _bots_owned_by_gateway = not os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
+    _bots_owned_by_gateway = not settings.connector_runtime_url
 
     async def periodic_scan():
         while not stop_event.is_set():
@@ -150,7 +151,7 @@ for _bot in iter_bots():
 # connector-runtime owns the agent-side handlers, so api-gateway only wires
 # the user-side. In monolith mode we register both.
 register_user_socket_events()
-if not os.environ.get("CONNECTOR_RUNTIME_URL", "").strip():
+if not settings.connector_runtime_url:
     register_agent_socket_events()
 
 # Socket.IO App Wrapper
