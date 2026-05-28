@@ -4,10 +4,14 @@ import asyncio
 import base64
 import copy
 import json
+import logging
 import os
 import re
 import sys
 import time
+
+
+logger = logging.getLogger(__name__)
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -68,19 +72,18 @@ from .chat_runtime_helpers import (
 from .chat_scheduler import _start_task_run
 
 from api.core.config import DEFAULT_CHAT_MAX_STEPS
+from api.core.settings import settings
 
 
 def _ai_debug_enabled() -> bool:
-    raw = os.environ.get("HEYSURE_AI_DEBUG", "").strip().lower()
-    return raw in {"1", "true", "yes", "on"}
+    return bool(settings.ai_debug)
 
 
 def _ai_debug_color_enabled() -> bool:
-    raw = os.environ.get("HEYSURE_AI_DEBUG_COLOR", "").strip().lower()
-    if raw in {"0", "false", "no", "off"}:
+    # ai_debug_color defaults True, so honor NO_COLOR (standard convention)
+    # and TTY autodetect on top of the explicit setting.
+    if not settings.ai_debug_color:
         return False
-    if raw in {"1", "true", "yes", "on"}:
-        return True
     if os.environ.get("NO_COLOR"):
         return False
     try:
@@ -128,7 +131,7 @@ def _ai_short_base_url(base_url: str) -> str:
 
 def _ai_debug_log(message: str) -> None:
     if _ai_debug_enabled():
-        print(f"[ai-debug] {message}", flush=True)
+        logger.debug(message)
 
 
 def _ai_debug_stage(stage: str, message: str, color: str = "36") -> None:
@@ -447,7 +450,7 @@ async def _call_mcp_or_endpoint_tool(
     ai_config_id: Optional[int],
 ) -> Dict[str, object]:
     if is_endpoint_agent_tool(tool):
-        connector_url = os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
+        connector_url = settings.connector_runtime_url
         if connector_url:
             return {
                 "tool": tool,
@@ -466,7 +469,7 @@ async def _call_mcp_or_endpoint_tool(
                 args=arguments,
             ),
         }
-    runtime_url = os.environ.get("MCP_RUNTIME_URL", "").strip()
+    runtime_url = settings.mcp_runtime_url
     if runtime_url:
         return await _call_mcp_via_runtime(runtime_url, tool, user_id, arguments, ai_config_id)
     return await registry.call(tool, user_id, arguments, ai_config_id)
@@ -857,10 +860,16 @@ def _run_worker_impl(
                 # System-injected AI-to-AI messages must remain answerable even
                 # when a task or config narrows the general MCP tool allowlist.
                 effective_tool_allowlist.add("ai.send_message")
-            if str(session_id or "").startswith("feishu_"):
-                # Feishu conversations need a self-service context trim path even
-                # for older AI configs whose saved MCP list predates this tool.
-                effective_tool_allowlist.add("conversation.forget_before_current")
+            # Per-bot tool requirements (e.g. Feishu adds context-trim) live
+            # on the adapter so adding/removing a bot's required tools no
+            # longer touches the chat worker.
+            from api.bots import iter_bots as _iter_bots
+            from api.bots.base import channel_for_session_id as _channel_for_session_id
+            _session_channel = _channel_for_session_id(str(session_id or ""), _iter_bots())
+            if _session_channel:
+                _bot = next((b for b in _iter_bots() if b.channel == _session_channel), None)
+                if _bot is not None:
+                    effective_tool_allowlist.update(_bot.extra_required_mcp_tools())
             token_threshold_override = None
             workspace_root_override = None
             if task_payload:
@@ -983,7 +992,7 @@ def _run_worker_impl(
                         )
                     except Exception as _iex:
                         _inbound = None
-                        print(f"[chat_worker] inbox poll failed: {_iex}")
+                        logger.exception("inbox poll failed")
                     if _inbound is not None:
                         _from_name = _resolve_ai_name_safe(bg, _inbound.from_ai_config_id) or f"AI-{_inbound.from_ai_config_id}"
                         _target_name = _resolve_ai_name_safe(bg, ai_config_id) or f"AI-{ai_config_id}"
@@ -1337,7 +1346,7 @@ def _run_worker_impl(
                                 bg.add(saved)
                                 bg.commit()
                         except Exception as _arex:
-                            print(f"[chat_worker] auto AI message reply failed: {_arex}")
+                            logger.exception("auto AI message reply failed")
                         finally:
                             pending_ai_reply_message_id = ""
                     _run_set_status(run_id, "completed", finished=True)
@@ -1649,7 +1658,7 @@ def _run_worker_impl(
                             summary=inherited_summary,
                         )
                     except Exception as _vex:
-                        print(f"[chat_worker] valhalla write_inherit failed: {_vex}")
+                        logger.exception("valhalla write_inherit failed")
 
                     resume_prompt = str(auto_ctl.get("resume_task_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["resume_task_prompt"])
                     next_run_id = _start_task_run(
@@ -1728,7 +1737,7 @@ def _run_worker_impl(
                                 summary=task_summary,
                             )
                         except Exception as _vex:
-                            print(f"[chat_worker] valhalla write_complete failed: {_vex}")
+                            logger.exception("valhalla write_complete failed")
                         try:
                             notify_task_completion(
                                 user_id=user_id,
@@ -1736,7 +1745,7 @@ def _run_worker_impl(
                                 summary=task_summary,
                             )
                         except Exception as _nex:
-                            print(f"[chat_worker] task completion notify failed: {_nex}")
+                            logger.exception("task completion notify failed")
                     next_loop_job = _create_loop_scheduled_job(bg, completed_job, time.time())
                     completion_notice_lines = [
                         "[系统提示]",

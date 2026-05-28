@@ -1,20 +1,23 @@
-import os
+import logging
 from typing import Optional, Tuple
 
 import socketio
 from sqlmodel import Session, select
 
 from .auth import decode_access_token
-from .core.config import AGENT_TOKEN
+from .core.settings import settings
 from .database import engine
+
+
+logger = logging.getLogger(__name__)
 
 
 # Process role decides whether this process owns a real Socket.IO server or
 # is a "leaf" that needs to forward emits to the api-gateway over HTTP.
 #   gateway          — full Socket.IO server (default; current monolith)
-#   worker | mcp     — no server, emits forwarded via HEYSURE_API_GATEWAY_URL
+#   worker | mcp     — no server, emits forwarded via api_gateway_url
 #   connector        — full Socket.IO server for /agent namespace (Phase 4)
-HEYSURE_SERVICE_ROLE = os.environ.get("HEYSURE_SERVICE_ROLE", "gateway").strip().lower()
+HEYSURE_SERVICE_ROLE = settings.service_role
 _HAS_LOCAL_SIO_SERVER = HEYSURE_SERVICE_ROLE in ("gateway", "connector")
 
 
@@ -61,9 +64,9 @@ class _RemoteSio:
                     "namespace": namespace,
                 },
             )
-        except Exception as exc:
+        except Exception:
             # Logging only — emit failures should never break the worker.
-            print(f"[sio-proxy] forward failed event={event}: {exc}")
+            logger.exception(f"sio-proxy forward failed event={event}")
 
     async def enter_room(self, *_, **__):
         return None
@@ -89,7 +92,7 @@ if _HAS_LOCAL_SIO_SERVER:
         max_http_buffer_size=20_000_000,
     )
 else:
-    sio = _RemoteSio(os.environ.get("HEYSURE_API_GATEWAY_URL", "").strip())
+    sio = _RemoteSio(settings.api_gateway_url)
 
 # Connected desktop/browser agents: sid -> agent info dict.
 agents = {}
@@ -107,9 +110,9 @@ def is_agent_shared_secret(token: str) -> bool:
 
     Empty AGENT_TOKEN disables this bypass (the default in dev).
     """
-    if not AGENT_TOKEN:
+    if not settings.agent_token:
         return False
-    return str(token or "").strip() == AGENT_TOKEN
+    return str(token or "").strip() == settings.agent_token
 
 
 def resolve_agent_user(token: str) -> Optional[Tuple[int, str]]:

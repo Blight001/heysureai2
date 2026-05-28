@@ -1,14 +1,17 @@
 IS_ROUTER_ENTRY = False
 
+import logging
 import time
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException
 from sqlmodel import Session, select
 
+from api.bots import all_channels, iter_bots
+
+
+logger = logging.getLogger(__name__)
 from api.database import get_session
-from api.integrations.feishu.long_connection import start_feishu_long_connection_clients
-from api.integrations.qq.long_connection import start_qq_long_connection_clients
 from api.mcp.permissions import clamp_tools_json, config_role_tier
 from api.models import (
     AIRuntimeStatus,
@@ -29,8 +32,22 @@ from .ai_base import (
 
 
 def _normalize_bot_channel(value) -> str:
+    """Snap an incoming ``bot_channel`` to a registered bot, defaulting to ``feishu``."""
     channel = str(value or "feishu").strip().lower()
-    return channel if channel in {"feishu", "qq"} else "feishu"
+    return channel if channel in set(all_channels()) else "feishu"
+
+
+def _restart_all_bot_long_connections() -> None:
+    """Best-effort kick every registered bot's long-connection client.
+
+    Each adapter is idempotent — already-running clients just reload their
+    config; missing clients spin up.
+    """
+    for bot in iter_bots():
+        try:
+            bot.start_long_connections()
+        except Exception:
+            logger.exception(f"start {bot.channel} long_connections failed")
 
 
 def _resolve_config_model_fields(user, preset_id: Optional[str], fallback_model: Optional[str] = None) -> dict:
@@ -109,19 +126,6 @@ async def create_ai_config(
         workspace_root=workspace_root,
         database_uri=body.database_uri,
         bot_channel=bot_channel,
-        feishu_enabled=bool(body.feishu_enabled) and bot_channel == "feishu",
-        feishu_webhook_url=body.feishu_webhook_url or "",
-        feishu_app_id=body.feishu_app_id or "",
-        feishu_app_secret=body.feishu_app_secret or "",
-        feishu_verification_token=body.feishu_verification_token or "",
-        feishu_default_receive_id=body.feishu_default_receive_id or "",
-        feishu_default_receive_id_type=body.feishu_default_receive_id_type or "chat_id",
-        qq_enabled=bool(body.qq_enabled) and bot_channel == "qq",
-        qq_app_id=body.qq_app_id or "",
-        qq_app_secret=body.qq_app_secret or "",
-        qq_sandbox=body.qq_sandbox if body.qq_sandbox is not None else False,
-        qq_default_target_id=body.qq_default_target_id or "",
-        qq_default_target_type=body.qq_default_target_type or "c2c",
         project_id=body.project_id,
         project_name=body.project_name,
         sort_order=body.sort_order or 100,
@@ -131,18 +135,37 @@ async def create_ai_config(
         mcp_tools=clamped_mcp_tools,
         system_auto_control=body.system_auto_control or _default_system_auto_control_for_user(user),
     )
+    # Apply per-bot config slices via each adapter. Inactive channels are
+    # auto-disabled so an "enabled" flag in a non-selected channel never
+    # accidentally turns the wrong bot on.
+    _apply_bot_configs_from_payload(cfg, body.bot_configs, active_channel=bot_channel)
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
-    try:
-        start_feishu_long_connection_clients()
-    except Exception as exc:
-        print(f"[start_feishu_long_connection_clients] {exc}")
-    try:
-        start_qq_long_connection_clients()
-    except Exception as exc:
-        print(f"[start_qq_long_connection_clients] {exc}")
+    _restart_all_bot_long_connections()
     return cfg
+
+
+def _apply_bot_configs_from_payload(
+    cfg: AssistantAIConfig,
+    payload: Optional[dict],
+    *,
+    active_channel: str,
+) -> None:
+    """Route the create/update ``bot_configs`` payload through each adapter.
+
+    Bots whose channel is NOT the currently-active one have their
+    ``enabled`` flag force-cleared so the AI config can't accidentally
+    have two bots both flipped on at once.
+    """
+    payload = payload if isinstance(payload, dict) else {}
+    for bot in iter_bots():
+        slice_payload = payload.get(bot.channel) if isinstance(payload.get(bot.channel), dict) else {}
+        if bot.channel != active_channel:
+            # Force-disable inactive bots so a stray ``enabled=True`` in
+            # the JSON can't turn the wrong channel on.
+            slice_payload = {**slice_payload, "enabled": False}
+        bot.apply_config_payload(cfg, slice_payload)
 
 @router.put("/configs/{config_id}")
 async def update_ai_config(
@@ -167,10 +190,14 @@ async def update_ai_config(
     if "bot_channel" in updates:
         updates["bot_channel"] = _normalize_bot_channel(updates.get("bot_channel"))
     next_bot_channel = updates.get("bot_channel", cfg.bot_channel)
-    if next_bot_channel == "qq":
-        updates["feishu_enabled"] = False
-    if next_bot_channel == "feishu":
-        updates["qq_enabled"] = False
+    # bot_configs is a nested dict on the wire; route it through each
+    # adapter's apply_config_payload (which serializes to JSON onto cfg)
+    # and remove it from the simple-scalar setattr loop below.
+    bot_configs_payload = updates.pop("bot_configs", None)
+    if bot_configs_payload is not None or "bot_channel" in updates:
+        _apply_bot_configs_from_payload(
+            cfg, bot_configs_payload, active_channel=next_bot_channel
+        )
     if "ai_role" in updates:
         updates["ai_role"] = _normalize_ai_role(updates.get("ai_role"))
     next_ai_role = updates.get("ai_role", cfg.ai_role)
@@ -192,14 +219,7 @@ async def update_ai_config(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
-    try:
-        start_feishu_long_connection_clients()
-    except Exception as exc:
-        print(f"[start_feishu_long_connection_clients] {exc}")
-    try:
-        start_qq_long_connection_clients()
-    except Exception as exc:
-        print(f"[start_qq_long_connection_clients] {exc}")
+    _restart_all_bot_long_connections()
 
     status = session.exec(
         select(AIRuntimeStatus).where(

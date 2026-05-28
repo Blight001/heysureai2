@@ -30,6 +30,62 @@ const ROLE_MEMBER = 'digital_member_member'
 const ROLE_MANAGER = 'digital_member_manager'
 const ROLE_ASSISTANT_ADMIN = 'assistant_admin'
 
+// Server-side schema mirrors (see ``api/bots/<name>/_config.py``).
+// Anything outside these keys is dropped by the adapters; keep them in
+// sync when a bot's config schema changes.
+const BOT_CONFIG_DEFAULTS: Record<string, Record<string, any>> = {
+  feishu: {
+    enabled: false,
+    webhook_url: '',
+    app_id: '',
+    app_secret: '',
+    verification_token: '',
+    default_receive_id: '',
+    default_receive_id_type: 'chat_id',
+  },
+  qq: {
+    enabled: false,
+    app_id: '',
+    app_secret: '',
+    sandbox: false,
+    default_target_id: '',
+    default_target_type: 'c2c',
+  },
+}
+
+function hydrateBotConfigs(raw: any): Record<string, Record<string, any>> {
+  // Merge server payload on top of defaults so every channel slice always
+  // has every field populated for v-model bindings.
+  const out: Record<string, Record<string, any>> = {}
+  for (const [channel, defaults] of Object.entries(BOT_CONFIG_DEFAULTS)) {
+    const incoming = (raw && typeof raw === 'object' ? raw[channel] : null) || {}
+    const merged: Record<string, any> = { ...defaults }
+    for (const key of Object.keys(defaults)) {
+      if (incoming[key] !== undefined && incoming[key] !== null) {
+        merged[key] = incoming[key]
+      }
+    }
+    out[channel] = merged
+  }
+  return out
+}
+
+function buildBotConfigsPayload(
+  formConfigs: Record<string, Record<string, any>>,
+  activeChannel: string,
+): Record<string, Record<string, any>> {
+  // Bots that aren't the active channel are force-disabled before send so
+  // the server doesn't see a stray ``enabled=true`` from a previous toggle.
+  const out: Record<string, Record<string, any>> = {}
+  for (const [channel, defaults] of Object.entries(BOT_CONFIG_DEFAULTS)) {
+    const slice = formConfigs?.[channel] || {}
+    const merged: Record<string, any> = { ...defaults, ...slice }
+    if (channel !== activeChannel) merged.enabled = false
+    out[channel] = merged
+  }
+  return out
+}
+
 export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => {
   const {
     defaultMcpTools,
@@ -128,18 +184,25 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     mcp_tools: [...defaultMcpTools],
     mcp_auto_approve: false,
     bot_channel: 'feishu' as 'feishu' | 'qq',
-    feishu_enabled: false,
-    feishu_webhook_url: '',
-    feishu_app_id: '',
-    feishu_app_secret: '',
-    feishu_verification_token: '',
-    feishu_default_receive_id: '',
-    feishu_default_receive_id_type: 'chat_id',
-    qq_enabled: false,
-    qq_app_id: '',
-    qq_app_secret: '',
-    qq_sandbox: false,
-    qq_default_target_id: '',
+    bot_configs: {
+      feishu: {
+        enabled: false,
+        webhook_url: '',
+        app_id: '',
+        app_secret: '',
+        verification_token: '',
+        default_receive_id: '',
+        default_receive_id_type: 'chat_id',
+      },
+      qq: {
+        enabled: false,
+        app_id: '',
+        app_secret: '',
+        sandbox: false,
+        default_target_id: '',
+        default_target_type: 'c2c',
+      },
+    } as Record<string, Record<string, any>>,
     system_auto_control: normalizeSystemAutoControl({}),
   })
 
@@ -308,18 +371,9 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       mcp_tools: parsedTools,
       mcp_auto_approve: !!aiConfigForm.value.mcp_auto_approve,
       bot_channel: cfg.bot_channel === 'qq' ? 'qq' : 'feishu',
-      feishu_enabled: !!cfg.feishu_enabled,
-      feishu_webhook_url: cfg.feishu_webhook_url || '',
-      feishu_app_id: cfg.feishu_app_id || '',
-      feishu_app_secret: cfg.feishu_app_secret || '',
-      feishu_verification_token: cfg.feishu_verification_token || '',
-      feishu_default_receive_id: cfg.feishu_default_receive_id || '',
-      feishu_default_receive_id_type: cfg.feishu_default_receive_id_type || 'chat_id',
-      qq_enabled: !!cfg.qq_enabled,
-      qq_app_id: cfg.qq_app_id || '',
-      qq_app_secret: cfg.qq_app_secret || '',
-      qq_sandbox: cfg.qq_sandbox !== false,
-      qq_default_target_id: cfg.qq_default_target_id || '',
+      // Hydrate ``bot_configs`` from the server (default fills in any
+      // missing keys so the form bindings always have a value).
+      bot_configs: hydrateBotConfigs(cfg.bot_configs),
       system_auto_control: normalizeSystemAutoControl((() => {
         try { return JSON.parse(cfg.system_auto_control || '{}') } catch { return {} }
       })()),
@@ -357,18 +411,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       mcp_tools: parsedTools,
       mcp_auto_approve: !!agent.mcpAutoApprove,
       bot_channel: agent.botChannel === 'qq' ? 'qq' : 'feishu',
-      feishu_enabled: false,
-      feishu_webhook_url: '',
-      feishu_app_id: '',
-      feishu_app_secret: '',
-      feishu_verification_token: '',
-      feishu_default_receive_id: '',
-      feishu_default_receive_id_type: 'chat_id',
-      qq_enabled: false,
-      qq_app_id: '',
-      qq_app_secret: '',
-      qq_sandbox: false,
-      qq_default_target_id: '',
+      bot_configs: hydrateBotConfigs(null),
       system_auto_control: normalizeSystemAutoControl({}),
     }
     void loadWorkspaceDirs()
@@ -418,18 +461,7 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       prompt: aiConfigForm.value.prompt,
       mcp_tools: JSON.stringify(aiConfigForm.value.mcp_tools || []),
       bot_channel: selectedBotChannel,
-      feishu_enabled: selectedBotChannel === 'feishu' && !!aiConfigForm.value.feishu_enabled,
-      feishu_webhook_url: aiConfigForm.value.feishu_webhook_url || '',
-      feishu_app_id: aiConfigForm.value.feishu_app_id || '',
-      feishu_app_secret: aiConfigForm.value.feishu_app_secret || '',
-      feishu_verification_token: aiConfigForm.value.feishu_verification_token || '',
-      feishu_default_receive_id: aiConfigForm.value.feishu_default_receive_id || '',
-      feishu_default_receive_id_type: aiConfigForm.value.feishu_default_receive_id_type || 'chat_id',
-      qq_enabled: selectedBotChannel === 'qq' && !!aiConfigForm.value.qq_enabled,
-      qq_app_id: aiConfigForm.value.qq_app_id || '',
-      qq_app_secret: aiConfigForm.value.qq_app_secret || '',
-      qq_sandbox: aiConfigForm.value.qq_sandbox !== false,
-      qq_default_target_id: aiConfigForm.value.qq_default_target_id || '',
+      bot_configs: buildBotConfigsPayload(aiConfigForm.value.bot_configs, selectedBotChannel),
       system_auto_control: JSON.stringify(
         normalizeSystemAutoControl(
           aiConfigForm.value.system_auto_control || {},

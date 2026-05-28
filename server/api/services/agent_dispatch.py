@@ -18,6 +18,7 @@ user's UI room so the frontend updates live.
 import contextvars
 import asyncio
 import json
+import logging
 import time
 import uuid
 from typing import Any, Dict, List, Optional
@@ -36,6 +37,9 @@ from .screenshot_store import attach_persisted_screenshot
 from ..models import AgentDispatchTask, ChatMessageCreate
 from ..sio import agents, sio
 from .chat_persistence import _save_message
+
+
+logger = logging.getLogger(__name__)
 
 
 def _persist_dispatch(
@@ -70,7 +74,7 @@ def _persist_dispatch(
     except Exception as exc:
         # Persistence failure is non-fatal for the in-memory dispatch path,
         # but it does defeat the restart-resilience guarantee. Log loudly.
-        print(f"[agent-dispatch] persist failed task={task_id}: {exc}")
+        logger.exception(f"persist failed task={task_id}: {exc}")
 
 
 def _finalize_dispatch_row(
@@ -112,7 +116,7 @@ def _finalize_dispatch_row(
             session.add(row)
             session.commit()
     except Exception as exc:
-        print(f"[agent-dispatch] finalize failed task={task_id}: {exc}")
+        logger.exception(f"finalize failed task={task_id}: {exc}")
 
 
 def expire_orphan_dispatches(older_than_seconds: float = 300.0) -> int:
@@ -139,7 +143,7 @@ def expire_orphan_dispatches(older_than_seconds: float = 300.0) -> int:
             if expired:
                 session.commit()
     except Exception as exc:
-        print(f"[agent-dispatch] orphan sweep failed: {exc}")
+        logger.exception(f"orphan sweep failed: {exc}")
     return expired
 
 # Per-run session context so MCP tools (running inside the worker thread) can

@@ -6,24 +6,32 @@ this module only wires it together for the public-facing process.
 """
 
 import socketio
+import logging
 import os
 import importlib
 import glob
-import traceback
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.bots import iter_bots
+from api.core.logging_config import configure_logging
+from api.core.settings import settings
 from api.sio import sio
 from api.socket_events import register_agent_socket_events, register_user_socket_events
 from api.database import create_db_and_tables
 from api.mcp.loader import load_plugins_on_startup
 from api.runtime import heartbeat as heartbeat_module
 from api.services.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
-from api.integrations.feishu.long_connection import start_feishu_long_connection_clients
-from api.integrations.qq.long_connection import start_qq_long_connection_clients
 from api.routers.chat import process_task_scheduler
+
+
+# Ensure logging is configured when the app is loaded by uvicorn (which
+# may not go through gateway.main).
+configure_logging()
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -31,58 +39,51 @@ async def lifespan(app: FastAPI):
     try:
         plugin_boot = load_plugins_on_startup()
         for entry in plugin_boot.get("plugin_errors") or []:
-            print(f"[mcp-plugins] failed to load {entry.get('plugin')}: {entry.get('error')}")
+            logger.error(f"mcp-plugins: failed to load {entry.get('plugin')}: {entry.get('error')}")
         if plugin_boot.get("loaded"):
-            print(
-                f"[mcp-plugins] loaded {plugin_boot['loaded']} plugin module(s); "
+            logger.info(
+                f"mcp-plugins loaded {plugin_boot['loaded']} module(s); "
                 f"registry version={plugin_boot.get('version')}"
             )
-    except Exception as exc:
-        print(f"[mcp-plugins] startup discovery failed: {exc}")
+    except Exception:
+        logger.exception("mcp-plugins startup discovery failed")
     try:
         result = migrate_legacy_switch_files_to_db()
         if result.get("imported") or result.get("removed"):
-            print(
-                "[migrate_legacy_switch_files_to_db] "
-                f"imported={result.get('imported', 0)} "
+            logger.info(
+                f"migrate_legacy_switch_files_to_db imported={result.get('imported', 0)} "
                 f"removed={result.get('removed', 0)}"
             )
-    except Exception as exc:
-        print(f"[migrate_legacy_switch_files_to_db] {exc}")
+    except Exception:
+        logger.exception("migrate_legacy_switch_files_to_db failed")
     try:
         result = align_token_snapshots_with_history()
         if result.get("changed_rows") or result.get("deleted_rows"):
-            print(
-                "[align_token_snapshots_with_history] "
-                f"changed={result.get('changed_rows', 0)} "
+            logger.info(
+                f"align_token_snapshots_with_history changed={result.get('changed_rows', 0)} "
                 f"deleted={result.get('deleted_rows', 0)}"
             )
-    except Exception as exc:
-        print(f"[align_token_snapshots_with_history] {exc}")
+    except Exception:
+        logger.exception("align_token_snapshots_with_history failed")
     stop_event = asyncio.Event()
 
     watchdog_counter = {"ticks": 0}
-    # When a dedicated connector-runtime is configured, it owns the Feishu
-    # long connection so api-gateway restarts don't drop the upstream.
-    _feishu_in_gateway = not os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
-    _qq_in_gateway = not os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
+    # In split deployments the dedicated connector-runtime owns every bot's
+    # long-connection client so api-gateway restarts don't drop upstream.
+    _bots_owned_by_gateway = not settings.connector_runtime_url
 
     async def periodic_scan():
         while not stop_event.is_set():
-            if _feishu_in_gateway:
-                try:
-                    start_feishu_long_connection_clients()
-                except Exception as exc:
-                    print(f"[start_feishu_long_connection_clients] {exc}")
-            if _qq_in_gateway:
-                try:
-                    start_qq_long_connection_clients()
-                except Exception as exc:
-                    print(f"[start_qq_long_connection_clients] {exc}")
+            if _bots_owned_by_gateway:
+                for bot in iter_bots():
+                    try:
+                        bot.start_long_connections()
+                    except Exception:
+                        logger.exception(f"start {bot.channel} long_connections failed")
             try:
                 process_task_scheduler()
-            except Exception as exc:
-                print(f"[process_task_scheduler] {exc}")
+            except Exception:
+                logger.exception("process_task_scheduler failed")
             # Reap stale ChatRun heartbeats every ~30s to avoid scanning
             # the table on every 3s tick.
             watchdog_counter["ticks"] += 1
@@ -90,9 +91,9 @@ async def lifespan(app: FastAPI):
                 try:
                     reaped = heartbeat_module.reap_stale_runs()
                     if reaped:
-                        print(f"[watchdog] reaped stale runs: {reaped}")
-                except Exception as exc:
-                    print(f"[watchdog] reap failed: {exc}")
+                        logger.warning(f"watchdog reaped stale runs: {reaped}")
+                except Exception:
+                    logger.exception("watchdog reap failed")
             await asyncio.sleep(3)
 
     task = asyncio.create_task(periodic_scan())
@@ -132,16 +133,30 @@ for router_file in router_files:
             # 默认统一挂载到 /api 前缀下；模块可定义 PREFIX 覆盖。
             prefix = getattr(module, "PREFIX", "/api")
             app.include_router(module.router, prefix=prefix)
-            print(f"Loaded router: {module_name} -> {prefix}")
+            logger.info(f"loaded router: {module_name} -> {prefix}")
     except Exception:
-        print(f"\033[91mFailed to load router {module_name}:\033[0m")
-        traceback.print_exc()
+        logger.exception(f"failed to load router {module_name}")
+
+# Bot routers live next to each bot's adapter — mount them here so adding a
+# new bot stays a single ``bots/<name>/`` directory drop instead of also
+# editing api/routers/.
+for _bot in iter_bots():
+    try:
+        bot_router_module = importlib.import_module(f"api.bots.{_bot.channel}.router")
+    except ModuleNotFoundError:
+        continue
+    bot_router = getattr(bot_router_module, "router", None)
+    if bot_router is None:
+        continue
+    bot_prefix = getattr(bot_router_module, "PREFIX", f"/api/{_bot.channel}")
+    app.include_router(bot_router, prefix=bot_prefix)
+    logger.info(f"loaded bot router: {_bot.channel} -> {bot_prefix}")
 
 # Register Socket Events. In split deployments (CONNECTOR_RUNTIME_URL set)
 # connector-runtime owns the agent-side handlers, so api-gateway only wires
 # the user-side. In monolith mode we register both.
 register_user_socket_events()
-if not os.environ.get("CONNECTOR_RUNTIME_URL", "").strip():
+if not settings.connector_runtime_url:
     register_agent_socket_events()
 
 # Socket.IO App Wrapper

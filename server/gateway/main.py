@@ -6,22 +6,16 @@ or via uvicorn directly:
     uvicorn gateway.app:sio_app --host 0.0.0.0 --port 3000
 """
 
-import os
-
 import uvicorn
 
+from api.core.logging_config import configure_logging
+from api.core.settings import settings
 from gateway.app import sio_app  # noqa: F401 — imported for side effects when not reloading
 
 
-def _env_enabled(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
 if __name__ == "__main__":
-    reload_enabled = _env_enabled("HEYSURE_SERVER_RELOAD", False)
+    configure_logging()
+    reload_enabled = settings.server_reload
     uvicorn.run(
         "gateway.app:sio_app",
         host="0.0.0.0",

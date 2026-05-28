@@ -13,6 +13,10 @@ from typing import Dict, Optional, Tuple
 from sqlmodel import Session, select
 
 from ..models import ChatMessage, ChatMessageCreate, ChatSession, TokenUsageSnapshot
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def _save_message(
@@ -52,11 +56,11 @@ def _save_message(
         total_tokens=db_msg.total_tokens or 0,
     )
     try:
-        from .feishu_auto_notify import notify_saved_assistant_message
+        from ..bots.notify import notify_saved_assistant_message
 
         notify_saved_assistant_message(session, db_msg)
     except Exception as exc:
-        print(f"[chat_persistence] bot auto notify failed message_id={db_msg.id}: {exc}")
+        logger.exception(f"bot auto notify failed message_id={db_msg.id}: {exc}")
     return db_msg
 
 def _rebuild_usage_snapshots(

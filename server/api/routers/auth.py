@@ -1,19 +1,30 @@
+import logging
+import os
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlmodel import Session, select
-import os
 
-from api.database import get_session
-from api.services.ai_service import ensure_default_ai_for_user
+from api.auth import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    create_access_token,
+    decode_access_token,
+    get_password_hash,
+    verify_password,
+)
 from api.core.config import (
     USER_WORKSPACE_SUBFOLDERS,
     WORKSPACE_DIR,
     user_workspace_dir,
 )
-from api.models import User, UserCreate, UserLogin, UserRead, Token, UserUpdate
+from api.database import get_session
+from api.models import Token, User, UserCreate, UserLogin, UserRead, UserUpdate
 from api.models.defaults import DEFAULT_MCP_NAMESPACE_HINTS
+from api.services.ai_service import ensure_default_ai_for_user
 from api.services.model_presets import model_presets_json
-from api.auth import get_password_hash, verify_password, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, decode_access_token
-from datetime import timedelta
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 PREFIX = "/api/auth"
@@ -40,14 +51,14 @@ def ensure_user_workspace(user_id: int) -> None:
         os.makedirs(WORKSPACE_DIR, exist_ok=True)
         if not os.path.exists(user_dir):
             os.makedirs(user_dir)
-            print(f"Created user directory: {user_dir}")
+            logger.info(f"Created user directory: {user_dir}")
         for folder in USER_WORKSPACE_SUBFOLDERS:
             folder_path = os.path.join(user_dir, folder)
             if not os.path.exists(folder_path):
                 os.makedirs(folder_path)
-                print(f"Created subfolder: {folder_path}")
+                logger.info(f"Created subfolder: {folder_path}")
     except Exception as exc:
-        print(f"Error ensuring user directories for user {user_id}: {exc}")
+        logger.exception(f"Error ensuring user directories for user {user_id}: {exc}")
 
 def get_current_user_from_token(token: str = Depends(lambda x: x), session: Session = Depends(get_session)):
     # This dependency can be used to get user from Bearer token
@@ -83,7 +94,7 @@ def get_current_user(token: str, session: Session = Depends(get_session)):
     except HTTPException:
          raise
     except Exception as e:
-         print(f"Error in get_current_user: {e}")
+         logger.exception(f"Error in get_current_user: {e}")
          raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Could not validate credentials: {str(e)}",

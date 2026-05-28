@@ -7,10 +7,9 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import Depends, Header, HTTPException
 from sqlmodel import Session, select
 
+from api.bots import iter_bots
 from api.core.config import CONNECTOR_RUNTIME_URL
 from api.database import get_session
-from api.integrations.feishu.long_connection import get_feishu_long_connection_state
-from api.integrations.qq.long_connection import get_qq_long_connection_state
 from api.runtime.internal_http import InternalClient
 from api.models import (
     AITaskJob,
@@ -29,45 +28,46 @@ from api.services.task_system import decode_task_payload, parse_generation_from_
 from .ai_base import router
 
 
+def _empty_bot_statuses() -> Dict[str, Dict[int, Dict[str, str]]]:
+    """``{channel: {ai_config_id: state}}`` zero-initialized for every bot."""
+    return {bot.channel: {} for bot in iter_bots()}
+
+
 def _load_connector_runtime_bot_statuses() -> Tuple[Dict[str, Dict[int, Dict[str, str]]], Optional[str]]:
+    """Fetch per-bot state from connector-runtime; fall back gracefully.
+
+    The connector replies with one ``<channel>_statuses`` field per bot
+    (``feishu_statuses``, ``qq_statuses``, …). Any registered bot whose
+    field is absent comes back with an empty dict so callers can iterate
+    every channel uniformly.
+    """
     if not CONNECTOR_RUNTIME_URL:
-        return {"feishu": {}, "qq": {}}, None
+        return _empty_bot_statuses(), None
     client = InternalClient(CONNECTOR_RUNTIME_URL, timeout=8.0)
     try:
         payload = client.get("/internal/bot/statuses")
     except Exception as exc:
-        return {"feishu": {}, "qq": {}}, str(exc)
+        return _empty_bot_statuses(), str(exc)
     finally:
         client.close()
 
-    feishu_statuses: Dict[int, Dict[str, str]] = {}
-    qq_statuses: Dict[int, Dict[str, str]] = {}
+    statuses = _empty_bot_statuses()
     if isinstance(payload, dict):
-        for raw_id, state in (payload.get("feishu_statuses") or {}).items():
-            try:
-                config_id = int(raw_id)
-            except Exception:
-                continue
-            if isinstance(state, dict):
-                feishu_statuses[config_id] = {
-                    "status": str(state.get("status") or "failed"),
-                    "mode": str(state.get("mode") or "long_connection"),
-                    "label": str(state.get("label") or ""),
-                    "message": str(state.get("message") or ""),
-                }
-        for raw_id, state in (payload.get("qq_statuses") or {}).items():
-            try:
-                config_id = int(raw_id)
-            except Exception:
-                continue
-            if isinstance(state, dict):
-                qq_statuses[config_id] = {
-                    "status": str(state.get("status") or "failed"),
-                    "mode": str(state.get("mode") or "long_connection"),
-                    "label": str(state.get("label") or ""),
-                    "message": str(state.get("message") or ""),
-                }
-    return {"feishu": feishu_statuses, "qq": qq_statuses}, None
+        for bot in iter_bots():
+            field = f"{bot.channel}_statuses"
+            for raw_id, state in (payload.get(field) or {}).items():
+                try:
+                    config_id = int(raw_id)
+                except Exception:
+                    continue
+                if isinstance(state, dict):
+                    statuses[bot.channel][config_id] = {
+                        "status": str(state.get("status") or "failed"),
+                        "mode": str(state.get("mode") or "long_connection"),
+                        "label": str(state.get("label") or ""),
+                        "message": str(state.get("message") or ""),
+                    }
+    return statuses, None
 
 
 @router.post("/configs/{config_id}/clear-tokens")
@@ -365,81 +365,20 @@ async def list_ai_cards(
         return (schedule_at if schedule_at > 0 else float("inf"), -_task_activity_ts(item))
 
     remote_bot_statuses, remote_status_error = await asyncio.to_thread(_load_connector_runtime_bot_statuses)
+    # Only surface the connector-runtime error once we actually expect a
+    # remote answer; in monolith mode there's no remote and the local
+    # state is authoritative.
+    effective_remote_error = remote_status_error if CONNECTOR_RUNTIME_URL else None
 
-    def _build_feishu_status(cfg: AssistantAIConfig) -> Dict[str, str]:
-        if str(cfg.bot_channel or "feishu").strip().lower() != "feishu":
-            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "当前机器人类型不是飞书"}
-        if not cfg.feishu_enabled:
-            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "飞书机器人未启用"}
-        app_id = str(cfg.feishu_app_id or "").strip()
-        app_secret = str(cfg.feishu_app_secret or "").strip()
-        webhook_url = str(cfg.feishu_webhook_url or "").strip()
-        if app_id or app_secret:
-            if not app_id or not app_secret:
-                return {
-                    "status": "failed",
-                    "mode": "long_connection",
-                    "label": "失败",
-                    "message": "App ID / Secret 配置不完整",
-                }
-            state = remote_bot_statuses.get("feishu", {}).get(int(cfg.id or 0))
-            if state is None:
-                if CONNECTOR_RUNTIME_URL and remote_status_error:
-                    return {
-                        "status": "failed",
-                        "mode": "long_connection",
-                        "label": "失败",
-                        "message": f"connector-runtime 状态不可用: {remote_status_error}",
-                    }
-                state = get_feishu_long_connection_state(int(cfg.id or 0))
-            return {
-                "status": state.get("status") or "failed",
-                "mode": "long_connection",
-                "label": "成功" if state.get("status") == "success" else "失败",
-                "message": state.get("message") or "",
-            }
-        if webhook_url:
-            return {
-                "status": "success",
-                "mode": "webhook",
-                "label": "成功",
-                "message": "仅通知发送配置已完成",
-            }
-        return {"status": "failed", "mode": "none", "label": "失败", "message": "未配置 App ID/Secret 或 仅通知 URL"}
-
-    def _build_qq_status(cfg: AssistantAIConfig) -> Dict[str, str]:
-        if str(cfg.bot_channel or "feishu").strip().lower() != "qq":
-            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "当前机器人类型不是 QQ"}
-        if not cfg.qq_enabled:
-            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "QQ机器人未启用"}
-        app_id = str(cfg.qq_app_id or "").strip()
-        app_secret = str(cfg.qq_app_secret or "").strip()
-        if not app_id or not app_secret:
-            return {
-                "status": "failed",
-                "mode": "long_connection",
-                "label": "失败",
-                "message": "App ID / Secret 配置不完整",
-            }
-        state = remote_bot_statuses.get("qq", {}).get(int(cfg.id or 0))
-        if state is None:
-            if CONNECTOR_RUNTIME_URL and remote_status_error:
-                return {
-                    "status": "failed",
-                    "mode": "long_connection",
-                    "label": "失败",
-                    "message": f"connector-runtime 状态不可用: {remote_status_error}",
-                }
-            state = get_qq_long_connection_state(int(cfg.id or 0))
-        label = "成功" if state.get("status") == "success" and "启动中" not in str(state.get("message") or "") else "失败"
-        if "启动中" in str(state.get("message") or ""):
-            label = "启动中"
-        return {
-            "status": state.get("status") or "failed",
-            "mode": "long_connection",
-            "label": label,
-            "message": state.get("message") or "botpy 长连接未运行",
-        }
+    def _bot_status(cfg: AssistantAIConfig, channel: str) -> Dict[str, str]:
+        bot = next((b for b in iter_bots() if b.channel == channel), None)
+        if bot is None:
+            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "未知机器人"}
+        return bot.build_status(
+            cfg,
+            remote_state=remote_bot_statuses.get(channel, {}).get(int(cfg.id or 0)),
+            remote_error=effective_remote_error,
+        )
 
     cards = []
     for cfg in cfgs:
@@ -504,9 +443,15 @@ async def list_ai_cards(
         current_or_recent_task = current_task or latest_completed_task
         current_task_title = str(current_task.get("title") or "") if current_task else ""
         current_task_status = str(current_task.get("effective_status") or "idle") if current_task else "idle"
-        feishu_status = _build_feishu_status(cfg)
-        qq_status = _build_qq_status(cfg)
+        feishu_status = _bot_status(cfg, "feishu")
+        qq_status = _bot_status(cfg, "qq")
         bot_channel = str(cfg.bot_channel or "feishu")
+        # Surface every registered bot's parsed config slice so the
+        # frontend reads ``card.bot_configs.<channel>.<field>`` instead of
+        # the legacy flat columns.
+        bot_configs_view = {bot.channel: bot.read_config(cfg) for bot in iter_bots()}
+        active_bot = next((b for b in iter_bots() if b.channel == bot_channel), None)
+        active_bot_enabled = bool(active_bot.read_config(cfg).get("enabled")) if active_bot else False
         _, _, effective_model = resolve_model_preset(user, cfg)
         cards.append(
             {
@@ -535,19 +480,11 @@ async def list_ai_cards(
                 "enabled": cfg.enabled,
                 "mcp_enabled": cfg.mcp_enabled,
                 "bot_channel": bot_channel,
-                "feishu_enabled": cfg.feishu_enabled,
-                "feishu_webhook_url": cfg.feishu_webhook_url,
-                "feishu_app_id": cfg.feishu_app_id,
-                "feishu_default_receive_id": cfg.feishu_default_receive_id,
-                "feishu_default_receive_id_type": cfg.feishu_default_receive_id_type,
-                "feishu_status": feishu_status,
-                "qq_enabled": cfg.qq_enabled,
-                "qq_app_id": cfg.qq_app_id,
-                "qq_sandbox": cfg.qq_sandbox,
-                "qq_default_target_id": cfg.qq_default_target_id,
-                "qq_default_target_type": cfg.qq_default_target_type,
-                "qq_status": qq_status,
-                "bot_enabled": cfg.qq_enabled if bot_channel == "qq" else cfg.feishu_enabled,
+                # Per-channel config slices (replaces the flat feishu_*/qq_* columns).
+                "bot_configs": bot_configs_view,
+                # Per-channel runtime status (one entry per registered bot).
+                "bot_statuses": {"feishu": feishu_status, "qq": qq_status},
+                "bot_enabled": active_bot_enabled,
                 "bot_status": qq_status if bot_channel == "qq" else feishu_status,
                 "switch_key": cfg.switch_key,
                 "mcp_tools": cfg.mcp_tools,

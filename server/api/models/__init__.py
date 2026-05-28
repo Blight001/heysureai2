@@ -50,7 +50,7 @@ from .defaults import (
     DEFAULT_UI_THEME_MODE,
     DEFAULT_USER_MESSAGE_NOTICE,
 )
-from .feishu import FeishuSessionRoute, QQSessionRoute
+from .bot_session_route import BotSessionRoute
 from .knowledge import EvolutionInput, KnowledgeEntry, Memory, ValhallaEntry
 from .project import EvolutionProject, EvolutionProjectCreate, EvolutionProjectUpdate
 from .user import Token, User, UserCreate, UserLogin, UserRead, UserUpdate
@@ -107,7 +107,6 @@ __all__ = [
     "ValhallaEntry",
     # communication
     "AIMessage",
-    # feishu
-    "FeishuSessionRoute",
-    "QQSessionRoute",
+    # bots (unified session route, channel-keyed)
+    "BotSessionRoute",
 ]

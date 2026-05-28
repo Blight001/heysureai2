@@ -1,3 +1,4 @@
+import logging
 import time
 
 from sqlmodel import Session, select
@@ -16,6 +17,9 @@ from api.services.agent_dispatch import (
     handle_task_result,
     purge_stale_dispatches,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def _ai_config_belongs_to_user(ai_config_id, user_id: int) -> bool:
@@ -42,7 +46,7 @@ def register_user_socket_events():
     """
     @sio.on('connect')
     async def connect(sid, environ):
-        print('Client connected:', sid)
+        logger.info('Client connected:', sid)
 
     @sio.on('ui:join')
     async def ui_join(sid, data):
@@ -80,7 +84,7 @@ def register_agent_socket_events():
         else:
             resolved = resolve_agent_user(token)
             if not resolved:
-                print('Agent registration rejected (no auth):', info.get('id'))
+                logger.info('Agent registration rejected (no auth):', info.get('id'))
                 await sio.emit(
                     'agent:register_rejected',
                     {'reason': 'agent must be logged in (invalid or missing user token)'},
@@ -94,9 +98,9 @@ def register_agent_socket_events():
         # an AI that belongs to user B.
         claimed_ai = info.get('aiConfigId')
         if owner_user_id is not None and not _ai_config_belongs_to_user(claimed_ai, owner_user_id):
-            print(
-                'Agent registration rejected (AI ownership mismatch): agent',
-                info.get('id'), 'user', owner_user_id, 'ai', claimed_ai,
+            logger.warning(
+                f"Agent registration rejected (AI ownership mismatch): "
+                f"agent={info.get('id')} user={owner_user_id} ai={claimed_ai}"
             )
             await sio.emit(
                 'agent:register_rejected',
@@ -130,10 +134,9 @@ def register_agent_socket_events():
             'source': 'socket',
             'dispatchable': True,
         }
-        print(
-            'Agent registered:', agent_id,
-            'user:', owner_user_id,
-            'ai:', agents[sid].get('aiConfigId'),
+        logger.info(
+            f"Agent registered: {agent_id} user={owner_user_id} "
+            f"ai={agents[sid].get('aiConfigId')}"
         )
         await sio.emit('agent:registered', {'id': agent_id}, to=sid)
         await sio.emit('agent:list', list(agents.values()))

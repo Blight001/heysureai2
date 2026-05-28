@@ -10,15 +10,20 @@ from sqlmodel import Session, select
 
 from api.database import get_session
 from api.database import engine
-from api.integrations.qq.long_connection import get_qq_long_connection_state
-from api.integrations.qq.service import diagnose_qq_config, parse_qq_text_event, send_qq_text_message
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.routers.auth import get_current_user
 from api.routers.chat_base import _RUN_THREADS
 from api.routers.chat_runtime_helpers import _resolve_ai_runtime
 from api.routers.chat_worker import _run_worker
 from api.services.chat_persistence import _save_message
-from api.services.feishu_auto_notify import register_qq_session_route
+from ._config import read_qq_config
+from .long_connection import get_qq_long_connection_state
+from .routes_store import register_qq_session_route
+from .service import diagnose_qq_config, parse_qq_text_event, send_qq_text_message
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 PREFIX = "/api/qq"
@@ -57,7 +62,9 @@ def _verify_qq_signature(cfg: AssistantAIConfig, request: Request, body: bytes) 
         raise HTTPException(status_code=403, detail="Invalid QQ callback signature encoding")
     if len(sig) != 64:
         raise HTTPException(status_code=403, detail="Invalid QQ callback signature length")
-    public_key = _ed25519_private_key_from_secret(str(cfg.qq_app_secret or "")).public_key()
+    public_key = _ed25519_private_key_from_secret(
+        str(read_qq_config(cfg).get("app_secret") or "")
+    ).public_key()
     try:
         public_key.verify(sig, timestamp.encode("utf-8") + body)
     except Exception:
@@ -107,7 +114,7 @@ def _send_qq_text(
         )
         return True
     except Exception as exc:
-        print(f"[qq_notify] send failed config_id={ai_config_id}: {exc}")
+        logger.exception(f"send failed config_id={ai_config_id}: {exc}")
         return False
 
 
@@ -137,7 +144,7 @@ def _start_qq_worker(worker_kwargs: Dict[str, Any]) -> str:
                         bg.add(row)
                         bg.commit()
             except Exception as exc:
-                print(f"[qq] persist worker_kwargs failed for {run_id}: {exc}")
+                logger.exception(f"persist worker_kwargs failed for {run_id}: {exc}")
         notify_queue(run_id)
         return run_id
 
@@ -189,7 +196,7 @@ def _wait_for_qq_idle_then_run(*, deferred_key: str, worker_kwargs: Dict[str, An
                 break
             time.sleep(0.5)
         if _qq_session_has_live_run(**send_kwargs):
-            print(f"[qq_notify] deferred run timeout session={send_kwargs['session_id']}")
+            logger.debug(f"deferred run timeout session={send_kwargs['session_id']}")
             return
         run_id = f"run_{uuid.uuid4().hex}"
         with Session(engine) as session:
@@ -279,7 +286,7 @@ def handle_qq_event_payload(
             raise HTTPException(status_code=404, detail="AI config not found")
         if str(cfg.bot_channel or "feishu").strip().lower() != "qq":
             raise HTTPException(status_code=400, detail="QQ bot is not the active channel for this AI")
-        if not cfg.qq_enabled:
+        if not read_qq_config(cfg).get("enabled"):
             raise HTTPException(status_code=400, detail="QQ bot is disabled for this AI")
         op = int(payload.get("op") or 0)
         event_type = str(payload.get("t") or "").strip()
@@ -290,7 +297,7 @@ def handle_qq_event_payload(
             "has_signature": bool(request.headers.get("X-Signature-Ed25519")) if request is not None else False,
             "body_bytes": len(raw_body or b""),
         }
-        print(f"[qq_callback] config_id={config_id} op={op} event_type={event_type or '-'} bytes={len(raw_body or b'')}")
+        logger.debug(f"config_id={config_id} op={op} event_type={event_type or '-'} bytes={len(raw_body or b'')}")
         if request is not None and raw_body is not None and op != 13:
             _verify_qq_signature(cfg, request, raw_body)
 
@@ -300,15 +307,17 @@ def handle_qq_event_payload(
             event_ts = str(data.get("event_ts") or "").strip()
             if not plain_token or not event_ts:
                 raise HTTPException(status_code=400, detail="Invalid QQ validation payload")
-            print(f"[qq_callback] validation ok config_id={config_id}")
+            logger.debug(f"validation ok config_id={config_id}")
             return {
                 "plain_token": plain_token,
-                "signature": _qq_validation_signature(str(cfg.qq_app_secret or ""), event_ts, plain_token),
+                "signature": _qq_validation_signature(
+                    str(read_qq_config(cfg).get("app_secret") or ""), event_ts, plain_token
+                ),
             }
 
         event = parse_qq_text_event(payload)
         if not event:
-            print(f"[qq_callback] ignored config_id={config_id} op={op} event_type={event_type or '-'}")
+            logger.debug(f"ignored config_id={config_id} op={op} event_type={event_type or '-'}")
             return {"op": 12, "d": 0}
 
         target_id = event.get("target_id") or ""

@@ -20,6 +20,7 @@ JWT auth as the monolith.
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager, suppress
 from typing import Any, Dict, Optional
 
@@ -27,15 +28,15 @@ import socketio
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from api.bots import iter_bots, get as get_bot
 from api.database import create_db_and_tables
-from api.integrations.feishu.long_connection import start_feishu_long_connection_clients
-from api.integrations.feishu.long_connection import get_feishu_long_connection_state
-from api.integrations.qq.long_connection import start_qq_long_connection_clients
-from api.integrations.qq.long_connection import get_qq_long_connection_state
 from api.models import AssistantAIConfig
 from api.sio import sio
 from api.socket_events import register_agent_socket_events
 from api.runtime.internal_http import require_internal_token
+
+
+logger = logging.getLogger(__name__)
 
 
 class AgentDispatchRequest(BaseModel):
@@ -67,35 +68,27 @@ async def _lifespan(app: FastAPI):
     try:
         expired = expire_orphan_dispatches()
         if expired:
-            print(f"[connector-runtime] expired {expired} orphan dispatch rows")
+            logger.info(f"expired {expired} orphan dispatch rows")
     except Exception as exc:
-        print(f"[connector-runtime] orphan sweep failed: {exc}")
+        logger.exception("orphan sweep failed")
 
-    # Maintain Feishu long connections from this process. Owning the
-    # upstream here means api-gateway restarts no longer drop Feishu.
+    # Maintain every registered bot's long-connection clients from this
+    # process. Owning the upstream here means api-gateway restarts no
+    # longer drop the inbound messages each bot is responsible for.
     stop_event = asyncio.Event()
 
-    async def _feishu_keepalive() -> None:
-        while not stop_event.is_set():
-            try:
-                start_feishu_long_connection_clients()
-            except Exception as exc:
-                print(f"[connector-runtime] feishu keepalive failed: {exc}")
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=3.0)
-            except asyncio.TimeoutError:
-                continue
-
-    async def _qq_keepalive() -> None:
-        while not stop_event.is_set():
-            try:
-                start_qq_long_connection_clients()
-            except Exception as exc:
-                print(f"[connector-runtime] qq keepalive failed: {exc}")
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=3.0)
-            except asyncio.TimeoutError:
-                continue
+    def _make_bot_keepalive(bot):
+        async def _keepalive() -> None:
+            while not stop_event.is_set():
+                try:
+                    bot.start_long_connections()
+                except Exception as exc:
+                    logger.exception(f"{bot.channel} keepalive failed")
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=3.0)
+                except asyncio.TimeoutError:
+                    continue
+        return _keepalive
 
     async def _orphan_sweeper() -> None:
         # Periodic sweep — startup pass alone isn't enough for a process
@@ -109,19 +102,22 @@ async def _lifespan(app: FastAPI):
             try:
                 expired_now = expire_orphan_dispatches()
                 if expired_now:
-                    print(f"[connector-runtime] expired {expired_now} orphan dispatch rows")
+                    logger.info(f"expired {expired_now} orphan dispatch rows")
             except Exception as exc:
-                print(f"[connector-runtime] periodic orphan sweep failed: {exc}")
+                logger.exception("periodic orphan sweep failed")
 
-    keepalive_task = asyncio.create_task(_feishu_keepalive())
-    qq_keepalive_task = asyncio.create_task(_qq_keepalive())
+    keepalive_tasks = [
+        asyncio.create_task(_make_bot_keepalive(bot)(), name=f"keepalive-{bot.channel}")
+        for bot in iter_bots()
+    ]
     sweep_task = asyncio.create_task(_orphan_sweeper())
-    print("[connector-runtime] ready (Socket.IO + /internal/* + feishu/qq keepalive)")
+    bot_channels = ",".join(bot.channel for bot in iter_bots()) or "no bots"
+    logger.info(f"ready (Socket.IO + /internal/* + bot keepalive: {bot_channels})")
     try:
         yield
     finally:
         stop_event.set()
-        for task in (keepalive_task, qq_keepalive_task, sweep_task):
+        for task in (*keepalive_tasks, sweep_task):
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
@@ -139,24 +135,31 @@ def create_app() -> FastAPI:
 
     @router.get("/bot/statuses")
     def bot_statuses() -> Dict[str, Any]:
+        """Return ``{<channel>_statuses: {config_id: state}}`` for every bot.
+
+        api-gateway's bot status route consumes this; the shape stays
+        ``"<channel>_statuses"`` so existing clients keep working but the
+        set of keys grows automatically when new bots register.
+        """
         from sqlmodel import Session, select
         from api.database import engine
 
-        feishu_statuses: Dict[str, Dict[str, str]] = {}
-        qq_statuses: Dict[str, Dict[str, str]] = {}
+        per_channel: Dict[str, Dict[str, Dict[str, str]]] = {
+            bot.channel: {} for bot in iter_bots()
+        }
         with Session(engine) as session:
             configs = session.exec(select(AssistantAIConfig)).all()
         for cfg in configs:
             config_id = int(cfg.id or 0)
             if not config_id:
                 continue
-            feishu_statuses[str(config_id)] = get_feishu_long_connection_state(config_id)
-            qq_statuses[str(config_id)] = get_qq_long_connection_state(config_id)
-        return {
-            "ok": True,
-            "feishu_statuses": feishu_statuses,
-            "qq_statuses": qq_statuses,
-        }
+            for bot in iter_bots():
+                per_channel[bot.channel][str(config_id)] = bot.get_long_connection_state(config_id)
+
+        payload: Dict[str, Any] = {"ok": True}
+        for channel, statuses in per_channel.items():
+            payload[f"{channel}_statuses"] = statuses
+        return payload
 
     @router.post("/agent/dispatch")
     async def agent_dispatch(req: AgentDispatchRequest) -> Dict[str, Any]:
@@ -209,16 +212,20 @@ def create_app() -> FastAPI:
 
     @router.post("/feishu/send")
     def feishu_send(req: FeishuSendRequest) -> Dict[str, Any]:
-        # Imported lazily — pulls in lark-oapi which we don't want loaded
-        # for processes that never send outbound Feishu traffic.
-        from api.integrations.feishu.service import send_feishu_text_message
+        # Lark-oapi is loaded lazily inside the adapter so processes that
+        # never send outbound Feishu traffic don't pull it in at import time.
+        bot = get_bot("feishu")
+        if bot is None:
+            raise HTTPException(status_code=503, detail="feishu bot not registered")
         try:
-            result = send_feishu_text_message(
+            result = bot.send_text(
                 user_id=req.user_id,
                 ai_config_id=req.ai_config_id,
                 text=req.text,
-                receive_id=req.receive_id or "",
-                receive_id_type=req.receive_id_type or "",
+                target={
+                    "receive_id": req.receive_id or "",
+                    "receive_id_type": req.receive_id_type or "",
+                },
             )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"feishu send failed: {exc}")

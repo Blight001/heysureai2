@@ -18,7 +18,7 @@ next NOTIFY.
 
 from __future__ import annotations
 
-import os
+import logging
 import threading
 import time
 import traceback
@@ -26,10 +26,24 @@ from typing import Any, Callable, Dict, List, Optional
 
 from sqlmodel import Session, select
 
-from api.core.config import DATABASE_URL, database_dialect, psycopg_dsn
+from api.core.settings import settings
 from api.database import engine
 from api.models import ChatRun
 from api.runtime import heartbeat
+
+
+logger = logging.getLogger(__name__)
+
+
+DATABASE_URL = settings.database_url
+
+
+def database_dialect() -> str:
+    return settings.database_dialect
+
+
+def psycopg_dsn() -> str:
+    return settings.psycopg_dsn
 
 
 QUEUE_CHANNEL = "ai_run_queued"
@@ -39,9 +53,7 @@ POLL_INTERVAL_SECONDS = 2.0  # SQLite fallback only
 # a thread + Python stack + an LLM HTTP connection, so unbounded growth from
 # a NOTIFY burst would exhaust the process. Override via env if you scale
 # vertically.
-_MAX_CONCURRENT_RUNS = max(
-    1, int(os.environ.get("HEYSURE_AI_RUNTIME_MAX_CONCURRENT", "16") or "16")
-)
+_MAX_CONCURRENT_RUNS = max(1, settings.ai_runtime_max_concurrent)
 _run_slots = threading.Semaphore(_MAX_CONCURRENT_RUNS)
 
 
@@ -67,8 +79,8 @@ def notify_queue(run_id: str) -> None:
             # run_id which we sanitize defensively.
             safe_payload = str(run_id or "").replace("'", "")
             conn.execute(f"NOTIFY {QUEUE_CHANNEL}, '{safe_payload}'")
-    except Exception as exc:
-        print(f"[ai-runtime] NOTIFY failed for {run_id}: {exc}")
+    except Exception:
+        logger.exception(f"NOTIFY failed for {run_id}")
 
 
 def _claim_one_queued_run() -> Optional[ChatRun]:
@@ -245,8 +257,8 @@ def _retry_tick_loop(stop_evt: threading.Event) -> None:
             return
         try:
             _drain_dispatcher()
-        except Exception as exc:
-            print(f"[ai-runtime] retry-tick drain failed: {exc}")
+        except Exception:
+            logger.exception("retry-tick drain failed")
 
 
 def _listen_postgres(stop_evt: threading.Event) -> None:
@@ -274,8 +286,8 @@ def _listen_postgres(stop_evt: threading.Event) -> None:
                         if stop_evt.is_set():
                             return
                         _drain_dispatcher()
-        except Exception as exc:
-            print(f"[ai-runtime] listen loop failed, retrying: {exc}")
+        except Exception:
+            logger.exception("listen loop failed, retrying")
             if stop_evt.wait(backoff):
                 return
             backoff = min(backoff * 2, 30.0)
@@ -285,8 +297,8 @@ def _poll_sqlite(stop_evt: threading.Event) -> None:
     while not stop_evt.is_set():
         try:
             _drain_dispatcher()
-        except Exception as exc:
-            print(f"[ai-runtime] poll sweep failed: {exc}")
+        except Exception:
+            logger.exception("poll sweep failed")
         if stop_evt.wait(POLL_INTERVAL_SECONDS):
             return
 
@@ -298,8 +310,8 @@ def run_dispatcher_forever(stop_evt: Optional[threading.Event] = None) -> None:
     at start and chooses the LISTEN/NOTIFY or polling path accordingly.
     """
     evt = stop_evt or threading.Event()
-    print(
-        f"[ai-runtime] dispatcher starting (dialect={database_dialect()}, "
+    logger.info(
+        f"dispatcher starting (dialect={database_dialect()}, "
         f"db={DATABASE_URL.split('@')[-1]})"
     )
     # Boot-time recovery sweep — re-enqueue any 'running' rows whose worker
@@ -308,9 +320,9 @@ def run_dispatcher_forever(stop_evt: Optional[threading.Event] = None) -> None:
     try:
         reaped = heartbeat.reap_stale_runs()
         if reaped:
-            print(f"[ai-runtime] boot watchdog reaped {len(reaped)} stale runs")
-    except Exception as exc:
-        print(f"[ai-runtime] boot reap failed: {exc}")
+            logger.warning(f"boot watchdog reaped {len(reaped)} stale runs")
+    except Exception:
+        logger.exception("boot reap failed")
     if database_dialect() == "postgresql":
         _listen_postgres(evt)
     else:

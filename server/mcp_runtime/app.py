@@ -13,6 +13,7 @@ ingress layer.
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
@@ -23,6 +24,9 @@ from api.database import create_db_and_tables
 from api.mcp import registry
 from api.mcp.loader import load_plugins_on_startup, reload_registry
 from api.runtime.internal_http import require_internal_token
+
+
+logger = logging.getLogger(__name__)
 
 
 class CallRequest(BaseModel):
@@ -45,10 +49,8 @@ async def _lifespan(app: FastAPI):
     boot = load_plugins_on_startup()
     if boot.get("plugin_errors"):
         for entry in boot["plugin_errors"]:
-            print(f"[mcp-runtime] plugin load failed: {entry.get('plugin')} -> {entry.get('error')}")
-    print(
-        f"[mcp-runtime] ready: {boot.get('tools', 0)} tools (version {boot.get('version', 1)})"
-    )
+            logger.error(f"plugin load failed: {entry.get('plugin')} -> {entry.get('error')}")
+    logger.info(f"ready: {boot.get('tools', 0)} tools (version {boot.get('version', 1)})")
     yield
 
 

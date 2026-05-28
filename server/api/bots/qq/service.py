@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from ...database import engine
 from ...integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
 from ...models import AssistantAIConfig
+from ._config import read_qq_config
 
 QQ_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
 QQ_API_BASE = "https://api.sgroup.qq.com"
@@ -73,15 +74,17 @@ def _load_qq_config(user_id: int, ai_config_id: Optional[int]) -> AssistantAICon
         raise HTTPException(status_code=404, detail="AI config not found")
     if str(cfg.bot_channel or "feishu").strip().lower() != "qq":
         raise HTTPException(status_code=400, detail="QQ bot is not the active channel for this AI")
-    if not cfg.qq_enabled:
+    bot_cfg = read_qq_config(cfg)
+    if not bot_cfg.get("enabled"):
         raise HTTPException(status_code=400, detail="QQ bot is not enabled for this AI")
-    if not cfg.qq_app_id or not cfg.qq_app_secret:
+    if not bot_cfg.get("app_id") or not bot_cfg.get("app_secret"):
         raise HTTPException(status_code=400, detail="QQ App ID / App Secret not configured")
     return cfg
 
 
 def get_qq_access_token(user_id: int, ai_config_id: Optional[int]) -> str:
     cfg = _load_qq_config(user_id, ai_config_id)
+    bot_cfg = read_qq_config(cfg)
     now = time.time()
     cache = _TOKEN_CACHE.get(int(cfg.id or 0))
     if cache and cache.get("token") and float(cache.get("expires_at") or 0) > now + 120:
@@ -90,7 +93,7 @@ def get_qq_access_token(user_id: int, ai_config_id: Optional[int]) -> str:
     res = requests.post(
         QQ_TOKEN_URL,
         headers={"Content-Type": "application/json"},
-        json={"appId": str(cfg.qq_app_id or ""), "clientSecret": str(cfg.qq_app_secret or "")},
+        json={"appId": str(bot_cfg.get("app_id") or ""), "clientSecret": str(bot_cfg.get("app_secret") or "")},
         timeout=20,
     )
     data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
@@ -103,7 +106,7 @@ def get_qq_access_token(user_id: int, ai_config_id: Optional[int]) -> str:
 
 
 def _qq_api_base(cfg: AssistantAIConfig) -> str:
-    return QQ_SANDBOX_API_BASE if bool(cfg.qq_sandbox) else QQ_API_BASE
+    return QQ_SANDBOX_API_BASE if bool(read_qq_config(cfg).get("sandbox")) else QQ_API_BASE
 
 
 def _message_endpoint(cfg: AssistantAIConfig, target_type: str, target_id: str) -> str:
@@ -123,7 +126,7 @@ def _qq_headers(cfg: AssistantAIConfig, token: str) -> Dict[str, str]:
     return {
         "Authorization": f"QQBot {token}",
         "Content-Type": "application/json",
-        "X-Union-Appid": str(cfg.qq_app_id or ""),
+        "X-Union-Appid": str(read_qq_config(cfg).get("app_id") or ""),
     }
 
 
@@ -188,11 +191,12 @@ def send_qq_text_message(
     msg_seq: Optional[int] = None,
 ) -> Dict[str, Any]:
     cfg = _load_qq_config(user_id, ai_config_id)
+    bot_cfg = read_qq_config(cfg)
     body = normalize_qq_text(text)
     if not body:
         raise HTTPException(status_code=400, detail="QQ message text is required")
-    final_target_id = str(target_id or cfg.qq_default_target_id or "").strip()
-    final_target_type = _normalize_target_type(target_type or cfg.qq_default_target_type or "c2c")
+    final_target_id = str(target_id or bot_cfg.get("default_target_id") or "").strip()
+    final_target_type = _normalize_target_type(target_type or bot_cfg.get("default_target_type") or "c2c")
     if not final_target_id:
         raise HTTPException(status_code=400, detail="QQ target_id is required")
 
@@ -225,18 +229,19 @@ def send_qq_text_message(
 
 def diagnose_qq_config(user_id: int, ai_config_id: Optional[int]) -> Dict[str, Any]:
     cfg = _load_qq_config(user_id, ai_config_id)
+    bot_cfg = read_qq_config(cfg)
     token = get_qq_access_token(user_id, ai_config_id)
     return {
         "success": True,
         "ai_config_id": int(cfg.id or 0),
         "bot_channel": str(cfg.bot_channel or ""),
-        "qq_enabled": bool(cfg.qq_enabled),
-        "app_id_configured": bool(str(cfg.qq_app_id or "").strip()),
-        "app_secret_configured": bool(str(cfg.qq_app_secret or "").strip()),
-        "sandbox": bool(cfg.qq_sandbox),
+        "qq_enabled": bool(bot_cfg.get("enabled")),
+        "app_id_configured": bool(str(bot_cfg.get("app_id") or "").strip()),
+        "app_secret_configured": bool(str(bot_cfg.get("app_secret") or "").strip()),
+        "sandbox": bool(bot_cfg.get("sandbox")),
         "api_base": _qq_api_base(cfg),
-        "default_target_id_configured": bool(str(cfg.qq_default_target_id or "").strip()),
-        "default_target_type": str(cfg.qq_default_target_type or "c2c"),
+        "default_target_id_configured": bool(str(bot_cfg.get("default_target_id") or "").strip()),
+        "default_target_type": str(bot_cfg.get("default_target_type") or "c2c"),
         "token_ok": bool(token),
         "token_preview": f"{token[:6]}..." if token else "",
     }
@@ -258,8 +263,9 @@ def send_qq_media_message(
     msg_seq: Optional[int] = None,
 ) -> Dict[str, Any]:
     cfg = _load_qq_config(user_id, ai_config_id)
-    final_target_id = str(target_id or cfg.qq_default_target_id or "").strip()
-    final_target_type = _normalize_target_type(target_type or cfg.qq_default_target_type or "c2c")
+    bot_cfg = read_qq_config(cfg)
+    final_target_id = str(target_id or bot_cfg.get("default_target_id") or "").strip()
+    final_target_type = _normalize_target_type(target_type or bot_cfg.get("default_target_type") or "c2c")
     if not final_target_id:
         raise HTTPException(status_code=400, detail="QQ target_id is required")
     if final_target_type not in {"c2c", "group"}:

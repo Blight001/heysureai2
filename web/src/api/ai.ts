@@ -12,6 +12,35 @@ export type AiConfigRow = Record<string, any>
 
 export type QqDiagnoseRow = Record<string, any>
 
+// Each bot's per-channel config slice. Keys mirror the server-side
+// ``BotAdapter.default_config`` schema; unknown keys are silently dropped
+// by the adapter so it is safe to send extras.
+export interface FeishuBotConfig {
+  enabled: boolean
+  webhook_url?: string
+  app_id?: string
+  app_secret?: string
+  verification_token?: string
+  default_receive_id?: string
+  default_receive_id_type?: string
+}
+
+export interface QqBotConfig {
+  enabled: boolean
+  app_id?: string
+  app_secret?: string
+  sandbox?: boolean
+  default_target_id?: string
+  default_target_type?: string
+}
+
+export interface BotConfigsPayload {
+  feishu?: Partial<FeishuBotConfig>
+  qq?: Partial<QqBotConfig>
+  // Future bots: any additional channel name keys an adapter is registered for.
+  [channel: string]: Record<string, any> | undefined
+}
+
 export interface AiConfigUpsertPayload {
   name: string
   description?: string
@@ -25,18 +54,7 @@ export interface AiConfigUpsertPayload {
   prompt?: string
   mcp_tools: string
   bot_channel: 'feishu' | 'qq'
-  feishu_enabled: boolean
-  feishu_webhook_url?: string
-  feishu_app_id?: string
-  feishu_app_secret?: string
-  feishu_verification_token?: string
-  feishu_default_receive_id?: string
-  feishu_default_receive_id_type?: string
-  qq_enabled?: boolean
-  qq_app_id?: string
-  qq_app_secret?: string
-  qq_sandbox?: boolean
-  qq_default_target_id?: string
+  bot_configs: BotConfigsPayload
   system_auto_control: string
 }
 
@@ -63,6 +81,22 @@ export const toggleAiRun = (configId: number) =>
     fallbackError: 'AI 启停切换失败',
   })
 
+// Unified bot diagnostics — every registered channel exposes the same shape.
+// Use this for any new code; the channel-specific shims below are kept for
+// existing call sites and will be removed once they migrate.
+export type BotDiagnoseRow = Record<string, any>
+
+export const diagnoseBot = (channel: string, configId: number) =>
+  get<BotDiagnoseRow>(`/api/bots/${channel}/diagnose/${configId}`, {
+    fallbackError: '机器人诊断失败',
+  })
+
+export const listBotChannels = () =>
+  get<{ channels: { channel: string; label: string }[] }>('/api/bots/channels', {
+    fallbackError: '机器人通道列表加载失败',
+  })
+
+// Deprecated — prefer ``diagnoseBot('qq', configId)``.
 export const diagnoseQqBot = (configId: number) =>
   get<QqDiagnoseRow>(`/api/qq/diagnose/${configId}`, {
     fallbackError: 'QQ 诊断失败',

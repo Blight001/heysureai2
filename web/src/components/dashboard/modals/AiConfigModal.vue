@@ -58,7 +58,10 @@ const selectedModelPreset = computed(() => {
   const selectedId = String(props.form?.model_preset_id || '')
   return (props.modelPresets || []).find(item => item.id === selectedId) || null
 })
-const selectedBotEnabled = computed(() => props.form?.bot_channel === 'qq' ? !!props.form?.qq_enabled : !!props.form?.feishu_enabled)
+const selectedBotEnabled = computed(() => {
+  const channel = props.form?.bot_channel === 'qq' ? 'qq' : 'feishu'
+  return !!props.form?.bot_configs?.[channel]?.enabled
+})
 const isToolSelected = (tool: string) => Array.isArray(props.form?.mcp_tools) && props.form.mcp_tools.includes(tool)
 const selectedAvailableMcpToolCount = computed(() => props.availableMcpTools.filter(tool => isToolSelected(tool)).length)
 const toolsAllSelected = (tools: string[]) => tools.length > 0 && tools.every(tool => isToolSelected(tool))
@@ -377,28 +380,28 @@ const onModelPresetChange = () => {
                 <template v-if="form.bot_channel === 'feishu'">
                 <label class="flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-300 px-2 py-2 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60">
                   <span>启用飞书机器人</span>
-                  <input type="checkbox" v-model="form.feishu_enabled" />
+                  <input type="checkbox" v-model="form.bot_configs.feishu.enabled" />
                 </label>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div class="md:col-span-2">
                     <label class="block text-[11px] text-zinc-500 mb-1">自定义群机器人 仅通知 URL</label>
-                    <input v-model="form.feishu_webhook_url" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." />
+                    <input v-model="form.bot_configs.feishu.webhook_url" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." />
                   </div>
                   <div>
                     <label class="block text-[11px] text-zinc-500 mb-1">App ID</label>
-                    <input v-model="form.feishu_app_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="cli_xxx" />
+                    <input v-model="form.bot_configs.feishu.app_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="cli_xxx" />
                   </div>
                   <div>
                     <label class="block text-[11px] text-zinc-500 mb-1">App Secret</label>
-                    <input v-model="form.feishu_app_secret" type="password" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
+                    <input v-model="form.bot_configs.feishu.app_secret" type="password" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
                   </div>
                   <div>
                     <label class="block text-[11px] text-zinc-500 mb-1">Verification Token</label>
-                    <input v-model="form.feishu_verification_token" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
+                    <input v-model="form.bot_configs.feishu.verification_token" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
                   </div>
                   <div>
                     <label class="block text-[11px] text-zinc-500 mb-1">默认接收 ID 类型</label>
-                    <select v-model="form.feishu_default_receive_id_type" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs">
+                    <select v-model="form.bot_configs.feishu.default_receive_id_type" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs">
                       <option value="chat_id">chat_id</option>
                       <option value="open_id">open_id</option>
                       <option value="user_id">user_id</option>
@@ -408,7 +411,7 @@ const onModelPresetChange = () => {
                   </div>
                   <div class="md:col-span-2">
                     <label class="block text-[11px] text-zinc-500 mb-1">默认接收 ID（AI 主动通知时使用）</label>
-                    <input v-model="form.feishu_default_receive_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="群聊 chat_id 或用户 open_id" />
+                    <input v-model="form.bot_configs.feishu.default_receive_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="群聊 chat_id 或用户 open_id" />
                   </div>
                 </div>
                 <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
@@ -419,24 +422,24 @@ const onModelPresetChange = () => {
                 <template v-else>
                 <label class="flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-300 px-2 py-2 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60">
                   <span>启用 QQ机器人</span>
-                  <input type="checkbox" v-model="form.qq_enabled" />
+                  <input type="checkbox" v-model="form.bot_configs.qq.enabled" />
                 </label>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label class="block text-[11px] text-zinc-500 mb-1">App ID</label>
-                    <input v-model="form.qq_app_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="开放平台机器人 AppID" />
+                    <input v-model="form.bot_configs.qq.app_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="开放平台机器人 AppID" />
                   </div>
                   <div>
                     <label class="block text-[11px] text-zinc-500 mb-1">App Secret</label>
-                    <input v-model="form.qq_app_secret" type="password" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
+                    <input v-model="form.bot_configs.qq.app_secret" type="password" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" />
                   </div>
                   <label class="md:col-span-2 flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-300 px-2 py-2 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60">
                     <span>使用沙箱环境</span>
-                    <input type="checkbox" v-model="form.qq_sandbox" />
+                    <input type="checkbox" v-model="form.bot_configs.qq.sandbox" />
                   </label>
                   <div>
                     <label class="block text-[11px] text-zinc-500 mb-1">主动发送目标 ID（可选）</label>
-                    <input v-model="form.qq_default_target_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="openid / group_openid / channel_id" />
+                    <input v-model="form.bot_configs.qq.default_target_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="openid / group_openid / channel_id" />
                   </div>
                 </div>
                 <div class="text-[11px] text-zinc-500 dark:text-zinc-400">

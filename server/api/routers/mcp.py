@@ -128,8 +128,8 @@ async def call_mcp_tool(
     # path uses the same registry version the AI worker uses. Without this,
     # admins who reload mcp-runtime would still see stale tool behavior in
     # the UI "test tool" feature.
-    import os as _os
-    runtime_url = _os.environ.get("MCP_RUNTIME_URL", "").strip()
+    from api.core.settings import settings
+    runtime_url = settings.mcp_runtime_url
     if runtime_url:
         import httpx
         from api.runtime.internal_http import internal_headers
