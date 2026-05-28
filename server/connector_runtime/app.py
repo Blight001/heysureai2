@@ -27,15 +27,15 @@ import socketio
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from ...database import create_db_and_tables
-from ...integrations.feishu.long_connection import start_feishu_long_connection_clients
-from ...integrations.feishu.long_connection import get_feishu_long_connection_state
-from ...integrations.qq.long_connection import start_qq_long_connection_clients
-from ...integrations.qq.long_connection import get_qq_long_connection_state
-from ...models import AssistantAIConfig
-from ...sio import sio
-from ...socket_events import register_agent_socket_events
-from ..internal_http import require_internal_token
+from api.database import create_db_and_tables
+from api.integrations.feishu.long_connection import start_feishu_long_connection_clients
+from api.integrations.feishu.long_connection import get_feishu_long_connection_state
+from api.integrations.qq.long_connection import start_qq_long_connection_clients
+from api.integrations.qq.long_connection import get_qq_long_connection_state
+from api.models import AssistantAIConfig
+from api.sio import sio
+from api.socket_events import register_agent_socket_events
+from api.runtime.internal_http import require_internal_token
 
 
 class AgentDispatchRequest(BaseModel):
@@ -63,7 +63,7 @@ async def _lifespan(app: FastAPI):
 
     # Reap any dispatch rows whose original Future died with a previous
     # connector-runtime process. The poller would otherwise wait forever.
-    from ...services.agent_dispatch import expire_orphan_dispatches
+    from api.services.agent_dispatch import expire_orphan_dispatches
     try:
         expired = expire_orphan_dispatches()
         if expired:
@@ -134,13 +134,13 @@ def create_app() -> FastAPI:
 
     @router.get("/health")
     def health() -> Dict[str, Any]:
-        from ...sio import agents
+        from api.sio import agents
         return {"ok": True, "agents": len(agents)}
 
     @router.get("/bot/statuses")
     def bot_statuses() -> Dict[str, Any]:
         from sqlmodel import Session, select
-        from ...database import engine
+        from api.database import engine
 
         feishu_statuses: Dict[str, Dict[str, str]] = {}
         qq_statuses: Dict[str, Dict[str, str]] = {}
@@ -163,7 +163,7 @@ def create_app() -> FastAPI:
         # Non-blocking: emit task:dispatch to the agent + persist a pending
         # row. The caller polls /agent/dispatch/result/{task_id} for the
         # outcome so connector-runtime restarts don't strand the request.
-        from ...services.agent_dispatch import dispatch_endpoint_tool
+        from api.services.agent_dispatch import dispatch_endpoint_tool
         try:
             task_id = await dispatch_endpoint_tool(
                 user_id=req.user_id,
@@ -181,8 +181,8 @@ def create_app() -> FastAPI:
     def agent_dispatch_result(task_id: str) -> Dict[str, Any]:
         # DB-backed lookup so connector-runtime restarts don't lose state.
         from sqlmodel import Session, select
-        from ...database import engine
-        from ...models import AgentDispatchTask
+        from api.database import engine
+        from api.models import AgentDispatchTask
         with Session(engine) as session:
             row = session.exec(
                 select(AgentDispatchTask).where(AgentDispatchTask.task_id == task_id)
@@ -211,7 +211,7 @@ def create_app() -> FastAPI:
     def feishu_send(req: FeishuSendRequest) -> Dict[str, Any]:
         # Imported lazily — pulls in lark-oapi which we don't want loaded
         # for processes that never send outbound Feishu traffic.
-        from ...integrations.feishu.service import send_feishu_text_message
+        from api.integrations.feishu.service import send_feishu_text_message
         try:
             result = send_feishu_text_message(
                 user_id=req.user_id,

@@ -85,7 +85,7 @@ def _send_feishu_text(
 def _start_feishu_worker(worker_kwargs: Dict[str, Any]) -> str:
     import json as _json
     from .chat_action_routes import _ai_dispatch_mode
-    from api.runtime.ai_worker_service import notify_queue
+    from ai_runtime.worker import notify_queue
 
     run_id = str(worker_kwargs["run_id"])
     if _ai_dispatch_mode() == "remote":

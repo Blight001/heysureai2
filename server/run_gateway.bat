@@ -22,5 +22,5 @@ if not defined AI_DISPATCH_MODE set "AI_DISPATCH_MODE=remote"
 rem Keep the gateway stable unless you explicitly enable reload yourself.
 set "HEYSURE_SERVER_RELOAD=0"
 
-python main.py
+python -m gateway.main
 pause

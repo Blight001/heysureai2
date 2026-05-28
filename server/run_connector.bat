@@ -15,5 +15,5 @@ if exist "%ENV_FILE%" (
 cd /d "%~dp0"
 call venv\Scripts\activate
 
-python main_connector_runtime.py
+python -m connector_runtime.main
 pause

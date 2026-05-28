@@ -1,4 +1,10 @@
-import uvicorn
+"""``api-gateway`` FastAPI + Socket.IO app served on port 3000.
+
+Mounts every router under ``api/routers/`` at ``/api`` and wraps the
+Socket.IO server from ``api.sio``. Shared library code lives in ``api``;
+this module only wires it together for the public-facing process.
+"""
+
 import socketio
 import os
 import importlib
@@ -9,15 +15,15 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .sio import sio
-from .socket_events import register_agent_socket_events, register_user_socket_events
-from .database import create_db_and_tables
-from .mcp.loader import load_plugins_on_startup
-from .runtime import heartbeat as heartbeat_module
-from .services.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
-from .integrations.feishu.long_connection import start_feishu_long_connection_clients
-from .integrations.qq.long_connection import start_qq_long_connection_clients
-from .routers.chat import process_task_scheduler
+from api.sio import sio
+from api.socket_events import register_agent_socket_events, register_user_socket_events
+from api.database import create_db_and_tables
+from api.mcp.loader import load_plugins_on_startup
+from api.runtime import heartbeat as heartbeat_module
+from api.services.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
+from api.integrations.feishu.long_connection import start_feishu_long_connection_clients
+from api.integrations.qq.long_connection import start_qq_long_connection_clients
+from api.routers.chat import process_task_scheduler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -107,31 +113,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 自动注册路由
-# 遍历 api/routers 目录下的所有 .py 文件
-# 由于现在 app.py 在 api 文件夹下，所以路径需要调整
-api_dir = os.path.dirname(__file__)
-routers_dir = os.path.join(api_dir, "routers")
-# 使用 glob 查找所有 .py 文件，排除 __init__.py
+# 自动注册路由：扫描共享的 api/routers/ 目录下所有路由模块。
+# 路由模块本身仍位于 api 包内（被 ai_runtime 等进程复用），网关进程
+# 只是把它们挂载到对外 HTTP 端口上。
+import api.routers as _routers_pkg
+routers_dir = os.path.dirname(_routers_pkg.__file__)
 router_files = glob.glob(os.path.join(routers_dir, "*.py"))
 
 for router_file in router_files:
     module_name = os.path.basename(router_file)[:-3]
     if module_name == "__init__":
         continue
-    
-    # 动态导入模块
+
     try:
-        # 由于在 api 包内，我们可以用相对导入或绝对导入
         module = importlib.import_module(f"api.routers.{module_name}")
         # 仅注册显式入口路由模块，避免拆分后的子模块重复挂载同一 router
         if hasattr(module, "router") and getattr(module, "IS_ROUTER_ENTRY", True):
-            # 默认统一挂载到 /api 前缀下
-            # 你也可以在模块中定义 PREFIX 变量来覆盖默认前缀
+            # 默认统一挂载到 /api 前缀下；模块可定义 PREFIX 覆盖。
             prefix = getattr(module, "PREFIX", "/api")
             app.include_router(module.router, prefix=prefix)
             print(f"Loaded router: {module_name} -> {prefix}")
-    except Exception as e:
+    except Exception:
         print(f"\033[91mFailed to load router {module_name}:\033[0m")
         traceback.print_exc()
 

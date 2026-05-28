@@ -17,5 +17,5 @@ call venv\Scripts\activate
 
 if not defined HEYSURE_SERVICE_ROLE set "HEYSURE_SERVICE_ROLE=mcp"
 
-python main_mcp_runtime.py
+python -m mcp_runtime.main
 pause

@@ -20,4 +20,4 @@ if not defined MCP_RUNTIME_URL set "MCP_RUNTIME_URL=http://127.0.0.1:3001"
 if not defined CONNECTOR_RUNTIME_URL set "CONNECTOR_RUNTIME_URL=http://127.0.0.1:3002"
 if not defined HEYSURE_AI_DEBUG set "HEYSURE_AI_DEBUG=1"
 
-python main_ai_runtime.py
+python -m ai_runtime.main
