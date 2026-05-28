@@ -6,9 +6,8 @@ from typing import Optional
 from fastapi import Depends, Header, HTTPException
 from sqlmodel import Session, select
 
+from api.bots import all_channels, iter_bots
 from api.database import get_session
-from api.integrations.feishu.long_connection import start_feishu_long_connection_clients
-from api.integrations.qq.long_connection import start_qq_long_connection_clients
 from api.mcp.permissions import clamp_tools_json, config_role_tier
 from api.models import (
     AIRuntimeStatus,
@@ -29,8 +28,22 @@ from .ai_base import (
 
 
 def _normalize_bot_channel(value) -> str:
+    """Snap an incoming ``bot_channel`` to a registered bot, defaulting to ``feishu``."""
     channel = str(value or "feishu").strip().lower()
-    return channel if channel in {"feishu", "qq"} else "feishu"
+    return channel if channel in set(all_channels()) else "feishu"
+
+
+def _restart_all_bot_long_connections() -> None:
+    """Best-effort kick every registered bot's long-connection client.
+
+    Each adapter is idempotent — already-running clients just reload their
+    config; missing clients spin up.
+    """
+    for bot in iter_bots():
+        try:
+            bot.start_long_connections()
+        except Exception as exc:
+            print(f"[start_{bot.channel}_long_connection_clients] {exc}")
 
 
 def _resolve_config_model_fields(user, preset_id: Optional[str], fallback_model: Optional[str] = None) -> dict:
@@ -134,14 +147,7 @@ async def create_ai_config(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
-    try:
-        start_feishu_long_connection_clients()
-    except Exception as exc:
-        print(f"[start_feishu_long_connection_clients] {exc}")
-    try:
-        start_qq_long_connection_clients()
-    except Exception as exc:
-        print(f"[start_qq_long_connection_clients] {exc}")
+    _restart_all_bot_long_connections()
     return cfg
 
 @router.put("/configs/{config_id}")
@@ -167,10 +173,11 @@ async def update_ai_config(
     if "bot_channel" in updates:
         updates["bot_channel"] = _normalize_bot_channel(updates.get("bot_channel"))
     next_bot_channel = updates.get("bot_channel", cfg.bot_channel)
-    if next_bot_channel == "qq":
-        updates["feishu_enabled"] = False
-    if next_bot_channel == "feishu":
-        updates["qq_enabled"] = False
+    # Switching channels must mutually-exclude every other registered bot
+    # so two backends never fight over the same AI config.
+    for bot in iter_bots():
+        if bot.channel != next_bot_channel:
+            bot.disable_in_config_updates(updates)
     if "ai_role" in updates:
         updates["ai_role"] = _normalize_ai_role(updates.get("ai_role"))
     next_ai_role = updates.get("ai_role", cfg.ai_role)
@@ -192,14 +199,7 @@ async def update_ai_config(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
-    try:
-        start_feishu_long_connection_clients()
-    except Exception as exc:
-        print(f"[start_feishu_long_connection_clients] {exc}")
-    try:
-        start_qq_long_connection_clients()
-    except Exception as exc:
-        print(f"[start_qq_long_connection_clients] {exc}")
+    _restart_all_bot_long_connections()
 
     status = session.exec(
         select(AIRuntimeStatus).where(

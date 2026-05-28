@@ -124,7 +124,7 @@ def _mark_error(config_id: int, exc: BaseException) -> None:
 
 
 async def _dispatch_botpy_event(config_id: int, payload: Dict[str, Any]) -> None:
-    from ...routers.qq import handle_qq_event_payload
+    from .router import handle_qq_event_payload
 
     await asyncio.to_thread(handle_qq_event_payload, int(config_id), payload)
 

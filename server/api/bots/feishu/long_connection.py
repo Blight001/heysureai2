@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 
 from ...database import engine
 from ...models import AssistantAIConfig
-from ...routers.feishu import handle_feishu_event_payload
+from .router import handle_feishu_event_payload
 
 _LOCK = threading.Lock()
 _LOOP_LOCK = threading.Lock()

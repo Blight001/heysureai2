@@ -7,13 +7,13 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlmodel import Session, select
 
 from api.database import engine
-from api.integrations.feishu.service import parse_feishu_text_event, send_feishu_text_message
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.services.chat_persistence import _save_message
-from api.services.feishu_auto_notify import register_feishu_session_route
 from api.routers.chat_base import _RUN_THREADS
 from api.routers.chat_runtime_helpers import _resolve_ai_runtime
 from api.routers.chat_worker import _run_worker
+from .routes_store import register_feishu_session_route
+from .service import parse_feishu_text_event, send_feishu_text_message
 
 router = APIRouter()
 PREFIX = "/api/feishu"

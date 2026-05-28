@@ -10,15 +10,15 @@ from sqlmodel import Session, select
 
 from api.database import get_session
 from api.database import engine
-from api.integrations.qq.long_connection import get_qq_long_connection_state
-from api.integrations.qq.service import diagnose_qq_config, parse_qq_text_event, send_qq_text_message
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.routers.auth import get_current_user
 from api.routers.chat_base import _RUN_THREADS
 from api.routers.chat_runtime_helpers import _resolve_ai_runtime
 from api.routers.chat_worker import _run_worker
 from api.services.chat_persistence import _save_message
-from api.services.feishu_auto_notify import register_qq_session_route
+from .long_connection import get_qq_long_connection_state
+from .routes_store import register_qq_session_route
+from .service import diagnose_qq_config, parse_qq_text_event, send_qq_text_message
 
 router = APIRouter()
 PREFIX = "/api/qq"

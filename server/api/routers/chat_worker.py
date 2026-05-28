@@ -857,10 +857,16 @@ def _run_worker_impl(
                 # System-injected AI-to-AI messages must remain answerable even
                 # when a task or config narrows the general MCP tool allowlist.
                 effective_tool_allowlist.add("ai.send_message")
-            if str(session_id or "").startswith("feishu_"):
-                # Feishu conversations need a self-service context trim path even
-                # for older AI configs whose saved MCP list predates this tool.
-                effective_tool_allowlist.add("conversation.forget_before_current")
+            # Per-bot tool requirements (e.g. Feishu adds context-trim) live
+            # on the adapter so adding/removing a bot's required tools no
+            # longer touches the chat worker.
+            from api.bots import iter_bots as _iter_bots
+            from api.bots.base import channel_for_session_id as _channel_for_session_id
+            _session_channel = _channel_for_session_id(str(session_id or ""), _iter_bots())
+            if _session_channel:
+                _bot = next((b for b in _iter_bots() if b.channel == _session_channel), None)
+                if _bot is not None:
+                    effective_tool_allowlist.update(_bot.extra_required_mcp_tools())
             token_threshold_override = None
             workspace_root_override = None
             if task_payload:

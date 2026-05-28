@@ -1,5 +1,5 @@
 """通信类 MCP 工具：
-- user.send_message  → 向用户发送消息（按 AI 配置选择飞书/QQ 机器人）
+- user.send_message  → 向用户发送消息（按 AI 配置选择对应机器人插件）
 - ai.send_message    → 向另一个 AI 发送消息。所有"回信"都走它本身：带
                        message_type="reply" 与 reply_to_message_id。
                        系统按 (target_session_id, status) 严格匹配。
@@ -11,9 +11,8 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
+from ...bots import all_channels, get as get_bot
 from ...database import engine
-from ...integrations.feishu.service import send_feishu_media_message, send_feishu_text_message
-from ...integrations.qq.service import send_qq_media_message, send_qq_text_message
 from ..core import get_project_root, safe_join
 from ...models import AssistantAIConfig, User
 from ...services import ai_message_service
@@ -83,69 +82,52 @@ def _user_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
             ).first() if ai_config_id else None
             channel = str(getattr(cfg, "bot_channel", "") or "feishu").strip().lower()
 
-    if channel == "feishu":
-        results = []
-        if text and (media_url or media_path):
-            results.append(send_feishu_text_message(
-                user_id,
-                ai_config_id,
-                text=text,
-                receive_id=receive_id,
-                receive_id_type=receive_id_type,
-            ))
-        if media_url or media_path:
-            results.append(send_feishu_media_message(
-                user_id,
-                ai_config_id,
-                media_url=media_url,
-                media_path=media_path,
-                media_type=media_type,
-                file_name=file_name,
-                receive_id=receive_id,
-                receive_id_type=receive_id_type,
-                duration=int(args["duration"]) if args.get("duration") is not None else None,
-            ))
-            result = results[-1]
-            if len(results) > 1:
-                result = {"success": True, "results": results}
-        else:
-            result = send_feishu_text_message(
-                user_id,
-                ai_config_id,
-                text=text,
-                receive_id=receive_id,
-                receive_id_type=receive_id_type,
-            )
-    elif channel == "qq":
-        target_id = str(args.get("target_id") or args.get("group_openid") or args.get("openid") or receive_id or "").strip()
-        target_type = str(args.get("target_type") or args.get("qq_target_type") or receive_id_type or "").strip()
-        if media_url or media_path:
-            result = send_qq_media_message(
-                user_id,
-                ai_config_id,
-                media_url=media_url,
-                media_path=media_path,
-                media_type=media_type,
-                file_name=file_name,
-                target_id=target_id,
-                target_type=target_type,
-                text=text,
-                msg_id=str(args.get("msg_id") or "").strip(),
-                event_id=str(args.get("event_id") or "").strip(),
-                msg_seq=int(args["msg_seq"]) if args.get("msg_seq") is not None else None,
-            )
-        else:
-            result = send_qq_text_message(
-                user_id,
-                ai_config_id,
-                text=text,
-                target_id=target_id,
-                target_type=target_type,
-                msg_id=str(args.get("msg_id") or "").strip(),
-                event_id=str(args.get("event_id") or "").strip(),
-            )
+    bot = get_bot(channel)
+    if bot is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"channel '{channel}' not supported; use one of {sorted(all_channels())}",
+        )
+
+    # Bots pick the fields they need out of ``target``; we pass through every
+    # plausible alias the caller might have used (qq aliases group_openid /
+    # openid; feishu uses receive_id / receive_id_type).
+    target: Dict[str, Any] = {
+        "receive_id": receive_id,
+        "receive_id_type": receive_id_type,
+        "target_id": str(
+            args.get("target_id") or args.get("group_openid") or args.get("openid") or receive_id or ""
+        ).strip(),
+        "target_type": str(
+            args.get("target_type") or args.get("qq_target_type") or receive_id_type or ""
+        ).strip(),
+        "msg_id": str(args.get("msg_id") or "").strip(),
+        "event_id": str(args.get("event_id") or "").strip(),
+        "msg_seq": args.get("msg_seq"),
+    }
+    media: Dict[str, Any] = {
+        "url": media_url,
+        "path": media_path,
+        "type": media_type,
+        "file_name": file_name,
+        "duration": args.get("duration"),
+    }
+
+    if media_url or media_path:
+        result = bot.send_media(
+            user_id=user_id,
+            ai_config_id=ai_config_id,
+            text=text,
+            media=media,
+            target=target,
+        )
     else:
-        raise HTTPException(status_code=400, detail=f"channel '{channel}' not supported; use 'feishu' or 'qq'")
+        result = bot.send_text(
+            user_id=user_id,
+            ai_config_id=ai_config_id,
+            text=text,
+            target=target,
+        )
     # 套一层 user 语义包装 + 拼出"已送达"提示
     notice_template = ""
     try:

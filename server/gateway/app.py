@@ -15,14 +15,13 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.bots import iter_bots
 from api.sio import sio
 from api.socket_events import register_agent_socket_events, register_user_socket_events
 from api.database import create_db_and_tables
 from api.mcp.loader import load_plugins_on_startup
 from api.runtime import heartbeat as heartbeat_module
 from api.services.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
-from api.integrations.feishu.long_connection import start_feishu_long_connection_clients
-from api.integrations.qq.long_connection import start_qq_long_connection_clients
 from api.routers.chat import process_task_scheduler
 
 @asynccontextmanager
@@ -62,23 +61,18 @@ async def lifespan(app: FastAPI):
     stop_event = asyncio.Event()
 
     watchdog_counter = {"ticks": 0}
-    # When a dedicated connector-runtime is configured, it owns the Feishu
-    # long connection so api-gateway restarts don't drop the upstream.
-    _feishu_in_gateway = not os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
-    _qq_in_gateway = not os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
+    # In split deployments the dedicated connector-runtime owns every bot's
+    # long-connection client so api-gateway restarts don't drop upstream.
+    _bots_owned_by_gateway = not os.environ.get("CONNECTOR_RUNTIME_URL", "").strip()
 
     async def periodic_scan():
         while not stop_event.is_set():
-            if _feishu_in_gateway:
-                try:
-                    start_feishu_long_connection_clients()
-                except Exception as exc:
-                    print(f"[start_feishu_long_connection_clients] {exc}")
-            if _qq_in_gateway:
-                try:
-                    start_qq_long_connection_clients()
-                except Exception as exc:
-                    print(f"[start_qq_long_connection_clients] {exc}")
+            if _bots_owned_by_gateway:
+                for bot in iter_bots():
+                    try:
+                        bot.start_long_connections()
+                    except Exception as exc:
+                        print(f"[start_{bot.channel}_long_connection_clients] {exc}")
             try:
                 process_task_scheduler()
             except Exception as exc:
@@ -136,6 +130,21 @@ for router_file in router_files:
     except Exception:
         print(f"\033[91mFailed to load router {module_name}:\033[0m")
         traceback.print_exc()
+
+# Bot routers live next to each bot's adapter — mount them here so adding a
+# new bot stays a single ``bots/<name>/`` directory drop instead of also
+# editing api/routers/.
+for _bot in iter_bots():
+    try:
+        bot_router_module = importlib.import_module(f"api.bots.{_bot.channel}.router")
+    except ModuleNotFoundError:
+        continue
+    bot_router = getattr(bot_router_module, "router", None)
+    if bot_router is None:
+        continue
+    bot_prefix = getattr(bot_router_module, "PREFIX", f"/api/{_bot.channel}")
+    app.include_router(bot_router, prefix=bot_prefix)
+    print(f"Loaded bot router: {_bot.channel} -> {bot_prefix}")
 
 # Register Socket Events. In split deployments (CONNECTOR_RUNTIME_URL set)
 # connector-runtime owns the agent-side handlers, so api-gateway only wires
