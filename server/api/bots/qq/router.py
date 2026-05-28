@@ -16,6 +16,7 @@ from api.routers.chat_base import _RUN_THREADS
 from api.routers.chat_runtime_helpers import _resolve_ai_runtime
 from api.routers.chat_worker import _run_worker
 from api.services.chat_persistence import _save_message
+from ._config import read_qq_config
 from .long_connection import get_qq_long_connection_state
 from .routes_store import register_qq_session_route
 from .service import diagnose_qq_config, parse_qq_text_event, send_qq_text_message
@@ -57,7 +58,9 @@ def _verify_qq_signature(cfg: AssistantAIConfig, request: Request, body: bytes) 
         raise HTTPException(status_code=403, detail="Invalid QQ callback signature encoding")
     if len(sig) != 64:
         raise HTTPException(status_code=403, detail="Invalid QQ callback signature length")
-    public_key = _ed25519_private_key_from_secret(str(cfg.qq_app_secret or "")).public_key()
+    public_key = _ed25519_private_key_from_secret(
+        str(read_qq_config(cfg).get("app_secret") or "")
+    ).public_key()
     try:
         public_key.verify(sig, timestamp.encode("utf-8") + body)
     except Exception:
@@ -279,7 +282,7 @@ def handle_qq_event_payload(
             raise HTTPException(status_code=404, detail="AI config not found")
         if str(cfg.bot_channel or "feishu").strip().lower() != "qq":
             raise HTTPException(status_code=400, detail="QQ bot is not the active channel for this AI")
-        if not cfg.qq_enabled:
+        if not read_qq_config(cfg).get("enabled"):
             raise HTTPException(status_code=400, detail="QQ bot is disabled for this AI")
         op = int(payload.get("op") or 0)
         event_type = str(payload.get("t") or "").strip()
@@ -303,7 +306,9 @@ def handle_qq_event_payload(
             print(f"[qq_callback] validation ok config_id={config_id}")
             return {
                 "plain_token": plain_token,
-                "signature": _qq_validation_signature(str(cfg.qq_app_secret or ""), event_ts, plain_token),
+                "signature": _qq_validation_signature(
+                    str(read_qq_config(cfg).get("app_secret") or ""), event_ts, plain_token
+                ),
             }
 
         event = parse_qq_text_event(payload)

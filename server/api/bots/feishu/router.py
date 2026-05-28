@@ -12,6 +12,7 @@ from api.services.chat_persistence import _save_message
 from api.routers.chat_base import _RUN_THREADS
 from api.routers.chat_runtime_helpers import _resolve_ai_runtime
 from api.routers.chat_worker import _run_worker
+from ._config import read_feishu_config
 from .routes_store import register_feishu_session_route
 from .service import parse_feishu_text_event, send_feishu_text_message
 
@@ -25,7 +26,7 @@ _FEISHU_DEFERRED_SESSIONS: set[str] = set()
 
 
 def _verify_token(cfg: AssistantAIConfig, payload: Dict[str, Any]) -> None:
-    expected = str(cfg.feishu_verification_token or "").strip()
+    expected = str(read_feishu_config(cfg).get("verification_token") or "").strip()
     if not expected:
         return
     header = payload.get("header") if isinstance(payload.get("header"), dict) else {}
@@ -210,7 +211,7 @@ def handle_feishu_event_payload(config_id: int, payload: Dict[str, Any], verify_
             raise HTTPException(status_code=404, detail="AI config not found")
         if str(cfg.bot_channel or "feishu").strip().lower() != "feishu":
             raise HTTPException(status_code=400, detail="Feishu bot is not the active channel for this AI")
-        if not cfg.feishu_enabled:
+        if not read_feishu_config(cfg).get("enabled"):
             raise HTTPException(status_code=400, detail="Feishu bot is disabled for this AI")
         if verify_token:
             _verify_token(cfg, payload)

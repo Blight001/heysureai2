@@ -31,6 +31,124 @@ def run_data_consolidations(engine) -> None:
     per-bot tables into ``botsessionroute`` etc.
     """
     _consolidate_bot_session_routes(engine)
+    _consolidate_assistantaiconfig_bot_configs(engine)
+
+
+_LEGACY_FEISHU_COLS = (
+    "feishu_enabled",
+    "feishu_webhook_url",
+    "feishu_app_id",
+    "feishu_app_secret",
+    "feishu_verification_token",
+    "feishu_default_receive_id",
+    "feishu_default_receive_id_type",
+)
+_LEGACY_QQ_COLS = (
+    "qq_enabled",
+    "qq_app_id",
+    "qq_app_secret",
+    "qq_sandbox",
+    "qq_default_target_id",
+    "qq_default_target_type",
+)
+
+
+def _consolidate_assistantaiconfig_bot_configs(engine) -> None:
+    """Backfill ``assistantaiconfig.bot_configs`` from the deprecated flat
+    columns, then drop those columns.
+
+    The flat columns (``feishu_*`` / ``qq_*``) were the original storage
+    for per-bot credentials. We're moving them into a single ``bot_configs``
+    JSON column keyed by channel so adding a new bot doesn't require a
+    schema migration each time.
+
+    The migration is idempotent:
+    - If ``bot_configs`` is missing it's added.
+    - For rows whose ``bot_configs`` is empty (``{}`` / NULL) we build the
+      JSON from whatever flat columns still exist and write it.
+    - Flat columns are dropped at the end via ``ALTER TABLE DROP COLUMN``
+      (works on Postgres + SQLite ≥ 3.35). Drops that fail are logged but
+      do not abort the migration.
+    """
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if "assistantaiconfig" not in set(insp.get_table_names()):
+        return
+    columns = {col["name"] for col in insp.get_columns("assistantaiconfig")}
+
+    # 1. Ensure bot_configs exists.
+    if "bot_configs" not in columns:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE assistantaiconfig ADD COLUMN bot_configs TEXT NOT NULL DEFAULT '{}'"
+                )
+            )
+        columns.add("bot_configs")
+
+    # 2. Backfill any row whose bot_configs is empty.
+    flat_present = [c for c in (*_LEGACY_FEISHU_COLS, *_LEGACY_QQ_COLS) if c in columns]
+    if flat_present:
+        select_cols = ", ".join(["id", "bot_configs", *flat_present])
+        with engine.begin() as conn:
+            rows = conn.execute(
+                text(f"SELECT {select_cols} FROM assistantaiconfig")
+            ).mappings().all()
+            for row in rows:
+                current = str(row.get("bot_configs") or "").strip() or "{}"
+                try:
+                    parsed = json.loads(current)
+                except Exception:
+                    parsed = {}
+                if not isinstance(parsed, dict):
+                    parsed = {}
+                if parsed:
+                    continue  # already migrated for this row
+                feishu_slice = {
+                    "enabled": bool(row.get("feishu_enabled")) if "feishu_enabled" in columns else False,
+                    "webhook_url": row.get("feishu_webhook_url") or "" if "feishu_webhook_url" in columns else "",
+                    "app_id": row.get("feishu_app_id") or "" if "feishu_app_id" in columns else "",
+                    "app_secret": row.get("feishu_app_secret") or "" if "feishu_app_secret" in columns else "",
+                    "verification_token": row.get("feishu_verification_token") or "" if "feishu_verification_token" in columns else "",
+                    "default_receive_id": row.get("feishu_default_receive_id") or "" if "feishu_default_receive_id" in columns else "",
+                    "default_receive_id_type": row.get("feishu_default_receive_id_type") or "chat_id" if "feishu_default_receive_id_type" in columns else "chat_id",
+                }
+                raw_target_type = (
+                    row.get("qq_default_target_type") or ""
+                    if "qq_default_target_type" in columns
+                    else ""
+                )
+                if raw_target_type not in {"c2c", "group", "channel", "dm"}:
+                    raw_target_type = "c2c"
+                qq_slice = {
+                    "enabled": bool(row.get("qq_enabled")) if "qq_enabled" in columns else False,
+                    "app_id": row.get("qq_app_id") or "" if "qq_app_id" in columns else "",
+                    "app_secret": row.get("qq_app_secret") or "" if "qq_app_secret" in columns else "",
+                    "sandbox": bool(row.get("qq_sandbox")) if "qq_sandbox" in columns else False,
+                    "default_target_id": row.get("qq_default_target_id") or "" if "qq_default_target_id" in columns else "",
+                    "default_target_type": raw_target_type,
+                }
+                payload = json.dumps(
+                    {"feishu": feishu_slice, "qq": qq_slice}, ensure_ascii=False
+                )
+                conn.execute(
+                    text("UPDATE assistantaiconfig SET bot_configs = :p WHERE id = :id"),
+                    {"p": payload, "id": row["id"]},
+                )
+
+    # 3. Drop the legacy columns. Best-effort per-column so a partial
+    #    failure (older SQLite, missing column) doesn't strand the rest.
+    for col in (*_LEGACY_FEISHU_COLS, *_LEGACY_QQ_COLS):
+        if col not in columns:
+            continue
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE assistantaiconfig DROP COLUMN {col}"))
+        except Exception as exc:
+            # Surface but do not raise: production may need a manual rebuild
+            # on very old SQLite that predates DROP COLUMN.
+            print(f"[migration] drop column {col} failed: {exc}")
 
 
 def _consolidate_bot_session_routes(engine) -> None:
@@ -425,19 +543,10 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
     _add_column(cursor, "assistantaiconfig", "workspace_root", "TEXT", existing)
     _add_column(cursor, "assistantaiconfig", "database_uri", "TEXT", existing)
     _add_column(cursor, "assistantaiconfig", "bot_channel", "TEXT DEFAULT 'feishu'", existing)
-    _add_column(cursor, "assistantaiconfig", "feishu_enabled", "BOOLEAN DEFAULT 0", existing)
-    _add_column(cursor, "assistantaiconfig", "feishu_webhook_url", "TEXT DEFAULT ''", existing)
-    _add_column(cursor, "assistantaiconfig", "feishu_app_id", "TEXT DEFAULT ''", existing)
-    _add_column(cursor, "assistantaiconfig", "feishu_app_secret", "TEXT DEFAULT ''", existing)
-    _add_column(cursor, "assistantaiconfig", "feishu_verification_token", "TEXT DEFAULT ''", existing)
-    _add_column(cursor, "assistantaiconfig", "feishu_default_receive_id", "TEXT DEFAULT ''", existing)
-    _add_column(cursor, "assistantaiconfig", "feishu_default_receive_id_type", "TEXT DEFAULT 'chat_id'", existing)
-    _add_column(cursor, "assistantaiconfig", "qq_enabled", "BOOLEAN DEFAULT 0", existing)
-    _add_column(cursor, "assistantaiconfig", "qq_app_id", "TEXT DEFAULT ''", existing)
-    _add_column(cursor, "assistantaiconfig", "qq_app_secret", "TEXT DEFAULT ''", existing)
-    _add_column(cursor, "assistantaiconfig", "qq_sandbox", "BOOLEAN DEFAULT 1", existing)
-    _add_column(cursor, "assistantaiconfig", "qq_default_target_id", "TEXT DEFAULT ''", existing)
-    _add_column(cursor, "assistantaiconfig", "qq_default_target_type", "TEXT DEFAULT 'c2c'", existing)
+    # The legacy ``feishu_*`` / ``qq_*`` flat columns are consolidated into
+    # ``bot_configs`` JSON by ``_consolidate_assistantaiconfig_bot_configs``.
+    # The add-column calls used to live here; they're intentionally gone so
+    # we don't re-add columns we drop in the dialect-agnostic migration.
     _add_column(cursor, "assistantaiconfig", "project_id", "TEXT", existing)
     _add_column(cursor, "assistantaiconfig", "project_name", "TEXT", existing)
     _add_column(cursor, "assistantaiconfig", "sort_order", "INTEGER DEFAULT 100", existing)
@@ -533,11 +642,14 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
         "WHERE bot_channel IS NULL OR bot_channel = '' "
         "OR bot_channel NOT IN ('feishu', 'qq')"
     )
-    cursor.execute(
-        "UPDATE assistantaiconfig SET qq_default_target_type = 'c2c' "
-        "WHERE qq_default_target_type IS NULL OR qq_default_target_type = '' "
-        "OR qq_default_target_type NOT IN ('c2c', 'group', 'channel', 'dm')"
-    )
+    # Normalize qq_default_target_type only while the legacy column still
+    # exists; once the bot_configs consolidation drops it, this is a no-op.
+    if "qq_default_target_type" in _existing_columns(cursor, "assistantaiconfig"):
+        cursor.execute(
+            "UPDATE assistantaiconfig SET qq_default_target_type = 'c2c' "
+            "WHERE qq_default_target_type IS NULL OR qq_default_target_type = '' "
+            "OR qq_default_target_type NOT IN ('c2c', 'group', 'channel', 'dm')"
+        )
 
 
 def _backfill_model_presets_from_ai_configs(cursor: sqlite3.Cursor) -> None:

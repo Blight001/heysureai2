@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from ..base import BotAdapter
 from ..registry import register
+from ._config import FEISHU_DEFAULTS
 
 if TYPE_CHECKING:
     from sqlmodel import Session
@@ -30,11 +31,18 @@ class FeishuBot(BotAdapter):
     label = "飞书"
     session_prefix = "feishu_"
 
+    # ---- config -----------------------------------------------------------
+
+    def default_config(self) -> dict:
+        return dict(FEISHU_DEFAULTS)
+
     # ---- enablement --------------------------------------------------------
 
     def is_enabled(self, cfg: "AssistantAIConfig") -> bool:
         channel = str(getattr(cfg, "bot_channel", "") or "feishu").strip().lower()
-        return channel == self.channel and bool(getattr(cfg, "feishu_enabled", False))
+        if channel != self.channel:
+            return False
+        return bool(self.read_config(cfg).get("enabled"))
 
     # ---- long-connection lifecycle ----------------------------------------
 
@@ -160,11 +168,6 @@ class FeishuBot(BotAdapter):
         # for older AI configs whose saved MCP allowlist predates this tool.
         return {"conversation.forget_before_current"}
 
-    # ---- config writeback -------------------------------------------------
-
-    def disable_in_config_updates(self, updates: Dict[str, Any]) -> None:
-        updates["feishu_enabled"] = False
-
     # ---- status -----------------------------------------------------------
 
     def build_status(
@@ -176,11 +179,12 @@ class FeishuBot(BotAdapter):
     ) -> Dict[str, str]:
         if str(cfg.bot_channel or "feishu").strip().lower() != self.channel:
             return {"status": "disabled", "mode": "off", "label": "未启用", "message": "当前机器人类型不是飞书"}
-        if not cfg.feishu_enabled:
+        bot_cfg = self.read_config(cfg)
+        if not bot_cfg.get("enabled"):
             return {"status": "disabled", "mode": "off", "label": "未启用", "message": "飞书机器人未启用"}
-        app_id = str(cfg.feishu_app_id or "").strip()
-        app_secret = str(cfg.feishu_app_secret or "").strip()
-        webhook_url = str(cfg.feishu_webhook_url or "").strip()
+        app_id = str(bot_cfg.get("app_id") or "").strip()
+        app_secret = str(bot_cfg.get("app_secret") or "").strip()
+        webhook_url = str(bot_cfg.get("webhook_url") or "").strip()
         if app_id or app_secret:
             if not app_id or not app_secret:
                 return {

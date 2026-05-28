@@ -6,6 +6,7 @@ from sqlmodel import Session, select
 
 from ...database import engine
 from ...models import AssistantAIConfig
+from ._config import read_qq_config
 
 _LOCK = threading.Lock()
 _CLIENTS: Dict[int, Any] = {}
@@ -296,16 +297,17 @@ def start_qq_long_connection_clients() -> int:
         configs = session.exec(select(AssistantAIConfig)).all()
     for cfg in configs:
         config_id = int(cfg.id or 0)
-        app_id = str(cfg.qq_app_id or "").strip()
-        app_secret = str(cfg.qq_app_secret or "").strip()
+        bot_cfg = read_qq_config(cfg)
+        app_id = str(bot_cfg.get("app_id") or "").strip()
+        app_secret = str(bot_cfg.get("app_secret") or "").strip()
         if (
             config_id
             and str(cfg.bot_channel or "feishu").strip().lower() == "qq"
-            and cfg.qq_enabled
+            and bot_cfg.get("enabled")
             and app_id
             and app_secret
         ):
-            desired[config_id] = (app_id, app_secret, bool(cfg.qq_sandbox))
+            desired[config_id] = (app_id, app_secret, bool(bot_cfg.get("sandbox")))
 
     if desired:
         print(f"[qq_long_connection] desired_configs={sorted(desired.keys())}")

@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 
 from ...database import engine
 from ...models import AssistantAIConfig
+from ._config import read_feishu_config
 from .router import handle_feishu_event_payload
 
 _LOCK = threading.Lock()
@@ -170,9 +171,10 @@ def start_feishu_long_connection_clients() -> int:
         configs = session.exec(select(AssistantAIConfig)).all()
     for cfg in configs:
         config_id = int(cfg.id or 0)
-        app_id = str(cfg.feishu_app_id or "").strip()
-        app_secret = str(cfg.feishu_app_secret or "").strip()
-        if config_id and str(cfg.bot_channel or "feishu") == "feishu" and cfg.feishu_enabled and app_id and app_secret:
+        bot_cfg = read_feishu_config(cfg)
+        app_id = str(bot_cfg.get("app_id") or "").strip()
+        app_secret = str(bot_cfg.get("app_secret") or "").strip()
+        if config_id and str(cfg.bot_channel or "feishu") == "feishu" and bot_cfg.get("enabled") and app_id and app_secret:
             desired[config_id] = (app_id, app_secret)
 
     disconnects = []

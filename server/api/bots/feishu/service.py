@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from ...database import engine
 from ...integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
 from ...models import AssistantAIConfig, User
+from ._config import read_feishu_config
 
 FEISHU_OPEN_API_BASE = "https://open.feishu.cn/open-apis"
 _TOKEN_CACHE: Dict[int, Dict[str, Any]] = {}
@@ -87,9 +88,10 @@ def _load_feishu_config(user_id: int, ai_config_id: Optional[int]) -> AssistantA
         raise HTTPException(status_code=404, detail="AI config not found")
     if str(cfg.bot_channel or "feishu").strip().lower() != "feishu":
         raise HTTPException(status_code=400, detail="Feishu bot is not the active channel for this AI")
-    if not cfg.feishu_enabled:
+    bot_cfg = read_feishu_config(cfg)
+    if not bot_cfg.get("enabled"):
         raise HTTPException(status_code=400, detail="Feishu bot is not enabled for this AI")
-    if not cfg.feishu_webhook_url and (not cfg.feishu_app_id or not cfg.feishu_app_secret):
+    if not bot_cfg.get("webhook_url") and (not bot_cfg.get("app_id") or not bot_cfg.get("app_secret")):
         raise HTTPException(status_code=400, detail="Feishu 仅通知 URL 或 app_id/app_secret 未配置")
     return cfg
 
@@ -101,10 +103,11 @@ def get_tenant_access_token(user_id: int, ai_config_id: Optional[int]) -> str:
     if cache and cache.get("token") and float(cache.get("expires_at") or 0) > now + 120:
         return str(cache["token"])
 
+    bot_cfg = read_feishu_config(cfg)
     res = requests.post(
         f"{FEISHU_OPEN_API_BASE}/auth/v3/tenant_access_token/internal",
         headers={"Content-Type": "application/json; charset=utf-8"},
-        json={"app_id": cfg.feishu_app_id, "app_secret": cfg.feishu_app_secret},
+        json={"app_id": bot_cfg.get("app_id", ""), "app_secret": bot_cfg.get("app_secret", "")},
         timeout=20,
     )
     data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
@@ -127,13 +130,14 @@ def send_feishu_text_message(
     receive_id_type: str = "",
 ) -> Dict[str, Any]:
     cfg = _load_feishu_config(user_id, ai_config_id)
+    bot_cfg = read_feishu_config(cfg)
     text = normalize_feishu_text(text, strip_markdown=_should_strip_markdown(user_id))
-    target_id = str(receive_id or cfg.feishu_default_receive_id or "").strip()
-    target_type = str(receive_id_type or cfg.feishu_default_receive_id_type or "chat_id").strip()
-    can_send_to_target = bool(target_id and cfg.feishu_app_id and cfg.feishu_app_secret)
-    if cfg.feishu_webhook_url and not can_send_to_target:
+    target_id = str(receive_id or bot_cfg.get("default_receive_id") or "").strip()
+    target_type = str(receive_id_type or bot_cfg.get("default_receive_id_type") or "chat_id").strip()
+    can_send_to_target = bool(target_id and bot_cfg.get("app_id") and bot_cfg.get("app_secret"))
+    if bot_cfg.get("webhook_url") and not can_send_to_target:
         res = requests.post(
-            cfg.feishu_webhook_url,
+            bot_cfg.get("webhook_url", ""),
             headers={"Content-Type": "application/json; charset=utf-8"},
             json={"msg_type": "text", "content": {"text": str(text or "")}},
             timeout=20,
@@ -274,10 +278,11 @@ def send_feishu_media_message(
     duration: Optional[int] = None,
 ) -> Dict[str, Any]:
     cfg = _load_feishu_config(user_id, ai_config_id)
-    if not cfg.feishu_app_id or not cfg.feishu_app_secret:
+    bot_cfg = read_feishu_config(cfg)
+    if not bot_cfg.get("app_id") or not bot_cfg.get("app_secret"):
         raise HTTPException(status_code=400, detail="Feishu media messages require App ID / App Secret")
-    target_id = str(receive_id or cfg.feishu_default_receive_id or "").strip()
-    target_type = str(receive_id_type or cfg.feishu_default_receive_id_type or "chat_id").strip()
+    target_id = str(receive_id or bot_cfg.get("default_receive_id") or "").strip()
+    target_type = str(receive_id_type or bot_cfg.get("default_receive_id_type") or "chat_id").strip()
     if not target_id:
         raise HTTPException(status_code=400, detail="Feishu receive_id is required")
     if target_type not in {"chat_id", "open_id", "user_id", "union_id", "email"}:

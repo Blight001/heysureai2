@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from ..base import BotAdapter
 from ..registry import register
+from ._config import QQ_DEFAULTS
 
 if TYPE_CHECKING:
     from sqlmodel import Session
@@ -24,11 +25,18 @@ class QQBot(BotAdapter):
     label = "QQ"
     session_prefix = "qq_"
 
+    # ---- config -----------------------------------------------------------
+
+    def default_config(self) -> dict:
+        return dict(QQ_DEFAULTS)
+
     # ---- enablement --------------------------------------------------------
 
     def is_enabled(self, cfg: "AssistantAIConfig") -> bool:
         channel = str(getattr(cfg, "bot_channel", "") or "feishu").strip().lower()
-        return channel == self.channel and bool(getattr(cfg, "qq_enabled", False))
+        if channel != self.channel:
+            return False
+        return bool(self.read_config(cfg).get("enabled"))
 
     # ---- long-connection lifecycle ----------------------------------------
 
@@ -134,11 +142,6 @@ class QQBot(BotAdapter):
         except Exception as exc:
             print(f"[qq_auto_notify] send failed message_id={message.id}: {exc}")
 
-    # ---- config writeback -------------------------------------------------
-
-    def disable_in_config_updates(self, updates: Dict[str, Any]) -> None:
-        updates["qq_enabled"] = False
-
     # ---- status -----------------------------------------------------------
 
     def build_status(
@@ -150,10 +153,11 @@ class QQBot(BotAdapter):
     ) -> Dict[str, str]:
         if str(cfg.bot_channel or "feishu").strip().lower() != self.channel:
             return {"status": "disabled", "mode": "off", "label": "未启用", "message": "当前机器人类型不是 QQ"}
-        if not cfg.qq_enabled:
+        bot_cfg = self.read_config(cfg)
+        if not bot_cfg.get("enabled"):
             return {"status": "disabled", "mode": "off", "label": "未启用", "message": "QQ机器人未启用"}
-        app_id = str(cfg.qq_app_id or "").strip()
-        app_secret = str(cfg.qq_app_secret or "").strip()
+        app_id = str(bot_cfg.get("app_id") or "").strip()
+        app_secret = str(bot_cfg.get("app_secret") or "").strip()
         if not app_id or not app_secret:
             return {
                 "status": "failed",

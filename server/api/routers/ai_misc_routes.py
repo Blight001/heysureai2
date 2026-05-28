@@ -446,6 +446,12 @@ async def list_ai_cards(
         feishu_status = _bot_status(cfg, "feishu")
         qq_status = _bot_status(cfg, "qq")
         bot_channel = str(cfg.bot_channel or "feishu")
+        # Surface every registered bot's parsed config slice so the
+        # frontend reads ``card.bot_configs.<channel>.<field>`` instead of
+        # the legacy flat columns.
+        bot_configs_view = {bot.channel: bot.read_config(cfg) for bot in iter_bots()}
+        active_bot = next((b for b in iter_bots() if b.channel == bot_channel), None)
+        active_bot_enabled = bool(active_bot.read_config(cfg).get("enabled")) if active_bot else False
         _, _, effective_model = resolve_model_preset(user, cfg)
         cards.append(
             {
@@ -474,19 +480,11 @@ async def list_ai_cards(
                 "enabled": cfg.enabled,
                 "mcp_enabled": cfg.mcp_enabled,
                 "bot_channel": bot_channel,
-                "feishu_enabled": cfg.feishu_enabled,
-                "feishu_webhook_url": cfg.feishu_webhook_url,
-                "feishu_app_id": cfg.feishu_app_id,
-                "feishu_default_receive_id": cfg.feishu_default_receive_id,
-                "feishu_default_receive_id_type": cfg.feishu_default_receive_id_type,
-                "feishu_status": feishu_status,
-                "qq_enabled": cfg.qq_enabled,
-                "qq_app_id": cfg.qq_app_id,
-                "qq_sandbox": cfg.qq_sandbox,
-                "qq_default_target_id": cfg.qq_default_target_id,
-                "qq_default_target_type": cfg.qq_default_target_type,
-                "qq_status": qq_status,
-                "bot_enabled": cfg.qq_enabled if bot_channel == "qq" else cfg.feishu_enabled,
+                # Per-channel config slices (replaces the flat feishu_*/qq_* columns).
+                "bot_configs": bot_configs_view,
+                # Per-channel runtime status (one entry per registered bot).
+                "bot_statuses": {"feishu": feishu_status, "qq": qq_status},
+                "bot_enabled": active_bot_enabled,
                 "bot_status": qq_status if bot_channel == "qq" else feishu_status,
                 "switch_key": cfg.switch_key,
                 "mcp_tools": cfg.mcp_tools,

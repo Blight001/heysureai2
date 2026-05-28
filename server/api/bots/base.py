@@ -39,6 +39,33 @@ class BotAdapter(ABC):
     # ---- config / enablement ------------------------------------------------
 
     @abstractmethod
+    def default_config(self) -> Dict[str, Any]:
+        """Return the default values for this bot's config slice.
+
+        The dict's keys become the whitelist for ``apply_config_payload`` —
+        anything not declared here is rejected. Use simple JSON-friendly
+        types only (str / bool / int).
+        """
+
+    def read_config(self, cfg: "AssistantAIConfig") -> Dict[str, Any]:
+        """Return this channel's config slice from ``cfg.bot_configs``,
+        with defaults filling in any missing keys.
+        """
+        from .config_store import get_channel_config
+        return get_channel_config(cfg, self.channel, self.default_config())
+
+    def apply_config_payload(
+        self, cfg: "AssistantAIConfig", payload: Dict[str, Any]
+    ) -> None:
+        """Merge ``payload`` into the channel slice of ``cfg.bot_configs``.
+
+        ``payload`` is the dict the API caller supplied. Unknown keys are
+        ignored; booleans / ints are coerced from JSON-y strings.
+        """
+        from .config_store import update_channel_config
+        update_channel_config(cfg, self.channel, payload, self.default_config())
+
+    @abstractmethod
     def is_enabled(self, cfg: "AssistantAIConfig") -> bool:
         """Return True iff this bot should run for the given AI config."""
 
@@ -103,17 +130,6 @@ class BotAdapter(ABC):
         """
         return set()
 
-    # ---- config writeback --------------------------------------------------
-
-    @abstractmethod
-    def disable_in_config_updates(self, updates: Dict[str, Any]) -> None:
-        """Mutate ``updates`` so this bot is turned off in ``AssistantAIConfig``.
-
-        Used by the config switch route: when the user picks channel ``X``,
-        every other registered bot has its enable flag flipped off via
-        this hook so we don't leave two backends fighting over the same
-        AI config.
-        """
 
 
     # ---- formatting --------------------------------------------------------
