@@ -223,7 +223,7 @@ def _start_task_run(
     session.add(job)
     session.commit()
     from .chat_action_routes import _ai_dispatch_mode
-    from api.runtime.ai_worker_service import notify_queue
+    from ai_runtime.worker import notify_queue
 
     if _ai_dispatch_mode() == "remote":
         notify_queue(run_id)

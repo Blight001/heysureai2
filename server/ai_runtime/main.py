@@ -15,7 +15,7 @@ Required env:
                                         — optional; enables HTTP agent dispatch
 
 Run with:
-    python main_ai_runtime.py
+    python -m ai_runtime.main
 """
 
 import os
@@ -24,12 +24,12 @@ import threading
 
 
 # Force-set the service role BEFORE importing the api package so api.sio picks
-# the remote proxy at import time. main_ai_runtime.py must be the entrypoint
-# for the worker process.
+# the remote proxy at import time. This module must be the entrypoint for the
+# worker process.
 os.environ.setdefault("HEYSURE_SERVICE_ROLE", "worker")
 
 from api.database import create_db_and_tables  # noqa: E402
-from api.runtime.ai_worker_service import run_dispatcher_forever  # noqa: E402
+from ai_runtime.worker import run_dispatcher_forever  # noqa: E402
 
 
 def main() -> int:

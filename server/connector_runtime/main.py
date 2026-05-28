@@ -10,7 +10,7 @@ Required env:
     DATABASE_URL=postgresql://...        — shared with the other services
 
 Run with:
-    python main_connector_runtime.py
+    python -m connector_runtime.main
 """
 
 import os
@@ -21,7 +21,7 @@ import uvicorn
 # Must be set BEFORE importing the api package so api.sio binds a real server.
 os.environ.setdefault("HEYSURE_SERVICE_ROLE", "connector")
 
-from api.runtime.connector_service import create_app  # noqa: E402
+from connector_runtime.app import create_app  # noqa: E402
 
 app = create_app()
 

@@ -19,10 +19,10 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from ...database import create_db_and_tables
-from ...mcp import registry
-from ...mcp.loader import load_plugins_on_startup, reload_registry
-from ..internal_http import require_internal_token
+from api.database import create_db_and_tables
+from api.mcp import registry
+from api.mcp.loader import load_plugins_on_startup, reload_registry
+from api.runtime.internal_http import require_internal_token
 
 
 class CallRequest(BaseModel):

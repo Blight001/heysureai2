@@ -26,10 +26,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 from sqlmodel import Session, select
 
-from ..core.config import DATABASE_URL, database_dialect, psycopg_dsn
-from ..database import engine
-from ..models import ChatRun
-from . import heartbeat
+from api.core.config import DATABASE_URL, database_dialect, psycopg_dsn
+from api.database import engine
+from api.models import ChatRun
+from api.runtime import heartbeat
 
 
 QUEUE_CHANNEL = "ai_run_queued"
@@ -115,8 +115,8 @@ def _load_worker_kwargs(run: ChatRun) -> Dict[str, Any]:
     """
     import json as _json
 
-    from ..routers.chat_runtime_helpers import _resolve_ai_runtime
-    from ..models import ChatMessage, User
+    from api.routers.chat_runtime_helpers import _resolve_ai_runtime
+    from api.models import ChatMessage, User
 
     extras: Dict[str, Any] = {}
     if run.worker_kwargs_json:
@@ -164,7 +164,7 @@ def _load_worker_kwargs(run: ChatRun) -> Dict[str, Any]:
 def _execute_run(run: ChatRun) -> None:
     # ``_run_worker`` now spawns its own heartbeat thread, so the dispatcher
     # just needs to materialize the kwargs and call it.
-    from ..routers.chat_worker import _run_worker
+    from api.routers.chat_worker import _run_worker
 
     try:
         kwargs = _load_worker_kwargs(run)
@@ -294,7 +294,7 @@ def _poll_sqlite(stop_evt: threading.Event) -> None:
 def run_dispatcher_forever(stop_evt: Optional[threading.Event] = None) -> None:
     """Block forever, dispatching queued runs as they appear.
 
-    Designed to be called from ``main_ai_runtime.py``. Catches dialect once
+    Designed to be called from ``ai_runtime/main.py``. Catches dialect once
     at start and chooses the LISTEN/NOTIFY or polling path accordingly.
     """
     evt = stop_evt or threading.Event()
