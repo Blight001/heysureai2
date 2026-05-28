@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 
 from ...database import engine
 from ...integrations.feishu.service import send_feishu_media_message, send_feishu_text_message
-from ...integrations.qq.service import send_qq_markdown_message, send_qq_media_message, send_qq_text_message
+from ...integrations.qq.service import send_qq_media_message, send_qq_text_message
 from ..core import get_project_root, safe_join
 from ...models import AssistantAIConfig, User
 from ...services import ai_message_service
@@ -51,12 +51,6 @@ def _coerce_message_type(raw: Any) -> str:
 def _user_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     """主动向用户推送一条消息。当前支持：飞书机器人、QQ机器人。"""
     text = str(args.get("text") or args.get("content") or args.get("message") or "").strip()
-    markdown_content = str(
-        args.get("markdown_content")
-        or args.get("markdown")
-        or ""
-    ).strip()
-    markdown_template_id = str(args.get("markdown_template_id") or "").strip()
     media_url = str(
         args.get("media_url")
         or args.get("image_url")
@@ -74,7 +68,7 @@ def _user_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
     media_path = _resolve_server_media_path(user_id, ai_config_id, media_path)
     media_type = str(args.get("media_type") or ("image" if (args.get("image_url") or args.get("image_path")) else "") or ("video" if (args.get("video_url") or args.get("video_path")) else "")).strip()
     file_name = str(args.get("file_name") or args.get("filename") or "").strip()
-    if not text and not markdown_content and not markdown_template_id and not media_url and not media_path:
+    if not text and not media_url and not media_path:
         raise HTTPException(status_code=400, detail="text or media_url/media_path is required for user.send_message")
     receive_id = str(args.get("receive_id") or args.get("chat_id") or args.get("open_id") or "").strip()
     receive_id_type = str(args.get("receive_id_type") or ("open_id" if args.get("open_id") else "")).strip()
@@ -125,11 +119,6 @@ def _user_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
     elif channel == "qq":
         target_id = str(args.get("target_id") or args.get("group_openid") or args.get("openid") or receive_id or "").strip()
         target_type = str(args.get("target_type") or args.get("qq_target_type") or receive_id_type or "").strip()
-        qq_message_format = str(
-            args.get("qq_message_format")
-            or args.get("message_format")
-            or ""
-        ).strip().lower()
         if media_url or media_path:
             result = send_qq_media_message(
                 user_id,
@@ -141,22 +130,6 @@ def _user_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
                 target_id=target_id,
                 target_type=target_type,
                 text=text,
-                msg_id=str(args.get("msg_id") or "").strip(),
-                event_id=str(args.get("event_id") or "").strip(),
-                msg_seq=int(args["msg_seq"]) if args.get("msg_seq") is not None else None,
-            )
-        elif qq_message_format == "markdown":
-            markdown_params = args.get("markdown_params")
-            if not isinstance(markdown_params, list):
-                markdown_params = []
-            result = send_qq_markdown_message(
-                user_id,
-                ai_config_id,
-                markdown_content=markdown_content or text,
-                markdown_template_id=markdown_template_id,
-                markdown_params=markdown_params,
-                target_id=target_id,
-                target_type=target_type,
                 msg_id=str(args.get("msg_id") or "").strip(),
                 event_id=str(args.get("event_id") or "").strip(),
                 msg_seq=int(args["msg_seq"]) if args.get("msg_seq") is not None else None,

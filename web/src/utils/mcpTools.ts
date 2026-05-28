@@ -109,7 +109,7 @@ const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag
   'prompt.write_ai': { label: '修改 AI Prompt', description: '按行修改指定 AI 的 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
   'prompt.read_system': { label: '读取系统 Prompt', description: '读取全局注入模板/旧版兜底 prompt；当前 AI 基础 prompt 请用读取 AI Prompt。', tag: 'Prompt' },
   'prompt.write_system': { label: '修改系统 Prompt', description: '按行修改全局注入模板/旧版兜底 prompt；整段覆盖必须显式使用 replace_all。', tag: 'Prompt' },
-  'user.send_message': { label: '发送用户消息', description: '向用户发送文本、图片、视频，或 QQ markdown 消息；默认通过当前 AI 绑定的飞书或 QQ 机器人投递。', tag: '协作' },
+  'user.send_message': { label: '发送用户消息', description: '向用户发送文本、图片或视频；默认通过当前 AI 绑定的飞书或 QQ 机器人投递。', tag: '协作' },
   'conversation.forget_before_current': { label: '忘记前文', description: '删除当前会话里当前用户消息之前的内容，保留当前消息及之后内容。', tag: '协作' },
   'conversation.find': { label: '查找对话', description: '按关键词、会话名、会话 ID 或消息内容查找当前 AI 范围内的对话。', tag: '协作' },
   'conversation.create': { label: '新建对话', description: '为当前 AI 新建一个空白对话会话。', tag: '协作' },

@@ -323,7 +323,7 @@ Rules:
         ui_brain_view_mode: brainViewMode.value,
         ui_plain_text_output_enabled: plainTextOutputEnabled.value,
         ui_thinking_icon: thinkingIcon.value,
-        ui_mcp_icon: mcpSuccessIcon.value,
+        ui_mcp_icon: mcpIcon.value,
         ui_mcp_success_icon: mcpSuccessIcon.value,
         ui_mcp_error_icon: mcpErrorIcon.value,
         ui_thinking_icon_enabled: thinkingIconEnabled.value,

@@ -280,6 +280,7 @@ def notify_saved_assistant_message(session: Session, message: ChatMessage) -> No
             return
         prefix = _feishu_assistant_prefix(session, message)
         content = f"{prefix}{content}" if prefix else content
+        content = content.lstrip("\n")
         content = _format_bot_content(session, message, content, "qq")
         msg_seq = max(1, int(route.next_msg_seq or 1))
         try:
@@ -308,6 +309,7 @@ def notify_saved_assistant_message(session: Session, message: ChatMessage) -> No
         return
     prefix = _feishu_assistant_prefix(session, message)
     content = f"{prefix}{content}" if prefix else content
+    content = content.lstrip("\n")
     content = _format_bot_content(session, message, content, "feishu")
     for start in range(0, len(content), FEISHU_TEXT_MAX_CHARS):
         chunk = content[start:start + FEISHU_TEXT_MAX_CHARS].strip()
