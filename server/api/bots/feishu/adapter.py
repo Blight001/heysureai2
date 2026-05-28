@@ -8,11 +8,15 @@ work continues to live in ``service.py`` / ``long_connection.py`` and the
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from ..base import BotAdapter
 from ..registry import register
 from ._config import FEISHU_DEFAULTS
+
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from sqlmodel import Session
@@ -158,7 +162,7 @@ class FeishuBot(BotAdapter):
                     receive_id_type=receive_id_type,
                 )
             except Exception as exc:
-                print(f"[feishu_auto_notify] send failed message_id={message.id}: {exc}")
+                logger.exception(f"send failed message_id={message.id}: {exc}")
                 return
 
     # ---- runtime tool requirements ---------------------------------------

@@ -4,10 +4,14 @@ import asyncio
 import base64
 import copy
 import json
+import logging
 import os
 import re
 import sys
 import time
+
+
+logger = logging.getLogger(__name__)
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
@@ -127,7 +131,7 @@ def _ai_short_base_url(base_url: str) -> str:
 
 def _ai_debug_log(message: str) -> None:
     if _ai_debug_enabled():
-        print(f"[ai-debug] {message}", flush=True)
+        logger.debug(message)
 
 
 def _ai_debug_stage(stage: str, message: str, color: str = "36") -> None:
@@ -988,7 +992,7 @@ def _run_worker_impl(
                         )
                     except Exception as _iex:
                         _inbound = None
-                        print(f"[chat_worker] inbox poll failed: {_iex}")
+                        logger.exception("inbox poll failed")
                     if _inbound is not None:
                         _from_name = _resolve_ai_name_safe(bg, _inbound.from_ai_config_id) or f"AI-{_inbound.from_ai_config_id}"
                         _target_name = _resolve_ai_name_safe(bg, ai_config_id) or f"AI-{ai_config_id}"
@@ -1342,7 +1346,7 @@ def _run_worker_impl(
                                 bg.add(saved)
                                 bg.commit()
                         except Exception as _arex:
-                            print(f"[chat_worker] auto AI message reply failed: {_arex}")
+                            logger.exception("auto AI message reply failed")
                         finally:
                             pending_ai_reply_message_id = ""
                     _run_set_status(run_id, "completed", finished=True)
@@ -1654,7 +1658,7 @@ def _run_worker_impl(
                             summary=inherited_summary,
                         )
                     except Exception as _vex:
-                        print(f"[chat_worker] valhalla write_inherit failed: {_vex}")
+                        logger.exception("valhalla write_inherit failed")
 
                     resume_prompt = str(auto_ctl.get("resume_task_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["resume_task_prompt"])
                     next_run_id = _start_task_run(
@@ -1733,7 +1737,7 @@ def _run_worker_impl(
                                 summary=task_summary,
                             )
                         except Exception as _vex:
-                            print(f"[chat_worker] valhalla write_complete failed: {_vex}")
+                            logger.exception("valhalla write_complete failed")
                         try:
                             notify_task_completion(
                                 user_id=user_id,
@@ -1741,7 +1745,7 @@ def _run_worker_impl(
                                 summary=task_summary,
                             )
                         except Exception as _nex:
-                            print(f"[chat_worker] task completion notify failed: {_nex}")
+                            logger.exception("task completion notify failed")
                     next_loop_job = _create_loop_scheduled_job(bg, completed_job, time.time())
                     completion_notice_lines = [
                         "[系统提示]",

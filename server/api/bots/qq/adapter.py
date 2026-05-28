@@ -6,12 +6,16 @@ Thin façade over ``service.py`` / ``long_connection.py``; same shape as
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from ..base import BotAdapter
 from ..registry import register
 from ._config import QQ_DEFAULTS
+
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from sqlmodel import Session
@@ -140,7 +144,7 @@ class QQBot(BotAdapter):
             session.add(route.row)
             session.commit()
         except Exception as exc:
-            print(f"[qq_auto_notify] send failed message_id={message.id}: {exc}")
+            logger.exception(f"send failed message_id={message.id}: {exc}")
 
     # ---- status -----------------------------------------------------------
 

@@ -30,6 +30,10 @@ from ..database import engine
 from ..mcp.core import _resolve_ai_workspace, safe_join
 from ..models import AssistantAIConfig, KnowledgeEntry, User
 from ..sio import sio
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 _KB_DIR = "KnowledgeBase"
@@ -429,7 +433,7 @@ def _rebuild_index(user_id: int) -> None:
         with open(path, "w", encoding="utf-8") as f:
             json.dump({"items": items, "updated_at": time.time()}, f, ensure_ascii=False, indent=2)
     except Exception as exc:
-        print(f"[librarian._rebuild_index] {exc}")
+        logger.info(f"{exc}")
 
 
 def _split_csv(value: str) -> List[str]:
@@ -621,7 +625,7 @@ def _load_intrinsic_properties_overrides(user_id: int) -> Dict[str, Any]:
     except FileNotFoundError:
         return {}
     except Exception as exc:
-        print(f"[librarian._load_intrinsic_properties_overrides] {exc}")
+        logger.info(f"{exc}")
         return {}
 
 
@@ -1080,7 +1084,7 @@ def archive(*, user_id: int, memory_id: str) -> Dict[str, Any]:
             if os.path.exists(src):
                 os.replace(src, dest)
         except Exception as exc:
-            print(f"[librarian.archive] move file failed: {exc}")
+            logger.exception(f"move file failed: {exc}")
         row.status = "archived"
         row.file_path = dest_rel
         row.updated_at = time.time()
@@ -1370,7 +1374,7 @@ def _emit_proposal_event(user_id: int, event: str, entry: Dict[str, Any]) -> Non
         try:
             await sio.emit(event, payload, room=room)
         except Exception as exc:
-            print(f"[librarian._emit_proposal_event] {event}: {exc}")
+            logger.info(f"{event}: {exc}")
 
     try:
         loop = asyncio.get_running_loop()
@@ -1382,5 +1386,5 @@ def _emit_proposal_event(user_id: int, event: str, entry: Dict[str, Any]) -> Non
             try:
                 asyncio.run(_do_emit())
             except Exception as exc:
-                print(f"[librarian._emit_proposal_event] runner: {exc}")
+                logger.info(f"runner: {exc}")
         threading.Thread(target=_runner, daemon=True).start()

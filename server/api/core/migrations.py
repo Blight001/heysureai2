@@ -13,10 +13,14 @@ runs ``create_all`` against Postgres after copying rows).
 """
 
 import json
+import logging
 import os
 import sqlite3
 
 from .config import DATABASE_URL, SQLITE_FILE, database_dialect
+
+
+logger = logging.getLogger(__name__)
 
 # Imported lazily inside ``run_pending_migrations`` to avoid a hard dependency
 # on the models package at import time (the package itself is loaded before
@@ -148,7 +152,7 @@ def _consolidate_assistantaiconfig_bot_configs(engine) -> None:
         except Exception as exc:
             # Surface but do not raise: production may need a manual rebuild
             # on very old SQLite that predates DROP COLUMN.
-            print(f"[migration] drop column {col} failed: {exc}")
+            logger.exception(f"drop column {col} failed: {exc}")
 
 
 def _consolidate_bot_session_routes(engine) -> None:

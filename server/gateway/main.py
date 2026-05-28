@@ -8,11 +8,13 @@ or via uvicorn directly:
 
 import uvicorn
 
+from api.core.logging_config import configure_logging
 from api.core.settings import settings
 from gateway.app import sio_app  # noqa: F401 — imported for side effects when not reloading
 
 
 if __name__ == "__main__":
+    configure_logging()
     reload_enabled = settings.server_reload
     uvicorn.run(
         "gateway.app:sio_app",

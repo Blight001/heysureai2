@@ -23,7 +23,11 @@ import uvicorn
 # instance sees ``connector`` even if the operator forgot to export it.)
 os.environ.setdefault("HEYSURE_SERVICE_ROLE", "connector")
 
+from api.core.logging_config import configure_logging  # noqa: E402
 from api.core.settings import settings  # noqa: E402
+
+configure_logging()
+
 from connector_runtime.app import create_app  # noqa: E402
 
 app = create_app()

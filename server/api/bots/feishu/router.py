@@ -15,6 +15,10 @@ from api.routers.chat_worker import _run_worker
 from ._config import read_feishu_config
 from .routes_store import register_feishu_session_route
 from .service import parse_feishu_text_event, send_feishu_text_message
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 PREFIX = "/api/feishu"
@@ -78,7 +82,7 @@ def _send_feishu_text(
             )
             ok = True
         except Exception as exc:
-            print(f"[feishu_notify] send failed config_id={ai_config_id}: {exc}")
+            logger.exception(f"send failed config_id={ai_config_id}: {exc}")
             return ok
     return ok
 
@@ -112,7 +116,7 @@ def _start_feishu_worker(worker_kwargs: Dict[str, Any]) -> str:
                         bg.add(row)
                         bg.commit()
             except Exception as exc:
-                print(f"[feishu] persist worker_kwargs failed for {run_id}: {exc}")
+                logger.exception(f"persist worker_kwargs failed for {run_id}: {exc}")
         notify_queue(run_id)
         return run_id
 
@@ -173,7 +177,7 @@ def _wait_for_feishu_idle_then_run(
                 break
             time.sleep(0.5)
         if _feishu_session_has_live_run(**send_kwargs):
-            print(f"[feishu_notify] deferred run timeout session={send_kwargs['session_id']}")
+            logger.debug(f"deferred run timeout session={send_kwargs['session_id']}")
             return
 
         run_id = f"run_{uuid.uuid4().hex}"

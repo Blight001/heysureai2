@@ -20,6 +20,7 @@ JWT auth as the monolith.
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager, suppress
 from typing import Any, Dict, Optional
 
@@ -33,6 +34,9 @@ from api.models import AssistantAIConfig
 from api.sio import sio
 from api.socket_events import register_agent_socket_events
 from api.runtime.internal_http import require_internal_token
+
+
+logger = logging.getLogger(__name__)
 
 
 class AgentDispatchRequest(BaseModel):
@@ -64,9 +68,9 @@ async def _lifespan(app: FastAPI):
     try:
         expired = expire_orphan_dispatches()
         if expired:
-            print(f"[connector-runtime] expired {expired} orphan dispatch rows")
+            logger.info(f"expired {expired} orphan dispatch rows")
     except Exception as exc:
-        print(f"[connector-runtime] orphan sweep failed: {exc}")
+        logger.exception("orphan sweep failed")
 
     # Maintain every registered bot's long-connection clients from this
     # process. Owning the upstream here means api-gateway restarts no
@@ -79,7 +83,7 @@ async def _lifespan(app: FastAPI):
                 try:
                     bot.start_long_connections()
                 except Exception as exc:
-                    print(f"[connector-runtime] {bot.channel} keepalive failed: {exc}")
+                    logger.exception(f"{bot.channel} keepalive failed")
                 try:
                     await asyncio.wait_for(stop_event.wait(), timeout=3.0)
                 except asyncio.TimeoutError:
@@ -98,9 +102,9 @@ async def _lifespan(app: FastAPI):
             try:
                 expired_now = expire_orphan_dispatches()
                 if expired_now:
-                    print(f"[connector-runtime] expired {expired_now} orphan dispatch rows")
+                    logger.info(f"expired {expired_now} orphan dispatch rows")
             except Exception as exc:
-                print(f"[connector-runtime] periodic orphan sweep failed: {exc}")
+                logger.exception("periodic orphan sweep failed")
 
     keepalive_tasks = [
         asyncio.create_task(_make_bot_keepalive(bot)(), name=f"keepalive-{bot.channel}")
@@ -108,7 +112,7 @@ async def _lifespan(app: FastAPI):
     ]
     sweep_task = asyncio.create_task(_orphan_sweeper())
     bot_channels = ",".join(bot.channel for bot in iter_bots()) or "no bots"
-    print(f"[connector-runtime] ready (Socket.IO + /internal/* + bot keepalive: {bot_channels})")
+    logger.info(f"ready (Socket.IO + /internal/* + bot keepalive: {bot_channels})")
     try:
         yield
     finally:

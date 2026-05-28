@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -28,6 +29,8 @@ from ..models import (
     ValhallaEntry,
 )
 
+
+logger = logging.getLogger(__name__)
 
 _VALHALLA_DIR = "Valhalla"
 _REGISTRY_FILE = "memorial_registry.json"
@@ -488,7 +491,7 @@ def write_inherit(
             return entry
     except Exception as exc:
         # best-effort：英灵殿写失败不应阻塞主任务
-        print(f"[valhalla.write_inherit] error: {exc}")
+        logger.exception(f"error: {exc}")
         return None
 
 
@@ -566,7 +569,7 @@ def write_complete(
             })
             return entry
     except Exception as exc:
-        print(f"[valhalla.write_complete] error: {exc}")
+        logger.exception(f"error: {exc}")
         return None
 
 
@@ -674,7 +677,7 @@ def delete_entries(
                 if not has_same_dir_entry and os.path.isdir(gen_dir):
                     shutil.rmtree(gen_dir, ignore_errors=True)
             except Exception as exc:
-                print(f"[valhalla.delete_entries] file cleanup failed for {entry_id}: {exc}")
+                logger.exception(f"file cleanup failed for {entry_id}: {exc}")
 
         session.commit()
 
@@ -714,7 +717,7 @@ def _safe_write(path: str, text: str) -> None:
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
     except Exception as exc:
-        print(f"[valhalla._safe_write] {path}: {exc}")
+        logger.info(f"{path}: {exc}")
 
 
 def _safe_write_json(path: str, data: Any) -> None:
@@ -723,4 +726,4 @@ def _safe_write_json(path: str, data: Any) -> None:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception as exc:
-        print(f"[valhalla._safe_write_json] {path}: {exc}")
+        logger.info(f"{path}: {exc}")

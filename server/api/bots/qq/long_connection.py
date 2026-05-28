@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import threading
 from typing import Any, Dict, Optional, Tuple
 
@@ -7,6 +8,9 @@ from sqlmodel import Session, select
 from ...database import engine
 from ...models import AssistantAIConfig
 from ._config import read_qq_config
+
+
+logger = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
 _CLIENTS: Dict[int, Any] = {}
@@ -148,8 +152,8 @@ def _build_client(botpy, config_id: int, *, app_id: str, app_secret: str, is_san
             except Exception:
                 robot_name = ""
             _mark_ready(self._config_id)
-            print(
-                f"[qq_long_connection] ready config_id={self._config_id}"
+            logger.info(
+                f"ready config_id={self._config_id}"
                 + (f" robot={robot_name}" if robot_name else "")
             )
 
@@ -157,10 +161,9 @@ def _build_client(botpy, config_id: int, *, app_id: str, app_secret: str, is_san
             payload = _build_message_payload(event_type, message)
             try:
                 await _dispatch_botpy_event(self._config_id, payload)
-            except Exception as exc:
-                print(
-                    f"[qq_long_connection] event failed config_id={self._config_id} "
-                    f"event_type={event_type} error={exc}"
+            except Exception:
+                logger.exception(
+                    f"event failed config_id={self._config_id} event_type={event_type}"
                 )
 
         async def on_at_message_create(self, message: Any):
@@ -183,12 +186,11 @@ def _build_client(botpy, config_id: int, *, app_id: str, app_secret: str, is_san
                     "guild_id": getattr(message, "guild_id", None),
                     "content": getattr(message, "content", None),
                 }
-                print(
-                    f"[qq_long_connection] message_create config_id={self._config_id} "
-                    f"{snapshot}"
+                logger.debug(
+                    f"message_create config_id={self._config_id} {snapshot}"
                 )
             except Exception:
-                print(f"[qq_long_connection] message_create config_id={self._config_id}")
+                logger.debug(f"message_create config_id={self._config_id}")
 
     return QQLongConnectionClient()
 
@@ -201,7 +203,7 @@ def _thread_main(config_id: int, app_id: str, app_secret: str, is_sandbox: bool,
     except Exception as exc:
         _mark_error(config_id, exc)
         ready_event.set()
-        print(f"[qq_long_connection] botpy import failed config_id={config_id}: {exc}")
+        logger.exception(f"botpy import failed config_id={config_id}")
         loop.close()
         return
 
@@ -249,7 +251,7 @@ def _thread_main(config_id: int, app_id: str, app_secret: str, is_sandbox: bool,
     except Exception as exc:
         _mark_error(config_id, exc)
         ready_event.set()
-        print(f"[qq_long_connection] start failed config_id={config_id}: {exc}")
+        logger.exception(f"start failed config_id={config_id}")
     finally:
         pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
         for pending_task in pending:
@@ -287,7 +289,7 @@ def start_qq_long_connection_clients() -> int:
     try:
         import botpy
     except Exception as exc:
-        print(f"[qq_long_connection] botpy is not installed: {exc}")
+        logger.error(f"botpy is not installed: {exc}")
         with _LOCK:
             _LAST_ERRORS[0] = f"botpy is not installed: {exc}"
         return 0
@@ -310,7 +312,7 @@ def start_qq_long_connection_clients() -> int:
             desired[config_id] = (app_id, app_secret, bool(bot_cfg.get("sandbox")))
 
     if desired:
-        print(f"[qq_long_connection] desired_configs={sorted(desired.keys())}")
+        logger.debug(f"desired_configs={sorted(desired.keys())}")
 
     with _LOCK:
         active_ids = set(_CLIENTS.keys()) | set(_STARTING_CONFIG_IDS)
@@ -340,7 +342,7 @@ def start_qq_long_connection_clients() -> int:
         ready_event.wait(timeout=5)
         started += 1
     if started:
-        print(f"[qq_long_connection] started={started}")
+        logger.info(f"started={started}")
     return started
 
 

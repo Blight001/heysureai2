@@ -18,6 +18,7 @@ Run with:
     python -m ai_runtime.main
 """
 
+import logging
 import os
 import signal
 import threading
@@ -28,7 +29,12 @@ import threading
 # worker process.
 os.environ.setdefault("HEYSURE_SERVICE_ROLE", "worker")
 
+from api.core.logging_config import configure_logging  # noqa: E402
 from api.core.settings import settings  # noqa: E402
+
+configure_logging()
+logger = logging.getLogger(__name__)
+
 from api.database import create_db_and_tables  # noqa: E402
 from ai_runtime.worker import run_dispatcher_forever  # noqa: E402
 
@@ -37,19 +43,15 @@ def main() -> int:
     # Warn loudly if the gateway URL is missing — without it _RemoteSio drops
     # every emit silently and the UI never updates while AI runs progress.
     if not settings.api_gateway_url:
-        print(
-            "[ai-runtime] WARNING: HEYSURE_API_GATEWAY_URL not set. "
-            "Socket.IO events from this worker will be dropped — UI status "
-            "updates will be missing. Set HEYSURE_API_GATEWAY_URL=http://api-gateway:3000 "
-            "in your environment.",
-            flush=True,
+        logger.warning(
+            "HEYSURE_API_GATEWAY_URL not set. Socket.IO events from this worker "
+            "will be dropped — UI status updates will be missing. Set "
+            "HEYSURE_API_GATEWAY_URL=http://api-gateway:3000 in your environment."
         )
     if not settings.internal_token:
-        print(
-            "[ai-runtime] WARNING: HEYSURE_INTERNAL_TOKEN not set. "
-            "Cross-service calls will fall back to loopback-only auth, which "
-            "will fail in containerized deployments.",
-            flush=True,
+        logger.warning(
+            "HEYSURE_INTERNAL_TOKEN not set. Cross-service calls will fall back "
+            "to loopback-only auth, which will fail in containerized deployments."
         )
 
     create_db_and_tables()
@@ -57,7 +59,7 @@ def main() -> int:
     stop_evt = threading.Event()
 
     def _on_signal(signum, _frame):
-        print(f"[ai-runtime] signal {signum} -> draining and exiting")
+        logger.info(f"signal {signum} -> draining and exiting")
         stop_evt.set()
 
     signal.signal(signal.SIGINT, _on_signal)

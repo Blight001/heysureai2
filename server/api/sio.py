@@ -1,3 +1,4 @@
+import logging
 from typing import Optional, Tuple
 
 import socketio
@@ -6,6 +7,9 @@ from sqlmodel import Session, select
 from .auth import decode_access_token
 from .core.settings import settings
 from .database import engine
+
+
+logger = logging.getLogger(__name__)
 
 
 # Process role decides whether this process owns a real Socket.IO server or
@@ -60,9 +64,9 @@ class _RemoteSio:
                     "namespace": namespace,
                 },
             )
-        except Exception as exc:
+        except Exception:
             # Logging only — emit failures should never break the worker.
-            print(f"[sio-proxy] forward failed event={event}: {exc}")
+            logger.exception(f"sio-proxy forward failed event={event}")
 
     async def enter_room(self, *_, **__):
         return None

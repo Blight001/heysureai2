@@ -15,6 +15,10 @@ from api.services import librarian_service
 from api.services.task_system import DEFAULT_SYSTEM_AUTO_CONTROL, normalize_system_auto_control, parse_generation_from_session_id
 from .chat_base import MAX_AUTO_SUPERVISION_ROUNDS, _RUN_THREADS
 from api.services.chat_persistence import _save_message
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def _load_previous_unfinished_block(user_id: int, ai_config_id: int, job_id: str, generation: int) -> str:
@@ -41,7 +45,7 @@ def _load_previous_unfinished_block(user_id: int, ai_config_id: int, job_id: str
         lines = ["[上代未完成清单]"] + [f"{i + 1}. {it}" for i, it in enumerate(items)] + [""]
         return "\n".join(lines) + "\n"
     except Exception as exc:
-        print(f"[chat_scheduler] _load_previous_unfinished_block failed: {exc}")
+        logger.exception(f"_load_previous_unfinished_block failed: {exc}")
         return ""
 
 
@@ -165,7 +169,7 @@ def _start_task_run(
                 f"{brief_text}\n\n"
             )
     except Exception as _bex:
-        print(f"[chat_scheduler] librarian.brief failed: {_bex}")
+        logger.exception(f"librarian.brief failed: {_bex}")
 
     # 上代未完成事项（从 Valhalla 文件读，结构化注入）
     unfinished_block = _load_previous_unfinished_block(cfg.user_id, cfg.id, job.job_id, generation)

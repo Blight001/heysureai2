@@ -34,6 +34,10 @@ from sqlmodel import Session, select
 from ..database import engine
 from ..models import AIMessage, AssistantAIConfig, ChatMessageCreate, ChatRun, ChatSession, User
 from ..services.chat_persistence import _save_message
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -300,13 +304,13 @@ def _enqueue_unwaited_reply(original: Dict[str, Any]) -> None:
             cascade_depth=parent_depth + 1,
         )
     except Exception as exc:
-        print(f"[ai_message_service] enqueue unwaited reply failed: {exc}")
+        logger.exception(f"enqueue unwaited reply failed: {exc}")
         return
 
     try:
         wake_idle_target_for_message(message_id=followup.message_id, user_id=user_id)
     except Exception as exc:
-        print(f"[ai_message_service] wake sender for unwaited reply failed: {exc}")
+        logger.exception(f"wake sender for unwaited reply failed: {exc}")
 
 
 def pop_pending_for(
@@ -615,7 +619,7 @@ async def wait_for_reply(
                             elapsed_seconds=reminder_after,
                         )
                     except Exception as exc:
-                        print(f"[ai_message_service] inquiry reply reminder failed: {exc}")
+                        logger.exception(f"inquiry reply reminder failed: {exc}")
                     reminded = True
                     idle_since = None
         except asyncio.TimeoutError:

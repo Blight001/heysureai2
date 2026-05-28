@@ -2,8 +2,12 @@ IS_ROUTER_ENTRY = False
 
 import asyncio
 import json
+import logging
 import re
 import time
+
+
+logger = logging.getLogger(__name__)
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -640,8 +644,8 @@ def _emit_run_live_update(run_id: str) -> None:
     async def _do_emit():
         try:
             await sio.emit("chat:run_live", payload, room=f"user_{int(user_id)}")
-        except Exception as exc:
-            print(f"[chat_live_emit] {run_id}: {exc}")
+        except Exception:
+            logger.exception(f"chat_live_emit {run_id} failed")
 
     try:
         loop = asyncio.get_running_loop()

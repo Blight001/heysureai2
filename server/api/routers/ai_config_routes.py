@@ -1,5 +1,6 @@
 IS_ROUTER_ENTRY = False
 
+import logging
 import time
 from typing import Optional
 
@@ -7,6 +8,9 @@ from fastapi import Depends, Header, HTTPException
 from sqlmodel import Session, select
 
 from api.bots import all_channels, iter_bots
+
+
+logger = logging.getLogger(__name__)
 from api.database import get_session
 from api.mcp.permissions import clamp_tools_json, config_role_tier
 from api.models import (
@@ -42,8 +46,8 @@ def _restart_all_bot_long_connections() -> None:
     for bot in iter_bots():
         try:
             bot.start_long_connections()
-        except Exception as exc:
-            print(f"[start_{bot.channel}_long_connection_clients] {exc}")
+        except Exception:
+            logger.exception(f"start {bot.channel} long_connections failed")
 
 
 def _resolve_config_model_fields(user, preset_id: Optional[str], fallback_model: Optional[str] = None) -> dict:
