@@ -35,7 +35,7 @@ SERVER_DIR = os.path.dirname(THIS_DIR)
 if SERVER_DIR not in sys.path:
     sys.path.insert(0, SERVER_DIR)
 
-from sqlalchemy import create_engine as sa_create_engine, text  # noqa: E402
+from sqlalchemy import Boolean, create_engine as sa_create_engine, text  # noqa: E402
 from sqlalchemy.engine import Engine  # noqa: E402
 from sqlmodel import SQLModel  # noqa: E402
 
@@ -62,9 +62,34 @@ def _table_names_in_metadata() -> list[str]:
     return [t.name for t in SQLModel.metadata.sorted_tables]
 
 
+def _metadata_columns(table: str) -> list[str]:
+    sa_table = SQLModel.metadata.tables.get(table)
+    if sa_table is None:
+        return []
+    return [column.name for column in sa_table.columns]
+
+
 def _sqlite_columns(conn: sqlite3.Connection, table: str) -> list[str]:
     cursor = conn.execute(f"PRAGMA table_info({table})")
     return [row[1] for row in cursor.fetchall()]
+
+
+def _shared_columns(src_cols: list[str], dest_cols: list[str]) -> list[str]:
+    """Return columns present in both source and destination, in destination order."""
+    src_set = set(src_cols)
+    return [col for col in dest_cols if col in src_set]
+
+
+def _coerce_for_destination(table: str, column: str, value: Any) -> Any:
+    sa_table = SQLModel.metadata.tables.get(table)
+    if sa_table is None or column not in sa_table.c:
+        return value
+    dest_column = sa_table.c[column]
+    if isinstance(dest_column.type, Boolean):
+        if value is None:
+            return None
+        return bool(value)
+    return value
 
 
 def _copy_table(
@@ -78,6 +103,12 @@ def _copy_table(
     src_cols = _sqlite_columns(src, table)
     if not src_cols:
         return (0, "source-missing")
+    dest_cols = _metadata_columns(table)
+    if not dest_cols:
+        return (0, "dest-missing")
+    insert_cols = _shared_columns(src_cols, dest_cols)
+    if not insert_cols:
+        return (0, "no-shared-columns")
 
     with dest.begin() as conn:
         existing_count = conn.execute(text(f'SELECT COUNT(*) FROM "{table}"')).scalar() or 0
@@ -86,18 +117,24 @@ def _copy_table(
         if existing_count and truncate:
             conn.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
 
-    cursor = src.execute(f"SELECT {', '.join(src_cols)} FROM {table}")
+    cursor = src.execute(f"SELECT {', '.join(insert_cols)} FROM {table}")
     rows: list[dict[str, Any]] = []
     total = 0
-    placeholders = ", ".join([f":{c}" for c in src_cols])
-    cols_sql = ", ".join([f'"{c}"' for c in src_cols])
+    placeholders = ", ".join([f":{c}" for c in insert_cols])
+    cols_sql = ", ".join([f'"{c}"' for c in insert_cols])
     insert_sql = text(f'INSERT INTO "{table}" ({cols_sql}) VALUES ({placeholders})')
 
     while True:
         batch = cursor.fetchmany(batch_size)
         if not batch:
             break
-        rows = [dict(zip(src_cols, row)) for row in batch]
+        rows = [
+            {
+                column: _coerce_for_destination(table, column, value)
+                for column, value in zip(insert_cols, row)
+            }
+            for row in batch
+        ]
         with dest.begin() as conn:
             conn.execute(insert_sql, rows)
         total += len(rows)

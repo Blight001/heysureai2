@@ -82,9 +82,10 @@ def reload_registry() -> Dict[str, Any]:
             "error": Optional[str],         # set when ok=False
         }
     """
-    # Late imports keep this module light to import on cold start; ``registry``
-    # is the live singleton object whose ``_tools`` table we swap.
-    from . import registry as registry_module
+    # Import the module explicitly. ``api.mcp`` re-exports a ``registry``
+    # singleton object, so ``from . import registry`` would bind the object
+    # instead of the module and break attribute access like ``registry.version``.
+    registry_module = importlib.import_module(_REGISTRY_MODULE)
 
     plugin_errors: List[Dict[str, Any]] = []
     try:
@@ -151,7 +152,7 @@ def load_plugins_on_startup() -> Dict[str, Any]:
     plugins under ``api/mcp/plugins/`` to the live registry without bumping
     the version artificially when there are zero plugins.
     """
-    from . import registry as registry_module
+    registry_module = importlib.import_module(_REGISTRY_MODULE)
 
     plugin_errors: List[Dict[str, Any]] = []
     loaded = 0

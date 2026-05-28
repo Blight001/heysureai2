@@ -23,7 +23,7 @@ services:
       - ./server/data:/app/data
     environment:
       - HEYSURE_SERVICE_ROLE=gateway
-      - DATABASE_URL=postgresql://heysure:heysure@db:5432/heysure
+      - DATABASE_URL=postgresql+psycopg://heysure:heysure@db:5432/heysure
       - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:?Set HEYSURE_INTERNAL_TOKEN in .env or shell}
       - MCP_RUNTIME_URL=http://mcp-runtime:3001
       - CONNECTOR_RUNTIME_URL=http://connector-runtime:3002
@@ -41,7 +41,7 @@ services:
       - ./server/data:/app/data
     environment:
       - HEYSURE_SERVICE_ROLE=worker
-      - DATABASE_URL=postgresql://heysure:heysure@db:5432/heysure
+      - DATABASE_URL=postgresql+psycopg://heysure:heysure@db:5432/heysure
       - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:?Set HEYSURE_INTERNAL_TOKEN in .env or shell}
       - HEYSURE_API_GATEWAY_URL=http://api-gateway:3000
       - MCP_RUNTIME_URL=http://mcp-runtime:3001
@@ -67,7 +67,7 @@ services:
       - ./server/data:/app/data
     environment:
       - HEYSURE_SERVICE_ROLE=mcp
-      - DATABASE_URL=postgresql://heysure:heysure@db:5432/heysure
+      - DATABASE_URL=postgresql+psycopg://heysure:heysure@db:5432/heysure
       - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:?Set HEYSURE_INTERNAL_TOKEN in .env or shell}
       - HEYSURE_API_GATEWAY_URL=http://api-gateway:3000
     command: ["python", "main_mcp_runtime.py"]
@@ -88,7 +88,7 @@ services:
       - ./server/data:/app/data
     environment:
       - HEYSURE_SERVICE_ROLE=connector
-      - DATABASE_URL=postgresql://heysure:heysure@db:5432/heysure
+      - DATABASE_URL=postgresql+psycopg://heysure:heysure@db:5432/heysure
       - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:?Set HEYSURE_INTERNAL_TOKEN in .env or shell}
       - HEYSURE_API_GATEWAY_URL=http://api-gateway:3000
     command: ["python", "main_connector_runtime.py"]
