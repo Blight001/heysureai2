@@ -2,6 +2,8 @@
   // src/lib/types.ts
   var SETTING_DEFAULTS = {
     serverUrl: "http://localhost:3000",
+    agentServerUrl: "",
+    lastWorkingAgentUrl: "",
     agentToken: "",
     agentId: "",
     agentName: "Browser Agent",
@@ -663,6 +665,7 @@
   var testResult = $("test-result");
   var saveFeedback = $("save-feedback");
   var cfgServer = $("cfg-server");
+  var cfgAgentServer = $("cfg-agent-server");
   var cfgAiKey = $("cfg-ai-key");
   var cfgAiBase = $("cfg-ai-base");
   var cfgAiModel = $("cfg-ai-model");
@@ -1933,6 +1936,7 @@
     serverUrl = s.serverUrl || "";
     selectedMemberId = s.selectedAiConfigId || null;
     cfgServer.value = s.serverUrl || "";
+    cfgAgentServer.value = s.agentServerUrl || "";
     cfgAiKey.value = s.aiKey || "";
     cfgAiBase.value = s.aiBaseUrl || "";
     cfgAiModel.value = s.aiModel || "";
@@ -1973,6 +1977,7 @@
   $("save-btn").addEventListener("click", () => {
     const payload = {
       serverUrl: cfgServer.value.trim(),
+      agentServerUrl: cfgAgentServer.value.trim(),
       aiKey: cfgAiKey.value.trim(),
       aiBaseUrl: cfgAiBase.value.trim() || "https://api.anthropic.com",
       aiModel: cfgAiModel.value.trim() || "claude-sonnet-4-5",
@@ -2061,9 +2066,25 @@
           break;
         }
         case "connection:result": {
-          const r = msg.result;
-          testResult.textContent = r.success ? `\u2713 ${r.status} \xB7 ${r.ms}ms` : `\u2717 ${r.error}`;
-          testResult.className = `test-result ${r.success ? "ok" : "fail"}`;
+          const r = msg.result || {};
+          const http = r.http || (typeof r.status !== "undefined" ? r : null);
+          const lines = [];
+          if (http) {
+            lines.push(http.success ? `HTTP \u2713 ${http.status} \xB7 ${http.ms}ms` : `HTTP \u2717 ${http.error}`);
+          }
+          if (Array.isArray(r.agentProbes) && r.agentProbes.length) {
+            for (const p of r.agentProbes) {
+              lines.push(p.ok ? `Agent \u2713 ${p.url}` : `Agent \u2717 ${p.url} \u2014 ${p.reason || ""}`);
+            }
+            if (r.agentOkUrl)
+              lines.push(`\u5C06\u8FDE\u63A5\u5230\uFF1A${r.agentOkUrl}`);
+          } else if (r.needsLogin) {
+            lines.push("Agent: \u672A\u767B\u5F55\uFF0C\u8DF3\u8FC7\u63A2\u6D4B");
+          }
+          const ok = !!(http?.success && (!r.agentProbes?.length || r.agentOkUrl));
+          testResult.textContent = lines.join("\n") || (ok ? "\u2713 \u5DF2\u8FDE\u63A5" : "\u2717 \u672A\u8FDE\u63A5");
+          testResult.className = `test-result ${ok ? "ok" : "fail"}`;
+          testResult.style.whiteSpace = "pre-line";
           break;
         }
         case "card:progress": {

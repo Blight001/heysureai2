@@ -655,7 +655,12 @@
       <!-- Server Config -->
       <div class="card">
         <div class="card-title">📡 服务器连接</div>
-        <div class="fg"><label>服务器 URL</label><input type="url" id="cfg-server" placeholder="http://localhost:3000"/></div>
+        <div class="fg"><label>服务器 URL（登录）</label><input type="url" id="cfg-server" placeholder="http://localhost:3000"/></div>
+        <div class="fg">
+          <label>Agent 服务器 URL（可选）</label>
+          <input type="url" id="cfg-agent-server" placeholder="留空：自动探测"/>
+        </div>
+        <div class="login-hint" style="text-align:left;margin-top:-4px;">服务端拆分部署时填写，例如 <code>http://your-host:3002</code>。留空时插件会自动尝试登录 URL 及常见 connector-runtime 端口。</div>
         <div class="fg check-row">
           <input type="checkbox" id="cfg-auto-connect"/>
           <label for="cfg-auto-connect" style="margin:0;text-transform:none;font-size:11px;">浏览器启动时自动连接</label>
