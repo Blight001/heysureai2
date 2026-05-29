@@ -27,9 +27,9 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 
 from ..database import engine
-from ..mcp.core import _resolve_ai_workspace, safe_join
 from ..models import AssistantAIConfig, KnowledgeEntry, User
 from ..sio import sio
+from mcp_runtime.mcp.core import _resolve_ai_workspace, safe_join
 import logging
 
 
@@ -498,7 +498,7 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
 
 
 def _intrinsic_properties_payload(user_id: int = 0) -> Dict[str, Any]:
-    from ..mcp import registry
+    from mcp_runtime.mcp import registry
 
     overrides = _load_intrinsic_properties_overrides(user_id) if user_id else {}
     tools = sorted(registry.list_tools(), key=lambda item: str(item.get("name") or ""))
