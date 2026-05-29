@@ -18,16 +18,80 @@ one notch so our own INFO doesn't drown in framework chatter.
 
 from __future__ import annotations
 
+import collections
 import json
 import logging
 import os
 import sys
-from typing import Any, Dict
+import threading
+from typing import Any, Dict, List, Optional
 
 from .settings import settings
 
 
 _CONFIGURED = False
+
+# Max console lines kept in memory per process for the admin panel.
+_RING_BUFFER_CAPACITY = 600
+
+
+class RingBufferHandler(logging.Handler):
+    """Keep the most recent log records in memory so the admin panel can show
+    a service's console output without shelling into the container.
+
+    Records are stored as plain dicts (ts/level/logger/msg) in a bounded,
+    thread-safe deque. This is intentionally lightweight — it is a tail, not
+    a durable log store.
+    """
+
+    def __init__(self, capacity: int = _RING_BUFFER_CAPACITY) -> None:
+        super().__init__()
+        self._buffer: "collections.deque[Dict[str, Any]]" = collections.deque(maxlen=capacity)
+        self._lock = threading.Lock()
+        self._seq = 0
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            message = record.getMessage()
+            if record.exc_info:
+                message = f"{message}\n{logging.Formatter().formatException(record.exc_info)}"
+        except Exception:
+            return
+        with self._lock:
+            self._seq += 1
+            self._buffer.append(
+                {
+                    "seq": self._seq,
+                    "ts": record.created,
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "msg": message,
+                }
+            )
+
+    def snapshot(self, limit: int = 200, level: Optional[str] = None) -> List[Dict[str, Any]]:
+        with self._lock:
+            items = list(self._buffer)
+        if level:
+            wanted = level.upper()
+            items = [it for it in items if it["level"] == wanted]
+        if limit and limit > 0:
+            items = items[-limit:]
+        return items
+
+
+_ring_buffer_handler: Optional[RingBufferHandler] = None
+
+
+def get_recent_logs(limit: int = 200, level: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Return the most recent in-process log lines captured by the ring buffer.
+
+    Returns an empty list if logging hasn't been configured yet (e.g. during
+    very early import) so callers never have to guard against ``None``.
+    """
+    if _ring_buffer_handler is None:
+        return []
+    return _ring_buffer_handler.snapshot(limit=limit, level=level)
 
 
 # ---- Formatters -------------------------------------------------------------
@@ -107,7 +171,7 @@ def configure_logging() -> None:
     Safe to call multiple times — second and later calls are no-ops so each
     process entrypoint can call this without coordinating who "owns" setup.
     """
-    global _CONFIGURED
+    global _CONFIGURED, _ring_buffer_handler
     if _CONFIGURED:
         return
     _CONFIGURED = True
@@ -118,10 +182,13 @@ def configure_logging() -> None:
     else:
         handler.setFormatter(_ConsoleFormatter(use_color=_stdout_is_tty()))
 
+    # In-memory tail consumed by the admin panel's service console view.
+    _ring_buffer_handler = RingBufferHandler()
+
     root = logging.getLogger()
     root.setLevel(settings.log_level)
     # Replace any prior handlers so re-runs in tests don't double-print.
-    root.handlers[:] = [handler]
+    root.handlers[:] = [handler, _ring_buffer_handler]
 
     # Dial third-party loggers down one notch so the operator's INFO logs
     # don't drown in framework chatter.

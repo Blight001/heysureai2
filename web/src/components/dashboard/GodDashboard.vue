@@ -27,6 +27,7 @@ import McpToolsModal from './modals/McpToolsModal.vue'
 import WorkspaceContextModal from './modals/WorkspaceContextModal.vue'
 import TaskManagementModal from './modals/TaskManagementModal.vue'
 import AiConfigModal from './modals/AiConfigModal.vue'
+import AdminModal from './modals/AdminModal.vue'
 import ProposalReviewModal from '@/components/librarian/ProposalReviewModal.vue'
 
 const { alert, confirm } = useMessage()
@@ -46,6 +47,8 @@ const selectedFiles = ref<string[]>([])
 const chatModalOpen = ref(false)
 const chatTarget = ref<Agent | null>(null)
 const proposalReviewOpen = ref(false)
+const adminModalOpen = ref(false)
+const isAdminUser = computed(() => ['owner', 'admin'].includes(props.currentUser?.role || ''))
 let dashboardRefreshTimer: number | null = null
 let dashboardRefreshLoopActive = false
 
@@ -436,6 +439,14 @@ onUnmounted(() => {
            <span class="text-xs text-zinc-400 uppercase font-semibold">文明代数</span>
            <span class="text-lg font-bold text-emerald-600 leading-none">Gen {{ globalGeneration }}</span>
         </div>
+        <button
+          v-if="isAdminUser"
+          class="ml-2 w-8 h-8 md:w-9 md:h-9 rounded-full border border-amber-200 bg-white text-amber-600 hover:text-amber-700 hover:border-amber-300 hover:bg-amber-50 transition-colors dark:bg-zinc-800 dark:border-amber-700/60 dark:text-amber-300 dark:hover:text-amber-200 shadow-sm hover:shadow-md flex items-center justify-center"
+          title="管理员控制台"
+          @click.stop="adminModalOpen = true; closeContextMenu()"
+        >
+          <span class="block text-xs md:text-base">🛡️</span>
+        </button>
         <button class="ml-2 w-8 h-8 md:w-9 md:h-9 rounded-full border border-zinc-200 bg-white text-zinc-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition-colors dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300 shadow-sm hover:shadow-md flex items-center justify-center" @click.stop="settingsOpen = true; closeContextMenu()">
           <span class="block hover:rotate-90 transition-transform duration-300 text-xs md:text-base">⚙️</span>
         </button>
@@ -703,6 +714,12 @@ onUnmounted(() => {
       @set-role-all-tools="payload => setRoleAllTools(payload.role, payload.checked)"
       @reset-role-mcp-permissions="resetRoleMcpPermissions"
       @save="saveSystemSettings"
+    />
+
+    <AdminModal
+      :show="adminModalOpen"
+      :current-user="currentUser"
+      @close="adminModalOpen = false"
     />
 
 

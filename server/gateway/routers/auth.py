@@ -112,11 +112,16 @@ async def register(
         raise HTTPException(status_code=400, detail="Account already registered")
     
     hashed_password = get_password_hash(user_create.password)
+    # The very first account on a fresh install becomes the 房主 (owner) so
+    # there is always someone who can reach the admin panel; everyone after
+    # defaults to 成员 (member) until promoted.
+    owner_exists = session.exec(select(User).where(User.role == "owner")).first()
     db_user = User(
-        name=user_create.name, 
-        account=user_create.account, 
-        hashed_password=hashed_password, 
-        avatar=user_create.avatar
+        name=user_create.name,
+        account=user_create.account,
+        hashed_password=hashed_password,
+        avatar=user_create.avatar,
+        role="owner" if not owner_exists else "member",
     )
     session.add(db_user)
     session.commit()

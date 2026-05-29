@@ -85,8 +85,15 @@ class Settings(BaseSettings):
         alias="CONNECTOR_RUNTIME_URL",
         description="HTTP base of connector-runtime; empty = in-process bots.",
     )
+    ai_runtime_url: str = Field(
+        default="",
+        alias="AI_RUNTIME_URL",
+        description="HTTP base of the ai-runtime worker's internal status server "
+        "(health + console tail). Empty = admin panel skips the worker.",
+    )
     connector_runtime_port: int = Field(default=3002)
     mcp_runtime_port: int = Field(default=3001)
+    ai_runtime_port: int = Field(default=3003)
 
     # ---- Chat / AI runtime ---------------------------------------------------
 
@@ -160,6 +167,7 @@ class Settings(BaseSettings):
         "api_gateway_url",
         "mcp_runtime_url",
         "connector_runtime_url",
+        "ai_runtime_url",
         "agent_token",
         "tavily_api_key",
         mode="before",

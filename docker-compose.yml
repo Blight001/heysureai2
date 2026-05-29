@@ -27,6 +27,7 @@ services:
       - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
       - MCP_RUNTIME_URL=http://mcp-runtime:3001
       - CONNECTOR_RUNTIME_URL=http://connector-runtime:3002
+      - AI_RUNTIME_URL=http://ai-runtime:3003
       - AI_DISPATCH_MODE=remote
     command: ["uvicorn", "gateway.app:sio_app", "--host", "0.0.0.0", "--port", "3000"]
     depends_on:
@@ -36,6 +37,10 @@ services:
 
   ai-runtime:
     build: ./server
+    # Internal-only status server (/internal/health + /internal/logs) on 3003,
+    # reachable by api-gateway over the compose network for the admin panel.
+    expose:
+      - "3003"
     volumes:
       - ./server/uploads:/app/uploads
       - ./server/data:/app/data
@@ -46,6 +51,7 @@ services:
       - HEYSURE_API_GATEWAY_URL=http://api-gateway:3000
       - MCP_RUNTIME_URL=http://mcp-runtime:3001
       - CONNECTOR_RUNTIME_URL=http://connector-runtime:3002
+      - HEYSURE_AI_RUNTIME_PORT=3003
     command: ["python", "-m", "ai_runtime.main"]
     depends_on:
       db:
