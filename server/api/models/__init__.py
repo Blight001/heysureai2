@@ -50,6 +50,7 @@ from .defaults import (
     DEFAULT_UI_THEME_MODE,
     DEFAULT_USER_MESSAGE_NOTICE,
 )
+from .admin_audit import AdminAuditLog
 from .bot_session_route import BotSessionRoute
 from .knowledge import EvolutionInput, KnowledgeEntry, Memory, ValhallaEntry
 from .project import EvolutionProject, EvolutionProjectCreate, EvolutionProjectUpdate
@@ -81,6 +82,8 @@ __all__ = [
     "UserLogin",
     "UserRead",
     "UserUpdate",
+    # admin
+    "AdminAuditLog",
     # chat
     "ChatMessage",
     "ChatMessageCreate",

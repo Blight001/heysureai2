@@ -22,6 +22,7 @@ import collections
 import json
 import logging
 import os
+import re
 import sys
 import threading
 from typing import Any, Dict, List, Optional
@@ -33,6 +34,44 @@ _CONFIGURED = False
 
 # Max console lines kept in memory per process for the admin panel.
 _RING_BUFFER_CAPACITY = 600
+
+
+# Patterns whose secret portion must never reach the admin panel's log view.
+# Order matters: more specific (key=value) patterns run before the broad
+# "looks like an API key" sweep.
+_REDACT_PATTERNS = (
+    # Authorization: Bearer <token>
+    (re.compile(r"(?i)(bearer\s+)([A-Za-z0-9._\-]{6,})"), r"\1***"),
+    # key/secret/token/password = "value"  (json or kv form)
+    (
+        re.compile(
+            r"(?i)(\"?(?:api[_-]?key|secret|token|password|hashed_password|app_secret|"
+            r"verification_token|jwt_secret|internal_token)\"?\s*[:=]\s*\"?)"
+            r"([^\"\s,}&]+)"
+        ),
+        r"\1***",
+    ),
+    # OpenAI / DeepSeek style standalone keys
+    (re.compile(r"\bsk-[A-Za-z0-9]{6,}\b"), "sk-***"),
+    # Tavily keys
+    (re.compile(r"\btvly-[A-Za-z0-9]{6,}\b"), "tvly-***"),
+)
+
+
+def redact_secrets(text: str) -> str:
+    """Mask obvious credentials in a log line for the admin console.
+
+    Only applied to the in-memory buffer the admin panel reads — the raw
+    stdout stream the operator owns is left untouched.
+    """
+    if not text:
+        return text
+    for pattern, repl in _REDACT_PATTERNS:
+        try:
+            text = pattern.sub(repl, text)
+        except Exception:
+            continue
+    return text
 
 
 class RingBufferHandler(logging.Handler):
@@ -55,6 +94,7 @@ class RingBufferHandler(logging.Handler):
             message = record.getMessage()
             if record.exc_info:
                 message = f"{message}\n{logging.Formatter().formatException(record.exc_info)}"
+            message = redact_secrets(message)
         except Exception:
             return
         with self._lock:
@@ -64,7 +104,7 @@ class RingBufferHandler(logging.Handler):
                     "seq": self._seq,
                     "ts": record.created,
                     "level": record.levelname,
-                    "logger": record.name,
+                    "logger": redact_secrets(record.name),
                     "msg": message,
                 }
             )
