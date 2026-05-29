@@ -23,6 +23,12 @@ let connecting = false
 // URL the current `socket` was opened against — used to detect when the
 // configured serverUrl changes and we need to drop the cached endpoint.
 let activeSocketUrl: string | null = null
+// Set when the server rejected registration for a non-transient reason
+// (expired/invalid token or AI-ownership mismatch). Retrying with the same
+// token just loops forever, so we stop auto-reconnect and the keepalive
+// alarm until the user re-authenticates or explicitly reconnects. Cleared
+// at the start of connect() and on logout.
+let authRejected = false
 
 async function withTaskTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -174,12 +180,25 @@ function probeRegister(url: string, timeoutMs: number): Promise<ProbeOutcome> {
   })
 }
 
+// Single source of truth for "which AI this agent registers as". The
+// selection lives in chrome.storage (selectedAiConfigId) but is only valid
+// when the user is logged in. Using a plain `|| null` would also mistreat a
+// legitimate id of 0, so normalize explicitly here and reuse everywhere.
+function effectiveSelectedAiConfigId(
+  settings: { selectedAiConfigId: number | null },
+  auth: { token: string },
+): number | null {
+  if (!auth.token) return null
+  const raw = settings.selectedAiConfigId
+  return typeof raw === 'number' && raw >= 0 ? raw : null
+}
+
 async function emitRegisterOn(s: Socket): Promise<void> {
   const settings = await getSettings()
   const auth = await getAuth()
   if (settings.offlineMode) return
   const id = settings.agentId || await getMachineId()
-  const selectedAiConfigId = auth.token ? (settings.selectedAiConfigId || null) : null
+  const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth)
   s.emit('agent:register', {
     id,
     aiConfigId: selectedAiConfigId,
@@ -239,6 +258,8 @@ async function connect() {
     return
   }
 
+  // A fresh, user-initiated connect clears any prior rejection latch.
+  authRejected = false
   connecting = true
   setStatus('connecting')
 
@@ -330,8 +351,17 @@ function attachOperationalListeners(s: Socket, agentName: string) {
   })
 
   s.on('agent:register_rejected', (data: any) => {
-    setStatus('error', data?.reason)
-    log('system', 'error', `注册被拒绝: ${data?.reason}`)
+    const reason = data?.reason || '注册被服务器拒绝'
+    // Non-transient: the token is invalid/expired or the AI no longer
+    // belongs to this user. Reconnecting and re-registering with the same
+    // token would loop forever (reconnectionAttempts is Infinity), so we
+    // latch authRejected, disable reconnection and tear the socket down.
+    // The user must re-login (or pick a valid AI) and connect again.
+    authRejected = true
+    try { s.io.reconnection(false) } catch { /* noop */ }
+    disconnect()
+    setStatus('error', reason)
+    log('system', 'error', `注册被拒绝，已停止自动重连（请重新登录后再连接）: ${reason}`)
   })
 
   s.on('task:dispatch', (task: DispatchedTask) => { void handleTask(task) })
@@ -345,7 +375,7 @@ async function register() {
     return
   }
   if (!socket) return
-  const selectedAiConfigId = auth.token ? (settings.selectedAiConfigId || null) : null
+  const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth)
   if (!auth.token && settings.selectedAiConfigId) {
     await saveSettings({ selectedAiConfigId: null })
     log('system', 'warn', '未登录，已取消 AI 成员自动注册选择')
@@ -374,7 +404,7 @@ async function refreshServerAiSelectionOnStartup(): Promise<number | null> {
     return null
   }
 
-  const selectedAiConfigId = settings.selectedAiConfigId || null
+  const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth)
   if (!selectedAiConfigId) return null
 
   const selected = members.find(m => m.id === selectedAiConfigId)
@@ -623,6 +653,7 @@ chrome.runtime.onConnect.addListener((port) => {
         // don't keep re-registering with an empty/stale token. Also
         // clear the cached agent URL so the next login re-probes the
         // (possibly different) backend.
+        authRejected = false
         disconnect()
         await saveSettings({ selectedAiConfigId: null, lastWorkingAgentUrl: '' })
         break
@@ -723,20 +754,31 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     })
     return
   }
-  if (alarm.name === 'keepalive' && socket && !socket.connected && currentStatus !== 'connecting') {
+  if (alarm.name === 'keepalive' && socket && !socket.connected && currentStatus !== 'connecting' && !authRejected) {
     socket.connect()
   }
 })
 
 // ── Context menus ─────────────────────────────────────────────────────────
+// Single onInstalled handler. removeAll() first so re-creating on update
+// doesn't throw on the already-registered ids. The keepalive alarm is
+// (re)created at module scope above on every service-worker wake, which is
+// what actually matters for an MV3 worker that gets torn down frequently.
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({ id: 'hs-ask', title: 'HeySure AI: 询问选中内容', contexts: ['selection'] })
-  chrome.contextMenus.create({ id: 'hs-screenshot', title: 'HeySure AI: 截图分析此页', contexts: ['page'] })
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: 'hs-ask', title: 'HeySure AI: 询问选中内容', contexts: ['selection'] })
+    chrome.contextMenus.create({ id: 'hs-screenshot', title: 'HeySure AI: 截图分析此页', contexts: ['page'] })
+  })
 })
 
 chrome.contextMenus.onClicked.addListener(async (info) => {
   if (info.menuItemId === 'hs-ask' && info.selectionText) {
     await chrome.storage.session.set({ _pendingChat: info.selectionText })
+  } else if (info.menuItemId === 'hs-screenshot') {
+    // Pre-fill the chat so opening the popup kicks off a screenshot+analyze
+    // turn (the agent has browser_screenshot available). Without this the
+    // menu item was registered but did nothing when clicked.
+    await chrome.storage.session.set({ _pendingChat: '请截图并分析当前页面' })
   }
 })
 
@@ -746,8 +788,3 @@ chrome.runtime.onStartup.addListener(async () => {
 })
 
 void restoreAndConnectOnStartup()
-
-// On install / update — register alarms fresh
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create('keepalive', { periodInMinutes: 0.4 })
-})
