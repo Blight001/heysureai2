@@ -11,7 +11,7 @@ import json
 from typing import TYPE_CHECKING, Any, Dict
 
 if TYPE_CHECKING:
-    from ..models import AssistantAIConfig
+    from api.models import AssistantAIConfig
 
 
 def load_bot_configs(cfg: "AssistantAIConfig") -> Dict[str, Dict[str, Any]]:

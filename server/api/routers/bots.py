@@ -14,7 +14,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlmodel import Session
 
-from api.bots import all_channels, get as get_bot
+from connector_runtime.bots import all_channels, get as get_bot
 from api.database import get_session
 from api.models import AssistantAIConfig
 from api.routers.auth import get_current_user

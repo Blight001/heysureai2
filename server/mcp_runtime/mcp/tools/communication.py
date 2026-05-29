@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from api.bots import all_channels, get as get_bot
+from connector_runtime.bots import all_channels, get as get_bot
 from api.database import engine
 from ..core import get_project_root, safe_join
 from api.models import AssistantAIConfig, User

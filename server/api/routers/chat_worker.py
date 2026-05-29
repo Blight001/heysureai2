@@ -25,7 +25,7 @@ from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCre
 from api.services import ai_message_service, valhalla_service
 from api.services.agent_dispatch import dispatch_endpoint_tool_and_wait, set_run_session_context
 from api.services.task_completion_notify import notify_task_completion
-from api.services.desktop_agent_tools import (
+from connector_runtime.dispatch.desktop_agent_tools import (
     build_endpoint_tools_payload,
     endpoint_bridge_tools_for_config,
     is_endpoint_agent_tool,
@@ -863,8 +863,8 @@ def _run_worker_impl(
             # Per-bot tool requirements (e.g. Feishu adds context-trim) live
             # on the adapter so adding/removing a bot's required tools no
             # longer touches the chat worker.
-            from api.bots import iter_bots as _iter_bots
-            from api.bots.base import channel_for_session_id as _channel_for_session_id
+            from connector_runtime.bots import iter_bots as _iter_bots
+            from connector_runtime.bots.base import channel_for_session_id as _channel_for_session_id
             _session_channel = _channel_for_session_id(str(session_id or ""), _iter_bots())
             if _session_channel:
                 _bot = next((b for b in _iter_bots() if b.channel == _session_channel), None)

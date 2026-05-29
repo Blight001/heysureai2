@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 
 from ..database import engine
-from .desktop_agent_tools import (
+from connector_runtime.dispatch.desktop_agent_tools import (
     get_connected_browser_agent,
     get_connected_desktop_agent,
     is_browser_tool,

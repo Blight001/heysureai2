@@ -7,8 +7,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from sqlmodel import Session, select
 
-from ...database import engine
-from ...models import AssistantAIConfig
+from api.database import engine
+from api.models import AssistantAIConfig
 from ._config import read_feishu_config
 from .router import handle_feishu_event_payload
 

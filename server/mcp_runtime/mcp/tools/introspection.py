@@ -33,7 +33,7 @@ def _namespace_hints(user_id: int) -> dict[str, str]:
 
 
 def _allowed_tool_names(user_id: int, ai_config_id: Optional[int]) -> set[str]:
-    from api.services.desktop_agent_tools import endpoint_bridge_tools_for_config
+    from connector_runtime.dispatch.desktop_agent_tools import endpoint_bridge_tools_for_config
     from api.services.task_system import with_workspace_read_by_name_compat
     import json
 
@@ -82,7 +82,7 @@ def _resolve_tool_alias(name: str, allowed: set[str]) -> str:
 
 def _mcp_list_tools(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int] = None):
     from ..registry import registry
-    from api.services.desktop_agent_tools import endpoint_tool_description, is_endpoint_agent_tool
+    from connector_runtime.dispatch.desktop_agent_tools import endpoint_tool_description, is_endpoint_agent_tool
     from api.services.librarian_service import intrinsic_tool_description
 
     allowed = _allowed_tool_names(user_id, ai_config_id)
@@ -162,7 +162,7 @@ def _mcp_list_tools(user_id: int, args: Dict[str, Any], ai_config_id: Optional[i
 
 def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int] = None):
     from ..registry import registry
-    from api.services.desktop_agent_tools import (
+    from connector_runtime.dispatch.desktop_agent_tools import (
         endpoint_tool_description,
         endpoint_tool_input_schema,
         is_endpoint_agent_tool,

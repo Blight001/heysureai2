@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from sqlmodel import Session
 
-    from ...models import AssistantAIConfig, ChatMessage
+    from api.models import AssistantAIConfig, ChatMessage
     from .routes_store import FeishuRouteView
 
 

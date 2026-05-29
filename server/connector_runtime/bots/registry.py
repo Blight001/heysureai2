@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Dict, Iterator, List, Optional
 from .base import BotAdapter
 
 if TYPE_CHECKING:
-    from ..models import AssistantAIConfig
+    from api.models import AssistantAIConfig
 
 
 _BOTS: Dict[str, BotAdapter] = {}

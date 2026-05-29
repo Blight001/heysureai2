@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.bots import iter_bots
+from connector_runtime.bots import iter_bots
 from api.core.logging_config import configure_logging
 from api.core.settings import settings
 from api.sio import sio
@@ -142,7 +142,7 @@ for router_file in router_files:
 # editing api/routers/.
 for _bot in iter_bots():
     try:
-        bot_router_module = importlib.import_module(f"api.bots.{_bot.channel}.router")
+        bot_router_module = importlib.import_module(f"connector_runtime.bots.{_bot.channel}.router")
     except ModuleNotFoundError:
         continue
     bot_router = getattr(bot_router_module, "router", None)

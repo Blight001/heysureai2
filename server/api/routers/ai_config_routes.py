@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import Depends, Header, HTTPException
 from sqlmodel import Session, select
 
-from api.bots import all_channels, iter_bots
+from connector_runtime.bots import all_channels, iter_bots
 
 
 logger = logging.getLogger(__name__)

@@ -18,12 +18,12 @@ from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import select
 
-from ...models import BotSessionRoute
+from api.models import BotSessionRoute
 
 if TYPE_CHECKING:
     from sqlmodel import Session
 
-    from ...models import ChatMessage
+    from api.models import ChatMessage
 
 
 CHANNEL = "qq"

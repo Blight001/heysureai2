@@ -5,8 +5,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from sqlmodel import Session, select
 
-from ...database import engine
-from ...models import AssistantAIConfig
+from api.database import engine
+from api.models import AssistantAIConfig
 from ._config import read_qq_config
 
 

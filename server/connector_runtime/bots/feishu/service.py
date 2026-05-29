@@ -8,9 +8,9 @@ import requests
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from ...database import engine
-from ...integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
-from ...models import AssistantAIConfig, User
+from api.database import engine
+from api.integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
+from api.models import AssistantAIConfig, User
 from ._config import read_feishu_config
 
 FEISHU_OPEN_API_BASE = "https://open.feishu.cn/open-apis"

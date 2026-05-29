@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Dict
 from ..config_store import get_channel_config
 
 if TYPE_CHECKING:
-    from ...models import AssistantAIConfig
+    from api.models import AssistantAIConfig
 
 
 CHANNEL = "feishu"

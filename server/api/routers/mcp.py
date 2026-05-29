@@ -23,7 +23,7 @@ from api.models import AssistantAIConfig
 from api.routers.auth import get_current_user
 from api.runtime.internal_http import require_internal_token
 from api.services.agent_dispatch import dispatch_endpoint_tool_and_wait
-from api.services.desktop_agent_tools import endpoint_bridge_tools_for_config, is_endpoint_agent_tool
+from connector_runtime.dispatch.desktop_agent_tools import endpoint_bridge_tools_for_config, is_endpoint_agent_tool
 from api.services.librarian_service import intrinsic_input_schema, intrinsic_tool_description
 from api.services.task_system import with_workspace_read_by_name_compat
 

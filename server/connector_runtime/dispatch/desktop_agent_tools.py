@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional, Set
 
-from ..sio import agents
+from api.sio import agents
 
 
 ENDPOINT_BRIDGE_MCP_TOOLS = {"admin.list_agents"}

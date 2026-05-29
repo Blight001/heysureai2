@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Set
 if TYPE_CHECKING:
     from sqlmodel import Session
 
-    from ..models import AssistantAIConfig, ChatMessage
+    from api.models import AssistantAIConfig, ChatMessage
 
 
 class BotAdapter(ABC):

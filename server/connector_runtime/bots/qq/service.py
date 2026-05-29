@@ -8,9 +8,9 @@ import requests
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from ...database import engine
-from ...integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
-from ...models import AssistantAIConfig
+from api.database import engine
+from api.integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
+from api.models import AssistantAIConfig
 from ._config import read_qq_config
 
 QQ_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"

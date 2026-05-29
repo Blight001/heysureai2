@@ -23,7 +23,7 @@ from api.chat_runtime.mcp_parser import (
     extract_first_complete_mcp_call,
     parse_mcp_payload,
 )
-from api.services.desktop_agent_tools import endpoint_bridge_tools_for_config
+from connector_runtime.dispatch.desktop_agent_tools import endpoint_bridge_tools_for_config
 from api.services.task_system import (
     DEFAULT_SYSTEM_AUTO_CONTROL,
     with_workspace_read_by_name_compat,

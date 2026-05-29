@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import Depends, Header, HTTPException
 from sqlmodel import Session, select
 
-from api.bots import iter_bots
+from connector_runtime.bots import iter_bots
 from api.core.config import CONNECTOR_RUNTIME_URL
 from api.database import get_session
 from api.runtime.internal_http import InternalClient

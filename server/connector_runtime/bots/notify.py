@@ -20,14 +20,14 @@ from typing import TYPE_CHECKING, Optional
 
 from sqlmodel import select
 
-from ..chat_runtime.mcp_parser import MCP_CALL_BLOCK_RE
+from api.chat_runtime.mcp_parser import MCP_CALL_BLOCK_RE
 from .base import channel_for_session_id
 from .registry import get, iter_bots
 
 if TYPE_CHECKING:
     from sqlmodel import Session
 
-    from ..models import ChatMessage
+    from api.models import ChatMessage
 
 
 def _visible_content(message: "ChatMessage") -> str:
@@ -49,7 +49,7 @@ def _is_visible_assistant_message(message: "ChatMessage") -> bool:
 
 def _user_ui_icons(session: "Session", user_id: int) -> dict[str, str]:
     """Resolve the per-user thinking/MCP icons used as assistant prefixes."""
-    from ..models import User
+    from api.models import User
 
     user = session.get(User, int(user_id))
 
@@ -74,7 +74,7 @@ def _user_ui_icons(session: "Session", user_id: int) -> dict[str, str]:
 
 
 def _plain_text_output_enabled(session: "Session", user_id: int) -> bool:
-    from ..models import User
+    from api.models import User
 
     user = session.get(User, int(user_id))
     value = getattr(user, "ui_plain_text_output_enabled", False)
@@ -106,7 +106,7 @@ def _assistant_prefix(session: "Session", message: "ChatMessage") -> str:
     visible assistant text. Behavior matches the legacy implementation —
     only the bot-channel dispatch has been factored out.
     """
-    from ..models import ChatMessage
+    from api.models import ChatMessage
 
     icons = _user_ui_icons(session, int(message.user_id))
     message_id = int(message.id or 0)
