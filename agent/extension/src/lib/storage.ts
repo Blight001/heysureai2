@@ -88,6 +88,28 @@ export async function clearAuth(): Promise<void> {
   await chrome.storage.local.set({ [AUTH_KEY]: { ...AUTH_DEFAULT, account: current.account } })
 }
 
+// ── Avatar cache (current account only) ──────────────────────────────────────
+// The avatar image is fetched from the server once and cached as a data URL so
+// it renders instantly on popup open without re-downloading. Only the current
+// account's avatar is kept; `src` records which source URL the data belongs to
+// so a different/changed avatar (e.g. after switching accounts) re-fetches.
+export interface AvatarCache { src: string; dataUrl: string }
+const AVATAR_CACHE_KEY = '_avatar_cache'
+
+export async function getAvatarCache(): Promise<AvatarCache | null> {
+  const r = await chrome.storage.local.get(AVATAR_CACHE_KEY)
+  const c = (r as any)[AVATAR_CACHE_KEY]
+  return c && typeof c.src === 'string' && typeof c.dataUrl === 'string' ? c as AvatarCache : null
+}
+
+export async function setAvatarCache(cache: AvatarCache): Promise<void> {
+  await chrome.storage.local.set({ [AVATAR_CACHE_KEY]: cache })
+}
+
+export async function clearAvatarCache(): Promise<void> {
+  await chrome.storage.local.remove(AVATAR_CACHE_KEY)
+}
+
 // ── Memory cards (automation workflows) ──────────────────────────────────────
 const CARDS_KEY = '_memory_cards'
 

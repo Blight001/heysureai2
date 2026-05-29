@@ -27,6 +27,10 @@
     offlineMode: false,
     localModel: "",
     auth: { token: "", account: "", userId: null, userName: "", avatar: "" },
+    // Cached data URL for the current account's avatar (hydrated from storage),
+    // used so renders are synchronous and offline-friendly. Empty = fall back to
+    // the live server URL.
+    avatarDataUrl: "",
     members: [],
     selectedMemberId: null,
     activeRunId: null,
@@ -202,6 +206,18 @@
   async function clearAuth() {
     const current = await getAuth();
     await chrome.storage.local.set({ [AUTH_KEY]: { ...AUTH_DEFAULT, account: current.account } });
+  }
+  var AVATAR_CACHE_KEY = "_avatar_cache";
+  async function getAvatarCache() {
+    const r = await chrome.storage.local.get(AVATAR_CACHE_KEY);
+    const c = r[AVATAR_CACHE_KEY];
+    return c && typeof c.src === "string" && typeof c.dataUrl === "string" ? c : null;
+  }
+  async function setAvatarCache(cache) {
+    await chrome.storage.local.set({ [AVATAR_CACHE_KEY]: cache });
+  }
+  async function clearAvatarCache() {
+    await chrome.storage.local.remove(AVATAR_CACHE_KEY);
   }
   var CARDS_KEY = "_memory_cards";
   async function getCards() {
@@ -663,13 +679,14 @@
     const raw = String(avatar || "").trim();
     if (!raw)
       return "";
-    const local = raw.match(/avatars([1-5])(?:[-.][^/]*)?\.png/i);
-    if (local)
-      return chrome.runtime.getURL(`avatars/avatars${local[1]}.png`);
+    const base = state.serverUrl.replace(/\/+$/, "");
+    const preset = raw.match(/avatars([1-5])(?:[-.][^/]*)?\.png/i);
+    if (preset)
+      return base ? `${base}/avatars/avatars${preset[1]}.png` : "";
     if (/^(https?:|data:|blob:|chrome-extension:)/i.test(raw))
       return raw;
     if (raw.startsWith("/"))
-      return state.serverUrl ? `${state.serverUrl.replace(/\/+$/, "")}${raw}` : raw;
+      return base ? `${base}${raw}` : raw;
     return raw;
   }
   function avatarHtml(src, fallback) {
@@ -716,6 +733,47 @@
       return;
     state.port.postMessage({ type: "agent:selected-ai", aiConfigId: state.selectedMemberId });
   }
+  function fetchAsDataUrl(url) {
+    return fetch(url).then((resp) => {
+      if (!resp.ok)
+        throw new Error(`HTTP ${resp.status}`);
+      return resp.blob();
+    }).then((blob) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    }));
+  }
+  async function refreshAvatarCache() {
+    const resolved = normalizeAvatarUrl(state.auth.avatar);
+    if (!resolved) {
+      state.avatarDataUrl = "";
+      await clearAvatarCache();
+      return;
+    }
+    if (resolved.startsWith("data:")) {
+      state.avatarDataUrl = resolved;
+      await setAvatarCache({ src: resolved, dataUrl: resolved });
+      return;
+    }
+    const cached = await getAvatarCache();
+    if (cached && cached.src === resolved) {
+      state.avatarDataUrl = cached.dataUrl;
+      return;
+    }
+    try {
+      const dataUrl = await fetchAsDataUrl(resolved);
+      state.avatarDataUrl = dataUrl;
+      await setAvatarCache({ src: resolved, dataUrl });
+    } catch (err) {
+      console.warn("avatar cache fetch failed, falling back to live URL", err);
+      state.avatarDataUrl = "";
+    }
+  }
+  function currentAvatarHtml(fallback) {
+    return avatarHtml(state.avatarDataUrl || state.auth.avatar, fallback);
+  }
 
   // src/popup/chat.ts
   function syncChatHistory() {
@@ -750,7 +808,7 @@
     if (historyIndex !== void 0)
       el.dataset.historyIndex = String(historyIndex);
     const supportsRecall = role === "user";
-    const avatar = role === "ai" ? "\u2728" : avatarHtml(state.auth.avatar, "\u{1F464}");
+    const avatar = role === "ai" ? "\u2728" : currentAvatarHtml("\u{1F464}");
     el.innerHTML = `<div class="chat-avatar">${avatar}</div><div class="chat-bubble">${rowActionsHtml(role, supportsRecall)}${renderChatContent(content)}</div>`;
     chatMsgs.appendChild(el);
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
@@ -1246,6 +1304,8 @@
       loginFeedback.textContent = "\u767B\u5F55\u6210\u529F \u2713";
       loginFeedback.style.color = "var(--success)";
       updateUserChip();
+      await refreshAvatarCache();
+      updateUserChip();
       await loadMembers();
       syncSelectedAiToBackground(true);
       renderSettingsViews();
@@ -1265,6 +1325,8 @@
     state.port.postMessage({ type: "auth:logout" });
     state.port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
     state.auth = await getAuth();
+    state.avatarDataUrl = "";
+    await clearAvatarCache();
     closeMembersModal();
     state.members = [];
     state.selectedMemberId = null;
@@ -1893,7 +1955,7 @@
     const auth = state.auth;
     if (auth.token) {
       userChip.classList.remove("guest");
-      userAva.innerHTML = avatarHtml(auth.avatar, (auth.userName || auth.account || "?").slice(0, 1).toUpperCase());
+      userAva.innerHTML = currentAvatarHtml((auth.userName || auth.account || "?").slice(0, 1).toUpperCase());
       userName.textContent = auth.userName || auth.account || "\u5DF2\u767B\u5F55";
     } else {
       userChip.classList.add("guest");
@@ -2180,6 +2242,7 @@
     loginAccount.value = state.auth.account || "";
     updateUserChip();
     updateOfflineUi();
+    void refreshAvatarCache().then(updateUserChip);
     void restoreChatHistory();
     if (state.auth.token) {
       void (async () => {
@@ -2188,6 +2251,7 @@
           state.auth.userName = me?.name || state.auth.userName;
           state.auth.avatar = me?.avatar || "";
           await saveAuth({ userName: state.auth.userName, avatar: state.auth.avatar });
+          await refreshAvatarCache();
           updateUserChip();
           renderChatHistory();
           await loadMembers();

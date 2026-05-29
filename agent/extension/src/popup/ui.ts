@@ -5,7 +5,7 @@
 import { AgentStatus, ActivityEntry } from '../lib/types'
 import { state, TabName, STATUS_LABELS, ROLE_LABELS } from './state'
 import * as dom from './dom'
-import { fmt, roleOf, memberById, avatarHtml, getConnectedAiShortLabel, useServerChat } from './helpers'
+import { fmt, roleOf, memberById, currentAvatarHtml, getConnectedAiShortLabel, useServerChat } from './helpers'
 import { esc } from './markdown'
 import { loadMembers, renderMembers } from './members'
 import { loadJobs } from './tasks'
@@ -104,7 +104,7 @@ export function updateUserChip() {
   const auth = state.auth
   if (auth.token) {
     dom.userChip.classList.remove('guest')
-    dom.userAva.innerHTML = avatarHtml(auth.avatar, (auth.userName || auth.account || '?').slice(0, 1).toUpperCase())
+    dom.userAva.innerHTML = currentAvatarHtml((auth.userName || auth.account || '?').slice(0, 1).toUpperCase())
     dom.userName.textContent = auth.userName || auth.account || '已登录'
   } else {
     dom.userChip.classList.add('guest')

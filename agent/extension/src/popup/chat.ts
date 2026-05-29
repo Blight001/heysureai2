@@ -7,7 +7,7 @@
 import { ChatMessage } from '../lib/types'
 import { state } from './state'
 import * as dom from './dom'
-import { sleep, useServerChat, avatarHtml } from './helpers'
+import { sleep, useServerChat, currentAvatarHtml } from './helpers'
 import { refreshChatAvailability } from './ui'
 import { doLogout } from './members'
 import {
@@ -50,7 +50,7 @@ export function appendChatMsg(role: 'user' | 'ai', content: string, historyIndex
   el.className = `chat-msg ${role}`
   if (historyIndex !== undefined) el.dataset.historyIndex = String(historyIndex)
   const supportsRecall = role === 'user'
-  const avatar = role === 'ai' ? '✨' : avatarHtml(state.auth.avatar, '👤')
+  const avatar = role === 'ai' ? '✨' : currentAvatarHtml('👤')
   el.innerHTML = `<div class="chat-avatar">${avatar}</div>`
     + `<div class="chat-bubble">${rowActionsHtml(role, supportsRecall)}${renderChatContent(content)}</div>`
   dom.chatMsgs.appendChild(el)

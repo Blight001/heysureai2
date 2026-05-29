@@ -12,7 +12,7 @@ import * as dom from './dom'
 import { getAuth, saveAuth, getSettings } from '../lib/storage'
 import { getMe, isAuthError } from '../lib/client'
 import { renderChatFrame } from './markdown'
-import { syncSelectedAiToBackground, useServerChat } from './helpers'
+import { syncSelectedAiToBackground, useServerChat, refreshAvatarCache } from './helpers'
 import {
   setStatus, addEntry, updateUserChip, updateOfflineUi, switchTab, wireUi,
 } from './ui'
@@ -142,6 +142,9 @@ async function init() {
   dom.loginAccount.value = state.auth.account || ''
   updateUserChip()
   updateOfflineUi()
+  // Show the cached avatar immediately (no network), then let the getMe refresh
+  // below pick up any change.
+  void refreshAvatarCache().then(updateUserChip)
   void restoreChatHistory()
   if (state.auth.token) {
     // Validate token in the background and refresh members.
@@ -151,6 +154,7 @@ async function init() {
         state.auth.userName = me?.name || state.auth.userName
         state.auth.avatar = me?.avatar || ''
         await saveAuth({ userName: state.auth.userName, avatar: state.auth.avatar })
+        await refreshAvatarCache()
         updateUserChip()
         renderChatHistory()
         await loadMembers()

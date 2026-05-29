@@ -4,12 +4,12 @@
 
 import { state, ROLE_LABELS } from './state'
 import * as dom from './dom'
-import { roleOf, toolCount, hasBrowserMcpPermission, syncSelectedAiToBackground, useServerChat } from './helpers'
+import { roleOf, toolCount, hasBrowserMcpPermission, syncSelectedAiToBackground, useServerChat, refreshAvatarCache } from './helpers'
 import { esc } from './markdown'
 import {
   login as apiLogin, listConfigs, isAuthError, MemberConfig,
 } from '../lib/client'
-import { saveAuth, clearAuth, getAuth, saveSettings } from '../lib/storage'
+import { saveAuth, clearAuth, getAuth, saveSettings, clearAvatarCache } from '../lib/storage'
 import {
   updateUserChip, renderStatus, renderSettingsViews, updateTargetBanners,
   switchTab, openLoginModal, closeLoginModal, openMembersModal, closeMembersModal,
@@ -38,6 +38,8 @@ export async function doLogin() {
     dom.loginFeedback.textContent = '登录成功 ✓'
     dom.loginFeedback.style.color = 'var(--success)'
     updateUserChip()
+    await refreshAvatarCache()
+    updateUserChip()
     await loadMembers()
     syncSelectedAiToBackground(true)
     renderSettingsViews()
@@ -61,6 +63,8 @@ export async function doLogout() {
   state.port.postMessage({ type: 'auth:logout' })
   state.port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
   state.auth = await getAuth()
+  state.avatarDataUrl = ''
+  await clearAvatarCache()
   closeMembersModal()
   state.members = []
   state.selectedMemberId = null

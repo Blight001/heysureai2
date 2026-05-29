@@ -33,6 +33,10 @@ export const state = {
   offlineMode: false,
   localModel: '',
   auth: { token: '', account: '', userId: null, userName: '', avatar: '' } as AuthState,
+  // Cached data URL for the current account's avatar (hydrated from storage),
+  // used so renders are synchronous and offline-friendly. Empty = fall back to
+  // the live server URL.
+  avatarDataUrl: '',
   members: [] as MemberConfig[],
   selectedMemberId: null as number | null,
   activeRunId: null as string | null,
