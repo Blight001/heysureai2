@@ -5,9 +5,9 @@ from typing import Dict, Optional, Tuple
 
 from sqlmodel import Session, select
 
-from ..database import engine
-from ..models import AIRuntimeStatus, AssistantAIConfig, ChatMessage, TokenUsageSnapshot
-from ..core.config import DATA_DIR
+from api.database import engine
+from api.models import AIRuntimeStatus, AssistantAIConfig, ChatMessage, TokenUsageSnapshot
+from api.core.config import DATA_DIR
 
 
 GENERIC_ASSISTANT_PROMPT = "你是一个辅助管理员，帮助用户处理项目任务。"

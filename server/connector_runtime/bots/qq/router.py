@@ -14,7 +14,7 @@ from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRu
 from api.routers.auth import get_current_user
 from api.routers.chat_base import _RUN_THREADS
 from api.routers.chat_runtime_helpers import _resolve_ai_runtime
-from api.routers.chat_worker import _run_worker
+from ai_runtime.inference.core import _run_worker
 from api.services.chat_persistence import _save_message
 from ._config import read_qq_config
 from .long_connection import get_qq_long_connection_state

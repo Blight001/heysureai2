@@ -23,7 +23,7 @@ from api.socket_events import register_agent_socket_events, register_user_socket
 from api.database import create_db_and_tables
 from mcp_runtime.mcp.loader import load_plugins_on_startup
 from api.runtime import heartbeat as heartbeat_module
-from api.services.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
+from ai_runtime.inference.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
 from api.routers.chat import process_task_scheduler
 
 

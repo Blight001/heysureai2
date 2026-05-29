@@ -20,7 +20,7 @@ from api.models import (
     AssistantAIConfigUpdate,
 )
 from api.routers.auth import get_current_user
-from api.services.ai_service import ensure_default_ai_for_user
+from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.services.model_presets import normalize_model_presets
 from api.services.task_system import normalize_workspace_root
 from .ai_base import (

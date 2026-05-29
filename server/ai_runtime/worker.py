@@ -176,7 +176,7 @@ def _load_worker_kwargs(run: ChatRun) -> Dict[str, Any]:
 def _execute_run(run: ChatRun) -> None:
     # ``_run_worker`` now spawns its own heartbeat thread, so the dispatcher
     # just needs to materialize the kwargs and call it.
-    from api.routers.chat_worker import _run_worker
+    from ai_runtime.inference.core import _run_worker
 
     try:
         kwargs = _load_worker_kwargs(run)

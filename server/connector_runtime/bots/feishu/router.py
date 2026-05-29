@@ -11,7 +11,7 @@ from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRu
 from api.services.chat_persistence import _save_message
 from api.routers.chat_base import _RUN_THREADS
 from api.routers.chat_runtime_helpers import _resolve_ai_runtime
-from api.routers.chat_worker import _run_worker
+from ai_runtime.inference.core import _run_worker
 from ._config import read_feishu_config
 from .routes_store import register_feishu_session_route
 from .service import parse_feishu_text_event, send_feishu_text_message

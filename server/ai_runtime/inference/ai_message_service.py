@@ -31,9 +31,9 @@ from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, select
 
-from ..database import engine
-from ..models import AIMessage, AssistantAIConfig, ChatMessageCreate, ChatRun, ChatSession, User
-from ..services.chat_persistence import _save_message
+from api.database import engine
+from api.models import AIMessage, AssistantAIConfig, ChatMessageCreate, ChatRun, ChatSession, User
+from api.services.chat_persistence import _save_message
 import logging
 
 
@@ -526,7 +526,7 @@ def _send_inquiry_reply_reminder(*, message_id: str, user_id: int, elapsed_secon
         session.commit()
 
     from api.routers.chat_base import _RUN_THREADS
-    from api.routers.chat_worker import _run_worker
+    from ai_runtime.inference.core import _run_worker
 
     worker = threading.Thread(
         target=_run_worker,
@@ -1011,7 +1011,7 @@ def _wake_idle_target_for_message_locked(
         session.commit()
 
     from api.routers.chat_base import _RUN_THREADS
-    from api.routers.chat_worker import _run_worker
+    from ai_runtime.inference.core import _run_worker
 
     worker = threading.Thread(
         target=_run_worker,

@@ -22,7 +22,7 @@ from api.models import (
     TokenUsageSnapshot,
 )
 from api.routers.auth import get_current_user
-from api.services.ai_service import ensure_default_ai_for_user
+from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.services.model_presets import resolve_model_preset
 from api.services.task_system import decode_task_payload, parse_generation_from_session_id
 from .ai_base import router

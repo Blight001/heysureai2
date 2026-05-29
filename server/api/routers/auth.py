@@ -20,7 +20,7 @@ from api.core.config import (
 from api.database import get_session
 from api.models import Token, User, UserCreate, UserLogin, UserRead, UserUpdate
 from api.models.defaults import DEFAULT_MCP_NAMESPACE_HINTS
-from api.services.ai_service import ensure_default_ai_for_user
+from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.services.model_presets import model_presets_json
 
 

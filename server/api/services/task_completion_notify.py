@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 
 from ..database import engine
 from ..models import AITaskJob, AssistantAIConfig, ChatMessageCreate, ChatRun, ChatSession
-from ..services import ai_message_service
+from ai_runtime.inference import ai_message_service
 from ..services.chat_persistence import _save_message
 
 TASK_COMPLETION_RECEIPT = "【任务完成回执】"
@@ -88,7 +88,7 @@ def _start_creator_notice_run(
         session.commit()
 
     from api.routers.chat_base import _RUN_THREADS
-    from api.routers.chat_worker import _run_worker
+    from ai_runtime.inference.core import _run_worker
 
     worker = threading.Thread(
         target=_run_worker,
