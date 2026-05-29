@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, select
 
-from ..database import engine
+from api.database import engine
 from connector_runtime.dispatch.desktop_agent_tools import (
     get_connected_browser_agent,
     get_connected_desktop_agent,
@@ -33,10 +33,10 @@ from connector_runtime.dispatch.desktop_agent_tools import (
     is_desktop_tool,
     is_endpoint_agent_tool,
 )
-from .screenshot_store import attach_persisted_screenshot
-from ..models import AgentDispatchTask, ChatMessageCreate
-from ..sio import agents, sio
-from .chat_persistence import _save_message
+from api.services.screenshot_store import attach_persisted_screenshot
+from api.models import AgentDispatchTask, ChatMessageCreate
+from api.sio import agents, sio
+from api.services.chat_persistence import _save_message
 
 
 logger = logging.getLogger(__name__)

@@ -16,7 +16,7 @@ from api.database import engine
 from ..core import get_project_root, safe_join
 from api.models import AssistantAIConfig, User
 from api.services import ai_message_service
-from api.services.agent_dispatch import get_run_session_context
+from connector_runtime.dispatch.agent_dispatch import get_run_session_context
 
 
 _ALLOWED_MESSAGE_TYPES = {"inquiry", "reply", "chitchat", "notify"}

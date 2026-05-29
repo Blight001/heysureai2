@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 from api.database import engine
 from api.models import ChatMessage, ChatSession
 from api.services.chat_persistence import _rebuild_usage_snapshots
-from api.services.agent_dispatch import get_run_session_context
+from connector_runtime.dispatch.agent_dispatch import get_run_session_context
 
 
 def _coerce_int(value: Any) -> Optional[int]:

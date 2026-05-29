@@ -23,7 +23,7 @@ from mcp_runtime.mcp import registry, reset_mcp_runtime_overrides, set_mcp_runti
 from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.services import ai_message_service, valhalla_service
-from api.services.agent_dispatch import dispatch_endpoint_tool_and_wait, set_run_session_context
+from connector_runtime.dispatch.agent_dispatch import dispatch_endpoint_tool_and_wait, set_run_session_context
 from api.services.task_completion_notify import notify_task_completion
 from connector_runtime.dispatch.desktop_agent_tools import (
     build_endpoint_tools_payload,
