@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
@@ -116,7 +117,7 @@ def list_services(_admin: User = Depends(require_admin_user)) -> dict:
 def service_logs(
     key: str,
     limit: int = 200,
-    level: str | None = None,
+    level: Optional[str] = None,
     _admin: User = Depends(require_admin_user),
 ) -> dict:
     limit = max(1, min(600, int(limit or 200)))
@@ -150,7 +151,7 @@ def service_logs(
 @router.get("/tasks")
 def list_tasks(
     limit: int = 50,
-    status: str | None = None,
+    status: Optional[str] = None,
     session: Session = Depends(get_session),
     _admin: User = Depends(require_admin_user),
 ) -> dict:
