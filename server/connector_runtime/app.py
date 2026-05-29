@@ -5,7 +5,7 @@ Hosts:
   compatibility shim) where desktop / browser agents register and stream
   task results.
 - HTTP ``/internal/agent/dispatch``: synchronous wrapper around
-  :func:`api.services.agent_dispatch.dispatch_endpoint_tool_and_wait` so
+  :func:`connector_runtime.dispatch.agent_dispatch.dispatch_endpoint_tool_and_wait` so
   ai-runtime can fire a tool dispatch over HTTP and wait for the agent's
   reply within the same process that holds the Socket.IO session.
 - HTTP ``/internal/feishu/send``: outbound Feishu helper for ai-runtime.
@@ -28,7 +28,7 @@ import socketio
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from api.bots import iter_bots, get as get_bot
+from connector_runtime.bots import iter_bots, get as get_bot
 from api.database import create_db_and_tables
 from api.models import AssistantAIConfig
 from api.sio import sio
@@ -64,7 +64,7 @@ async def _lifespan(app: FastAPI):
 
     # Reap any dispatch rows whose original Future died with a previous
     # connector-runtime process. The poller would otherwise wait forever.
-    from api.services.agent_dispatch import expire_orphan_dispatches
+    from connector_runtime.dispatch.agent_dispatch import expire_orphan_dispatches
     try:
         expired = expire_orphan_dispatches()
         if expired:
@@ -166,7 +166,7 @@ def create_app() -> FastAPI:
         # Non-blocking: emit task:dispatch to the agent + persist a pending
         # row. The caller polls /agent/dispatch/result/{task_id} for the
         # outcome so connector-runtime restarts don't strand the request.
-        from api.services.agent_dispatch import dispatch_endpoint_tool
+        from connector_runtime.dispatch.agent_dispatch import dispatch_endpoint_tool
         try:
             task_id = await dispatch_endpoint_tool(
                 user_id=req.user_id,

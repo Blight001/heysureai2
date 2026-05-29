@@ -15,16 +15,16 @@ from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.bots import iter_bots
+from connector_runtime.bots import iter_bots
 from api.core.logging_config import configure_logging
 from api.core.settings import settings
 from api.sio import sio
 from api.socket_events import register_agent_socket_events, register_user_socket_events
 from api.database import create_db_and_tables
-from api.mcp.loader import load_plugins_on_startup
+from mcp_runtime.mcp.loader import load_plugins_on_startup
 from api.runtime import heartbeat as heartbeat_module
-from api.services.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
-from api.routers.chat import process_task_scheduler
+from ai_runtime.inference.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
+from api.chat_runtime.chat_scheduler import process_task_scheduler
 
 
 # Ensure logging is configured when the app is loaded by uvicorn (which
@@ -114,10 +114,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 自动注册路由：扫描共享的 api/routers/ 目录下所有路由模块。
-# 路由模块本身仍位于 api 包内（被 ai_runtime 等进程复用），网关进程
-# 只是把它们挂载到对外 HTTP 端口上。
-import api.routers as _routers_pkg
+# 自动注册路由：扫描 gateway/routers/ 目录下所有 HTTP 路由模块。
+# 网关进程现在拥有所有真路由；推理 helper（chat_prompt_utils/chat_runtime_helpers/
+# chat_scheduler/chat_stream）已迁到 api/chat_runtime/，作为跨 runtime 共享代码。
+import gateway.routers as _routers_pkg
 routers_dir = os.path.dirname(_routers_pkg.__file__)
 router_files = glob.glob(os.path.join(routers_dir, "*.py"))
 
@@ -127,7 +127,7 @@ for router_file in router_files:
         continue
 
     try:
-        module = importlib.import_module(f"api.routers.{module_name}")
+        module = importlib.import_module(f"gateway.routers.{module_name}")
         # 仅注册显式入口路由模块，避免拆分后的子模块重复挂载同一 router
         if hasattr(module, "router") and getattr(module, "IS_ROUTER_ENTRY", True):
             # 默认统一挂载到 /api 前缀下；模块可定义 PREFIX 覆盖。
@@ -142,7 +142,7 @@ for router_file in router_files:
 # editing api/routers/.
 for _bot in iter_bots():
     try:
-        bot_router_module = importlib.import_module(f"api.bots.{_bot.channel}.router")
+        bot_router_module = importlib.import_module(f"connector_runtime.bots.{_bot.channel}.router")
     except ModuleNotFoundError:
         continue
     bot_router = getattr(bot_router_module, "router", None)

@@ -11,7 +11,7 @@ from api.sio import (
     is_agent_shared_secret,
     resolve_agent_user,
 )
-from api.services.agent_dispatch import (
+from connector_runtime.dispatch.agent_dispatch import (
     handle_task_error,
     handle_task_progress,
     handle_task_result,
