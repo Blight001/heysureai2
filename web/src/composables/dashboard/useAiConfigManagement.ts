@@ -56,6 +56,17 @@ const BOT_CONFIG_DEFAULTS: Record<string, Record<string, any>> = {
 function hydrateBotConfigs(raw: any): Record<string, Record<string, any>> {
   // Merge server payload on top of defaults so every channel slice always
   // has every field populated for v-model bindings.
+  // The server stores ``bot_configs`` as a JSON *string* column, so the
+  // ``/api/ai/configs`` row hands it back as a string; parse it before use
+  // (otherwise ``typeof raw === 'object'`` is false and the saved config is
+  // silently dropped, leaving the popup blank).
+  if (typeof raw === 'string') {
+    try {
+      raw = raw.trim() ? JSON.parse(raw) : null
+    } catch {
+      raw = null
+    }
+  }
   const out: Record<string, Record<string, any>> = {}
   for (const [channel, defaults] of Object.entries(BOT_CONFIG_DEFAULTS)) {
     const incoming = (raw && typeof raw === 'object' ? raw[channel] : null) || {}
