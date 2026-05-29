@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from api.database import engine
-from api.mcp import get_project_root, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
+from mcp_runtime.mcp import get_project_root, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, User
 from api.services.model_presets import resolve_model_preset
 from api.services.task_system import parse_generation_from_session_id, with_workspace_read_by_name_compat

@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
 from api.database import get_session
-from api.mcp import get_project_root, registry
+from mcp_runtime.mcp import get_project_root, registry
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatMessageUpdate, ChatRun
 from api.routers.auth import get_current_user
 from ai_runtime.worker import notify_queue

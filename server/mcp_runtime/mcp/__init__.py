@@ -8,9 +8,9 @@ Layout:
 - tools.*      — concrete handlers, grouped by domain (workspace, tasks,
                  projects, prompts, memory, communication, human, librarian).
 
-External callers should keep importing from ``api.mcp`` (this package) for
-the small public surface re-exported below; reach into ``api.mcp.core`` /
-``api.mcp.permissions`` only when they need internals.
+External callers should keep importing from ``mcp_runtime.mcp`` (this package) for
+the small public surface re-exported below; reach into ``mcp_runtime.mcp.core`` /
+``mcp_runtime.mcp.permissions`` only when they need internals.
 """
 
 from .core import (

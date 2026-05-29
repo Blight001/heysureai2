@@ -19,8 +19,8 @@ import requests
 from sqlmodel import Session, select
 
 from api.database import engine
-from api.mcp import registry, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
-from api.mcp.core import MCP_INTROSPECTION_TOOLS
+from mcp_runtime.mcp import registry, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
+from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.services import ai_message_service, valhalla_service
 from api.services.agent_dispatch import dispatch_endpoint_tool_and_wait, set_run_session_context

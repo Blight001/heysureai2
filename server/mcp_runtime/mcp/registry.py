@@ -62,7 +62,7 @@ from .tools.web_search import _web_search
 def _register_builtin_tools(registry: MCPRegistry) -> None:
     """Populate ``registry`` with all builtin tools.
 
-    Extracted so ``api.mcp.loader`` can rebuild a fresh registry on hot
+    Extracted so ``mcp_runtime.mcp.loader`` can rebuild a fresh registry on hot
     reload without needing to ``importlib.reload`` this module (which would
     invalidate references held by callers).
     """

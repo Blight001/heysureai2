@@ -4,9 +4,9 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from ...database import engine
-from ...models import AssistantAIConfig, User
-from ...services.governance import assert_can_manage_or_legacy
+from api.database import engine
+from api.models import AssistantAIConfig, User
+from api.services.governance import assert_can_manage_or_legacy
 
 
 SYSTEM_PROMPT_FIELDS = {

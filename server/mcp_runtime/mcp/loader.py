@@ -1,15 +1,15 @@
 """Hot-reload entry for the MCP tool registry.
 
-Goal: let a deployer drop new code into ``api/mcp/tools/`` or
-``api/mcp/plugins/`` and pick it up at runtime without restarting the
+Goal: let a deployer drop new code into ``mcp_runtime/mcp/tools/`` or
+``mcp_runtime/mcp/plugins/`` and pick it up at runtime without restarting the
 process. Reload is admin-level — never expose this to end users.
 
 Flow:
-1. ``importlib.reload`` every module under ``api.mcp.tools`` so handler
+1. ``importlib.reload`` every module under ``mcp_runtime.mcp.tools`` so handler
    bodies pick up source changes.
 2. Build a fresh ``MCPRegistry`` and call ``_register_builtin_tools`` on
-   it (the function from ``api.mcp.registry``).
-3. Discover ``api/mcp/plugins/*.py`` and call each module's ``register``
+   it (the function from ``mcp_runtime.mcp.registry``).
+3. Discover ``mcp_runtime/mcp/plugins/*.py`` and call each module's ``register``
    function, passing the fresh registry. Plugin files are imported (or
    reloaded if already loaded) for each call so source changes take
    effect.
@@ -32,13 +32,13 @@ from typing import Any, Dict, List
 from .core import MCPRegistry
 
 
-_PLUGINS_PACKAGE = "api.mcp.plugins"
-_TOOLS_PACKAGE = "api.mcp.tools"
-_REGISTRY_MODULE = "api.mcp.registry"
+_PLUGINS_PACKAGE = "mcp_runtime.mcp.plugins"
+_TOOLS_PACKAGE = "mcp_runtime.mcp.tools"
+_REGISTRY_MODULE = "mcp_runtime.mcp.registry"
 
 
 def _iter_tool_modules() -> List[str]:
-    """Return fully-qualified names of every module under api.mcp.tools."""
+    """Return fully-qualified names of every module under mcp_runtime.mcp.tools."""
     try:
         tools_pkg = importlib.import_module(_TOOLS_PACKAGE)
     except Exception:
@@ -50,7 +50,7 @@ def _iter_tool_modules() -> List[str]:
 
 
 def _iter_plugin_modules() -> List[str]:
-    """Return fully-qualified names of every plugin under api.mcp.plugins."""
+    """Return fully-qualified names of every plugin under mcp_runtime.mcp.plugins."""
     try:
         pkg = importlib.import_module(_PLUGINS_PACKAGE)
     except Exception:
@@ -82,7 +82,7 @@ def reload_registry() -> Dict[str, Any]:
             "error": Optional[str],         # set when ok=False
         }
     """
-    # Import the module explicitly. ``api.mcp`` re-exports a ``registry``
+    # Import the module explicitly. ``mcp_runtime.mcp`` re-exports a ``registry``
     # singleton object, so ``from . import registry`` would bind the object
     # instead of the module and break attribute access like ``registry.version``.
     registry_module = importlib.import_module(_REGISTRY_MODULE)
@@ -149,7 +149,7 @@ def load_plugins_on_startup() -> Dict[str, Any]:
     """Best-effort plugin discovery on first boot.
 
     Builtin tools are already loaded via ``registry`` import. This adds any
-    plugins under ``api/mcp/plugins/`` to the live registry without bumping
+    plugins under ``mcp_runtime/mcp/plugins/`` to the live registry without bumping
     the version artificially when there are zero plugins.
     """
     registry_module = importlib.import_module(_REGISTRY_MODULE)

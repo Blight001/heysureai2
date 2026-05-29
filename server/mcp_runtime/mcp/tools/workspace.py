@@ -6,9 +6,9 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from ...database import engine
-from ...models import AIRuntimeStatus, AssistantAIConfig
-from ...sio import agents
+from api.database import engine
+from api.models import AIRuntimeStatus, AssistantAIConfig
+from api.sio import agents
 from ..core import generate_file_tree, get_project_root, safe_join
 
 

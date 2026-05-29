@@ -12,7 +12,7 @@ from api.bots import all_channels, iter_bots
 
 logger = logging.getLogger(__name__)
 from api.database import get_session
-from api.mcp.permissions import clamp_tools_json, config_role_tier
+from mcp_runtime.mcp.permissions import clamp_tools_json, config_role_tier
 from api.models import (
     AIRuntimeStatus,
     AssistantAIConfig,

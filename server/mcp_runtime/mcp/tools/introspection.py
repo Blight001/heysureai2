@@ -3,9 +3,9 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from ...database import engine
-from ...models import AssistantAIConfig, User
-from ...models.defaults import DEFAULT_MCP_NAMESPACE_HINTS
+from api.database import engine
+from api.models import AssistantAIConfig, User
+from api.models.defaults import DEFAULT_MCP_NAMESPACE_HINTS
 from ..core import MCP_INTROSPECTION_TOOLS
 
 
@@ -33,8 +33,8 @@ def _namespace_hints(user_id: int) -> dict[str, str]:
 
 
 def _allowed_tool_names(user_id: int, ai_config_id: Optional[int]) -> set[str]:
-    from ...services.desktop_agent_tools import endpoint_bridge_tools_for_config
-    from ...services.task_system import with_workspace_read_by_name_compat
+    from api.services.desktop_agent_tools import endpoint_bridge_tools_for_config
+    from api.services.task_system import with_workspace_read_by_name_compat
     import json
 
     allowed: set[str] = set(MCP_INTROSPECTION_TOOLS)
@@ -82,8 +82,8 @@ def _resolve_tool_alias(name: str, allowed: set[str]) -> str:
 
 def _mcp_list_tools(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int] = None):
     from ..registry import registry
-    from ...services.desktop_agent_tools import endpoint_tool_description, is_endpoint_agent_tool
-    from ...services.librarian_service import intrinsic_tool_description
+    from api.services.desktop_agent_tools import endpoint_tool_description, is_endpoint_agent_tool
+    from api.services.librarian_service import intrinsic_tool_description
 
     allowed = _allowed_tool_names(user_id, ai_config_id)
     namespace_filter = str(args.get("namespace") or "").strip()
@@ -162,12 +162,12 @@ def _mcp_list_tools(user_id: int, args: Dict[str, Any], ai_config_id: Optional[i
 
 def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int] = None):
     from ..registry import registry
-    from ...services.desktop_agent_tools import (
+    from api.services.desktop_agent_tools import (
         endpoint_tool_description,
         endpoint_tool_input_schema,
         is_endpoint_agent_tool,
     )
-    from ...services.librarian_service import intrinsic_input_schema, intrinsic_tool_description
+    from api.services.librarian_service import intrinsic_input_schema, intrinsic_tool_description
 
     name = str(args.get("tool") or args.get("name") or "").strip()
     if not name:

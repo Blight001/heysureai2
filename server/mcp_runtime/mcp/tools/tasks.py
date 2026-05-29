@@ -7,12 +7,12 @@ from typing import Any, Dict, List, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from ...database import engine
-from ...models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, ChatSession
-from ...services.agent_dispatch import get_run_session_context
-from ...services.governance import assert_can_manage_or_legacy
-from ...services.task_completion_notify import notify_task_completion
-from ...services.task_system import extract_task_payload
+from api.database import engine
+from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, ChatSession
+from api.services.agent_dispatch import get_run_session_context
+from api.services.governance import assert_can_manage_or_legacy
+from api.services.task_completion_notify import notify_task_completion
+from api.services.task_system import extract_task_payload
 
 _FINISHED_STATUSES = {"completed", "cancelled", "stopped", "error"}
 _ACTIVE_STATUSES = {"queued", "running", "paused"}

@@ -14,8 +14,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 from fastapi import HTTPException
 
-from api.mcp import registry
-from api.mcp.core import MCP_INTROSPECTION_TOOLS
+from mcp_runtime.mcp import registry
+from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
 from api.models import AssistantAIConfig, DEFAULT_MCP_FORMAT_ERROR_HINT
 from api.models.defaults import DEFAULT_MCP_NAMESPACE_HINTS
 from api.chat_runtime.mcp_parser import (

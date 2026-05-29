@@ -6,10 +6,10 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from api.database import get_session
-from api.mcp import registry
-from api.mcp.core import MCP_INTROSPECTION_TOOLS
-from api.mcp.loader import reload_registry
-from api.mcp.permissions import (
+from mcp_runtime.mcp import registry
+from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
+from mcp_runtime.mcp.loader import reload_registry
+from mcp_runtime.mcp.permissions import (
     CONFIGURABLE_ROLES,
     ROLE_LABELS_ZH,
     config_role_tier,

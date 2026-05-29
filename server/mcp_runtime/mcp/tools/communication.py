@@ -11,12 +11,12 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from ...bots import all_channels, get as get_bot
-from ...database import engine
+from api.bots import all_channels, get as get_bot
+from api.database import engine
 from ..core import get_project_root, safe_join
-from ...models import AssistantAIConfig, User
-from ...services import ai_message_service
-from ...services.agent_dispatch import get_run_session_context
+from api.models import AssistantAIConfig, User
+from api.services import ai_message_service
+from api.services.agent_dispatch import get_run_session_context
 
 
 _ALLOWED_MESSAGE_TYPES = {"inquiry", "reply", "chitchat", "notify"}

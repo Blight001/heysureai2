@@ -7,10 +7,10 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from ..core.config import USER_WORKSPACE_SUBFOLDERS, user_workspace_dir
-from ..database import engine
-from ..models import AIRuntimeStatus, AssistantAIConfig
-from ..sio import sio
+from api.core.config import USER_WORKSPACE_SUBFOLDERS, user_workspace_dir
+from api.database import engine
+from api.models import AIRuntimeStatus, AssistantAIConfig
+from api.sio import sio
 
 _MCP_RUNTIME_OVERRIDES: contextvars.ContextVar[Optional[Dict[str, Any]]] = contextvars.ContextVar(
     "mcp_runtime_overrides",
@@ -137,7 +137,7 @@ class MCPRegistry:
         """Atomically swap the live tool table.
 
         Keeps the registry object identity stable so callers that did
-        ``from api.mcp.registry import registry`` see the updated tools
+        ``from mcp_runtime.mcp.registry import registry`` see the updated tools
         through their existing reference. Version is bumped so that any
         cached payloads can be invalidated.
         """

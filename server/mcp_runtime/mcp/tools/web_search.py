@@ -3,9 +3,9 @@ from typing import Any, Dict, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from ...core.settings import settings
-from ...database import engine
-from ...models import User
+from api.core.settings import settings
+from api.database import engine
+from api.models import User
 
 
 def _get_tavily_api_key(user_id: int) -> str:
