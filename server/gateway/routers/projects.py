@@ -12,7 +12,7 @@ from api.models import (
     EvolutionProjectCreate,
     EvolutionProjectUpdate,
 )
-from api.routers.auth import get_current_user
+from .auth import get_current_user
 
 router = APIRouter()
 PREFIX = "/api/projects"

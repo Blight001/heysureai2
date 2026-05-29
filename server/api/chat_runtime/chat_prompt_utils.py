@@ -28,7 +28,7 @@ from api.services.task_system import (
     DEFAULT_SYSTEM_AUTO_CONTROL,
     with_workspace_read_by_name_compat,
 )
-from .chat_base import (
+from .run_state import (
     STATE_PREFIX,
     _AUTO_RUNTIME_SECTION_TITLES,
     _RUN_LIVE_STATE,

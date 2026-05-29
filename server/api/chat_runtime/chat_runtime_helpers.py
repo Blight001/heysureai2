@@ -14,7 +14,7 @@ from mcp_runtime.mcp import get_project_root, reset_mcp_runtime_overrides, set_m
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, User
 from api.services.model_presets import resolve_model_preset
 from api.services.task_system import parse_generation_from_session_id, with_workspace_read_by_name_compat
-from .chat_base import _RUN_LIVE_STATE, _RUN_STATE_LOCK
+from .run_state import _RUN_LIVE_STATE, _RUN_STATE_LOCK
 from .chat_prompt_utils import (
     _append_prompt_section,
     _clear_run_live_text,

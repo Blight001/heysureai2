@@ -8,10 +8,10 @@ from sqlmodel import Session, select
 
 from api.database import get_session
 from api.models import ChatMessage, ChatSession
-from api.routers.auth import get_current_user
+from .auth import get_current_user
 from .chat_base import router
 from api.services.chat_persistence import _rebuild_usage_snapshots
-from .chat_runtime_helpers import _live_pending_tokens_for
+from api.chat_runtime.chat_runtime_helpers import _live_pending_tokens_for
 
 
 @router.get("/history", response_model=List[ChatMessage])

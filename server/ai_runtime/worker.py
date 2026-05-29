@@ -127,7 +127,7 @@ def _load_worker_kwargs(run: ChatRun) -> Dict[str, Any]:
     """
     import json as _json
 
-    from api.routers.chat_runtime_helpers import _resolve_ai_runtime
+    from api.chat_runtime.chat_runtime_helpers import _resolve_ai_runtime
     from api.models import ChatMessage, User
 
     extras: Dict[str, Any] = {}

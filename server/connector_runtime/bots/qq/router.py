@@ -11,9 +11,9 @@ from sqlmodel import Session, select
 from api.database import get_session
 from api.database import engine
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
-from api.routers.auth import get_current_user
-from api.routers.chat_base import _RUN_THREADS
-from api.routers.chat_runtime_helpers import _resolve_ai_runtime
+from gateway.routers.auth import get_current_user
+from api.chat_runtime.run_state import _RUN_THREADS
+from api.chat_runtime.chat_runtime_helpers import _resolve_ai_runtime
 from ai_runtime.inference.core import _run_worker
 from api.services.chat_persistence import _save_message
 from ._config import read_qq_config

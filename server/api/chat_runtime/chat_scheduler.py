@@ -13,7 +13,7 @@ from api.database import engine
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, ChatSession, User
 from api.services import librarian_service
 from api.services.task_system import DEFAULT_SYSTEM_AUTO_CONTROL, normalize_system_auto_control, parse_generation_from_session_id
-from .chat_base import MAX_AUTO_SUPERVISION_ROUNDS, _RUN_THREADS
+from .run_state import MAX_AUTO_SUPERVISION_ROUNDS, _RUN_THREADS
 from api.services.chat_persistence import _save_message
 import logging
 

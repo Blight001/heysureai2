@@ -13,7 +13,7 @@ from sqlmodel import Session
 
 from api.services import valhalla_service
 from api.database import get_session
-from api.routers.auth import get_current_user
+from .auth import get_current_user
 
 
 PREFIX = "/api/valhalla"

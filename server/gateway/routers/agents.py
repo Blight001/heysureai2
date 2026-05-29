@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Header
 from sqlmodel import Session
 
 from api.database import get_session
-from api.routers.auth import get_current_user
+from .auth import get_current_user
 from api.sio import agents, agent_token_required
 
 router = APIRouter()

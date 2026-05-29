@@ -525,7 +525,7 @@ def _send_inquiry_reply_reminder(*, message_id: str, user_id: int, elapsed_secon
         session.add(run)
         session.commit()
 
-    from api.routers.chat_base import _RUN_THREADS
+    from api.chat_runtime.run_state import _RUN_THREADS
     from ai_runtime.inference.core import _run_worker
 
     worker = threading.Thread(
@@ -862,7 +862,7 @@ def _run_thread_is_alive(run_id: str) -> bool:
     if not run_id:
         return False
     try:
-        from api.routers.chat_base import _RUN_THREADS
+        from api.chat_runtime.run_state import _RUN_THREADS
         worker = _RUN_THREADS.get(run_id)
         return bool(worker and worker.is_alive())
     except Exception:
@@ -873,7 +873,7 @@ def _clear_live_run_state(run_id: str) -> None:
     if not run_id:
         return
     try:
-        from api.routers.chat_base import _RUN_LIVE_STATE, _RUN_STATE_LOCK
+        from api.chat_runtime.run_state import _RUN_LIVE_STATE, _RUN_STATE_LOCK
         with _RUN_STATE_LOCK:
             _RUN_LIVE_STATE.pop(run_id, None)
     except Exception:
@@ -1010,7 +1010,7 @@ def _wake_idle_target_for_message_locked(
         session.add(row)
         session.commit()
 
-    from api.routers.chat_base import _RUN_THREADS
+    from api.chat_runtime.run_state import _RUN_THREADS
     from ai_runtime.inference.core import _run_worker
 
     worker = threading.Thread(

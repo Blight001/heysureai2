@@ -38,7 +38,7 @@ from api.services.task_system import (
     parse_generation_from_session_id,
     with_workspace_read_by_name_compat,
 )
-from api.routers.chat_prompt_utils import (
+from api.chat_runtime.chat_prompt_utils import (
     _append_mcp_state_to_tags,
     _append_prompt_section,
     _build_mcp_display_result,
@@ -57,8 +57,8 @@ from api.routers.chat_prompt_utils import (
     _strip_task_runtime_sections,
 )
 from api.services.chat_persistence import _save_message
-from api.routers.chat_stream import StreamResult, _detect_provider, stream_turn_anthropic, stream_turn_openai_compat
-from api.routers.chat_runtime_helpers import (
+from api.chat_runtime.chat_stream import StreamResult, _detect_provider, stream_turn_anthropic, stream_turn_openai_compat
+from api.chat_runtime.chat_runtime_helpers import (
     _create_loop_scheduled_job,
     _is_task_finished_status,
     _load_task_job_by_session,
@@ -70,7 +70,7 @@ from api.routers.chat_runtime_helpers import (
     _run_should_stop,
     _session_total_tokens,
 )
-from api.routers.chat_scheduler import _start_task_run
+from api.chat_runtime.chat_scheduler import _start_task_run
 
 from api.core.config import DEFAULT_CHAT_MAX_STEPS
 from api.core.settings import settings

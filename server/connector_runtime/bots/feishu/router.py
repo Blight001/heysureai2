@@ -9,8 +9,8 @@ from sqlmodel import Session, select
 from api.database import engine
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.services.chat_persistence import _save_message
-from api.routers.chat_base import _RUN_THREADS
-from api.routers.chat_runtime_helpers import _resolve_ai_runtime
+from api.chat_runtime.run_state import _RUN_THREADS
+from api.chat_runtime.chat_runtime_helpers import _resolve_ai_runtime
 from ai_runtime.inference.core import _run_worker
 from ._config import read_feishu_config
 from .routes_store import register_feishu_session_route

@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 
 from api.database import get_session
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, ChatSession
-from api.routers.auth import get_current_user
+from .auth import get_current_user
 from api.services.task_system import (
     decode_task_payload,
     extract_task_payload,
@@ -237,7 +237,7 @@ async def get_ai_task_jobs(
         task_tokens_by_prefix[prefix] = task_tokens_by_prefix.get(prefix, 0) + int(msg.total_tokens or 0)
 
     try:
-        from api.routers.chat import _RUN_LIVE_STATE, _RUN_STATE_LOCK  # type: ignore
+        from api.chat_runtime.run_state import _RUN_LIVE_STATE, _RUN_STATE_LOCK  # type: ignore
         with _RUN_STATE_LOCK:
             live_map = dict(_RUN_LIVE_STATE)
     except Exception:
@@ -675,7 +675,7 @@ async def get_task_job_generations(
     ).all()
 
     try:
-        from api.routers.chat import _RUN_LIVE_STATE, _RUN_STATE_LOCK  # type: ignore
+        from api.chat_runtime.run_state import _RUN_LIVE_STATE, _RUN_STATE_LOCK  # type: ignore
         with _RUN_STATE_LOCK:
             live_map = dict(_RUN_LIVE_STATE)
     except Exception:

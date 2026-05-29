@@ -2,7 +2,7 @@
 
 Configuration (secret key, algorithm, expiry) lives in ``api.core.config``.
 This module is intentionally thin: routers depend on ``get_current_user`` in
-``api.routers.auth``, which builds on these primitives.
+``gateway.routers.auth``, which builds on these primitives.
 """
 
 from datetime import datetime, timedelta

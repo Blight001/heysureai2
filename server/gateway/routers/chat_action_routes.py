@@ -15,20 +15,20 @@ from sqlmodel import Session, select
 from api.database import get_session
 from mcp_runtime.mcp import get_project_root, registry
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatMessageUpdate, ChatRun
-from api.routers.auth import get_current_user
+from .auth import get_current_user
 from ai_runtime.worker import notify_queue
 from api.core.settings import settings
 from api.services.model_presets import resolve_model_preset
 from .chat_base import _RUN_LIVE_STATE, _RUN_STATE_LOCK, _RUN_THREADS, router
 from api.services.chat_persistence import _append_usage_snapshot, _rebuild_usage_snapshots, _save_message, _upsert_session
-from .chat_prompt_utils import (
+from api.chat_runtime.chat_prompt_utils import (
     _append_prompt_section,
     _build_mcp_stream_warning,
     _clear_run_live_text,
     _strip_runtime_injected_sections,
 )
-from .chat_runtime_helpers import _resolve_ai_runtime
-from .chat_worker import _raise_for_upstream_error, _run_worker
+from api.chat_runtime.chat_runtime_helpers import _resolve_ai_runtime
+from ai_runtime.inference.core import _raise_for_upstream_error, _run_worker
 
 
 def _ai_dispatch_mode() -> str:

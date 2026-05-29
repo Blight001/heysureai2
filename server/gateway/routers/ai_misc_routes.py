@@ -21,7 +21,7 @@ from api.models import (
     ChatSessionCreate,
     TokenUsageSnapshot,
 )
-from api.routers.auth import get_current_user
+from .auth import get_current_user
 from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.services.model_presets import resolve_model_preset
 from api.services.task_system import decode_task_payload, parse_generation_from_session_id
@@ -289,7 +289,7 @@ async def list_ai_cards(
             task_active_status_by_prefix[session_prefix] = str(row.status or "")
 
     try:
-        from api.routers.chat import _RUN_LIVE_STATE, _RUN_STATE_LOCK  # type: ignore
+        from api.chat_runtime.run_state import _RUN_LIVE_STATE, _RUN_STATE_LOCK  # type: ignore
         with _RUN_STATE_LOCK:
             run_live_state = dict(_RUN_LIVE_STATE)
     except Exception:

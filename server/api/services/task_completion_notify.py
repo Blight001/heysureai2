@@ -87,7 +87,7 @@ def _start_creator_notice_run(
         session.add(row)
         session.commit()
 
-    from api.routers.chat_base import _RUN_THREADS
+    from api.chat_runtime.run_state import _RUN_THREADS
     from ai_runtime.inference.core import _run_worker
 
     worker = threading.Thread(
