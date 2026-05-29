@@ -18,6 +18,7 @@ import { DEFAULT_MCP_TOOLS } from '@/constants/mcp'
 import type { Agent, McpRoleMeta, McpToolDefinition, User } from '@/types'
 
 import logoUrl from '@/assets/logo/HeySure.png'
+import { resolveAvatarUrl } from '@/utils/avatar'
 import SystemSettingsPanel from './panels/SystemSettingsPanel.vue'
 import LeftSidebarPanel from './panels/LeftSidebarPanel.vue'
 import EvolutionArenaPanel from './panels/EvolutionArenaPanel.vue'
@@ -455,7 +456,7 @@ onUnmounted(() => {
         <div class="ml-2 md:ml-4 flex items-center gap-3 pl-2 md:pl-4 border-l border-zinc-200 dark:border-zinc-700 relative">
           <template v-if="currentUser">
             <button class="flex items-center gap-2 hover:bg-zinc-50 p-1 rounded-lg transition-colors dark:hover:bg-zinc-800" @click.stop="userMenuOpen = !userMenuOpen">
-              <img :src="currentUser.avatar || 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + currentUser.name"
+              <img :src="resolveAvatarUrl(currentUser.avatar) || 'https://api.dicebear.com/7.x/avataaars/svg?seed=' + currentUser.name"
                    class="w-7 h-7 md:w-8 md:h-8 rounded-full border border-zinc-200 bg-zinc-50 object-cover" />
               <div class="hidden md:flex flex-col items-start text-left">
                 <span class="text-sm font-bold text-zinc-700 dark:text-zinc-200 leading-none mb-1">{{ currentUser.name }}</span>
