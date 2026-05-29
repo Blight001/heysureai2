@@ -38,8 +38,17 @@ agent/extension/
     │   ├── viewport.ts     #   页面位置上下文（scrollY、当前章节、可见标题）
     │   ├── popups.ts       #   弹窗/对话框检测与关闭
     │   └── actions.ts      #   点击/输入/滚动/拖拽/提取 等具体动作
-    ├── popup/              # 弹窗 UI 逻辑
-    │   ├── index.ts        #   主入口：DOM 引用、状态、tab 切换、所有交互
+    ├── popup/              # 弹窗 UI 逻辑（按职责拆分的模块）
+    │   ├── index.ts        #   编排层：background 端口分派、启动流程、装配监听
+    │   ├── state.ts        #   共享可变状态单例 + 常量
+    │   ├── dom.ts          #   集中缓存的 DOM 元素引用
+    │   ├── helpers.ts      #   纯/派生工具（头像、角色、useServerChat 等）
+    │   ├── ui.ts           #   表现层：主题/状态/活动流/tab/弹窗/目标横幅
+    │   ├── members.ts      #   登录登出 + AI 成员加载/渲染/选择
+    │   ├── chat.ts         #   对话子系统（服务端轮询 + 本地、会话、消息操作）
+    │   ├── tasks.ts        #   任务安排与作业列表
+    │   ├── cards.ts        #   记忆卡片：执行/查看/导入导出
+    │   ├── settings.ts     #   设置表单：加载/保存/预设/测试连接/连接控制
     │   └── markdown.ts     #   纯渲染工具：Markdown / MCP 调用块 / 推理块
     └── lib/                # 跨入口共享的库代码
         ├── types.ts        #   AgentSettings、ChatMessage、MemoryCard、消息类型等
