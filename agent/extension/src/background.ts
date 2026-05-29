@@ -180,12 +180,25 @@ function probeRegister(url: string, timeoutMs: number): Promise<ProbeOutcome> {
   })
 }
 
+// Single source of truth for "which AI this agent registers as". The
+// selection lives in chrome.storage (selectedAiConfigId) but is only valid
+// when the user is logged in. Using a plain `|| null` would also mistreat a
+// legitimate id of 0, so normalize explicitly here and reuse everywhere.
+function effectiveSelectedAiConfigId(
+  settings: { selectedAiConfigId: number | null },
+  auth: { token: string },
+): number | null {
+  if (!auth.token) return null
+  const raw = settings.selectedAiConfigId
+  return typeof raw === 'number' && raw >= 0 ? raw : null
+}
+
 async function emitRegisterOn(s: Socket): Promise<void> {
   const settings = await getSettings()
   const auth = await getAuth()
   if (settings.offlineMode) return
   const id = settings.agentId || await getMachineId()
-  const selectedAiConfigId = auth.token ? (settings.selectedAiConfigId || null) : null
+  const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth)
   s.emit('agent:register', {
     id,
     aiConfigId: selectedAiConfigId,
@@ -362,7 +375,7 @@ async function register() {
     return
   }
   if (!socket) return
-  const selectedAiConfigId = auth.token ? (settings.selectedAiConfigId || null) : null
+  const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth)
   if (!auth.token && settings.selectedAiConfigId) {
     await saveSettings({ selectedAiConfigId: null })
     log('system', 'warn', '未登录，已取消 AI 成员自动注册选择')
@@ -391,7 +404,7 @@ async function refreshServerAiSelectionOnStartup(): Promise<number | null> {
     return null
   }
 
-  const selectedAiConfigId = settings.selectedAiConfigId || null
+  const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth)
   if (!selectedAiConfigId) return null
 
   const selected = members.find(m => m.id === selectedAiConfigId)
@@ -747,14 +760,25 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 })
 
 // ── Context menus ─────────────────────────────────────────────────────────
+// Single onInstalled handler. removeAll() first so re-creating on update
+// doesn't throw on the already-registered ids. The keepalive alarm is
+// (re)created at module scope above on every service-worker wake, which is
+// what actually matters for an MV3 worker that gets torn down frequently.
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({ id: 'hs-ask', title: 'HeySure AI: 询问选中内容', contexts: ['selection'] })
-  chrome.contextMenus.create({ id: 'hs-screenshot', title: 'HeySure AI: 截图分析此页', contexts: ['page'] })
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: 'hs-ask', title: 'HeySure AI: 询问选中内容', contexts: ['selection'] })
+    chrome.contextMenus.create({ id: 'hs-screenshot', title: 'HeySure AI: 截图分析此页', contexts: ['page'] })
+  })
 })
 
 chrome.contextMenus.onClicked.addListener(async (info) => {
   if (info.menuItemId === 'hs-ask' && info.selectionText) {
     await chrome.storage.session.set({ _pendingChat: info.selectionText })
+  } else if (info.menuItemId === 'hs-screenshot') {
+    // Pre-fill the chat so opening the popup kicks off a screenshot+analyze
+    // turn (the agent has browser_screenshot available). Without this the
+    // menu item was registered but did nothing when clicked.
+    await chrome.storage.session.set({ _pendingChat: '请截图并分析当前页面' })
   }
 })
 
@@ -764,8 +788,3 @@ chrome.runtime.onStartup.addListener(async () => {
 })
 
 void restoreAndConnectOnStartup()
-
-// On install / update — register alarms fresh
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create('keepalive', { periodInMinutes: 0.4 })
-})

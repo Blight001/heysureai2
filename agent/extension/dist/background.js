@@ -5885,13 +5885,19 @@ Always:
       probe.on("agent:register_rejected", (data) => settle({ kind: "rejected", reason: data?.reason || "\u6CE8\u518C\u88AB\u670D\u52A1\u5668\u62D2\u7EDD" }));
     });
   }
+  function effectiveSelectedAiConfigId(settings, auth) {
+    if (!auth.token)
+      return null;
+    const raw = settings.selectedAiConfigId;
+    return typeof raw === "number" && raw >= 0 ? raw : null;
+  }
   async function emitRegisterOn(s) {
     const settings = await getSettings();
     const auth = await getAuth();
     if (settings.offlineMode)
       return;
     const id = settings.agentId || await getMachineId();
-    const selectedAiConfigId = auth.token ? settings.selectedAiConfigId || null : null;
+    const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth);
     s.emit("agent:register", {
       id,
       aiConfigId: selectedAiConfigId,
@@ -6041,7 +6047,7 @@ ${failures.map((f) => `\xB7 ${f.url} \u2014 ${f.reason}`).join("\n")}
     }
     if (!socket)
       return;
-    const selectedAiConfigId = auth.token ? settings.selectedAiConfigId || null : null;
+    const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth);
     if (!auth.token && settings.selectedAiConfigId) {
       await saveSettings({ selectedAiConfigId: null });
       log("system", "warn", "\u672A\u767B\u5F55\uFF0C\u5DF2\u53D6\u6D88 AI \u6210\u5458\u81EA\u52A8\u6CE8\u518C\u9009\u62E9");
@@ -6067,7 +6073,7 @@ ${failures.map((f) => `\xB7 ${f.url} \u2014 ${f.reason}`).join("\n")}
       log("system", "warn", `\u542F\u52A8\u65F6\u83B7\u53D6 AI \u6210\u5458\u5931\u8D25: ${err?.message || err}`);
       return null;
     }
-    const selectedAiConfigId = settings.selectedAiConfigId || null;
+    const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth);
     if (!selectedAiConfigId)
       return null;
     const selected = members.find((m) => m.id === selectedAiConfigId);
@@ -6389,19 +6395,20 @@ Respond in the same language as the user. For factual questions, search the web 
     }
   });
   chrome.runtime.onInstalled.addListener(() => {
-    chrome.contextMenus.create({ id: "hs-ask", title: "HeySure AI: \u8BE2\u95EE\u9009\u4E2D\u5185\u5BB9", contexts: ["selection"] });
-    chrome.contextMenus.create({ id: "hs-screenshot", title: "HeySure AI: \u622A\u56FE\u5206\u6790\u6B64\u9875", contexts: ["page"] });
+    chrome.contextMenus.removeAll(() => {
+      chrome.contextMenus.create({ id: "hs-ask", title: "HeySure AI: \u8BE2\u95EE\u9009\u4E2D\u5185\u5BB9", contexts: ["selection"] });
+      chrome.contextMenus.create({ id: "hs-screenshot", title: "HeySure AI: \u622A\u56FE\u5206\u6790\u6B64\u9875", contexts: ["page"] });
+    });
   });
   chrome.contextMenus.onClicked.addListener(async (info) => {
     if (info.menuItemId === "hs-ask" && info.selectionText) {
       await chrome.storage.session.set({ _pendingChat: info.selectionText });
+    } else if (info.menuItemId === "hs-screenshot") {
+      await chrome.storage.session.set({ _pendingChat: "\u8BF7\u622A\u56FE\u5E76\u5206\u6790\u5F53\u524D\u9875\u9762" });
     }
   });
   chrome.runtime.onStartup.addListener(async () => {
     await restoreAndConnectOnStartup();
   });
   void restoreAndConnectOnStartup();
-  chrome.runtime.onInstalled.addListener(() => {
-    chrome.alarms.create("keepalive", { periodInMinutes: 0.4 });
-  });
 })();
