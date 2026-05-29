@@ -1,10 +1,10 @@
 // renderer.ts — HeySure Agent renderer process
 //
-// The desktop app is now a thin tool-calling endpoint: it logs in, selects an
-// AI member, registers with the server and then executes whatever tool calls
-// the server dispatches over the socket. Task management and AI chat now live
-// entirely on the web console, so this renderer only owns login / AI selection,
-// connection control and a live feed of the tool calls the agent performs.
+// The desktop app is a thin tool-calling endpoint. It logs in and connects to
+// the server; the AI assignment is controlled server-side from the web
+// Workshop ("作坊") panel — the device no longer picks an AI. This renderer
+// owns login, connection control and a live feed of the tool calls the agent
+// performs on the server's behalf.
 
 interface Window {
   heysureAPI: {
@@ -22,22 +22,16 @@ interface Window {
     testConnection: () => Promise<{ success: boolean; status?: number; ms?: number; error?: string }>
     login: (params: { serverUrl: string; account: string; password: string }) => Promise<{ success: boolean; user: any }>
     logout: () => Promise<{ success: boolean }>
-    listAiConfigs: () => Promise<any[]>
-    getAiRuntimeStatus: () => Promise<any[]>
-    selectAiConfig: (cfg: any) => Promise<{ success: boolean }>
-    cloneAiConfig: (configId: number) => Promise<any>
     version: string
   }
 }
 
 // ── State ──────────────────────────────────────────────────────────────────
-type AppScreen = 'login' | 'ai-select' | 'main'
+type AppScreen = 'login' | 'main'
 let currentTheme: 'dark' | 'light' = 'dark'
 let totalCalls = 0, successCalls = 0, failedCalls = 0, runningCalls = 0
 let sidebarOpen = false
 let currentConnectionStatus = 'disconnected'
-let currentAiDisplayName = ''
-let selectedAiConfigId: number | null = null
 
 // ── Screen navigation ──────────────────────────────────────────────────────
 function showScreen(screen: AppScreen) {
@@ -51,7 +45,6 @@ const feedEmpty       = document.getElementById('feed-empty')!
 const bodyEl          = document.getElementById('body')!
 const statusDot       = document.getElementById('status-dot')!
 const statusLabel     = document.getElementById('status-label')!
-const statusPill      = document.getElementById('status-pill')!
 const infoStatus      = document.getElementById('info-status')!
 const infoServer      = document.getElementById('info-server')!
 const infoWorkspace   = document.getElementById('info-workspace')!
@@ -69,29 +62,13 @@ const clearBtn        = document.getElementById('clear-btn')!
 const settingsToggle  = document.getElementById('settings-toggle')!
 const testConnBtn     = document.getElementById('test-conn-btn')!
 const testResult      = document.getElementById('test-result')!
-const aiInfoName      = document.getElementById('ai-info-name')!
-const aiInfoRole      = document.getElementById('ai-info-role')!
-const aiInfoLifecycle = document.getElementById('ai-info-lifecycle')!
-const aiInfoProject   = document.getElementById('ai-info-project')!
 const headerUserChip  = document.getElementById('header-user-chip')!
 const headerUserAva   = document.getElementById('header-user-ava')!
 const headerUserName  = document.getElementById('header-user-name')!
-const aiSelectTarget  = document.getElementById('ai-select-target')!
-const aiSelectTargetText = document.getElementById('ai-select-target-text')!
 
 const STATUS_LABELS: Record<string, string> = {
-  disconnected: '未连接', connecting: '连接中...', connected: '已连接', registered: '已注册', error: '连接错误',
+  disconnected: '未连接', connecting: '连接中...', connected: '已连接', registered: '已连接到服务器', error: '连接错误',
 }
-const DESKTOP_AGENT_MCP_TOOLS = new Set([
-  'fs.list', 'fs.read', 'fs.write',
-  'shell.run', 'git.diff',
-  'keyboard.type', 'keyboard.press',
-  'mouse.move', 'mouse.click', 'mouse.double_click', 'mouse.right_click', 'mouse.scroll', 'mouse.drag',
-  'screen.capture', 'screen.capture_region', 'screen.info',
-  'clipboard.get', 'clipboard.set',
-  'window.list', 'window.focus', 'window.close',
-  'process.list', 'process.kill',
-])
 
 // ── Theme ──────────────────────────────────────────────────────────────────
 function applyTheme(theme: 'dark' | 'light', persist = true) {
@@ -108,11 +85,10 @@ function applyTheme(theme: 'dark' | 'light', persist = true) {
 // ── Status display ─────────────────────────────────────────────────────────
 function setStatus(status: string) {
   currentConnectionStatus = status
-  const rawLabel = STATUS_LABELS[status] || status
-  const label = status === 'registered' && currentAiDisplayName ? currentAiDisplayName : rawLabel
+  const label = STATUS_LABELS[status] || status
   statusDot.className = status
   statusLabel.textContent = label
-  infoStatus.textContent = rawLabel
+  infoStatus.textContent = label
   infoStatus.className = `info-value ${status}`
 }
 
@@ -136,9 +112,6 @@ function formatTime(ts: number) {
 }
 function escapeHtml(str: string) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-}
-function lifecycleLabel(lc: string) {
-  return ({ learning: '学习中', working: '工作中', reproducing: '繁殖中', dead: '退役' } as any)[lc] || lc
 }
 
 // ── Activity feed ──────────────────────────────────────────────────────────
@@ -188,49 +161,12 @@ function addEntry(entry: { id?: string; type: string; status: string; message: s
 // ── Settings ───────────────────────────────────────────────────────────────
 async function loadMainSettings() {
   const s = await window.heysureAPI.getSettings()
-  selectedAiConfigId = typeof s.selectedAiConfigId === 'number' ? s.selectedAiConfigId : null
   cfgServer.value = s.serverUrl || ''
   cfgWorkspace.value = s.workspaceRoot || ''
   infoServer.textContent    = s.serverUrl || '—'
   infoWorkspace.textContent = s.workspaceRoot ? (s.workspaceRoot.split(/[/\\]/).pop() || s.workspaceRoot) : '—'
-  if (s.selectedAiConfigName) updateAiMemberDisplay(s)
-  else clearAiMemberDisplay()
   updateUserChip(s)
   return s
-}
-
-function updateAiMemberDisplay(s: any) {
-  const isManager = s.selectedAiConfigRole === 'manager'
-  const name = s.selectedAiConfigName || '—'
-  selectedAiConfigId = typeof s.selectedAiConfigId === 'number' ? s.selectedAiConfigId : selectedAiConfigId
-  currentAiDisplayName = name === '—' ? '' : (isManager ? `★ ${name}` : name)
-  aiInfoName.textContent = name
-  aiInfoRole.textContent = isManager ? '组长 (Manager)' : '成员 (Member)'
-  aiInfoLifecycle.textContent = lifecycleLabel(s.selectedAiConfigLifecycle)
-  aiInfoProject.textContent = s.selectedAiConfigProject || '—'
-  updateAiSelectTarget()
-  setStatus(currentConnectionStatus)
-}
-
-function clearAiMemberDisplay() {
-  selectedAiConfigId = null
-  currentAiDisplayName = ''
-  aiInfoName.textContent = '—'
-  aiInfoRole.textContent = '—'
-  aiInfoLifecycle.textContent = '—'
-  aiInfoProject.textContent = '—'
-  updateAiSelectTarget()
-  setStatus(currentConnectionStatus)
-}
-
-function updateAiSelectTarget() {
-  if (currentAiDisplayName) {
-    aiSelectTarget.classList.remove('empty')
-    aiSelectTargetText.innerHTML = `当前 AI：<span class="tb-name">${escapeHtml(currentAiDisplayName)}</span>`
-  } else {
-    aiSelectTarget.classList.add('empty')
-    aiSelectTargetText.textContent = '未选择 AI 成员'
-  }
 }
 
 async function saveSettings() {
@@ -294,8 +230,6 @@ const loginBtn           = document.getElementById('login-btn') as HTMLButtonEle
 const loginError         = document.getElementById('login-error')!
 const loginModal         = document.getElementById('login-modal')!
 const loginModalClose    = document.getElementById('login-modal-close')!
-const aiSelectModal      = document.getElementById('ai-select-modal')!
-const aiSelectModalClose = document.getElementById('ai-select-modal-close')!
 
 function showLoginError(msg: string) { loginError.textContent = msg; loginError.classList.add('visible') }
 function clearLoginError() { loginError.classList.remove('visible') }
@@ -314,34 +248,13 @@ function closeLoginModal() {
   loginModal.classList.add('hidden')
 }
 
-function openAiSelectModal() {
-  aiSelectModal.classList.remove('hidden')
-  window.heysureAPI.getSettings().then(s => {
-    updateUserChip(s)
-    if (!s.authToken) {
-      aiGrid.innerHTML = '<div class="ai-empty"><div class="ai-empty-icon">&#x1F512;</div><p>请先点击头像登录软件端账号</p></div>'
-      return
-    }
-    loadAiSelectScreen().catch(() => {})
-  }).catch(() => {})
-}
-
-function closeAiSelectModal() {
-  aiSelectModal.classList.add('hidden')
-}
-
 document.addEventListener('keydown', (event: KeyboardEvent) => {
-  if (event.key !== 'Escape') return
-  closeLoginModal()
-  closeAiSelectModal()
+  if (event.key === 'Escape') closeLoginModal()
 })
 
 window.heysureAPI.onAuthExpired(async reason => {
   const s = await window.heysureAPI.getSettings()
   updateUserChip(s)
-  selectedAiConfigId = null
-  currentAiDisplayName = ''
-  updateAiSelectTarget()
   openLoginModal()
   showLoginError(reason || '登录已过期，请重新登录')
 })
@@ -364,7 +277,8 @@ async function doLogin() {
     updateUserChip(s)
     closeLoginModal()
     await loadMainSettings()
-    openAiSelectModal()
+    // Logged in → connect right away. AI is assigned later from the web Workshop.
+    window.heysureAPI.connect()
   } catch (err: any) {
     showLoginError(err.message || '登录失败')
   } finally {
@@ -377,23 +291,11 @@ loginBtn.addEventListener('click', doLogin)
 )
 loginModalClose.addEventListener('click', closeLoginModal)
 loginModal.addEventListener('click', e => { if (e.target === loginModal) closeLoginModal() })
-statusPill.addEventListener('click', openAiSelectModal)
-statusPill.addEventListener('keydown', e => {
-  const key = (e as KeyboardEvent).key
-  if (key === 'Enter' || key === ' ') {
-    e.preventDefault()
-    openAiSelectModal()
-  }
-})
-aiSelectModalClose.addEventListener('click', closeAiSelectModal)
-aiSelectModal.addEventListener('click', e => { if (e.target === aiSelectModal) closeAiSelectModal() })
 
 // ══════════════════════════════════════════════════════
-// AI SELECT
+// ACCOUNT / USER CHIP
 // ══════════════════════════════════════════════════════
-const aiGrid       = document.getElementById('ai-grid')!
 const logoutBtn    = document.getElementById('logout-btn')!
-const refreshAiBtn = document.getElementById('refresh-ai-btn')!
 const accountInfoBlock     = document.getElementById('account-info') as HTMLElement
 const accountInfoAva       = document.getElementById('account-info-ava') as HTMLElement
 const accountInfoAvaImg    = document.getElementById('account-info-ava-img') as HTMLImageElement
@@ -458,31 +360,6 @@ function updateUserChip(s: any) {
   setUserChip(s.userName || '', s.userAvatar || '', s.serverUrl || '', !!s.authToken, s.userAvatarDataUrl || '')
 }
 
-function parseMcpTools(value: any): string[] {
-  if (Array.isArray(value)) return value.map(item => String(item || '').trim()).filter(Boolean)
-  if (typeof value !== 'string') return []
-  try {
-    const parsed = JSON.parse(value || '[]')
-    return Array.isArray(parsed) ? parsed.map(item => String(item || '').trim()).filter(Boolean) : []
-  } catch {
-    return value.split(',').map(item => item.trim()).filter(Boolean)
-  }
-}
-
-function hasDesktopMcpPermission(cfg: any) {
-  if (cfg?.mcp_enabled === false) return false
-  return parseMcpTools(cfg?.mcp_tools).some(tool => DESKTOP_AGENT_MCP_TOOLS.has(tool))
-}
-
-function roleOfConfig(cfg: any) {
-  if (cfg?.ai_role === 'assistant_admin') return 'assistant_admin'
-  return cfg?.digital_member_role === 'manager' ? 'manager' : 'member'
-}
-
-function roleLabel(role: string) {
-  return ({ assistant_admin: '辅助管理员', manager: '管理者', member: '普通成员' } as Record<string, string>)[role] || role
-}
-
 async function doLogout() {
   await window.heysureAPI.logout()
   const s = await window.heysureAPI.getSettings()
@@ -490,106 +367,13 @@ async function doLogout() {
   loginAccountInput.value = ''
   loginPasswordInput.value = ''
   updateUserChip(s)
-  clearAiMemberDisplay()
   clearLoginError()
   closeLoginModal()
-  closeAiSelectModal()
   setStatus('disconnected')
 }
 
 headerUserChip.addEventListener('click', () => openLoginModal())
-
-async function loadAiSelectScreen() {
-  aiGrid.innerHTML = '<div class="ai-loading"><div class="spinner-large"></div><p>加载 AI 成员列表...</p></div>'
-  try {
-    const [configs, statuses, settings] = await Promise.all([
-      window.heysureAPI.listAiConfigs(),
-      window.heysureAPI.getAiRuntimeStatus(),
-      window.heysureAPI.getSettings(),
-    ])
-    selectedAiConfigId = typeof settings.selectedAiConfigId === 'number' ? settings.selectedAiConfigId : null
-    currentAiDisplayName = settings.selectedAiConfigName || currentAiDisplayName
-    updateAiSelectTarget()
-    renderAiGrid(configs, statuses)
-  } catch (err: any) {
-    aiGrid.innerHTML = `<div class="ai-empty"><div class="ai-empty-icon">&#x26A0;</div><p>加载失败: ${escapeHtml(err.message || String(err))}</p><button class="btn btn-secondary" onclick="loadAiSelectScreen()" style="margin-top:8px">重试</button></div>`
-  }
-}
-
-function renderAiGrid(configs: any[], statuses: any[]) {
-  const desktopConfigs = (configs || []).filter(hasDesktopMcpPermission)
-  const statusMap = new Map<number, any>()
-  statuses.forEach(s => statusMap.set(s.ai_config_id, s))
-
-  if (!configs || configs.length === 0) {
-    aiGrid.innerHTML = '<div class="ai-empty"><div class="ai-empty-icon">&#x1F916;</div><p>暂无 AI 成员</p><p style="font-size:11px">请先在网页端项目中创建 AI 成员</p></div>'
-    return
-  }
-
-  if (desktopConfigs.length === 0) {
-    aiGrid.innerHTML = '<div class="ai-empty"><div class="ai-empty-icon">&#x1F5A5;</div><p>暂无具备 Windows 桌面权限的 AI 成员</p><p style="font-size:11px">请在网页端 AI 设置中为成员开启桌面端 MCP 工具权限</p></div>'
-    return
-  }
-
-  aiGrid.innerHTML = ''
-  desktopConfigs.forEach(cfg => {
-    const role = roleOfConfig(cfg)
-    const isAdmin = role === 'assistant_admin'
-    const rs = statusMap.get(cfg.id)
-    const isEnabled = rs?.running ?? cfg.enabled
-    const tools = parseMcpTools(cfg?.mcp_tools)
-    const toolsHtml = tools.length === 0
-      ? '<div class="member-tool-empty">未配置可调用的 MCP 工具</div>'
-      : `<div class="member-tools">${
-          tools.slice(0, 12).map(tool => `<span class="member-tool-chip">${escapeHtml(tool)}</span>`).join('')
-        }${tools.length > 12 ? `<span class="member-tool-chip more">+${tools.length - 12}</span>` : ''}</div>`
-
-    const card = document.createElement('div')
-    card.className = `member-card${cfg.id === selectedAiConfigId ? ' selected' : ''}${isAdmin ? ' admin-card' : ''}`
-
-    card.innerHTML = `
-      <div class="${isEnabled ? 'member-dot-on' : 'member-dot-off'}"></div>
-      <div class="member-ava">${escapeHtml((cfg.name || '?').slice(0, 1))}</div>
-      <div class="member-info">
-        <div class="member-name">${escapeHtml(cfg.name || '未命名')}</div>
-        <div class="member-meta">${escapeHtml(cfg.model || '—')} · MCP ${tools.length} 项 · ${escapeHtml(cfg.project_name || cfg.description || '无项目')}</div>
-      </div>
-      <span class="role-badge ${role}">${roleLabel(role)}</span>
-      ${toolsHtml}`
-
-    if (!isAdmin) {
-      card.addEventListener('click', async () => {
-        card.classList.add('selected')
-        try {
-          await window.heysureAPI.selectAiConfig(cfg)
-          const s = await window.heysureAPI.getSettings()
-          await loadMainSettings()
-          updateAiMemberDisplay(s)
-          const status = await window.heysureAPI.getStatus()
-          setStatus(status)
-          closeAiSelectModal()
-          showScreen('main')
-        } catch (err: any) {
-          alert('选择失败: ' + (err.message || String(err)))
-          await loadAiSelectScreen()
-        }
-      })
-    }
-
-    aiGrid.appendChild(card)
-  })
-}
-
-;(window as any).loadAiSelectScreen = loadAiSelectScreen
-
 logoutBtn.addEventListener('click', () => doLogout())
-
-refreshAiBtn.addEventListener('click', () => loadAiSelectScreen())
-
-function goToAiSelect() {
-  openAiSelectModal()
-}
-document.getElementById('switch-ai-btn2')?.addEventListener('click', goToAiSelect)
 
 // ══════════════════════════════════════════════════════
 // INIT
@@ -606,10 +390,9 @@ async function init() {
   setStatus(status)
   showScreen('main')
 
-  if (s.authToken && s.selectedAiConfigId) {
-    loadAiSelectScreen().catch(() => {})
-  } else if (s.authToken) {
-    openAiSelectModal()
+  if (s.authToken) {
+    // Already logged in → ensure we're connected (idempotent).
+    window.heysureAPI.connect()
   } else {
     openLoginModal()
   }

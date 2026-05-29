@@ -51,6 +51,7 @@ from .defaults import (
     DEFAULT_USER_MESSAGE_NOTICE,
 )
 from .admin_audit import AdminAuditLog
+from .agent_binding import AgentAiBinding
 from .bot_session_route import BotSessionRoute
 from .knowledge import EvolutionInput, KnowledgeEntry, Memory, ValhallaEntry
 from .project import EvolutionProject, EvolutionProjectCreate, EvolutionProjectUpdate
@@ -84,6 +85,8 @@ __all__ = [
     "UserUpdate",
     # admin
     "AdminAuditLog",
+    # agent device bindings
+    "AgentAiBinding",
     # chat
     "ChatMessage",
     "ChatMessageCreate",

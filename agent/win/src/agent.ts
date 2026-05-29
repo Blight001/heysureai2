@@ -114,11 +114,11 @@ export class HeySureAgent {
     const agentId = this.settings.agentId ||
       `agent-${os.hostname().toLowerCase().replace(/[^a-z0-9]/g, '-')}`
     const hasAuth = !!this.settings.authToken
-    const selectedAiConfigId = hasAuth ? this.settings.selectedAiConfigId : null
-    if (!hasAuth && this.settings.selectedAiConfigId) {
-      this.log('warn', '未登录，已忽略残留的 AI 成员自动注册选择')
-    }
-    this.log('info', `注册 agent (AI=${selectedAiConfigId ?? '未选择'})`)
+    // The desktop client no longer picks its own AI. It just logs in and
+    // connects; an operator assigns a server-side AI to this device from the
+    // web Workshop ("作坊") panel. The server re-applies that binding on every
+    // register, so we send aiConfigId: null and let the server decide.
+    this.log('info', '注册 agent（AI 由服务器作坊分配）')
     this.socket?.emit('agent:register', {
       id: agentId,
       name: this.settings.agentName || os.hostname(),
@@ -133,7 +133,7 @@ export class HeySureAgent {
       workspaceRoot: this.workspaceRoot,
       lifecycle: 'registered',
       isWindowsDesktop: true,
-      aiConfigId: selectedAiConfigId,
+      aiConfigId: null,
       userId: hasAuth ? this.settings.userId : null,
     })
   }

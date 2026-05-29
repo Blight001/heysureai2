@@ -1,10 +1,11 @@
-// popup/members.ts — software-end account: login / logout and the AI member
-// list (load, render, select). Selecting a member is what targets chat/tasks
-// at a server-side AI config.
+// popup/members.ts — software-end account: login / logout and a read-only AI
+// member list. The device no longer picks its own AI; an operator assigns one
+// from the web "作坊" (Workshop) panel. This list is purely informational so
+// users can see which AIs exist for their account.
 
 import { state, ROLE_LABELS } from './state'
 import * as dom from './dom'
-import { roleOf, toolCount, hasBrowserMcpPermission, syncSelectedAiToBackground, refreshAvatarCache } from './helpers'
+import { roleOf, toolCount, hasBrowserMcpPermission, refreshAvatarCache } from './helpers'
 import { esc } from './markdown'
 import {
   login as apiLogin, listConfigs, isAuthError, MemberConfig,
@@ -40,8 +41,10 @@ export async function doLogin() {
     await refreshAvatarCache()
     updateUserChip()
     await loadMembers()
-    syncSelectedAiToBackground(true)
     renderSettingsViews()
+    // Logged in → link to the server. The device then shows up in the web
+    // Workshop panel where an operator assigns it an AI.
+    state.port.postMessage({ type: 'agent:connect' })
     closeLoginModal()
     openMembersModal()
   } catch (err: any) {
@@ -59,7 +62,6 @@ export async function doLogout() {
   // re-register with an empty token (the server now rejects this, but the
   // socket-level connection would still show "已连接" in the popup).
   state.port.postMessage({ type: 'auth:logout' })
-  state.port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
   state.auth = await getAuth()
   state.avatarDataUrl = ''
   await clearAvatarCache()
@@ -79,24 +81,6 @@ export async function loadMembers() {
   try {
     const rows = await listConfigs(state.serverUrl, state.auth.token)
     state.members = rows.filter(hasBrowserMcpPermission)
-    if (state.selectedMemberId) {
-      const stillExists = rows.some(m => m.id === state.selectedMemberId)
-      if (!stillExists) {
-        // Truly gone (deleted) — drop the selection.
-        state.selectedMemberId = null
-        state.port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
-      } else {
-        // The member still exists but may have been filtered out of the
-        // browser-capable list (e.g. an admin toggled its MCP tools). Keep
-        // it selected/visible so an unrelated config edit doesn't silently
-        // reset the user's choice and model target.
-        if (!state.members.some(m => m.id === state.selectedMemberId)) {
-          const sel = rows.find(m => m.id === state.selectedMemberId)
-          if (sel) state.members = [...state.members, sel]
-        }
-        state.port.postMessage({ type: 'agent:selected-ai', aiConfigId: state.selectedMemberId })
-      }
-    }
     renderMembers()
     renderSettingsViews()
     renderStatus()
@@ -120,10 +104,11 @@ export function renderMembers() {
     return
   }
   dom.membersEmpty.style.display = 'none'
+  // Read-only list — AI assignment happens server-side in the Workshop panel.
   for (const m of state.members) {
     const role = roleOf(m)
     const el = document.createElement('div')
-    el.className = `member-card${m.id === state.selectedMemberId ? ' selected' : ''}`
+    el.className = 'member-card'
     el.innerHTML = `
       <div class="${m.enabled === false ? 'dot-off' : 'dot-on'}"></div>
       <div class="member-ava">${esc((m.name || '?').slice(0,1))}</div>
@@ -132,32 +117,8 @@ export function renderMembers() {
         <div class="member-meta">${esc(m.model || '—')} · MCP ${toolCount(m)} 项</div>
       </div>
       <span class="role-badge ${role}">${ROLE_LABELS[role] || role}</span>`
-    el.addEventListener('click', () => selectMember(m.id))
     dom.membersList.appendChild(el)
   }
-}
-
-export async function selectMember(id: number) {
-  if (!state.auth.token) {
-    state.selectedMemberId = null
-    state.port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
-    dom.loginFeedback.textContent = '请先登录后再选择 AI 成员'
-    dom.loginFeedback.style.color = 'var(--warn)'
-    switchTab('settings')
-    renderMembers()
-    renderSettingsViews()
-    return
-  }
-  state.selectedMemberId = id
-  // Persist directly to storage first. Without this the background's
-  // register() can read a stale settings snapshot during a fast
-  // login -> select-AI -> connect sequence and emit aiConfigId: null,
-  // leaving the server-side agent record without an AI assignment.
-  await saveSettings({ selectedAiConfigId: id })
-  state.port.postMessage({ type: 'agent:selected-ai', aiConfigId: id })
-  renderMembers()
-  renderSettingsViews()
-  renderStatus()
 }
 
 export function wireMembers() {

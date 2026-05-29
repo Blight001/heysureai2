@@ -299,15 +299,6 @@
       return false;
     }
   }
-  function syncSelectedAiToBackground(force = false) {
-    if (!state.selectedMemberId)
-      return;
-    if (!state.auth.token && !force)
-      return;
-    if (!memberById(state.selectedMemberId))
-      return;
-    state.port.postMessage({ type: "agent:selected-ai", aiConfigId: state.selectedMemberId });
-  }
   function fetchAsDataUrl(url) {
     return fetch(url).then((resp) => {
       if (!resp.ok)
@@ -384,8 +375,8 @@
       await refreshAvatarCache();
       updateUserChip();
       await loadMembers();
-      syncSelectedAiToBackground(true);
       renderSettingsViews();
+      state.port.postMessage({ type: "agent:connect" });
       closeLoginModal();
       openMembersModal();
     } catch (err) {
@@ -398,7 +389,6 @@
   async function doLogout() {
     await clearAuth();
     state.port.postMessage({ type: "auth:logout" });
-    state.port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
     state.auth = await getAuth();
     state.avatarDataUrl = "";
     await clearAvatarCache();
@@ -418,20 +408,6 @@
     try {
       const rows = await listConfigs(state.serverUrl, state.auth.token);
       state.members = rows.filter(hasBrowserMcpPermission);
-      if (state.selectedMemberId) {
-        const stillExists = rows.some((m) => m.id === state.selectedMemberId);
-        if (!stillExists) {
-          state.selectedMemberId = null;
-          state.port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
-        } else {
-          if (!state.members.some((m) => m.id === state.selectedMemberId)) {
-            const sel = rows.find((m) => m.id === state.selectedMemberId);
-            if (sel)
-              state.members = [...state.members, sel];
-          }
-          state.port.postMessage({ type: "agent:selected-ai", aiConfigId: state.selectedMemberId });
-        }
-      }
       renderMembers();
       renderSettingsViews();
       renderStatus();
@@ -456,7 +432,7 @@
     for (const m of state.members) {
       const role = roleOf(m);
       const el = document.createElement("div");
-      el.className = `member-card${m.id === state.selectedMemberId ? " selected" : ""}`;
+      el.className = "member-card";
       el.innerHTML = `
       <div class="${m.enabled === false ? "dot-off" : "dot-on"}"></div>
       <div class="member-ava">${esc((m.name || "?").slice(0, 1))}</div>
@@ -465,27 +441,8 @@
         <div class="member-meta">${esc(m.model || "\u2014")} \xB7 MCP ${toolCount(m)} \u9879</div>
       </div>
       <span class="role-badge ${role}">${ROLE_LABELS[role] || role}</span>`;
-      el.addEventListener("click", () => selectMember(m.id));
       membersList.appendChild(el);
     }
-  }
-  async function selectMember(id) {
-    if (!state.auth.token) {
-      state.selectedMemberId = null;
-      state.port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
-      loginFeedback.textContent = "\u8BF7\u5148\u767B\u5F55\u540E\u518D\u9009\u62E9 AI \u6210\u5458";
-      loginFeedback.style.color = "var(--warn)";
-      switchTab("settings");
-      renderMembers();
-      renderSettingsViews();
-      return;
-    }
-    state.selectedMemberId = id;
-    await saveSettings({ selectedAiConfigId: id });
-    state.port.postMessage({ type: "agent:selected-ai", aiConfigId: id });
-    renderMembers();
-    renderSettingsViews();
-    renderStatus();
   }
   function wireMembers() {
     loginBtn.addEventListener("click", () => void doLogin());
@@ -958,7 +915,6 @@
     state.hasAiKey = !!s.aiKey?.trim();
     updateOfflineUi();
     renderMembers();
-    syncSelectedAiToBackground();
     applyTheme(s.theme || "dark", false);
   }
   var PROVIDER_PRESETS = {
@@ -1104,7 +1060,6 @@
           await refreshAvatarCache();
           updateUserChip();
           await loadMembers();
-          syncSelectedAiToBackground(true);
         } catch (err) {
           if (isAuthError(err)) {
             await doLogout();
@@ -1114,7 +1069,6 @@
             loginFeedback.style.color = "var(--warn)";
             try {
               await loadMembers();
-              syncSelectedAiToBackground(true);
             } catch {
             }
           }

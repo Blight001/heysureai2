@@ -3,6 +3,7 @@ import time
 
 from sqlmodel import Session, select
 
+from api.agent_bindings import get_binding
 from api.database import engine
 from api.models import AssistantAIConfig
 from api.sio import (
@@ -93,10 +94,14 @@ def register_agent_socket_events():
                 return
             owner_user_id, owner_account = resolved
 
-        # Cross-check that the AI the agent wants to bind to is owned by the
-        # authenticated user. This prevents a logged-in user A from selecting
-        # an AI that belongs to user B.
-        claimed_ai = info.get('aiConfigId')
+        # Devices no longer pick their own AI — they log in and connect, then an
+        # operator assigns a server-side AI from the Workshop panel. Re-apply any
+        # persisted binding for this (user, agent) so the assignment survives
+        # reconnects. A payload aiConfigId (legacy clients) is honoured only as a
+        # fallback when no server-side binding exists.
+        agent_id = str(info.get('id') or sid)
+        bound_ai = get_binding(owner_user_id, agent_id) if owner_user_id is not None else None
+        claimed_ai = bound_ai if bound_ai is not None else info.get('aiConfigId')
         if owner_user_id is not None and not _ai_config_belongs_to_user(claimed_ai, owner_user_id):
             logger.warning(
                 f"Agent registration rejected (AI ownership mismatch): "
@@ -109,7 +114,6 @@ def register_agent_socket_events():
             )
             return
 
-        agent_id = str(info.get('id') or sid)
         # Idempotent: drop any stale socket entry for the same logical agent id
         # so a reconnect updates the socketId instead of duplicating the agent.
         for old_sid in [s for s, a in agents.items() if str(a.get('id')) == agent_id and s != sid]:
@@ -119,6 +123,7 @@ def register_agent_socket_events():
         agents[sid] = {
             **info,
             'id': agent_id,
+            'aiConfigId': claimed_ai,
             'socketId': sid,
             'userId': owner_user_id,
             'userAccount': owner_account,

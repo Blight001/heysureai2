@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, reactive } from 'vue'
 import type { ConnectedAgent } from '@/composables/dashboard/useDashboardData'
+import { assignAgentAi } from '@/api/agents'
 
 interface Agent {
   id: string
@@ -32,6 +33,59 @@ const memberByConfigId = computed(() => {
   }
   return map
 })
+
+// AI members the operator can assign to a device (those backed by a real config).
+const assignableMembers = computed(() =>
+  (props.agents || [])
+    .filter(a => Number.isFinite(Number(a.aiConfigId)) && Number(a.aiConfigId) > 0)
+    .map(a => ({ aiConfigId: Number(a.aiConfigId), name: a.name })),
+)
+
+// Per-device dropdown selection (stored as strings for native <select>) plus
+// busy/error state.
+const selection = reactive<Record<string, string>>({})
+const busy = reactive<Record<string, boolean>>({})
+const errors = reactive<Record<string, string>>({})
+
+// Current dropdown value: an explicit pick if the operator changed it, else the
+// device's existing binding.
+const selectionFor = (device: ConnectedAgent): string => {
+  if (device.id in selection) return selection[device.id]
+  const id = Number(device.aiConfigId)
+  return Number.isFinite(id) && id > 0 ? String(id) : ''
+}
+
+const onSelect = (device: ConnectedAgent, event: Event) => {
+  selection[device.id] = (event.target as HTMLSelectElement).value
+}
+
+const assign = async (device: ConnectedAgent) => {
+  const chosen = selectionFor(device)
+  const cfgId = chosen === '' ? null : Number(chosen)
+  busy[device.id] = true
+  errors[device.id] = ''
+  try {
+    // The server broadcasts an updated agent:list, so the card refreshes itself.
+    await assignAgentAi(device.id, cfgId)
+  } catch (err: any) {
+    errors[device.id] = err?.message || '分配失败'
+  } finally {
+    busy[device.id] = false
+  }
+}
+
+const unassign = async (device: ConnectedAgent) => {
+  selection[device.id] = ''
+  busy[device.id] = true
+  errors[device.id] = ''
+  try {
+    await assignAgentAi(device.id, null)
+  } catch (err: any) {
+    errors[device.id] = err?.message || '解绑失败'
+  } finally {
+    busy[device.id] = false
+  }
+}
 
 const deviceTypeLabel = (device: ConnectedAgent) => {
   const platform = String(device.platform || '').toLowerCase()
@@ -159,6 +213,39 @@ const memberStatusBadgeClass = (device: ConnectedAgent) => hasLinkedMember(devic
           </div>
         </template>
         <div v-else class="text-xs font-medium text-amber-700 dark:text-amber-200">未链接成员</div>
+
+        <!-- Assign / reassign control (operator picks the server-side AI) -->
+        <div class="mt-2 flex items-center gap-1.5">
+          <select
+            :value="selectionFor(device)"
+            :disabled="busy[device.id]"
+            class="min-w-0 flex-1 rounded border border-zinc-200 bg-white px-1.5 py-1 text-[10px] text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
+            @change="onSelect(device, $event)"
+          >
+            <option value="">未分配</option>
+            <option v-for="m in assignableMembers" :key="m.aiConfigId" :value="String(m.aiConfigId)">
+              {{ m.name }}（ID: {{ m.aiConfigId }}）
+            </option>
+          </select>
+          <button
+            type="button"
+            :disabled="busy[device.id]"
+            class="shrink-0 rounded bg-indigo-500 px-2 py-1 text-[10px] font-medium text-white hover:bg-indigo-600 disabled:opacity-50"
+            @click="assign(device)"
+          >
+            {{ busy[device.id] ? '...' : '分配' }}
+          </button>
+          <button
+            v-if="hasLinkedMember(device)"
+            type="button"
+            :disabled="busy[device.id]"
+            class="shrink-0 rounded border border-zinc-200 px-2 py-1 text-[10px] font-medium text-zinc-500 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            @click="unassign(device)"
+          >
+            解绑
+          </button>
+        </div>
+        <div v-if="errors[device.id]" class="mt-1 text-[10px] text-rose-500">{{ errors[device.id] }}</div>
       </div>
 
       <div class="mt-2 grid grid-cols-2 gap-2 text-[10px]">

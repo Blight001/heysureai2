@@ -10,7 +10,7 @@ import { state } from './state'
 import * as dom from './dom'
 import { getAuth, saveAuth, getSettings } from '../lib/storage'
 import { getMe, isAuthError } from '../lib/client'
-import { syncSelectedAiToBackground, refreshAvatarCache } from './helpers'
+import { refreshAvatarCache } from './helpers'
 import {
   setStatus, addEntry, updateUserChip, updateOfflineUi, switchTab, wireUi,
 } from './ui'
@@ -116,7 +116,6 @@ async function init() {
         await refreshAvatarCache()
         updateUserChip()
         await loadMembers()
-        syncSelectedAiToBackground(true)
       } catch (err: any) {
         // Only drop the session on a genuine auth failure. A transient
         // network error / timeout (server briefly down, flaky connection)
@@ -131,7 +130,6 @@ async function init() {
           dom.loginFeedback.style.color = 'var(--warn)'
           try {
             await loadMembers()
-            syncSelectedAiToBackground(true)
           } catch { /* still down — leave session intact */ }
         }
       }

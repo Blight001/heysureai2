@@ -77,11 +77,11 @@
   // node_modules/engine.io-parser/build/esm/contrib/base64-arraybuffer.js
   var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   var lookup = typeof Uint8Array === "undefined" ? [] : new Uint8Array(256);
-  for (let i = 0; i < chars.length; i++) {
-    lookup[chars.charCodeAt(i)] = i;
+  for (let i2 = 0; i2 < chars.length; i2++) {
+    lookup[chars.charCodeAt(i2)] = i2;
   }
   var decode = (base64) => {
-    let bufferLength = base64.length * 0.75, len = base64.length, i, p = 0, encoded1, encoded2, encoded3, encoded4;
+    let bufferLength = base64.length * 0.75, len = base64.length, i2, p = 0, encoded1, encoded2, encoded3, encoded4;
     if (base64[base64.length - 1] === "=") {
       bufferLength--;
       if (base64[base64.length - 2] === "=") {
@@ -89,11 +89,11 @@
       }
     }
     const arraybuffer = new ArrayBuffer(bufferLength), bytes = new Uint8Array(arraybuffer);
-    for (i = 0; i < len; i += 4) {
-      encoded1 = lookup[base64.charCodeAt(i)];
-      encoded2 = lookup[base64.charCodeAt(i + 1)];
-      encoded3 = lookup[base64.charCodeAt(i + 2)];
-      encoded4 = lookup[base64.charCodeAt(i + 3)];
+    for (i2 = 0; i2 < len; i2 += 4) {
+      encoded1 = lookup[base64.charCodeAt(i2)];
+      encoded2 = lookup[base64.charCodeAt(i2 + 1)];
+      encoded3 = lookup[base64.charCodeAt(i2 + 2)];
+      encoded4 = lookup[base64.charCodeAt(i2 + 3)];
       bytes[p++] = encoded1 << 2 | encoded2 >> 4;
       bytes[p++] = (encoded2 & 15) << 4 | encoded3 >> 2;
       bytes[p++] = (encoded3 & 3) << 6 | encoded4 & 63;
@@ -157,13 +157,13 @@
   // node_modules/engine.io-parser/build/esm/index.js
   var SEPARATOR = String.fromCharCode(30);
   var encodePayload = (packets, callback) => {
-    const length = packets.length;
-    const encodedPackets = new Array(length);
+    const length2 = packets.length;
+    const encodedPackets = new Array(length2);
     let count = 0;
-    packets.forEach((packet, i) => {
+    packets.forEach((packet, i2) => {
       encodePacket(packet, false, (encodedPacket) => {
-        encodedPackets[i] = encodedPacket;
-        if (++count === length) {
+        encodedPackets[i2] = encodedPacket;
+        if (++count === length2) {
           callback(encodedPackets.join(SEPARATOR));
         }
       });
@@ -172,8 +172,8 @@
   var decodePayload = (encodedPayload, binaryType) => {
     const encodedPackets = encodedPayload.split(SEPARATOR);
     const packets = [];
-    for (let i = 0; i < encodedPackets.length; i++) {
-      const decodedPacket = decodePacket(encodedPackets[i], binaryType);
+    for (let i2 = 0; i2 < encodedPackets.length; i2++) {
+      const decodedPacket = decodePacket(encodedPackets[i2], binaryType);
       packets.push(decodedPacket);
       if (decodedPacket.type === "error") {
         break;
@@ -220,8 +220,8 @@
     }
     const buffer = new Uint8Array(size);
     let j = 0;
-    for (let i = 0; i < size; i++) {
-      buffer[i] = chunks[0][j++];
+    for (let i2 = 0; i2 < size; i2++) {
+      buffer[i2] = chunks[0][j++];
       if (j === chunks[0].length) {
         chunks.shift();
         j = 0;
@@ -335,10 +335,10 @@
       return this;
     }
     var cb;
-    for (var i = 0; i < callbacks.length; i++) {
-      cb = callbacks[i];
+    for (var i2 = 0; i2 < callbacks.length; i2++) {
+      cb = callbacks[i2];
       if (cb === fn || cb.fn === fn) {
-        callbacks.splice(i, 1);
+        callbacks.splice(i2, 1);
         break;
       }
     }
@@ -350,13 +350,13 @@
   Emitter.prototype.emit = function(event) {
     this._callbacks = this._callbacks || {};
     var args = new Array(arguments.length - 1), callbacks = this._callbacks["$" + event];
-    for (var i = 1; i < arguments.length; i++) {
-      args[i - 1] = arguments[i];
+    for (var i2 = 1; i2 < arguments.length; i2++) {
+      args[i2 - 1] = arguments[i2];
     }
     if (callbacks) {
       callbacks = callbacks.slice(0);
-      for (var i = 0, len = callbacks.length; i < len; ++i) {
-        callbacks[i].apply(this, args);
+      for (var i2 = 0, len = callbacks.length; i2 < len; ++i2) {
+        callbacks[i2].apply(this, args);
       }
     }
     return this;
@@ -370,15 +370,7 @@
     return !!this.listeners(event).length;
   };
 
-  // node_modules/engine.io-client/build/esm/globals.js
-  var nextTick = (() => {
-    const isPromiseAvailable = typeof Promise === "function" && typeof Promise.resolve === "function";
-    if (isPromiseAvailable) {
-      return (cb) => Promise.resolve().then(cb);
-    } else {
-      return (cb, setTimeoutFn) => setTimeoutFn(cb, 0);
-    }
-  })();
+  // node_modules/engine.io-client/build/esm/globalThis.browser.js
   var globalThisShim = (() => {
     if (typeof self !== "undefined") {
       return self;
@@ -388,9 +380,6 @@
       return Function("return this")();
     }
   })();
-  var defaultBinaryType = "arraybuffer";
-  function createCookieJar() {
-  }
 
   // node_modules/engine.io-client/build/esm/util.js
   function pick(obj, ...attr) {
@@ -420,34 +409,31 @@
     return Math.ceil((obj.byteLength || obj.size) * BASE64_OVERHEAD);
   }
   function utf8Length(str) {
-    let c = 0, length = 0;
-    for (let i = 0, l = str.length; i < l; i++) {
-      c = str.charCodeAt(i);
+    let c = 0, length2 = 0;
+    for (let i2 = 0, l = str.length; i2 < l; i2++) {
+      c = str.charCodeAt(i2);
       if (c < 128) {
-        length += 1;
+        length2 += 1;
       } else if (c < 2048) {
-        length += 2;
+        length2 += 2;
       } else if (c < 55296 || c >= 57344) {
-        length += 3;
+        length2 += 3;
       } else {
-        i++;
-        length += 4;
+        i2++;
+        length2 += 4;
       }
     }
-    return length;
-  }
-  function randomString() {
-    return Date.now().toString(36).substring(3) + Math.random().toString(36).substring(2, 5);
+    return length2;
   }
 
   // node_modules/engine.io-client/build/esm/contrib/parseqs.js
   function encode(obj) {
     let str = "";
-    for (let i in obj) {
-      if (obj.hasOwnProperty(i)) {
+    for (let i2 in obj) {
+      if (obj.hasOwnProperty(i2)) {
         if (str.length)
           str += "&";
-        str += encodeURIComponent(i) + "=" + encodeURIComponent(obj[i]);
+        str += encodeURIComponent(i2) + "=" + encodeURIComponent(obj[i2]);
       }
     }
     return str;
@@ -455,8 +441,8 @@
   function decode2(qs) {
     let qry = {};
     let pairs = qs.split("&");
-    for (let i = 0, l = pairs.length; i < l; i++) {
-      let pair = pairs[i].split("=");
+    for (let i2 = 0, l = pairs.length; i2 < l; i2++) {
+      let pair = pairs[i2].split("=");
       qry[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1]);
     }
     return qry;
@@ -485,7 +471,6 @@
       this.opts = opts;
       this.query = opts.query;
       this.socket = opts.socket;
-      this.supportsBinary = !opts.forceBase64;
     }
     /**
      * Emits an error.
@@ -581,7 +566,7 @@
       return hostname.indexOf(":") === -1 ? hostname : "[" + hostname + "]";
     }
     _port() {
-      if (this.opts.port && (this.opts.secure && Number(this.opts.port) !== 443 || !this.opts.secure && Number(this.opts.port) !== 80)) {
+      if (this.opts.port && (this.opts.secure && Number(this.opts.port !== 443) || !this.opts.secure && Number(this.opts.port) !== 80)) {
         return ":" + this.opts.port;
       } else {
         return "";
@@ -593,11 +578,89 @@
     }
   };
 
+  // node_modules/engine.io-client/build/esm/contrib/yeast.js
+  var alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_".split("");
+  var length = 64;
+  var map = {};
+  var seed = 0;
+  var i = 0;
+  var prev;
+  function encode2(num) {
+    let encoded = "";
+    do {
+      encoded = alphabet[num % length] + encoded;
+      num = Math.floor(num / length);
+    } while (num > 0);
+    return encoded;
+  }
+  function yeast() {
+    const now = encode2(+/* @__PURE__ */ new Date());
+    if (now !== prev)
+      return seed = 0, prev = now;
+    return now + "." + encode2(seed++);
+  }
+  for (; i < length; i++)
+    map[alphabet[i]] = i;
+
+  // node_modules/engine.io-client/build/esm/contrib/has-cors.js
+  var value = false;
+  try {
+    value = typeof XMLHttpRequest !== "undefined" && "withCredentials" in new XMLHttpRequest();
+  } catch (err) {
+  }
+  var hasCORS = value;
+
+  // node_modules/engine.io-client/build/esm/transports/xmlhttprequest.browser.js
+  function XHR(opts) {
+    const xdomain = opts.xdomain;
+    try {
+      if ("undefined" !== typeof XMLHttpRequest && (!xdomain || hasCORS)) {
+        return new XMLHttpRequest();
+      }
+    } catch (e) {
+    }
+    if (!xdomain) {
+      try {
+        return new globalThisShim[["Active"].concat("Object").join("X")]("Microsoft.XMLHTTP");
+      } catch (e) {
+      }
+    }
+  }
+  function createCookieJar() {
+  }
+
   // node_modules/engine.io-client/build/esm/transports/polling.js
+  function empty() {
+  }
+  var hasXHR2 = function() {
+    const xhr = new XHR({
+      xdomain: false
+    });
+    return null != xhr.responseType;
+  }();
   var Polling = class extends Transport {
-    constructor() {
-      super(...arguments);
-      this._polling = false;
+    /**
+     * XHR Polling constructor.
+     *
+     * @param {Object} opts
+     * @package
+     */
+    constructor(opts) {
+      super(opts);
+      this.polling = false;
+      if (typeof location !== "undefined") {
+        const isSSL = "https:" === location.protocol;
+        let port = location.port;
+        if (!port) {
+          port = isSSL ? "443" : "80";
+        }
+        this.xd = typeof location !== "undefined" && opts.hostname !== location.hostname || port !== opts.port;
+      }
+      const forceBase64 = opts && opts.forceBase64;
+      this.supportsBinary = hasXHR2 && !forceBase64;
+      if (this.opts.withCredentials) {
+        this.cookieJar = createCookieJar();
+      }
     }
     get name() {
       return "polling";
@@ -609,7 +672,7 @@
      * @protected
      */
     doOpen() {
-      this._poll();
+      this.poll();
     }
     /**
      * Pauses polling.
@@ -623,9 +686,9 @@
         this.readyState = "paused";
         onPause();
       };
-      if (this._polling || !this.writable) {
+      if (this.polling || !this.writable) {
         let total = 0;
-        if (this._polling) {
+        if (this.polling) {
           total++;
           this.once("pollComplete", function() {
             --total || pause();
@@ -646,8 +709,8 @@
      *
      * @private
      */
-    _poll() {
-      this._polling = true;
+    poll() {
+      this.polling = true;
       this.doPoll();
       this.emitReserved("poll");
     }
@@ -669,10 +732,10 @@
       };
       decodePayload(data, this.socket.binaryType).forEach(callback);
       if ("closed" !== this.readyState) {
-        this._polling = false;
+        this.polling = false;
         this.emitReserved("pollComplete");
         if ("open" === this.readyState) {
-          this._poll();
+          this.poll();
         } else {
         }
       }
@@ -716,49 +779,28 @@
       const schema = this.opts.secure ? "https" : "http";
       const query = this.query || {};
       if (false !== this.opts.timestampRequests) {
-        query[this.opts.timestampParam] = randomString();
+        query[this.opts.timestampParam] = yeast();
       }
       if (!this.supportsBinary && !query.sid) {
         query.b64 = 1;
       }
       return this.createUri(schema, query);
     }
-  };
-
-  // node_modules/engine.io-client/build/esm/contrib/has-cors.js
-  var value = false;
-  try {
-    value = typeof XMLHttpRequest !== "undefined" && "withCredentials" in new XMLHttpRequest();
-  } catch (err) {
-  }
-  var hasCORS = value;
-
-  // node_modules/engine.io-client/build/esm/transports/polling-xhr.js
-  function empty() {
-  }
-  var BaseXHR = class extends Polling {
     /**
-     * XHR Polling constructor.
+     * Creates a request.
      *
-     * @param {Object} opts
-     * @package
+     * @param {String} method
+     * @private
      */
-    constructor(opts) {
-      super(opts);
-      if (typeof location !== "undefined") {
-        const isSSL = "https:" === location.protocol;
-        let port = location.port;
-        if (!port) {
-          port = isSSL ? "443" : "80";
-        }
-        this.xd = typeof location !== "undefined" && opts.hostname !== location.hostname || port !== opts.port;
-      }
+    request(opts = {}) {
+      Object.assign(opts, { xd: this.xd, cookieJar: this.cookieJar }, this.opts);
+      return new Request(this.uri(), opts);
     }
     /**
      * Sends data.
      *
-     * @param {String} data - data to send.
-     * @param {Function} fn - called upon flush.
+     * @param {String} data to send.
+     * @param {Function} called upon flush.
      * @private
      */
     doWrite(data, fn) {
@@ -792,40 +834,39 @@
      * @param {Object} options
      * @package
      */
-    constructor(createRequest, uri, opts) {
+    constructor(uri, opts) {
       super();
-      this.createRequest = createRequest;
       installTimerFunctions(this, opts);
-      this._opts = opts;
-      this._method = opts.method || "GET";
-      this._uri = uri;
-      this._data = void 0 !== opts.data ? opts.data : null;
-      this._create();
+      this.opts = opts;
+      this.method = opts.method || "GET";
+      this.uri = uri;
+      this.data = void 0 !== opts.data ? opts.data : null;
+      this.create();
     }
     /**
      * Creates the XHR object and sends the request.
      *
      * @private
      */
-    _create() {
+    create() {
       var _a;
-      const opts = pick(this._opts, "agent", "pfx", "key", "passphrase", "cert", "ca", "ciphers", "rejectUnauthorized", "autoUnref");
-      opts.xdomain = !!this._opts.xd;
-      const xhr = this._xhr = this.createRequest(opts);
+      const opts = pick(this.opts, "agent", "pfx", "key", "passphrase", "cert", "ca", "ciphers", "rejectUnauthorized", "autoUnref");
+      opts.xdomain = !!this.opts.xd;
+      const xhr = this.xhr = new XHR(opts);
       try {
-        xhr.open(this._method, this._uri, true);
+        xhr.open(this.method, this.uri, true);
         try {
-          if (this._opts.extraHeaders) {
+          if (this.opts.extraHeaders) {
             xhr.setDisableHeaderCheck && xhr.setDisableHeaderCheck(true);
-            for (let i in this._opts.extraHeaders) {
-              if (this._opts.extraHeaders.hasOwnProperty(i)) {
-                xhr.setRequestHeader(i, this._opts.extraHeaders[i]);
+            for (let i2 in this.opts.extraHeaders) {
+              if (this.opts.extraHeaders.hasOwnProperty(i2)) {
+                xhr.setRequestHeader(i2, this.opts.extraHeaders[i2]);
               }
             }
           }
         } catch (e) {
         }
-        if ("POST" === this._method) {
+        if ("POST" === this.method) {
           try {
             xhr.setRequestHeader("Content-type", "text/plain;charset=UTF-8");
           } catch (e) {
@@ -835,41 +876,38 @@
           xhr.setRequestHeader("Accept", "*/*");
         } catch (e) {
         }
-        (_a = this._opts.cookieJar) === null || _a === void 0 ? void 0 : _a.addCookies(xhr);
+        (_a = this.opts.cookieJar) === null || _a === void 0 ? void 0 : _a.addCookies(xhr);
         if ("withCredentials" in xhr) {
-          xhr.withCredentials = this._opts.withCredentials;
+          xhr.withCredentials = this.opts.withCredentials;
         }
-        if (this._opts.requestTimeout) {
-          xhr.timeout = this._opts.requestTimeout;
+        if (this.opts.requestTimeout) {
+          xhr.timeout = this.opts.requestTimeout;
         }
         xhr.onreadystatechange = () => {
           var _a2;
           if (xhr.readyState === 3) {
-            (_a2 = this._opts.cookieJar) === null || _a2 === void 0 ? void 0 : _a2.parseCookies(
-              // @ts-ignore
-              xhr.getResponseHeader("set-cookie")
-            );
+            (_a2 = this.opts.cookieJar) === null || _a2 === void 0 ? void 0 : _a2.parseCookies(xhr);
           }
           if (4 !== xhr.readyState)
             return;
           if (200 === xhr.status || 1223 === xhr.status) {
-            this._onLoad();
+            this.onLoad();
           } else {
             this.setTimeoutFn(() => {
-              this._onError(typeof xhr.status === "number" ? xhr.status : 0);
+              this.onError(typeof xhr.status === "number" ? xhr.status : 0);
             }, 0);
           }
         };
-        xhr.send(this._data);
+        xhr.send(this.data);
       } catch (e) {
         this.setTimeoutFn(() => {
-          this._onError(e);
+          this.onError(e);
         }, 0);
         return;
       }
       if (typeof document !== "undefined") {
-        this._index = _Request.requestsCount++;
-        _Request.requests[this._index] = this;
+        this.index = _Request.requestsCount++;
+        _Request.requests[this.index] = this;
       }
     }
     /**
@@ -877,42 +915,42 @@
      *
      * @private
      */
-    _onError(err) {
-      this.emitReserved("error", err, this._xhr);
-      this._cleanup(true);
+    onError(err) {
+      this.emitReserved("error", err, this.xhr);
+      this.cleanup(true);
     }
     /**
      * Cleans up house.
      *
      * @private
      */
-    _cleanup(fromError) {
-      if ("undefined" === typeof this._xhr || null === this._xhr) {
+    cleanup(fromError) {
+      if ("undefined" === typeof this.xhr || null === this.xhr) {
         return;
       }
-      this._xhr.onreadystatechange = empty;
+      this.xhr.onreadystatechange = empty;
       if (fromError) {
         try {
-          this._xhr.abort();
+          this.xhr.abort();
         } catch (e) {
         }
       }
       if (typeof document !== "undefined") {
-        delete _Request.requests[this._index];
+        delete _Request.requests[this.index];
       }
-      this._xhr = null;
+      this.xhr = null;
     }
     /**
      * Called upon load.
      *
      * @private
      */
-    _onLoad() {
-      const data = this._xhr.responseText;
+    onLoad() {
+      const data = this.xhr.responseText;
       if (data !== null) {
         this.emitReserved("data", data);
         this.emitReserved("success");
-        this._cleanup();
+        this.cleanup();
       }
     }
     /**
@@ -921,7 +959,7 @@
      * @package
      */
     abort() {
-      this._cleanup();
+      this.cleanup();
     }
   };
   Request.requestsCount = 0;
@@ -935,52 +973,46 @@
     }
   }
   function unloadHandler() {
-    for (let i in Request.requests) {
-      if (Request.requests.hasOwnProperty(i)) {
-        Request.requests[i].abort();
-      }
-    }
-  }
-  var hasXHR2 = function() {
-    const xhr = newRequest({
-      xdomain: false
-    });
-    return xhr && xhr.responseType !== null;
-  }();
-  var XHR = class extends BaseXHR {
-    constructor(opts) {
-      super(opts);
-      const forceBase64 = opts && opts.forceBase64;
-      this.supportsBinary = hasXHR2 && !forceBase64;
-    }
-    request(opts = {}) {
-      Object.assign(opts, { xd: this.xd }, this.opts);
-      return new Request(newRequest, this.uri(), opts);
-    }
-  };
-  function newRequest(opts) {
-    const xdomain = opts.xdomain;
-    try {
-      if ("undefined" !== typeof XMLHttpRequest && (!xdomain || hasCORS)) {
-        return new XMLHttpRequest();
-      }
-    } catch (e) {
-    }
-    if (!xdomain) {
-      try {
-        return new globalThisShim[["Active"].concat("Object").join("X")]("Microsoft.XMLHTTP");
-      } catch (e) {
+    for (let i2 in Request.requests) {
+      if (Request.requests.hasOwnProperty(i2)) {
+        Request.requests[i2].abort();
       }
     }
   }
 
+  // node_modules/engine.io-client/build/esm/transports/websocket-constructor.browser.js
+  var nextTick = (() => {
+    const isPromiseAvailable = typeof Promise === "function" && typeof Promise.resolve === "function";
+    if (isPromiseAvailable) {
+      return (cb) => Promise.resolve().then(cb);
+    } else {
+      return (cb, setTimeoutFn) => setTimeoutFn(cb, 0);
+    }
+  })();
+  var WebSocket = globalThisShim.WebSocket || globalThisShim.MozWebSocket;
+  var usingBrowserWebSocket = true;
+  var defaultBinaryType = "arraybuffer";
+
   // node_modules/engine.io-client/build/esm/transports/websocket.js
   var isReactNative = typeof navigator !== "undefined" && typeof navigator.product === "string" && navigator.product.toLowerCase() === "reactnative";
-  var BaseWS = class extends Transport {
+  var WS = class extends Transport {
+    /**
+     * WebSocket transport constructor.
+     *
+     * @param {Object} opts - connection options
+     * @protected
+     */
+    constructor(opts) {
+      super(opts);
+      this.supportsBinary = !opts.forceBase64;
+    }
     get name() {
       return "websocket";
     }
     doOpen() {
+      if (!this.check()) {
+        return;
+      }
       const uri = this.uri();
       const protocols = this.opts.protocols;
       const opts = isReactNative ? {} : pick(this.opts, "agent", "perMessageDeflate", "pfx", "key", "passphrase", "cert", "ca", "ciphers", "rejectUnauthorized", "localAddress", "protocolVersion", "origin", "maxPayload", "family", "checkServerIdentity");
@@ -988,7 +1020,7 @@
         opts.headers = this.opts.extraHeaders;
       }
       try {
-        this.ws = this.createSocket(uri, protocols, opts);
+        this.ws = usingBrowserWebSocket && !isReactNative ? protocols ? new WebSocket(uri, protocols) : new WebSocket(uri) : new WebSocket(uri, protocols, opts);
       } catch (err) {
         return this.emitReserved("error", err);
       }
@@ -1016,12 +1048,31 @@
     }
     write(packets) {
       this.writable = false;
-      for (let i = 0; i < packets.length; i++) {
-        const packet = packets[i];
-        const lastPacket = i === packets.length - 1;
+      for (let i2 = 0; i2 < packets.length; i2++) {
+        const packet = packets[i2];
+        const lastPacket = i2 === packets.length - 1;
         encodePacket(packet, this.supportsBinary, (data) => {
+          const opts = {};
+          if (!usingBrowserWebSocket) {
+            if (packet.options) {
+              opts.compress = packet.options.compress;
+            }
+            if (this.opts.perMessageDeflate) {
+              const len = (
+                // @ts-ignore
+                "string" === typeof data ? Buffer.byteLength(data) : data.length
+              );
+              if (len < this.opts.perMessageDeflate.threshold) {
+                opts.compress = false;
+              }
+            }
+          }
           try {
-            this.doWrite(packet, data);
+            if (usingBrowserWebSocket) {
+              this.ws.send(data);
+            } else {
+              this.ws.send(data, opts);
+            }
           } catch (e) {
           }
           if (lastPacket) {
@@ -1035,8 +1086,6 @@
     }
     doClose() {
       if (typeof this.ws !== "undefined") {
-        this.ws.onerror = () => {
-        };
         this.ws.close();
         this.ws = null;
       }
@@ -1050,21 +1099,21 @@
       const schema = this.opts.secure ? "wss" : "ws";
       const query = this.query || {};
       if (this.opts.timestampRequests) {
-        query[this.opts.timestampParam] = randomString();
+        query[this.opts.timestampParam] = yeast();
       }
       if (!this.supportsBinary) {
         query.b64 = 1;
       }
       return this.createUri(schema, query);
     }
-  };
-  var WebSocketCtor = globalThisShim.WebSocket || globalThisShim.MozWebSocket;
-  var WS = class extends BaseWS {
-    createSocket(uri, protocols, opts) {
-      return !isReactNative ? protocols ? new WebSocketCtor(uri, protocols) : new WebSocketCtor(uri) : new WebSocketCtor(uri, protocols, opts);
-    }
-    doWrite(_packet, data) {
-      this.ws.send(data);
+    /**
+     * Feature detection for WebSocket.
+     *
+     * @return {Boolean} whether this transport is available.
+     * @private
+     */
+    check() {
+      return !!WebSocket;
     }
   };
 
@@ -1074,23 +1123,22 @@
       return "webtransport";
     }
     doOpen() {
-      try {
-        this._transport = new WebTransport(this.createUri("https"), this.opts.transportOptions[this.name]);
-      } catch (err) {
-        return this.emitReserved("error", err);
+      if (typeof WebTransport !== "function") {
+        return;
       }
-      this._transport.closed.then(() => {
+      this.transport = new WebTransport(this.createUri("https"), this.opts.transportOptions[this.name]);
+      this.transport.closed.then(() => {
         this.onClose();
       }).catch((err) => {
         this.onError("webtransport error", err);
       });
-      this._transport.ready.then(() => {
-        this._transport.createBidirectionalStream().then((stream) => {
+      this.transport.ready.then(() => {
+        this.transport.createBidirectionalStream().then((stream) => {
           const decoderStream = createPacketDecoderStream(Number.MAX_SAFE_INTEGER, this.socket.binaryType);
           const reader = stream.readable.pipeThrough(decoderStream).getReader();
           const encoderStream = createPacketEncoderStream();
           encoderStream.readable.pipeTo(stream.writable);
-          this._writer = encoderStream.writable.getWriter();
+          this.writer = encoderStream.writable.getWriter();
           const read = () => {
             reader.read().then(({ done, value: value2 }) => {
               if (done) {
@@ -1106,16 +1154,16 @@
           if (this.query.sid) {
             packet.data = `{"sid":"${this.query.sid}"}`;
           }
-          this._writer.write(packet).then(() => this.onOpen());
+          this.writer.write(packet).then(() => this.onOpen());
         });
       });
     }
     write(packets) {
       this.writable = false;
-      for (let i = 0; i < packets.length; i++) {
-        const packet = packets[i];
-        const lastPacket = i === packets.length - 1;
-        this._writer.write(packet).then(() => {
+      for (let i2 = 0; i2 < packets.length; i2++) {
+        const packet = packets[i2];
+        const lastPacket = i2 === packets.length - 1;
+        this.writer.write(packet).then(() => {
           if (lastPacket) {
             nextTick(() => {
               this.writable = true;
@@ -1127,7 +1175,7 @@
     }
     doClose() {
       var _a;
-      (_a = this._transport) === null || _a === void 0 ? void 0 : _a.close();
+      (_a = this.transport) === null || _a === void 0 ? void 0 : _a.close();
     }
   };
 
@@ -1135,7 +1183,7 @@
   var transports = {
     websocket: WS,
     webtransport: WT,
-    polling: XHR
+    polling: Polling
   };
 
   // node_modules/engine.io-client/build/esm/contrib/parseuri.js
@@ -1157,16 +1205,16 @@
     "anchor"
   ];
   function parse(str) {
-    if (str.length > 8e3) {
+    if (str.length > 2e3) {
       throw "URI too long";
     }
     const src = str, b = str.indexOf("["), e = str.indexOf("]");
     if (b != -1 && e != -1) {
       str = str.substring(0, b) + str.substring(b, e).replace(/:/g, ";") + str.substring(e, str.length);
     }
-    let m = re.exec(str || ""), uri = {}, i = 14;
-    while (i--) {
-      uri[parts[i]] = m[i] || "";
+    let m = re.exec(str || ""), uri = {}, i2 = 14;
+    while (i2--) {
+      uri[parts[i2]] = m[i2] || "";
     }
     if (b != -1 && e != -1) {
       uri.source = src;
@@ -1199,40 +1247,28 @@
   }
 
   // node_modules/engine.io-client/build/esm/socket.js
-  var withEventListeners = typeof addEventListener === "function" && typeof removeEventListener === "function";
-  var OFFLINE_EVENT_LISTENERS = [];
-  if (withEventListeners) {
-    addEventListener("offline", () => {
-      OFFLINE_EVENT_LISTENERS.forEach((listener) => listener());
-    }, false);
-  }
-  var SocketWithoutUpgrade = class _SocketWithoutUpgrade extends Emitter {
+  var Socket = class _Socket extends Emitter {
     /**
      * Socket constructor.
      *
      * @param {String|Object} uri - uri or options
      * @param {Object} opts - options
      */
-    constructor(uri, opts) {
+    constructor(uri, opts = {}) {
       super();
       this.binaryType = defaultBinaryType;
       this.writeBuffer = [];
-      this._prevBufferLen = 0;
-      this._pingInterval = -1;
-      this._pingTimeout = -1;
-      this._maxPayload = -1;
-      this._pingTimeoutTime = Infinity;
       if (uri && "object" === typeof uri) {
         opts = uri;
         uri = null;
       }
       if (uri) {
-        const parsedUri = parse(uri);
-        opts.hostname = parsedUri.host;
-        opts.secure = parsedUri.protocol === "https" || parsedUri.protocol === "wss";
-        opts.port = parsedUri.port;
-        if (parsedUri.query)
-          opts.query = parsedUri.query;
+        uri = parse(uri);
+        opts.hostname = uri.host;
+        opts.secure = uri.protocol === "https" || uri.protocol === "wss";
+        opts.port = uri.port;
+        if (uri.query)
+          opts.query = uri.query;
       } else if (opts.host) {
         opts.hostname = parse(opts.host).host;
       }
@@ -1243,13 +1279,13 @@
       }
       this.hostname = opts.hostname || (typeof location !== "undefined" ? location.hostname : "localhost");
       this.port = opts.port || (typeof location !== "undefined" && location.port ? location.port : this.secure ? "443" : "80");
-      this.transports = [];
-      this._transportsByName = {};
-      opts.transports.forEach((t) => {
-        const transportName = t.prototype.name;
-        this.transports.push(transportName);
-        this._transportsByName[transportName] = t;
-      });
+      this.transports = opts.transports || [
+        "polling",
+        "websocket",
+        "webtransport"
+      ];
+      this.writeBuffer = [];
+      this.prevBufferLen = 0;
       this.opts = Object.assign({
         path: "/engine.io",
         agent: false,
@@ -1269,29 +1305,31 @@
       if (typeof this.opts.query === "string") {
         this.opts.query = decode2(this.opts.query);
       }
-      if (withEventListeners) {
+      this.id = null;
+      this.upgrades = null;
+      this.pingInterval = null;
+      this.pingTimeout = null;
+      this.pingTimeoutTimer = null;
+      if (typeof addEventListener === "function") {
         if (this.opts.closeOnBeforeunload) {
-          this._beforeunloadEventListener = () => {
+          this.beforeunloadEventListener = () => {
             if (this.transport) {
               this.transport.removeAllListeners();
               this.transport.close();
             }
           };
-          addEventListener("beforeunload", this._beforeunloadEventListener, false);
+          addEventListener("beforeunload", this.beforeunloadEventListener, false);
         }
         if (this.hostname !== "localhost") {
-          this._offlineEventListener = () => {
-            this._onClose("transport close", {
+          this.offlineEventListener = () => {
+            this.onClose("transport close", {
               description: "network connection lost"
             });
           };
-          OFFLINE_EVENT_LISTENERS.push(this._offlineEventListener);
+          addEventListener("offline", this.offlineEventListener, false);
         }
       }
-      if (this.opts.withCredentials) {
-        this._cookieJar = createCookieJar();
-      }
-      this._open();
+      this.open();
     }
     /**
      * Creates transport of the given type.
@@ -1313,23 +1351,33 @@
         secure: this.secure,
         port: this.port
       }, this.opts.transportOptions[name]);
-      return new this._transportsByName[name](opts);
+      return new transports[name](opts);
     }
     /**
      * Initializes transport to use and starts probe.
      *
      * @private
      */
-    _open() {
-      if (this.transports.length === 0) {
+    open() {
+      let transport;
+      if (this.opts.rememberUpgrade && _Socket.priorWebsocketSuccess && this.transports.indexOf("websocket") !== -1) {
+        transport = "websocket";
+      } else if (0 === this.transports.length) {
         this.setTimeoutFn(() => {
           this.emitReserved("error", "No transports available");
         }, 0);
         return;
+      } else {
+        transport = this.transports[0];
       }
-      const transportName = this.opts.rememberUpgrade && _SocketWithoutUpgrade.priorWebsocketSuccess && this.transports.indexOf("websocket") !== -1 ? "websocket" : this.transports[0];
       this.readyState = "opening";
-      const transport = this.createTransport(transportName);
+      try {
+        transport = this.createTransport(transport);
+      } catch (e) {
+        this.transports.shift();
+        this.open();
+        return;
+      }
       transport.open();
       this.setTransport(transport);
     }
@@ -1343,308 +1391,7 @@
         this.transport.removeAllListeners();
       }
       this.transport = transport;
-      transport.on("drain", this._onDrain.bind(this)).on("packet", this._onPacket.bind(this)).on("error", this._onError.bind(this)).on("close", (reason) => this._onClose("transport close", reason));
-    }
-    /**
-     * Called when connection is deemed open.
-     *
-     * @private
-     */
-    onOpen() {
-      this.readyState = "open";
-      _SocketWithoutUpgrade.priorWebsocketSuccess = "websocket" === this.transport.name;
-      this.emitReserved("open");
-      this.flush();
-    }
-    /**
-     * Handles a packet.
-     *
-     * @private
-     */
-    _onPacket(packet) {
-      if ("opening" === this.readyState || "open" === this.readyState || "closing" === this.readyState) {
-        this.emitReserved("packet", packet);
-        this.emitReserved("heartbeat");
-        switch (packet.type) {
-          case "open":
-            this.onHandshake(JSON.parse(packet.data));
-            break;
-          case "ping":
-            this._sendPacket("pong");
-            this.emitReserved("ping");
-            this.emitReserved("pong");
-            this._resetPingTimeout();
-            break;
-          case "error":
-            const err = new Error("server error");
-            err.code = packet.data;
-            this._onError(err);
-            break;
-          case "message":
-            this.emitReserved("data", packet.data);
-            this.emitReserved("message", packet.data);
-            break;
-        }
-      } else {
-      }
-    }
-    /**
-     * Called upon handshake completion.
-     *
-     * @param {Object} data - handshake obj
-     * @private
-     */
-    onHandshake(data) {
-      this.emitReserved("handshake", data);
-      this.id = data.sid;
-      this.transport.query.sid = data.sid;
-      this._pingInterval = data.pingInterval;
-      this._pingTimeout = data.pingTimeout;
-      this._maxPayload = data.maxPayload;
-      this.onOpen();
-      if ("closed" === this.readyState)
-        return;
-      this._resetPingTimeout();
-    }
-    /**
-     * Sets and resets ping timeout timer based on server pings.
-     *
-     * @private
-     */
-    _resetPingTimeout() {
-      this.clearTimeoutFn(this._pingTimeoutTimer);
-      const delay2 = this._pingInterval + this._pingTimeout;
-      this._pingTimeoutTime = Date.now() + delay2;
-      this._pingTimeoutTimer = this.setTimeoutFn(() => {
-        this._onClose("ping timeout");
-      }, delay2);
-      if (this.opts.autoUnref) {
-        this._pingTimeoutTimer.unref();
-      }
-    }
-    /**
-     * Called on `drain` event
-     *
-     * @private
-     */
-    _onDrain() {
-      this.writeBuffer.splice(0, this._prevBufferLen);
-      this._prevBufferLen = 0;
-      if (0 === this.writeBuffer.length) {
-        this.emitReserved("drain");
-      } else {
-        this.flush();
-      }
-    }
-    /**
-     * Flush write buffers.
-     *
-     * @private
-     */
-    flush() {
-      if ("closed" !== this.readyState && this.transport.writable && !this.upgrading && this.writeBuffer.length) {
-        const packets = this._getWritablePackets();
-        this.transport.send(packets);
-        this._prevBufferLen = packets.length;
-        this.emitReserved("flush");
-      }
-    }
-    /**
-     * Ensure the encoded size of the writeBuffer is below the maxPayload value sent by the server (only for HTTP
-     * long-polling)
-     *
-     * @private
-     */
-    _getWritablePackets() {
-      const shouldCheckPayloadSize = this._maxPayload && this.transport.name === "polling" && this.writeBuffer.length > 1;
-      if (!shouldCheckPayloadSize) {
-        return this.writeBuffer;
-      }
-      let payloadSize = 1;
-      for (let i = 0; i < this.writeBuffer.length; i++) {
-        const data = this.writeBuffer[i].data;
-        if (data) {
-          payloadSize += byteLength(data);
-        }
-        if (i > 0 && payloadSize > this._maxPayload) {
-          return this.writeBuffer.slice(0, i);
-        }
-        payloadSize += 2;
-      }
-      return this.writeBuffer;
-    }
-    /**
-     * Checks whether the heartbeat timer has expired but the socket has not yet been notified.
-     *
-     * Note: this method is private for now because it does not really fit the WebSocket API, but if we put it in the
-     * `write()` method then the message would not be buffered by the Socket.IO client.
-     *
-     * @return {boolean}
-     * @private
-     */
-    /* private */
-    _hasPingExpired() {
-      if (!this._pingTimeoutTime)
-        return true;
-      const hasExpired = Date.now() > this._pingTimeoutTime;
-      if (hasExpired) {
-        this._pingTimeoutTime = 0;
-        nextTick(() => {
-          this._onClose("ping timeout");
-        }, this.setTimeoutFn);
-      }
-      return hasExpired;
-    }
-    /**
-     * Sends a message.
-     *
-     * @param {String} msg - message.
-     * @param {Object} options.
-     * @param {Function} fn - callback function.
-     * @return {Socket} for chaining.
-     */
-    write(msg, options, fn) {
-      this._sendPacket("message", msg, options, fn);
-      return this;
-    }
-    /**
-     * Sends a message. Alias of {@link Socket#write}.
-     *
-     * @param {String} msg - message.
-     * @param {Object} options.
-     * @param {Function} fn - callback function.
-     * @return {Socket} for chaining.
-     */
-    send(msg, options, fn) {
-      this._sendPacket("message", msg, options, fn);
-      return this;
-    }
-    /**
-     * Sends a packet.
-     *
-     * @param {String} type - packet type.
-     * @param {String} data.
-     * @param {Object} options.
-     * @param {Function} fn - callback function.
-     * @private
-     */
-    _sendPacket(type, data, options, fn) {
-      if ("function" === typeof data) {
-        fn = data;
-        data = void 0;
-      }
-      if ("function" === typeof options) {
-        fn = options;
-        options = null;
-      }
-      if ("closing" === this.readyState || "closed" === this.readyState) {
-        return;
-      }
-      options = options || {};
-      options.compress = false !== options.compress;
-      const packet = {
-        type,
-        data,
-        options
-      };
-      this.emitReserved("packetCreate", packet);
-      this.writeBuffer.push(packet);
-      if (fn)
-        this.once("flush", fn);
-      this.flush();
-    }
-    /**
-     * Closes the connection.
-     */
-    close() {
-      const close = () => {
-        this._onClose("forced close");
-        this.transport.close();
-      };
-      const cleanupAndClose = () => {
-        this.off("upgrade", cleanupAndClose);
-        this.off("upgradeError", cleanupAndClose);
-        close();
-      };
-      const waitForUpgrade = () => {
-        this.once("upgrade", cleanupAndClose);
-        this.once("upgradeError", cleanupAndClose);
-      };
-      if ("opening" === this.readyState || "open" === this.readyState) {
-        this.readyState = "closing";
-        if (this.writeBuffer.length) {
-          this.once("drain", () => {
-            if (this.upgrading) {
-              waitForUpgrade();
-            } else {
-              close();
-            }
-          });
-        } else if (this.upgrading) {
-          waitForUpgrade();
-        } else {
-          close();
-        }
-      }
-      return this;
-    }
-    /**
-     * Called upon transport error
-     *
-     * @private
-     */
-    _onError(err) {
-      _SocketWithoutUpgrade.priorWebsocketSuccess = false;
-      if (this.opts.tryAllTransports && this.transports.length > 1 && this.readyState === "opening") {
-        this.transports.shift();
-        return this._open();
-      }
-      this.emitReserved("error", err);
-      this._onClose("transport error", err);
-    }
-    /**
-     * Called upon transport close.
-     *
-     * @private
-     */
-    _onClose(reason, description) {
-      if ("opening" === this.readyState || "open" === this.readyState || "closing" === this.readyState) {
-        this.clearTimeoutFn(this._pingTimeoutTimer);
-        this.transport.removeAllListeners("close");
-        this.transport.close();
-        this.transport.removeAllListeners();
-        if (withEventListeners) {
-          if (this._beforeunloadEventListener) {
-            removeEventListener("beforeunload", this._beforeunloadEventListener, false);
-          }
-          if (this._offlineEventListener) {
-            const i = OFFLINE_EVENT_LISTENERS.indexOf(this._offlineEventListener);
-            if (i !== -1) {
-              OFFLINE_EVENT_LISTENERS.splice(i, 1);
-            }
-          }
-        }
-        this.readyState = "closed";
-        this.id = null;
-        this.emitReserved("close", reason, description);
-        this.writeBuffer = [];
-        this._prevBufferLen = 0;
-      }
-    }
-  };
-  SocketWithoutUpgrade.protocol = protocol;
-  var SocketWithUpgrade = class extends SocketWithoutUpgrade {
-    constructor() {
-      super(...arguments);
-      this._upgrades = [];
-    }
-    onOpen() {
-      super.onOpen();
-      if ("open" === this.readyState && this.opts.upgrade) {
-        for (let i = 0; i < this._upgrades.length; i++) {
-          this._probe(this._upgrades[i]);
-        }
-      }
+      transport.on("drain", this.onDrain.bind(this)).on("packet", this.onPacket.bind(this)).on("error", this.onError.bind(this)).on("close", (reason) => this.onClose("transport close", reason));
     }
     /**
      * Probes a transport.
@@ -1652,10 +1399,10 @@
      * @param {String} name - transport name
      * @private
      */
-    _probe(name) {
+    probe(name) {
       let transport = this.createTransport(name);
       let failed = false;
-      SocketWithoutUpgrade.priorWebsocketSuccess = false;
+      _Socket.priorWebsocketSuccess = false;
       const onTransportOpen = () => {
         if (failed)
           return;
@@ -1668,7 +1415,7 @@
             this.emitReserved("upgrading", transport);
             if (!transport)
               return;
-            SocketWithoutUpgrade.priorWebsocketSuccess = "websocket" === transport.name;
+            _Socket.priorWebsocketSuccess = "websocket" === transport.name;
             this.transport.pause(() => {
               if (failed)
                 return;
@@ -1726,7 +1473,7 @@
       transport.once("close", onTransportClose);
       this.once("close", onclose);
       this.once("upgrading", onupgrade);
-      if (this._upgrades.indexOf("webtransport") !== -1 && name !== "webtransport") {
+      if (this.upgrades.indexOf("webtransport") !== -1 && name !== "webtransport") {
         this.setTimeoutFn(() => {
           if (!failed) {
             transport.open();
@@ -1736,9 +1483,256 @@
         transport.open();
       }
     }
+    /**
+     * Called when connection is deemed open.
+     *
+     * @private
+     */
+    onOpen() {
+      this.readyState = "open";
+      _Socket.priorWebsocketSuccess = "websocket" === this.transport.name;
+      this.emitReserved("open");
+      this.flush();
+      if ("open" === this.readyState && this.opts.upgrade) {
+        let i2 = 0;
+        const l = this.upgrades.length;
+        for (; i2 < l; i2++) {
+          this.probe(this.upgrades[i2]);
+        }
+      }
+    }
+    /**
+     * Handles a packet.
+     *
+     * @private
+     */
+    onPacket(packet) {
+      if ("opening" === this.readyState || "open" === this.readyState || "closing" === this.readyState) {
+        this.emitReserved("packet", packet);
+        this.emitReserved("heartbeat");
+        this.resetPingTimeout();
+        switch (packet.type) {
+          case "open":
+            this.onHandshake(JSON.parse(packet.data));
+            break;
+          case "ping":
+            this.sendPacket("pong");
+            this.emitReserved("ping");
+            this.emitReserved("pong");
+            break;
+          case "error":
+            const err = new Error("server error");
+            err.code = packet.data;
+            this.onError(err);
+            break;
+          case "message":
+            this.emitReserved("data", packet.data);
+            this.emitReserved("message", packet.data);
+            break;
+        }
+      } else {
+      }
+    }
+    /**
+     * Called upon handshake completion.
+     *
+     * @param {Object} data - handshake obj
+     * @private
+     */
     onHandshake(data) {
-      this._upgrades = this._filterUpgrades(data.upgrades);
-      super.onHandshake(data);
+      this.emitReserved("handshake", data);
+      this.id = data.sid;
+      this.transport.query.sid = data.sid;
+      this.upgrades = this.filterUpgrades(data.upgrades);
+      this.pingInterval = data.pingInterval;
+      this.pingTimeout = data.pingTimeout;
+      this.maxPayload = data.maxPayload;
+      this.onOpen();
+      if ("closed" === this.readyState)
+        return;
+      this.resetPingTimeout();
+    }
+    /**
+     * Sets and resets ping timeout timer based on server pings.
+     *
+     * @private
+     */
+    resetPingTimeout() {
+      this.clearTimeoutFn(this.pingTimeoutTimer);
+      this.pingTimeoutTimer = this.setTimeoutFn(() => {
+        this.onClose("ping timeout");
+      }, this.pingInterval + this.pingTimeout);
+      if (this.opts.autoUnref) {
+        this.pingTimeoutTimer.unref();
+      }
+    }
+    /**
+     * Called on `drain` event
+     *
+     * @private
+     */
+    onDrain() {
+      this.writeBuffer.splice(0, this.prevBufferLen);
+      this.prevBufferLen = 0;
+      if (0 === this.writeBuffer.length) {
+        this.emitReserved("drain");
+      } else {
+        this.flush();
+      }
+    }
+    /**
+     * Flush write buffers.
+     *
+     * @private
+     */
+    flush() {
+      if ("closed" !== this.readyState && this.transport.writable && !this.upgrading && this.writeBuffer.length) {
+        const packets = this.getWritablePackets();
+        this.transport.send(packets);
+        this.prevBufferLen = packets.length;
+        this.emitReserved("flush");
+      }
+    }
+    /**
+     * Ensure the encoded size of the writeBuffer is below the maxPayload value sent by the server (only for HTTP
+     * long-polling)
+     *
+     * @private
+     */
+    getWritablePackets() {
+      const shouldCheckPayloadSize = this.maxPayload && this.transport.name === "polling" && this.writeBuffer.length > 1;
+      if (!shouldCheckPayloadSize) {
+        return this.writeBuffer;
+      }
+      let payloadSize = 1;
+      for (let i2 = 0; i2 < this.writeBuffer.length; i2++) {
+        const data = this.writeBuffer[i2].data;
+        if (data) {
+          payloadSize += byteLength(data);
+        }
+        if (i2 > 0 && payloadSize > this.maxPayload) {
+          return this.writeBuffer.slice(0, i2);
+        }
+        payloadSize += 2;
+      }
+      return this.writeBuffer;
+    }
+    /**
+     * Sends a message.
+     *
+     * @param {String} msg - message.
+     * @param {Object} options.
+     * @param {Function} callback function.
+     * @return {Socket} for chaining.
+     */
+    write(msg, options, fn) {
+      this.sendPacket("message", msg, options, fn);
+      return this;
+    }
+    send(msg, options, fn) {
+      this.sendPacket("message", msg, options, fn);
+      return this;
+    }
+    /**
+     * Sends a packet.
+     *
+     * @param {String} type: packet type.
+     * @param {String} data.
+     * @param {Object} options.
+     * @param {Function} fn - callback function.
+     * @private
+     */
+    sendPacket(type, data, options, fn) {
+      if ("function" === typeof data) {
+        fn = data;
+        data = void 0;
+      }
+      if ("function" === typeof options) {
+        fn = options;
+        options = null;
+      }
+      if ("closing" === this.readyState || "closed" === this.readyState) {
+        return;
+      }
+      options = options || {};
+      options.compress = false !== options.compress;
+      const packet = {
+        type,
+        data,
+        options
+      };
+      this.emitReserved("packetCreate", packet);
+      this.writeBuffer.push(packet);
+      if (fn)
+        this.once("flush", fn);
+      this.flush();
+    }
+    /**
+     * Closes the connection.
+     */
+    close() {
+      const close = () => {
+        this.onClose("forced close");
+        this.transport.close();
+      };
+      const cleanupAndClose = () => {
+        this.off("upgrade", cleanupAndClose);
+        this.off("upgradeError", cleanupAndClose);
+        close();
+      };
+      const waitForUpgrade = () => {
+        this.once("upgrade", cleanupAndClose);
+        this.once("upgradeError", cleanupAndClose);
+      };
+      if ("opening" === this.readyState || "open" === this.readyState) {
+        this.readyState = "closing";
+        if (this.writeBuffer.length) {
+          this.once("drain", () => {
+            if (this.upgrading) {
+              waitForUpgrade();
+            } else {
+              close();
+            }
+          });
+        } else if (this.upgrading) {
+          waitForUpgrade();
+        } else {
+          close();
+        }
+      }
+      return this;
+    }
+    /**
+     * Called upon transport error
+     *
+     * @private
+     */
+    onError(err) {
+      _Socket.priorWebsocketSuccess = false;
+      this.emitReserved("error", err);
+      this.onClose("transport error", err);
+    }
+    /**
+     * Called upon transport close.
+     *
+     * @private
+     */
+    onClose(reason, description) {
+      if ("opening" === this.readyState || "open" === this.readyState || "closing" === this.readyState) {
+        this.clearTimeoutFn(this.pingTimeoutTimer);
+        this.transport.removeAllListeners("close");
+        this.transport.close();
+        this.transport.removeAllListeners();
+        if (typeof removeEventListener === "function") {
+          removeEventListener("beforeunload", this.beforeunloadEventListener, false);
+          removeEventListener("offline", this.offlineEventListener, false);
+        }
+        this.readyState = "closed";
+        this.id = null;
+        this.emitReserved("close", reason, description);
+        this.writeBuffer = [];
+        this.prevBufferLen = 0;
+      }
     }
     /**
      * Filters upgrades, returning only those matching client transports.
@@ -1746,24 +1740,18 @@
      * @param {Array} upgrades - server upgrades
      * @private
      */
-    _filterUpgrades(upgrades) {
+    filterUpgrades(upgrades) {
       const filteredUpgrades = [];
-      for (let i = 0; i < upgrades.length; i++) {
-        if (~this.transports.indexOf(upgrades[i]))
-          filteredUpgrades.push(upgrades[i]);
+      let i2 = 0;
+      const j = upgrades.length;
+      for (; i2 < j; i2++) {
+        if (~this.transports.indexOf(upgrades[i2]))
+          filteredUpgrades.push(upgrades[i2]);
       }
       return filteredUpgrades;
     }
   };
-  var Socket = class extends SocketWithUpgrade {
-    constructor(uri, opts = {}) {
-      const o = typeof uri === "object" ? uri : opts;
-      if (!o.transports || o.transports && typeof o.transports[0] === "string") {
-        o.transports = (o.transports || ["polling", "websocket", "webtransport"]).map((transportName) => transports[transportName]).filter((t) => !!t);
-      }
-      super(uri, o);
-    }
-  };
+  Socket.protocol = protocol;
 
   // node_modules/engine.io-client/build/esm/index.js
   var protocol2 = Socket.protocol;
@@ -1832,8 +1820,8 @@
       return false;
     }
     if (Array.isArray(obj)) {
-      for (let i = 0, l = obj.length; i < l; i++) {
-        if (hasBinary(obj[i])) {
+      for (let i2 = 0, l = obj.length; i2 < l; i2++) {
+        if (hasBinary(obj[i2])) {
           return true;
         }
       }
@@ -1871,8 +1859,8 @@
       return placeholder;
     } else if (Array.isArray(data)) {
       const newData = new Array(data.length);
-      for (let i = 0; i < data.length; i++) {
-        newData[i] = _deconstructPacket(data[i], buffers);
+      for (let i2 = 0; i2 < data.length; i2++) {
+        newData[i2] = _deconstructPacket(data[i2], buffers);
       }
       return newData;
     } else if (typeof data === "object" && !(data instanceof Date)) {
@@ -1902,8 +1890,8 @@
         throw new Error("illegal attachments");
       }
     } else if (Array.isArray(data)) {
-      for (let i = 0; i < data.length; i++) {
-        data[i] = _reconstructPacket(data[i], buffers);
+      for (let i2 = 0; i2 < data.length; i2++) {
+        data[i2] = _reconstructPacket(data[i2], buffers);
       }
     } else if (typeof data === "object") {
       for (const key in data) {
@@ -2055,7 +2043,7 @@
      * @return {Object} packet
      */
     decodeString(str) {
-      let i = 0;
+      let i2 = 0;
       const p = {
         type: Number(str.charAt(0))
       };
@@ -2063,11 +2051,11 @@
         throw new Error("unknown packet type " + p.type);
       }
       if (p.type === PacketType.BINARY_EVENT || p.type === PacketType.BINARY_ACK) {
-        const start = i + 1;
-        while (str.charAt(++i) !== "-" && i != str.length) {
+        const start = i2 + 1;
+        while (str.charAt(++i2) !== "-" && i2 != str.length) {
         }
-        const buf = str.substring(start, i);
-        if (buf != Number(buf) || str.charAt(i) !== "-") {
+        const buf = str.substring(start, i2);
+        if (buf != Number(buf) || str.charAt(i2) !== "-") {
           throw new Error("Illegal attachments");
         }
         const n = Number(buf);
@@ -2078,35 +2066,35 @@
         }
         p.attachments = n;
       }
-      if ("/" === str.charAt(i + 1)) {
-        const start = i + 1;
-        while (++i) {
-          const c = str.charAt(i);
+      if ("/" === str.charAt(i2 + 1)) {
+        const start = i2 + 1;
+        while (++i2) {
+          const c = str.charAt(i2);
           if ("," === c)
             break;
-          if (i === str.length)
+          if (i2 === str.length)
             break;
         }
-        p.nsp = str.substring(start, i);
+        p.nsp = str.substring(start, i2);
       } else {
         p.nsp = "/";
       }
-      const next = str.charAt(i + 1);
+      const next = str.charAt(i2 + 1);
       if ("" !== next && Number(next) == next) {
-        const start = i + 1;
-        while (++i) {
-          const c = str.charAt(i);
+        const start = i2 + 1;
+        while (++i2) {
+          const c = str.charAt(i2);
           if (null == c || Number(c) != c) {
-            --i;
+            --i2;
             break;
           }
-          if (i === str.length)
+          if (i2 === str.length)
             break;
         }
-        p.id = Number(str.substring(start, i + 1));
+        p.id = Number(str.substring(start, i2 + 1));
       }
-      if (str.charAt(++i)) {
-        const payload = this.tryParse(str.substr(i));
+      if (str.charAt(++i2)) {
+        const payload = this.tryParse(str.substr(i2));
         if (_Decoder.isPayloadValid(p.type, payload)) {
           p.data = payload;
         } else {
@@ -2370,7 +2358,6 @@
      * @return self
      */
     emit(ev, ...args) {
-      var _a, _b, _c;
       if (RESERVED_EVENTS2.hasOwnProperty(ev)) {
         throw new Error('"' + ev.toString() + '" is a reserved event name');
       }
@@ -2391,11 +2378,10 @@
         this._registerAckCallback(id, ack);
         packet.id = id;
       }
-      const isTransportWritable = (_b = (_a = this.io.engine) === null || _a === void 0 ? void 0 : _a.transport) === null || _b === void 0 ? void 0 : _b.writable;
-      const isConnected = this.connected && !((_c = this.io.engine) === null || _c === void 0 ? void 0 : _c._hasPingExpired());
-      const discardPacket = this.flags.volatile && !isTransportWritable;
+      const isTransportWritable = this.io.engine && this.io.engine.transport && this.io.engine.transport.writable;
+      const discardPacket = this.flags.volatile && (!isTransportWritable || !this.connected);
       if (discardPacket) {
-      } else if (isConnected) {
+      } else if (this.connected) {
         this.notifyOutgoingListeners(packet);
         this.packet(packet);
       } else {
@@ -2416,9 +2402,9 @@
       }
       const timer = this.io.setTimeoutFn(() => {
         delete this.acks[id];
-        for (let i = 0; i < this.sendBuffer.length; i++) {
-          if (this.sendBuffer[i].id === id) {
-            this.sendBuffer.splice(i, 1);
+        for (let i2 = 0; i2 < this.sendBuffer.length; i2++) {
+          if (this.sendBuffer[i2].id === id) {
+            this.sendBuffer.splice(i2, 1);
           }
         }
         ack.call(this, new Error("operation has timed out"));
@@ -2475,6 +2461,7 @@
       };
       args.push((err, ...responseArgs) => {
         if (packet !== this._queue[0]) {
+          return;
         }
         const hasError = err !== null;
         if (hasError) {
@@ -2706,8 +2693,8 @@
       this._pid = pid;
       this.connected = true;
       this.emitBuffered();
-      this._drainQueue(true);
       this.emitReserved("connect");
+      this._drainQueue(true);
     }
     /**
      * Emit buffered events (received and emitted).
@@ -2879,9 +2866,9 @@
       }
       if (listener) {
         const listeners = this._anyListeners;
-        for (let i = 0; i < listeners.length; i++) {
-          if (listener === listeners[i]) {
-            listeners.splice(i, 1);
+        for (let i2 = 0; i2 < listeners.length; i2++) {
+          if (listener === listeners[i2]) {
+            listeners.splice(i2, 1);
             return this;
           }
         }
@@ -2957,9 +2944,9 @@
       }
       if (listener) {
         const listeners = this._anyOutgoingListeners;
-        for (let i = 0; i < listeners.length; i++) {
-          if (listener === listeners[i]) {
-            listeners.splice(i, 1);
+        for (let i2 = 0; i2 < listeners.length; i2++) {
+          if (listener === listeners[i2]) {
+            listeners.splice(i2, 1);
             return this;
           }
         }
@@ -3062,9 +3049,6 @@
       if (!arguments.length)
         return this._reconnection;
       this._reconnection = !!v;
-      if (!v) {
-        this.skipReconnect = true;
-      }
       return this;
     }
     reconnectionAttempts(v) {
@@ -3181,14 +3165,7 @@
       this._readyState = "open";
       this.emitReserved("open");
       const socket2 = this.engine;
-      this.subs.push(
-        on(socket2, "ping", this.onping.bind(this)),
-        on(socket2, "data", this.ondata.bind(this)),
-        on(socket2, "error", this.onerror.bind(this)),
-        on(socket2, "close", this.onclose.bind(this)),
-        // @ts-ignore
-        on(this.decoder, "decoded", this.ondecoded.bind(this))
-      );
+      this.subs.push(on(socket2, "ping", this.onping.bind(this)), on(socket2, "data", this.ondata.bind(this)), on(socket2, "error", this.onerror.bind(this)), on(socket2, "close", this.onclose.bind(this)), on(this.decoder, "decoded", this.ondecoded.bind(this)));
     }
     /**
      * Called upon a ping.
@@ -3268,8 +3245,8 @@
      */
     _packet(packet) {
       const encodedPackets = this.encoder.encode(packet);
-      for (let i = 0; i < encodedPackets.length; i++) {
-        this.engine.write(encodedPackets[i], packet.options);
+      for (let i2 = 0; i2 < encodedPackets.length; i2++) {
+        this.engine.write(encodedPackets[i2], packet.options);
       }
     }
     /**
@@ -3291,6 +3268,8 @@
       this.skipReconnect = true;
       this._reconnecting = false;
       this.onclose("forced close");
+      if (this.engine)
+        this.engine.close();
     }
     /**
      * Alias for close()
@@ -3301,18 +3280,12 @@
       return this._close();
     }
     /**
-     * Called when:
-     *
-     * - the low-level engine is closed
-     * - the parser encountered a badly formatted packet
-     * - all sockets are disconnected
+     * Called upon engine close.
      *
      * @private
      */
     onclose(reason, description) {
-      var _a;
       this.cleanup();
-      (_a = this.engine) === null || _a === void 0 ? void 0 : _a.close();
       this.backoff.reset();
       this._readyState = "closed";
       this.emitReserved("close", reason, description);
@@ -3468,41 +3441,6 @@
   }
   async function getCard(id) {
     return (await getCards()).find((c) => c.id === id);
-  }
-
-  // src/lib/client.ts
-  var trimUrl = (u) => String(u || "").replace(/\/+$/, "");
-  var authHeaders = (token, withJson = false) => {
-    const h = { Authorization: `Bearer ${token}` };
-    if (withJson)
-      h["Content-Type"] = "application/json";
-    return h;
-  };
-  var ApiError = class extends Error {
-    status;
-    constructor(message, status) {
-      super(message);
-      this.name = "ApiError";
-      this.status = status;
-    }
-  };
-  async function parseError(res, fallback) {
-    try {
-      const data = await res.json();
-      return String(data?.detail || data?.error || fallback);
-    } catch {
-      return `${fallback} (HTTP ${res.status})`;
-    }
-  }
-  async function requestJson(url2, init, fallback) {
-    const res = await fetch(url2, { ...init, signal: init.signal ?? AbortSignal.timeout(2e4) });
-    if (!res.ok)
-      throw new ApiError(await parseError(res, fallback), res.status);
-    return await res.json();
-  }
-  async function listConfigs(serverUrl, token) {
-    const rows = await requestJson(`${trimUrl(serverUrl)}/api/ai/configs`, { headers: authHeaders(token) }, "AI \u6210\u5458\u5217\u8868\u52A0\u8F7D\u5931\u8D25");
-    return Array.isArray(rows) ? rows : [];
   }
 
   // src/lib/tools/definitions.ts
@@ -4395,7 +4333,7 @@
   async function captureVisibleTab(windowId, args, retries = 1) {
     let lastErr;
     const timeoutMs = boundedTimeout(args.visible_timeout_ms ?? args.timeout_ms, 8e3);
-    for (let i = 0; i <= retries; i++) {
+    for (let i2 = 0; i2 <= retries; i2++) {
       try {
         return await withTimeout(
           chrome.tabs.captureVisibleTab(windowId, {
@@ -4408,7 +4346,7 @@
       } catch (err) {
         lastErr = err;
         const message = err?.message || String(err);
-        if (i >= retries || !isRetryableCaptureError(message))
+        if (i2 >= retries || !isRetryableCaptureError(message))
           break;
         await delay(300);
       }
@@ -5198,29 +5136,29 @@ ${code}
     const total = card.steps.length;
     const results = [];
     const vars = { ...opts.variables || {} };
-    for (let i = 0; i < total; i++) {
+    for (let i2 = 0; i2 < total; i2++) {
       if (opts.shouldStop?.())
         return { success: false, stopped: true, results };
-      const step = card.steps[i];
+      const step = card.steps[i2];
       if (!shouldRunStep(step, vars)) {
-        const skipped = { index: i, note: step.note, tool: step.tool, status: "success", skipped: true, preview: "skipped by condition" };
+        const skipped = { index: i2, note: step.note, tool: step.tool, status: "success", skipped: true, preview: "skipped by condition" };
         results.push(skipped);
-        cardProgress?.(card.id, i, total, step.note, step.tool, "success");
+        cardProgress?.(card.id, i2, total, step.note, step.tool, "success");
         continue;
       }
       if (/^card[_.]/i.test(step.tool)) {
-        const r = { index: i, note: step.note, tool: step.tool, status: "error", error: "\u5361\u7247\u6B65\u9AA4\u4E0D\u5141\u8BB8\u8C03\u7528\u5361\u7247\u5DE5\u5177\uFF08\u907F\u514D\u9012\u5F52\uFF09" };
+        const r = { index: i2, note: step.note, tool: step.tool, status: "error", error: "\u5361\u7247\u6B65\u9AA4\u4E0D\u5141\u8BB8\u8C03\u7528\u5361\u7247\u5DE5\u5177\uFF08\u907F\u514D\u9012\u5F52\uFF09" };
         results.push(r);
-        cardProgress?.(card.id, i, total, step.note, step.tool, "error", r.error);
+        cardProgress?.(card.id, i2, total, step.note, step.tool, "error", r.error);
         return { success: false, results, failedStep: r };
       }
-      cardProgress?.(card.id, i, total, step.note, step.tool, "running");
+      cardProgress?.(card.id, i2, total, step.note, step.tool, "running");
       try {
         const args = applyVars(step.args || {}, vars);
         if (step.tool === "var_set") {
           vars[String(args.name)] = args.value;
-          results.push({ index: i, note: step.note, tool: step.tool, status: "success", preview: `${args.name}=${JSON.stringify(args.value)}` });
-          cardProgress?.(card.id, i, total, step.note, step.tool, "success");
+          results.push({ index: i2, note: step.note, tool: step.tool, status: "success", preview: `${args.name}=${JSON.stringify(args.value)}` });
+          cardProgress?.(card.id, i2, total, step.note, step.tool, "success");
           continue;
         }
         const result = await executeBrowserOnly(step.tool, args);
@@ -5232,13 +5170,13 @@ ${code}
           preview = (typeof result === "string" ? result : JSON.stringify(result)).slice(0, 180);
         } catch {
         }
-        results.push({ index: i, note: step.note, tool: step.tool, status: "success", preview });
-        cardProgress?.(card.id, i, total, step.note, step.tool, "success");
+        results.push({ index: i2, note: step.note, tool: step.tool, status: "success", preview });
+        cardProgress?.(card.id, i2, total, step.note, step.tool, "success");
       } catch (err) {
         const msg = err?.message || String(err);
-        const r = { index: i, note: step.note, tool: step.tool, status: "error", error: msg };
+        const r = { index: i2, note: step.note, tool: step.tool, status: "error", error: msg };
         results.push(r);
-        cardProgress?.(card.id, i, total, step.note, step.tool, "error", msg);
+        cardProgress?.(card.id, i2, total, step.note, step.tool, "error", msg);
         return { success: false, results, failedStep: r };
       }
     }
@@ -5367,10 +5305,10 @@ ${code}
     if (!rows.length)
       throw new Error("items \u4E0D\u80FD\u4E3A\u7A7A");
     const results = [];
-    for (let i = 0; i < rows.length; i++) {
-      const variables = { ...args.variables || {}, item: rows[i], index: i };
+    for (let i2 = 0; i2 < rows.length; i2++) {
+      const variables = { ...args.variables || {}, item: rows[i2], index: i2 };
       const res = await runCardSteps(card, { variables });
-      results.push({ index: i, success: res.success, completed: res.results.filter((r) => r.status === "success" && !r.skipped).length, failedStep: res.failedStep, results: res.results });
+      results.push({ index: i2, success: res.success, completed: res.results.filter((r) => r.status === "success" && !r.skipped).length, failedStep: res.failedStep, results: res.results });
       if (!res.success && args.stop_on_error !== false)
         break;
     }
@@ -5885,22 +5823,15 @@ Always:
       probe.on("agent:register_rejected", (data) => settle({ kind: "rejected", reason: data?.reason || "\u6CE8\u518C\u88AB\u670D\u52A1\u5668\u62D2\u7EDD" }));
     });
   }
-  function effectiveSelectedAiConfigId(settings, auth) {
-    if (!auth.token)
-      return null;
-    const raw = settings.selectedAiConfigId;
-    return typeof raw === "number" && raw >= 0 ? raw : null;
-  }
   async function emitRegisterOn(s) {
     const settings = await getSettings();
     const auth = await getAuth();
     if (settings.offlineMode)
       return;
     const id = settings.agentId || await getMachineId();
-    const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth);
     s.emit("agent:register", {
       id,
-      aiConfigId: selectedAiConfigId,
+      aiConfigId: null,
       name: settings.agentName || "Browser Agent",
       group: settings.agentGroup || "",
       platform: `browser-extension (${navigator?.userAgent?.split(" ").pop() || "chrome"})`,
@@ -6040,19 +5971,13 @@ ${failures.map((f) => `\xB7 ${f.url} \u2014 ${f.reason}`).join("\n")}
   }
   async function register() {
     const settings = await getSettings();
-    const auth = await getAuth();
     if (settings.offlineMode) {
       log("system", "info", "\u79BB\u7EBF\u6A21\u5F0F\u5DF2\u5F00\u542F\uFF0C\u8DF3\u8FC7\u6CE8\u518C");
       return;
     }
     if (!socket)
       return;
-    const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth);
-    if (!auth.token && settings.selectedAiConfigId) {
-      await saveSettings({ selectedAiConfigId: null });
-      log("system", "warn", "\u672A\u767B\u5F55\uFF0C\u5DF2\u53D6\u6D88 AI \u6210\u5458\u81EA\u52A8\u6CE8\u518C\u9009\u62E9");
-    }
-    log("system", "info", `\u6CE8\u518C agent (AI=${selectedAiConfigId ?? "\u672A\u9009\u62E9"})`);
+    log("system", "info", "\u6CE8\u518C agent\uFF08AI \u7531\u670D\u52A1\u5668\u4F5C\u574A\u5206\u914D\uFF09");
     await emitRegisterOn(socket);
   }
   function disconnect() {
@@ -6061,34 +5986,10 @@ ${failures.map((f) => `\xB7 ${f.url} \u2014 ${f.reason}`).join("\n")}
     activeSocketUrl = null;
     setStatus("disconnected");
   }
-  async function refreshServerAiSelectionOnStartup() {
-    const settings = await getSettings();
-    const auth = await getAuth();
-    if (settings.offlineMode || !auth.token || !settings.serverUrl)
-      return null;
-    let members;
-    try {
-      members = await listConfigs(settings.serverUrl, auth.token);
-    } catch (err) {
-      log("system", "warn", `\u542F\u52A8\u65F6\u83B7\u53D6 AI \u6210\u5458\u5931\u8D25: ${err?.message || err}`);
-      return null;
-    }
-    const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth);
-    if (!selectedAiConfigId)
-      return null;
-    const selected = members.find((m) => m.id === selectedAiConfigId);
-    if (!selected) {
-      await saveSettings({ selectedAiConfigId: null });
-      log("system", "warn", "\u4E0A\u6B21\u9009\u62E9\u7684 AI \u5DF2\u4E0D\u5B58\u5728\uFF0C\u5DF2\u6E05\u9664\u81EA\u52A8\u9009\u62E9");
-      return null;
-    }
-    log("system", "info", `\u5DF2\u6062\u590D\u4E0A\u6B21\u9009\u62E9\u7684 AI\uFF1A${selected.name || selected.id}`);
-    return selectedAiConfigId;
-  }
   async function restoreAndConnectOnStartup() {
-    const selectedAiConfigId = await refreshServerAiSelectionOnStartup();
     const s = await getSettings();
-    if (!s.offlineMode && (selectedAiConfigId || s.autoConnect))
+    const auth = await getAuth();
+    if (!s.offlineMode && auth.token)
       await connect();
   }
   async function handleTask(task) {
@@ -6318,10 +6219,10 @@ Respond in the same language as the user. For factual questions, search the web 
           break;
         }
         case "settings:save": {
-          const prev = await getSettings();
+          const prev2 = await getSettings();
           const payload = { ...msg.payload };
-          const serverUrlChanged = payload.serverUrl !== void 0 && payload.serverUrl !== prev.serverUrl;
-          const agentUrlChanged = payload.agentServerUrl !== void 0 && payload.agentServerUrl !== prev.agentServerUrl;
+          const serverUrlChanged = payload.serverUrl !== void 0 && payload.serverUrl !== prev2.serverUrl;
+          const agentUrlChanged = payload.agentServerUrl !== void 0 && payload.agentServerUrl !== prev2.agentServerUrl;
           if ((serverUrlChanged || agentUrlChanged) && payload.lastWorkingAgentUrl === void 0) {
             payload.lastWorkingAgentUrl = "";
           }
@@ -6335,20 +6236,6 @@ Respond in the same language as the user. For factual questions, search the web 
             if (wasConnected && !payload.offlineMode) {
               void connect();
             }
-          }
-          break;
-        }
-        case "agent:selected-ai": {
-          const auth = await getAuth();
-          const aiConfigId = auth.token ? msg.aiConfigId : null;
-          if (msg.aiConfigId && !auth.token) {
-            log("system", "warn", "\u8BF7\u5148\u767B\u5F55\u8F6F\u4EF6\u7AEF\u8D26\u53F7\uFF0C\u518D\u9009\u62E9 AI \u6210\u5458\u81EA\u52A8\u6CE8\u518C");
-          }
-          await saveSettings({ selectedAiConfigId: aiConfigId });
-          if (socket?.connected) {
-            await register();
-          } else if (aiConfigId && auth.token) {
-            await connect();
           }
           break;
         }

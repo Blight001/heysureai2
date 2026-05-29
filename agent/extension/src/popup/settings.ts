@@ -5,7 +5,6 @@
 import { AgentSettings } from '../lib/types'
 import { state } from './state'
 import * as dom from './dom'
-import { syncSelectedAiToBackground } from './helpers'
 import { updateOfflineUi, applyTheme } from './ui'
 import { renderMembers } from './members'
 
@@ -25,7 +24,6 @@ export function loadSettings(s: AgentSettings) {
   state.hasAiKey = !!(s.aiKey?.trim())
   updateOfflineUi()
   renderMembers()
-  syncSelectedAiToBackground()
   applyTheme(s.theme || 'dark', false)
 }
 
