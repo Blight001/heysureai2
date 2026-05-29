@@ -21,8 +21,8 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from api.database import create_db_and_tables
-from api.mcp import registry
-from api.mcp.loader import load_plugins_on_startup, reload_registry
+from mcp_runtime.mcp import registry
+from mcp_runtime.mcp.loader import load_plugins_on_startup, reload_registry
 from api.runtime.internal_http import require_internal_token
 
 

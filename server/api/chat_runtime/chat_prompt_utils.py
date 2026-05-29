@@ -1,0 +1,688 @@
+IS_ROUTER_ENTRY = False
+
+import asyncio
+import json
+import logging
+import re
+import time
+
+
+logger = logging.getLogger(__name__)
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
+
+import requests
+from fastapi import HTTPException
+
+from mcp_runtime.mcp import registry
+from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
+from api.models import AssistantAIConfig, DEFAULT_MCP_FORMAT_ERROR_HINT
+from api.models.defaults import DEFAULT_MCP_NAMESPACE_HINTS
+from api.chat_runtime.mcp_parser import (
+    MCP_CALL_BLOCK_RE,
+    extract_first_complete_mcp_call,
+    parse_mcp_payload,
+)
+from connector_runtime.dispatch.desktop_agent_tools import endpoint_bridge_tools_for_config
+from api.services.task_system import (
+    DEFAULT_SYSTEM_AUTO_CONTROL,
+    with_workspace_read_by_name_compat,
+)
+from .run_state import (
+    STATE_PREFIX,
+    _AUTO_RUNTIME_SECTION_TITLES,
+    _RUN_LIVE_STATE,
+    _RUN_LIVE_META,
+    _RUN_STATE_LOCK,
+    _TASK_CREATE_TOOL_NAMES,
+    _TASK_RUNTIME_SECTION_TITLES,
+)
+from api.sio import sio
+
+def _parse_mcp_payload(raw: str):
+    return parse_mcp_payload(raw)
+
+def _strip_prompt_section(text: str, section_title: str) -> str:
+    src = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    pattern = re.compile(rf"\n*\[{re.escape(section_title)}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)")
+    return pattern.sub("", src)
+
+def _strip_prompt_sections(text: str, section_titles: tuple[str, ...]) -> str:
+    current = str(text or "")
+    for section_title in section_titles:
+        current = _strip_prompt_section(current, section_title)
+    return current.strip()
+
+def _append_prompt_section(text: str, section_title: str, section_body: str) -> str:
+    base = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    body = str(section_body or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not body:
+        return base
+    section = f"[{section_title}]\n{body}"
+    if not base:
+        return section
+    return f"{base}\n\n{section}"
+
+def _strip_runtime_injected_sections(text: str) -> str:
+    return _strip_prompt_sections(text, _AUTO_RUNTIME_SECTION_TITLES)
+
+def _strip_task_runtime_sections(text: str) -> str:
+    return _strip_prompt_sections(text, _TASK_RUNTIME_SECTION_TITLES)
+
+def _strip_legacy_global_mcp_block(text: str) -> str:
+    # Remove previously inlined global MCP method blocks to avoid duplicate prompt sections.
+    return _strip_prompt_section(text, "全局MCP调用方法").strip()
+
+def _looks_like_mcp_template(text: str) -> bool:
+    src = str(text or "").strip().lower()
+    if not src:
+        return False
+    has_tools_line = (
+        "available mcp tools include" in src
+        or "可用的 mcp 工具包括" in src
+        or "可用的mcp工具包括" in src
+    )
+    has_rules_line = ("rules:" in src or "规则" in src)
+    return ("<mcp-call>" in src and has_tools_line and has_rules_line)
+
+def _parse_allowed_tools_for_cfg(cfg: Optional[AssistantAIConfig]) -> set[str]:
+    if not cfg:
+        return set()
+    try:
+        parsed = json.loads(cfg.mcp_tools or "[]")
+        if not isinstance(parsed, list):
+            return set()
+        raw_tools = {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
+        raw_tools = with_workspace_read_by_name_compat(raw_tools)
+        raw_tools.update(MCP_INTROSPECTION_TOOLS)
+        raw_tools.update(endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
+        return raw_tools
+    except Exception:
+        return set()
+
+def _schema_type_name(schema: Any) -> str:
+    if not isinstance(schema, dict):
+        return "any"
+    raw = schema.get("type")
+    if isinstance(raw, list):
+        vals = [str(v).strip() for v in raw if str(v).strip()]
+        return "|".join(vals) if vals else "any"
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    if isinstance(schema.get("enum"), list):
+        return "enum"
+    return "any"
+
+def _example_schedule_iso(hours_from_now: int = 2) -> str:
+    target = datetime.now().astimezone() + timedelta(hours=max(1, int(hours_from_now or 1)))
+    return target.replace(second=0, microsecond=0).isoformat()
+
+def _schema_placeholder(schema: Any, field_name: str = "") -> Any:
+    t = _schema_type_name(schema)
+    field = str(field_name or "").strip().lower()
+    if "|" in t:
+        candidates = [part.strip() for part in t.split("|") if part.strip()]
+        if "string" in candidates:
+            t = "string"
+        elif "number" in candidates:
+            t = "number"
+        elif "integer" in candidates:
+            t = "integer"
+        elif candidates:
+            t = candidates[0]
+
+    if t == "string":
+        if field in {"path", "name"}:
+            return "README.md"
+        if field == "command":
+            return "git status"
+        if field in {"job_id"}:
+            return "job_demo_001"
+        if field in {"project_id", "id"}:
+            return "project_demo_001"
+        if field == "title":
+            return "整理今日开发待办"
+        if field in {"instruction", "content"}:
+            return "先检查当前进度，再输出下一步执行清单。"
+        return "example"
+    if t == "integer":
+        if field in {"priority"}:
+            return 5
+        if field in {"target_ai_config_id", "target_config_id"}:
+            return 1
+        return 1
+    if t == "number":
+        return 1
+    if t == "boolean":
+        return True
+    if t == "array":
+        if field in {"paths", "names"}:
+            return ["README.md"]
+        if field in {"ai_member_ids"}:
+            return [1, 2]
+        return ["example"]
+    if t == "object":
+        if field == "flowdata":
+            return {"action": "ping"}
+        return {"note": "example"}
+    if t == "enum":
+        values = schema.get("enum") if isinstance(schema, dict) else None
+        if isinstance(values, list) and values:
+            return values[0]
+        return "example"
+    return "example"
+
+def _compact_fields(fields: List[str], limit: int = 6) -> str:
+    if not fields:
+        return "无"
+    if len(fields) <= limit:
+        return ", ".join(fields)
+    return ", ".join(fields[:limit]) + ", ..."
+
+def _render_mcp_tool_item(tool_info: Dict[str, Any]) -> str:
+    name = str(tool_info.get("name") or "").strip()
+    if not name:
+        return ""
+    schema = tool_info.get("inputSchema")
+    if not isinstance(schema, dict):
+        return f"- {name} (参数: 无)"
+
+    props = schema.get("properties")
+    if not isinstance(props, dict) or not props:
+        return f"- {name} (参数: 无)"
+
+    required_raw = schema.get("required")
+    required_names: List[str] = []
+    if isinstance(required_raw, list):
+        required_names = [str(v).strip() for v in required_raw if str(v).strip() in props]
+    optional_names = [k for k in props.keys() if k not in required_names]
+
+    required_desc = [f"{key}:{_schema_type_name(props.get(key))}" for key in required_names]
+    optional_desc = [f"{key}:{_schema_type_name(props.get(key))}" for key in optional_names]
+    field_limit = 100 if name in _TASK_CREATE_TOOL_NAMES else (30 if name.startswith("task.") else 6)
+
+    example_args: Dict[str, Any] = {}
+    if name == "task.create":
+        example_args["mode"] = "scheduled"
+        if "title" in props:
+            example_args["title"] = "两小时后执行代码健康巡检"
+        if "instruction" in props:
+            example_args["instruction"] = "运行后端语法检查与前端类型检查，记录失败项和修复建议到 doc/ops/health-check.md。"
+        if "priority" in props:
+            example_args["priority"] = 6
+        if "schedule_at" in props:
+            example_args["schedule_at"] = _example_schedule_iso(2)
+    else:
+        seed_names = required_names[:3] if required_names else optional_names[:1]
+        for key in seed_names:
+            example_args[key] = _schema_placeholder(props.get(key), key)
+
+    example_payload = json.dumps(
+        {"tool": name, "arguments": example_args},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    format_hint = ""
+    if name == "task.create":
+        format_hint = (
+            "\n"
+            "  mode: `immediate` 立即执行；`scheduled` 一次性定时；`recurring` 循环运行。\n"
+            "  时间格式: mode=scheduled 的 `schedule_at` 仅支持 Unix 秒或带时区 ISO-8601（必须包含 `+08:00` 或 `Z`）；"
+            "mode=recurring 不传 `schedule_at`，仅使用 `schedule_duration_minutes`（分钟间隔）。"
+        )
+    return (
+        f"- {name} (必填: {_compact_fields(required_desc, field_limit)}; 可选: {_compact_fields(optional_desc, field_limit)})\n"
+        f"  示例: {example_payload}"
+        f"{format_hint}"
+    )
+
+def _tool_namespace(name: str) -> str:
+    if "." in name:
+        return name.split(".", 1)[0]
+    if "_" in name:
+        return name.split("_", 1)[0]
+    return "other"
+
+def _render_mcp_tool_lines(cfg: Optional[AssistantAIConfig]) -> str:
+    if cfg is not None:
+        if not getattr(cfg, "mcp_enabled", True):
+            return "- （MCP 未启用）"
+    return _render_mcp_namespace_lines(cfg, DEFAULT_MCP_NAMESPACE_HINTS)
+
+def _parse_namespace_hints(raw: str) -> Dict[str, str]:
+    try:
+        parsed = json.loads(str(raw or "").strip() or DEFAULT_MCP_NAMESPACE_HINTS)
+    except Exception:
+        parsed = json.loads(DEFAULT_MCP_NAMESPACE_HINTS)
+    if not isinstance(parsed, dict):
+        parsed = json.loads(DEFAULT_MCP_NAMESPACE_HINTS)
+    fallback = json.loads(DEFAULT_MCP_NAMESPACE_HINTS)
+    out: Dict[str, str] = {str(k): str(v) for k, v in fallback.items()}
+    for key, value in parsed.items():
+        namespace = str(key or "").strip()
+        hint = str(value or "").strip()
+        if namespace and hint:
+            out[namespace] = hint
+    return out
+
+def _render_mcp_namespace_lines(cfg: Optional[AssistantAIConfig], namespace_hints: str) -> str:
+    if cfg is not None and not getattr(cfg, "mcp_enabled", True):
+        return "- （MCP 未启用）"
+    allowed = _parse_allowed_tools_for_cfg(cfg)
+    if cfg is None:
+        allowed = {str(item.get("name") or "").strip() for item in registry.list_tools() if item.get("name")}
+    if not allowed:
+        return "- （空）"
+    namespaces = sorted({_tool_namespace(name) for name in allowed if name})
+    hints = _parse_namespace_hints(namespace_hints)
+    lines = []
+    for namespace in namespaces:
+        hint = hints.get(namespace, "该 namespace 下存在可用 MCP 工具；需要展开时调用 mcp.list_tools 并传 namespace。")
+        lines.append(f"- {namespace}：{hint}")
+    return "\n".join(lines) if lines else "- （空）"
+
+def _inject_mcp_placeholder(template: str, cfg: Optional[AssistantAIConfig]) -> str:
+    return _inject_mcp_placeholder_with_hints(template, cfg, DEFAULT_MCP_NAMESPACE_HINTS)
+
+def _inject_mcp_placeholder_with_hints(template: str, cfg: Optional[AssistantAIConfig], namespace_hints: str) -> str:
+    text = str(template or "")
+    if "{MCP}" not in text:
+        return text
+    return text.replace("{MCP}", _render_mcp_namespace_lines(cfg, namespace_hints))
+
+def _merge_global_mcp_method(
+    system_prompt: str,
+    global_mcp_method: str,
+    cfg: Optional[AssistantAIConfig],
+    namespace_hints: str = DEFAULT_MCP_NAMESPACE_HINTS,
+) -> str:
+    base = _strip_legacy_global_mcp_block(system_prompt)
+    method = _inject_mcp_placeholder_with_hints(str(global_mcp_method or "").strip(), cfg, namespace_hints)
+    method = str(method or "").replace("\r\n", "\n").replace("\r", "\n")
+    if not method:
+        return base
+    method = "\n".join(
+        line for line in method.splitlines()
+        if "Call exactly one tool per <mcp-call> block; never join two tool names into one name." not in line
+    ).strip()
+    # Legacy bug compatibility: global MCP template was once persisted to admin_prompt directly.
+    if _looks_like_mcp_template(base) and method:
+        base = ""
+    if method in base:
+        return base
+    if base:
+        return f"{base}\n\n[全局MCP调用方法]\n{method}"
+    return f"[全局MCP调用方法]\n{method}"
+
+def _render_inheritance_notice(template: str, cfg: AssistantAIConfig, session_tokens: int, threshold: int) -> str:
+    text = template or DEFAULT_SYSTEM_AUTO_CONTROL["inheritance_notice"]
+    try:
+        return text.format(
+            session_tokens=session_tokens,
+            threshold=threshold,
+            ai_name=cfg.name,
+        )
+    except Exception:
+        return (
+            f"当前思考量已达到阈值（{session_tokens}/{threshold}），"
+            f"建议 {cfg.name} 在本轮结束后立即开启传承流程，沉淀关键结论。"
+        )
+
+def _render_mcp_warning_text(template: str, details: List[str], values: Dict[str, Any]) -> str:
+    details_bullets = "\n".join(f"- {line}" for line in details if str(line).strip())
+    if not details_bullets:
+        details_bullets = "- 未提供细节"
+
+    payload = dict(values)
+    payload["details"] = details_bullets
+    payload["details_bullets"] = details_bullets
+
+    def _replace_known_tokens(raw: str) -> str:
+        text = str(raw or "")
+        for key, value in payload.items():
+            text = text.replace("{" + str(key) + "}", str(value))
+        return text.strip()
+
+    rendered = _replace_known_tokens(str(template or "").strip() or DEFAULT_MCP_FORMAT_ERROR_HINT)
+    if rendered:
+        return rendered
+
+    return (
+        "[系统提示] 检测到 MCP 调用未成功。\n"
+        f"{details_bullets}\n"
+        "请使用标准格式: <mcp-call>{\"tool\":\"...\",\"arguments\":{...}}</mcp-call>"
+    )
+
+def _build_mcp_stream_warning(
+    assistant_text: str,
+    cfg: Optional[AssistantAIConfig],
+    warning_template: str = "",
+) -> Optional[str]:
+    matches = list(MCP_CALL_BLOCK_RE.finditer(assistant_text or ""))
+    if not matches:
+        return None
+
+    parsed_calls = []
+    format_error_count = 0
+    xml_arguments_tag_count = 0
+    for m in matches:
+        raw_payload = str(m.group(1) or "")
+        payload = _parse_mcp_payload(raw_payload)
+        if payload:
+            parsed_calls.append(payload)
+        else:
+            format_error_count += 1
+            args_match = re.search(r"<arguments>\s*([\s\S]*?)\s*</arguments>", raw_payload, re.IGNORECASE)
+            args_raw = str(args_match.group(1) or "").strip() if args_match else ""
+            if args_raw and re.search(r"<\s*[a-zA-Z_][\w.\-]*\b[^>]*>", args_raw):
+                xml_arguments_tag_count += 1
+
+    known_tools = {item.get("name") for item in registry.list_tools() if item.get("name")}
+
+    unauthorized_tools = []
+    unknown_tools = []
+    if cfg and parsed_calls:
+        allowed_tools = set()
+        try:
+            parsed_allowed = json.loads(cfg.mcp_tools or "[]")
+            if isinstance(parsed_allowed, list):
+                allowed_tools = {str(v).strip() for v in parsed_allowed if isinstance(v, str) and str(v).strip()}
+                allowed_tools = with_workspace_read_by_name_compat(allowed_tools)
+        except Exception:
+            allowed_tools = set()
+
+        if not cfg.mcp_enabled:
+            unauthorized_tools = [call["tool"] for call in parsed_calls]
+        else:
+            allowed_tools.update(endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
+            for call in parsed_calls:
+                tool = call["tool"]
+                if tool not in known_tools:
+                    unknown_tools.append(tool)
+                elif tool not in allowed_tools:
+                    unauthorized_tools.append(tool)
+    else:
+        for call in parsed_calls:
+            tool = call["tool"]
+            if tool not in known_tools:
+                unknown_tools.append(tool)
+
+    if format_error_count == 0 and not unauthorized_tools and not unknown_tools:
+        return None
+
+    hints = []
+    if format_error_count > 0:
+        hints.append(f"检测到 {format_error_count} 个 mcp-call 块格式错误。")
+    if xml_arguments_tag_count > 0:
+        hints.append(
+            f"其中 {xml_arguments_tag_count} 个调用在 <arguments> 内使用了 XML 子标签；"
+            "该位置必须是 JSON 对象字符串。"
+        )
+    if unknown_tools:
+        hints.append(f"未注册工具: {', '.join(sorted(set(unknown_tools)))}")
+    if unauthorized_tools:
+        hints.append(f"无权限工具: {', '.join(sorted(set(unauthorized_tools)))}")
+    values = {
+        "format_error_count": format_error_count,
+        "xml_arguments_tag_count": xml_arguments_tag_count,
+        "unknown_tools": ", ".join(sorted(set(unknown_tools))),
+        "unauthorized_tools": ", ".join(sorted(set(unauthorized_tools))),
+        "mcp_call_count": len(matches),
+    }
+    return _render_mcp_warning_text(warning_template, hints, values)
+
+def _stable_stringify(value):
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, list):
+        return "[" + ",".join(_stable_stringify(v) for v in value) + "]"
+    if isinstance(value, dict):
+        keys = sorted(value.keys())
+        return "{" + ",".join(f"{json.dumps(str(k), ensure_ascii=False)}:{_stable_stringify(value[k])}" for k in keys) + "}"
+    return json.dumps(str(value), ensure_ascii=False)
+
+def _simple_hash(input_text: str) -> str:
+    h = 5381
+    for ch in input_text:
+        h = ((h << 5) + h) + ord(ch)
+        h &= 0xFFFFFFFF
+    return str(h)
+
+def _block_signature(tool: str, arguments: dict) -> str:
+    raw = "|".join([
+        "mcp",
+        tool or "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        _stable_stringify(arguments or {}),
+    ])
+    return f"sig_{_simple_hash(raw)}"
+
+def _sanitize_large_media(value):
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            if key == "dataUrl" and isinstance(item, str) and item.startswith("data:image/"):
+                out[key] = f"<image data URL omitted, {len(item)} chars>"
+            else:
+                out[key] = _sanitize_large_media(item)
+        return out
+    if isinstance(value, list):
+        return [_sanitize_large_media(item) for item in value]
+    return value
+
+def _safe_json(value, max_len: int = 12000) -> str:
+    try:
+        text = json.dumps(_sanitize_large_media(value), ensure_ascii=False, indent=2)
+    except Exception:
+        text = str(value)
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "\n...<truncated>"
+
+def _extract_mcp_error(exc: Exception) -> str:
+    if isinstance(exc, HTTPException):
+        detail = getattr(exc, "detail", "")
+        if isinstance(detail, (dict, list)):
+            return _safe_json(detail, 2000)
+        detail_text = str(detail or "").strip()
+        if detail_text:
+            return detail_text
+        return f"HTTP {getattr(exc, 'status_code', 500)}"
+    text = str(exc or "").strip()
+    return text or exc.__class__.__name__
+
+def _build_mcp_display_result(tool: str, data: dict, ok: bool = True, error_message: str = "") -> str:
+    result = data.get("result", data)
+    if ok:
+        return f"工具: {tool}\n状态: 成功\n\n{_safe_json(result)}"
+    return f"工具: {tool}\n状态: 失败\n错误: {error_message or '未知错误'}\n\n{_safe_json(result)}"
+
+def _extract_first_mcp_call(assistant_text: str):
+    payload, _ = _extract_first_complete_mcp_call(assistant_text)
+    return payload
+
+def _extract_first_complete_mcp_call(assistant_text: str):
+    return extract_first_complete_mcp_call(assistant_text)
+
+def _extract_delta_text(delta) -> str:
+    if not delta:
+        return ""
+    content = delta.get("content") if isinstance(delta, dict) else None
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                parts.append(item["text"])
+        return "".join(parts)
+    return ""
+
+def _set_run_live_text(run_id: str, text: str):
+    with _RUN_STATE_LOCK:
+        prev = _RUN_LIVE_STATE.get(run_id) or {}
+        meta = _RUN_LIVE_META.get(run_id) or {}
+        _RUN_LIVE_STATE[run_id] = {
+            "text": text,
+            "reasoning": prev.get("reasoning", ""),
+            "phase": prev.get("phase", "generating"),
+            "current_tool": prev.get("current_tool", ""),
+            "pending_prompt_tokens": int(prev.get("pending_prompt_tokens") or 0),
+            "pending_completion_tokens": int(prev.get("pending_completion_tokens") or 0),
+            "pending_total_tokens": int(prev.get("pending_total_tokens") or 0),
+            "updated_at": time.time(),
+        }
+        _RUN_LIVE_META[run_id] = meta
+    _emit_run_live_update(run_id)
+
+def _set_run_live_reasoning(run_id: str, reasoning: str):
+    with _RUN_STATE_LOCK:
+        prev = _RUN_LIVE_STATE.get(run_id) or {}
+        meta = _RUN_LIVE_META.get(run_id) or {}
+        _RUN_LIVE_STATE[run_id] = {
+            "text": prev.get("text", ""),
+            "reasoning": reasoning,
+            "phase": prev.get("phase", "generating"),
+            "current_tool": prev.get("current_tool", ""),
+            "pending_prompt_tokens": int(prev.get("pending_prompt_tokens") or 0),
+            "pending_completion_tokens": int(prev.get("pending_completion_tokens") or 0),
+            "pending_total_tokens": int(prev.get("pending_total_tokens") or 0),
+            "updated_at": time.time(),
+        }
+        _RUN_LIVE_META[run_id] = meta
+    _emit_run_live_update(run_id)
+
+def _set_run_live_phase(run_id: str, phase: str, current_tool: str = ""):
+    with _RUN_STATE_LOCK:
+        prev = _RUN_LIVE_STATE.get(run_id) or {}
+        meta = _RUN_LIVE_META.get(run_id) or {}
+        _RUN_LIVE_STATE[run_id] = {
+            "text": prev.get("text", ""),
+            "reasoning": prev.get("reasoning", ""),
+            "phase": phase,
+            "current_tool": current_tool,
+            "pending_prompt_tokens": int(prev.get("pending_prompt_tokens") or 0),
+            "pending_completion_tokens": int(prev.get("pending_completion_tokens") or 0),
+            "pending_total_tokens": int(prev.get("pending_total_tokens") or 0),
+            "updated_at": time.time(),
+        }
+        _RUN_LIVE_META[run_id] = meta
+    _emit_run_live_update(run_id)
+
+def _set_run_live_usage(
+    run_id: str,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    total_tokens: int = 0,
+):
+    with _RUN_STATE_LOCK:
+        prev = _RUN_LIVE_STATE.get(run_id) or {}
+        meta = _RUN_LIVE_META.get(run_id) or {}
+        _RUN_LIVE_STATE[run_id] = {
+            "text": prev.get("text", ""),
+            "reasoning": prev.get("reasoning", ""),
+            "phase": prev.get("phase", "generating"),
+            "current_tool": prev.get("current_tool", ""),
+            "pending_prompt_tokens": max(0, int(prompt_tokens or 0)),
+            "pending_completion_tokens": max(0, int(completion_tokens or 0)),
+            "pending_total_tokens": max(0, int(total_tokens or 0)),
+            "updated_at": time.time(),
+        }
+        _RUN_LIVE_META[run_id] = meta
+    _emit_run_live_update(run_id)
+
+def _clear_run_live_text(run_id: str):
+    with _RUN_STATE_LOCK:
+        _RUN_LIVE_STATE.pop(run_id, None)
+        _RUN_LIVE_META.pop(run_id, None)
+
+def _set_run_live_meta(run_id: str, **meta: object) -> None:
+    with _RUN_STATE_LOCK:
+        current = dict(_RUN_LIVE_META.get(run_id) or {})
+        current.update({k: v for k, v in meta.items() if v is not None})
+        _RUN_LIVE_META[run_id] = current
+
+def _emit_run_live_update(run_id: str) -> None:
+    with _RUN_STATE_LOCK:
+        live = dict(_RUN_LIVE_STATE.get(run_id) or {})
+        meta = dict(_RUN_LIVE_META.get(run_id) or {})
+        last_emit_at = float(meta.get("last_emit_at") or 0.0)
+        now = time.time()
+        if now - last_emit_at < 0.08:
+            meta["last_emit_at"] = last_emit_at
+            _RUN_LIVE_META[run_id] = meta
+            return
+        meta["last_emit_at"] = now
+        _RUN_LIVE_META[run_id] = meta
+    user_id = meta.get("user_id")
+    if user_id is None:
+        return
+
+    payload = {
+        "run_id": run_id,
+        "user_id": user_id,
+        "text": str(live.get("text") or ""),
+        "reasoning": str(live.get("reasoning") or ""),
+        "phase": str(live.get("phase") or "generating"),
+        "current_tool": str(live.get("current_tool") or ""),
+        "prompt_tokens": int(live.get("pending_prompt_tokens") or 0),
+        "completion_tokens": int(live.get("pending_completion_tokens") or 0),
+        "total_tokens": int(live.get("pending_total_tokens") or 0),
+        "updated_at": live.get("updated_at"),
+    }
+
+    async def _do_emit():
+        try:
+            await sio.emit("chat:run_live", payload, room=f"user_{int(user_id)}")
+        except Exception:
+            logger.exception(f"chat_live_emit {run_id} failed")
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_do_emit())
+    except RuntimeError:
+        asyncio.run(_do_emit())
+
+def _split_tags(raw: Optional[str]) -> Tuple[str, str]:
+    text = str(raw or "")
+    idx = text.find(STATE_PREFIX)
+    if idx < 0:
+        return text.strip(), ""
+    base = text[:idx].rstrip().rstrip("|").strip()
+    encoded = text[idx + len(STATE_PREFIX):].strip()
+    return base, encoded
+
+def _encode_tags_with_state(base_tags: str, state: Optional[dict]) -> str:
+    base = (base_tags or "").strip()
+    if not state:
+        return base
+    encoded = requests.utils.quote(json.dumps(state, ensure_ascii=False))
+    return f"{base} | {STATE_PREFIX}{encoded}" if base else f"{STATE_PREFIX}{encoded}"
+
+def _append_mcp_state_to_tags(existing_tags: Optional[str], tool: str, arguments: dict, result_text: str) -> str:
+    state = {"signatures": {_block_signature(tool, arguments): {"applied": True, "result": result_text}}}
+    base, encoded = _split_tags(existing_tags)
+    if encoded:
+        try:
+            decoded = requests.utils.unquote(encoded)
+            existing = json.loads(decoded)
+            if isinstance(existing, dict):
+                signatures = existing.get("signatures")
+                if not isinstance(signatures, dict):
+                    signatures = {}
+                    existing["signatures"] = signatures
+                signatures.update(state["signatures"])
+                state = existing
+        except Exception:
+            pass
+    return _encode_tags_with_state(base, state)

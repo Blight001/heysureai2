@@ -8,7 +8,7 @@ between *infrastructure* (``database``, ``sio``, ``auth``), *services*
 
 Conventions:
 - Services depend on ``api.models`` / ``api.database`` and may call
-  ``api.mcp`` helpers, but **must not** import from ``api.routers``
+  ``mcp_runtime.mcp`` helpers, but **must not** import from ``api.routers``
   (the dependency direction is router -> service, never reverse).
 - Cross-service imports use ``from . import xxx`` (relative within
   the package).
