@@ -55,6 +55,26 @@ export interface AdminUser {
   created_at: number | null
 }
 
+export interface AuditEntry {
+  id: number
+  created_at: number
+  actor_id: number | null
+  actor_account: string
+  action: string
+  target_type: string
+  target_id: string
+  target_label: string
+  detail: string
+}
+
+export interface NewUserPayload {
+  name: string
+  account: string
+  password: string
+  role: UserRole
+  avatar?: string | null
+}
+
 export const listServices = () =>
   get<{ services: ServiceInfo[]; checked_at: number }>('/api/admin/services', {
     fallbackError: '获取服务状态失败',
@@ -86,6 +106,17 @@ export const restartService = (key: string) =>
 
 export const listUsers = () =>
   get<{ users: AdminUser[] }>('/api/admin/users', { fallbackError: '获取用户列表失败' })
+
+export const createUser = (payload: NewUserPayload) =>
+  post<{ ok: boolean; user: AdminUser }>('/api/admin/users', payload, {
+    fallbackError: '创建用户失败',
+  })
+
+export const listAudit = (limit = 100) =>
+  get<{ entries: AuditEntry[] }>('/api/admin/audit', {
+    query: { limit },
+    fallbackError: '获取审计日志失败',
+  })
 
 export const setUserRole = (userId: number, role: UserRole) =>
   patch<{ ok: boolean; user: AdminUser }>(`/api/admin/users/${userId}/role`, { role }, {

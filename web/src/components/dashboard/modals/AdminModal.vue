@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useMessage } from '@/composables/useMessage'
 import * as adminApi from '@/api/admin'
-import type { AdminTask, AdminUser, LogLine, ServiceInfo } from '@/api/admin'
+import type { AdminTask, AdminUser, AuditEntry, LogLine, ServiceInfo } from '@/api/admin'
 import type { User, UserRole } from '@/types'
 
 const props = defineProps<{
@@ -16,7 +16,7 @@ const emit = defineEmits<{
 
 const { alert, confirm, prompt } = useMessage()
 
-type Tab = 'services' | 'users'
+type Tab = 'services' | 'users' | 'audit'
 const tab = ref<Tab>('services')
 
 // ---- Services + tasks ----
@@ -27,6 +27,18 @@ const logLines = ref<LogLine[]>([])
 const logsLoading = ref(false)
 const logsNote = ref<string>('')
 
+// ---- Log view controls ----
+const logLevel = ref<string>('')
+const logSearch = ref<string>('')
+const logAutoScroll = ref(true)
+const logContainer = ref<HTMLElement | null>(null)
+const LOG_LEVELS = ['', 'DEBUG', 'INFO', 'WARNING', 'ERROR']
+
+// ---- Auto refresh ----
+const autoRefresh = ref(true)
+let refreshTimer: number | null = null
+const REFRESH_INTERVAL_MS = 5000
+
 const tasks = ref<AdminTask[]>([])
 const tasksLoading = ref(false)
 const busyRun = ref<string>('')
@@ -35,8 +47,25 @@ const busyService = ref<string>('')
 // ---- Users ----
 const users = ref<AdminUser[]>([])
 const usersLoading = ref(false)
+const newUserOpen = ref(false)
+const creatingUser = ref(false)
+const newUser = ref<{ name: string; account: string; password: string; role: UserRole }>({
+  name: '', account: '', password: '', role: 'member',
+})
+
+// ---- Audit ----
+const auditEntries = ref<AuditEntry[]>([])
+const auditLoading = ref(false)
 
 const isOwner = computed(() => props.currentUser?.role === 'owner')
+
+const filteredLogLines = computed(() => {
+  const q = logSearch.value.trim().toLowerCase()
+  if (!q) return logLines.value
+  return logLines.value.filter(l =>
+    l.msg.toLowerCase().includes(q) || l.logger.toLowerCase().includes(q),
+  )
+})
 
 const STATUS_META: Record<string, { label: string; cls: string }> = {
   running: { label: '运行中', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
@@ -88,14 +117,23 @@ const loadServices = async () => {
   }
 }
 
-const loadLogs = async (key: string) => {
+const scrollLogsToBottom = () => {
+  if (!logAutoScroll.value) return
+  void nextTick(() => {
+    const el = logContainer.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
+const loadLogs = async (key: string, silent = false) => {
   selectedServiceKey.value = key
-  logsLoading.value = true
+  if (!silent) logsLoading.value = true
   logsNote.value = ''
   try {
-    const res = await adminApi.getServiceLogs(key, 200)
+    const res = await adminApi.getServiceLogs(key, 300, logLevel.value || undefined)
     logLines.value = res.lines
     logsNote.value = res.note || ''
+    scrollLogsToBottom()
   } catch (err) {
     logLines.value = []
     logsNote.value = (err as Error).message
@@ -226,20 +264,103 @@ const deleteUser = async (u: AdminUser) => {
   }
 }
 
+const submitNewUser = async () => {
+  const name = newUser.value.name.trim()
+  const account = newUser.value.account.trim()
+  const password = newUser.value.password.trim()
+  if (!name || !account) {
+    await alert({ message: '昵称和账号不能为空', type: 'warning' })
+    return
+  }
+  if (password.length < 6) {
+    await alert({ message: '密码至少需要 6 位', type: 'warning' })
+    return
+  }
+  creatingUser.value = true
+  try {
+    const res = await adminApi.createUser({ name, account, password, role: newUser.value.role })
+    users.value.push(res.user)
+    newUser.value = { name: '', account: '', password: '', role: 'member' }
+    newUserOpen.value = false
+    await alert({ message: '用户已创建', type: 'success' })
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    creatingUser.value = false
+  }
+}
+
+const loadAudit = async () => {
+  auditLoading.value = true
+  try {
+    const res = await adminApi.listAudit(100)
+    auditEntries.value = res.entries
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    auditLoading.value = false
+  }
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  set_role: '设置权限',
+  reset_password: '重置密码',
+  delete_user: '删除用户',
+  create_user: '创建用户',
+  restart_service: '重启服务',
+  stop_task: '停止子任务',
+}
+
+// ---- Auto refresh: poll the live data on whichever tab is open ----
+const tick = () => {
+  if (!props.show) return
+  if (tab.value === 'services') {
+    void loadServices()
+    void loadTasks()
+    void loadLogs(selectedServiceKey.value, true)
+  } else if (tab.value === 'audit') {
+    void loadAudit()
+  }
+}
+
+const startAutoRefresh = () => {
+  stopAutoRefresh()
+  if (!autoRefresh.value) return
+  refreshTimer = window.setInterval(tick, REFRESH_INTERVAL_MS)
+}
+
+const stopAutoRefresh = () => {
+  if (refreshTimer !== null) {
+    window.clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+}
+
+watch(autoRefresh, () => startAutoRefresh())
+watch(logLevel, () => { if (props.show) void loadLogs(selectedServiceKey.value, true) })
+
 const switchTab = (next: Tab) => {
   tab.value = next
   if (next === 'users' && !users.value.length) void loadUsers()
+  if (next === 'audit') void loadAudit()
 }
 
 watch(
   () => props.show,
   (open) => {
-    if (!open) return
+    if (!open) {
+      stopAutoRefresh()
+      return
+    }
     tab.value = 'services'
+    newUserOpen.value = false
     void refreshServicesTab()
     void loadUsers()
+    startAutoRefresh()
   },
 )
+
+onUnmounted(stopAutoRefresh)
 
 const avatarFor = (u: AdminUser) =>
   u.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(u.name)}`
@@ -263,23 +384,29 @@ const avatarFor = (u: AdminUser) =>
               <span class="text-lg">🛡️</span>
               <h2 class="text-sm md:text-base font-bold text-zinc-800 dark:text-zinc-100">管理员控制台</h2>
             </div>
-            <button
-              class="w-8 h-8 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 flex items-center justify-center"
-              @click="emit('close')"
-            >✕</button>
+            <div class="flex items-center gap-3">
+              <label class="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 cursor-pointer select-none">
+                <input type="checkbox" v-model="autoRefresh" class="accent-indigo-500" />
+                自动刷新
+              </label>
+              <button
+                class="w-8 h-8 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 flex items-center justify-center"
+                @click="emit('close')"
+              >✕</button>
+            </div>
           </div>
 
           <!-- Tabs -->
           <div class="flex gap-1 px-5 pt-3 border-b border-zinc-200 dark:border-zinc-800">
             <button
-              v-for="t in (['services','users'] as Tab[])"
+              v-for="t in (['services','users','audit'] as Tab[])"
               :key="t"
               class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors"
               :class="tab === t
                 ? 'bg-indigo-50 text-indigo-700 border-b-2 border-indigo-500 dark:bg-indigo-900/20 dark:text-indigo-300'
                 : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
               @click="switchTab(t)"
-            >{{ t === 'services' ? '服务监控' : '用户管理' }}</button>
+            >{{ t === 'services' ? '服务监控' : t === 'users' ? '用户管理' : '操作审计' }}</button>
           </div>
 
           <!-- ============ Services tab ============ -->
@@ -327,20 +454,38 @@ const avatarFor = (u: AdminUser) =>
 
             <!-- Console output -->
             <section>
-              <div class="flex items-center justify-between mb-2">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
                 <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-400">
                   控制台输出 · {{ services.find(s => s.key === selectedServiceKey)?.name || selectedServiceKey }}
                 </h3>
-                <button
-                  class="text-xs px-2 py-1 rounded-lg border border-zinc-200 text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-400"
-                  :disabled="logsLoading"
-                  @click="loadLogs(selectedServiceKey)"
-                >{{ logsLoading ? '加载中…' : '↻ 刷新日志' }}</button>
+                <div class="flex items-center gap-2">
+                  <select
+                    v-model="logLevel"
+                    class="text-xs border border-zinc-200 rounded-lg px-2 py-1 bg-white text-zinc-600 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300"
+                    title="按级别过滤"
+                  >
+                    <option v-for="lv in LOG_LEVELS" :key="lv" :value="lv">{{ lv || '全部级别' }}</option>
+                  </select>
+                  <input
+                    v-model="logSearch"
+                    type="text"
+                    placeholder="搜索关键字…"
+                    class="text-xs border border-zinc-200 rounded-lg px-2 py-1 bg-white text-zinc-600 w-28 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300"
+                  />
+                  <label class="flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400 cursor-pointer select-none">
+                    <input type="checkbox" v-model="logAutoScroll" class="accent-indigo-500" /> 滚动到底
+                  </label>
+                  <button
+                    class="text-xs px-2 py-1 rounded-lg border border-zinc-200 text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-400"
+                    :disabled="logsLoading"
+                    @click="loadLogs(selectedServiceKey)"
+                  >{{ logsLoading ? '加载中…' : '↻' }}</button>
+                </div>
               </div>
-              <div class="bg-zinc-950 text-zinc-100 rounded-xl p-3 font-mono text-[11px] leading-relaxed h-56 overflow-y-auto">
+              <div ref="logContainer" class="bg-zinc-950 text-zinc-100 rounded-xl p-3 font-mono text-[11px] leading-relaxed h-56 overflow-y-auto">
                 <div v-if="logsNote" class="text-amber-400 mb-1">{{ logsNote }}</div>
-                <div v-if="!logLines.length && !logsLoading && !logsNote" class="text-zinc-500">暂无日志</div>
-                <div v-for="line in logLines" :key="line.seq" class="whitespace-pre-wrap break-all">
+                <div v-if="!filteredLogLines.length && !logsLoading && !logsNote" class="text-zinc-500">暂无日志</div>
+                <div v-for="line in filteredLogLines" :key="line.seq" class="whitespace-pre-wrap break-all">
                   <span class="text-zinc-500">{{ fmtLogTime(line.ts) }}</span>
                   <span
                     class="mx-1 font-bold"
@@ -413,12 +558,43 @@ const avatarFor = (u: AdminUser) =>
           <div v-show="tab === 'users'" class="flex-1 overflow-y-auto p-5">
             <div class="flex items-center justify-between mb-3">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-400">后台用户</h3>
-              <button
-                class="text-xs px-2 py-1 rounded-lg border border-zinc-200 text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-400"
-                :disabled="usersLoading"
-                @click="loadUsers"
-              >{{ usersLoading ? '刷新中…' : '↻ 刷新' }}</button>
+              <div class="flex items-center gap-2">
+                <button
+                  class="text-xs px-2 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                  @click="newUserOpen = !newUserOpen"
+                >＋ 新建用户</button>
+                <button
+                  class="text-xs px-2 py-1 rounded-lg border border-zinc-200 text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-400"
+                  :disabled="usersLoading"
+                  @click="loadUsers"
+                >{{ usersLoading ? '刷新中…' : '↻ 刷新' }}</button>
+              </div>
             </div>
+
+            <!-- New-user form -->
+            <Transition name="fade">
+              <div v-if="newUserOpen" class="mb-4 p-4 rounded-xl border border-indigo-200 bg-indigo-50/40 dark:border-indigo-800/60 dark:bg-indigo-900/10">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <input v-model="newUser.name" type="text" placeholder="昵称"
+                    class="text-sm border border-zinc-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100" />
+                  <input v-model="newUser.account" type="text" placeholder="账号（登录名）" autocomplete="off"
+                    class="text-sm border border-zinc-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100" />
+                  <input v-model="newUser.password" type="password" placeholder="初始密码（至少 6 位）" autocomplete="new-password"
+                    class="text-sm border border-zinc-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100" />
+                  <select v-model="newUser.role"
+                    class="text-sm border border-zinc-200 rounded-lg px-3 py-2 bg-white text-zinc-700 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200">
+                    <option v-for="opt in ROLE_OPTIONS" :key="opt.value" :value="opt.value"
+                      :disabled="opt.value === 'owner' && !isOwner">{{ opt.label }}</option>
+                  </select>
+                </div>
+                <div class="mt-3 flex justify-end gap-2">
+                  <button class="text-xs px-3 py-1.5 rounded-lg text-zinc-500 hover:text-zinc-700 dark:text-zinc-400" @click="newUserOpen = false">取消</button>
+                  <button class="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                    :disabled="creatingUser" @click="submitNewUser">{{ creatingUser ? '创建中…' : '创建' }}</button>
+                </div>
+              </div>
+            </Transition>
+
             <div class="space-y-2">
               <div
                 v-for="u in users"
@@ -453,6 +629,48 @@ const avatarFor = (u: AdminUser) =>
                 >删除</button>
               </div>
               <div v-if="!users.length && !usersLoading" class="text-center text-zinc-400 py-8 text-sm">暂无用户</div>
+            </div>
+          </div>
+
+          <!-- ============ Audit tab ============ -->
+          <div v-show="tab === 'audit'" class="flex-1 overflow-y-auto p-5">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-400">操作审计日志</h3>
+              <button
+                class="text-xs px-2 py-1 rounded-lg border border-zinc-200 text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-400"
+                :disabled="auditLoading"
+                @click="loadAudit"
+              >{{ auditLoading ? '刷新中…' : '↻ 刷新' }}</button>
+            </div>
+            <div class="border border-zinc-200 rounded-xl overflow-hidden dark:border-zinc-800">
+              <table class="w-full text-xs">
+                <thead class="bg-zinc-50 text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
+                  <tr>
+                    <th class="text-left px-3 py-2 font-medium">时间</th>
+                    <th class="text-left px-3 py-2 font-medium">操作者</th>
+                    <th class="text-left px-3 py-2 font-medium">动作</th>
+                    <th class="text-left px-3 py-2 font-medium">详情</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="!auditEntries.length">
+                    <td colspan="4" class="px-3 py-6 text-center text-zinc-400">暂无审计记录</td>
+                  </tr>
+                  <tr v-for="e in auditEntries" :key="e.id" class="border-t border-zinc-100 dark:border-zinc-800">
+                    <td class="px-3 py-2 text-zinc-400 whitespace-nowrap">{{ fmtTime(e.created_at) }}</td>
+                    <td class="px-3 py-2 text-zinc-600 dark:text-zinc-300 whitespace-nowrap">{{ e.actor_account || ('#' + e.actor_id) }}</td>
+                    <td class="px-3 py-2">
+                      <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 dark:bg-indigo-900/20 dark:text-indigo-300 whitespace-nowrap">
+                        {{ ACTION_LABELS[e.action] || e.action }}
+                      </span>
+                    </td>
+                    <td class="px-3 py-2 text-zinc-600 dark:text-zinc-300">
+                      {{ e.detail }}
+                      <span v-if="e.target_label" class="text-zinc-400">（{{ e.target_label }}）</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

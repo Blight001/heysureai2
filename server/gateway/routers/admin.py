@@ -12,6 +12,8 @@ Mounted at ``/api/admin`` (see ``PREFIX``) and auto-discovered by
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 import time
 from typing import Optional
 
@@ -20,13 +22,15 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlmodel import Session, SQLModel, select
 
+from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.auth import get_password_hash
+from api.core.config import user_workspace_dir
 from api.core.logging_config import get_recent_logs
 from api.core.settings import settings
 from api.database import get_session
-from api.models import ChatRun, User
+from api.models import AdminAuditLog, ChatRun, User
 from api.runtime.internal_http import InternalClient
-from gateway.routers.auth import get_current_user
+from gateway.routers.auth import ensure_user_workspace, get_current_user
 
 
 logger = logging.getLogger(__name__)
@@ -51,6 +55,36 @@ def require_admin_user(authorization: str = Header(None), session: Session = Dep
     if user.role not in ("owner", "admin"):
         raise HTTPException(status_code=403, detail="需要管理员或房主权限")
     return user
+
+
+def _record_audit(
+    session: Session,
+    actor: User,
+    action: str,
+    *,
+    target_type: str = "",
+    target_id: str = "",
+    target_label: str = "",
+    detail: str = "",
+) -> None:
+    """Persist a privileged action. Best-effort: a logging failure must not
+    abort the action the admin actually requested."""
+    try:
+        session.add(
+            AdminAuditLog(
+                actor_id=actor.id,
+                actor_account=actor.account,
+                action=action,
+                target_type=target_type,
+                target_id=str(target_id),
+                target_label=target_label,
+                detail=detail,
+            )
+        )
+        session.commit()
+    except Exception:
+        logger.exception("failed to write admin audit log")
+        session.rollback()
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +232,7 @@ def list_tasks(
 def stop_task(
     run_id: str,
     session: Session = Depends(get_session),
-    _admin: User = Depends(require_admin_user),
+    actor: User = Depends(require_admin_user),
 ) -> dict:
     run = session.exec(select(ChatRun).where(ChatRun.run_id == run_id)).first()
     if not run:
@@ -211,11 +245,20 @@ def stop_task(
     run.updated_at = now
     session.add(run)
     session.commit()
+    _record_audit(
+        session, actor, "stop_task",
+        target_type="task", target_id=run_id, target_label=run.session_name or run_id,
+        detail=f"停止子任务 {run_id}",
+    )
     return {"ok": True, "run_id": run_id, "status": run.status}
 
 
 @router.post("/services/{key}/restart")
-def restart_service(key: str, admin: User = Depends(require_admin_user)) -> dict:
+def restart_service(
+    key: str,
+    session: Session = Depends(get_session),
+    admin: User = Depends(require_admin_user),
+) -> dict:
     """Restart a whole sub-service (its process/port), not an individual run.
 
     - ``gateway`` restarts this very process — the connection serving this
@@ -234,6 +277,11 @@ def restart_service(key: str, admin: User = Depends(require_admin_user)) -> dict
         from api.runtime.process_control import request_restart
 
         logger.warning(f"admin {admin.account} triggered gateway restart")
+        _record_audit(
+            session, admin, "restart_service",
+            target_type="service", target_id=key, target_label=name,
+            detail=f"重启服务 {name}（网关自身）",
+        )
         cmd = request_restart(delay=1.0)
         return {"ok": True, "key": key, "name": name, "restarting": True, "command": cmd}
 
@@ -244,6 +292,11 @@ def restart_service(key: str, admin: User = Depends(require_admin_user)) -> dict
     try:
         payload = client.post("/internal/restart")
         logger.warning(f"admin {admin.account} triggered restart of {key} ({base_url})")
+        _record_audit(
+            session, admin, "restart_service",
+            target_type="service", target_id=key, target_label=name,
+            detail=f"重启服务 {name}（{base_url}）",
+        )
         return {"ok": True, "key": key, "name": name, **payload}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"无法重启 {name}: {exc}")
@@ -262,6 +315,14 @@ class RoleUpdate(BaseModel):
 
 class PasswordReset(BaseModel):
     new_password: str
+
+
+class UserCreatePayload(BaseModel):
+    name: str
+    account: str
+    password: str
+    role: str = "member"
+    avatar: Optional[str] = None
 
 
 def _serialize_user(u: User) -> dict:
@@ -283,6 +344,54 @@ def list_users(
 ) -> dict:
     users = session.exec(select(User).order_by(User.id)).all()
     return {"users": [_serialize_user(u) for u in users]}
+
+
+@router.post("/users")
+def create_user(
+    payload: UserCreatePayload,
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_admin_user),
+) -> dict:
+    name = (payload.name or "").strip()
+    account = (payload.account or "").strip()
+    password = (payload.password or "").strip()
+    role = (payload.role or "member").strip().lower()
+    if not name or not account:
+        raise HTTPException(status_code=400, detail="昵称和账号不能为空")
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="密码至少需要 6 位")
+    if role not in VALID_ROLES:
+        raise HTTPException(status_code=400, detail="无效的角色")
+    # Only an owner may mint another owner.
+    if role == "owner" and actor.role != "owner":
+        raise HTTPException(status_code=403, detail="只有房主能创建房主")
+    if session.exec(select(User).where(User.account == account)).first():
+        raise HTTPException(status_code=400, detail="账号已存在")
+
+    new_user = User(
+        name=name,
+        account=account,
+        hashed_password=get_password_hash(password),
+        avatar=payload.avatar,
+        role=role,
+    )
+    session.add(new_user)
+    session.commit()
+    session.refresh(new_user)
+
+    # Mirror normal registration so the account is immediately usable.
+    try:
+        ensure_user_workspace(new_user.id)
+        ensure_default_ai_for_user(session, new_user.id)
+    except Exception:
+        logger.exception(f"post-create bootstrap failed for user {new_user.id}")
+
+    _record_audit(
+        session, actor, "create_user",
+        target_type="user", target_id=new_user.id, target_label=new_user.account,
+        detail=f"创建用户 {name}（{account}），权限「{ROLE_LABELS.get(role, role)}」",
+    )
+    return {"ok": True, "user": _serialize_user(new_user)}
 
 
 @router.patch("/users/{user_id}/role")
@@ -311,10 +420,16 @@ def set_user_role(
         if not other_owners:
             raise HTTPException(status_code=400, detail="至少需要保留一名房主")
 
+    old_role = target.role
     target.role = new_role
     session.add(target)
     session.commit()
     session.refresh(target)
+    _record_audit(
+        session, actor, "set_role",
+        target_type="user", target_id=target.id, target_label=target.account,
+        detail=f"权限 {ROLE_LABELS.get(old_role, old_role)} → {ROLE_LABELS.get(new_role, new_role)}",
+    )
     return {"ok": True, "user": _serialize_user(target)}
 
 
@@ -338,6 +453,11 @@ def reset_user_password(
     target.hashed_password = get_password_hash(new_password)
     session.add(target)
     session.commit()
+    _record_audit(
+        session, actor, "reset_password",
+        target_type="user", target_id=target.id, target_label=target.account,
+        detail=f"重置了 {target.name}（{target.account}）的密码",
+    )
     return {"ok": True, "user_id": user_id}
 
 
@@ -381,8 +501,56 @@ def delete_user(
         if not other_owner:
             raise HTTPException(status_code=400, detail="至少需要保留一名房主")
 
+    target_account = target.account
+    target_name = target.name
     _delete_user_owned_rows(session, user_id)
     session.delete(target)
     session.commit()
-    logger.warning(f"admin {actor.account} deleted user #{user_id} ({target.account})")
+
+    # Best-effort: drop the user's on-disk workspace so deletion is complete.
+    try:
+        ws = user_workspace_dir(user_id)
+        if os.path.isdir(ws):
+            shutil.rmtree(ws, ignore_errors=True)
+    except Exception:
+        logger.exception(f"failed to remove workspace dir for user {user_id}")
+
+    logger.warning(f"admin {actor.account} deleted user #{user_id} ({target_account})")
+    _record_audit(
+        session, actor, "delete_user",
+        target_type="user", target_id=user_id, target_label=target_account,
+        detail=f"删除用户 {target_name}（{target_account}）及其所有数据",
+    )
     return {"ok": True, "user_id": user_id}
+
+
+# ---------------------------------------------------------------------------
+# Audit log
+# ---------------------------------------------------------------------------
+
+
+@router.get("/audit")
+def list_audit(
+    limit: int = 100,
+    session: Session = Depends(get_session),
+    _admin: User = Depends(require_admin_user),
+) -> dict:
+    limit = max(1, min(500, int(limit or 100)))
+    rows = session.exec(
+        select(AdminAuditLog).order_by(AdminAuditLog.created_at.desc()).limit(limit)
+    ).all()
+    entries = [
+        {
+            "id": r.id,
+            "created_at": r.created_at,
+            "actor_id": r.actor_id,
+            "actor_account": r.actor_account,
+            "action": r.action,
+            "target_type": r.target_type,
+            "target_id": r.target_id,
+            "target_label": r.target_label,
+            "detail": r.detail,
+        }
+        for r in rows
+    ]
+    return {"entries": entries}
