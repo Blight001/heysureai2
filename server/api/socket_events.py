@@ -46,7 +46,7 @@ def register_user_socket_events():
     """
     @sio.on('connect')
     async def connect(sid, environ):
-        logger.info('Client connected:', sid)
+        logger.info('Client connected: %s', sid)
 
     @sio.on('ui:join')
     async def ui_join(sid, data):
@@ -84,7 +84,7 @@ def register_agent_socket_events():
         else:
             resolved = resolve_agent_user(token)
             if not resolved:
-                logger.info('Agent registration rejected (no auth):', info.get('id'))
+                logger.info('Agent registration rejected (no auth): %s', info.get('id'))
                 await sio.emit(
                     'agent:register_rejected',
                     {'reason': 'agent must be logged in (invalid or missing user token)'},

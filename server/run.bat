@@ -9,9 +9,12 @@ rem When the split AI runtime is launched, route chat runs to the queue so the
 rem ai-runtime console actually consumes them and shows its debug output.
 if not defined AI_DISPATCH_MODE set "AI_DISPATCH_MODE=remote"
 
-start "HeySure Gateway" /D "%SCRIPT_DIR%" cmd /k "call run_gateway.bat"
-start "HeySure MCP Runtime" /D "%SCRIPT_DIR%" cmd /k "call run_mcp.bat"
-start "HeySure Connector Runtime" /D "%SCRIPT_DIR%" cmd /k "call run_connector.bat"
-start "HeySure AI Runtime" /D "%SCRIPT_DIR%" cmd /c "call run_ai.bat"
-
-pause
+set "TILE_SCRIPT=%SCRIPT_DIR%tile_windows.ps1"
+if exist "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" (
+  "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%TILE_SCRIPT%"
+) else if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
+  "%ProgramFiles%\PowerShell\7\pwsh.exe" -NoProfile -Sta -ExecutionPolicy Bypass -File "%TILE_SCRIPT%"
+) else (
+  echo PowerShell is not available.
+  exit /b 1
+)
