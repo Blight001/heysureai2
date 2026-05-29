@@ -4,6 +4,7 @@ import { getAgent, clearAiSelectionIfLoggedOut } from '../services/agent-runtime
 import { sendActivityLog } from '../services/activity-log'
 import { setMainWindowTheme } from '../windows/main-window'
 import { resolveBaseUrl, serverFetch, ServerError } from '../services/server-client'
+import { cacheUserAvatar } from '../services/avatar-cache'
 
 export function registerSettingsIpc(): void {
   ipcMain.handle('settings:get', async () => {
@@ -12,11 +13,20 @@ export function registerSettingsIpc(): void {
     if (s.serverUrl && s.authToken) {
       try {
         const base = resolveBaseUrl(s.serverUrl)
-        await serverFetch(base, '/api/auth/me', {
+        const me = await serverFetch<any>(base, '/api/auth/me', {
           token: s.authToken,
           failureMessage: '登录状态校验失败',
           timeoutMs: 5000,
         })
+        // Keep the cached avatar in sync if it changed server-side (mirrors the
+        // browser extension's getMe refresh); re-fetch the image only as needed.
+        const freshAvatar = me && typeof me === 'object' ? String(me.avatar || '') : s.userAvatar
+        if (freshAvatar !== s.userAvatar) {
+          store.set('userAvatar', freshAvatar)
+          await cacheUserAvatar(base, freshAvatar)
+        } else if (s.userAvatar && !s.userAvatarDataUrl) {
+          await cacheUserAvatar(base, s.userAvatar)
+        }
       } catch (err) {
         if (!(err instanceof ServerError && err.status === 401)) {
           // Network/server errors should not log the user out. They are handled

@@ -1,4 +1,150 @@
 (() => {
+  // src/popup/state.ts
+  var STATUS_LABELS = {
+    disconnected: "\u672A\u8FDE\u63A5",
+    connecting: "\u8FDE\u63A5\u4E2D...",
+    connected: "\u5DF2\u8FDE\u63A5",
+    registered: "\u5DF2\u6CE8\u518C\u5230\u670D\u52A1\u5668",
+    error: "\u8FDE\u63A5\u9519\u8BEF"
+  };
+  var ROLE_LABELS = {
+    assistant_admin: "\u8F85\u52A9\u7BA1\u7406\u5458",
+    manager: "\u7BA1\u7406\u8005",
+    member: "\u666E\u901A\u6210\u5458"
+  };
+  var state = {
+    currentTheme: "dark",
+    activeTab: "chat",
+    currentStatus: "disconnected",
+    chatHistory: [],
+    chatBusy: false,
+    hasAiKey: false,
+    // Assigned in initPort(); used before assignment never happens because the
+    // listeners that read it only fire after the popup has initialised.
+    port: void 0,
+    activeChatRequestId: null,
+    serverUrl: "",
+    offlineMode: false,
+    localModel: "",
+    auth: { token: "", account: "", userId: null, userName: "", avatar: "" },
+    // Cached data URL for the current account's avatar (hydrated from storage),
+    // used so renders are synchronous and offline-friendly. Empty = fall back to
+    // the live server URL.
+    avatarDataUrl: "",
+    members: [],
+    selectedMemberId: null,
+    activeRunId: null,
+    cards: [],
+    expandedCardId: null,
+    runningCardId: null,
+    // Server-backed chat history. Populated only when useServerChat() is true.
+    serverSessions: [],
+    currentServerSessionId: "",
+    lastSyncedMessageId: 0,
+    chatHistoryLoading: false
+  };
+
+  // src/popup/dom.ts
+  var $ = (id) => document.getElementById(id);
+  var statusDot = $("status-dot");
+  var statusLabel = $("status-label");
+  var statusPill = $("status-pill");
+  var themeToggle = $("theme-toggle");
+  var userChip = $("user-chip");
+  var userAva = $("user-ava");
+  var userName = $("user-name");
+  var tabs = {
+    chat: $("tab-chat"),
+    tasks: $("tab-tasks"),
+    cards: $("tab-cards"),
+    settings: $("tab-settings")
+  };
+  var panes = {
+    chat: $("chat-pane"),
+    tasks: $("task-pane"),
+    cards: $("cards-pane"),
+    settings: $("settings-pane")
+  };
+  var feed = $("feed");
+  var feedEmpty = $("feed-empty");
+  var chatMsgs = $("chat-messages");
+  var chatNoKey = $("chat-no-key");
+  var chatInput = $("chat-input");
+  var chatSendBtn = $("chat-send");
+  var chatTarget = $("chat-target");
+  var chatTargetText = $("chat-target-text");
+  var chatClearBtn = $("chat-clear-btn");
+  var chatSessionSelect = $("chat-session-select");
+  var chatSessionDeleteBtn = $("chat-session-delete-btn");
+  var connectBtn = $("connect-btn");
+  var disconnectBtn = $("disconnect-btn");
+  var clearBtn = $("clear-btn");
+  var testConnBtn = $("test-conn-btn");
+  var testResult = $("test-result");
+  var saveFeedback = $("save-feedback");
+  var cfgServer = $("cfg-server");
+  var cfgAgentServer = $("cfg-agent-server");
+  var cfgAiKey = $("cfg-ai-key");
+  var cfgAiBase = $("cfg-ai-base");
+  var cfgAiModel = $("cfg-ai-model");
+  var cfgAutoConn = $("cfg-auto-connect");
+  var cfgOfflineMode = $("cfg-offline-mode");
+  var offlineModelConfig = $("offline-model-config");
+  var cfgAiProvider = $("cfg-ai-provider");
+  var cfgMouseFx = $("cfg-mouse-fx");
+  var saveBtn = $("save-btn");
+  var loginGate = $("login-gate");
+  var loginModal = $("login-modal");
+  var loginModalClose = $("login-modal-close");
+  var membersModal = $("members-modal");
+  var membersModalClose = $("members-modal-close");
+  var accountCard = $("account-card");
+  var loginAccount = $("login-account");
+  var loginPassword = $("login-password");
+  var loginBtn = $("login-btn");
+  var loginFeedback = $("login-feedback");
+  var membersRefresh = $("members-refresh");
+  var membersList = $("members-list");
+  var membersEmpty = $("members-empty");
+  var taskTarget = $("task-target");
+  var taskForm = $("task-form");
+  var taskTitle = $("task-title");
+  var taskInstruction = $("task-instruction");
+  var taskPriority = $("task-priority");
+  var taskSchedEnabled = $("task-schedule-enabled");
+  var taskSchedOpts = $("task-schedule-opts");
+  var taskLoop = $("task-loop-enabled");
+  var taskRunNow = $("task-run-immediately");
+  var taskDuration = $("task-duration");
+  var taskAt = $("task-at");
+  var taskSubmit = $("task-submit");
+  var taskFeedback = $("task-feedback");
+  var taskJobsCard = $("task-jobs-card");
+  var jobsRefresh = $("jobs-refresh");
+  var jobsList = $("jobs-list");
+  var jobsEmpty = $("jobs-empty");
+  var accountStatusV = $("account-status-v");
+  var logoutBtn = $("logout-btn");
+  var memberSettingsCard = $("member-settings-card");
+  var connectionControlCard = $("connection-control-card");
+  var memberSettingsBody = $("member-settings-body");
+  var cardsImportBtn = $("cards-import-btn");
+  var cardsExportAllBtn = $("cards-export-all-btn");
+  var cardsImportBox = $("cards-import-box");
+  var cardsImportText = $("cards-import-text");
+  var cardsImportFileBtn = $("cards-import-file-btn");
+  var cardsImportFile = $("cards-import-file");
+  var cardsImportConfirm = $("cards-import-confirm");
+  var cardsImportFeedback = $("cards-import-feedback");
+  var cardsRunStatus = $("cards-run-status");
+  var cardsList = $("cards-list");
+  var cardsEmpty = $("cards-empty");
+  var cardModal = $("card-modal");
+  var cardModalMsg = $("card-modal-msg");
+  var cmMerge = $("cm-merge");
+  var cmReplace = $("cm-replace");
+  var cmSkip = $("cm-skip");
+
   // src/lib/types.ts
   var SETTING_DEFAULTS = {
     serverUrl: "http://localhost:3000",
@@ -53,13 +199,25 @@
     const r = await chrome.storage.local.get(AUTH_KEY);
     return { ...AUTH_DEFAULT, ...r[AUTH_KEY] || {} };
   }
-  async function saveAuth(state) {
+  async function saveAuth(state2) {
     const current = await getAuth();
-    await chrome.storage.local.set({ [AUTH_KEY]: { ...current, ...state } });
+    await chrome.storage.local.set({ [AUTH_KEY]: { ...current, ...state2 } });
   }
   async function clearAuth() {
     const current = await getAuth();
     await chrome.storage.local.set({ [AUTH_KEY]: { ...AUTH_DEFAULT, account: current.account } });
+  }
+  var AVATAR_CACHE_KEY = "_avatar_cache";
+  async function getAvatarCache() {
+    const r = await chrome.storage.local.get(AVATAR_CACHE_KEY);
+    const c = r[AVATAR_CACHE_KEY];
+    return c && typeof c.src === "string" && typeof c.dataUrl === "string" ? c : null;
+  }
+  async function setAvatarCache(cache) {
+    await chrome.storage.local.set({ [AVATAR_CACHE_KEY]: cache });
+  }
+  async function clearAvatarCache() {
+    await chrome.storage.local.remove(AVATAR_CACHE_KEY);
   }
   var CARDS_KEY = "_memory_cards";
   async function getCards() {
@@ -67,112 +225,11 @@
     const list = r[CARDS_KEY];
     return Array.isArray(list) ? list : [];
   }
-  async function setCards(cards2) {
-    await chrome.storage.local.set({ [CARDS_KEY]: cards2 });
+  async function setCards(cards) {
+    await chrome.storage.local.set({ [CARDS_KEY]: cards });
   }
   async function deleteCard(id) {
     await setCards((await getCards()).filter((c) => c.id !== id));
-  }
-
-  // src/lib/cards.ts
-  var newId = () => "card_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-  function deriveNote(tool, args) {
-    const labels = {
-      browser_navigate: "\u8DF3\u8F6C\u9875\u9762",
-      browser_wait: "\u7B49\u5F85",
-      browser_click: "\u70B9\u51FB",
-      browser_double_click: "\u53CC\u51FB",
-      browser_right_click: "\u53F3\u952E",
-      browser_type: "\u8F93\u5165\u5185\u5BB9",
-      browser_scroll: "\u6EDA\u52A8",
-      browser_select: "\u9009\u62E9",
-      browser_press_key: "\u6309\u952E",
-      browser_drag: "\u62D6\u62FD",
-      browser_hover: "\u60AC\u505C",
-      browser_fill_form: "\u586B\u5199\u8868\u5355",
-      browser_search: "\u641C\u7D22",
-      browser_screenshot: "\u622A\u56FE",
-      browser_extract: "\u63D0\u53D6\u6570\u636E",
-      browser_get_content: "\u8BFB\u53D6\u5185\u5BB9",
-      browser_page_info: "\u67E5\u770B\u9875\u9762\u4F4D\u7F6E",
-      browser_find_popups: "\u67E5\u627E\u5F39\u7A97",
-      browser_close_popup: "\u5173\u95ED\u5F39\u7A97"
-    };
-    const base = labels[tool] || tool.replace(/^browser_/, "");
-    const hint = args?.url || args?.text || args?.selector || args?.query || (args?.direction ? `${args.direction}${args?.amount ? " " + args.amount : ""}` : "") || (args?.key ? `\u6309\u952E ${args.key}` : "") || (args?.ms ? `${args.ms}ms` : "");
-    return hint ? `${base}\uFF1A${String(hint).slice(0, 60)}` : base;
-  }
-  function normalizeStep(raw) {
-    if (!raw || typeof raw !== "object")
-      return null;
-    const tool = String(raw.tool || raw.name || "").trim();
-    if (!tool)
-      return null;
-    let args = raw.args ?? raw.arguments ?? raw.input ?? {};
-    if (typeof args === "string") {
-      try {
-        args = JSON.parse(args);
-      } catch {
-        args = {};
-      }
-    }
-    if (!args || typeof args !== "object")
-      args = {};
-    const note = String(raw.note ?? raw.remark ?? raw.comment ?? raw.\u5907\u6CE8 ?? "").trim() || deriveNote(tool, args);
-    return { tool, args, note };
-  }
-  function parseImport(text) {
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error("\u4E0D\u662F\u6709\u6548\u7684 JSON");
-    }
-    let rawCards;
-    if (Array.isArray(data))
-      rawCards = data;
-    else if (data && Array.isArray(data.cards))
-      rawCards = data.cards;
-    else if (data && (data.steps || data.name))
-      rawCards = [data];
-    else
-      throw new Error("\u672A\u627E\u5230\u5361\u7247\u6570\u636E");
-    const now = Date.now();
-    const out = [];
-    for (const rc of rawCards) {
-      if (!rc || typeof rc !== "object")
-        continue;
-      const rawSteps = Array.isArray(rc.steps) ? rc.steps : [];
-      const steps = rawSteps.map(normalizeStep).filter((s) => !!s);
-      if (steps.length === 0)
-        continue;
-      out.push({
-        id: newId(),
-        name: String(rc.name || "\u672A\u547D\u540D\u5361\u7247").trim().slice(0, 80),
-        description: String(rc.description || "").trim().slice(0, 300),
-        steps,
-        createdAt: now,
-        updatedAt: now
-      });
-    }
-    if (out.length === 0)
-      throw new Error("\u5361\u7247\u4E2D\u6CA1\u6709\u53EF\u7528\u7684\u6B65\u9AA4");
-    return out;
-  }
-  function mergeCards(existing, incoming) {
-    return {
-      ...existing,
-      description: existing.description || incoming.description,
-      steps: [...existing.steps, ...incoming.steps],
-      updatedAt: Date.now()
-    };
-  }
-  function exportCard(card) {
-    return {
-      name: card.name,
-      description: card.description,
-      steps: card.steps.map((s) => ({ tool: s.tool, args: s.args, note: s.note }))
-    };
   }
 
   // src/lib/client.ts
@@ -210,8 +267,8 @@
       throw new ApiError(await parseError(res, fallback), res.status);
     return await res.json();
   }
-  async function login(serverUrl2, account, password) {
-    const base = trimUrl(serverUrl2);
+  async function login(serverUrl, account, password) {
+    const base = trimUrl(serverUrl);
     const data = await requestJson(
       `${base}/api/auth/login`,
       { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ account, password }) },
@@ -221,16 +278,16 @@
       throw new Error("\u767B\u5F55\u54CD\u5E94\u7F3A\u5C11\u4EE4\u724C");
     return { token: data.access_token, user: data.user };
   }
-  async function getMe(serverUrl2, token) {
-    return requestJson(`${trimUrl(serverUrl2)}/api/auth/me`, { headers: authHeaders(token) }, "\u83B7\u53D6\u7528\u6237\u4FE1\u606F\u5931\u8D25");
+  async function getMe(serverUrl, token) {
+    return requestJson(`${trimUrl(serverUrl)}/api/auth/me`, { headers: authHeaders(token) }, "\u83B7\u53D6\u7528\u6237\u4FE1\u606F\u5931\u8D25");
   }
-  async function listConfigs(serverUrl2, token) {
-    const rows = await requestJson(`${trimUrl(serverUrl2)}/api/ai/configs`, { headers: authHeaders(token) }, "AI \u6210\u5458\u5217\u8868\u52A0\u8F7D\u5931\u8D25");
+  async function listConfigs(serverUrl, token) {
+    const rows = await requestJson(`${trimUrl(serverUrl)}/api/ai/configs`, { headers: authHeaders(token) }, "AI \u6210\u5458\u5217\u8868\u52A0\u8F7D\u5931\u8D25");
     return Array.isArray(rows) ? rows : [];
   }
-  async function startChatRun(serverUrl2, token, aiConfigId, sessionId, content, sessionName) {
+  async function startChatRun(serverUrl, token, aiConfigId, sessionId, content, sessionName) {
     return requestJson(
-      `${trimUrl(serverUrl2)}/api/chat/run/start`,
+      `${trimUrl(serverUrl)}/api/chat/run/start`,
       {
         method: "POST",
         headers: authHeaders(token, true),
@@ -246,16 +303,16 @@
       "\u53D1\u8D77\u5BF9\u8BDD\u5931\u8D25"
     );
   }
-  async function getChatRun(serverUrl2, token, runId, after) {
+  async function getChatRun(serverUrl, token, runId, after) {
     const q = after !== void 0 ? `?after=${after}` : "";
     return requestJson(
-      `${trimUrl(serverUrl2)}/api/chat/run/status/${encodeURIComponent(runId)}${q}`,
+      `${trimUrl(serverUrl)}/api/chat/run/status/${encodeURIComponent(runId)}${q}`,
       { headers: authHeaders(token) },
       "\u83B7\u53D6\u5BF9\u8BDD\u72B6\u6001\u5931\u8D25"
     );
   }
-  async function stopChatRun(serverUrl2, token, runId) {
-    await fetch(`${trimUrl(serverUrl2)}/api/chat/run/${encodeURIComponent(runId)}/stop`, {
+  async function stopChatRun(serverUrl, token, runId) {
+    await fetch(`${trimUrl(serverUrl)}/api/chat/run/${encodeURIComponent(runId)}/stop`, {
       method: "POST",
       headers: authHeaders(token),
       signal: AbortSignal.timeout(1e4)
@@ -268,9 +325,9 @@
       params.ai_config_id = String(aiConfigId);
     return new URLSearchParams(params).toString();
   };
-  async function listChatSessions(serverUrl2, token, aiConfigId) {
+  async function listChatSessions(serverUrl, token, aiConfigId) {
     const rows = await requestJson(
-      `${trimUrl(serverUrl2)}/api/chat/sessions?${chatQs(aiConfigId)}`,
+      `${trimUrl(serverUrl)}/api/chat/sessions?${chatQs(aiConfigId)}`,
       { headers: authHeaders(token) },
       "\u4F1A\u8BDD\u5217\u8868\u52A0\u8F7D\u5931\u8D25"
     );
@@ -280,9 +337,9 @@
       total_tokens: Number(row?.total_tokens || 0)
     }));
   }
-  async function createChatSession(serverUrl2, token, name, aiConfigId) {
+  async function createChatSession(serverUrl, token, name, aiConfigId) {
     const row = await requestJson(
-      `${trimUrl(serverUrl2)}/api/chat/sessions`,
+      `${trimUrl(serverUrl)}/api/chat/sessions`,
       {
         method: "POST",
         headers: authHeaders(token, true),
@@ -292,54 +349,54 @@
     );
     return { id: String(row?.id || ""), name: String(row?.name || name || "\u672A\u547D\u540D\u4F1A\u8BDD") };
   }
-  async function deleteChatSession(serverUrl2, token, sessionId, aiConfigId) {
+  async function deleteChatSession(serverUrl, token, sessionId, aiConfigId) {
     const res = await fetch(
-      `${trimUrl(serverUrl2)}/api/chat/sessions/${encodeURIComponent(sessionId)}?${chatQs(aiConfigId)}`,
+      `${trimUrl(serverUrl)}/api/chat/sessions/${encodeURIComponent(sessionId)}?${chatQs(aiConfigId)}`,
       { method: "DELETE", headers: authHeaders(token), signal: AbortSignal.timeout(1e4) }
     );
     if (!res.ok)
       throw new ApiError(await parseError(res, "\u5220\u9664\u4F1A\u8BDD\u5931\u8D25"), res.status);
   }
-  async function fetchChatHistory(serverUrl2, token, sessionId, aiConfigId) {
+  async function fetchChatHistory(serverUrl, token, sessionId, aiConfigId) {
     const rows = await requestJson(
-      `${trimUrl(serverUrl2)}/api/chat/history?${chatQs(aiConfigId, { session_id: sessionId })}`,
+      `${trimUrl(serverUrl)}/api/chat/history?${chatQs(aiConfigId, { session_id: sessionId })}`,
       { headers: authHeaders(token) },
       "\u52A0\u8F7D\u5BF9\u8BDD\u8BB0\u5F55\u5931\u8D25"
     );
     return Array.isArray(rows) ? rows : [];
   }
-  async function deleteServerChatMessage(serverUrl2, token, msgId) {
+  async function deleteServerChatMessage(serverUrl, token, msgId) {
     const res = await fetch(
-      `${trimUrl(serverUrl2)}/api/chat/${msgId}`,
+      `${trimUrl(serverUrl)}/api/chat/${msgId}`,
       { method: "DELETE", headers: authHeaders(token), signal: AbortSignal.timeout(1e4) }
     );
     if (!res.ok)
       throw new ApiError(await parseError(res, "\u5220\u9664\u6D88\u606F\u5931\u8D25"), res.status);
   }
-  async function recallServerChatMessage(serverUrl2, token, msgId) {
+  async function recallServerChatMessage(serverUrl, token, msgId) {
     return requestJson(
-      `${trimUrl(serverUrl2)}/api/chat/recall/${msgId}`,
+      `${trimUrl(serverUrl)}/api/chat/recall/${msgId}`,
       { method: "POST", headers: authHeaders(token) },
       "\u64A4\u56DE\u5931\u8D25"
     );
   }
-  async function triggerTask(serverUrl2, token, configId, payload) {
+  async function triggerTask(serverUrl, token, configId, payload) {
     return requestJson(
-      `${trimUrl(serverUrl2)}/api/ai/configs/${configId}/task-trigger`,
+      `${trimUrl(serverUrl)}/api/ai/configs/${configId}/task-trigger`,
       { method: "POST", headers: authHeaders(token, true), body: JSON.stringify(payload) },
       "\u5B89\u6392\u4EFB\u52A1\u5931\u8D25"
     );
   }
-  async function listTaskJobs(serverUrl2, token, configId) {
+  async function listTaskJobs(serverUrl, token, configId) {
     const data = await requestJson(
-      `${trimUrl(serverUrl2)}/api/ai/configs/${configId}/task-jobs`,
+      `${trimUrl(serverUrl)}/api/ai/configs/${configId}/task-jobs`,
       { headers: authHeaders(token) },
       "\u4EFB\u52A1\u5217\u8868\u52A0\u8F7D\u5931\u8D25"
     );
     return Array.isArray(data?.jobs) ? data.jobs : [];
   }
-  async function taskJobAction(serverUrl2, token, configId, jobId, action) {
-    const base = `${trimUrl(serverUrl2)}/api/ai/configs/${configId}/task-jobs/${encodeURIComponent(jobId)}`;
+  async function taskJobAction(serverUrl, token, configId, jobId, action) {
+    const base = `${trimUrl(serverUrl)}/api/ai/configs/${configId}/task-jobs/${encodeURIComponent(jobId)}`;
     if (action === "delete") {
       const res2 = await fetch(base, { method: "DELETE", headers: authHeaders(token), signal: AbortSignal.timeout(1e4) });
       if (!res2.ok)
@@ -605,139 +662,7 @@
     ].filter(Boolean).join("");
   }
 
-  // src/popup/index.ts
-  var currentTheme = "dark";
-  var activeTab = "chat";
-  var currentStatus = "disconnected";
-  var chatHistory = [];
-  var chatBusy = false;
-  var hasAiKey = false;
-  var port;
-  var activeChatRequestId = null;
-  var serverUrl = "";
-  var offlineMode = false;
-  var localModel = "";
-  var auth = { token: "", account: "", userId: null, userName: "", avatar: "" };
-  var members = [];
-  var selectedMemberId = null;
-  var activeRunId = null;
-  var cards = [];
-  var expandedCardId = null;
-  var runningCardId = null;
-  var serverSessions = [];
-  var currentServerSessionId = "";
-  var lastSyncedMessageId = 0;
-  var chatHistoryLoading = false;
-  var STATUS_LABELS = {
-    disconnected: "\u672A\u8FDE\u63A5",
-    connecting: "\u8FDE\u63A5\u4E2D...",
-    connected: "\u5DF2\u8FDE\u63A5",
-    registered: "\u5DF2\u6CE8\u518C\u5230\u670D\u52A1\u5668",
-    error: "\u8FDE\u63A5\u9519\u8BEF"
-  };
-  var ROLE_LABELS = {
-    assistant_admin: "\u8F85\u52A9\u7BA1\u7406\u5458",
-    manager: "\u7BA1\u7406\u8005",
-    member: "\u666E\u901A\u6210\u5458"
-  };
-  var $ = (id) => document.getElementById(id);
-  var statusDot = $("status-dot");
-  var statusLabel = $("status-label");
-  var statusPill = $("status-pill");
-  var themeToggle = $("theme-toggle");
-  var userChip = $("user-chip");
-  var userAva = $("user-ava");
-  var userName = $("user-name");
-  var tabs = {
-    chat: $("tab-chat"),
-    tasks: $("tab-tasks"),
-    cards: $("tab-cards"),
-    settings: $("tab-settings")
-  };
-  var panes = {
-    chat: $("chat-pane"),
-    tasks: $("task-pane"),
-    cards: $("cards-pane"),
-    settings: $("settings-pane")
-  };
-  var feed = $("feed");
-  var feedEmpty = $("feed-empty");
-  var chatMsgs = $("chat-messages");
-  var chatNoKey = $("chat-no-key");
-  var chatInput = $("chat-input");
-  var chatSendBtn = $("chat-send");
-  var chatTarget = $("chat-target");
-  var chatTargetText = $("chat-target-text");
-  var chatClearBtn = $("chat-clear-btn");
-  var chatSessionSelect = $("chat-session-select");
-  var chatSessionDeleteBtn = $("chat-session-delete-btn");
-  var connectBtn = $("connect-btn");
-  var disconnectBtn = $("disconnect-btn");
-  var clearBtn = $("clear-btn");
-  var testConnBtn = $("test-conn-btn");
-  var testResult = $("test-result");
-  var saveFeedback = $("save-feedback");
-  var cfgServer = $("cfg-server");
-  var cfgAgentServer = $("cfg-agent-server");
-  var cfgAiKey = $("cfg-ai-key");
-  var cfgAiBase = $("cfg-ai-base");
-  var cfgAiModel = $("cfg-ai-model");
-  var cfgAutoConn = $("cfg-auto-connect");
-  var cfgOfflineMode = $("cfg-offline-mode");
-  var offlineModelConfig = $("offline-model-config");
-  var cfgAiProvider = $("cfg-ai-provider");
-  var cfgMouseFx = $("cfg-mouse-fx");
-  var loginGate = $("login-gate");
-  var loginModal = $("login-modal");
-  var loginModalClose = $("login-modal-close");
-  var membersModal = $("members-modal");
-  var membersModalClose = $("members-modal-close");
-  var accountCard = $("account-card");
-  var loginAccount = $("login-account");
-  var loginPassword = $("login-password");
-  var loginBtn = $("login-btn");
-  var loginFeedback = $("login-feedback");
-  var membersRefresh = $("members-refresh");
-  var membersList = $("members-list");
-  var membersEmpty = $("members-empty");
-  var taskTarget = $("task-target");
-  var taskForm = $("task-form");
-  var taskTitle = $("task-title");
-  var taskInstruction = $("task-instruction");
-  var taskPriority = $("task-priority");
-  var taskSchedEnabled = $("task-schedule-enabled");
-  var taskSchedOpts = $("task-schedule-opts");
-  var taskLoop = $("task-loop-enabled");
-  var taskRunNow = $("task-run-immediately");
-  var taskDuration = $("task-duration");
-  var taskAt = $("task-at");
-  var taskSubmit = $("task-submit");
-  var taskFeedback = $("task-feedback");
-  var taskJobsCard = $("task-jobs-card");
-  var jobsRefresh = $("jobs-refresh");
-  var jobsList = $("jobs-list");
-  var jobsEmpty = $("jobs-empty");
-  var accountStatusV = $("account-status-v");
-  var logoutBtn = $("logout-btn");
-  var memberSettingsCard = $("member-settings-card");
-  var connectionControlCard = $("connection-control-card");
-  var memberSettingsBody = $("member-settings-body");
-  var cardsImportBtn = $("cards-import-btn");
-  var cardsExportAllBtn = $("cards-export-all-btn");
-  var cardsImportBox = $("cards-import-box");
-  var cardsImportText = $("cards-import-text");
-  var cardsImportFileBtn = $("cards-import-file-btn");
-  var cardsImportFile = $("cards-import-file");
-  var cardsImportConfirm = $("cards-import-confirm");
-  var cardsImportFeedback = $("cards-import-feedback");
-  var cardsRunStatus = $("cards-run-status");
-  var cardsList = $("cards-list");
-  var cardsEmpty = $("cards-empty");
-  var cardModal = $("card-modal");
-  var cardModalMsg = $("card-modal-msg");
-  var cmMerge = $("cm-merge");
-  var cmReplace = $("cm-replace");
-  var cmSkip = $("cm-skip");
+  // src/popup/helpers.ts
   var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   function fmt(ts) {
     return new Date(ts).toTimeString().slice(0, 8);
@@ -748,19 +673,20 @@
     return m.digital_member_role === "manager" ? "manager" : "member";
   }
   function memberById(id) {
-    return members.find((m) => m.id === id);
+    return state.members.find((m) => m.id === id);
   }
   function normalizeAvatarUrl(avatar) {
     const raw = String(avatar || "").trim();
     if (!raw)
       return "";
-    const local = raw.match(/avatars([1-5])(?:[-.][^/]*)?\.png/i);
-    if (local)
-      return chrome.runtime.getURL(`avatars/avatars${local[1]}.png`);
+    const base = state.serverUrl.replace(/\/+$/, "");
+    const preset = raw.match(/avatars([1-5])(?:[-.][^/]*)?\.png/i);
+    if (preset)
+      return base ? `${base}/avatars/avatars${preset[1]}.png` : "";
     if (/^(https?:|data:|blob:|chrome-extension:)/i.test(raw))
       return raw;
     if (raw.startsWith("/"))
-      return serverUrl ? `${serverUrl.replace(/\/+$/, "")}${raw}` : raw;
+      return base ? `${base}${raw}` : raw;
     return raw;
   }
   function avatarHtml(src, fallback) {
@@ -776,7 +702,7 @@
     }
   }
   function getConnectedAiShortLabel() {
-    const name = String(memberById(selectedMemberId)?.name || auth.userName || auth.account || "AI").trim();
+    const name = String(memberById(state.selectedMemberId)?.name || state.auth.userName || state.auth.account || "AI").trim();
     const shortName = Array.from(name).slice(0, 2).join("") || "AI";
     return `${shortName}...`;
   }
@@ -795,366 +721,65 @@
       return false;
     }
   }
-  function syncSelectedAiToBackground(force = false) {
-    if (!selectedMemberId)
-      return;
-    if (!auth.token && !force)
-      return;
-    if (!memberById(selectedMemberId))
-      return;
-    port.postMessage({ type: "agent:selected-ai", aiConfigId: selectedMemberId });
-  }
-  function switchTab(tab) {
-    activeTab = tab;
-    Object.keys(panes).forEach((k) => panes[k].classList.add("hidden"));
-    Object.keys(tabs).forEach((k) => tabs[k].classList.remove("active"));
-    panes[tab].classList.remove("hidden");
-    tabs[tab].classList.add("active");
-    if (tab === "chat") {
-      chatMsgs.scrollTop = chatMsgs.scrollHeight;
-      if (useServerChat())
-        void refreshServerSessionsAndHistory();
-    }
-    if (tab === "settings" && auth.token && members.length === 0)
-      void loadMembers();
-    if (tab === "tasks" && selectedMemberId && auth.token)
-      void loadJobs();
-    if (tab === "cards")
-      void renderCards();
-  }
-  Object.keys(tabs).forEach((k) => tabs[k].addEventListener("click", () => switchTab(k)));
-  function openLoginModal() {
-    loginModal.classList.remove("hidden");
-    updateUserChip();
-    setTimeout(() => {
-      if (!auth.token)
-        loginAccount.focus();
-    }, 0);
-  }
-  function closeLoginModal() {
-    loginModal.classList.add("hidden");
-  }
-  function openMembersModal() {
-    membersModal.classList.remove("hidden");
-    if (auth.token && members.length === 0)
-      void loadMembers();
-    else
-      renderMembers();
-  }
-  function closeMembersModal() {
-    membersModal.classList.add("hidden");
-  }
-  function renderStatus() {
-    if (offlineMode) {
-      statusDot.className = "status-dot offline";
-      statusLabel.textContent = "\u79BB\u7EBF\u6A21\u5F0F";
-      return;
-    }
-    statusDot.className = `status-dot ${currentStatus}`;
-    statusLabel.textContent = currentStatus === "registered" ? getConnectedAiShortLabel() : STATUS_LABELS[currentStatus] || currentStatus;
-  }
-  function setStatus(status) {
-    currentStatus = status;
-    renderStatus();
-  }
-  function applyTheme(theme, persist = true) {
-    currentTheme = theme;
-    document.body.className = theme;
-    themeToggle.textContent = theme === "dark" ? "\u2600\uFE0F" : "\u{1F319}";
-    if (persist)
-      port.postMessage({ type: "settings:save", payload: { theme } });
-  }
-  themeToggle.addEventListener("click", () => applyTheme(currentTheme === "dark" ? "light" : "dark"));
-  var ICON = { success: "\u2713", error: "\u2717", running: "\u25B6", warn: "\u26A0", system: "\u25CF", info: "\u2139", human: "?" };
-  var IC_CLS = { success: "success", error: "error", running: "running", warn: "warn", system: "system", info: "info", human: "warn" };
-  function addEntry(e) {
-    feedEmpty.style.display = "none";
-    const ic = IC_CLS[e.status] || IC_CLS[e.type] || "info";
-    const hasData = e.data !== void 0 && e.data !== null;
-    let datHtml = "";
-    if (hasData) {
-      const ds = typeof e.data === "string" ? e.data : (() => {
-        try {
-          return JSON.stringify(e.data, null, 2);
-        } catch {
-          return String(e.data);
-        }
-      })();
-      datHtml = `<button class="toggle-btn" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('show')"><span>\u25B6</span> \u8BE6\u60C5</button><div class="data-block"><pre>${esc(ds.slice(0, 2e3))}</pre></div>`;
-    }
-    const el = document.createElement("div");
-    el.className = "entry";
-    el.innerHTML = `
-    <div class="entry-icon ${ic}">${ICON[e.status] || ICON[e.type] || "\u2139"}</div>
-    <div class="entry-body">
-      <div class="entry-top"><span class="entry-badge ${e.type}">${e.type}</span><span class="entry-time">${fmt(e.timestamp)}</span></div>
-      <div class="entry-msg">${esc(e.message)}</div>${datHtml}
-    </div>`;
-    feed.appendChild(el);
-    feed.scrollTop = feed.scrollHeight;
-  }
-  clearBtn.addEventListener("click", () => {
-    feed.querySelectorAll(".entry").forEach((e) => e.remove());
-    feedEmpty.style.display = "flex";
-  });
-  function updateUserChip() {
-    if (auth.token) {
-      userChip.classList.remove("guest");
-      userAva.innerHTML = avatarHtml(auth.avatar, (auth.userName || auth.account || "?").slice(0, 1).toUpperCase());
-      userName.textContent = auth.userName || auth.account || "\u5DF2\u767B\u5F55";
-    } else {
-      userChip.classList.add("guest");
-      userAva.textContent = "\xB7";
-      userName.textContent = "\u672A\u767B\u5F55";
-    }
-    connectionControlCard.classList.toggle("hidden", !auth.token);
-    memberSettingsCard.classList.toggle("hidden", !auth.token);
-    accountCard.classList.toggle("hidden", !auth.token);
-    loginGate.classList.toggle("hidden", !!auth.token);
-    accountStatusV.textContent = auth.token ? `\u5DF2\u767B\u5F55\uFF1A${auth.userName || auth.account}` : "\u672A\u767B\u5F55";
-    logoutBtn.style.display = auth.token ? "block" : "none";
-  }
-  async function doLogin() {
-    const configuredServerUrl = cfgServer.value.trim();
-    if (configuredServerUrl && configuredServerUrl !== serverUrl) {
-      serverUrl = configuredServerUrl;
-      await saveSettings({ serverUrl });
-      port.postMessage({ type: "settings:save", payload: { serverUrl } });
-    }
-    const account = loginAccount.value.trim();
-    const password = loginPassword.value;
-    if (!account || !password) {
-      loginFeedback.textContent = "\u8BF7\u8F93\u5165\u8D26\u53F7\u548C\u5BC6\u7801";
-      loginFeedback.style.color = "var(--error)";
-      return;
-    }
-    if (!serverUrl) {
-      loginFeedback.textContent = "\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u914D\u7F6E\u670D\u52A1\u5668 URL";
-      loginFeedback.style.color = "var(--error)";
-      return;
-    }
-    loginBtn.disabled = true;
-    loginFeedback.textContent = "\u767B\u5F55\u4E2D\u2026";
-    loginFeedback.style.color = "var(--muted)";
-    try {
-      const { token, user } = await login(serverUrl, account, password);
-      auth = { token, account, userId: user?.id ?? null, userName: user?.name || account, avatar: user?.avatar || "" };
-      await saveAuth(auth);
-      loginPassword.value = "";
-      loginFeedback.textContent = "\u767B\u5F55\u6210\u529F \u2713";
-      loginFeedback.style.color = "var(--success)";
-      updateUserChip();
-      await loadMembers();
-      syncSelectedAiToBackground(true);
-      renderSettingsViews();
-      if (useServerChat())
-        await refreshServerSessionsAndHistory();
-      closeLoginModal();
-      openMembersModal();
-    } catch (err) {
-      loginFeedback.textContent = `\u767B\u5F55\u5931\u8D25\uFF1A${err?.message || err}`;
-      loginFeedback.style.color = "var(--error)";
-    } finally {
-      loginBtn.disabled = false;
-    }
-  }
-  loginBtn.addEventListener("click", () => void doLogin());
-  loginPassword.addEventListener("keydown", (e) => {
-    if (e.key === "Enter")
-      void doLogin();
-  });
-  userChip.addEventListener("click", () => openLoginModal());
-  userChip.addEventListener("keydown", (e) => {
-    const key = e.key;
-    if (key === "Enter" || key === " ") {
-      e.preventDefault();
-      openLoginModal();
-    }
-  });
-  loginModal.addEventListener("click", (e) => {
-    if (e.target === loginModal)
-      closeLoginModal();
-  });
-  loginModalClose.addEventListener("click", () => closeLoginModal());
-  statusPill.addEventListener("click", () => openMembersModal());
-  statusPill.addEventListener("keydown", (e) => {
-    const key = e.key;
-    if (key === "Enter" || key === " ") {
-      e.preventDefault();
-      openMembersModal();
-    }
-  });
-  membersModal.addEventListener("click", (e) => {
-    if (e.target === membersModal)
-      closeMembersModal();
-  });
-  membersModalClose.addEventListener("click", () => closeMembersModal());
-  async function doLogout() {
-    await clearAuth();
-    port.postMessage({ type: "auth:logout" });
-    port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
-    auth = await getAuth();
-    closeMembersModal();
-    members = [];
-    selectedMemberId = null;
-    serverSessions = [];
-    currentServerSessionId = "";
-    lastSyncedMessageId = 0;
-    chatHistory = [];
-    renderChatHistory();
-    updateChatSessionControls();
-    updateUserChip();
-    renderMembers();
-    updateTargetBanners();
-    renderSettingsViews();
-    switchTab("settings");
-  }
-  logoutBtn.addEventListener("click", () => void doLogout());
-  async function loadMembers() {
-    if (!auth.token)
-      return;
-    membersEmpty.textContent = "\u52A0\u8F7D\u4E2D\u2026";
-    membersEmpty.style.display = "block";
-    try {
-      const rows = await listConfigs(serverUrl, auth.token);
-      members = rows.filter(hasBrowserMcpPermission);
-      if (selectedMemberId) {
-        const stillExists = rows.some((m) => m.id === selectedMemberId);
-        if (!stillExists) {
-          selectedMemberId = null;
-          port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
-          serverSessions = [];
-          currentServerSessionId = "";
-          lastSyncedMessageId = 0;
-          chatHistory = [];
-          renderChatHistory();
-          updateChatSessionControls();
-        } else {
-          if (!members.some((m) => m.id === selectedMemberId)) {
-            const sel = rows.find((m) => m.id === selectedMemberId);
-            if (sel)
-              members = [...members, sel];
-          }
-          port.postMessage({ type: "agent:selected-ai", aiConfigId: selectedMemberId });
-        }
-      }
-      renderMembers();
-      updateTargetBanners();
-      renderSettingsViews();
-      renderStatus();
-    } catch (err) {
-      if (isAuthError(err)) {
-        await doLogout();
-        loginFeedback.textContent = "\u767B\u5F55\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55";
-        loginFeedback.style.color = "var(--warn)";
-        return;
-      }
-      membersEmpty.textContent = `\u52A0\u8F7D\u5931\u8D25\uFF1A${err?.message || err}`;
-    }
-  }
-  function renderMembers() {
-    membersList.querySelectorAll(".member-card").forEach((e) => e.remove());
-    if (!members.length) {
-      membersEmpty.style.display = "block";
-      membersEmpty.textContent = auth.token ? "\u6682\u65E0\u53EF\u663E\u793A\u7684 AI \u6210\u5458" : "\u8BF7\u5148\u767B\u5F55";
-      return;
-    }
-    membersEmpty.style.display = "none";
-    for (const m of members) {
-      const role = roleOf(m);
-      const el = document.createElement("div");
-      el.className = `member-card${m.id === selectedMemberId ? " selected" : ""}`;
-      el.innerHTML = `
-      <div class="${m.enabled === false ? "dot-off" : "dot-on"}"></div>
-      <div class="member-ava">${esc((m.name || "?").slice(0, 1))}</div>
-      <div class="member-info">
-        <div class="member-name">${esc(m.name || "\u672A\u547D\u540D")}</div>
-        <div class="member-meta">${esc(m.model || "\u2014")} \xB7 MCP ${toolCount(m)} \u9879</div>
-      </div>
-      <span class="role-badge ${role}">${ROLE_LABELS[role] || role}</span>`;
-      el.addEventListener("click", () => selectMember(m.id));
-      membersList.appendChild(el);
-    }
-  }
-  async function selectMember(id) {
-    if (!auth.token) {
-      selectedMemberId = null;
-      port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
-      loginFeedback.textContent = "\u8BF7\u5148\u767B\u5F55\u540E\u518D\u9009\u62E9 AI \u6210\u5458";
-      loginFeedback.style.color = "var(--warn)";
-      switchTab("settings");
-      renderMembers();
-      updateTargetBanners();
-      renderSettingsViews();
-      return;
-    }
-    selectedMemberId = id;
-    await saveSettings({ selectedAiConfigId: id });
-    port.postMessage({ type: "agent:selected-ai", aiConfigId: id });
-    renderMembers();
-    updateTargetBanners();
-    renderSettingsViews();
-    renderStatus();
-    chatHistory = [];
-    serverSessions = [];
-    currentServerSessionId = "";
-    lastSyncedMessageId = 0;
-    chatMsgs.querySelectorAll(".chat-msg").forEach((e) => e.remove());
-    updateChatSessionControls();
-    if (useServerChat())
-      void refreshServerSessionsAndHistory();
-  }
-  membersRefresh.addEventListener("click", () => void loadMembers());
   function useServerChat() {
-    return !!(!offlineMode && auth.token && selectedMemberId);
+    return !!(!state.offlineMode && state.auth.token && state.selectedMemberId);
   }
-  function updateOfflineUi() {
-    offlineModelConfig.classList.toggle("hidden", !offlineMode);
-    renderStatus();
-    updateTargetBanners();
+  function syncSelectedAiToBackground(force = false) {
+    if (!state.selectedMemberId)
+      return;
+    if (!state.auth.token && !force)
+      return;
+    if (!memberById(state.selectedMemberId))
+      return;
+    state.port.postMessage({ type: "agent:selected-ai", aiConfigId: state.selectedMemberId });
   }
-  function updateTargetBanners() {
-    const m = memberById(selectedMemberId);
-    if (offlineMode) {
-      chatTarget.classList.remove("empty");
-      chatTargetText.innerHTML = `\u{1F6DC} \u79BB\u7EBF\u6A21\u5F0F \xB7 \u6A21\u578B <span class="tb-name">${esc(localModel || "\u672A\u914D\u7F6E")}</span>`;
-    } else if (m) {
-      chatTarget.classList.remove("empty");
-      chatTargetText.innerHTML = `\u5BF9\u8BDD\u76EE\u6807\uFF1A<span class="tb-name">${esc(m.name)}</span>\uFF08${ROLE_LABELS[roleOf(m)] || ""}\uFF09`;
-    } else {
-      chatTarget.classList.add("empty");
-      chatTargetText.textContent = "\u672A\u9009\u62E9 AI \u6210\u5458\uFF08\u5C06\u4F7F\u7528\u672C\u5730 AI Key \u76F4\u8FDE\uFF09";
+  function fetchAsDataUrl(url) {
+    return fetch(url).then((resp) => {
+      if (!resp.ok)
+        throw new Error(`HTTP ${resp.status}`);
+      return resp.blob();
+    }).then((blob) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    }));
+  }
+  async function refreshAvatarCache() {
+    const resolved = normalizeAvatarUrl(state.auth.avatar);
+    if (!resolved) {
+      state.avatarDataUrl = "";
+      await clearAvatarCache();
+      return;
     }
-    if (m && !offlineMode) {
-      taskTarget.classList.remove("empty");
-      taskTarget.innerHTML = `\u4EFB\u52A1\u76EE\u6807\uFF1A<span class="tb-name">${esc(m.name)}</span>`;
-      taskForm.style.display = "block";
-      taskJobsCard.style.display = "block";
-    } else {
-      taskTarget.classList.add("empty");
-      taskTarget.textContent = offlineMode ? "\u79BB\u7EBF\u6A21\u5F0F\u4E0B\u4E0D\u53EF\u5B89\u6392\u4EFB\u52A1\uFF08\u4EFB\u52A1\u9700\u767B\u5F55\u670D\u52A1\u5668\uFF09" : auth.token ? "\u8BF7\u5148\u5728\u201C\u6210\u5458\u201D\u4E2D\u9009\u62E9\u4E00\u4E2A AI \u6210\u5458" : "\u8BF7\u5148\u767B\u5F55\u5E76\u9009\u62E9 AI \u6210\u5458";
-      taskForm.style.display = "none";
-      taskJobsCard.style.display = "none";
+    if (resolved.startsWith("data:")) {
+      state.avatarDataUrl = resolved;
+      await setAvatarCache({ src: resolved, dataUrl: resolved });
+      return;
     }
-    refreshChatAvailability();
-  }
-  function refreshChatAvailability() {
-    const enabled = useServerChat() || hasAiKey;
-    const hasMessages = chatMsgs.querySelectorAll(".chat-msg").length > 0;
-    chatNoKey.style.display = enabled || hasMessages ? "none" : "flex";
-    chatInput.disabled = !enabled || chatBusy;
-    chatSendBtn.disabled = !enabled || chatBusy;
-    if (useServerChat()) {
-      chatClearBtn.disabled = chatBusy;
-    } else {
-      chatClearBtn.disabled = !hasMessages && !chatHistory.length && !chatBusy;
+    const cached = await getAvatarCache();
+    if (cached && cached.src === resolved) {
+      state.avatarDataUrl = cached.dataUrl;
+      return;
     }
-    updateChatSessionControls();
+    try {
+      const dataUrl = await fetchAsDataUrl(resolved);
+      state.avatarDataUrl = dataUrl;
+      await setAvatarCache({ src: resolved, dataUrl });
+    } catch (err) {
+      console.warn("avatar cache fetch failed, falling back to live URL", err);
+      state.avatarDataUrl = "";
+    }
   }
+  function currentAvatarHtml(fallback) {
+    return avatarHtml(state.avatarDataUrl || state.auth.avatar, fallback);
+  }
+
+  // src/popup/chat.ts
   function syncChatHistory() {
     if (useServerChat())
       return Promise.resolve();
-    return setChatHistory(chatHistory);
+    return setChatHistory(state.chatHistory);
   }
   function clearChatMessages() {
     chatMsgs.querySelectorAll(".chat-msg").forEach((e) => e.remove());
@@ -1183,7 +808,7 @@
     if (historyIndex !== void 0)
       el.dataset.historyIndex = String(historyIndex);
     const supportsRecall = role === "user";
-    const avatar = role === "ai" ? "\u2728" : avatarHtml(auth.avatar, "\u{1F464}");
+    const avatar = role === "ai" ? "\u2728" : currentAvatarHtml("\u{1F464}");
     el.innerHTML = `<div class="chat-avatar">${avatar}</div><div class="chat-bubble">${rowActionsHtml(role, supportsRecall)}${renderChatContent(content)}</div>`;
     chatMsgs.appendChild(el);
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
@@ -1191,11 +816,11 @@
   }
   function renderChatHistory() {
     clearChatMessages();
-    if (!chatHistory.length) {
+    if (!state.chatHistory.length) {
       refreshChatAvailability();
       return;
     }
-    chatHistory.forEach((msg, index) => {
+    state.chatHistory.forEach((msg, index) => {
       const role = msg.role === "assistant" ? "ai" : "user";
       const el = appendChatMsg(role, chatContentToText(msg.content), index);
       if (msg.serverId !== void 0)
@@ -1219,17 +844,17 @@
     chatMsgs.scrollTop = chatMsgs.scrollHeight;
   }
   function setChatBusy(busy) {
-    chatBusy = busy;
+    state.chatBusy = busy;
     refreshChatAvailability();
   }
   async function restoreChatHistory() {
     if (useServerChat())
       return;
-    chatHistory = await getChatHistory();
+    state.chatHistory = await getChatHistory();
     renderChatHistory();
   }
   function defaultSessionIdForMember() {
-    return `ext-${selectedMemberId}`;
+    return `ext-${state.selectedMemberId}`;
   }
   function isExtensionSession(name) {
     return /^浏览器插件(?:会话| 对话)/.test(String(name || "").trim());
@@ -1250,14 +875,14 @@
     }
     chatClearBtn.textContent = "\u65B0\u5EFA\u5BF9\u8BDD";
     chatClearBtn.title = "\u5728\u670D\u52A1\u5668\u4E0A\u65B0\u5EFA\u4E00\u6BB5\u5BF9\u8BDD\uFF08\u4FDD\u7559\u5F53\u524D\u5386\u53F2\uFF09";
-    if (serverSessions.length === 0) {
+    if (state.serverSessions.length === 0) {
       chatSessionSelect.classList.add("hidden");
       chatSessionDeleteBtn.style.display = "none";
       return;
     }
-    chatSessionSelect.innerHTML = serverSessions.map((s) => `<option value="${esc(s.id)}"${s.id === currentServerSessionId ? " selected" : ""}>${esc(s.name)}</option>`).join("");
+    chatSessionSelect.innerHTML = state.serverSessions.map((s) => `<option value="${esc(s.id)}"${s.id === state.currentServerSessionId ? " selected" : ""}>${esc(s.name)}</option>`).join("");
     chatSessionSelect.classList.remove("hidden");
-    chatSessionDeleteBtn.style.display = serverSessions.length > 1 ? "block" : "none";
+    chatSessionDeleteBtn.style.display = state.serverSessions.length > 1 ? "block" : "none";
   }
   function chatMessageFromServer(row) {
     const role = String(row?.role || "");
@@ -1277,13 +902,13 @@
   async function loadServerChatHistory(sessionId) {
     if (!useServerChat() || !sessionId)
       return false;
-    if (chatHistoryLoading)
+    if (state.chatHistoryLoading)
       return false;
-    chatHistoryLoading = true;
+    state.chatHistoryLoading = true;
     try {
-      const rows = await fetchChatHistory(serverUrl, auth.token, sessionId, selectedMemberId);
-      chatHistory = rows.map(chatMessageFromServer).filter((m) => m !== null);
-      lastSyncedMessageId = chatHistory.reduce(
+      const rows = await fetchChatHistory(state.serverUrl, state.auth.token, sessionId, state.selectedMemberId);
+      state.chatHistory = rows.map(chatMessageFromServer).filter((m) => m !== null);
+      state.lastSyncedMessageId = state.chatHistory.reduce(
         (max, m) => m.serverId && m.serverId > max ? m.serverId : max,
         0
       );
@@ -1297,52 +922,52 @@
       console.warn("loadServerChatHistory failed", err);
       return false;
     } finally {
-      chatHistoryLoading = false;
+      state.chatHistoryLoading = false;
     }
   }
   async function refreshServerSessionsAndHistory(targetSessionId) {
     if (!useServerChat())
       return;
     try {
-      serverSessions = await listChatSessions(serverUrl, auth.token, selectedMemberId);
+      state.serverSessions = await listChatSessions(state.serverUrl, state.auth.token, state.selectedMemberId);
     } catch (err) {
       if (isAuthError(err)) {
         await doLogout();
         return;
       }
       console.warn("listChatSessions failed", err);
-      serverSessions = [];
+      state.serverSessions = [];
     }
-    if (!serverSessions.length) {
+    if (!state.serverSessions.length) {
       try {
-        const created = await createChatSession(serverUrl, auth.token, "\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD", selectedMemberId);
-        serverSessions = [created];
+        const created = await createChatSession(state.serverUrl, state.auth.token, "\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD", state.selectedMemberId);
+        state.serverSessions = [created];
       } catch (err) {
         console.warn("createChatSession failed", err);
       }
     }
-    const preferred = targetSessionId && serverSessions.some((s) => s.id === targetSessionId) ? targetSessionId : currentServerSessionId && serverSessions.some((s) => s.id === currentServerSessionId) ? currentServerSessionId : pickPreferredSessionId(serverSessions);
-    currentServerSessionId = preferred;
+    const preferred = targetSessionId && state.serverSessions.some((s) => s.id === targetSessionId) ? targetSessionId : state.currentServerSessionId && state.serverSessions.some((s) => s.id === state.currentServerSessionId) ? state.currentServerSessionId : pickPreferredSessionId(state.serverSessions);
+    state.currentServerSessionId = preferred;
     updateChatSessionControls();
     if (preferred)
       await loadServerChatHistory(preferred);
     else {
-      chatHistory = [];
+      state.chatHistory = [];
       renderChatHistory();
     }
   }
   async function syncIncrementalServerHistory() {
-    if (!useServerChat() || !currentServerSessionId)
+    if (!useServerChat() || !state.currentServerSessionId)
       return;
     try {
-      const rows = await fetchChatHistory(serverUrl, auth.token, currentServerSessionId, selectedMemberId);
+      const rows = await fetchChatHistory(state.serverUrl, state.auth.token, state.currentServerSessionId, state.selectedMemberId);
       const incoming = [];
-      let maxId = lastSyncedMessageId;
+      let maxId = state.lastSyncedMessageId;
       for (const row of rows) {
         const msg = chatMessageFromServer(row);
         if (!msg)
           continue;
-        if (msg.serverId !== void 0 && msg.serverId <= lastSyncedMessageId)
+        if (msg.serverId !== void 0 && msg.serverId <= state.lastSyncedMessageId)
           continue;
         incoming.push(msg);
         if (msg.serverId !== void 0 && msg.serverId > maxId)
@@ -1353,26 +978,26 @@
       for (const msg of incoming) {
         if (msg.role !== "assistant")
           continue;
-        const idx = chatHistory.findIndex((item) => item.serverId === void 0 && item.role === "assistant" && chatContentToText(item.content).trim() === chatContentToText(msg.content).trim());
+        const idx = state.chatHistory.findIndex((item) => item.serverId === void 0 && item.role === "assistant" && chatContentToText(item.content).trim() === chatContentToText(msg.content).trim());
         if (idx >= 0)
-          chatHistory.splice(idx, 1);
+          state.chatHistory.splice(idx, 1);
       }
-      chatHistory.push(...incoming);
-      lastSyncedMessageId = maxId;
+      state.chatHistory.push(...incoming);
+      state.lastSyncedMessageId = maxId;
       renderChatHistory();
     } catch (err) {
       console.warn("syncIncrementalServerHistory failed", err);
     }
   }
   async function clearConversation() {
-    if (chatBusy)
+    if (state.chatBusy)
       stopPendingChatUi();
     if (useServerChat()) {
       try {
         const name = `\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD ${(/* @__PURE__ */ new Date()).toLocaleString("zh-CN", { hour12: false })}`;
-        const created = await createChatSession(serverUrl, auth.token, name, selectedMemberId);
-        chatHistory = [];
-        lastSyncedMessageId = 0;
+        const created = await createChatSession(state.serverUrl, state.auth.token, name, state.selectedMemberId);
+        state.chatHistory = [];
+        state.lastSyncedMessageId = 0;
         renderChatHistory();
         await refreshServerSessionsAndHistory(created.id);
       } catch (err) {
@@ -1381,23 +1006,23 @@
       }
       return;
     }
-    chatHistory = [];
+    state.chatHistory = [];
     await clearChatHistory();
     renderChatHistory();
   }
   async function deleteCurrentServerSession() {
-    if (!useServerChat() || !currentServerSessionId)
+    if (!useServerChat() || !state.currentServerSessionId)
       return;
-    if (serverSessions.length <= 1)
+    if (state.serverSessions.length <= 1)
       return;
-    const target = serverSessions.find((s) => s.id === currentServerSessionId);
+    const target = state.serverSessions.find((s) => s.id === state.currentServerSessionId);
     if (!target)
       return;
     if (!confirm(`\u786E\u5B9A\u5220\u9664\u4F1A\u8BDD\u300C${target.name}\u300D\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\u3002`))
       return;
     try {
-      await deleteChatSession(serverUrl, auth.token, currentServerSessionId, selectedMemberId);
-      currentServerSessionId = "";
+      await deleteChatSession(state.serverUrl, state.auth.token, state.currentServerSessionId, state.selectedMemberId);
+      state.currentServerSessionId = "";
       await refreshServerSessionsAndHistory();
     } catch (err) {
       alert(`\u5220\u9664\u4F1A\u8BDD\u5931\u8D25\uFF1A${err?.message || err}`);
@@ -1418,64 +1043,64 @@
     ta.remove();
   }
   function stopPendingChatUi() {
-    activeChatRequestId = null;
+    state.activeChatRequestId = null;
     const thinking = window._chatThinking;
     thinking?.remove();
     window._chatThinking = null;
     const liveThinking = document.getElementById("thinking");
     liveThinking?.remove();
-    if (activeRunId && auth.token) {
-      void stopChatRun(serverUrl, auth.token, activeRunId).catch(() => {
+    if (state.activeRunId && state.auth.token) {
+      void stopChatRun(state.serverUrl, state.auth.token, state.activeRunId).catch(() => {
       });
     }
-    activeRunId = null;
+    state.activeRunId = null;
     setChatBusy(false);
   }
   async function deleteChatMessage(index) {
-    const msg = chatHistory[index];
+    const msg = state.chatHistory[index];
     if (!msg)
       return;
-    const lastUserIndex = chatHistory.map((m) => m.role).lastIndexOf("user");
-    if (chatBusy && index === lastUserIndex)
+    const lastUserIndex = state.chatHistory.map((m) => m.role).lastIndexOf("user");
+    if (state.chatBusy && index === lastUserIndex)
       stopPendingChatUi();
     if (useServerChat() && msg.serverId !== void 0) {
       if (!confirm("\u786E\u5B9A\u8981\u5220\u9664\u8FD9\u6761\u6D88\u606F\u5417\uFF1F"))
         return;
       try {
-        await deleteServerChatMessage(serverUrl, auth.token, msg.serverId);
+        await deleteServerChatMessage(state.serverUrl, state.auth.token, msg.serverId);
       } catch (err) {
         alert(`\u5220\u9664\u5931\u8D25\uFF1A${err?.message || err}`);
         return;
       }
     }
-    chatHistory.splice(index, 1);
+    state.chatHistory.splice(index, 1);
     await syncChatHistory();
     renderChatHistory();
   }
   async function revokeChatMessage(index) {
-    const msg = chatHistory[index];
+    const msg = state.chatHistory[index];
     if (!msg || msg.role !== "user")
       return;
     const text = chatContentToText(msg.content);
-    if (chatBusy)
+    if (state.chatBusy)
       stopPendingChatUi();
     if (useServerChat() && msg.serverId !== void 0) {
       if (!confirm("\u786E\u5B9A\u64A4\u56DE\u6B64\u6D88\u606F\uFF1F\u5C06\u5220\u9664\u5B83\u4E4B\u540E\u7684\u5BF9\u8BDD\u3002"))
         return;
       try {
-        const result = await recallServerChatMessage(serverUrl, auth.token, msg.serverId);
+        const result = await recallServerChatMessage(state.serverUrl, state.auth.token, msg.serverId);
         chatInput.value = result?.recall_content || text;
       } catch (err) {
         alert(`\u64A4\u56DE\u5931\u8D25\uFF1A${err?.message || err}`);
         return;
       }
-      chatHistory.splice(index);
-      lastSyncedMessageId = chatHistory.reduce(
+      state.chatHistory.splice(index);
+      state.lastSyncedMessageId = state.chatHistory.reduce(
         (max, m) => m.serverId && m.serverId > max ? m.serverId : max,
         0
       );
     } else {
-      chatHistory.splice(index);
+      state.chatHistory.splice(index);
       chatInput.value = text;
     }
     await syncChatHistory();
@@ -1485,49 +1110,14 @@
     refreshChatAvailability();
     chatInput.focus();
   }
-  chatMsgs.addEventListener("click", (e) => {
-    const btn = e.target.closest(".chat-action-btn");
-    if (!btn)
-      return;
-    e.preventDefault();
-    e.stopPropagation();
-    const msgEl = btn.closest(".chat-msg");
-    const index = Number(msgEl?.dataset.historyIndex);
-    if (!Number.isInteger(index) || !chatHistory[index])
-      return;
-    const action = btn.dataset.chatAction;
-    if (action === "copy") {
-      const originalText = btn.textContent;
-      void writeClipboardText(chatContentToText(chatHistory[index].content)).then(() => {
-        btn.textContent = "\u5DF2\u590D\u5236";
-        setTimeout(() => {
-          btn.textContent = originalText || "\u590D\u5236";
-        }, 900);
-      });
-    } else if (action === "revoke") {
-      void revokeChatMessage(index);
-    } else if (action === "delete") {
-      void deleteChatMessage(index);
-    }
-  });
-  chatClearBtn.addEventListener("click", () => void clearConversation());
-  chatSessionDeleteBtn.addEventListener("click", () => void deleteCurrentServerSession());
-  chatSessionSelect.addEventListener("change", () => {
-    const next = chatSessionSelect.value;
-    if (!next || next === currentServerSessionId)
-      return;
-    currentServerSessionId = next;
-    lastSyncedMessageId = 0;
-    void loadServerChatHistory(next);
-  });
   async function runServerChat(text, thinking) {
-    if (!currentServerSessionId) {
+    if (!state.currentServerSessionId) {
       await refreshServerSessionsAndHistory();
     }
-    const sessionId = currentServerSessionId || defaultSessionIdForMember();
-    const sessionName = serverSessions.find((s) => s.id === sessionId)?.name || "\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD";
-    const { run_id } = await startChatRun(serverUrl, auth.token, selectedMemberId, sessionId, text, sessionName);
-    activeRunId = run_id;
+    const sessionId = state.currentServerSessionId || defaultSessionIdForMember();
+    const sessionName = state.serverSessions.find((s) => s.id === sessionId)?.name || "\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD";
+    const { run_id } = await startChatRun(state.serverUrl, state.auth.token, state.selectedMemberId, sessionId, text, sessionName);
+    state.activeRunId = run_id;
     let after = 0;
     let lastText = "";
     let lastReasoning = "";
@@ -1538,7 +1128,7 @@
       await sleep(800);
       let st;
       try {
-        st = await getChatRun(serverUrl, auth.token, run_id, after);
+        st = await getChatRun(state.serverUrl, state.auth.token, run_id, after);
       } catch {
         continue;
       }
@@ -1576,7 +1166,7 @@
         }));
       }
       if (["completed", "error", "stopped"].includes(st.status)) {
-        activeRunId = null;
+        state.activeRunId = null;
         if (st.status === "error")
           return { text: `\u26A0 \u9519\u8BEF: ${st.error_message || "\u6267\u884C\u5931\u8D25"}`, reasoning: lastReasoning, events: liveEvents, ok: false };
         if (st.status === "stopped")
@@ -1584,72 +1174,307 @@
         return { text: lastText || "\u5B8C\u6210", reasoning: lastReasoning, events: liveEvents, ok: true };
       }
     }
-    activeRunId = null;
+    state.activeRunId = null;
     return { text: lastText || "\uFF08\u8D85\u65F6\uFF0C\u672A\u6536\u5230\u5B8C\u6574\u56DE\u590D\uFF09", reasoning: lastReasoning, events: liveEvents, ok: false };
   }
   async function sendChat() {
-    const enabled = useServerChat() || hasAiKey;
-    if (chatBusy || !enabled)
+    const enabled = useServerChat() || state.hasAiKey;
+    if (state.chatBusy || !enabled)
       return;
     const text = chatInput.value.trim();
     if (!text)
       return;
     chatInput.value = "";
     chatInput.style.height = "auto";
-    chatHistory.push({ role: "user", content: text });
-    appendChatMsg("user", text, chatHistory.length - 1);
+    state.chatHistory.push({ role: "user", content: text });
+    appendChatMsg("user", text, state.chatHistory.length - 1);
     void syncChatHistory();
     const thinking = showThinking();
     const requestId = makeChatRequestId();
-    activeChatRequestId = requestId;
+    state.activeChatRequestId = requestId;
     setChatBusy(true);
     if (useServerChat()) {
       try {
         const res = await runServerChat(text, thinking);
-        if (activeChatRequestId !== requestId)
+        if (state.activeChatRequestId !== requestId)
           return;
         setBubble(thinking, renderChatFrame(res.text, { reasoning: res.reasoning, events: res.events }));
         thinking.removeAttribute("id");
-        const lastIdx = chatHistory.length - 1;
-        if (lastIdx >= 0 && chatHistory[lastIdx].serverId === void 0 && chatHistory[lastIdx].role === "user") {
-          chatHistory.splice(lastIdx, 1);
+        const lastIdx = state.chatHistory.length - 1;
+        if (lastIdx >= 0 && state.chatHistory[lastIdx].serverId === void 0 && state.chatHistory[lastIdx].role === "user") {
+          state.chatHistory.splice(lastIdx, 1);
         }
         await syncIncrementalServerHistory();
       } catch (err) {
-        if (activeChatRequestId !== requestId)
+        if (state.activeChatRequestId !== requestId)
           return;
         const errorText = `\u26A0 \u9519\u8BEF: ${err?.message || err}`;
         setBubble(thinking, renderChatContent(errorText));
         thinking.removeAttribute("id");
         await syncIncrementalServerHistory();
       } finally {
-        if (activeChatRequestId === requestId) {
-          activeChatRequestId = null;
+        if (state.activeChatRequestId === requestId) {
+          state.activeChatRequestId = null;
           setChatBusy(false);
         }
       }
     } else {
       ;
       window._chatThinking = thinking;
-      port.postMessage({ type: "chat:send", messages: chatHistory, requestId });
+      state.port.postMessage({ type: "chat:send", messages: state.chatHistory, requestId });
     }
   }
-  chatSendBtn.addEventListener("click", () => void sendChat());
-  chatInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+  function wireChat() {
+    chatMsgs.addEventListener("click", (e) => {
+      const btn = e.target.closest(".chat-action-btn");
+      if (!btn)
+        return;
       e.preventDefault();
-      void sendChat();
+      e.stopPropagation();
+      const msgEl = btn.closest(".chat-msg");
+      const index = Number(msgEl?.dataset.historyIndex);
+      if (!Number.isInteger(index) || !state.chatHistory[index])
+        return;
+      const action = btn.dataset.chatAction;
+      if (action === "copy") {
+        const originalText = btn.textContent;
+        void writeClipboardText(chatContentToText(state.chatHistory[index].content)).then(() => {
+          btn.textContent = "\u5DF2\u590D\u5236";
+          setTimeout(() => {
+            btn.textContent = originalText || "\u590D\u5236";
+          }, 900);
+        });
+      } else if (action === "revoke") {
+        void revokeChatMessage(index);
+      } else if (action === "delete") {
+        void deleteChatMessage(index);
+      }
+    });
+    chatClearBtn.addEventListener("click", () => void clearConversation());
+    chatSessionDeleteBtn.addEventListener("click", () => void deleteCurrentServerSession());
+    chatSessionSelect.addEventListener("change", () => {
+      const next = chatSessionSelect.value;
+      if (!next || next === state.currentServerSessionId)
+        return;
+      state.currentServerSessionId = next;
+      state.lastSyncedMessageId = 0;
+      void loadServerChatHistory(next);
+    });
+    chatSendBtn.addEventListener("click", () => void sendChat());
+    chatInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        void sendChat();
+      }
+    });
+    chatInput.addEventListener("input", () => {
+      chatInput.style.height = "auto";
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
+    });
+  }
+
+  // src/popup/members.ts
+  async function doLogin() {
+    const configuredServerUrl = cfgServer.value.trim();
+    if (configuredServerUrl && configuredServerUrl !== state.serverUrl) {
+      state.serverUrl = configuredServerUrl;
+      await saveSettings({ serverUrl: state.serverUrl });
+      state.port.postMessage({ type: "settings:save", payload: { serverUrl: state.serverUrl } });
     }
-  });
-  chatInput.addEventListener("input", () => {
-    chatInput.style.height = "auto";
-    chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
-  });
-  taskSchedEnabled.addEventListener("change", () => {
-    taskSchedOpts.style.display = taskSchedEnabled.checked ? "block" : "none";
-  });
+    const account = loginAccount.value.trim();
+    const password = loginPassword.value;
+    if (!account || !password) {
+      loginFeedback.textContent = "\u8BF7\u8F93\u5165\u8D26\u53F7\u548C\u5BC6\u7801";
+      loginFeedback.style.color = "var(--error)";
+      return;
+    }
+    if (!state.serverUrl) {
+      loginFeedback.textContent = "\u8BF7\u5148\u5728\u8BBE\u7F6E\u4E2D\u914D\u7F6E\u670D\u52A1\u5668 URL";
+      loginFeedback.style.color = "var(--error)";
+      return;
+    }
+    loginBtn.disabled = true;
+    loginFeedback.textContent = "\u767B\u5F55\u4E2D\u2026";
+    loginFeedback.style.color = "var(--muted)";
+    try {
+      const { token, user } = await login(state.serverUrl, account, password);
+      state.auth = { token, account, userId: user?.id ?? null, userName: user?.name || account, avatar: user?.avatar || "" };
+      await saveAuth(state.auth);
+      loginPassword.value = "";
+      loginFeedback.textContent = "\u767B\u5F55\u6210\u529F \u2713";
+      loginFeedback.style.color = "var(--success)";
+      updateUserChip();
+      await refreshAvatarCache();
+      updateUserChip();
+      await loadMembers();
+      syncSelectedAiToBackground(true);
+      renderSettingsViews();
+      if (useServerChat())
+        await refreshServerSessionsAndHistory();
+      closeLoginModal();
+      openMembersModal();
+    } catch (err) {
+      loginFeedback.textContent = `\u767B\u5F55\u5931\u8D25\uFF1A${err?.message || err}`;
+      loginFeedback.style.color = "var(--error)";
+    } finally {
+      loginBtn.disabled = false;
+    }
+  }
+  async function doLogout() {
+    await clearAuth();
+    state.port.postMessage({ type: "auth:logout" });
+    state.port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
+    state.auth = await getAuth();
+    state.avatarDataUrl = "";
+    await clearAvatarCache();
+    closeMembersModal();
+    state.members = [];
+    state.selectedMemberId = null;
+    state.serverSessions = [];
+    state.currentServerSessionId = "";
+    state.lastSyncedMessageId = 0;
+    state.chatHistory = [];
+    renderChatHistory();
+    updateChatSessionControls();
+    updateUserChip();
+    renderMembers();
+    updateTargetBanners();
+    renderSettingsViews();
+    switchTab("settings");
+  }
+  async function loadMembers() {
+    if (!state.auth.token)
+      return;
+    membersEmpty.textContent = "\u52A0\u8F7D\u4E2D\u2026";
+    membersEmpty.style.display = "block";
+    try {
+      const rows = await listConfigs(state.serverUrl, state.auth.token);
+      state.members = rows.filter(hasBrowserMcpPermission);
+      if (state.selectedMemberId) {
+        const stillExists = rows.some((m) => m.id === state.selectedMemberId);
+        if (!stillExists) {
+          state.selectedMemberId = null;
+          state.port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
+          state.serverSessions = [];
+          state.currentServerSessionId = "";
+          state.lastSyncedMessageId = 0;
+          state.chatHistory = [];
+          renderChatHistory();
+          updateChatSessionControls();
+        } else {
+          if (!state.members.some((m) => m.id === state.selectedMemberId)) {
+            const sel = rows.find((m) => m.id === state.selectedMemberId);
+            if (sel)
+              state.members = [...state.members, sel];
+          }
+          state.port.postMessage({ type: "agent:selected-ai", aiConfigId: state.selectedMemberId });
+        }
+      }
+      renderMembers();
+      updateTargetBanners();
+      renderSettingsViews();
+      renderStatus();
+    } catch (err) {
+      if (isAuthError(err)) {
+        await doLogout();
+        loginFeedback.textContent = "\u767B\u5F55\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55";
+        loginFeedback.style.color = "var(--warn)";
+        return;
+      }
+      membersEmpty.textContent = `\u52A0\u8F7D\u5931\u8D25\uFF1A${err?.message || err}`;
+    }
+  }
+  function renderMembers() {
+    membersList.querySelectorAll(".member-card").forEach((e) => e.remove());
+    if (!state.members.length) {
+      membersEmpty.style.display = "block";
+      membersEmpty.textContent = state.auth.token ? "\u6682\u65E0\u53EF\u663E\u793A\u7684 AI \u6210\u5458" : "\u8BF7\u5148\u767B\u5F55";
+      return;
+    }
+    membersEmpty.style.display = "none";
+    for (const m of state.members) {
+      const role = roleOf(m);
+      const el = document.createElement("div");
+      el.className = `member-card${m.id === state.selectedMemberId ? " selected" : ""}`;
+      el.innerHTML = `
+      <div class="${m.enabled === false ? "dot-off" : "dot-on"}"></div>
+      <div class="member-ava">${esc((m.name || "?").slice(0, 1))}</div>
+      <div class="member-info">
+        <div class="member-name">${esc(m.name || "\u672A\u547D\u540D")}</div>
+        <div class="member-meta">${esc(m.model || "\u2014")} \xB7 MCP ${toolCount(m)} \u9879</div>
+      </div>
+      <span class="role-badge ${role}">${ROLE_LABELS[role] || role}</span>`;
+      el.addEventListener("click", () => selectMember(m.id));
+      membersList.appendChild(el);
+    }
+  }
+  async function selectMember(id) {
+    if (!state.auth.token) {
+      state.selectedMemberId = null;
+      state.port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
+      loginFeedback.textContent = "\u8BF7\u5148\u767B\u5F55\u540E\u518D\u9009\u62E9 AI \u6210\u5458";
+      loginFeedback.style.color = "var(--warn)";
+      switchTab("settings");
+      renderMembers();
+      updateTargetBanners();
+      renderSettingsViews();
+      return;
+    }
+    state.selectedMemberId = id;
+    await saveSettings({ selectedAiConfigId: id });
+    state.port.postMessage({ type: "agent:selected-ai", aiConfigId: id });
+    renderMembers();
+    updateTargetBanners();
+    renderSettingsViews();
+    renderStatus();
+    state.chatHistory = [];
+    state.serverSessions = [];
+    state.currentServerSessionId = "";
+    state.lastSyncedMessageId = 0;
+    chatMsgs.querySelectorAll(".chat-msg").forEach((e) => e.remove());
+    updateChatSessionControls();
+    if (useServerChat())
+      void refreshServerSessionsAndHistory();
+  }
+  function wireMembers() {
+    loginBtn.addEventListener("click", () => void doLogin());
+    loginPassword.addEventListener("keydown", (e) => {
+      if (e.key === "Enter")
+        void doLogin();
+    });
+    userChip.addEventListener("click", () => openLoginModal());
+    userChip.addEventListener("keydown", (e) => {
+      const key = e.key;
+      if (key === "Enter" || key === " ") {
+        e.preventDefault();
+        openLoginModal();
+      }
+    });
+    loginModal.addEventListener("click", (e) => {
+      if (e.target === loginModal)
+        closeLoginModal();
+    });
+    loginModalClose.addEventListener("click", () => closeLoginModal());
+    statusPill.addEventListener("click", () => openMembersModal());
+    statusPill.addEventListener("keydown", (e) => {
+      const key = e.key;
+      if (key === "Enter" || key === " ") {
+        e.preventDefault();
+        openMembersModal();
+      }
+    });
+    membersModal.addEventListener("click", (e) => {
+      if (e.target === membersModal)
+        closeMembersModal();
+    });
+    membersModalClose.addEventListener("click", () => closeMembersModal());
+    membersRefresh.addEventListener("click", () => void loadMembers());
+    logoutBtn.addEventListener("click", () => void doLogout());
+  }
+
+  // src/popup/tasks.ts
   async function submitTask() {
-    if (!auth.token || !selectedMemberId)
+    if (!state.auth.token || !state.selectedMemberId)
       return;
     const title = taskTitle.value.trim();
     const instruction = taskInstruction.value.trim();
@@ -1669,7 +1494,7 @@
         scheduleAt = Math.floor(t / 1e3);
     }
     try {
-      const res = await triggerTask(serverUrl, auth.token, selectedMemberId, {
+      const res = await triggerTask(state.serverUrl, state.auth.token, state.selectedMemberId, {
         title,
         instruction,
         priority: Math.max(1, Math.min(10, Number(taskPriority.value) || 5)),
@@ -1696,14 +1521,13 @@
       taskSubmit.disabled = false;
     }
   }
-  taskSubmit.addEventListener("click", () => void submitTask());
   async function loadJobs() {
-    if (!auth.token || !selectedMemberId)
+    if (!state.auth.token || !state.selectedMemberId)
       return;
     jobsEmpty.textContent = "\u52A0\u8F7D\u4E2D\u2026";
     jobsEmpty.style.display = "block";
     try {
-      const jobs = await listTaskJobs(serverUrl, auth.token, selectedMemberId);
+      const jobs = await listTaskJobs(state.serverUrl, state.auth.token, state.selectedMemberId);
       renderJobs(jobs);
     } catch (err) {
       jobsEmpty.textContent = `\u52A0\u8F7D\u5931\u8D25\uFF1A${err?.message || err}`;
@@ -1742,43 +1566,126 @@
     }
   }
   async function doJobAction(jobId, action) {
-    if (!auth.token || !selectedMemberId)
+    if (!state.auth.token || !state.selectedMemberId)
       return;
     try {
-      await taskJobAction(serverUrl, auth.token, selectedMemberId, jobId, action);
+      await taskJobAction(state.serverUrl, state.auth.token, state.selectedMemberId, jobId, action);
       await loadJobs();
     } catch (err) {
       taskFeedback.textContent = `\u64CD\u4F5C\u5931\u8D25\uFF1A${err?.message || err}`;
       taskFeedback.style.color = "var(--error)";
     }
   }
-  jobsRefresh.addEventListener("click", () => void loadJobs());
-  function renderSettingsViews() {
-    const m = memberById(selectedMemberId);
-    if (m) {
-      memberSettingsCard.style.display = "block";
-      let tools = [];
-      try {
-        const a = JSON.parse(m.mcp_tools || "[]");
-        if (Array.isArray(a))
-          tools = a;
-      } catch {
-      }
-      const chips = tools.length ? `<div class="tool-chips">${tools.map((t) => `<span class="tool-chip">${esc(t)}</span>`).join("")}</div>` : `<div class="empty-note">\u672A\u5206\u914D MCP \u5DE5\u5177</div>`;
-      memberSettingsBody.innerHTML = `
-      <div class="kv"><span class="k">\u540D\u79F0</span><span class="v">${esc(m.name || "")}</span></div>
-      <div class="kv"><span class="k">\u89D2\u8272</span><span class="v">${ROLE_LABELS[roleOf(m)] || roleOf(m)}</span></div>
-      <div class="kv"><span class="k">\u6A21\u578B</span><span class="v">${esc(m.model || "\u2014")}</span></div>
-      <div class="kv"><span class="k">\u5E73\u53F0</span><span class="v">${esc(m.platform || "\u2014")}</span></div>
-      <div class="kv"><span class="k">\u5DE5\u4F5C\u76EE\u5F55</span><span class="v">${esc(m.workspace_root || "\uFF08\u4EC5\u5BF9\u8BDD\uFF09")}</span></div>
-      <div class="kv"><span class="k">MCP \u5F00\u5173</span><span class="v">${m.mcp_enabled === false ? "\u5173\u95ED" : "\u5F00\u542F"}</span></div>
-      <div class="divider"></div>
-      <div class="kv"><span class="k">MCP \u5DE5\u5177\uFF08${tools.length}\uFF09</span><span class="v"></span></div>
-      ${chips}`;
-    } else {
-      memberSettingsCard.style.display = "none";
-    }
+  function wireTasks() {
+    taskSchedEnabled.addEventListener("change", () => {
+      taskSchedOpts.style.display = taskSchedEnabled.checked ? "block" : "none";
+    });
+    taskSubmit.addEventListener("click", () => void submitTask());
+    jobsRefresh.addEventListener("click", () => void loadJobs());
   }
+
+  // src/lib/cards.ts
+  var newId = () => "card_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+  function deriveNote(tool, args) {
+    const labels = {
+      browser_navigate: "\u8DF3\u8F6C\u9875\u9762",
+      browser_wait: "\u7B49\u5F85",
+      browser_click: "\u70B9\u51FB",
+      browser_double_click: "\u53CC\u51FB",
+      browser_right_click: "\u53F3\u952E",
+      browser_type: "\u8F93\u5165\u5185\u5BB9",
+      browser_scroll: "\u6EDA\u52A8",
+      browser_select: "\u9009\u62E9",
+      browser_press_key: "\u6309\u952E",
+      browser_drag: "\u62D6\u62FD",
+      browser_hover: "\u60AC\u505C",
+      browser_fill_form: "\u586B\u5199\u8868\u5355",
+      browser_search: "\u641C\u7D22",
+      browser_screenshot: "\u622A\u56FE",
+      browser_extract: "\u63D0\u53D6\u6570\u636E",
+      browser_get_content: "\u8BFB\u53D6\u5185\u5BB9",
+      browser_page_info: "\u67E5\u770B\u9875\u9762\u4F4D\u7F6E",
+      browser_find_popups: "\u67E5\u627E\u5F39\u7A97",
+      browser_close_popup: "\u5173\u95ED\u5F39\u7A97"
+    };
+    const base = labels[tool] || tool.replace(/^browser_/, "");
+    const hint = args?.url || args?.text || args?.selector || args?.query || (args?.direction ? `${args.direction}${args?.amount ? " " + args.amount : ""}` : "") || (args?.key ? `\u6309\u952E ${args.key}` : "") || (args?.ms ? `${args.ms}ms` : "");
+    return hint ? `${base}\uFF1A${String(hint).slice(0, 60)}` : base;
+  }
+  function normalizeStep(raw) {
+    if (!raw || typeof raw !== "object")
+      return null;
+    const tool = String(raw.tool || raw.name || "").trim();
+    if (!tool)
+      return null;
+    let args = raw.args ?? raw.arguments ?? raw.input ?? {};
+    if (typeof args === "string") {
+      try {
+        args = JSON.parse(args);
+      } catch {
+        args = {};
+      }
+    }
+    if (!args || typeof args !== "object")
+      args = {};
+    const note = String(raw.note ?? raw.remark ?? raw.comment ?? raw.\u5907\u6CE8 ?? "").trim() || deriveNote(tool, args);
+    return { tool, args, note };
+  }
+  function parseImport(text) {
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error("\u4E0D\u662F\u6709\u6548\u7684 JSON");
+    }
+    let rawCards;
+    if (Array.isArray(data))
+      rawCards = data;
+    else if (data && Array.isArray(data.cards))
+      rawCards = data.cards;
+    else if (data && (data.steps || data.name))
+      rawCards = [data];
+    else
+      throw new Error("\u672A\u627E\u5230\u5361\u7247\u6570\u636E");
+    const now = Date.now();
+    const out = [];
+    for (const rc of rawCards) {
+      if (!rc || typeof rc !== "object")
+        continue;
+      const rawSteps = Array.isArray(rc.steps) ? rc.steps : [];
+      const steps = rawSteps.map(normalizeStep).filter((s) => !!s);
+      if (steps.length === 0)
+        continue;
+      out.push({
+        id: newId(),
+        name: String(rc.name || "\u672A\u547D\u540D\u5361\u7247").trim().slice(0, 80),
+        description: String(rc.description || "").trim().slice(0, 300),
+        steps,
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+    if (out.length === 0)
+      throw new Error("\u5361\u7247\u4E2D\u6CA1\u6709\u53EF\u7528\u7684\u6B65\u9AA4");
+    return out;
+  }
+  function mergeCards(existing, incoming) {
+    return {
+      ...existing,
+      description: existing.description || incoming.description,
+      steps: [...existing.steps, ...incoming.steps],
+      updatedAt: Date.now()
+    };
+  }
+  function exportCard(card) {
+    return {
+      name: card.name,
+      description: card.description,
+      steps: card.steps.map((s) => ({ tool: s.tool, args: s.args, note: s.note }))
+    };
+  }
+
+  // src/popup/cards.ts
   function argSummary(args) {
     try {
       const s = JSON.stringify(args);
@@ -1799,17 +1706,17 @@
     return `<div class="card-steps">${rows}</div>`;
   }
   async function renderCards() {
-    cards = await getCards();
+    state.cards = await getCards();
     cardsList.querySelectorAll(".card-item").forEach((e) => e.remove());
-    if (!cards.length) {
+    if (!state.cards.length) {
       cardsEmpty.style.display = "block";
       return;
     }
     cardsEmpty.style.display = "none";
-    for (const c of cards) {
-      const expanded = c.id === expandedCardId;
+    for (const c of state.cards) {
+      const expanded = c.id === state.expandedCardId;
       const el = document.createElement("div");
-      el.className = "card-item" + (c.id === runningCardId ? " running" : "");
+      el.className = "card-item" + (c.id === state.runningCardId ? " running" : "");
       el.innerHTML = `
       <div class="card-item-top">
         <span class="card-item-name">${esc(c.name)}</span>
@@ -1817,7 +1724,7 @@
       </div>
       ${c.description ? `<div class="card-item-desc">${esc(c.description)}</div>` : ""}
       <div class="card-item-actions">
-        ${c.id === runningCardId ? `<button class="mini-btn danger" data-act="stop">\u505C\u6B62</button>` : `<button class="mini-btn" data-act="run">\u25B6 \u6267\u884C</button>`}
+        ${c.id === state.runningCardId ? `<button class="mini-btn danger" data-act="stop">\u505C\u6B62</button>` : `<button class="mini-btn" data-act="run">\u25B6 \u6267\u884C</button>`}
         <button class="mini-btn" data-act="view">${expanded ? "\u6536\u8D77" : "\u67E5\u770B"}</button>
         <button class="mini-btn" data-act="export">\u5BFC\u51FA</button>
         <button class="mini-btn danger" data-act="delete">\u5220\u9664</button>
@@ -1830,26 +1737,26 @@
     }
   }
   async function onCardAction(id, act) {
-    const card = cards.find((c) => c.id === id);
+    const card = state.cards.find((c) => c.id === id);
     if (!card)
       return;
     switch (act) {
       case "run":
-        if (runningCardId) {
+        if (state.runningCardId) {
           cardsRunStatus.textContent = "\u5DF2\u6709\u5361\u7247\u5728\u6267\u884C\uFF0C\u8BF7\u5148\u505C\u6B62";
           return;
         }
-        runningCardId = id;
-        expandedCardId = id;
+        state.runningCardId = id;
+        state.expandedCardId = id;
         cardsRunStatus.textContent = `\u5F00\u59CB\u6267\u884C\uFF1A${card.name}`;
-        port.postMessage({ type: "card:run", cardId: id });
+        state.port.postMessage({ type: "card:run", cardId: id });
         await renderCards();
         break;
       case "stop":
-        port.postMessage({ type: "card:stop" });
+        state.port.postMessage({ type: "card:stop" });
         break;
       case "view":
-        expandedCardId = expandedCardId === id ? null : id;
+        state.expandedCardId = state.expandedCardId === id ? null : id;
         await renderCards();
         break;
       case "export":
@@ -1858,8 +1765,8 @@
       case "delete":
         if (confirm(`\u786E\u5B9A\u5220\u9664\u5361\u7247\u300C${card.name}\u300D\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\u3002`)) {
           await deleteCard(id);
-          if (expandedCardId === id)
-            expandedCardId = null;
+          if (state.expandedCardId === id)
+            state.expandedCardId = null;
           await renderCards();
         }
         break;
@@ -1904,69 +1811,258 @@
       cardsImportFeedback.style.color = "var(--error)";
       return;
     }
-    cards = await getCards();
+    state.cards = await getCards();
     let added = 0, merged = 0, replaced = 0, skipped = 0;
     for (const inc of incoming) {
-      const existing = cards.find((c) => c.name === inc.name);
+      const existing = state.cards.find((c) => c.name === inc.name);
       if (existing) {
         const choice = await askMergeChoice(inc.name);
         if (choice === "skip") {
           skipped++;
           continue;
         }
-        const idx = cards.findIndex((c) => c.id === existing.id);
+        const idx = state.cards.findIndex((c) => c.id === existing.id);
         if (choice === "merge") {
-          cards[idx] = mergeCards(existing, inc);
+          state.cards[idx] = mergeCards(existing, inc);
           merged++;
         } else {
-          cards[idx] = { ...inc, id: existing.id, createdAt: existing.createdAt };
+          state.cards[idx] = { ...inc, id: existing.id, createdAt: existing.createdAt };
           replaced++;
         }
       } else {
-        cards.push(inc);
+        state.cards.push(inc);
         added++;
       }
     }
-    await setCards(cards);
+    await setCards(state.cards);
     cardsImportText.value = "";
     cardsImportFeedback.textContent = `\u5B8C\u6210\uFF1A\u65B0\u589E ${added}\uFF0C\u5408\u5E76 ${merged}\uFF0C\u66FF\u6362 ${replaced}\uFF0C\u8DF3\u8FC7 ${skipped}`;
     cardsImportFeedback.style.color = "var(--success)";
     await renderCards();
   }
-  cardsImportBtn.addEventListener("click", () => cardsImportBox.classList.toggle("hidden"));
-  cardsImportConfirm.addEventListener("click", () => void doImportText(cardsImportText.value.trim()));
-  cardsImportFileBtn.addEventListener("click", () => cardsImportFile.click());
-  cardsImportFile.addEventListener("change", async () => {
-    const f = cardsImportFile.files?.[0];
-    if (!f)
-      return;
-    const text = await f.text();
-    cardsImportFile.value = "";
-    cardsImportBox.classList.remove("hidden");
-    await doImportText(text);
-  });
-  cardsExportAllBtn.addEventListener("click", async () => {
-    cards = await getCards();
-    if (!cards.length) {
-      cardsRunStatus.textContent = "\u6CA1\u6709\u53EF\u5BFC\u51FA\u7684\u5361\u7247";
+  function wireCards() {
+    cardsImportBtn.addEventListener("click", () => cardsImportBox.classList.toggle("hidden"));
+    cardsImportConfirm.addEventListener("click", () => void doImportText(cardsImportText.value.trim()));
+    cardsImportFileBtn.addEventListener("click", () => cardsImportFile.click());
+    cardsImportFile.addEventListener("change", async () => {
+      const f = cardsImportFile.files?.[0];
+      if (!f)
+        return;
+      const text = await f.text();
+      cardsImportFile.value = "";
+      cardsImportBox.classList.remove("hidden");
+      await doImportText(text);
+    });
+    cardsExportAllBtn.addEventListener("click", async () => {
+      state.cards = await getCards();
+      if (!state.cards.length) {
+        cardsRunStatus.textContent = "\u6CA1\u6709\u53EF\u5BFC\u51FA\u7684\u5361\u7247";
+        return;
+      }
+      exportDownload("heysure-cards.json", { cards: state.cards.map(exportCard) });
+    });
+  }
+
+  // src/popup/ui.ts
+  function renderStatus() {
+    if (state.offlineMode) {
+      statusDot.className = "status-dot offline";
+      statusLabel.textContent = "\u79BB\u7EBF\u6A21\u5F0F";
       return;
     }
-    exportDownload("heysure-cards.json", { cards: cards.map(exportCard) });
-  });
+    statusDot.className = `status-dot ${state.currentStatus}`;
+    statusLabel.textContent = state.currentStatus === "registered" ? getConnectedAiShortLabel() : STATUS_LABELS[state.currentStatus] || state.currentStatus;
+  }
+  function setStatus(status) {
+    state.currentStatus = status;
+    renderStatus();
+  }
+  function applyTheme(theme, persist = true) {
+    state.currentTheme = theme;
+    document.body.className = theme;
+    themeToggle.textContent = theme === "dark" ? "\u2600\uFE0F" : "\u{1F319}";
+    if (persist)
+      state.port.postMessage({ type: "settings:save", payload: { theme } });
+  }
+  var ICON = { success: "\u2713", error: "\u2717", running: "\u25B6", warn: "\u26A0", system: "\u25CF", info: "\u2139", human: "?" };
+  var IC_CLS = { success: "success", error: "error", running: "running", warn: "warn", system: "system", info: "info", human: "warn" };
+  function addEntry(e) {
+    feedEmpty.style.display = "none";
+    const ic = IC_CLS[e.status] || IC_CLS[e.type] || "info";
+    const hasData = e.data !== void 0 && e.data !== null;
+    let datHtml = "";
+    if (hasData) {
+      const ds = typeof e.data === "string" ? e.data : (() => {
+        try {
+          return JSON.stringify(e.data, null, 2);
+        } catch {
+          return String(e.data);
+        }
+      })();
+      datHtml = `<button class="toggle-btn" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('show')"><span>\u25B6</span> \u8BE6\u60C5</button><div class="data-block"><pre>${esc(ds.slice(0, 2e3))}</pre></div>`;
+    }
+    const el = document.createElement("div");
+    el.className = "entry";
+    el.innerHTML = `
+    <div class="entry-icon ${ic}">${ICON[e.status] || ICON[e.type] || "\u2139"}</div>
+    <div class="entry-body">
+      <div class="entry-top"><span class="entry-badge ${e.type}">${e.type}</span><span class="entry-time">${fmt(e.timestamp)}</span></div>
+      <div class="entry-msg">${esc(e.message)}</div>${datHtml}
+    </div>`;
+    feed.appendChild(el);
+    feed.scrollTop = feed.scrollHeight;
+  }
+  function switchTab(tab) {
+    state.activeTab = tab;
+    Object.keys(panes).forEach((k) => panes[k].classList.add("hidden"));
+    Object.keys(tabs).forEach((k) => tabs[k].classList.remove("active"));
+    panes[tab].classList.remove("hidden");
+    tabs[tab].classList.add("active");
+    if (tab === "chat") {
+      chatMsgs.scrollTop = chatMsgs.scrollHeight;
+      if (useServerChat())
+        void refreshServerSessionsAndHistory();
+    }
+    if (tab === "settings" && state.auth.token && state.members.length === 0)
+      void loadMembers();
+    if (tab === "tasks" && state.selectedMemberId && state.auth.token)
+      void loadJobs();
+    if (tab === "cards")
+      void renderCards();
+  }
+  function openLoginModal() {
+    loginModal.classList.remove("hidden");
+    updateUserChip();
+    setTimeout(() => {
+      if (!state.auth.token)
+        loginAccount.focus();
+    }, 0);
+  }
+  function closeLoginModal() {
+    loginModal.classList.add("hidden");
+  }
+  function openMembersModal() {
+    membersModal.classList.remove("hidden");
+    if (state.auth.token && state.members.length === 0)
+      void loadMembers();
+    else
+      renderMembers();
+  }
+  function closeMembersModal() {
+    membersModal.classList.add("hidden");
+  }
+  function updateUserChip() {
+    const auth = state.auth;
+    if (auth.token) {
+      userChip.classList.remove("guest");
+      userAva.innerHTML = currentAvatarHtml((auth.userName || auth.account || "?").slice(0, 1).toUpperCase());
+      userName.textContent = auth.userName || auth.account || "\u5DF2\u767B\u5F55";
+    } else {
+      userChip.classList.add("guest");
+      userAva.textContent = "\xB7";
+      userName.textContent = "\u672A\u767B\u5F55";
+    }
+    connectionControlCard.classList.toggle("hidden", !auth.token);
+    memberSettingsCard.classList.toggle("hidden", !auth.token);
+    accountCard.classList.toggle("hidden", !auth.token);
+    loginGate.classList.toggle("hidden", !!auth.token);
+    accountStatusV.textContent = auth.token ? `\u5DF2\u767B\u5F55\uFF1A${auth.userName || auth.account}` : "\u672A\u767B\u5F55";
+    logoutBtn.style.display = auth.token ? "block" : "none";
+  }
+  function updateOfflineUi() {
+    offlineModelConfig.classList.toggle("hidden", !state.offlineMode);
+    renderStatus();
+    updateTargetBanners();
+  }
+  function updateTargetBanners() {
+    const m = memberById(state.selectedMemberId);
+    if (state.offlineMode) {
+      chatTarget.classList.remove("empty");
+      chatTargetText.innerHTML = `\u{1F6DC} \u79BB\u7EBF\u6A21\u5F0F \xB7 \u6A21\u578B <span class="tb-name">${esc(state.localModel || "\u672A\u914D\u7F6E")}</span>`;
+    } else if (m) {
+      chatTarget.classList.remove("empty");
+      chatTargetText.innerHTML = `\u5BF9\u8BDD\u76EE\u6807\uFF1A<span class="tb-name">${esc(m.name)}</span>\uFF08${ROLE_LABELS[roleOf(m)] || ""}\uFF09`;
+    } else {
+      chatTarget.classList.add("empty");
+      chatTargetText.textContent = "\u672A\u9009\u62E9 AI \u6210\u5458\uFF08\u5C06\u4F7F\u7528\u672C\u5730 AI Key \u76F4\u8FDE\uFF09";
+    }
+    if (m && !state.offlineMode) {
+      taskTarget.classList.remove("empty");
+      taskTarget.innerHTML = `\u4EFB\u52A1\u76EE\u6807\uFF1A<span class="tb-name">${esc(m.name)}</span>`;
+      taskForm.style.display = "block";
+      taskJobsCard.style.display = "block";
+    } else {
+      taskTarget.classList.add("empty");
+      taskTarget.textContent = state.offlineMode ? "\u79BB\u7EBF\u6A21\u5F0F\u4E0B\u4E0D\u53EF\u5B89\u6392\u4EFB\u52A1\uFF08\u4EFB\u52A1\u9700\u767B\u5F55\u670D\u52A1\u5668\uFF09" : state.auth.token ? "\u8BF7\u5148\u5728\u201C\u6210\u5458\u201D\u4E2D\u9009\u62E9\u4E00\u4E2A AI \u6210\u5458" : "\u8BF7\u5148\u767B\u5F55\u5E76\u9009\u62E9 AI \u6210\u5458";
+      taskForm.style.display = "none";
+      taskJobsCard.style.display = "none";
+    }
+    refreshChatAvailability();
+  }
+  function refreshChatAvailability() {
+    const enabled = useServerChat() || state.hasAiKey;
+    const hasMessages = chatMsgs.querySelectorAll(".chat-msg").length > 0;
+    chatNoKey.style.display = enabled || hasMessages ? "none" : "flex";
+    chatInput.disabled = !enabled || state.chatBusy;
+    chatSendBtn.disabled = !enabled || state.chatBusy;
+    if (useServerChat()) {
+      chatClearBtn.disabled = state.chatBusy;
+    } else {
+      chatClearBtn.disabled = !hasMessages && !state.chatHistory.length && !state.chatBusy;
+    }
+    updateChatSessionControls();
+  }
+  function renderSettingsViews() {
+    const m = memberById(state.selectedMemberId);
+    if (m) {
+      memberSettingsCard.style.display = "block";
+      let tools = [];
+      try {
+        const a = JSON.parse(m.mcp_tools || "[]");
+        if (Array.isArray(a))
+          tools = a;
+      } catch {
+      }
+      const chips = tools.length ? `<div class="tool-chips">${tools.map((t) => `<span class="tool-chip">${esc(t)}</span>`).join("")}</div>` : `<div class="empty-note">\u672A\u5206\u914D MCP \u5DE5\u5177</div>`;
+      memberSettingsBody.innerHTML = `
+      <div class="kv"><span class="k">\u540D\u79F0</span><span class="v">${esc(m.name || "")}</span></div>
+      <div class="kv"><span class="k">\u89D2\u8272</span><span class="v">${ROLE_LABELS[roleOf(m)] || roleOf(m)}</span></div>
+      <div class="kv"><span class="k">\u6A21\u578B</span><span class="v">${esc(m.model || "\u2014")}</span></div>
+      <div class="kv"><span class="k">\u5E73\u53F0</span><span class="v">${esc(m.platform || "\u2014")}</span></div>
+      <div class="kv"><span class="k">\u5DE5\u4F5C\u76EE\u5F55</span><span class="v">${esc(m.workspace_root || "\uFF08\u4EC5\u5BF9\u8BDD\uFF09")}</span></div>
+      <div class="kv"><span class="k">MCP \u5F00\u5173</span><span class="v">${m.mcp_enabled === false ? "\u5173\u95ED" : "\u5F00\u542F"}</span></div>
+      <div class="divider"></div>
+      <div class="kv"><span class="k">MCP \u5DE5\u5177\uFF08${tools.length}\uFF09</span><span class="v"></span></div>
+      ${chips}`;
+    } else {
+      memberSettingsCard.style.display = "none";
+    }
+  }
+  function wireUi() {
+    ;
+    Object.keys(tabs).forEach((k) => tabs[k].addEventListener("click", () => switchTab(k)));
+    themeToggle.addEventListener("click", () => applyTheme(state.currentTheme === "dark" ? "light" : "dark"));
+    clearBtn.addEventListener("click", () => {
+      feed.querySelectorAll(".entry").forEach((e) => e.remove());
+      feedEmpty.style.display = "flex";
+    });
+  }
+
+  // src/popup/settings.ts
   function loadSettings(s) {
-    serverUrl = s.serverUrl || "";
-    selectedMemberId = s.selectedAiConfigId || null;
+    state.serverUrl = s.serverUrl || "";
+    state.selectedMemberId = s.selectedAiConfigId || null;
     cfgServer.value = s.serverUrl || "";
     cfgAgentServer.value = s.agentServerUrl || "";
     cfgAiKey.value = s.aiKey || "";
     cfgAiBase.value = s.aiBaseUrl || "";
     cfgAiModel.value = s.aiModel || "";
     cfgAutoConn.checked = !!s.autoConnect;
-    offlineMode = !!s.offlineMode;
-    cfgOfflineMode.checked = offlineMode;
+    state.offlineMode = !!s.offlineMode;
+    cfgOfflineMode.checked = state.offlineMode;
     cfgMouseFx.checked = s.mouseFx !== false;
-    localModel = s.aiModel || "";
-    hasAiKey = !!s.aiKey?.trim();
+    state.localModel = s.aiModel || "";
+    state.hasAiKey = !!s.aiKey?.trim();
     updateOfflineUi();
     renderMembers();
     syncSelectedAiToBackground();
@@ -1979,55 +2075,59 @@
     openrouter: { base: "https://openrouter.ai/api", model: "anthropic/claude-3.5-sonnet" },
     ollama: { base: "http://localhost:11434", model: "llama3.1" }
   };
-  cfgAiProvider.addEventListener("change", () => {
-    const p = PROVIDER_PRESETS[cfgAiProvider.value];
-    if (p) {
-      cfgAiBase.value = p.base;
-      cfgAiModel.value = p.model;
-    }
-    cfgAiProvider.value = "";
-  });
-  cfgOfflineMode.addEventListener("change", () => {
-    offlineMode = cfgOfflineMode.checked;
-    updateOfflineUi();
-    port.postMessage({ type: "settings:save", payload: { offlineMode } });
-  });
-  cfgMouseFx.addEventListener("change", () => {
-    port.postMessage({ type: "settings:save", payload: { mouseFx: cfgMouseFx.checked } });
-  });
-  $("save-btn").addEventListener("click", () => {
-    const payload = {
-      serverUrl: cfgServer.value.trim(),
-      agentServerUrl: cfgAgentServer.value.trim(),
-      aiKey: cfgAiKey.value.trim(),
-      aiBaseUrl: cfgAiBase.value.trim() || "https://api.anthropic.com",
-      aiModel: cfgAiModel.value.trim() || "claude-sonnet-4-5",
-      autoConnect: cfgAutoConn.checked,
-      offlineMode: cfgOfflineMode.checked,
-      mouseFx: cfgMouseFx.checked
-    };
-    serverUrl = payload.serverUrl || "";
-    offlineMode = !!payload.offlineMode;
-    localModel = payload.aiModel || "";
-    port.postMessage({ type: "settings:save", payload });
-    hasAiKey = !!payload.aiKey;
-    updateOfflineUi();
-    saveFeedback.textContent = "\u5DF2\u4FDD\u5B58 \u2713";
-    saveFeedback.style.color = "var(--success)";
-    setTimeout(() => {
-      saveFeedback.textContent = "";
-    }, 2e3);
-  });
-  testConnBtn.addEventListener("click", () => {
-    testResult.textContent = "\u6D4B\u8BD5\u4E2D...";
-    testResult.className = "test-result";
-    port.postMessage({ type: "connection:test" });
-  });
-  connectBtn.addEventListener("click", () => port.postMessage({ type: "agent:connect" }));
-  disconnectBtn.addEventListener("click", () => port.postMessage({ type: "agent:disconnect" }));
+  function wireSettings() {
+    cfgAiProvider.addEventListener("change", () => {
+      const p = PROVIDER_PRESETS[cfgAiProvider.value];
+      if (p) {
+        cfgAiBase.value = p.base;
+        cfgAiModel.value = p.model;
+      }
+      cfgAiProvider.value = "";
+    });
+    cfgOfflineMode.addEventListener("change", () => {
+      state.offlineMode = cfgOfflineMode.checked;
+      updateOfflineUi();
+      state.port.postMessage({ type: "settings:save", payload: { offlineMode: state.offlineMode } });
+    });
+    cfgMouseFx.addEventListener("change", () => {
+      state.port.postMessage({ type: "settings:save", payload: { mouseFx: cfgMouseFx.checked } });
+    });
+    saveBtn.addEventListener("click", () => {
+      const payload = {
+        serverUrl: cfgServer.value.trim(),
+        agentServerUrl: cfgAgentServer.value.trim(),
+        aiKey: cfgAiKey.value.trim(),
+        aiBaseUrl: cfgAiBase.value.trim() || "https://api.anthropic.com",
+        aiModel: cfgAiModel.value.trim() || "claude-sonnet-4-5",
+        autoConnect: cfgAutoConn.checked,
+        offlineMode: cfgOfflineMode.checked,
+        mouseFx: cfgMouseFx.checked
+      };
+      state.serverUrl = payload.serverUrl || "";
+      state.offlineMode = !!payload.offlineMode;
+      state.localModel = payload.aiModel || "";
+      state.port.postMessage({ type: "settings:save", payload });
+      state.hasAiKey = !!payload.aiKey;
+      updateOfflineUi();
+      saveFeedback.textContent = "\u5DF2\u4FDD\u5B58 \u2713";
+      saveFeedback.style.color = "var(--success)";
+      setTimeout(() => {
+        saveFeedback.textContent = "";
+      }, 2e3);
+    });
+    testConnBtn.addEventListener("click", () => {
+      testResult.textContent = "\u6D4B\u8BD5\u4E2D...";
+      testResult.className = "test-result";
+      state.port.postMessage({ type: "connection:test" });
+    });
+    connectBtn.addEventListener("click", () => state.port.postMessage({ type: "agent:connect" }));
+    disconnectBtn.addEventListener("click", () => state.port.postMessage({ type: "agent:disconnect" }));
+  }
+
+  // src/popup/index.ts
   function initPort() {
-    port = chrome.runtime.connect({ name: "popup" });
-    port.onMessage.addListener((msg) => {
+    state.port = chrome.runtime.connect({ name: "popup" });
+    state.port.onMessage.addListener((msg) => {
       switch (msg.type) {
         case "agent:status":
           setStatus(msg.status);
@@ -2045,21 +2145,21 @@
           loadSettings(msg.settings);
           break;
         case "chat:response": {
-          if (msg.requestId !== activeChatRequestId)
+          if (msg.requestId !== state.activeChatRequestId)
             break;
           const thinking = window._chatThinking;
           if (!thinking) {
-            activeChatRequestId = null;
+            state.activeChatRequestId = null;
             setChatBusy(false);
             break;
           }
           thinking?.remove();
           window._chatThinking = null;
-          activeChatRequestId = null;
+          state.activeChatRequestId = null;
           setChatBusy(false);
           const reply = msg.text || "\u5B8C\u6210";
-          chatHistory.push({ role: "assistant", content: reply });
-          const el = appendChatMsg("ai", "", chatHistory.length - 1);
+          state.chatHistory.push({ role: "assistant", content: reply });
+          const el = appendChatMsg("ai", "", state.chatHistory.length - 1);
           setBubble(el, renderChatFrame(reply, { toolsUsed: msg.toolsUsed || [], events: msg.toolEvents || [] }));
           void syncChatHistory();
           if (msg.toolsUsed?.length) {
@@ -2068,21 +2168,21 @@
           break;
         }
         case "chat:error": {
-          if (msg.requestId !== activeChatRequestId)
+          if (msg.requestId !== state.activeChatRequestId)
             break;
           const thinking = window._chatThinking;
           if (!thinking) {
-            activeChatRequestId = null;
+            state.activeChatRequestId = null;
             setChatBusy(false);
             break;
           }
           thinking?.remove();
           window._chatThinking = null;
-          activeChatRequestId = null;
+          state.activeChatRequestId = null;
           setChatBusy(false);
           const errorText = `\u26A0 \u9519\u8BEF: ${msg.error}`;
-          chatHistory.push({ role: "assistant", content: errorText });
-          appendChatMsg("ai", errorText, chatHistory.length - 1);
+          state.chatHistory.push({ role: "assistant", content: errorText });
+          appendChatMsg("ai", errorText, state.chatHistory.length - 1);
           void syncChatHistory();
           break;
         }
@@ -2118,38 +2218,40 @@
           break;
         }
         case "card:done": {
-          runningCardId = null;
+          state.runningCardId = null;
           cardsRunStatus.textContent = msg.success ? "\u2713 \u5361\u7247\u6267\u884C\u5B8C\u6210" : msg.reason === "stopped" ? "\u5DF2\u505C\u6B62" : `\u2717 \u6267\u884C\u5931\u8D25\uFF1A${msg.reason || ""}`;
           void renderCards();
           break;
         }
       }
     });
-    port.onDisconnect.addListener(() => {
+    state.port.onDisconnect.addListener(() => {
       setTimeout(initPort, 1e3);
     });
-    port.postMessage({ type: "settings:get" });
+    state.port.postMessage({ type: "settings:get" });
   }
   async function init() {
     initPort();
     switchTab("chat");
     const s = await getSettings();
-    serverUrl = s.serverUrl || "";
-    offlineMode = !!s.offlineMode;
-    localModel = s.aiModel || "";
-    selectedMemberId = s.selectedAiConfigId || null;
-    auth = await getAuth();
-    loginAccount.value = auth.account || "";
+    state.serverUrl = s.serverUrl || "";
+    state.offlineMode = !!s.offlineMode;
+    state.localModel = s.aiModel || "";
+    state.selectedMemberId = s.selectedAiConfigId || null;
+    state.auth = await getAuth();
+    loginAccount.value = state.auth.account || "";
     updateUserChip();
     updateOfflineUi();
+    void refreshAvatarCache().then(updateUserChip);
     void restoreChatHistory();
-    if (auth.token) {
+    if (state.auth.token) {
       void (async () => {
         try {
-          const me = await getMe(serverUrl, auth.token);
-          auth.userName = me?.name || auth.userName;
-          auth.avatar = me?.avatar || "";
-          await saveAuth({ userName: auth.userName, avatar: auth.avatar });
+          const me = await getMe(state.serverUrl, state.auth.token);
+          state.auth.userName = me?.name || state.auth.userName;
+          state.auth.avatar = me?.avatar || "";
+          await saveAuth({ userName: state.auth.userName, avatar: state.auth.avatar });
+          await refreshAvatarCache();
           updateUserChip();
           renderChatHistory();
           await loadMembers();
@@ -2176,6 +2278,12 @@
     }
     updateChatSessionControls();
   }
+  wireUi();
+  wireMembers();
+  wireChat();
+  wireTasks();
+  wireCards();
+  wireSettings();
   chrome.storage.session.get("_pendingChat").then((r) => {
     if (r._pendingChat) {
       chrome.storage.session.remove("_pendingChat");

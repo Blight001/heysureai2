@@ -13,8 +13,10 @@ import importlib
 import glob
 import asyncio
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from connector_runtime.bots import iter_bots
 from api.core.logging_config import configure_logging
@@ -121,6 +123,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve the preset avatar images so clients (browser extension / desktop agent)
+# can fetch them from the backend instead of bundling their own copies. The
+# stored ``user.avatar`` value resolves to ``/avatars/avatarsN.png`` here.
+_avatars_dir = Path(__file__).resolve().parent.parent / "static" / "avatars"
+if _avatars_dir.is_dir():
+    app.mount("/avatars", StaticFiles(directory=str(_avatars_dir)), name="avatars")
+else:
+    logger.warning("avatars static dir not found: %s", _avatars_dir)
 
 # 自动注册路由：扫描 gateway/routers/ 目录下所有 HTTP 路由模块。
 # 网关进程现在拥有所有真路由；推理 helper（chat_prompt_utils/chat_runtime_helpers/

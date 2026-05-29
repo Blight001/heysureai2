@@ -1364,8 +1364,13 @@ const loginFormBlock       = document.getElementById('login-form') as HTMLElemen
 function resolveAvatarUrl(avatar: string, server: string): string {
   const raw = (avatar || '').trim()
   if (!raw) return ''
-  if (/^(https?:|data:|blob:)/i.test(raw)) return raw
   const base = (server || '').replace(/\/+$/, '')
+  // Preset avatars are served by the backend at /avatars/avatarsN.png. The
+  // stored value is the web console's bundled URL (e.g. /assets/avatars2-<hash>.png),
+  // so extract the 1-5 index and resolve it against the server.
+  const preset = raw.match(/avatars([1-5])(?:[-.][^/]*)?\.png/i)
+  if (preset) return base ? `${base}/avatars/avatars${preset[1]}.png` : ''
+  if (/^(https?:|data:|blob:)/i.test(raw)) return raw
   if (!base) return raw
   return raw.startsWith('/') ? `${base}${raw}` : `${base}/${raw}`
 }
@@ -1384,11 +1389,12 @@ function bindAvatarImage(imgEl: HTMLImageElement, container: HTMLElement, src: s
   imgEl.src = src
 }
 
-function setUserChip(displayName: string, avatar: string, server: string, authenticated = true) {
+function setUserChip(displayName: string, avatar: string, server: string, authenticated = true, avatarDataUrl = '') {
   const host = (() => { try { return new URL(server).hostname } catch { return server || '—' } })()
   const shown = (displayName || '').trim()
   const initial = shown ? shown.slice(0, 1).toUpperCase() : '·'
-  const resolvedAvatar = authenticated && shown ? resolveAvatarUrl(avatar, server) : ''
+  // Prefer the cached data URL (instant, offline); fall back to the live URL.
+  const resolvedAvatar = authenticated && shown ? (avatarDataUrl || resolveAvatarUrl(avatar, server)) : ''
   headerUserName.textContent = authenticated && shown ? shown : '未登录'
   bindAvatarImage(headerUserAvaImg, headerUserAva, resolvedAvatar, initial, headerUserAvaText)
   headerUserChip.classList.toggle('logged-in', !!(authenticated && shown))
@@ -1406,7 +1412,7 @@ function setUserChip(displayName: string, avatar: string, server: string, authen
 }
 
 function updateUserChip(s: any) {
-  setUserChip(s.userName || '', s.userAvatar || '', s.serverUrl || '', !!s.authToken)
+  setUserChip(s.userName || '', s.userAvatar || '', s.serverUrl || '', !!s.authToken, s.userAvatarDataUrl || '')
 }
 
 function parseMcpTools(value: any): string[] {

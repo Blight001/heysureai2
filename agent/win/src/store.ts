@@ -17,6 +17,9 @@ interface AgentSettings {
   userAccount: string
   userName: string
   userAvatar: string
+  // Cached data URL of the current account's avatar (fetched from the backend),
+  // so it renders instantly and offline. Empty = fall back to the live URL.
+  userAvatarDataUrl: string
   authToken: string
   userId: number | null
   // Selected AI Config
@@ -43,6 +46,7 @@ const defaults: AgentSettings = {
   userAccount: '',
   userName: '',
   userAvatar: '',
+  userAvatarDataUrl: '',
   authToken: '',
   userId: null,
   selectedAiConfigId: null,

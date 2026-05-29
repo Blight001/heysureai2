@@ -21,7 +21,9 @@ const entries = [
   { in: 'src/popup/index.ts',   out: 'dist/popup.js' },
 ]
 
-const staticDirs = ['icons', 'avatars']
+// Avatar images are now served by the backend (/avatars/avatarsN.png) and
+// fetched + cached at runtime, so they're no longer bundled with the extension.
+const staticDirs = ['icons']
 
 function ensureDist() {
   if (!fs.existsSync('dist')) fs.mkdirSync('dist', { recursive: true })
