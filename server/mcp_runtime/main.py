@@ -9,6 +9,7 @@ or via uvicorn directly:
 """
 
 import os
+import sys
 
 import uvicorn
 
@@ -19,8 +20,10 @@ os.environ.setdefault("HEYSURE_SERVICE_ROLE", "mcp")
 
 from api.core.logging_config import configure_logging  # noqa: E402
 from api.core.settings import settings  # noqa: E402
+from api.runtime.process_control import register_restart_command  # noqa: E402
 
 configure_logging()
+register_restart_command([sys.executable, "-m", "mcp_runtime.main"])
 
 from mcp_runtime.app import create_app  # noqa: E402
 

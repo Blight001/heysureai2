@@ -13,12 +13,12 @@ from __future__ import annotations
 
 import logging
 import time
-import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlalchemy import text
+from sqlmodel import Session, SQLModel, select
 
 from api.auth import get_password_hash
 from api.core.logging_config import get_recent_logs
@@ -214,48 +214,41 @@ def stop_task(
     return {"ok": True, "run_id": run_id, "status": run.status}
 
 
-@router.post("/tasks/{run_id}/restart")
-def restart_task(
-    run_id: str,
-    session: Session = Depends(get_session),
-    _admin: User = Depends(require_admin_user),
-) -> dict:
-    """Re-enqueue a finished/errored/stopped run so the worker pool picks it up.
+@router.post("/services/{key}/restart")
+def restart_service(key: str, admin: User = Depends(require_admin_user)) -> dict:
+    """Restart a whole sub-service (its process/port), not an individual run.
 
-    Mints a fresh ``run_id`` for the requeued copy so it doesn't collide with
-    the historical row's unique key, then NOTIFYs the ai-runtime queue.
+    - ``gateway`` restarts this very process — the connection serving this
+      request drops and the service comes back up on the same port.
+    - The remote runtimes are told to re-exec themselves via their own
+      ``/internal/restart`` endpoint.
+    - In monolith mode (no dedicated URL) there is no separate process to
+      bounce, so the call is rejected.
     """
-    run = session.exec(select(ChatRun).where(ChatRun.run_id == run_id)).first()
-    if not run:
-        raise HTTPException(status_code=404, detail="子任务不存在")
-    if run.status in ("queued", "running"):
-        raise HTTPException(status_code=409, detail="子任务仍在运行，无需重启")
+    registry = {k: (name, url) for k, name, url in _service_registry()}
+    if key not in registry:
+        raise HTTPException(status_code=404, detail="未知的子服务")
+    name, base_url = registry[key]
 
-    now = time.time()
-    new_run_id = f"run_{uuid.uuid4().hex[:16]}"
-    requeued = ChatRun(
-        run_id=new_run_id,
-        user_id=run.user_id,
-        ai_config_id=run.ai_config_id,
-        ai_kind=run.ai_kind,
-        session_id=run.session_id,
-        session_name=run.session_name,
-        status="queued",
-        worker_kwargs_json=run.worker_kwargs_json,
-        created_at=now,
-        updated_at=now,
-    )
-    session.add(requeued)
-    session.commit()
+    if key == "gateway":
+        from api.runtime.process_control import request_restart
 
+        logger.warning(f"admin {admin.account} triggered gateway restart")
+        cmd = request_restart(delay=1.0)
+        return {"ok": True, "key": key, "name": name, "restarting": True, "command": cmd}
+
+    if not base_url:
+        raise HTTPException(status_code=400, detail=f"{name} 未配置独立服务地址（单体模式无法重启）")
+
+    client = InternalClient(base_url, timeout=5.0)
     try:
-        from ai_runtime.worker import notify_queue
-
-        notify_queue(new_run_id)
-    except Exception:
-        logger.exception("notify_queue failed for restarted run")
-
-    return {"ok": True, "run_id": new_run_id, "status": "queued", "from_run_id": run_id}
+        payload = client.post("/internal/restart")
+        logger.warning(f"admin {admin.account} triggered restart of {key} ({base_url})")
+        return {"ok": True, "key": key, "name": name, **payload}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"无法重启 {name}: {exc}")
+    finally:
+        client.close()
 
 
 # ---------------------------------------------------------------------------
@@ -345,4 +338,51 @@ def reset_user_password(
     target.hashed_password = get_password_hash(new_password)
     session.add(target)
     session.commit()
+    return {"ok": True, "user_id": user_id}
+
+
+def _delete_user_owned_rows(session: Session, user_id: int) -> None:
+    """Remove every row scoped to ``user_id`` before deleting the account.
+
+    Postgres enforces the ``user_id`` foreign keys, so the account row can't
+    go until its dependents do. We walk the SQLModel metadata in reverse
+    dependency order and clear any table carrying a ``user_id`` column — this
+    stays correct as new user-scoped tables are added without editing here.
+    """
+    for table in reversed(SQLModel.metadata.sorted_tables):
+        if table.name == "user":
+            continue
+        if "user_id" in table.c:
+            session.execute(
+                text(f'DELETE FROM "{table.name}" WHERE user_id = :uid'),
+                {"uid": user_id},
+            )
+
+
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_admin_user),
+) -> dict:
+    target = session.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if target.id == actor.id:
+        raise HTTPException(status_code=400, detail="不能删除自己")
+    # Admins may not remove owners; only owners can.
+    if actor.role != "owner" and target.role == "owner":
+        raise HTTPException(status_code=403, detail="只有房主能删除房主")
+    # Never delete the last remaining owner.
+    if target.role == "owner":
+        other_owner = session.exec(
+            select(User).where(User.role == "owner", User.id != target.id)
+        ).first()
+        if not other_owner:
+            raise HTTPException(status_code=400, detail="至少需要保留一名房主")
+
+    _delete_user_owned_rows(session, user_id)
+    session.delete(target)
+    session.commit()
+    logger.warning(f"admin {actor.account} deleted user #{user_id} ({target.account})")
     return {"ok": True, "user_id": user_id}

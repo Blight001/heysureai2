@@ -5,7 +5,7 @@
  * hides the entry point for members. Thin wrappers over the shared http
  * client so error parsing / auth header injection stay centralised.
  */
-import { get, patch, post } from './http'
+import { del, get, patch, post } from './http'
 import type { UserRole } from '@/types'
 
 export type ServiceStatus = 'running' | 'degraded' | 'down' | 'local'
@@ -77,11 +77,11 @@ export const stopTask = (runId: string) =>
     fallbackError: '停止子任务失败',
   })
 
-export const restartTask = (runId: string) =>
-  post<{ ok: boolean; run_id: string; status: string; from_run_id: string }>(
-    `/api/admin/tasks/${runId}/restart`,
+export const restartService = (key: string) =>
+  post<{ ok: boolean; key: string; name: string; restarting: boolean; command?: string[] }>(
+    `/api/admin/services/${key}/restart`,
     undefined,
-    { fallbackError: '重启子任务失败' },
+    { fallbackError: '重启服务失败' },
   )
 
 export const listUsers = () =>
@@ -96,3 +96,8 @@ export const resetUserPassword = (userId: number, newPassword: string) =>
   post<{ ok: boolean; user_id: number }>(`/api/admin/users/${userId}/reset-password`, {
     new_password: newPassword,
   }, { fallbackError: '重置密码失败' })
+
+export const deleteUser = (userId: number) =>
+  del<{ ok: boolean; user_id: number }>(`/api/admin/users/${userId}`, {
+    fallbackError: '删除用户失败',
+  })
