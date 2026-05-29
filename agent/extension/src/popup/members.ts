@@ -4,17 +4,16 @@
 
 import { state, ROLE_LABELS } from './state'
 import * as dom from './dom'
-import { roleOf, toolCount, hasBrowserMcpPermission, syncSelectedAiToBackground, useServerChat, refreshAvatarCache } from './helpers'
+import { roleOf, toolCount, hasBrowserMcpPermission, syncSelectedAiToBackground, refreshAvatarCache } from './helpers'
 import { esc } from './markdown'
 import {
   login as apiLogin, listConfigs, isAuthError, MemberConfig,
 } from '../lib/client'
 import { saveAuth, clearAuth, getAuth, saveSettings, clearAvatarCache } from '../lib/storage'
 import {
-  updateUserChip, renderStatus, renderSettingsViews, updateTargetBanners,
+  updateUserChip, renderStatus, renderSettingsViews,
   switchTab, openLoginModal, closeLoginModal, openMembersModal, closeMembersModal,
 } from './ui'
-import { renderChatHistory, updateChatSessionControls, refreshServerSessionsAndHistory } from './chat'
 
 export async function doLogin() {
   const configuredServerUrl = dom.cfgServer.value.trim()
@@ -43,7 +42,6 @@ export async function doLogin() {
     await loadMembers()
     syncSelectedAiToBackground(true)
     renderSettingsViews()
-    if (useServerChat()) await refreshServerSessionsAndHistory()
     closeLoginModal()
     openMembersModal()
   } catch (err: any) {
@@ -68,15 +66,8 @@ export async function doLogout() {
   closeMembersModal()
   state.members = []
   state.selectedMemberId = null
-  state.serverSessions = []
-  state.currentServerSessionId = ''
-  state.lastSyncedMessageId = 0
-  state.chatHistory = []
-  renderChatHistory()
-  updateChatSessionControls()
   updateUserChip()
   renderMembers()
-  updateTargetBanners()
   renderSettingsViews()
   switchTab('settings')
 }
@@ -91,15 +82,9 @@ export async function loadMembers() {
     if (state.selectedMemberId) {
       const stillExists = rows.some(m => m.id === state.selectedMemberId)
       if (!stillExists) {
-        // Truly gone (deleted) — drop the selection and reset the chat.
+        // Truly gone (deleted) — drop the selection.
         state.selectedMemberId = null
         state.port.postMessage({ type: 'agent:selected-ai', aiConfigId: null })
-        state.serverSessions = []
-        state.currentServerSessionId = ''
-        state.lastSyncedMessageId = 0
-        state.chatHistory = []
-        renderChatHistory()
-        updateChatSessionControls()
       } else {
         // The member still exists but may have been filtered out of the
         // browser-capable list (e.g. an admin toggled its MCP tools). Keep
@@ -113,7 +98,6 @@ export async function loadMembers() {
       }
     }
     renderMembers()
-    updateTargetBanners()
     renderSettingsViews()
     renderStatus()
   } catch (err: any) {
@@ -161,7 +145,6 @@ export async function selectMember(id: number) {
     dom.loginFeedback.style.color = 'var(--warn)'
     switchTab('settings')
     renderMembers()
-    updateTargetBanners()
     renderSettingsViews()
     return
   }
@@ -173,16 +156,8 @@ export async function selectMember(id: number) {
   await saveSettings({ selectedAiConfigId: id })
   state.port.postMessage({ type: 'agent:selected-ai', aiConfigId: id })
   renderMembers()
-  updateTargetBanners()
   renderSettingsViews()
   renderStatus()
-  state.chatHistory = []
-  state.serverSessions = []
-  state.currentServerSessionId = ''
-  state.lastSyncedMessageId = 0
-  dom.chatMsgs.querySelectorAll('.chat-msg').forEach(e => e.remove())
-  updateChatSessionControls()
-  if (useServerChat()) void refreshServerSessionsAndHistory()
 }
 
 export function wireMembers() {

@@ -510,75 +510,12 @@
 
   <!-- Tabs -->
   <div class="tab-bar">
-    <button class="tab-btn active" id="tab-chat">💬 对话</button>
-    <button class="tab-btn" id="tab-tasks">🗂 任务</button>
-    <button class="tab-btn" id="tab-cards">🃏 卡片</button>
+    <button class="tab-btn active" id="tab-cards">🃏 卡片</button>
     <button class="tab-btn" id="tab-settings">⚙ 设置</button>
   </div>
 
   <!-- Content -->
   <div id="content">
-
-    <!-- Chat pane -->
-    <div class="pane hidden" id="chat-pane">
-      <div class="target-banner empty" id="chat-target">
-        <span class="target-text" id="chat-target-text">未选择 AI 成员（将使用本地 AI Key 直连）</span>
-        <select id="chat-session-select" class="chat-session-select hidden" title="切换会话"></select>
-        <button class="target-clear-btn" id="chat-session-delete-btn" type="button" title="删除当前会话" style="display:none;">🗑</button>
-        <button class="target-clear-btn" id="chat-clear-btn" type="button" title="新建一段对话（保留历史）">新建对话</button>
-      </div>
-      <div class="chat-messages" id="chat-messages">
-        <div id="chat-no-key">
-          <div class="ki">🔑</div>
-          <p style="font-size:11px">请在设置中配置 AI Key</p>
-          <p style="font-size:10px;color:var(--muted)">支持 Anthropic Claude 和 OpenAI 兼容接口</p>
-        </div>
-      </div>
-      <div class="chat-input-row">
-        <textarea id="chat-input" placeholder="向 AI 发消息... (Enter 发送)" rows="1" disabled></textarea>
-        <button id="chat-send" title="发送" disabled>↑</button>
-      </div>
-    </div>
-
-    <!-- Tasks pane -->
-    <div class="pane hidden" id="task-pane">
-      <div class="target-banner empty" id="task-target">请先在“成员”中选择一个 AI 成员</div>
-
-      <div class="card" id="task-form" style="display:none;">
-        <div class="card-title">🗂 安排任务</div>
-        <div class="fg"><label>任务标题</label><input type="text" id="task-title" placeholder="例如：抓取页面数据"/></div>
-        <div class="fg"><label>任务指令</label><textarea class="ta" id="task-instruction" placeholder="详细描述任务目标、约束与交付要求"></textarea></div>
-        <div class="fg"><label>优先级 (1-10)</label><input type="number" id="task-priority" min="1" max="10" value="5"/></div>
-        <div class="fg check-row">
-          <input type="checkbox" id="task-schedule-enabled"/>
-          <label for="task-schedule-enabled" style="margin:0;text-transform:none;font-size:11px;">定时执行</label>
-        </div>
-        <div id="task-schedule-opts" style="display:none;">
-          <div class="fg check-row">
-            <input type="checkbox" id="task-loop-enabled"/>
-            <label for="task-loop-enabled" style="margin:0;text-transform:none;font-size:11px;">循环执行</label>
-          </div>
-          <div class="fg check-row">
-            <input type="checkbox" id="task-run-immediately"/>
-            <label for="task-run-immediately" style="margin:0;text-transform:none;font-size:11px;">首次立即执行</label>
-          </div>
-          <div class="fg"><label>循环间隔（分钟）</label><input type="number" id="task-duration" min="1" value="30"/></div>
-          <div class="fg" id="task-at-row"><label>执行时间（一次性，可留空用间隔）</label><input type="datetime-local" id="task-at"/></div>
-        </div>
-        <button class="btn btn-primary" id="task-submit">安排任务</button>
-        <div class="save-feedback" id="task-feedback"></div>
-      </div>
-
-      <div class="card" id="task-jobs-card" style="display:none;">
-        <div class="pane-header" style="margin-bottom:8px;">
-          <span class="pane-title">任务队列</span>
-          <button id="jobs-refresh" style="font-size:10px;color:var(--muted);border:none;background:none;cursor:pointer;padding:2px 5px;border-radius:4px;">刷新</button>
-        </div>
-        <div class="jobs-list" id="jobs-list">
-          <div class="empty-note" id="jobs-empty">暂无任务</div>
-        </div>
-      </div>
-    </div>
 
     <!-- Cards pane -->
     <div class="pane hidden" id="cards-pane">
@@ -735,7 +672,7 @@
 
       <div id="login-gate" class="card login-box">
         <div class="card-title">🔐 登录软件端账号</div>
-        <div class="login-hint">使用与软件端相同的账号登录，登录后可查看 AI 成员、对话与安排任务。</div>
+        <div class="login-hint">使用与软件端相同的账号登录，登录后可查看 AI 成员并选择工具调用目标。</div>
         <div class="fg"><label>账号</label><input type="text" id="login-account" placeholder="你的账号" autocomplete="username"/></div>
         <div class="fg"><label>密码</label><input type="password" id="login-password" placeholder="密码" autocomplete="current-password"/></div>
         <button class="btn btn-primary" id="login-btn">登录</button>

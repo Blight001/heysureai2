@@ -7,7 +7,7 @@ import { AgentStatus, ChatMessage, MemoryCard } from '../lib/types'
 import { AuthState } from '../lib/storage'
 import { MemberConfig, ServerChatSession } from '../lib/client'
 
-export type TabName = 'chat' | 'tasks' | 'cards' | 'settings'
+export type TabName = 'cards' | 'settings'
 
 export const STATUS_LABELS: Record<string, string> = {
   disconnected: '未连接', connecting: '连接中...', connected: '已连接',
@@ -19,7 +19,7 @@ export const ROLE_LABELS: Record<string, string> = {
 
 export const state = {
   currentTheme: 'dark' as 'dark' | 'light',
-  activeTab: 'chat' as TabName,
+  activeTab: 'cards' as TabName,
   currentStatus: 'disconnected' as AgentStatus,
   chatHistory: [] as ChatMessage[],
   chatBusy: false,
