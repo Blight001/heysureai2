@@ -70,7 +70,14 @@ def resolve_model_preset(
         selected = next((item for item in presets if item["id"] == preset_id), None)
     if selected is None and model_name:
         selected = next((item for item in presets if item["model"] == model_name or item["id"] == model_name), None)
-    if selected is None and presets:
+    # Only auto-pick the first preset when the config did NOT pin any model.
+    # If a model / preset was explicitly chosen but no longer matches a
+    # preset (renamed, removed, typo), silently substituting presets[0]
+    # would run inference on a DIFFERENT model than the one the user
+    # selected and sees in the UI. Instead fall through to the config's own
+    # literal fields below — which honors the chosen model when it carries
+    # its own credentials, or surfaces a clear "not configured" error.
+    if selected is None and presets and not preset_id and not model_name:
         selected = presets[0]
 
     if selected is not None:

@@ -3478,6 +3478,14 @@
       h["Content-Type"] = "application/json";
     return h;
   };
+  var ApiError = class extends Error {
+    status;
+    constructor(message, status) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+    }
+  };
   async function parseError(res, fallback) {
     try {
       const data = await res.json();
@@ -3489,7 +3497,7 @@
   async function requestJson(url2, init, fallback) {
     const res = await fetch(url2, { ...init, signal: init.signal ?? AbortSignal.timeout(2e4) });
     if (!res.ok)
-      throw new Error(await parseError(res, fallback));
+      throw new ApiError(await parseError(res, fallback), res.status);
     return await res.json();
   }
   async function listConfigs(serverUrl, token) {
@@ -5743,6 +5751,7 @@ Always:
   var _machineId = null;
   var connecting = false;
   var activeSocketUrl = null;
+  var authRejected = false;
   async function withTaskTimeout(promise, ms, label) {
     let timer = null;
     try {
@@ -5935,6 +5944,7 @@ Always:
       log("system", "error", "\u6CA1\u6709\u53EF\u7528\u7684 Agent \u670D\u52A1\u5668\u5730\u5740");
       return;
     }
+    authRejected = false;
     connecting = true;
     setStatus("connecting");
     try {
@@ -6008,8 +6018,15 @@ ${failures.map((f) => `\xB7 ${f.url} \u2014 ${f.reason}`).join("\n")}
       log("system", "success", `\u5DF2\u6CE8\u518C: ${data?.name || agentName}`);
     });
     s.on("agent:register_rejected", (data) => {
-      setStatus("error", data?.reason);
-      log("system", "error", `\u6CE8\u518C\u88AB\u62D2\u7EDD: ${data?.reason}`);
+      const reason = data?.reason || "\u6CE8\u518C\u88AB\u670D\u52A1\u5668\u62D2\u7EDD";
+      authRejected = true;
+      try {
+        s.io.reconnection(false);
+      } catch {
+      }
+      disconnect();
+      setStatus("error", reason);
+      log("system", "error", `\u6CE8\u518C\u88AB\u62D2\u7EDD\uFF0C\u5DF2\u505C\u6B62\u81EA\u52A8\u91CD\u8FDE\uFF08\u8BF7\u91CD\u65B0\u767B\u5F55\u540E\u518D\u8FDE\u63A5\uFF09: ${reason}`);
     });
     s.on("task:dispatch", (task) => {
       void handleTask(task);
@@ -6284,6 +6301,7 @@ Respond in the same language as the user. For factual questions, search the web 
           break;
         }
         case "auth:logout": {
+          authRejected = false;
           disconnect();
           await saveSettings({ selectedAiConfigId: null, lastWorkingAgentUrl: "" });
           break;
@@ -6366,7 +6384,7 @@ Respond in the same language as the user. For factual questions, search the web 
       });
       return;
     }
-    if (alarm.name === "keepalive" && socket && !socket.connected && currentStatus !== "connecting") {
+    if (alarm.name === "keepalive" && socket && !socket.connected && currentStatus !== "connecting" && !authRejected) {
       socket.connect();
     }
   });

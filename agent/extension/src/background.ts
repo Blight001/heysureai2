@@ -23,6 +23,12 @@ let connecting = false
 // URL the current `socket` was opened against — used to detect when the
 // configured serverUrl changes and we need to drop the cached endpoint.
 let activeSocketUrl: string | null = null
+// Set when the server rejected registration for a non-transient reason
+// (expired/invalid token or AI-ownership mismatch). Retrying with the same
+// token just loops forever, so we stop auto-reconnect and the keepalive
+// alarm until the user re-authenticates or explicitly reconnects. Cleared
+// at the start of connect() and on logout.
+let authRejected = false
 
 async function withTaskTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -239,6 +245,8 @@ async function connect() {
     return
   }
 
+  // A fresh, user-initiated connect clears any prior rejection latch.
+  authRejected = false
   connecting = true
   setStatus('connecting')
 
@@ -330,8 +338,17 @@ function attachOperationalListeners(s: Socket, agentName: string) {
   })
 
   s.on('agent:register_rejected', (data: any) => {
-    setStatus('error', data?.reason)
-    log('system', 'error', `注册被拒绝: ${data?.reason}`)
+    const reason = data?.reason || '注册被服务器拒绝'
+    // Non-transient: the token is invalid/expired or the AI no longer
+    // belongs to this user. Reconnecting and re-registering with the same
+    // token would loop forever (reconnectionAttempts is Infinity), so we
+    // latch authRejected, disable reconnection and tear the socket down.
+    // The user must re-login (or pick a valid AI) and connect again.
+    authRejected = true
+    try { s.io.reconnection(false) } catch { /* noop */ }
+    disconnect()
+    setStatus('error', reason)
+    log('system', 'error', `注册被拒绝，已停止自动重连（请重新登录后再连接）: ${reason}`)
   })
 
   s.on('task:dispatch', (task: DispatchedTask) => { void handleTask(task) })
@@ -623,6 +640,7 @@ chrome.runtime.onConnect.addListener((port) => {
         // don't keep re-registering with an empty/stale token. Also
         // clear the cached agent URL so the next login re-probes the
         // (possibly different) backend.
+        authRejected = false
         disconnect()
         await saveSettings({ selectedAiConfigId: null, lastWorkingAgentUrl: '' })
         break
@@ -723,7 +741,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     })
     return
   }
-  if (alarm.name === 'keepalive' && socket && !socket.connected && currentStatus !== 'connecting') {
+  if (alarm.name === 'keepalive' && socket && !socket.connected && currentStatus !== 'connecting' && !authRejected) {
     socket.connect()
   }
 })

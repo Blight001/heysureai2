@@ -13,6 +13,7 @@ import {
   triggerTask, listTaskJobs, taskJobAction,
   listChatSessions, createChatSession, deleteChatSession,
   fetchChatHistory, deleteServerChatMessage, recallServerChatMessage,
+  isAuthError,
   MemberConfig, TaskJob, ServerChatSession,
 } from '../lib/client'
 import {
@@ -444,8 +445,8 @@ async function loadMembers() {
     renderSettingsViews()
     renderStatus()
   } catch (err: any) {
-    if (/401|令牌|凭证|credential/i.test(String(err?.message))) {
-      // token expired
+    if (isAuthError(err)) {
+      // token expired / invalid
       await doLogout()
       loginFeedback.textContent = '登录已过期，请重新登录'
       loginFeedback.style.color = 'var(--warn)'
@@ -714,7 +715,7 @@ async function loadServerChatHistory(sessionId: string): Promise<boolean> {
     renderChatHistory()
     return true
   } catch (err: any) {
-    if (/401|令牌|凭证|credential/i.test(String(err?.message))) {
+    if (isAuthError(err)) {
       await doLogout()
       return false
     }
@@ -730,7 +731,7 @@ async function refreshServerSessionsAndHistory(targetSessionId?: string): Promis
   try {
     serverSessions = await listChatSessions(serverUrl, auth.token, selectedMemberId)
   } catch (err: any) {
-    if (/401|令牌|凭证|credential/i.test(String(err?.message))) {
+    if (isAuthError(err)) {
       await doLogout()
       return
     }
@@ -1542,8 +1543,24 @@ async function init() {
         await loadMembers()
         syncSelectedAiToBackground(true)
         if (useServerChat()) await refreshServerSessionsAndHistory()
-      } catch {
-        await doLogout()
+      } catch (err: any) {
+        // Only drop the session on a genuine auth failure. A transient
+        // network error / timeout (server briefly down, flaky connection)
+        // must NOT wipe a still-valid token — otherwise every popup open
+        // during a blip silently logs the user out. Keep the session and
+        // make a best-effort refresh; the next successful call recovers.
+        if (isAuthError(err)) {
+          await doLogout()
+        } else {
+          console.warn('getMe failed (transient), keeping session', err)
+          loginFeedback.textContent = '暂时无法连接服务器，稍后将自动重试'
+          loginFeedback.style.color = 'var(--warn)'
+          try {
+            await loadMembers()
+            syncSelectedAiToBackground(true)
+            if (useServerChat()) await refreshServerSessionsAndHistory()
+          } catch { /* still down — leave session intact */ }
+        }
       }
     })()
   }

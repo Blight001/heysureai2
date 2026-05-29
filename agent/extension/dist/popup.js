@@ -183,6 +183,19 @@
       h["Content-Type"] = "application/json";
     return h;
   };
+  var ApiError = class extends Error {
+    status;
+    constructor(message, status) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+    }
+  };
+  function isAuthError(err) {
+    if (err && typeof err.status === "number")
+      return err.status === 401 || err.status === 403;
+    return /\b(401|403)\b|令牌|凭证|credential|unauthor/i.test(String(err?.message || err));
+  }
   async function parseError(res, fallback) {
     try {
       const data = await res.json();
@@ -194,7 +207,7 @@
   async function requestJson(url, init2, fallback) {
     const res = await fetch(url, { ...init2, signal: init2.signal ?? AbortSignal.timeout(2e4) });
     if (!res.ok)
-      throw new Error(await parseError(res, fallback));
+      throw new ApiError(await parseError(res, fallback), res.status);
     return await res.json();
   }
   async function login(serverUrl2, account, password) {
@@ -285,7 +298,7 @@
       { method: "DELETE", headers: authHeaders(token), signal: AbortSignal.timeout(1e4) }
     );
     if (!res.ok)
-      throw new Error(await parseError(res, "\u5220\u9664\u4F1A\u8BDD\u5931\u8D25"));
+      throw new ApiError(await parseError(res, "\u5220\u9664\u4F1A\u8BDD\u5931\u8D25"), res.status);
   }
   async function fetchChatHistory(serverUrl2, token, sessionId, aiConfigId) {
     const rows = await requestJson(
@@ -301,7 +314,7 @@
       { method: "DELETE", headers: authHeaders(token), signal: AbortSignal.timeout(1e4) }
     );
     if (!res.ok)
-      throw new Error(await parseError(res, "\u5220\u9664\u6D88\u606F\u5931\u8D25"));
+      throw new ApiError(await parseError(res, "\u5220\u9664\u6D88\u606F\u5931\u8D25"), res.status);
   }
   async function recallServerChatMessage(serverUrl2, token, msgId) {
     return requestJson(
@@ -330,12 +343,12 @@
     if (action === "delete") {
       const res2 = await fetch(base, { method: "DELETE", headers: authHeaders(token), signal: AbortSignal.timeout(1e4) });
       if (!res2.ok)
-        throw new Error(await parseError(res2, "\u5220\u9664\u4EFB\u52A1\u5931\u8D25"));
+        throw new ApiError(await parseError(res2, "\u5220\u9664\u4EFB\u52A1\u5931\u8D25"), res2.status);
       return;
     }
     const res = await fetch(`${base}/${action}`, { method: "POST", headers: authHeaders(token), signal: AbortSignal.timeout(1e4) });
     if (!res.ok)
-      throw new Error(await parseError(res, `${action} \u4EFB\u52A1\u5931\u8D25`));
+      throw new ApiError(await parseError(res, `${action} \u4EFB\u52A1\u5931\u8D25`), res.status);
   }
 
   // src/popup/markdown.ts
@@ -1022,7 +1035,7 @@
       renderSettingsViews();
       renderStatus();
     } catch (err) {
-      if (/401|令牌|凭证|credential/i.test(String(err?.message))) {
+      if (isAuthError(err)) {
         await doLogout();
         loginFeedback.textContent = "\u767B\u5F55\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55";
         loginFeedback.style.color = "var(--warn)";
@@ -1269,7 +1282,7 @@
       renderChatHistory();
       return true;
     } catch (err) {
-      if (/401|令牌|凭证|credential/i.test(String(err?.message))) {
+      if (isAuthError(err)) {
         await doLogout();
         return false;
       }
@@ -1285,7 +1298,7 @@
     try {
       serverSessions = await listChatSessions(serverUrl, auth.token, selectedMemberId);
     } catch (err) {
-      if (/401|令牌|凭证|credential/i.test(String(err?.message))) {
+      if (isAuthError(err)) {
         await doLogout();
         return;
       }
@@ -2135,8 +2148,21 @@
           syncSelectedAiToBackground(true);
           if (useServerChat())
             await refreshServerSessionsAndHistory();
-        } catch {
-          await doLogout();
+        } catch (err) {
+          if (isAuthError(err)) {
+            await doLogout();
+          } else {
+            console.warn("getMe failed (transient), keeping session", err);
+            loginFeedback.textContent = "\u6682\u65F6\u65E0\u6CD5\u8FDE\u63A5\u670D\u52A1\u5668\uFF0C\u7A0D\u540E\u5C06\u81EA\u52A8\u91CD\u8BD5";
+            loginFeedback.style.color = "var(--warn)";
+            try {
+              await loadMembers();
+              syncSelectedAiToBackground(true);
+              if (useServerChat())
+                await refreshServerSessionsAndHistory();
+            } catch {
+            }
+          }
         }
       })();
     }

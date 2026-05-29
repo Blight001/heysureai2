@@ -83,6 +83,28 @@ const authHeaders = (token: string, withJson = false): Record<string, string> =>
   return h
 }
 
+// Error that carries the HTTP status so callers can reliably tell an
+// auth failure (401/403 → token expired/invalid) apart from a transient
+// network/timeout error. Relying on message-string matching alone is
+// fragile because the server's `detail` text isn't guaranteed to contain
+// any particular keyword.
+export class ApiError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
+// True only for authentication/authorization failures. A thrown TypeError
+// (fetch network failure) or AbortError (timeout) is NOT an auth error and
+// must not trigger a logout.
+export function isAuthError(err: any): boolean {
+  if (err && typeof err.status === 'number') return err.status === 401 || err.status === 403
+  return /\b(401|403)\b|令牌|凭证|credential|unauthor/i.test(String(err?.message || err))
+}
+
 async function parseError(res: Response, fallback: string): Promise<string> {
   try {
     const data: any = await res.json()
@@ -94,7 +116,7 @@ async function parseError(res: Response, fallback: string): Promise<string> {
 
 async function requestJson<T>(url: string, init: RequestInit, fallback: string): Promise<T> {
   const res = await fetch(url, { ...init, signal: init.signal ?? AbortSignal.timeout(20000) })
-  if (!res.ok) throw new Error(await parseError(res, fallback))
+  if (!res.ok) throw new ApiError(await parseError(res, fallback), res.status)
   return await res.json() as T
 }
 
@@ -244,7 +266,7 @@ export async function deleteChatSession(
     `${trimUrl(serverUrl)}/api/chat/sessions/${encodeURIComponent(sessionId)}?${chatQs(aiConfigId)}`,
     { method: 'DELETE', headers: authHeaders(token), signal: AbortSignal.timeout(10000) },
   )
-  if (!res.ok) throw new Error(await parseError(res, '删除会话失败'))
+  if (!res.ok) throw new ApiError(await parseError(res, '删除会话失败'), res.status)
 }
 
 export async function fetchChatHistory(
@@ -266,7 +288,7 @@ export async function deleteServerChatMessage(serverUrl: string, token: string, 
     `${trimUrl(serverUrl)}/api/chat/${msgId}`,
     { method: 'DELETE', headers: authHeaders(token), signal: AbortSignal.timeout(10000) },
   )
-  if (!res.ok) throw new Error(await parseError(res, '删除消息失败'))
+  if (!res.ok) throw new ApiError(await parseError(res, '删除消息失败'), res.status)
 }
 
 export async function recallServerChatMessage(
@@ -309,9 +331,9 @@ export async function taskJobAction(
   const base = `${trimUrl(serverUrl)}/api/ai/configs/${configId}/task-jobs/${encodeURIComponent(jobId)}`
   if (action === 'delete') {
     const res = await fetch(base, { method: 'DELETE', headers: authHeaders(token), signal: AbortSignal.timeout(10000) })
-    if (!res.ok) throw new Error(await parseError(res, '删除任务失败'))
+    if (!res.ok) throw new ApiError(await parseError(res, '删除任务失败'), res.status)
     return
   }
   const res = await fetch(`${base}/${action}`, { method: 'POST', headers: authHeaders(token), signal: AbortSignal.timeout(10000) })
-  if (!res.ok) throw new Error(await parseError(res, `${action} 任务失败`))
+  if (!res.ok) throw new ApiError(await parseError(res, `${action} 任务失败`), res.status)
 }
