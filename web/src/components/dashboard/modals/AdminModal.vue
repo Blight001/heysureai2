@@ -30,6 +30,7 @@ const logsNote = ref<string>('')
 const tasks = ref<AdminTask[]>([])
 const tasksLoading = ref(false)
 const busyRun = ref<string>('')
+const busyService = ref<string>('')
 
 // ---- Users ----
 const users = ref<AdminUser[]>([])
@@ -133,17 +134,30 @@ const stopTask = async (task: AdminTask) => {
   }
 }
 
-const restartTask = async (task: AdminTask) => {
-  const ok = await confirm({ message: `确认重启子任务 ${task.run_id}？将重新排队执行。`, type: 'warning' })
+const restartService = async (svc: ServiceInfo) => {
+  const isSelf = svc.key === 'gateway'
+  const ok = await confirm({
+    message: isSelf
+      ? `确认重启「${svc.name}」？这是当前正在服务本页面的进程，重启期间面板会短暂断开，恢复后请刷新。`
+      : `确认重启「${svc.name}」服务（端口 ${svc.url || svc.key}）？该服务会重启进程并在同一端口恢复。`,
+    type: 'warning',
+  })
   if (!ok) return
-  busyRun.value = task.run_id
+  busyService.value = svc.key
   try {
-    await adminApi.restartTask(task.run_id)
-    await loadTasks()
+    await adminApi.restartService(svc.key)
+    await alert({
+      message: isSelf ? '网关正在重启，请稍候刷新页面。' : `${svc.name} 正在重启…`,
+      type: 'success',
+    })
+    if (!isSelf) {
+      // Give the process a moment to re-exec, then refresh status.
+      setTimeout(() => void loadServices(), 2500)
+    }
   } catch (err) {
     await alert({ message: (err as Error).message, type: 'error' })
   } finally {
-    busyRun.value = ''
+    busyService.value = ''
   }
 }
 
@@ -191,6 +205,22 @@ const resetPassword = async (u: AdminUser) => {
   try {
     await adminApi.resetUserPassword(u.id, pwd.trim())
     await alert({ message: '密码已重置', type: 'success' })
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  }
+}
+
+const deleteUser = async (u: AdminUser) => {
+  const ok = await confirm({
+    message: `确认删除用户 ${u.name}（${u.account}）？该用户的所有数据将一并删除，且不可恢复。`,
+    type: 'warning',
+    confirmText: '删除',
+  })
+  if (!ok) return
+  try {
+    await adminApi.deleteUser(u.id)
+    users.value = users.value.filter(x => x.id !== u.id)
+    await alert({ message: '用户已删除', type: 'success' })
   } catch (err) {
     await alert({ message: (err as Error).message, type: 'error' })
   }
@@ -265,10 +295,10 @@ const avatarFor = (u: AdminUser) =>
                 >{{ servicesLoading ? '刷新中…' : '↻ 刷新' }}</button>
               </div>
               <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <button
+                <div
                   v-for="svc in services"
                   :key="svc.key"
-                  class="text-left p-3 rounded-xl border transition-colors"
+                  class="text-left p-3 rounded-xl border transition-colors cursor-pointer"
                   :class="selectedServiceKey === svc.key
                     ? 'border-indigo-300 bg-indigo-50/50 dark:border-indigo-700 dark:bg-indigo-900/10'
                     : 'border-zinc-200 hover:border-indigo-200 dark:border-zinc-800 dark:hover:border-indigo-800'"
@@ -282,7 +312,16 @@ const avatarFor = (u: AdminUser) =>
                     >{{ (STATUS_META[svc.status] || { label: svc.status }).label }}</span>
                   </div>
                   <div class="text-[10px] text-zinc-400 mt-1 truncate">{{ svc.url || svc.key }}</div>
-                </button>
+                  <div class="mt-2 flex justify-end">
+                    <button
+                      v-if="svc.status !== 'local'"
+                      class="text-[11px] px-2 py-1 rounded-lg text-amber-600 hover:bg-amber-50 dark:text-amber-400 dark:hover:bg-amber-900/20 disabled:opacity-50"
+                      :disabled="busyService === svc.key"
+                      @click.stop="restartService(svc)"
+                    >{{ busyService === svc.key ? '重启中…' : '↻ 重启服务' }}</button>
+                    <span v-else class="text-[10px] text-zinc-400">内置无需重启</span>
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -361,12 +400,7 @@ const avatarFor = (u: AdminUser) =>
                           :disabled="busyRun === task.run_id"
                           @click="stopTask(task)"
                         >停止</button>
-                        <button
-                          v-else
-                          class="text-[11px] px-2 py-1 rounded-lg text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-900/20 disabled:opacity-50"
-                          :disabled="busyRun === task.run_id"
-                          @click="restartTask(task)"
-                        >重启</button>
+                        <span v-else class="text-[11px] text-zinc-300 dark:text-zinc-600">—</span>
                       </td>
                     </tr>
                   </tbody>
@@ -412,6 +446,11 @@ const avatarFor = (u: AdminUser) =>
                   class="text-[11px] px-2 py-1.5 rounded-lg border border-zinc-200 text-zinc-600 hover:text-indigo-600 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-300 whitespace-nowrap"
                   @click="resetPassword(u)"
                 >重置密码</button>
+                <button
+                  v-if="u.id !== currentUser?.id"
+                  class="text-[11px] px-2 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 dark:border-red-800/60 dark:text-red-400 dark:hover:bg-red-900/20 whitespace-nowrap"
+                  @click="deleteUser(u)"
+                >删除</button>
               </div>
               <div v-if="!users.length && !usersLoading" class="text-center text-zinc-400 py-8 text-sm">暂无用户</div>
             </div>

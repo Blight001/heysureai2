@@ -41,6 +41,14 @@ def create_status_app() -> FastAPI:
 
         return {"ok": True, "lines": get_recent_logs(limit=limit, level=level)}
 
+    @router.post("/restart")
+    def restart() -> Dict[str, Any]:
+        from api.runtime.process_control import request_restart
+
+        cmd = request_restart()
+        logger.warning("restart requested via /internal/restart")
+        return {"ok": True, "restarting": True, "command": cmd}
+
     app.include_router(router)
     return app
 

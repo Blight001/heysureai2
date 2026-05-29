@@ -8,6 +8,7 @@ this module only wires it together for the public-facing process.
 import socketio
 import logging
 import os
+import sys
 import importlib
 import glob
 import asyncio
@@ -31,6 +32,13 @@ from api.chat_runtime.chat_scheduler import process_task_scheduler
 # may not go through gateway.main).
 configure_logging()
 logger = logging.getLogger(__name__)
+
+# Declare how to relaunch ourselves on an admin-triggered restart. Routing
+# through ``gateway.main`` means it works whether we were started via the
+# uvicorn CLI or ``python -m gateway.main`` (both end up serving port 3000).
+from api.runtime.process_control import register_restart_command  # noqa: E402
+
+register_restart_command([sys.executable, "-m", "gateway.main"])
 
 
 @asynccontextmanager

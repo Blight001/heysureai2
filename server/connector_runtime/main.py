@@ -14,6 +14,7 @@ Run with:
 """
 
 import os
+import sys
 
 import uvicorn
 
@@ -25,8 +26,10 @@ os.environ.setdefault("HEYSURE_SERVICE_ROLE", "connector")
 
 from api.core.logging_config import configure_logging  # noqa: E402
 from api.core.settings import settings  # noqa: E402
+from api.runtime.process_control import register_restart_command  # noqa: E402
 
 configure_logging()
+register_restart_command([sys.executable, "-m", "connector_runtime.main"])
 
 from connector_runtime.app import create_app  # noqa: E402
 

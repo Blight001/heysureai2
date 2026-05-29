@@ -21,6 +21,7 @@ Run with:
 import logging
 import os
 import signal
+import sys
 import threading
 
 
@@ -31,8 +32,10 @@ os.environ.setdefault("HEYSURE_SERVICE_ROLE", "worker")
 
 from api.core.logging_config import configure_logging  # noqa: E402
 from api.core.settings import settings  # noqa: E402
+from api.runtime.process_control import register_restart_command  # noqa: E402
 
 configure_logging()
+register_restart_command([sys.executable, "-m", "ai_runtime.main"])
 logger = logging.getLogger(__name__)
 
 from api.database import create_db_and_tables  # noqa: E402
