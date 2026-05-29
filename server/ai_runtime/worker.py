@@ -56,6 +56,22 @@ POLL_INTERVAL_SECONDS = 2.0  # SQLite fallback only
 _MAX_CONCURRENT_RUNS = max(1, settings.ai_runtime_max_concurrent)
 _run_slots = threading.Semaphore(_MAX_CONCURRENT_RUNS)
 
+# Live in-flight run bookkeeping so the ai-runtime status server can report
+# "what is this worker doing right now" to the admin panel.
+_active_runs_lock = threading.Lock()
+_active_run_ids: set[str] = set()
+
+
+def active_runs() -> Dict[str, Any]:
+    """Snapshot of this worker's concurrency for the admin panel."""
+    with _active_runs_lock:
+        run_ids = sorted(_active_run_ids)
+    return {
+        "active": len(run_ids),
+        "max_concurrent": _MAX_CONCURRENT_RUNS,
+        "run_ids": run_ids,
+    }
+
 
 def notify_queue(run_id: str) -> None:
     """Best-effort NOTIFY for Postgres; no-op on SQLite.
@@ -210,9 +226,13 @@ def _execute_run(run: ChatRun) -> None:
 
 
 def _execute_run_with_slot(run: ChatRun) -> None:
+    with _active_runs_lock:
+        _active_run_ids.add(run.run_id)
     try:
         _execute_run(run)
     finally:
+        with _active_runs_lock:
+            _active_run_ids.discard(run.run_id)
         _run_slots.release()
 
 

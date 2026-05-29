@@ -1,3 +1,4 @@
+import time
 from typing import Optional
 
 from sqlmodel import Field, SQLModel
@@ -35,6 +36,12 @@ class User(SQLModel, table=True):
     account: str = Field(unique=True, index=True)
     hashed_password: str
     avatar: Optional[str] = None
+    # Platform-level access tier surfaced by the admin panel:
+    # ``owner`` (房主) > ``admin`` (管理员) > ``member`` (成员). The first
+    # registered user is bootstrapped to ``owner``; everyone else defaults
+    # to ``member`` until an owner/admin promotes them.
+    role: str = Field(default="member", index=True)
+    created_at: float = Field(default_factory=time.time)
 
     # 主脑 AI 配置
     admin_api_key: str = Field(default="sk-cb40bc0b0b894934919907913e337927")
@@ -99,6 +106,7 @@ class UserRead(SQLModel):
     name: str
     account: str
     avatar: Optional[str] = None
+    role: str = "member"
     admin_api_key: str
     admin_base_url: str
     admin_model: str

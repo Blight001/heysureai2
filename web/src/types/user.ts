@@ -10,11 +10,14 @@ export interface ModelPreset {
   model: string
 }
 
+export type UserRole = 'owner' | 'admin' | 'member'
+
 export interface User {
   id: number
   name: string
   account: string
   avatar?: string
+  role?: UserRole
   ui_theme_mode?: ThemeMode
   ui_font_size?: FontSize
   ui_brain_view_mode?: BrainViewMode

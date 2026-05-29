@@ -62,6 +62,12 @@ def create_app() -> FastAPI:
     def health() -> Dict[str, Any]:
         return {"ok": True, "tools": len(registry._tools), "version": registry.version}
 
+    @router.get("/logs")
+    def logs(limit: int = 200, level: Optional[str] = None) -> Dict[str, Any]:
+        from api.core.logging_config import get_recent_logs
+
+        return {"ok": True, "lines": get_recent_logs(limit=limit, level=level)}
+
     @router.get("/mcp/tools")
     def list_tools() -> Dict[str, Any]:
         return _tool_catalog()

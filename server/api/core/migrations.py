@@ -253,6 +253,7 @@ def _consolidate_bot_session_routes(engine) -> None:
 def run_pending_migrations() -> None:
     _migrate_assistantaiconfig_strip_markdown_symbols()
     _migrate_user_ui_plain_text_output_enabled()
+    _migrate_user_role()
     # Only run for SQLite. Postgres deployments either start fresh or are
     # seeded by the migration script, both of which produce a current schema.
     if database_dialect() != "sqlite":
@@ -383,6 +384,60 @@ def _migrate_user_ui_plain_text_output_enabled() -> None:
             'UPDATE "user" SET ui_plain_text_output_enabled = FALSE '
             "WHERE ui_plain_text_output_enabled IS NULL"
         )
+
+
+def _migrate_user_role() -> None:
+    """Add the platform-level ``role`` (+ ``created_at``) columns and make
+    sure exactly one ``owner`` exists.
+
+    Runs on every backend. Existing rows backfill to ``member``; the
+    lowest-id user is promoted to ``owner`` when no owner is present yet so
+    pre-existing single-user installs keep full admin access after the
+    upgrade. New installs get their owner assigned at registration time.
+    """
+    import time as _time
+
+    from ..database import engine
+
+    if database_dialect() == "sqlite":
+        table = "user"
+        with engine.begin() as conn:
+            existing = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(user)").fetchall()}
+            if "role" not in existing:
+                conn.exec_driver_sql("ALTER TABLE user ADD COLUMN role TEXT DEFAULT 'member'")
+            if "created_at" not in existing:
+                conn.exec_driver_sql("ALTER TABLE user ADD COLUMN created_at REAL")
+            conn.exec_driver_sql(
+                "UPDATE user SET role = 'member' "
+                "WHERE role IS NULL OR role = '' OR role NOT IN ('owner', 'admin', 'member')"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE user SET created_at = {_time.time()} WHERE created_at IS NULL"
+            )
+    else:
+        table = '"user"'
+        with engine.begin() as conn:
+            conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS role TEXT DEFAULT \'member\'')
+            conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS created_at DOUBLE PRECISION')
+            conn.exec_driver_sql(
+                'UPDATE "user" SET role = \'member\' '
+                "WHERE role IS NULL OR role = '' OR role NOT IN ('owner', 'admin', 'member')"
+            )
+            conn.exec_driver_sql(
+                f'UPDATE "user" SET created_at = {_time.time()} WHERE created_at IS NULL'
+            )
+
+    # Bootstrap an owner from the oldest account when none exists yet.
+    with engine.begin() as conn:
+        has_owner = conn.exec_driver_sql(
+            f"SELECT 1 FROM {table} WHERE role = 'owner' LIMIT 1"
+        ).first()
+        if not has_owner:
+            min_id = conn.exec_driver_sql(f"SELECT MIN(id) FROM {table}").scalar()
+            if min_id is not None:
+                conn.exec_driver_sql(
+                    f"UPDATE {table} SET role = 'owner' WHERE id = {int(min_id)}"
+                )
 
 
 def _quote(value: str) -> str:

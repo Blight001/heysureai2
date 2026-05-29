@@ -56,6 +56,15 @@ def main() -> int:
 
     create_db_and_tables()
 
+    # Expose a minimal health/console-tail HTTP surface so the admin panel can
+    # monitor this otherwise-headless worker. Best-effort: never fatal.
+    try:
+        from ai_runtime.internal_app import start_status_server_in_thread
+
+        start_status_server_in_thread(settings.ai_runtime_port)
+    except Exception:
+        logger.exception("ai-runtime status server bootstrap failed")
+
     stop_evt = threading.Event()
 
     def _on_signal(signum, _frame):

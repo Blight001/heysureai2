@@ -133,6 +133,12 @@ def create_app() -> FastAPI:
         from api.sio import agents
         return {"ok": True, "agents": len(agents)}
 
+    @router.get("/logs")
+    def logs(limit: int = 200, level: Optional[str] = None) -> Dict[str, Any]:
+        from api.core.logging_config import get_recent_logs
+
+        return {"ok": True, "lines": get_recent_logs(limit=limit, level=level)}
+
     @router.get("/bot/statuses")
     def bot_statuses() -> Dict[str, Any]:
         """Return ``{<channel>_statuses: {config_id: state}}`` for every bot.
