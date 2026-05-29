@@ -1935,131 +1935,20 @@
   <!-- Body -->
   <div id="body">
 
-    <!-- Left: tabbed column -->
+    <!-- Left: live tool-call feed -->
     <div id="feed-col">
-      <div class="tab-nav">
-        <button class="tab-btn active" id="tab-tasks">&#x1F4CB; 任务列表</button>
-        <button class="tab-btn" id="tab-chat">&#x1F4AC; AI 对话</button>
+      <div class="feed-header">
+        <div>
+          <div class="feed-title">实时工具调用</div>
+          <div class="task-summary">服务器下发的工具调用会实时显示在这里</div>
+        </div>
+        <button id="clear-btn" title="清空">清空</button>
       </div>
-
-
-      <!-- Task list pane -->
-      <div id="tasks-pane" class="active">
-        <div class="task-header">
-          <div>
-            <div class="feed-title">任务列表</div>
-            <div class="task-summary" id="task-summary">执行记录 0 条</div>
-          </div>
-          <div class="task-toolbar-actions">
-            <button id="task-create-btn">创建任务</button>
-            <button id="task-batch-delete-btn" disabled>批量删除 (0)</button>
-            <button id="task-refresh-btn">刷新</button>
-          </div>
-        </div>
-        <div class="task-filter-bar" id="task-filter-bar">
-          <button class="task-filter-btn active" data-task-filter="all">全部</button>
-          <button class="task-filter-btn" data-task-filter="running">执行中</button>
-          <button class="task-filter-btn" data-task-filter="next">等待执行</button>
-          <button class="task-filter-btn" data-task-filter="scheduled">定时任务</button>
-          <button class="task-filter-btn" data-task-filter="completed">已完成</button>
-        </div>
-        <div class="task-create-panel" id="task-create-panel">
-          <div class="task-modal-card" id="task-create-card">
-          <div class="task-modal-header">
-            <div>
-              <div class="task-modal-title">创建任务</div>
-              <div class="task-modal-subtitle">为当前 AI 创建即时、定时或循环任务</div>
-            </div>
-            <button class="task-modal-close" id="task-create-close" title="关闭">×</button>
-          </div>
-          <div class="task-form-grid">
-            <div class="task-form-field">
-              <label for="task-form-title">任务名称</label>
-              <input id="task-form-title" type="text" placeholder="例如：整理今日迭代计划" />
-            </div>
-            <div class="task-form-field">
-              <label for="task-form-priority">优先级</label>
-              <input id="task-form-priority" type="number" min="1" max="10" value="5" />
-            </div>
-          </div>
-          <div class="task-form-field">
-            <label for="task-form-instruction">任务具体内容</label>
-            <textarea id="task-form-instruction" placeholder="描述目标、验收标准、约束条件"></textarea>
-          </div>
-          <div class="task-form-row">
-            <label class="task-check"><input id="task-form-schedule" type="checkbox" /> 定时任务</label>
-            <label class="task-check" data-task-schedule-field><input id="task-form-loop" type="checkbox" /> 循环运行</label>
-            <label class="task-check" data-task-schedule-field><input id="task-form-run-now" type="checkbox" /> 首次立即执行</label>
-            <div class="task-form-field" data-task-schedule-field>
-              <label for="task-form-duration">定时时长（分钟）</label>
-              <input id="task-form-duration" type="number" min="1" value="30" />
-            </div>
-            <div class="task-form-field" data-task-schedule-field>
-              <label for="task-form-date">定时日期</label>
-              <input id="task-form-date" type="date" />
-            </div>
-          </div>
-          <div class="task-form-row">
-            <label class="task-check"><input id="task-form-token-enabled" type="checkbox" /> 修改默认 Token 范围</label>
-            <div class="task-form-field" data-task-token-field>
-              <label for="task-form-token">Token 范围</label>
-              <input id="task-form-token" type="number" min="1" value="10000" />
-            </div>
-          </div>
-          <div class="task-form-row">
-            <label class="task-check"><input id="task-form-mcp-enabled" type="checkbox" /> 修改默认 MCP 使用范围</label>
-            <div class="task-form-field" data-task-mcp-field>
-              <label for="task-form-mcp">MCP 工具（逗号分隔）</label>
-              <input id="task-form-mcp" type="text" placeholder="task.list, task.complete" />
-            </div>
-          </div>
-          <div class="task-form-row">
-            <label class="task-check"><input id="task-form-workspace-enabled" type="checkbox" /> 限制默认文件夹范围</label>
-            <div class="task-form-field" data-task-workspace-field>
-              <label for="task-form-workspace">工作区目录</label>
-              <select id="task-form-workspace"><option value=".">用户工作区根目录</option></select>
-            </div>
-          </div>
-          <div class="task-form-row">
-            <div class="task-form-status" id="task-form-status"></div>
-            <div class="header-spacer"></div>
-            <button class="task-mini-btn" id="task-cancel-btn">取消</button>
-            <button class="task-mini-btn" id="task-submit-btn">提交任务</button>
-          </div>
-          </div>
-        </div>
-        <div class="task-detail-modal" id="task-detail-modal">
-          <div class="task-modal-card wide" id="task-detail-card">
-            <div class="task-modal-header">
-              <div>
-                <div class="task-modal-title" id="task-detail-title">任务详情</div>
-                <div class="task-modal-subtitle" id="task-detail-subtitle">查看任务参数、代际和对话记录</div>
-              </div>
-              <button class="task-modal-close" id="task-detail-close" title="关闭">×</button>
-            </div>
-            <div class="task-detail" id="task-detail-content"></div>
-          </div>
-        </div>
-        <div id="task-list"></div>
-        <div id="task-empty">
-          <div class="empty-icon">&#x1F4CB;</div>
-          <p>暂无任务记录</p>
-          <p style="font-size:11px">网页端创建任务后会显示在这里</p>
-        </div>
-      </div>
-
-      <!-- Chat pane -->
-      <div id="chat-pane">
-        <div class="chat-messages" id="chat-messages">
-          <div id="chat-no-key" class="chat-no-key">
-            <div class="chat-no-key-icon">&#x1F4AC;</div>
-            <p>可以开始对话</p>
-            <p style="font-size:11px">模型和密钥使用服务器端配置</p>
-          </div>
-        </div>
-        <div class="chat-input-row">
-          <textarea class="chat-input" id="chat-input" placeholder="向 AI 发送消息... (Enter 发送, Shift+Enter 换行)" rows="1"></textarea>
-          <button class="chat-send-btn" id="chat-send" title="发送 (Enter)">&#x2191;</button>
+      <div id="feed">
+        <div id="feed-empty">
+          <div class="empty-icon">&#x1F916;</div>
+          <p>等待服务器调度任务...</p>
+          <p style="font-size:11px">Agent 连接后，服务器下发的工具调用将在此显示</p>
         </div>
       </div>
     </div>
@@ -2133,38 +2022,23 @@
 
       <!-- Stats (compact) -->
       <div class="card">
-        <div class="card-title">&#x1F4CA; 任务统计</div>
+        <div class="card-title">&#x1F4CA; 工具调用统计</div>
         <div class="stats-grid">
           <div class="stat-box">
-            <div class="stat-num" id="stat-tasks">0</div>
-            <div class="stat-label">总任务</div>
+            <div class="stat-num" id="stat-total">0</div>
+            <div class="stat-label">总调用</div>
           </div>
           <div class="stat-box">
             <div class="stat-num" id="stat-success" style="color:var(--success)">0</div>
-            <div class="stat-label">已完成</div>
+            <div class="stat-label">成功</div>
           </div>
           <div class="stat-box">
             <div class="stat-num" id="stat-failed" style="color:var(--error)">0</div>
-            <div class="stat-label">异常</div>
+            <div class="stat-label">失败</div>
           </div>
           <div class="stat-box">
             <div class="stat-num" id="stat-running" style="color:var(--warning)">0</div>
-            <div class="stat-label">运行中</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Activity console -->
-      <div class="card" id="console-card">
-        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span>&#x1F4DC; 实时活动控制台</span>
-          <button id="clear-btn" title="清空">清空</button>
-        </div>
-        <div id="feed" class="console-feed">
-          <div id="feed-empty">
-            <div class="empty-icon">&#x1F916;</div>
-            <p>等待任务中...</p>
-            <p style="font-size:11px">Agent 连接后将在此显示实时活动</p>
+            <div class="stat-label">进行中</div>
           </div>
         </div>
       </div>

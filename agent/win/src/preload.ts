@@ -28,9 +28,6 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   setTheme: (theme: 'dark' | 'light') => ipcRenderer.invoke('theme:set', theme),
   // Connection test
   testConnection: () => ipcRenderer.invoke('connection:test'),
-  // AI chat
-  sendChat: (content: string) => ipcRenderer.invoke('chat:send', content),
-  getChatHistory: () => ipcRenderer.invoke('chat:history'),
   // Auth
   login: (params: { serverUrl: string; account: string; password: string }) =>
     ipcRenderer.invoke('auth:login', params),
@@ -40,13 +37,6 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   getAiRuntimeStatus: () => ipcRenderer.invoke('ai-config:runtime-status'),
   selectAiConfig: (cfg: any) => ipcRenderer.invoke('ai-config:select', cfg),
   cloneAiConfig: (configId: number) => ipcRenderer.invoke('ai-config:clone', configId),
-  listTasks: () => ipcRenderer.invoke('task:list'),
-  getTaskGenerations: (jobId: string) => ipcRenderer.invoke('task:generations', jobId),
-  triggerTask: (payload: any) => ipcRenderer.invoke('task:trigger', payload),
-  pauseTask: (jobId: string) => ipcRenderer.invoke('task:pause', jobId),
-  resumeTask: (jobId: string) => ipcRenderer.invoke('task:resume', jobId),
-  deleteTask: (jobId: string) => ipcRenderer.invoke('task:delete', jobId),
-  listWorkspaceFiles: () => ipcRenderer.invoke('workspace:files'),
   // Version
   version: process.env.npm_package_version || '1.0.0',
 })
