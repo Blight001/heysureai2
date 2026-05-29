@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { store } from '../store'
 import { resolveBaseUrl, serverFetch } from '../services/server-client'
+import { cacheUserAvatar } from '../services/avatar-cache'
 import {
   getAgent, rebuildAgent, clearSelectedAiConfig,
 } from '../services/agent-runtime'
@@ -25,6 +26,7 @@ export function registerAuthIpc(): void {
     store.set('userName', String(data.user?.name || data.user?.nickname || account))
     store.set('userAvatar', String(data.user?.avatar || ''))
     store.set('userId', data.user?.id ?? null)
+    await cacheUserAvatar(base, String(data.user?.avatar || ''))
     clearSelectedAiConfig()
     getAgent()?.updateSettings(store.store)
     return { success: true, user: data.user }
@@ -37,6 +39,7 @@ export function registerAuthIpc(): void {
     store.set('userAccount', '')
     store.set('userName', '')
     store.set('userAvatar', '')
+    store.set('userAvatarDataUrl', '')
     store.set('userId', null)
     clearSelectedAiConfig()
     // Rebuild the agent so its in-memory `settings` snapshot (which still
