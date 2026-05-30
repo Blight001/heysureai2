@@ -1,7 +1,13 @@
 import { get, post } from './http'
 
+export interface McpEndpointToolEntry {
+  name: string
+  mcpSource: 'desktop' | 'browser'
+}
+
 export interface McpToolsResponse {
   tools?: any[]
+  endpointTools?: McpEndpointToolEntry[]
   roleOrder?: string[]
   roleLabels?: Record<string, string>
   roleDefaults?: Record<string, string[]>

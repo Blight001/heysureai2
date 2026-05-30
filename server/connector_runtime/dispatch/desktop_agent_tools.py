@@ -67,17 +67,91 @@ BROWSER_AGENT_MCP_TOOLS = {
 }
 
 
-def is_desktop_tool(name: str) -> bool:
-    return str(name or "").strip() in DESKTOP_AGENT_MCP_TOOLS
-
-
-def is_browser_tool(name: str) -> bool:
+def _is_browser_namespaced(name: str) -> bool:
     tool = str(name or "").strip()
     return tool in BROWSER_AGENT_MCP_TOOLS or tool.startswith("browser_") or tool.startswith("card_")
 
 
+def _reported_endpoint_tools(*, want_desktop: bool) -> Set[str]:
+    """Tool names advertised by currently-connected endpoint agents.
+
+    A desktop / browser agent sends its full tool surface in the
+    ``capabilities`` array of ``agent:register`` (see ``api/socket_events.py``).
+    Surfacing them here lets the server recognise and dispatch tools an agent
+    gained at runtime — e.g. a Windows desktop agent extended with new MCP
+    tools (``speech.*``, ``vision.*``, ``hands.*``, ``ear.*`` …) — without
+    editing the static built-in sets above or redeploying the server.
+
+    Browser-namespaced names always count as browser tools (they route to the
+    browser extension); everything else a desktop agent reports counts as a
+    desktop tool.
+    """
+    names: Set[str] = set()
+    for agent in list(agents.values()):
+        if not isinstance(agent, dict):
+            continue
+        platform = str(agent.get("platform") or "").lower()
+        is_desktop = bool(agent.get("isWindowsDesktop")) or "desktop" in platform
+        is_browser = bool(agent.get("isBrowserExtension")) or "browser-extension" in platform
+        if want_desktop and not is_desktop:
+            continue
+        if not want_desktop and not is_browser:
+            continue
+        for cap in agent.get("capabilities") or []:
+            name = str(cap or "").strip()
+            if not name:
+                continue
+            if want_desktop and _is_browser_namespaced(name):
+                continue
+            if not want_desktop and not _is_browser_namespaced(name):
+                continue
+            names.add(name)
+    return names
+
+
+def desktop_tool_names() -> Set[str]:
+    """Static built-in desktop tools unioned with those reported live by a
+    connected desktop agent."""
+    return set(DESKTOP_AGENT_MCP_TOOLS) | _reported_endpoint_tools(want_desktop=True)
+
+
+def browser_tool_names() -> Set[str]:
+    """Static built-in browser tools unioned with those reported live by a
+    connected browser agent."""
+    return set(BROWSER_AGENT_MCP_TOOLS) | _reported_endpoint_tools(want_desktop=False)
+
+
+def is_desktop_tool(name: str) -> bool:
+    return str(name or "").strip() in desktop_tool_names()
+
+
+def is_browser_tool(name: str) -> bool:
+    tool = str(name or "").strip()
+    if _is_browser_namespaced(tool):
+        return True
+    return tool in _reported_endpoint_tools(want_desktop=False)
+
+
 def is_endpoint_agent_tool(name: str) -> bool:
     return is_desktop_tool(name) or is_browser_tool(name)
+
+
+def connected_endpoint_tool_catalog() -> List[Dict[str, str]]:
+    """Live endpoint tool catalog for the Workshop tool picker.
+
+    Returns every tool a connected desktop / browser agent currently
+    advertises, tagged by ``mcpSource`` so the web UI can list runtime-extended
+    tools alongside the static built-ins. Desktop wins when a name appears for
+    both sources (it never should — namespaces are disjoint)."""
+    catalog: Dict[str, str] = {}
+    for name in desktop_tool_names():
+        catalog[name] = "desktop"
+    for name in browser_tool_names():
+        catalog.setdefault(name, "browser")
+    return [
+        {"name": name, "mcpSource": catalog[name]}
+        for name in sorted(catalog)
+    ]
 
 
 def endpoint_tool_description(name: str) -> str:
