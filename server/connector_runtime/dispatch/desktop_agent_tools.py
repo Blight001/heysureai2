@@ -11,6 +11,7 @@ from api.sio import agents
 # TTL cache of that snapshot so it stays context-free and cheap across
 # processes.
 _TOOLNAME_CACHE: Dict[str, Any] = {"expiry": 0.0, "desktop": set(), "browser": set()}
+_TOOLDEFS_CACHE: Dict[str, Any] = {"expiry": 0.0, "defs": {}}
 _TOOLNAME_TTL_SECONDS = 3.0
 
 
@@ -25,6 +26,22 @@ def _presence_tool_names() -> Tuple[Set[str], Set[str]]:
         desktop, browser = set(), set()
     _TOOLNAME_CACHE.update(expiry=now + _TOOLNAME_TTL_SECONDS, desktop=desktop, browser=browser)
     return desktop, browser
+
+
+def _presence_tool_defs() -> Dict[str, Dict[str, Any]]:
+    """Short-TTL cache of every online agent's self-described tool schemas.
+    The agent owns its schemas; the server reads them here so it never
+    hardcodes per-tool descriptions / input schemas."""
+    now = time.time()
+    if _TOOLDEFS_CACHE["expiry"] > now:
+        return _TOOLDEFS_CACHE["defs"]
+    try:
+        from api.agent_presence import online_tool_defs
+        defs = online_tool_defs()
+    except Exception:
+        defs = {}
+    _TOOLDEFS_CACHE.update(expiry=now + _TOOLNAME_TTL_SECONDS, defs=defs)
+    return defs
 
 
 
@@ -85,6 +102,33 @@ def agent_endpoint_tools(agent: Optional[Dict[str, Any]]) -> Set[str]:
     return _agent_capabilities(agent, atype)
 
 
+def agent_endpoint_tool_defs(agent: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    """``{name: {description, input_schema}}`` self-described by a single agent
+    (via the ``toolDefs`` it ships in ``agent:register``), restricted to the
+    tools of its own type. The agent is the source of truth for its own tool
+    schemas, so the server stores these verbatim instead of hardcoding them.
+    A tool reported without a def simply gets no entry (generic fallback)."""
+    atype = agent_type_of(agent)
+    if not atype or not isinstance(agent, dict):
+        return {}
+    allowed = _agent_capabilities(agent, atype)
+    out: Dict[str, Dict[str, Any]] = {}
+    for raw in agent.get("toolDefs") or []:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "").strip()
+        if not name or name not in allowed:
+            continue
+        schema = raw.get("input_schema")
+        if not isinstance(schema, dict):
+            schema = raw.get("inputSchema") if isinstance(raw.get("inputSchema"), dict) else {}
+        out[name] = {
+            "description": str(raw.get("description") or "").strip(),
+            "input_schema": schema,
+        }
+    return out
+
+
 def _reported_endpoint_tools(*, want_desktop: bool) -> Set[str]:
     """Every tool name advertised by currently-connected agents of one kind."""
     target = "desktop" if want_desktop else "browser"
@@ -142,8 +186,24 @@ def connected_endpoint_tool_catalog() -> List[Dict[str, str]]:
     ]
 
 
+# A tool reported by an agent that ships no schema (legacy clients) gets this
+# permissive object schema so the model can still pass arbitrary arguments.
+_GENERIC_ENDPOINT_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {},
+    "required": [],
+    "additionalProperties": True,
+}
+
+
 def endpoint_tool_description(name: str) -> str:
+    """Description for an endpoint tool. Prefers the agent's own reported
+    description; falls back to a generic line keyed by tool type. The server
+    no longer hardcodes per-tool text."""
     tool = str(name or "").strip()
+    reported = _presence_tool_defs().get(tool)
+    if reported and reported.get("description"):
+        return str(reported["description"])
     if is_browser_tool(tool):
         return (
             f"Run browser MCP tool `{tool}` on the connected browser extension bound to this AI. "
@@ -160,154 +220,15 @@ def endpoint_tool_description(name: str) -> str:
 
 
 def endpoint_tool_input_schema(name: str) -> Dict[str, Any]:
+    """Input schema for an endpoint tool, taken verbatim from the agent's own
+    reported ``toolDefs``. Agents that report no schema fall back to a generic
+    permissive object schema."""
     tool = str(name or "").strip()
-    properties: Dict[str, Any] = {}
-    required: List[str] = []
-    if tool == "browser_navigate":
-        properties = {
-            "url": {"type": "string", "description": "Absolute URL to open."},
-            "new_tab": {"type": "boolean", "description": "Open in a new tab."},
-        }
-        required = ["url"]
-    elif tool == "browser_search":
-        properties = {
-            "query": {"type": "string", "description": "Search query."},
-            "engine": {"type": "string", "description": "Search engine, e.g. google, bing, baidu."},
-        }
-        required = ["query"]
-    elif tool in {"browser_click", "browser_right_click", "browser_double_click", "mouse.click", "mouse.double_click", "mouse.right_click"}:
-        properties = {
-            "selector": {"type": "string"},
-            "text": {"type": "string"},
-            "x": {"type": "number"},
-            "y": {"type": "number"},
-            "button": {"type": "string"},
-        }
-    elif tool in {"browser_type", "keyboard.type"}:
-        properties = {
-            "selector": {"type": "string"},
-            "text": {"type": "string"},
-            "clear_first": {"type": "boolean"},
-            "submit": {"type": "boolean"},
-        }
-        required = ["text"]
-    elif tool in {"browser_get_content", "browser_extract", "browser_find_text", "fs.read", "fs.list"}:
-        properties = {
-            "path": {"type": "string"},
-            "selector": {"type": "string"},
-            "text": {"type": "string"},
-            "include_html": {"type": "boolean"},
-            "limit": {"type": "number"},
-        }
-    elif tool in {"browser_screenshot", "screen.capture"}:
-        properties = {
-            "display": {"type": "number", "description": "Desktop display index for screen.capture."},
-            "screen": {"type": "number", "description": "Alias of display."},
-            "selector": {"type": "string", "description": "browser_screenshot: CSS selector of an element to capture."},
-            "text": {"type": "string", "description": "browser_screenshot: visible text used to find an element to capture."},
-            "full_page": {"type": "boolean", "description": "browser_screenshot: capture the full scrollable page."},
-            "x": {"type": "number", "description": "browser_screenshot: region left coordinate."},
-            "y": {"type": "number", "description": "browser_screenshot: region top coordinate."},
-            "width": {"type": "number", "description": "browser_screenshot: region width in CSS pixels."},
-            "height": {"type": "number", "description": "browser_screenshot: region height in CSS pixels."},
-            "clip": {"type": "object", "description": "browser_screenshot: region object {x,y,width,height,coordinate_space?}."},
-            "coordinate_space": {"type": "string", "description": "browser_screenshot: viewport or page. Default viewport."},
-            "margin": {"type": "number", "description": "browser_screenshot: extra CSS pixels around an element capture."},
-            "scroll_into_view": {"type": "boolean", "description": "browser_screenshot: scroll element target into view before capture. Default true."},
-            "format": {"type": "string", "description": "browser_screenshot: png, jpeg, or webp. Default png."},
-            "quality": {"type": "number", "description": "browser_screenshot: JPEG/WebP quality, 0-100."},
-            "scale": {"type": "number", "description": "browser_screenshot: CDP clip scale. Default 1."},
-            "max_area": {"type": "number", "description": "browser_screenshot: maximum screenshot area in CSS pixels. Default 25000000."},
-            "retries": {"type": "number", "description": "browser_screenshot: retry count for simple visible-tab capture. Default 1."},
-            "timeout_ms": {"type": "number", "description": "browser_screenshot: per-stage screenshot timeout in milliseconds."},
-            "timeout_seconds": {"type": "number", "description": "browser_screenshot: server-side wait timeout for the endpoint result."},
-            "visible_timeout_ms": {"type": "number", "description": "browser_screenshot: timeout for visible-tab capture. Default 8000."},
-            "cdp_timeout_ms": {"type": "number", "description": "browser_screenshot: timeout for each Chrome DevTools Protocol screenshot command. Default 12000."},
-            "content_timeout_ms": {"type": "number", "description": "browser_screenshot: timeout for selector/text measurement. Default 5000."},
-            "max_data_url_chars": {"type": "number", "description": "browser_screenshot: maximum returned data URL length. Default 8000000."},
-            "allow_large_data_url": {"type": "boolean", "description": "browser_screenshot: allow returning payloads larger than max_data_url_chars. Default false."},
-            "task_timeout_ms": {"type": "number", "description": "browser_screenshot: endpoint agent hard timeout for this task. Default 35000."},
-            "fallback_visible": {"type": "boolean", "description": "browser_screenshot: fall back to visible-tab capture if precise capture fails. Default false."},
-            "upload_to_server": {
-                "type": "boolean",
-                "description": "Defaults true. The server stores the screenshot under the user's Screenshots workspace folder and returns server_path/workspace_path.",
-            },
-        }
-    elif tool == "screen.capture_region":
-        properties = {
-            "x": {"type": "number"},
-            "y": {"type": "number"},
-            "width": {"type": "number"},
-            "height": {"type": "number"},
-            "upload_to_server": {
-                "type": "boolean",
-                "description": "Defaults true. The server stores the screenshot under the user's Screenshots workspace folder and returns server_path/workspace_path.",
-            },
-        }
-        required = ["width", "height"]
-    elif tool == "browser_find_popups":
-        properties = {
-            "limit": {"type": "number", "description": "Maximum popups to return."},
-        }
-    elif tool == "browser_close_popup":
-        properties = {
-            "selector": {"type": "string", "description": "Optional CSS selector of the popup to close."},
-            "text": {"type": "string", "description": "Optional text inside the popup to identify it."},
-            "index": {"type": "number", "description": "Popup index returned by browser_find_popups."},
-            "strategy": {"type": "string", "description": "auto, close_button, escape, or backdrop."},
-            "force_remove": {"type": "boolean", "description": "Remove the popup DOM node as a last resort."},
-        }
-    elif tool in {"fs.write"}:
-        properties = {
-            "path": {"type": "string"},
-            "content": {"type": "string"},
-        }
-        required = ["path", "content"]
-    elif tool == "shell.run":
-        properties = {
-            "command": {"type": "string", "description": "Command to run."},
-            "timeout": {"type": "number"},
-        }
-        required = ["command"]
-    elif tool in {"keyboard.press", "browser_press_key"}:
-        properties = {
-            "key": {"type": "string"},
-            "selector": {"type": "string"},
-            "ctrl": {"type": "boolean"},
-            "shift": {"type": "boolean"},
-            "alt": {"type": "boolean"},
-            "meta": {"type": "boolean"},
-        }
-        required = ["key"]
-    elif tool in {"card_get", "card_run", "card_delete"}:
-        properties = {
-            "id": {"type": "string"},
-            "name": {"type": "string"},
-        }
-    elif tool == "card_save":
-        properties = {
-            "name": {"type": "string"},
-            "description": {"type": "string"},
-            "steps": {"type": "array", "items": {"type": "object"}},
-            "mode": {"type": "string"},
-        }
-        required = ["name", "steps"]
-    elif tool == "card_update_step":
-        properties = {
-            "id": {"type": "string"},
-            "name": {"type": "string"},
-            "index": {"type": "number"},
-            "tool": {"type": "string"},
-            "args": {"type": "object"},
-            "note": {"type": "string"},
-        }
-        required = ["index"]
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": required,
-        "additionalProperties": True,
-    }
+    reported = _presence_tool_defs().get(tool)
+    schema = reported.get("input_schema") if reported else None
+    if isinstance(schema, dict) and schema:
+        return schema
+    return dict(_GENERIC_ENDPOINT_SCHEMA)
 
 
 def build_endpoint_tools_payload(allowed_tools: Optional[Set[str]] = None) -> List[Dict[str, Any]]:

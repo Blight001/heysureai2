@@ -150,6 +150,7 @@ def register_agent_socket_events():
             from connector_runtime.dispatch.desktop_agent_tools import (
                 agent_type_of,
                 agent_endpoint_tools,
+                agent_endpoint_tool_defs,
             )
             from api.agent_presence import upsert_presence
 
@@ -162,6 +163,7 @@ def register_agent_socket_events():
                     atype,
                     sorted(agent_endpoint_tools(agents[sid])),
                     online=True,
+                    tool_defs=agent_endpoint_tool_defs(agents[sid]),
                 )
         except Exception:
             logger.exception('Failed to record endpoint agent presence: %s', agent_id)

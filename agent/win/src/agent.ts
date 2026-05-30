@@ -1,7 +1,7 @@
 import { io, Socket } from 'socket.io-client'
 import os from 'os'
 import path from 'path'
-import { executeTask, getAvailableTools, DispatchedTask } from './executor'
+import { executeTask, getAvailableTools, getToolDefs, DispatchedTask } from './executor'
 import { getPlatformInfo } from './platform'
 import { AgentSettings } from './store'
 import { normalizeServerUrl } from './server-url'
@@ -126,6 +126,10 @@ export class HeySureAgent {
       platform: `win32-desktop (${os.hostname()})`,
       os: getPlatformInfo(),
       capabilities: getAvailableTools(),
+      // Full self-described tool schemas. The server stores these and surfaces
+      // them in mcp.list_tools / describe_tool instead of hardcoding desktop
+      // tool schemas, so a tool added to the catalog needs no server change.
+      toolDefs: getToolDefs(),
       version: '2.0.0',
       // The server requires a valid user JWT. ``authToken`` is the source
       // of truth; agentToken is kept as a legacy shared-secret fallback.

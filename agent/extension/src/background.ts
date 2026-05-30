@@ -196,6 +196,10 @@ async function emitRegisterOn(s: Socket): Promise<void> {
     platform:        `browser-extension (${navigator?.userAgent?.split(' ').pop() || 'chrome'})`,
     os:              { platform: 'browser', arch: 'unknown', release: '1.0', hostname: id },
     capabilities:    BROWSER_CAPABILITIES,
+    // Full self-described tool schemas. The server stores these and surfaces
+    // them in mcp.list_tools / describe_tool instead of hardcoding browser
+    // tool schemas, so a tool added here needs no server change.
+    toolDefs:        BROWSER_TOOLS,
     version:         '1.0.0',
     token:           auth.token || settings.agentToken || '',
     userId:          auth.userId ?? null,

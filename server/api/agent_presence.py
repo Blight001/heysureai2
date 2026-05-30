@@ -7,7 +7,7 @@ discovery and classification. See ``api.models.agent_presence``.
 
 import json
 import time
-from typing import List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from sqlmodel import Session, select
 
@@ -34,11 +34,34 @@ def _decode(row: EndpointAgentPresence) -> Set[str]:
     return {str(x).strip() for x in parsed if str(x).strip()}
 
 
-def upsert_presence(user_id, agent_id, ai_config_id, agent_type, capabilities, online: bool = True) -> None:
+def _decode_defs(row: EndpointAgentPresence) -> Dict[str, dict]:
+    try:
+        parsed = json.loads(getattr(row, "tool_defs_json", "") or "{}")
+    except Exception:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    out: Dict[str, dict] = {}
+    for name, spec in parsed.items():
+        key = str(name or "").strip()
+        if not key or not isinstance(spec, dict):
+            continue
+        schema = spec.get("input_schema")
+        out[key] = {
+            "description": str(spec.get("description") or "").strip(),
+            "input_schema": schema if isinstance(schema, dict) else {},
+        }
+    return out
+
+
+def upsert_presence(
+    user_id, agent_id, ai_config_id, agent_type, capabilities, online: bool = True, tool_defs=None
+) -> None:
     aid = str(agent_id or "").strip()
     if not aid:
         return
     caps = sorted({str(c).strip() for c in (capabilities or []) if str(c).strip()})
+    defs = tool_defs if isinstance(tool_defs, dict) else {}
     uid = _int(user_id)
     with Session(engine) as session:
         row = session.exec(
@@ -51,6 +74,7 @@ def upsert_presence(user_id, agent_id, ai_config_id, agent_type, capabilities, o
         row.ai_config_id = _int(ai_config_id)
         row.agent_type = str(agent_type or "").strip()
         row.capabilities_json = json.dumps(caps, ensure_ascii=False)
+        row.tool_defs_json = json.dumps(defs, ensure_ascii=False)
         row.online = bool(online)
         row.updated_at = time.time()
         session.commit()
@@ -135,3 +159,18 @@ def online_tool_names() -> Tuple[Set[str], Set[str]]:
             else:
                 desktop |= caps
     return desktop, browser
+
+
+def online_tool_defs() -> Dict[str, dict]:
+    """Merged ``{tool_name: {description, input_schema}}`` self-described by all
+    online agents. The agent is the source of truth for its own tool schemas;
+    the server reads them here instead of hardcoding per-tool schemas."""
+    out: Dict[str, dict] = {}
+    with Session(engine) as session:
+        rows = session.exec(
+            select(EndpointAgentPresence).where(EndpointAgentPresence.online == True)  # noqa: E712
+        ).all()
+        for row in rows:
+            for name, spec in _decode_defs(row).items():
+                out.setdefault(name, spec)
+    return out
