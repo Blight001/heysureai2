@@ -1,5 +1,5 @@
 import './catalog' // side-effect: register built-in tools
-import { getTool, listToolIds } from './registry'
+import { getTool, listToolIds, listToolDefs, ToolDef } from './registry'
 import { inferTool } from './infer'
 
 export interface DispatchedTask {
@@ -50,4 +50,8 @@ export async function executeTask(workspaceRoot: string, task: DispatchedTask): 
 
 export function getAvailableTools(): string[] {
   return listToolIds()
+}
+
+export function getToolDefs(): ToolDef[] {
+  return listToolDefs()
 }

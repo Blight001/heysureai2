@@ -254,6 +254,7 @@ def run_pending_migrations() -> None:
     _migrate_assistantaiconfig_strip_markdown_symbols()
     _migrate_user_ui_plain_text_output_enabled()
     _migrate_user_role()
+    _migrate_endpointagentpresence_tool_defs()
     # Only run for SQLite. Postgres deployments either start fresh or are
     # seeded by the migration script, both of which produce a current schema.
     if database_dialect() != "sqlite":
@@ -384,6 +385,37 @@ def _migrate_user_ui_plain_text_output_enabled() -> None:
             'UPDATE "user" SET ui_plain_text_output_enabled = FALSE '
             "WHERE ui_plain_text_output_enabled IS NULL"
         )
+
+
+def _migrate_endpointagentpresence_tool_defs() -> None:
+    """Add ``tool_defs_json`` to the endpoint presence snapshot.
+
+    Endpoint agents now ship their own tool schemas at register time; the
+    server stores them here so it never hardcodes per-tool schemas. Existing
+    databases that predate this column get it back-filled to ``{}`` (legacy
+    rows simply fall back to a generic schema until the agent reconnects).
+    Runs on every backend.
+    """
+    from ..database import engine
+    from sqlalchemy import inspect
+
+    insp = inspect(engine)
+    if "endpointagentpresence" not in set(insp.get_table_names()):
+        return
+    columns = {col["name"] for col in insp.get_columns("endpointagentpresence")}
+    if "tool_defs_json" in columns:
+        return
+    if database_dialect() == "sqlite":
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                "ALTER TABLE endpointagentpresence ADD COLUMN tool_defs_json TEXT DEFAULT '{}'"
+            )
+    else:
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                "ALTER TABLE endpointagentpresence "
+                "ADD COLUMN IF NOT EXISTS tool_defs_json TEXT DEFAULT '{}'"
+            )
 
 
 def _migrate_user_role() -> None:

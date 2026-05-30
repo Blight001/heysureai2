@@ -21,6 +21,17 @@ export interface ToolDefinition {
   id: string
   platform: ToolPlatform
   handler: ToolHandler
+  // Self-described MCP schema shipped to the server at register time. The
+  // server stores these and surfaces them in mcp.list_tools / describe_tool
+  // instead of hardcoding desktop tool schemas. Optional for back-compat.
+  description?: string
+  inputSchema?: Record<string, any>
+}
+
+export interface ToolDef {
+  name: string
+  description: string
+  input_schema: Record<string, any>
 }
 
 const registry = new Map<string, ToolDefinition>()
@@ -41,6 +52,16 @@ export function listToolIds(): string[] {
   return Array.from(registry.values())
     .filter(t => t.platform === 'all' || (t.platform === 'windows' && IS_WINDOWS))
     .map(t => t.id)
+}
+
+export function listToolDefs(): ToolDef[] {
+  return Array.from(registry.values())
+    .filter(t => t.platform === 'all' || (t.platform === 'windows' && IS_WINDOWS))
+    .map(t => ({
+      name: t.id,
+      description: t.description || `Run desktop tool ${t.id} on the connected Windows agent.`,
+      input_schema: t.inputSchema || { type: 'object', properties: {}, additionalProperties: true },
+    }))
 }
 
 export function clearRegistry(): void {

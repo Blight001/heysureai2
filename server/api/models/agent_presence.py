@@ -30,5 +30,11 @@ class EndpointAgentPresence(SQLModel, table=True):
     agent_type: str = Field(default="")
     # JSON array of the agent's (type-filtered) endpoint tool names.
     capabilities_json: str = Field(default="[]")
+    # JSON object mapping each reported tool name to its self-described
+    # ``{"description", "input_schema"}``. The agent owns its own tool schemas
+    # (browser extension / Windows catalog) and ships them at register time, so
+    # the server never hardcodes per-tool schemas. May be ``{}`` for legacy
+    # agents that only report names — those fall back to a generic schema.
+    tool_defs_json: str = Field(default="{}")
     online: bool = Field(default=True, index=True)
     updated_at: float = Field(default_factory=time.time)
