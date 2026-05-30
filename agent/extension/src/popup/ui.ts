@@ -1,16 +1,14 @@
 // popup/ui.ts — shared presentation layer: theme, connection status, activity
-// feed, tab switching, modals, target banners, chat availability and the
-// read-only member settings view. Feature modules call into these renderers.
+// feed, tab switching, modals, the auth chip and the read-only member settings
+// view. Feature modules call into these renderers.
 
 import { AgentStatus, ActivityEntry } from '../lib/types'
 import { state, TabName, STATUS_LABELS, ROLE_LABELS } from './state'
 import * as dom from './dom'
-import { fmt, roleOf, memberById, currentAvatarHtml, getConnectedAiShortLabel, useServerChat } from './helpers'
+import { fmt, roleOf, memberById, currentAvatarHtml, getConnectedAiShortLabel } from './helpers'
 import { esc } from './markdown'
 import { loadMembers, renderMembers } from './members'
-import { loadJobs } from './tasks'
 import { renderCards } from './cards'
-import { refreshServerSessionsAndHistory, updateChatSessionControls } from './chat'
 
 // ── Status display ─────────────────────────────────────────────────────────
 export function renderStatus() {
@@ -70,12 +68,7 @@ export function switchTab(tab: TabName) {
   ;(Object.keys(dom.tabs) as TabName[]).forEach(k => dom.tabs[k].classList.remove('active'))
   dom.panes[tab].classList.remove('hidden')
   dom.tabs[tab].classList.add('active')
-  if (tab === 'chat') {
-    dom.chatMsgs.scrollTop = dom.chatMsgs.scrollHeight
-    if (useServerChat()) void refreshServerSessionsAndHistory()
-  }
   if (tab === 'settings' && state.auth.token && state.members.length === 0) void loadMembers()
-  if (tab === 'tasks' && state.selectedMemberId && state.auth.token) void loadJobs()
   if (tab === 'cards') void renderCards()
 }
 
@@ -120,54 +113,10 @@ export function updateUserChip() {
   dom.logoutBtn.style.display = auth.token ? 'block' : 'none'
 }
 
-// ── Target banners + chat availability ───────────────────────────────────────
+// ── Offline UI ───────────────────────────────────────────────────────────────
 export function updateOfflineUi() {
   dom.offlineModelConfig.classList.toggle('hidden', !state.offlineMode)
   renderStatus()
-  updateTargetBanners()
-}
-export function updateTargetBanners() {
-  const m = memberById(state.selectedMemberId)
-  if (state.offlineMode) {
-    dom.chatTarget.classList.remove('empty')
-    dom.chatTargetText.innerHTML = `🛜 离线模式 · 模型 <span class="tb-name">${esc(state.localModel || '未配置')}</span>`
-  } else if (m) {
-    dom.chatTarget.classList.remove('empty')
-    dom.chatTargetText.innerHTML = `对话目标：<span class="tb-name">${esc(m.name)}</span>（${ROLE_LABELS[roleOf(m)] || ''}）`
-  } else {
-    dom.chatTarget.classList.add('empty')
-    dom.chatTargetText.textContent = '未选择 AI 成员（将使用本地 AI Key 直连）'
-  }
-  // Task scheduling always needs the server (login + selected member).
-  if (m && !state.offlineMode) {
-    dom.taskTarget.classList.remove('empty')
-    dom.taskTarget.innerHTML = `任务目标：<span class="tb-name">${esc(m.name)}</span>`
-    dom.taskForm.style.display = 'block'
-    dom.taskJobsCard.style.display = 'block'
-  } else {
-    dom.taskTarget.classList.add('empty')
-    dom.taskTarget.textContent = state.offlineMode
-      ? '离线模式下不可安排任务（任务需登录服务器）'
-      : (state.auth.token ? '请先在“成员”中选择一个 AI 成员' : '请先登录并选择 AI 成员')
-    dom.taskForm.style.display = 'none'
-    dom.taskJobsCard.style.display = 'none'
-  }
-  refreshChatAvailability()
-}
-export function refreshChatAvailability() {
-  const enabled = useServerChat() || state.hasAiKey
-  const hasMessages = dom.chatMsgs.querySelectorAll('.chat-msg').length > 0
-  dom.chatNoKey.style.display = (enabled || hasMessages) ? 'none' : 'flex'
-  dom.chatInput.disabled = !enabled || state.chatBusy
-  dom.chatSendBtn.disabled = !enabled || state.chatBusy
-  // In server mode the clear button is "新建对话" — always available so users
-  // can start a fresh session even when the current view is empty.
-  if (useServerChat()) {
-    dom.chatClearBtn.disabled = state.chatBusy
-  } else {
-    dom.chatClearBtn.disabled = !hasMessages && !state.chatHistory.length && !state.chatBusy
-  }
-  updateChatSessionControls()
 }
 
 // ── Settings (read-only views) ────────────────────────────────────────────────

@@ -45,8 +45,10 @@ async function bootstrap(): Promise<void> {
   })
   updateTray(getAgent()?.status || 'disconnected')
 
-  // Auto-connect only if user already logged in and selected an AI member
-  if (store.get('authToken') && store.get('selectedAiConfigId')) {
+  // Auto-connect as soon as the user is logged in. The AI assignment is now
+  // controlled server-side (Workshop panel), so we no longer gate on a locally
+  // selected AI member.
+  if (store.get('authToken')) {
     getAgent()?.connect()
   }
 }

@@ -2,7 +2,6 @@
 // Manages: Socket.IO server connection, task dispatching, popup port communication
 import { io, Socket } from 'socket.io-client'
 import { getSettings, saveSettings, pushActivity, getActivity, getCard, getAuth } from './lib/storage'
-import { listConfigs, MemberConfig } from './lib/client'
 import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS, runCardSteps, setCardProgress, runScheduledCard } from './lib/tools'
 import { callAI } from './lib/ai'
 import { screenshotToolContent } from './lib/ai'
@@ -180,28 +179,18 @@ function probeRegister(url: string, timeoutMs: number): Promise<ProbeOutcome> {
   })
 }
 
-// Single source of truth for "which AI this agent registers as". The
-// selection lives in chrome.storage (selectedAiConfigId) but is only valid
-// when the user is logged in. Using a plain `|| null` would also mistreat a
-// legitimate id of 0, so normalize explicitly here and reuse everywhere.
-function effectiveSelectedAiConfigId(
-  settings: { selectedAiConfigId: number | null },
-  auth: { token: string },
-): number | null {
-  if (!auth.token) return null
-  const raw = settings.selectedAiConfigId
-  return typeof raw === 'number' && raw >= 0 ? raw : null
-}
-
 async function emitRegisterOn(s: Socket): Promise<void> {
   const settings = await getSettings()
   const auth = await getAuth()
   if (settings.offlineMode) return
   const id = settings.agentId || await getMachineId()
-  const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth)
+  // The extension no longer picks its own AI — it logs in and connects, then an
+  // operator assigns a server-side AI to this device from the web Workshop
+  // ("作坊") panel. The server re-applies that binding on every register, so we
+  // always send aiConfigId: null.
   s.emit('agent:register', {
     id,
-    aiConfigId: selectedAiConfigId,
+    aiConfigId: null,
     name:            settings.agentName || 'Browser Agent',
     group:           settings.agentGroup || '',
     platform:        `browser-extension (${navigator?.userAgent?.split(' ').pop() || 'chrome'})`,
@@ -369,18 +358,12 @@ function attachOperationalListeners(s: Socket, agentName: string) {
 
 async function register() {
   const settings = await getSettings()
-  const auth = await getAuth()
   if (settings.offlineMode) {
     log('system', 'info', '离线模式已开启，跳过注册')
     return
   }
   if (!socket) return
-  const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth)
-  if (!auth.token && settings.selectedAiConfigId) {
-    await saveSettings({ selectedAiConfigId: null })
-    log('system', 'warn', '未登录，已取消 AI 成员自动注册选择')
-  }
-  log('system', 'info', `注册 agent (AI=${selectedAiConfigId ?? '未选择'})`)
+  log('system', 'info', '注册 agent（AI 由服务器作坊分配）')
   await emitRegisterOn(socket)
 }
 
@@ -391,37 +374,12 @@ function disconnect() {
   setStatus('disconnected')
 }
 
-async function refreshServerAiSelectionOnStartup(): Promise<number | null> {
-  const settings = await getSettings()
-  const auth = await getAuth()
-  if (settings.offlineMode || !auth.token || !settings.serverUrl) return null
-
-  let members: MemberConfig[]
-  try {
-    members = await listConfigs(settings.serverUrl, auth.token)
-  } catch (err: any) {
-    log('system', 'warn', `启动时获取 AI 成员失败: ${err?.message || err}`)
-    return null
-  }
-
-  const selectedAiConfigId = effectiveSelectedAiConfigId(settings, auth)
-  if (!selectedAiConfigId) return null
-
-  const selected = members.find(m => m.id === selectedAiConfigId)
-  if (!selected) {
-    await saveSettings({ selectedAiConfigId: null })
-    log('system', 'warn', '上次选择的 AI 已不存在，已清除自动选择')
-    return null
-  }
-
-  log('system', 'info', `已恢复上次选择的 AI：${selected.name || selected.id}`)
-  return selectedAiConfigId
-}
-
 async function restoreAndConnectOnStartup() {
-  const selectedAiConfigId = await refreshServerAiSelectionOnStartup()
   const s = await getSettings()
-  if (!s.offlineMode && (selectedAiConfigId || s.autoConnect)) await connect()
+  const auth = await getAuth()
+  // Logged-in + online → link to the server automatically so the device shows
+  // up in the Workshop panel ready to be assigned an AI.
+  if (!s.offlineMode && auth.token) await connect()
 }
 
 // ── Task handling ─────────────────────────────────────────────────────────
@@ -693,28 +651,6 @@ chrome.runtime.onConnect.addListener((port) => {
         }
         break
       }
-      case 'agent:selected-ai': {
-        const auth = await getAuth()
-        const aiConfigId = auth.token ? msg.aiConfigId : null
-        if (msg.aiConfigId && !auth.token) {
-          log('system', 'warn', '请先登录软件端账号，再选择 AI 成员自动注册')
-        }
-        await saveSettings({ selectedAiConfigId: aiConfigId })
-        if (socket?.connected) {
-          // Already connected — re-register so the server updates the
-          // agent record with the new aiConfigId.
-          await register()
-        } else if (aiConfigId && auth.token) {
-          // Not yet connected. The user has shown intent (logged-in +
-          // selected an AI) so connect now. Without this, the agent
-          // either never registers, or — if the user later clicks
-          // "connect" — registers without an aiConfigId, leaving the
-          // server-side record showing the agent with no AI assigned.
-          await connect()
-        }
-        break
-      }
-
       case 'chat:send': {
         const requestId = msg.requestId
         try {

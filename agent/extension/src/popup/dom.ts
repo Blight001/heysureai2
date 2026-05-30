@@ -15,25 +15,14 @@ export const userAva      = $('user-ava')
 export const userName     = $('user-name')
 
 export const tabs: Record<TabName, HTMLElement> = {
-  chat: $('tab-chat'),
-  tasks: $('tab-tasks'), cards: $('tab-cards'), settings: $('tab-settings'),
+  cards: $('tab-cards'), settings: $('tab-settings'),
 }
 export const panes: Record<TabName, HTMLElement> = {
-  chat: $('chat-pane'),
-  tasks: $('task-pane'), cards: $('cards-pane'), settings: $('settings-pane'),
+  cards: $('cards-pane'), settings: $('settings-pane'),
 }
 
 export const feed         = $('feed')
 export const feedEmpty    = $('feed-empty')
-export const chatMsgs     = $('chat-messages')
-export const chatNoKey    = $('chat-no-key')
-export const chatInput    = $('chat-input') as HTMLTextAreaElement
-export const chatSendBtn  = $('chat-send') as HTMLButtonElement
-export const chatTarget   = $('chat-target')
-export const chatTargetText = $('chat-target-text')
-export const chatClearBtn = $('chat-clear-btn') as HTMLButtonElement
-export const chatSessionSelect = $('chat-session-select') as HTMLSelectElement
-export const chatSessionDeleteBtn = $('chat-session-delete-btn') as HTMLButtonElement
 export const connectBtn   = $('connect-btn')
 export const disconnectBtn = $('disconnect-btn')
 export const clearBtn     = $('clear-btn')
@@ -66,25 +55,6 @@ export const loginFeedback = $('login-feedback')
 export const membersRefresh = $('members-refresh')
 export const membersList  = $('members-list')
 export const membersEmpty = $('members-empty')
-
-// Tasks
-export const taskTarget   = $('task-target')
-export const taskForm     = $('task-form')
-export const taskTitle    = $('task-title') as HTMLInputElement
-export const taskInstruction = $('task-instruction') as HTMLTextAreaElement
-export const taskPriority = $('task-priority') as HTMLInputElement
-export const taskSchedEnabled = $('task-schedule-enabled') as HTMLInputElement
-export const taskSchedOpts = $('task-schedule-opts')
-export const taskLoop     = $('task-loop-enabled') as HTMLInputElement
-export const taskRunNow   = $('task-run-immediately') as HTMLInputElement
-export const taskDuration = $('task-duration') as HTMLInputElement
-export const taskAt       = $('task-at') as HTMLInputElement
-export const taskSubmit   = $('task-submit') as HTMLButtonElement
-export const taskFeedback = $('task-feedback')
-export const taskJobsCard = $('task-jobs-card')
-export const jobsRefresh  = $('jobs-refresh')
-export const jobsList     = $('jobs-list')
-export const jobsEmpty    = $('jobs-empty')
 
 // Settings extra
 export const accountStatusV = $('account-status-v')

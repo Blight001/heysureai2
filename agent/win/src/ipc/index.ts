@@ -5,16 +5,10 @@ import { registerSettingsIpc } from './settings'
 import { registerAgentIpc } from './agent'
 import { registerAuthIpc } from './auth'
 import { registerAiConfigIpc } from './ai-config'
-import { registerTaskIpc } from './task'
-import { registerChatIpc } from './chat'
-import { registerWorkspaceIpc } from './workspace'
 
 export function registerAllIpc(): void {
   registerSettingsIpc()
   registerAgentIpc()
   registerAuthIpc()
   registerAiConfigIpc()
-  registerTaskIpc()
-  registerChatIpc()
-  registerWorkspaceIpc()
 }

@@ -14,7 +14,7 @@
   };
   var state = {
     currentTheme: "dark",
-    activeTab: "chat",
+    activeTab: "cards",
     currentStatus: "disconnected",
     chatHistory: [],
     chatBusy: false,
@@ -54,28 +54,15 @@
   var userAva = $("user-ava");
   var userName = $("user-name");
   var tabs = {
-    chat: $("tab-chat"),
-    tasks: $("tab-tasks"),
     cards: $("tab-cards"),
     settings: $("tab-settings")
   };
   var panes = {
-    chat: $("chat-pane"),
-    tasks: $("task-pane"),
     cards: $("cards-pane"),
     settings: $("settings-pane")
   };
   var feed = $("feed");
   var feedEmpty = $("feed-empty");
-  var chatMsgs = $("chat-messages");
-  var chatNoKey = $("chat-no-key");
-  var chatInput = $("chat-input");
-  var chatSendBtn = $("chat-send");
-  var chatTarget = $("chat-target");
-  var chatTargetText = $("chat-target-text");
-  var chatClearBtn = $("chat-clear-btn");
-  var chatSessionSelect = $("chat-session-select");
-  var chatSessionDeleteBtn = $("chat-session-delete-btn");
   var connectBtn = $("connect-btn");
   var disconnectBtn = $("disconnect-btn");
   var clearBtn = $("clear-btn");
@@ -106,23 +93,6 @@
   var membersRefresh = $("members-refresh");
   var membersList = $("members-list");
   var membersEmpty = $("members-empty");
-  var taskTarget = $("task-target");
-  var taskForm = $("task-form");
-  var taskTitle = $("task-title");
-  var taskInstruction = $("task-instruction");
-  var taskPriority = $("task-priority");
-  var taskSchedEnabled = $("task-schedule-enabled");
-  var taskSchedOpts = $("task-schedule-opts");
-  var taskLoop = $("task-loop-enabled");
-  var taskRunNow = $("task-run-immediately");
-  var taskDuration = $("task-duration");
-  var taskAt = $("task-at");
-  var taskSubmit = $("task-submit");
-  var taskFeedback = $("task-feedback");
-  var taskJobsCard = $("task-jobs-card");
-  var jobsRefresh = $("jobs-refresh");
-  var jobsList = $("jobs-list");
-  var jobsEmpty = $("jobs-empty");
   var accountStatusV = $("account-status-v");
   var logoutBtn = $("logout-btn");
   var memberSettingsCard = $("member-settings-card");
@@ -172,26 +142,6 @@
   }
   async function saveSettings(partial) {
     await chrome.storage.local.set(partial);
-  }
-  var CHAT_KEY = "_chat_history";
-  var MAX_CHAT = 120;
-  function normalizeChatHistory(raw) {
-    if (!Array.isArray(raw))
-      return [];
-    return raw.filter((item) => item && (item.role === "user" || item.role === "assistant")).map((item) => ({
-      role: item.role,
-      content: item.content
-    })).slice(-MAX_CHAT);
-  }
-  async function getChatHistory() {
-    const r = await chrome.storage.local.get(CHAT_KEY);
-    return normalizeChatHistory(r[CHAT_KEY]);
-  }
-  async function setChatHistory(messages) {
-    await chrome.storage.local.set({ [CHAT_KEY]: normalizeChatHistory(messages) });
-  }
-  async function clearChatHistory() {
-    await chrome.storage.local.remove(CHAT_KEY);
   }
   var AUTH_KEY = "_auth_state";
   var AUTH_DEFAULT = { token: "", account: "", userId: null, userName: "", avatar: "" };
@@ -285,385 +235,13 @@
     const rows = await requestJson(`${trimUrl(serverUrl)}/api/ai/configs`, { headers: authHeaders(token) }, "AI \u6210\u5458\u5217\u8868\u52A0\u8F7D\u5931\u8D25");
     return Array.isArray(rows) ? rows : [];
   }
-  async function startChatRun(serverUrl, token, aiConfigId, sessionId, content, sessionName) {
-    return requestJson(
-      `${trimUrl(serverUrl)}/api/chat/run/start`,
-      {
-        method: "POST",
-        headers: authHeaders(token, true),
-        body: JSON.stringify({
-          ai_config_id: aiConfigId,
-          ai_kind: "assistant",
-          session_id: sessionId,
-          session_name: sessionName || "\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD",
-          visible_content: content,
-          model_content: content
-        })
-      },
-      "\u53D1\u8D77\u5BF9\u8BDD\u5931\u8D25"
-    );
-  }
-  async function getChatRun(serverUrl, token, runId, after) {
-    const q = after !== void 0 ? `?after=${after}` : "";
-    return requestJson(
-      `${trimUrl(serverUrl)}/api/chat/run/status/${encodeURIComponent(runId)}${q}`,
-      { headers: authHeaders(token) },
-      "\u83B7\u53D6\u5BF9\u8BDD\u72B6\u6001\u5931\u8D25"
-    );
-  }
-  async function stopChatRun(serverUrl, token, runId) {
-    await fetch(`${trimUrl(serverUrl)}/api/chat/run/${encodeURIComponent(runId)}/stop`, {
-      method: "POST",
-      headers: authHeaders(token),
-      signal: AbortSignal.timeout(1e4)
-    }).catch(() => {
-    });
-  }
-  var chatQs = (aiConfigId, extra = {}) => {
-    const params = { ai_kind: "assistant", ...extra };
-    if (aiConfigId !== null && aiConfigId !== void 0)
-      params.ai_config_id = String(aiConfigId);
-    return new URLSearchParams(params).toString();
-  };
-  async function listChatSessions(serverUrl, token, aiConfigId) {
-    const rows = await requestJson(
-      `${trimUrl(serverUrl)}/api/chat/sessions?${chatQs(aiConfigId)}`,
-      { headers: authHeaders(token) },
-      "\u4F1A\u8BDD\u5217\u8868\u52A0\u8F7D\u5931\u8D25"
-    );
-    return (Array.isArray(rows) ? rows : []).map((row) => ({
-      id: String(row?.id || ""),
-      name: String(row?.name || "\u672A\u547D\u540D\u4F1A\u8BDD"),
-      total_tokens: Number(row?.total_tokens || 0)
-    }));
-  }
-  async function createChatSession(serverUrl, token, name, aiConfigId) {
-    const row = await requestJson(
-      `${trimUrl(serverUrl)}/api/chat/sessions`,
-      {
-        method: "POST",
-        headers: authHeaders(token, true),
-        body: JSON.stringify({ name, ai_config_id: aiConfigId, ai_kind: "assistant" })
-      },
-      "\u521B\u5EFA\u4F1A\u8BDD\u5931\u8D25"
-    );
-    return { id: String(row?.id || ""), name: String(row?.name || name || "\u672A\u547D\u540D\u4F1A\u8BDD") };
-  }
-  async function deleteChatSession(serverUrl, token, sessionId, aiConfigId) {
-    const res = await fetch(
-      `${trimUrl(serverUrl)}/api/chat/sessions/${encodeURIComponent(sessionId)}?${chatQs(aiConfigId)}`,
-      { method: "DELETE", headers: authHeaders(token), signal: AbortSignal.timeout(1e4) }
-    );
-    if (!res.ok)
-      throw new ApiError(await parseError(res, "\u5220\u9664\u4F1A\u8BDD\u5931\u8D25"), res.status);
-  }
-  async function fetchChatHistory(serverUrl, token, sessionId, aiConfigId) {
-    const rows = await requestJson(
-      `${trimUrl(serverUrl)}/api/chat/history?${chatQs(aiConfigId, { session_id: sessionId })}`,
-      { headers: authHeaders(token) },
-      "\u52A0\u8F7D\u5BF9\u8BDD\u8BB0\u5F55\u5931\u8D25"
-    );
-    return Array.isArray(rows) ? rows : [];
-  }
-  async function deleteServerChatMessage(serverUrl, token, msgId) {
-    const res = await fetch(
-      `${trimUrl(serverUrl)}/api/chat/${msgId}`,
-      { method: "DELETE", headers: authHeaders(token), signal: AbortSignal.timeout(1e4) }
-    );
-    if (!res.ok)
-      throw new ApiError(await parseError(res, "\u5220\u9664\u6D88\u606F\u5931\u8D25"), res.status);
-  }
-  async function recallServerChatMessage(serverUrl, token, msgId) {
-    return requestJson(
-      `${trimUrl(serverUrl)}/api/chat/recall/${msgId}`,
-      { method: "POST", headers: authHeaders(token) },
-      "\u64A4\u56DE\u5931\u8D25"
-    );
-  }
-  async function triggerTask(serverUrl, token, configId, payload) {
-    return requestJson(
-      `${trimUrl(serverUrl)}/api/ai/configs/${configId}/task-trigger`,
-      { method: "POST", headers: authHeaders(token, true), body: JSON.stringify(payload) },
-      "\u5B89\u6392\u4EFB\u52A1\u5931\u8D25"
-    );
-  }
-  async function listTaskJobs(serverUrl, token, configId) {
-    const data = await requestJson(
-      `${trimUrl(serverUrl)}/api/ai/configs/${configId}/task-jobs`,
-      { headers: authHeaders(token) },
-      "\u4EFB\u52A1\u5217\u8868\u52A0\u8F7D\u5931\u8D25"
-    );
-    return Array.isArray(data?.jobs) ? data.jobs : [];
-  }
-  async function taskJobAction(serverUrl, token, configId, jobId, action) {
-    const base = `${trimUrl(serverUrl)}/api/ai/configs/${configId}/task-jobs/${encodeURIComponent(jobId)}`;
-    if (action === "delete") {
-      const res2 = await fetch(base, { method: "DELETE", headers: authHeaders(token), signal: AbortSignal.timeout(1e4) });
-      if (!res2.ok)
-        throw new ApiError(await parseError(res2, "\u5220\u9664\u4EFB\u52A1\u5931\u8D25"), res2.status);
-      return;
-    }
-    const res = await fetch(`${base}/${action}`, { method: "POST", headers: authHeaders(token), signal: AbortSignal.timeout(1e4) });
-    if (!res.ok)
-      throw new ApiError(await parseError(res, `${action} \u4EFB\u52A1\u5931\u8D25`), res.status);
-  }
 
   // src/popup/markdown.ts
   function esc(s) {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
-  function inlineMd(text) {
-    const placeholders = [];
-    const stash = (html) => {
-      const key = `@@HTML_${placeholders.length}@@`;
-      placeholders.push(html);
-      return key;
-    };
-    let out = esc(text);
-    out = out.replace(/`([^`]+)`/g, (_, code) => stash(`<code>${esc(code)}</code>`));
-    out = out.replace(
-      /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
-      (_, label, url) => stash(`<a href="${esc(url)}" target="_blank" rel="noreferrer">${esc(label)}</a>`)
-    );
-    out = out.replace(
-      /(^|[\s(])(https?:\/\/[^\s<)]+)/g,
-      (_, prefix, url) => `${prefix}${stash(`<a href="${esc(url)}" target="_blank" rel="noreferrer">${esc(url)}</a>`)}`
-    );
-    out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/__([^_]+)__/g, "<strong>$1</strong>").replace(/\*([^*\n]+)\*/g, "<em>$1</em>").replace(/_([^_\n]+)_/g, "<em>$1</em>").replace(/~~([^~]+)~~/g, "<del>$1</del>");
-    placeholders.forEach((html, idx) => {
-      out = out.replaceAll(`@@HTML_${idx}@@`, html);
-    });
-    return out;
-  }
-  function isMarkdownTableStart(lines, index) {
-    const head = lines[index]?.trim() || "";
-    const sep = lines[index + 1]?.trim() || "";
-    return /^\|.+\|$/.test(head) && /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(sep);
-  }
-  function parseTableRow(line) {
-    return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
-  }
-  function renderMarkdownTable(lines, start) {
-    const headers = parseTableRow(lines[start]);
-    let idx = start + 2;
-    const rows = [];
-    while (idx < lines.length && /^\|.+\|$/.test(lines[idx].trim())) {
-      rows.push(parseTableRow(lines[idx]));
-      idx++;
-    }
-    const head = headers.map((cell) => `<th>${inlineMd(cell)}</th>`).join("");
-    const body = rows.map((row) => `<tr>${headers.map((_, i) => `<td>${inlineMd(row[i] || "")}</td>`).join("")}</tr>`).join("");
-    return {
-      html: `<div class="chat-table-wrap"><table class="chat-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`,
-      next: idx
-    };
-  }
-  function renderMarkdown(text) {
-    const src = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
-    if (!src)
-      return "";
-    const blocks = [];
-    const parts = src.split(/(```[\s\S]*?```)/g);
-    for (const part of parts) {
-      if (!part)
-        continue;
-      const fence = part.match(/^```([\w-]*)\n?([\s\S]*?)```$/);
-      if (fence) {
-        const lang = fence[1] ? `<div class="chat-mcp-title">${esc(fence[1])}</div>` : "";
-        blocks.push(`${lang}<pre>${esc(fence[2].trim())}</pre>`);
-        continue;
-      }
-      const lines = part.split("\n");
-      let para = [];
-      let list = [];
-      let ordered = false;
-      const flushPara = () => {
-        if (para.length) {
-          blocks.push(`<p>${inlineMd(para.join("\n")).replace(/\n/g, "<br>")}</p>`);
-          para = [];
-        }
-      };
-      const flushList = () => {
-        if (list.length) {
-          blocks.push(`<${ordered ? "ol" : "ul"}>${list.join("")}</${ordered ? "ol" : "ul"}>`);
-          list = [];
-        }
-      };
-      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-        const line = lines[lineIndex];
-        const trimmed = line.trim();
-        if (!trimmed) {
-          flushPara();
-          flushList();
-          continue;
-        }
-        if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) {
-          flushPara();
-          flushList();
-          blocks.push("<hr>");
-          continue;
-        }
-        if (isMarkdownTableStart(lines, lineIndex)) {
-          flushPara();
-          flushList();
-          const table = renderMarkdownTable(lines, lineIndex);
-          blocks.push(table.html);
-          lineIndex = table.next - 1;
-          continue;
-        }
-        const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
-        if (heading) {
-          flushPara();
-          flushList();
-          const level = Math.min(3, heading[1].length);
-          blocks.push(`<h${level}>${inlineMd(heading[2])}</h${level}>`);
-          continue;
-        }
-        const quote = trimmed.match(/^>\s+(.+)$/);
-        if (quote) {
-          flushPara();
-          flushList();
-          blocks.push(`<blockquote>${inlineMd(quote[1])}</blockquote>`);
-          continue;
-        }
-        const task = trimmed.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/);
-        const unordered = trimmed.match(/^[-*]\s+(.+)$/);
-        const orderedMatch = trimmed.match(/^\d+\.\s+(.+)$/);
-        if (task || unordered || orderedMatch) {
-          flushPara();
-          const nextOrdered = !!orderedMatch;
-          if (list.length && ordered !== nextOrdered)
-            flushList();
-          ordered = nextOrdered;
-          if (task) {
-            const checked = task[1].trim().toLowerCase() === "x";
-            list.push(`<li class="chat-task"><span class="chat-check">${checked ? "\u2713" : ""}</span>${inlineMd(task[2])}</li>`);
-          } else {
-            list.push(`<li>${inlineMd((unordered || orderedMatch)[1])}</li>`);
-          }
-          continue;
-        }
-        flushList();
-        para.push(line);
-      }
-      flushPara();
-      flushList();
-    }
-    return `<div class="chat-md">${blocks.join("")}</div>`;
-  }
-  function normalizeJsonText(raw) {
-    const text = String(raw || "").trim();
-    try {
-      return JSON.stringify(JSON.parse(text), null, 2);
-    } catch {
-      return text;
-    }
-  }
-  var MCP_CALL_BLOCK_RE = /<mcp[-_]call>\s*([\s\S]*?)\s*<\/\s*(?:mcp[-_]call|[｜|]*\s*DSML\s*[｜|]*\s*(?:invoke|tool[-_]?calls?))\s*>/gi;
-  var MCP_HEADER_LINE_RE = /^(?:#{1,6}\s*)?(\[MCP执行[^\]]*\]|\[工具参数\]|\[工具执行结果\]|系统已执行工具[：:].*|工具(?:名称)?[：:].*|执行状态[：:].*|状态[：:].*|可用工具[：:].*)$/i;
-  function splitInlineContent(text) {
-    let body = String(text || "");
-    const reasoning = [];
-    body = body.replace(/<think>\s*([\s\S]*?)\s*<\/think>/gi, (_, inner) => {
-      reasoning.push(String(inner || "").trim());
-      return "";
-    });
-    const parts = [];
-    const matches = [];
-    for (const m of body.matchAll(MCP_CALL_BLOCK_RE)) {
-      matches.push({
-        index: m.index ?? 0,
-        length: m[0].length,
-        payload: normalizeJsonText(String(m[1] || "").trim())
-      });
-    }
-    matches.sort((a, b) => a.index - b.index);
-    let cursor = 0;
-    for (const m of matches) {
-      if (m.index > cursor) {
-        const slice = body.slice(cursor, m.index);
-        if (slice.trim())
-          parts.push({ kind: "text", content: slice });
-      }
-      parts.push({ kind: "mcp-block", content: m.payload });
-      cursor = m.index + m.length;
-    }
-    if (cursor < body.length) {
-      const tail = body.slice(cursor);
-      if (tail.trim())
-        parts.push({ kind: "text", content: tail });
-    }
-    if (!parts.length && body.trim())
-      parts.push({ kind: "text", content: body });
-    const refined = [];
-    for (const part of parts) {
-      if (part.kind !== "text") {
-        refined.push(part);
-        continue;
-      }
-      const lines = part.content.split("\n");
-      const headerIdx = lines.findIndex((line) => MCP_HEADER_LINE_RE.test(line.trim()));
-      if (headerIdx < 0) {
-        refined.push(part);
-        continue;
-      }
-      const plain = lines.slice(0, headerIdx).join("\n").trimEnd();
-      const mcpText = lines.slice(headerIdx).join("\n").trim();
-      if (plain)
-        refined.push({ kind: "text", content: plain });
-      if (mcpText)
-        refined.push({ kind: "mcp-snippet", content: mcpText });
-    }
-    return { reasoning, parts: refined };
-  }
-  function renderChatEvent(event) {
-    return `<div class="chat-mcp-card"><div class="chat-mcp-title">${esc(event.label)}</div>` + (event.imageUrl ? `<img class="chat-tool-image" src="${esc(event.imageUrl)}" alt="browser screenshot" />` : "") + (event.detail ? `<pre class="chat-mcp-pre">${esc(event.detail)}</pre>` : "") + `</div>`;
-  }
-  function renderMcpBlockHtml(payload) {
-    return `<div class="chat-mcp-card"><div class="chat-mcp-title">\u{1F9F0} MCP \u8C03\u7528</div><pre class="chat-mcp-pre">${esc(payload)}</pre></div>`;
-  }
-  function renderMcpSnippetHtml(text) {
-    return `<div class="chat-mcp-card"><div class="chat-mcp-title">MCP \u64CD\u4F5C</div><pre class="chat-mcp-pre">${esc(text)}</pre></div>`;
-  }
-  function renderChatContent(text, opts = {}) {
-    const { reasoning: inlineReasoning, parts } = splitInlineContent(text);
-    const reasoningParts = [opts.reasoning, ...inlineReasoning].map((v) => String(v || "").trim()).filter(Boolean);
-    const chunks = [];
-    if (reasoningParts.length) {
-      chunks.push(
-        `<details class="chat-reasoning" ${opts.loading ? "open" : ""}><summary>\u6DF1\u5EA6\u601D\u8003</summary><div class="chat-reasoning-body">${esc(reasoningParts.join("\n\n"))}</div></details>`
-      );
-    }
-    if (opts.currentTool) {
-      chunks.push(`<div class="chat-tool-phase">\u2699 \u7B49\u5F85 MCP: ${esc(opts.currentTool)}</div>`);
-    }
-    for (const part of parts) {
-      if (part.kind === "text")
-        chunks.push(renderMarkdown(part.content));
-      else if (part.kind === "mcp-block")
-        chunks.push(renderMcpBlockHtml(part.content));
-      else
-        chunks.push(renderMcpSnippetHtml(part.content));
-    }
-    if (opts.toolsUsed?.length) {
-      chunks.push(
-        `<div class="chat-mcp-card"><div class="chat-mcp-title">\u{1F9F0} MCP \u8C03\u7528</div><div class="tool-chips">${opts.toolsUsed.map((tool) => `<span class="tool-chip">${esc(tool)}</span>`).join("")}</div></div>`
-      );
-    }
-    if (!chunks.length && opts.loading) {
-      chunks.push('<div class="chat-empty-live">\u601D\u8003\u4E2D...</div><div class="thinking"><span></span><span></span><span></span></div>');
-    }
-    return chunks.join("");
-  }
-  function renderChatFrame(text, opts = {}) {
-    return [
-      ...(opts.events || []).map(renderChatEvent),
-      renderChatContent(text, opts)
-    ].filter(Boolean).join("");
-  }
 
   // src/popup/helpers.ts
-  var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   function fmt(ts) {
     return new Date(ts).toTimeString().slice(0, 8);
   }
@@ -721,18 +299,6 @@
       return false;
     }
   }
-  function useServerChat() {
-    return !!(!state.offlineMode && state.auth.token && state.selectedMemberId);
-  }
-  function syncSelectedAiToBackground(force = false) {
-    if (!state.selectedMemberId)
-      return;
-    if (!state.auth.token && !force)
-      return;
-    if (!memberById(state.selectedMemberId))
-      return;
-    state.port.postMessage({ type: "agent:selected-ai", aiConfigId: state.selectedMemberId });
-  }
   function fetchAsDataUrl(url) {
     return fetch(url).then((resp) => {
       if (!resp.ok)
@@ -775,504 +341,6 @@
     return avatarHtml(state.avatarDataUrl || state.auth.avatar, fallback);
   }
 
-  // src/popup/chat.ts
-  function syncChatHistory() {
-    if (useServerChat())
-      return Promise.resolve();
-    return setChatHistory(state.chatHistory);
-  }
-  function clearChatMessages() {
-    chatMsgs.querySelectorAll(".chat-msg").forEach((e) => e.remove());
-  }
-  function chatContentToText(content) {
-    return typeof content === "string" ? content : JSON.stringify(content);
-  }
-  function makeChatRequestId() {
-    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  }
-  function rowActionsHtml(role, supportsRecall) {
-    const isUser = role === "user";
-    const buttons = [
-      '<button class="chat-action-btn" type="button" data-chat-action="copy" title="\u590D\u5236">\u590D\u5236</button>'
-    ];
-    if (isUser && supportsRecall) {
-      buttons.push('<button class="chat-action-btn" type="button" data-chat-action="revoke" title="\u64A4\u56DE\u6B64\u6D88\u606F\u53CA\u4E4B\u540E\u6240\u6709\u5BF9\u8BDD">\u64A4\u56DE</button>');
-    }
-    buttons.push('<button class="chat-action-btn danger" type="button" data-chat-action="delete" title="\u5220\u9664\u6B64\u6D88\u606F">\u5220\u9664</button>');
-    return `<div class="chat-msg-actions" aria-label="\u6D88\u606F\u64CD\u4F5C">${buttons.join("")}</div>`;
-  }
-  function appendChatMsg(role, content, historyIndex) {
-    chatNoKey.style.display = "none";
-    const el = document.createElement("div");
-    el.className = `chat-msg ${role}`;
-    if (historyIndex !== void 0)
-      el.dataset.historyIndex = String(historyIndex);
-    const supportsRecall = role === "user";
-    const avatar = role === "ai" ? "\u2728" : currentAvatarHtml("\u{1F464}");
-    el.innerHTML = `<div class="chat-avatar">${avatar}</div><div class="chat-bubble">${rowActionsHtml(role, supportsRecall)}${renderChatContent(content)}</div>`;
-    chatMsgs.appendChild(el);
-    chatMsgs.scrollTop = chatMsgs.scrollHeight;
-    return el;
-  }
-  function renderChatHistory() {
-    clearChatMessages();
-    if (!state.chatHistory.length) {
-      refreshChatAvailability();
-      return;
-    }
-    state.chatHistory.forEach((msg, index) => {
-      const role = msg.role === "assistant" ? "ai" : "user";
-      const el = appendChatMsg(role, chatContentToText(msg.content), index);
-      if (msg.serverId !== void 0)
-        el.dataset.serverId = String(msg.serverId);
-    });
-    refreshChatAvailability();
-  }
-  function showThinking() {
-    const el = document.createElement("div");
-    el.className = "chat-msg ai";
-    el.id = "thinking";
-    el.innerHTML = `<div class="chat-avatar">\u2728</div><div class="chat-bubble"><div class="thinking"><span></span><span></span><span></span></div></div>`;
-    chatMsgs.appendChild(el);
-    chatMsgs.scrollTop = chatMsgs.scrollHeight;
-    return el;
-  }
-  function setBubble(el, html) {
-    const bubble = el.querySelector(".chat-bubble");
-    if (bubble)
-      bubble.innerHTML = html;
-    chatMsgs.scrollTop = chatMsgs.scrollHeight;
-  }
-  function setChatBusy(busy) {
-    state.chatBusy = busy;
-    refreshChatAvailability();
-  }
-  async function restoreChatHistory() {
-    if (useServerChat())
-      return;
-    state.chatHistory = await getChatHistory();
-    renderChatHistory();
-  }
-  function defaultSessionIdForMember() {
-    return `ext-${state.selectedMemberId}`;
-  }
-  function isExtensionSession(name) {
-    return /^浏览器插件(?:会话| 对话)/.test(String(name || "").trim());
-  }
-  function pickPreferredSessionId(items) {
-    if (!items.length)
-      return "";
-    const ext = items.find((item) => isExtensionSession(item.name));
-    return (ext || items[0]).id;
-  }
-  function updateChatSessionControls() {
-    if (!useServerChat()) {
-      chatSessionSelect.classList.add("hidden");
-      chatSessionDeleteBtn.style.display = "none";
-      chatClearBtn.textContent = "\u6E05\u7A7A";
-      chatClearBtn.title = "\u6E05\u7A7A\u672C\u5730\u5BF9\u8BDD\u8BB0\u5F55";
-      return;
-    }
-    chatClearBtn.textContent = "\u65B0\u5EFA\u5BF9\u8BDD";
-    chatClearBtn.title = "\u5728\u670D\u52A1\u5668\u4E0A\u65B0\u5EFA\u4E00\u6BB5\u5BF9\u8BDD\uFF08\u4FDD\u7559\u5F53\u524D\u5386\u53F2\uFF09";
-    if (state.serverSessions.length === 0) {
-      chatSessionSelect.classList.add("hidden");
-      chatSessionDeleteBtn.style.display = "none";
-      return;
-    }
-    chatSessionSelect.innerHTML = state.serverSessions.map((s) => `<option value="${esc(s.id)}"${s.id === state.currentServerSessionId ? " selected" : ""}>${esc(s.name)}</option>`).join("");
-    chatSessionSelect.classList.remove("hidden");
-    chatSessionDeleteBtn.style.display = state.serverSessions.length > 1 ? "block" : "none";
-  }
-  function chatMessageFromServer(row) {
-    const role = String(row?.role || "");
-    if (role !== "user" && role !== "assistant" && role !== "system")
-      return null;
-    const content = String(row?.content || "");
-    const think = String(row?.think || "");
-    const merged = think ? `<think>${think}</think>${content}` : content;
-    return {
-      role,
-      content: merged,
-      serverId: typeof row?.id === "number" ? row.id : void 0,
-      think: think || void 0,
-      createdAt: typeof row?.created_at === "number" ? row.created_at : void 0
-    };
-  }
-  async function loadServerChatHistory(sessionId) {
-    if (!useServerChat() || !sessionId)
-      return false;
-    if (state.chatHistoryLoading)
-      return false;
-    state.chatHistoryLoading = true;
-    try {
-      const rows = await fetchChatHistory(state.serverUrl, state.auth.token, sessionId, state.selectedMemberId);
-      state.chatHistory = rows.map(chatMessageFromServer).filter((m) => m !== null);
-      state.lastSyncedMessageId = state.chatHistory.reduce(
-        (max, m) => m.serverId && m.serverId > max ? m.serverId : max,
-        0
-      );
-      renderChatHistory();
-      return true;
-    } catch (err) {
-      if (isAuthError(err)) {
-        await doLogout();
-        return false;
-      }
-      console.warn("loadServerChatHistory failed", err);
-      return false;
-    } finally {
-      state.chatHistoryLoading = false;
-    }
-  }
-  async function refreshServerSessionsAndHistory(targetSessionId) {
-    if (!useServerChat())
-      return;
-    try {
-      state.serverSessions = await listChatSessions(state.serverUrl, state.auth.token, state.selectedMemberId);
-    } catch (err) {
-      if (isAuthError(err)) {
-        await doLogout();
-        return;
-      }
-      console.warn("listChatSessions failed", err);
-      state.serverSessions = [];
-    }
-    if (!state.serverSessions.length) {
-      try {
-        const created = await createChatSession(state.serverUrl, state.auth.token, "\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD", state.selectedMemberId);
-        state.serverSessions = [created];
-      } catch (err) {
-        console.warn("createChatSession failed", err);
-      }
-    }
-    const preferred = targetSessionId && state.serverSessions.some((s) => s.id === targetSessionId) ? targetSessionId : state.currentServerSessionId && state.serverSessions.some((s) => s.id === state.currentServerSessionId) ? state.currentServerSessionId : pickPreferredSessionId(state.serverSessions);
-    state.currentServerSessionId = preferred;
-    updateChatSessionControls();
-    if (preferred)
-      await loadServerChatHistory(preferred);
-    else {
-      state.chatHistory = [];
-      renderChatHistory();
-    }
-  }
-  async function syncIncrementalServerHistory() {
-    if (!useServerChat() || !state.currentServerSessionId)
-      return;
-    try {
-      const rows = await fetchChatHistory(state.serverUrl, state.auth.token, state.currentServerSessionId, state.selectedMemberId);
-      const incoming = [];
-      let maxId = state.lastSyncedMessageId;
-      for (const row of rows) {
-        const msg = chatMessageFromServer(row);
-        if (!msg)
-          continue;
-        if (msg.serverId !== void 0 && msg.serverId <= state.lastSyncedMessageId)
-          continue;
-        incoming.push(msg);
-        if (msg.serverId !== void 0 && msg.serverId > maxId)
-          maxId = msg.serverId;
-      }
-      if (!incoming.length)
-        return;
-      for (const msg of incoming) {
-        if (msg.role !== "assistant")
-          continue;
-        const idx = state.chatHistory.findIndex((item) => item.serverId === void 0 && item.role === "assistant" && chatContentToText(item.content).trim() === chatContentToText(msg.content).trim());
-        if (idx >= 0)
-          state.chatHistory.splice(idx, 1);
-      }
-      state.chatHistory.push(...incoming);
-      state.lastSyncedMessageId = maxId;
-      renderChatHistory();
-    } catch (err) {
-      console.warn("syncIncrementalServerHistory failed", err);
-    }
-  }
-  async function clearConversation() {
-    if (state.chatBusy)
-      stopPendingChatUi();
-    if (useServerChat()) {
-      try {
-        const name = `\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD ${(/* @__PURE__ */ new Date()).toLocaleString("zh-CN", { hour12: false })}`;
-        const created = await createChatSession(state.serverUrl, state.auth.token, name, state.selectedMemberId);
-        state.chatHistory = [];
-        state.lastSyncedMessageId = 0;
-        renderChatHistory();
-        await refreshServerSessionsAndHistory(created.id);
-      } catch (err) {
-        console.warn("createChatSession failed", err);
-        alert(`\u65B0\u5EFA\u5BF9\u8BDD\u5931\u8D25\uFF1A${err?.message || err}`);
-      }
-      return;
-    }
-    state.chatHistory = [];
-    await clearChatHistory();
-    renderChatHistory();
-  }
-  async function deleteCurrentServerSession() {
-    if (!useServerChat() || !state.currentServerSessionId)
-      return;
-    if (state.serverSessions.length <= 1)
-      return;
-    const target = state.serverSessions.find((s) => s.id === state.currentServerSessionId);
-    if (!target)
-      return;
-    if (!confirm(`\u786E\u5B9A\u5220\u9664\u4F1A\u8BDD\u300C${target.name}\u300D\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\u3002`))
-      return;
-    try {
-      await deleteChatSession(state.serverUrl, state.auth.token, state.currentServerSessionId, state.selectedMemberId);
-      state.currentServerSessionId = "";
-      await refreshServerSessionsAndHistory();
-    } catch (err) {
-      alert(`\u5220\u9664\u4F1A\u8BDD\u5931\u8D25\uFF1A${err?.message || err}`);
-    }
-  }
-  async function writeClipboardText(text) {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text);
-      return;
-    }
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    ta.remove();
-  }
-  function stopPendingChatUi() {
-    state.activeChatRequestId = null;
-    const thinking = window._chatThinking;
-    thinking?.remove();
-    window._chatThinking = null;
-    const liveThinking = document.getElementById("thinking");
-    liveThinking?.remove();
-    if (state.activeRunId && state.auth.token) {
-      void stopChatRun(state.serverUrl, state.auth.token, state.activeRunId).catch(() => {
-      });
-    }
-    state.activeRunId = null;
-    setChatBusy(false);
-  }
-  async function deleteChatMessage(index) {
-    const msg = state.chatHistory[index];
-    if (!msg)
-      return;
-    const lastUserIndex = state.chatHistory.map((m) => m.role).lastIndexOf("user");
-    if (state.chatBusy && index === lastUserIndex)
-      stopPendingChatUi();
-    if (useServerChat() && msg.serverId !== void 0) {
-      if (!confirm("\u786E\u5B9A\u8981\u5220\u9664\u8FD9\u6761\u6D88\u606F\u5417\uFF1F"))
-        return;
-      try {
-        await deleteServerChatMessage(state.serverUrl, state.auth.token, msg.serverId);
-      } catch (err) {
-        alert(`\u5220\u9664\u5931\u8D25\uFF1A${err?.message || err}`);
-        return;
-      }
-    }
-    state.chatHistory.splice(index, 1);
-    await syncChatHistory();
-    renderChatHistory();
-  }
-  async function revokeChatMessage(index) {
-    const msg = state.chatHistory[index];
-    if (!msg || msg.role !== "user")
-      return;
-    const text = chatContentToText(msg.content);
-    if (state.chatBusy)
-      stopPendingChatUi();
-    if (useServerChat() && msg.serverId !== void 0) {
-      if (!confirm("\u786E\u5B9A\u64A4\u56DE\u6B64\u6D88\u606F\uFF1F\u5C06\u5220\u9664\u5B83\u4E4B\u540E\u7684\u5BF9\u8BDD\u3002"))
-        return;
-      try {
-        const result = await recallServerChatMessage(state.serverUrl, state.auth.token, msg.serverId);
-        chatInput.value = result?.recall_content || text;
-      } catch (err) {
-        alert(`\u64A4\u56DE\u5931\u8D25\uFF1A${err?.message || err}`);
-        return;
-      }
-      state.chatHistory.splice(index);
-      state.lastSyncedMessageId = state.chatHistory.reduce(
-        (max, m) => m.serverId && m.serverId > max ? m.serverId : max,
-        0
-      );
-    } else {
-      state.chatHistory.splice(index);
-      chatInput.value = text;
-    }
-    await syncChatHistory();
-    renderChatHistory();
-    chatInput.style.height = "auto";
-    chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
-    refreshChatAvailability();
-    chatInput.focus();
-  }
-  async function runServerChat(text, thinking) {
-    if (!state.currentServerSessionId) {
-      await refreshServerSessionsAndHistory();
-    }
-    const sessionId = state.currentServerSessionId || defaultSessionIdForMember();
-    const sessionName = state.serverSessions.find((s) => s.id === sessionId)?.name || "\u6D4F\u89C8\u5668\u63D2\u4EF6\u4F1A\u8BDD";
-    const { run_id } = await startChatRun(state.serverUrl, state.auth.token, state.selectedMemberId, sessionId, text, sessionName);
-    state.activeRunId = run_id;
-    let after = 0;
-    let lastText = "";
-    let lastReasoning = "";
-    let lastPhaseKey = "";
-    const liveEvents = [];
-    const MAX_POLLS = 600;
-    for (let i = 0; i < MAX_POLLS; i++) {
-      await sleep(800);
-      let st;
-      try {
-        st = await getChatRun(state.serverUrl, state.auth.token, run_id, after);
-      } catch {
-        continue;
-      }
-      lastReasoning = String(st.live_reasoning || lastReasoning || "");
-      const phase = String(st.live_phase || "");
-      const currentTool = String(st.current_tool || "");
-      if (currentTool && phase === "waiting_mcp") {
-        const key = `${phase}:${currentTool}:${liveEvents.length}`;
-        if (lastPhaseKey !== `${phase}:${currentTool}`) {
-          liveEvents.push({
-            key,
-            label: "MCP \u8C03\u7528\u4E2D",
-            detail: currentTool
-          });
-          lastPhaseKey = `${phase}:${currentTool}`;
-        }
-      } else if (phase && phase !== "waiting_mcp") {
-        lastPhaseKey = `${phase}:${currentTool}`;
-      }
-      if (st.live_text && st.live_text !== lastText) {
-        lastText = st.live_text;
-        after = st.live_len;
-        setBubble(thinking, renderChatFrame(lastText, {
-          reasoning: lastReasoning,
-          currentTool,
-          loading: true,
-          events: liveEvents
-        }));
-      } else if (lastReasoning || currentTool || liveEvents.length) {
-        setBubble(thinking, renderChatFrame(lastText, {
-          reasoning: lastReasoning,
-          currentTool,
-          loading: true,
-          events: liveEvents
-        }));
-      }
-      if (["completed", "error", "stopped"].includes(st.status)) {
-        state.activeRunId = null;
-        if (st.status === "error")
-          return { text: `\u26A0 \u9519\u8BEF: ${st.error_message || "\u6267\u884C\u5931\u8D25"}`, reasoning: lastReasoning, events: liveEvents, ok: false };
-        if (st.status === "stopped")
-          return { text: lastText || "\uFF08\u5DF2\u505C\u6B62\uFF09", reasoning: lastReasoning, events: liveEvents, ok: true };
-        return { text: lastText || "\u5B8C\u6210", reasoning: lastReasoning, events: liveEvents, ok: true };
-      }
-    }
-    state.activeRunId = null;
-    return { text: lastText || "\uFF08\u8D85\u65F6\uFF0C\u672A\u6536\u5230\u5B8C\u6574\u56DE\u590D\uFF09", reasoning: lastReasoning, events: liveEvents, ok: false };
-  }
-  async function sendChat() {
-    const enabled = useServerChat() || state.hasAiKey;
-    if (state.chatBusy || !enabled)
-      return;
-    const text = chatInput.value.trim();
-    if (!text)
-      return;
-    chatInput.value = "";
-    chatInput.style.height = "auto";
-    state.chatHistory.push({ role: "user", content: text });
-    appendChatMsg("user", text, state.chatHistory.length - 1);
-    void syncChatHistory();
-    const thinking = showThinking();
-    const requestId = makeChatRequestId();
-    state.activeChatRequestId = requestId;
-    setChatBusy(true);
-    if (useServerChat()) {
-      try {
-        const res = await runServerChat(text, thinking);
-        if (state.activeChatRequestId !== requestId)
-          return;
-        setBubble(thinking, renderChatFrame(res.text, { reasoning: res.reasoning, events: res.events }));
-        thinking.removeAttribute("id");
-        const lastIdx = state.chatHistory.length - 1;
-        if (lastIdx >= 0 && state.chatHistory[lastIdx].serverId === void 0 && state.chatHistory[lastIdx].role === "user") {
-          state.chatHistory.splice(lastIdx, 1);
-        }
-        await syncIncrementalServerHistory();
-      } catch (err) {
-        if (state.activeChatRequestId !== requestId)
-          return;
-        const errorText = `\u26A0 \u9519\u8BEF: ${err?.message || err}`;
-        setBubble(thinking, renderChatContent(errorText));
-        thinking.removeAttribute("id");
-        await syncIncrementalServerHistory();
-      } finally {
-        if (state.activeChatRequestId === requestId) {
-          state.activeChatRequestId = null;
-          setChatBusy(false);
-        }
-      }
-    } else {
-      ;
-      window._chatThinking = thinking;
-      state.port.postMessage({ type: "chat:send", messages: state.chatHistory, requestId });
-    }
-  }
-  function wireChat() {
-    chatMsgs.addEventListener("click", (e) => {
-      const btn = e.target.closest(".chat-action-btn");
-      if (!btn)
-        return;
-      e.preventDefault();
-      e.stopPropagation();
-      const msgEl = btn.closest(".chat-msg");
-      const index = Number(msgEl?.dataset.historyIndex);
-      if (!Number.isInteger(index) || !state.chatHistory[index])
-        return;
-      const action = btn.dataset.chatAction;
-      if (action === "copy") {
-        const originalText = btn.textContent;
-        void writeClipboardText(chatContentToText(state.chatHistory[index].content)).then(() => {
-          btn.textContent = "\u5DF2\u590D\u5236";
-          setTimeout(() => {
-            btn.textContent = originalText || "\u590D\u5236";
-          }, 900);
-        });
-      } else if (action === "revoke") {
-        void revokeChatMessage(index);
-      } else if (action === "delete") {
-        void deleteChatMessage(index);
-      }
-    });
-    chatClearBtn.addEventListener("click", () => void clearConversation());
-    chatSessionDeleteBtn.addEventListener("click", () => void deleteCurrentServerSession());
-    chatSessionSelect.addEventListener("change", () => {
-      const next = chatSessionSelect.value;
-      if (!next || next === state.currentServerSessionId)
-        return;
-      state.currentServerSessionId = next;
-      state.lastSyncedMessageId = 0;
-      void loadServerChatHistory(next);
-    });
-    chatSendBtn.addEventListener("click", () => void sendChat());
-    chatInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        void sendChat();
-      }
-    });
-    chatInput.addEventListener("input", () => {
-      chatInput.style.height = "auto";
-      chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + "px";
-    });
-  }
-
   // src/popup/members.ts
   async function doLogin() {
     const configuredServerUrl = cfgServer.value.trim();
@@ -1307,10 +375,8 @@
       await refreshAvatarCache();
       updateUserChip();
       await loadMembers();
-      syncSelectedAiToBackground(true);
       renderSettingsViews();
-      if (useServerChat())
-        await refreshServerSessionsAndHistory();
+      state.port.postMessage({ type: "agent:connect" });
       closeLoginModal();
       openMembersModal();
     } catch (err) {
@@ -1323,22 +389,14 @@
   async function doLogout() {
     await clearAuth();
     state.port.postMessage({ type: "auth:logout" });
-    state.port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
     state.auth = await getAuth();
     state.avatarDataUrl = "";
     await clearAvatarCache();
     closeMembersModal();
     state.members = [];
     state.selectedMemberId = null;
-    state.serverSessions = [];
-    state.currentServerSessionId = "";
-    state.lastSyncedMessageId = 0;
-    state.chatHistory = [];
-    renderChatHistory();
-    updateChatSessionControls();
     updateUserChip();
     renderMembers();
-    updateTargetBanners();
     renderSettingsViews();
     switchTab("settings");
   }
@@ -1350,28 +408,7 @@
     try {
       const rows = await listConfigs(state.serverUrl, state.auth.token);
       state.members = rows.filter(hasBrowserMcpPermission);
-      if (state.selectedMemberId) {
-        const stillExists = rows.some((m) => m.id === state.selectedMemberId);
-        if (!stillExists) {
-          state.selectedMemberId = null;
-          state.port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
-          state.serverSessions = [];
-          state.currentServerSessionId = "";
-          state.lastSyncedMessageId = 0;
-          state.chatHistory = [];
-          renderChatHistory();
-          updateChatSessionControls();
-        } else {
-          if (!state.members.some((m) => m.id === state.selectedMemberId)) {
-            const sel = rows.find((m) => m.id === state.selectedMemberId);
-            if (sel)
-              state.members = [...state.members, sel];
-          }
-          state.port.postMessage({ type: "agent:selected-ai", aiConfigId: state.selectedMemberId });
-        }
-      }
       renderMembers();
-      updateTargetBanners();
       renderSettingsViews();
       renderStatus();
     } catch (err) {
@@ -1395,7 +432,7 @@
     for (const m of state.members) {
       const role = roleOf(m);
       const el = document.createElement("div");
-      el.className = `member-card${m.id === state.selectedMemberId ? " selected" : ""}`;
+      el.className = "member-card";
       el.innerHTML = `
       <div class="${m.enabled === false ? "dot-off" : "dot-on"}"></div>
       <div class="member-ava">${esc((m.name || "?").slice(0, 1))}</div>
@@ -1404,37 +441,8 @@
         <div class="member-meta">${esc(m.model || "\u2014")} \xB7 MCP ${toolCount(m)} \u9879</div>
       </div>
       <span class="role-badge ${role}">${ROLE_LABELS[role] || role}</span>`;
-      el.addEventListener("click", () => selectMember(m.id));
       membersList.appendChild(el);
     }
-  }
-  async function selectMember(id) {
-    if (!state.auth.token) {
-      state.selectedMemberId = null;
-      state.port.postMessage({ type: "agent:selected-ai", aiConfigId: null });
-      loginFeedback.textContent = "\u8BF7\u5148\u767B\u5F55\u540E\u518D\u9009\u62E9 AI \u6210\u5458";
-      loginFeedback.style.color = "var(--warn)";
-      switchTab("settings");
-      renderMembers();
-      updateTargetBanners();
-      renderSettingsViews();
-      return;
-    }
-    state.selectedMemberId = id;
-    await saveSettings({ selectedAiConfigId: id });
-    state.port.postMessage({ type: "agent:selected-ai", aiConfigId: id });
-    renderMembers();
-    updateTargetBanners();
-    renderSettingsViews();
-    renderStatus();
-    state.chatHistory = [];
-    state.serverSessions = [];
-    state.currentServerSessionId = "";
-    state.lastSyncedMessageId = 0;
-    chatMsgs.querySelectorAll(".chat-msg").forEach((e) => e.remove());
-    updateChatSessionControls();
-    if (useServerChat())
-      void refreshServerSessionsAndHistory();
   }
   function wireMembers() {
     loginBtn.addEventListener("click", () => void doLogin());
@@ -1470,118 +478,6 @@
     membersModalClose.addEventListener("click", () => closeMembersModal());
     membersRefresh.addEventListener("click", () => void loadMembers());
     logoutBtn.addEventListener("click", () => void doLogout());
-  }
-
-  // src/popup/tasks.ts
-  async function submitTask() {
-    if (!state.auth.token || !state.selectedMemberId)
-      return;
-    const title = taskTitle.value.trim();
-    const instruction = taskInstruction.value.trim();
-    if (!title) {
-      taskFeedback.textContent = "\u8BF7\u8F93\u5165\u4EFB\u52A1\u6807\u9898";
-      taskFeedback.style.color = "var(--error)";
-      return;
-    }
-    taskSubmit.disabled = true;
-    taskFeedback.textContent = "\u63D0\u4EA4\u4E2D\u2026";
-    taskFeedback.style.color = "var(--muted)";
-    const schedEnabled = taskSchedEnabled.checked;
-    let scheduleAt = null;
-    if (schedEnabled && taskAt.value) {
-      const t = new Date(taskAt.value).getTime();
-      if (!Number.isNaN(t))
-        scheduleAt = Math.floor(t / 1e3);
-    }
-    try {
-      const res = await triggerTask(state.serverUrl, state.auth.token, state.selectedMemberId, {
-        title,
-        instruction,
-        priority: Math.max(1, Math.min(10, Number(taskPriority.value) || 5)),
-        schedule_enabled: schedEnabled,
-        schedule_loop_enabled: schedEnabled && taskLoop.checked,
-        schedule_run_immediately: schedEnabled && taskLoop.checked && taskRunNow.checked,
-        schedule_duration_minutes: Math.max(1, Number(taskDuration.value) || 30),
-        schedule_at: scheduleAt,
-        override_mcp_tools_enabled: false,
-        mcp_tools_override: []
-      });
-      taskFeedback.textContent = `\u5DF2\u5B89\u6392\uFF1A${res?.title || title} \u2713`;
-      taskFeedback.style.color = "var(--success)";
-      taskTitle.value = "";
-      taskInstruction.value = "";
-      await loadJobs();
-      setTimeout(() => {
-        taskFeedback.textContent = "";
-      }, 2500);
-    } catch (err) {
-      taskFeedback.textContent = `\u5931\u8D25\uFF1A${err?.message || err}`;
-      taskFeedback.style.color = "var(--error)";
-    } finally {
-      taskSubmit.disabled = false;
-    }
-  }
-  async function loadJobs() {
-    if (!state.auth.token || !state.selectedMemberId)
-      return;
-    jobsEmpty.textContent = "\u52A0\u8F7D\u4E2D\u2026";
-    jobsEmpty.style.display = "block";
-    try {
-      const jobs = await listTaskJobs(state.serverUrl, state.auth.token, state.selectedMemberId);
-      renderJobs(jobs);
-    } catch (err) {
-      jobsEmpty.textContent = `\u52A0\u8F7D\u5931\u8D25\uFF1A${err?.message || err}`;
-    }
-  }
-  function renderJobs(jobs) {
-    jobsList.querySelectorAll(".job-card").forEach((e) => e.remove());
-    if (!jobs.length) {
-      jobsEmpty.style.display = "block";
-      jobsEmpty.textContent = "\u6682\u65E0\u4EFB\u52A1";
-      return;
-    }
-    jobsEmpty.style.display = "none";
-    for (const j of jobs) {
-      const st = String(j.effective_status || j.status || "queued");
-      const el = document.createElement("div");
-      el.className = "job-card";
-      const canPause = st === "queued" || st === "running";
-      const canResume = st === "paused";
-      el.innerHTML = `
-      <div class="job-top">
-        <span class="job-title">${esc(j.title || "\u672A\u547D\u540D\u4EFB\u52A1")}</span>
-        <span class="job-status ${st}">${esc(st)}</span>
-      </div>
-      <div style="font-size:10px;color:var(--muted)">\u4F18\u5148\u7EA7 ${j.priority ?? 5} \xB7 ${esc(j.trigger_type || "manual")}</div>
-      <div class="job-actions">
-        ${canPause ? `<button class="mini-btn" data-act="pause">\u6682\u505C</button>` : ""}
-        ${canResume ? `<button class="mini-btn" data-act="resume">\u7EE7\u7EED</button>` : ""}
-        <button class="mini-btn" data-act="stop">\u505C\u6B62</button>
-        <button class="mini-btn danger" data-act="delete">\u5220\u9664</button>
-      </div>`;
-      el.querySelectorAll("button[data-act]").forEach((btn) => {
-        btn.addEventListener("click", () => void doJobAction(j.job_id, btn.dataset.act));
-      });
-      jobsList.appendChild(el);
-    }
-  }
-  async function doJobAction(jobId, action) {
-    if (!state.auth.token || !state.selectedMemberId)
-      return;
-    try {
-      await taskJobAction(state.serverUrl, state.auth.token, state.selectedMemberId, jobId, action);
-      await loadJobs();
-    } catch (err) {
-      taskFeedback.textContent = `\u64CD\u4F5C\u5931\u8D25\uFF1A${err?.message || err}`;
-      taskFeedback.style.color = "var(--error)";
-    }
-  }
-  function wireTasks() {
-    taskSchedEnabled.addEventListener("change", () => {
-      taskSchedOpts.style.display = taskSchedEnabled.checked ? "block" : "none";
-    });
-    taskSubmit.addEventListener("click", () => void submitTask());
-    jobsRefresh.addEventListener("click", () => void loadJobs());
   }
 
   // src/lib/cards.ts
@@ -1918,15 +814,8 @@
     Object.keys(tabs).forEach((k) => tabs[k].classList.remove("active"));
     panes[tab].classList.remove("hidden");
     tabs[tab].classList.add("active");
-    if (tab === "chat") {
-      chatMsgs.scrollTop = chatMsgs.scrollHeight;
-      if (useServerChat())
-        void refreshServerSessionsAndHistory();
-    }
     if (tab === "settings" && state.auth.token && state.members.length === 0)
       void loadMembers();
-    if (tab === "tasks" && state.selectedMemberId && state.auth.token)
-      void loadJobs();
     if (tab === "cards")
       void renderCards();
   }
@@ -1972,45 +861,6 @@
   function updateOfflineUi() {
     offlineModelConfig.classList.toggle("hidden", !state.offlineMode);
     renderStatus();
-    updateTargetBanners();
-  }
-  function updateTargetBanners() {
-    const m = memberById(state.selectedMemberId);
-    if (state.offlineMode) {
-      chatTarget.classList.remove("empty");
-      chatTargetText.innerHTML = `\u{1F6DC} \u79BB\u7EBF\u6A21\u5F0F \xB7 \u6A21\u578B <span class="tb-name">${esc(state.localModel || "\u672A\u914D\u7F6E")}</span>`;
-    } else if (m) {
-      chatTarget.classList.remove("empty");
-      chatTargetText.innerHTML = `\u5BF9\u8BDD\u76EE\u6807\uFF1A<span class="tb-name">${esc(m.name)}</span>\uFF08${ROLE_LABELS[roleOf(m)] || ""}\uFF09`;
-    } else {
-      chatTarget.classList.add("empty");
-      chatTargetText.textContent = "\u672A\u9009\u62E9 AI \u6210\u5458\uFF08\u5C06\u4F7F\u7528\u672C\u5730 AI Key \u76F4\u8FDE\uFF09";
-    }
-    if (m && !state.offlineMode) {
-      taskTarget.classList.remove("empty");
-      taskTarget.innerHTML = `\u4EFB\u52A1\u76EE\u6807\uFF1A<span class="tb-name">${esc(m.name)}</span>`;
-      taskForm.style.display = "block";
-      taskJobsCard.style.display = "block";
-    } else {
-      taskTarget.classList.add("empty");
-      taskTarget.textContent = state.offlineMode ? "\u79BB\u7EBF\u6A21\u5F0F\u4E0B\u4E0D\u53EF\u5B89\u6392\u4EFB\u52A1\uFF08\u4EFB\u52A1\u9700\u767B\u5F55\u670D\u52A1\u5668\uFF09" : state.auth.token ? "\u8BF7\u5148\u5728\u201C\u6210\u5458\u201D\u4E2D\u9009\u62E9\u4E00\u4E2A AI \u6210\u5458" : "\u8BF7\u5148\u767B\u5F55\u5E76\u9009\u62E9 AI \u6210\u5458";
-      taskForm.style.display = "none";
-      taskJobsCard.style.display = "none";
-    }
-    refreshChatAvailability();
-  }
-  function refreshChatAvailability() {
-    const enabled = useServerChat() || state.hasAiKey;
-    const hasMessages = chatMsgs.querySelectorAll(".chat-msg").length > 0;
-    chatNoKey.style.display = enabled || hasMessages ? "none" : "flex";
-    chatInput.disabled = !enabled || state.chatBusy;
-    chatSendBtn.disabled = !enabled || state.chatBusy;
-    if (useServerChat()) {
-      chatClearBtn.disabled = state.chatBusy;
-    } else {
-      chatClearBtn.disabled = !hasMessages && !state.chatHistory.length && !state.chatBusy;
-    }
-    updateChatSessionControls();
   }
   function renderSettingsViews() {
     const m = memberById(state.selectedMemberId);
@@ -2065,7 +915,6 @@
     state.hasAiKey = !!s.aiKey?.trim();
     updateOfflineUi();
     renderMembers();
-    syncSelectedAiToBackground();
     applyTheme(s.theme || "dark", false);
   }
   var PROVIDER_PRESETS = {
@@ -2144,48 +993,6 @@
         case "settings:data":
           loadSettings(msg.settings);
           break;
-        case "chat:response": {
-          if (msg.requestId !== state.activeChatRequestId)
-            break;
-          const thinking = window._chatThinking;
-          if (!thinking) {
-            state.activeChatRequestId = null;
-            setChatBusy(false);
-            break;
-          }
-          thinking?.remove();
-          window._chatThinking = null;
-          state.activeChatRequestId = null;
-          setChatBusy(false);
-          const reply = msg.text || "\u5B8C\u6210";
-          state.chatHistory.push({ role: "assistant", content: reply });
-          const el = appendChatMsg("ai", "", state.chatHistory.length - 1);
-          setBubble(el, renderChatFrame(reply, { toolsUsed: msg.toolsUsed || [], events: msg.toolEvents || [] }));
-          void syncChatHistory();
-          if (msg.toolsUsed?.length) {
-            addEntry({ id: Date.now().toString(), type: "task", status: "success", message: `AI \u4F7F\u7528\u5DE5\u5177: ${msg.toolsUsed.join(", ")}`, timestamp: Date.now() });
-          }
-          break;
-        }
-        case "chat:error": {
-          if (msg.requestId !== state.activeChatRequestId)
-            break;
-          const thinking = window._chatThinking;
-          if (!thinking) {
-            state.activeChatRequestId = null;
-            setChatBusy(false);
-            break;
-          }
-          thinking?.remove();
-          window._chatThinking = null;
-          state.activeChatRequestId = null;
-          setChatBusy(false);
-          const errorText = `\u26A0 \u9519\u8BEF: ${msg.error}`;
-          state.chatHistory.push({ role: "assistant", content: errorText });
-          appendChatMsg("ai", errorText, state.chatHistory.length - 1);
-          void syncChatHistory();
-          break;
-        }
         case "connection:result": {
           const r = msg.result || {};
           const http = r.http || (typeof r.status !== "undefined" ? r : null);
@@ -2232,7 +1039,7 @@
   }
   async function init() {
     initPort();
-    switchTab("chat");
+    switchTab("cards");
     const s = await getSettings();
     state.serverUrl = s.serverUrl || "";
     state.offlineMode = !!s.offlineMode;
@@ -2243,7 +1050,6 @@
     updateUserChip();
     updateOfflineUi();
     void refreshAvatarCache().then(updateUserChip);
-    void restoreChatHistory();
     if (state.auth.token) {
       void (async () => {
         try {
@@ -2253,11 +1059,7 @@
           await saveAuth({ userName: state.auth.userName, avatar: state.auth.avatar });
           await refreshAvatarCache();
           updateUserChip();
-          renderChatHistory();
           await loadMembers();
-          syncSelectedAiToBackground(true);
-          if (useServerChat())
-            await refreshServerSessionsAndHistory();
         } catch (err) {
           if (isAuthError(err)) {
             await doLogout();
@@ -2267,30 +1069,16 @@
             loginFeedback.style.color = "var(--warn)";
             try {
               await loadMembers();
-              syncSelectedAiToBackground(true);
-              if (useServerChat())
-                await refreshServerSessionsAndHistory();
             } catch {
             }
           }
         }
       })();
     }
-    updateChatSessionControls();
   }
   wireUi();
   wireMembers();
-  wireChat();
-  wireTasks();
   wireCards();
   wireSettings();
-  chrome.storage.session.get("_pendingChat").then((r) => {
-    if (r._pendingChat) {
-      chrome.storage.session.remove("_pendingChat");
-      switchTab("chat");
-      chatInput.value = String(r._pendingChat);
-    }
-  }).catch(() => {
-  });
   void init();
 })();

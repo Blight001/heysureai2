@@ -1,28 +1,20 @@
 // popup/index.ts — HeySure Agent popup entry / orchestrator.
-// Two modes (both retained):
-//   1. Browser-Agent: socket connection managed by the background worker.
-//   2. Software-end client: logged-in account → AI members, chat, task scheduling.
-// Feature logic lives in sibling modules (state, dom, ui, members, chat, tasks,
-// cards, settings); this file owns the background port dispatch, startup flow
-// and listener wiring.
+// The popup is now a thin control surface: a logged-in account selects an AI
+// member (the tool-call target), manages automation cards and edits settings.
+// Chat and task scheduling moved to the web console. This file owns the
+// background port dispatch, startup flow and listener wiring. Feature logic
+// lives in sibling modules (state, dom, ui, members, cards, settings).
 
 import { BgMsg } from '../lib/types'
 import { state } from './state'
 import * as dom from './dom'
 import { getAuth, saveAuth, getSettings } from '../lib/storage'
 import { getMe, isAuthError } from '../lib/client'
-import { renderChatFrame } from './markdown'
-import { syncSelectedAiToBackground, useServerChat, refreshAvatarCache } from './helpers'
+import { refreshAvatarCache } from './helpers'
 import {
   setStatus, addEntry, updateUserChip, updateOfflineUi, switchTab, wireUi,
 } from './ui'
-import {
-  appendChatMsg, setBubble, setChatBusy, syncChatHistory,
-  renderChatHistory, restoreChatHistory, updateChatSessionControls,
-  refreshServerSessionsAndHistory, wireChat,
-} from './chat'
 import { loadMembers, doLogout, wireMembers } from './members'
-import { wireTasks } from './tasks'
 import { renderCards, wireCards } from './cards'
 import { loadSettings, wireSettings } from './settings'
 
@@ -47,38 +39,6 @@ function initPort() {
       case 'settings:data':
         loadSettings(msg.settings)
         break
-      case 'chat:response': {
-        if (msg.requestId !== state.activeChatRequestId) break
-        const thinking = (window as any)._chatThinking as HTMLElement | undefined
-        if (!thinking) { state.activeChatRequestId = null; setChatBusy(false); break }
-        thinking?.remove()
-        ;(window as any)._chatThinking = null
-        state.activeChatRequestId = null
-        setChatBusy(false)
-        const reply = msg.text || '完成'
-        state.chatHistory.push({ role: 'assistant', content: reply })
-        const el = appendChatMsg('ai', '', state.chatHistory.length - 1)
-        setBubble(el, renderChatFrame(reply, { toolsUsed: msg.toolsUsed || [], events: msg.toolEvents || [] }))
-        void syncChatHistory()
-        if (msg.toolsUsed?.length) {
-          addEntry({ id: Date.now().toString(), type: 'task', status: 'success', message: `AI 使用工具: ${msg.toolsUsed.join(', ')}`, timestamp: Date.now() })
-        }
-        break
-      }
-      case 'chat:error': {
-        if (msg.requestId !== state.activeChatRequestId) break
-        const thinking = (window as any)._chatThinking as HTMLElement | undefined
-        if (!thinking) { state.activeChatRequestId = null; setChatBusy(false); break }
-        thinking?.remove()
-        ;(window as any)._chatThinking = null
-        state.activeChatRequestId = null
-        setChatBusy(false)
-        const errorText = `⚠ 错误: ${msg.error}`
-        state.chatHistory.push({ role: 'assistant', content: errorText })
-        appendChatMsg('ai', errorText, state.chatHistory.length - 1)
-        void syncChatHistory()
-        break
-      }
       case 'connection:result': {
         const r = msg.result || {}
         const http = r.http || (typeof r.status !== 'undefined' ? r : null)
@@ -130,7 +90,7 @@ function initPort() {
 // ── Init ───────────────────────────────────────────────────────────────────
 async function init() {
   initPort()
-  switchTab('chat')
+  switchTab('cards')
   // Load server URL up front so auth-dependent calls have a base before the
   // port's settings:data round-trip arrives.
   const s = await getSettings()
@@ -145,7 +105,6 @@ async function init() {
   // Show the cached avatar immediately (no network), then let the getMe refresh
   // below pick up any change.
   void refreshAvatarCache().then(updateUserChip)
-  void restoreChatHistory()
   if (state.auth.token) {
     // Validate token in the background and refresh members.
     void (async () => {
@@ -156,10 +115,7 @@ async function init() {
         await saveAuth({ userName: state.auth.userName, avatar: state.auth.avatar })
         await refreshAvatarCache()
         updateUserChip()
-        renderChatHistory()
         await loadMembers()
-        syncSelectedAiToBackground(true)
-        if (useServerChat()) await refreshServerSessionsAndHistory()
       } catch (err: any) {
         // Only drop the session on a genuine auth failure. A transient
         // network error / timeout (server briefly down, flaky connection)
@@ -174,31 +130,17 @@ async function init() {
           dom.loginFeedback.style.color = 'var(--warn)'
           try {
             await loadMembers()
-            syncSelectedAiToBackground(true)
-            if (useServerChat()) await refreshServerSessionsAndHistory()
           } catch { /* still down — leave session intact */ }
         }
       }
     })()
   }
-  updateChatSessionControls()
 }
 
 // ── Wiring + startup ─────────────────────────────────────────────────────
 wireUi()
 wireMembers()
-wireChat()
-wireTasks()
 wireCards()
 wireSettings()
-
-// Pending chat text from context menu
-chrome.storage.session.get('_pendingChat').then(r => {
-  if (r._pendingChat) {
-    chrome.storage.session.remove('_pendingChat')
-    switchTab('chat')
-    dom.chatInput.value = String(r._pendingChat)
-  }
-}).catch(() => {})
 
 void init()

@@ -60,13 +60,6 @@ export function useServerChat(): boolean {
   return !!(!state.offlineMode && state.auth.token && state.selectedMemberId)
 }
 
-export function syncSelectedAiToBackground(force = false) {
-  if (!state.selectedMemberId) return
-  if (!state.auth.token && !force) return
-  if (!memberById(state.selectedMemberId)) return
-  state.port.postMessage({ type: 'agent:selected-ai', aiConfigId: state.selectedMemberId })
-}
-
 // ── Avatar fetch + cache (current account only) ──────────────────────────────
 // The popup has <all_urls> host permission, so a cross-origin fetch to the
 // server needs no CORS cooperation.
