@@ -2,6 +2,7 @@
 import { computed, reactive } from 'vue'
 import type { ConnectedAgent } from '@/composables/dashboard/useDashboardData'
 import { assignAgentAi } from '@/api/agents'
+import AgentMcpScopeEditor from '../modals/AgentMcpScopeEditor.vue'
 
 interface Agent {
   id: string
@@ -97,6 +98,11 @@ const deviceTypeLabel = (device: ConnectedAgent) => {
 const isSoftwareDevice = (device: ConnectedAgent) => {
   const platform = String(device.platform || '').toLowerCase()
   return !!device.isWindowsDesktop || platform.includes('desktop') || platform.includes('windows')
+}
+
+const isEndpointDevice = (device: ConnectedAgent) => {
+  const platform = String(device.platform || '').toLowerCase()
+  return isSoftwareDevice(device) || !!device.isBrowserExtension || platform.includes('browser')
 }
 
 const deviceDisplayName = (device: ConnectedAgent) => {
@@ -261,7 +267,14 @@ const memberStatusBadgeClass = (device: ConnectedAgent) => hasLinkedMember(devic
         </div>
       </div>
 
-      <div v-if="device.capabilities.length" class="mt-2 flex flex-wrap gap-1">
+      <!-- Endpoint agents: edit their per-(AI, type) MCP permission scope. -->
+      <AgentMcpScopeEditor
+        v-if="isEndpointDevice(device)"
+        class="mt-2"
+        :agent-id="device.id"
+        :refresh-key="`${device.aiConfigId ?? ''}-${device.lifecycle ?? ''}`"
+      />
+      <div v-else-if="device.capabilities.length" class="mt-2 flex flex-wrap gap-1">
         <span
           v-for="cap in device.capabilities"
           :key="cap"

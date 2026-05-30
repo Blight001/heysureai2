@@ -1,4 +1,4 @@
-import { get, post } from './http'
+import { get, post, put } from './http'
 
 export interface ConnectedAgentRow {
   id?: string
@@ -34,4 +34,30 @@ export const assignAgentAi = (agentId: string, aiConfigId: number | null) =>
     '/api/agents/bind',
     { agentId, aiConfigId },
     { fallbackError: '分配 AI 失败' },
+  )
+
+export interface AgentMcpScope {
+  agentId: string
+  agentName?: string
+  agentType?: 'desktop' | 'browser' | null
+  platform?: string
+  aiConfigId?: number | null
+  capabilities: string[]
+  allowed: string[]
+  hasRecord: boolean
+}
+
+// Endpoint (desktop / browser) MCP permission scope for a connected agent.
+// Visible only while the device is online; persisted per (AI, agent type) so a
+// reconnecting agent of the same type keeps its scope.
+export const getAgentMcpScope = (agentId: string) =>
+  get<AgentMcpScope>(`/api/agents/${encodeURIComponent(agentId)}/mcp-scope`, {
+    fallbackError: 'Agent MCP 权限加载失败',
+  })
+
+export const setAgentMcpScope = (agentId: string, tools: string[]) =>
+  put<AgentMcpScope>(
+    `/api/agents/${encodeURIComponent(agentId)}/mcp-scope`,
+    { tools },
+    { fallbackError: 'Agent MCP 权限保存失败' },
   )

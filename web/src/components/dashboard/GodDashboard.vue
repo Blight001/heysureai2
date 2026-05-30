@@ -665,6 +665,7 @@ onUnmounted(() => {
       :delete-confirm="aiConfigDeleteConfirm"
       :settings-section="aiConfigSettingsSection"
       :available-mcp-tools="configAvailableMcpTools"
+      :connected-agents="connectedAgents"
       :available-workspace-dirs="availableWorkspaceDirs"
       :workspace-dirs-loading="workspaceDirsLoading"
       :workspace-dirs-error="workspaceDirsError"

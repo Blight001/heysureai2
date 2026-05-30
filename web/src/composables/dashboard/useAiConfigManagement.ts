@@ -1,6 +1,5 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import type { Agent, McpRoleMeta, McpToolDefinition, ModelPreset } from '@/types'
-import { BROWSER_AGENT_MCP_TOOLS, DESKTOP_AGENT_MCP_TOOLS, ENDPOINT_AGENT_MCP_TOOLS } from '@/utils/mcpTools'
 import { getAuthToken } from '@/api/http'
 import { listWorkspaceFiles } from '@/api/workspace'
 import { listMcpTools } from '@/api/mcp'
@@ -280,53 +279,16 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
         }))
         .filter((item: McpToolDefinition) => !!item.name)
       : []
+    // Endpoint (desktop / browser) tools are no longer part of this picker —
+    // they are governed per-agent via the "已连接 Agent 的 MCP 权限" editor and
+    // derived dynamically from the connected device's reported capabilities.
+    // This picker only manages server-side MCP tools (cfg.mcp_tools).
     const map: Record<string, McpToolDefinition> = {}
     for (const row of rows) {
       map[row.name] = row
     }
-    for (const name of DESKTOP_AGENT_MCP_TOOLS) {
-      map[name] = {
-        name,
-        description: '桌面端 Agent 上报的执行能力，可直接在已连接桌面端执行。',
-        inputSchema: { type: 'object', properties: {} },
-        destructive: false,
-        mcpSource: 'desktop',
-      }
-    }
-    for (const name of BROWSER_AGENT_MCP_TOOLS) {
-      map[name] = {
-        name,
-        description: '浏览器插件上报的执行能力，可直接在已连接浏览器插件执行。',
-        inputSchema: { type: 'object', properties: {} },
-        destructive: false,
-        mcpSource: 'browser',
-      }
-    }
-    // Tools advertised live by connected endpoint agents — including ones a
-    // desktop/browser agent gained at runtime (extended MCP) that aren't in the
-    // static lists baked into this bundle. Keep any richer static entry already
-    // present; only fill in the names the bundle doesn't know about.
-    const dynamicEndpointTools = Array.isArray(data.endpointTools) ? data.endpointTools : []
-    for (const entry of dynamicEndpointTools) {
-      const name = String(entry?.name || '').trim()
-      if (!name || map[name]) continue
-      const source = entry?.mcpSource === 'browser' ? 'browser' : 'desktop'
-      map[name] = {
-        name,
-        description: source === 'browser'
-          ? '浏览器插件上报的执行能力，可直接在已连接浏览器插件执行。'
-          : '桌面端 Agent 上报的执行能力，可直接在已连接桌面端执行。',
-        inputSchema: { type: 'object', properties: {} },
-        destructive: false,
-        mcpSource: source,
-      }
-    }
     mcpToolMetaByName.value = map
-    const endpointToolNames = [
-      ...ENDPOINT_AGENT_MCP_TOOLS,
-      ...dynamicEndpointTools.map(entry => String(entry?.name || '').trim()).filter(Boolean),
-    ]
-    const tools = Array.from(new Set([...rows.map(item => item.name), ...endpointToolNames]))
+    const tools = Array.from(new Set(rows.map(item => item.name)))
     availableMcpTools.value = tools.length > 0 ? tools : [...defaultMcpTools]
 
     const asStringArrayMap = (raw: unknown): Record<string, string[]> => {
@@ -340,16 +302,9 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       }
       return out
     }
-    const mergeUnique = (base: string[] = [], extra: string[] = []) => Array.from(new Set([...base, ...extra])).filter(Boolean).sort((a, b) => a.localeCompare(b))
     const roleOptions = asStringArrayMap(data.roleOptions)
     const roleDefaults = asStringArrayMap(data.roleDefaults)
     const roleOrder = Array.isArray(data.roleOrder) ? data.roleOrder.map((item: unknown) => String(item || '').trim()).filter(Boolean) : []
-    for (const role of roleOrder) {
-      roleOptions[role] = mergeUnique(roleOptions[role], endpointToolNames)
-      if (role === ROLE_ASSISTANT_ADMIN) {
-        roleDefaults[role] = mergeUnique(roleDefaults[role], endpointToolNames)
-      }
-    }
     mcpRoleMeta.value = {
       order: roleOrder,
       labels: (data.roleLabels && typeof data.roleLabels === 'object') ? data.roleLabels as Record<string, string> : {},

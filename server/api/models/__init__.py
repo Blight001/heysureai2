@@ -52,6 +52,7 @@ from .defaults import (
 )
 from .admin_audit import AdminAuditLog
 from .agent_binding import AgentAiBinding
+from .agent_mcp_permission import AgentTypeMcpPermission
 from .bot_session_route import BotSessionRoute, BotUserCursor
 from .knowledge import EvolutionInput, KnowledgeEntry, Memory, ValhallaEntry
 from .project import EvolutionProject, EvolutionProjectCreate, EvolutionProjectUpdate
@@ -87,6 +88,7 @@ __all__ = [
     "AdminAuditLog",
     # agent device bindings
     "AgentAiBinding",
+    "AgentTypeMcpPermission",
     # chat
     "ChatMessage",
     "ChatMessageCreate",

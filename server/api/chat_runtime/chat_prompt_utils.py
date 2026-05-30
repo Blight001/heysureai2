@@ -23,7 +23,10 @@ from api.chat_runtime.mcp_parser import (
     extract_first_complete_mcp_call,
     parse_mcp_payload,
 )
-from connector_runtime.dispatch.desktop_agent_tools import endpoint_bridge_tools_for_config
+from connector_runtime.dispatch.desktop_agent_tools import (
+    endpoint_bridge_tools_for_config,
+    endpoint_tools_for_config,
+)
 from api.services.task_system import (
     DEFAULT_SYSTEM_AUTO_CONTROL,
     with_workspace_read_by_name_compat,
@@ -96,6 +99,7 @@ def _parse_allowed_tools_for_cfg(cfg: Optional[AssistantAIConfig]) -> set[str]:
         raw_tools = with_workspace_read_by_name_compat(raw_tools)
         raw_tools.update(MCP_INTROSPECTION_TOOLS)
         raw_tools.update(endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
+        raw_tools.update(endpoint_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
         return raw_tools
     except Exception:
         return set()
@@ -395,6 +399,7 @@ def _build_mcp_stream_warning(
             unauthorized_tools = [call["tool"] for call in parsed_calls]
         else:
             allowed_tools.update(endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
+            allowed_tools.update(endpoint_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
             for call in parsed_calls:
                 tool = call["tool"]
                 if tool not in known_tools:

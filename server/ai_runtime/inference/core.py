@@ -33,6 +33,7 @@ from api.services.task_completion_notify import notify_task_completion
 from connector_runtime.dispatch.desktop_agent_tools import (
     build_endpoint_tools_payload,
     endpoint_bridge_tools_for_config,
+    endpoint_tools_for_config,
     is_endpoint_agent_tool,
 )
 from api.services.task_system import (
@@ -874,6 +875,9 @@ def _run_worker_impl(
             effective_tool_allowlist = _parse_allowed_tools(cfg.mcp_tools if cfg else None)
             effective_tool_allowlist.update(MCP_INTROSPECTION_TOOLS)
             effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user_id))
+            # Endpoint (desktop / browser) tools are governed by the per-(AI,
+            # agent-type) permission scope, not cfg.mcp_tools.
+            effective_tool_allowlist.update(endpoint_tools_for_config(ai_config_id, user_id))
             if ai_config_id is not None:
                 # System-injected AI-to-AI messages must remain answerable even
                 # when a task or config narrows the general MCP tool allowlist.
@@ -900,6 +904,7 @@ def _run_worker_impl(
                         }
                         effective_tool_allowlist = with_workspace_read_by_name_compat(effective_tool_allowlist)
                         effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user_id))
+                        effective_tool_allowlist.update(endpoint_tools_for_config(ai_config_id, user_id))
                         if ai_config_id is not None:
                             effective_tool_allowlist.add("ai.send_message")
                 override_token = task_payload.get("override_token_limit")

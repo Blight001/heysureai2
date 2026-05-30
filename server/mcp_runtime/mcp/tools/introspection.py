@@ -33,7 +33,10 @@ def _namespace_hints(user_id: int) -> dict[str, str]:
 
 
 def _allowed_tool_names(user_id: int, ai_config_id: Optional[int]) -> set[str]:
-    from connector_runtime.dispatch.desktop_agent_tools import endpoint_bridge_tools_for_config
+    from connector_runtime.dispatch.desktop_agent_tools import (
+        endpoint_bridge_tools_for_config,
+        endpoint_tools_for_config,
+    )
     from api.services.task_system import with_workspace_read_by_name_compat
     import json
 
@@ -60,6 +63,7 @@ def _allowed_tool_names(user_id: int, ai_config_id: Optional[int]) -> set[str]:
         pass
     allowed = with_workspace_read_by_name_compat(allowed)
     allowed.update(endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
+    allowed.update(endpoint_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
     return allowed
 
 
