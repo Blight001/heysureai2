@@ -141,8 +141,10 @@ qq/adapter.py::notify_assistant_message → service.send_qq_text_message (被动
 > 注意：in-process 模式（`MCP_RUNTIME_URL` 为空）走 `registry.call`，contextvar 本就有效；
 > 此改动只影响 remote HTTP 路径，需保持两种模式都正确。
 
-### 改动 2：新增游标表 `BotUserCursor`
+### 改动 2：新增游标 / 对话区表 `BotUserCursor`
 位置：`server/api/models/bot_session_route.py`，并在 `server/api/models/__init__.py` 导出。
+
+该表既是"会话游标"，也兼任**对话区（Zone）记录**（见第八节）：一行 = 一个对话区。
 
 ```python
 class BotUserCursor(SQLModel, table=True):
@@ -152,7 +154,9 @@ class BotUserCursor(SQLModel, table=True):
     ai_config_id: int = Field(foreign_key="assistantaiconfig.id", index=True)
     ai_kind: str = Field(default="core", index=True)
     target_id: str = Field(index=True)                         # 外部用户（QQ openid）
-    active_session_id: str = Field(default="")
+    active_session_id: str = Field(default="")                 # 游标：当前活跃会话
+    alias: str = Field(default="")                             # 主人自定义别名（对话区标题，最高优先级）
+    display_name: str = Field(default="")                      # 从 QQ 事件抓到的昵称/群名（默认标题）
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
 ```
@@ -161,6 +165,7 @@ class BotUserCursor(SQLModel, table=True):
 > **无需写 ALTER 迁移**（`create_all` 只建缺失的表，不改已有表）。
 
 唯一性：逻辑上 `(channel, ai_config_id, ai_kind, target_id)` 唯一，读写时按这四元组 upsert。
+对话区标题取值优先级：`alias` → `display_name` → `target_id` 缩写。
 
 ### 改动 3：游标 / 归属 helper
 位置：`server/connector_runtime/bots/qq/routes_store.py`（或新建 `session_cursor.py`，保持 channel 无关以便他 bot 复用）。
@@ -235,17 +240,85 @@ session_id = get_active_session_id(
 3. 改动 4（路由切换，默认 home，确保兼容）。
 4. 改动 5（三个工具）+ 6（prompt）。
 5. 端到端联调：QQ 里说"列出我的对话""新开一个聊旅游的""切回刚才那个"，验证归属隔离与回复投递。
+6. 对话区栏目化（第八节）：抓昵称 → sessions 接口加分组字段 + `/zones` → 前端两级分组 UI + 别名改名 → 验证网页区/机器人区分类与同区硬隔离。
+
+> 说明：第五节是"多会话切换"核心 6 项；第八节"对话区栏目化"是其上的展示/组织层，可在核心跑通后再做。
 
 ---
 
-## 八、涉及文件速查
+## 八、对话区（栏目化）扩展
+
+> 目标：把机器人对话做成**独立的分类栏目**。每个（机器人 × 某个 QQ 用户）= 一个独立"对话区"，
+> 在对话列表里单独归类；AI 只能在**自己所属的对话区内**切换，与网页端、其它用户彻底隔开。
+> 这一层建立在第四～五节之上：对话区本质就是"按 openid 隔离"的可视化与结构化。
+
+### 9.1 已确认决策
+| 项 | 决策 |
+| --- | --- |
+| 对话区标题 | **可自定义别名**：默认用 `display_name`（QQ 昵称/群名）或 openid 缩写，主人可在网页端改别名 |
+| 网页会话归类 | **两个顶级栏目：网页区 + 机器人对话区**；机器人区下按 QQ 用户展开多个子对话区 |
+| AI 切换范围 | **硬锁在当前对话区内**，不能跨区、不能切到网页会话 |
+
+### 9.2 对话区（Zone）模型
+- **Zone 唯一标识** = `(channel, ai_config_id, ai_kind, target_id)`，即 `BotUserCursor` 一行（改动 2 已含 `alias`/`display_name`）。
+- **会话 → 对话区归属**：会话 X 属于某对话区 ⟺ 存在 `BotSessionRoute(channel, ..., session_id=X)` 且其 `target_id` = 该区 openid。
+- **网页区**：没有任何 `BotSessionRoute` 的 `ChatSession` 归入虚拟"网页区"（`zone_kind="web"`）。
+- **标题取值**：`alias` → `display_name` → `target_id` 缩写。
+
+### 9.3 抓取并存昵称（display_name）
+- 在 `long_connection.py::_build_message_payload` 已带 `author.username`；`router.py` 解析事件时，
+  把 C2C 的用户昵称 / 群的群名写入对应 Zone 的 `display_name`（仅当为空或变化时更新，别覆盖 `alias`）。
+- 群对话（`group`）标题用群名；C2C 用用户昵称。
+
+### 9.4 后端接口改动
+1. **`GET /api/chat/sessions` 增加分组信息**（`server/gateway/routers/chat_history_routes.py`）：
+   每条会话返回新增字段：
+   ```jsonc
+   {
+     "id": "...", "name": "...", "total_tokens": 0,
+     "zone_kind": "web" | "bot",           // 顶级栏目
+     "zone_id": "qq:c2c:AB12…" | "web",    // 对话区键（channel:type:target 或 web）
+     "channel": "qq" | "",                  // 机器人渠道
+     "zone_label": "小明" ,                 // 对话区标题（alias→display_name→openid缩写）
+     "is_active_in_zone": true              // 是否该区当前游标指向的会话
+   }
+   ```
+   实现：一次性 `select(BotSessionRoute)` + `select(BotUserCursor)`，在内存里给每个 `session_id` 贴标签。
+2. **对话区列表/改名**（新端点，`chat_history_routes.py`）：
+   - `GET /api/chat/zones?ai_config_id&ai_kind` —— 列出该 AI 的所有对话区（含标题、会话数、活跃会话、最近时间）。
+   - `PUT /api/chat/zones/{zone_id}` `{alias}` —— 主人给对话区起别名（写 `BotUserCursor.alias`）。
+3. 既有 `create/delete/rename session` 不变；网页端新建的会话默认进"网页区"。
+
+### 9.5 前端改动（`web/src`）
+- `src/api/chat.ts`：`ChatSessionRow` 增加 `zone_kind / zone_id / channel / zone_label / is_active_in_zone`；
+  新增 `listChatZones` / `renameChatZone`。
+- 会话列表组件（`components/chat/ChatInterface.vue` 等）：把扁平列表改为**两级分组**——
+  顶层「网页对话」「机器人对话区」；机器人区下按 `zone_id` 折叠出每个 QQ 用户的子区，子区标题可双击改别名。
+- 视觉上类似"任务栏目"：每个对话区是一个可折叠分组，组内是它的会话条目，活跃会话高亮。
+
+### 9.6 AI 侧硬隔离（与第五节工具配合）
+- `conversation.list_mine`：只返回**当前对话区**（由当前 `session_id` 反查 openid 得到）内的会话。
+- `conversation.switch`：目标会话必须与当前会话**同一 openid（同区）**，否则拒绝并提示"只能在本对话区内切换"。
+- `conversation.new`：新建会话**自动归入当前对话区**（写 `BotSessionRoute` 用当前 `target_json`），再设游标。
+- 即：AI 永远被限制在"正在跟它说话的这个 QQ 用户"的对话区里，无法窥探/切入他人或网页区。
+
+### 9.7 隔离与权限要点
+- 对话区是**展示/组织层**，真正的隔离仍由"按 openid 过滤 + 同区校验"保证（不能只靠前端分组）。
+- 别名 `alias` 只允许 **AI 主人**（拥有该 ai_config 的 user）在网页端编辑；QQ 用户侧不可改他人区名。
+- 删除会话不影响对话区存在；对话区在其名下还有会话或游标时保留。
+
+---
+
+## 九、涉及文件速查
 
 | 改动 | 文件 |
 | --- | --- |
 | HTTP 上下文 | `server/ai_runtime/inference/core.py`、`server/mcp_runtime/app.py` |
-| 游标表 / 模型 | `server/api/models/bot_session_route.py`、`server/api/models/__init__.py` |
-| 游标 / 归属 helper | `server/connector_runtime/bots/qq/routes_store.py` |
-| 入站路由 | `server/connector_runtime/bots/qq/router.py` |
-| MCP 工具 | `server/mcp_runtime/mcp/tools/conversation.py`、`registry.py`、`permissions.py` |
+| 游标 / 对话区表 / 模型 | `server/api/models/bot_session_route.py`、`server/api/models/__init__.py` |
+| 游标 / 归属 / 对话区 helper | `server/connector_runtime/bots/qq/routes_store.py` |
+| 入站路由 + 抓昵称 | `server/connector_runtime/bots/qq/router.py` |
+| MCP 工具（含同区校验） | `server/mcp_runtime/mcp/tools/conversation.py`、`registry.py`、`permissions.py` |
 | 提示词 | `server/connector_runtime/bots/qq/router.py::_build_qq_runtime_prompt` |
+| 对话区分组 / 接口 | `server/gateway/routers/chat_history_routes.py`（sessions 加分组字段、新增 `/zones`） |
+| 前端栏目化 | `web/src/api/chat.ts`、`web/src/components/chat/ChatInterface.vue` 等会话列表组件 |
 | （可选）发送健壮性 | `server/connector_runtime/bots/qq/service.py`、`adapter.py` |
