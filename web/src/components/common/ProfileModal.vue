@@ -2,11 +2,7 @@
 import { ref, watch } from 'vue'
 import * as authApi from '@/api/auth'
 import type { User } from '@/types'
-import avatar1 from '@/assets/avatars/avatars1.png'
-import avatar2 from '@/assets/avatars/avatars2.png'
-import avatar3 from '@/assets/avatars/avatars3.png'
-import avatar4 from '@/assets/avatars/avatars4.png'
-import avatar5 from '@/assets/avatars/avatars5.png'
+import { PRESET_AVATARS, resolveAvatarUrl } from '@/utils/avatar'
 
 const props = defineProps<{
   show: boolean
@@ -24,13 +20,15 @@ const name = ref('')
 const password = ref('')
 const selectedAvatar = ref('')
 
-const avatarList = [avatar1, avatar2, avatar3, avatar4, avatar5]
+const avatarList = PRESET_AVATARS
 
 watch(() => props.show, (newVal) => {
   if (newVal) {
     name.value = props.user.name
     password.value = ''
-    selectedAvatar.value = props.user.avatar || avatarList[0]
+    // Normalise so a previously-stored preset (incl. old bundled URLs) matches
+    // and stays highlighted in the picker.
+    selectedAvatar.value = resolveAvatarUrl(props.user.avatar) || avatarList[0]
     error.value = ''
   }
 })

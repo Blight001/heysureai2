@@ -4,6 +4,7 @@ import { useMessage } from '@/composables/useMessage'
 import * as adminApi from '@/api/admin'
 import type { AdminTask, AdminUser, AuditEntry, LogLine, ServiceInfo } from '@/api/admin'
 import type { User, UserRole } from '@/types'
+import { resolveAvatarUrl } from '@/utils/avatar'
 
 const props = defineProps<{
   show: boolean
@@ -363,7 +364,7 @@ watch(
 onUnmounted(stopAutoRefresh)
 
 const avatarFor = (u: AdminUser) =>
-  u.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(u.name)}`
+  resolveAvatarUrl(u.avatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(u.name)}`
 </script>
 
 <template>

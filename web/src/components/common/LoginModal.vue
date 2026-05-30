@@ -2,11 +2,7 @@
 import { ref, computed } from 'vue'
 import * as authApi from '@/api/auth'
 import type { User } from '@/types'
-import avatar1 from '@/assets/avatars/avatars1.png'
-import avatar2 from '@/assets/avatars/avatars2.png'
-import avatar3 from '@/assets/avatars/avatars3.png'
-import avatar4 from '@/assets/avatars/avatars4.png'
-import avatar5 from '@/assets/avatars/avatars5.png'
+import { PRESET_AVATARS } from '@/utils/avatar'
 
 defineProps<{
   show: boolean
@@ -27,9 +23,8 @@ const switchText = computed(() => isLoginMode.value ? '没有账号？去注册'
 const account = ref('')
 const password = ref('')
 const name = ref('')
-const selectedAvatar = ref(avatar1)
-
-const avatarList = [avatar1, avatar2, avatar3, avatar4, avatar5]
+const avatarList = PRESET_AVATARS
+const selectedAvatar = ref(avatarList[0])
 
 const handleSubmit = async () => {
   error.value = ''

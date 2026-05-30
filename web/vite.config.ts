@@ -30,6 +30,10 @@ export default defineConfig({
       '/uploads': {
         target: process.env.SERVER_URL || 'http://localhost:3000',
         changeOrigin: true
+      },
+      '/avatars': {
+        target: process.env.SERVER_URL || 'http://localhost:3000',
+        changeOrigin: true
       }
     }
   }
