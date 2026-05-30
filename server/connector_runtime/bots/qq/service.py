@@ -130,6 +130,20 @@ def _qq_headers(cfg: AssistantAIConfig, token: str) -> Dict[str, str]:
     }
 
 
+def _post_qq_message(cfg: AssistantAIConfig, *, endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    token = get_qq_access_token(cfg.user_id, cfg.id)
+    res = requests.post(
+        endpoint,
+        headers=_qq_headers(cfg, token),
+        json=payload,
+        timeout=20,
+    )
+    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
+    if not res.ok or (isinstance(data, dict) and data.get("code") not in (None, 0)):
+        raise HTTPException(status_code=502, detail=f"QQ send_message failed: {data or res.text}")
+    return data
+
+
 def _qq_media_file_endpoint(cfg: AssistantAIConfig, target_type: str, target_id: str) -> str:
     base = _qq_api_base(cfg)
     if target_type == "c2c":
@@ -208,16 +222,17 @@ def send_qq_text_message(
     if event_id and not msg_id:
         payload["event_id"] = str(event_id)
 
-    token = get_qq_access_token(user_id, ai_config_id)
-    res = requests.post(
-        _message_endpoint(cfg, final_target_type, final_target_id),
-        headers=_qq_headers(cfg, token),
-        json=payload,
-        timeout=20,
-    )
-    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
-    if not res.ok or (isinstance(data, dict) and data.get("code") not in (None, 0)):
-        raise HTTPException(status_code=502, detail=f"QQ send_message failed: {data or res.text}")
+    endpoint = _message_endpoint(cfg, final_target_type, final_target_id)
+    try:
+        data = _post_qq_message(cfg, endpoint=endpoint, payload=payload)
+    except HTTPException:
+        if "msg_id" not in payload:
+            raise
+        fallback_payload = dict(payload)
+        fallback_payload.pop("msg_id", None)
+        fallback_payload.pop("msg_seq", None)
+        fallback_payload.pop("event_id", None)
+        data = _post_qq_message(cfg, endpoint=endpoint, payload=fallback_payload)
     return {
         "success": True,
         "target_id": final_target_id,
@@ -302,16 +317,17 @@ def send_qq_media_message(
     if event_id and not msg_id:
         payload["event_id"] = str(event_id)
 
-    token = get_qq_access_token(user_id, ai_config_id)
-    res = requests.post(
-        _message_endpoint(cfg, final_target_type, final_target_id),
-        headers=_qq_headers(cfg, token),
-        json=payload,
-        timeout=20,
-    )
-    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
-    if not res.ok or (isinstance(data, dict) and data.get("code") not in (None, 0)):
-        raise HTTPException(status_code=502, detail=f"QQ send_media failed: {data or res.text}")
+    endpoint = _message_endpoint(cfg, final_target_type, final_target_id)
+    try:
+        data = _post_qq_message(cfg, endpoint=endpoint, payload=payload)
+    except HTTPException:
+        if "msg_id" not in payload:
+            raise
+        fallback_payload = dict(payload)
+        fallback_payload.pop("msg_id", None)
+        fallback_payload.pop("msg_seq", None)
+        fallback_payload.pop("event_id", None)
+        data = _post_qq_message(cfg, endpoint=endpoint, payload=fallback_payload)
     return {
         "success": True,
         "target_id": final_target_id,

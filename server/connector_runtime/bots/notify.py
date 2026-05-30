@@ -5,7 +5,7 @@
 committed. We:
 
 1. Strip MCP-call blocks so private tool traffic never leaks to chat UI.
-2. Identify which bot owns the message via the ``session_id`` prefix.
+2. Identify which bot owns the message by checking the registered routes.
 3. Glue any per-bot thinking/tool icons onto the rendered content.
 4. Hand the message to the matching adapter for delivery.
 
@@ -21,8 +21,7 @@ from typing import TYPE_CHECKING, Optional
 from sqlmodel import select
 
 from api.chat_runtime.mcp_parser import MCP_CALL_BLOCK_RE
-from .base import channel_for_session_id
-from .registry import get, iter_bots
+from .registry import iter_bots
 
 if TYPE_CHECKING:
     from sqlmodel import Session
@@ -162,21 +161,20 @@ def notify_saved_assistant_message(session: "Session", message: "ChatMessage") -
     """Deliver a saved assistant message to whichever bot owns its session.
 
     No-op when the message is empty, not from the assistant, or its
-    ``session_id`` doesn't match any registered bot's prefix.
+    ``session_id`` has no registered bot route.
     """
     if not _is_visible_assistant_message(message):
         return
     content = _visible_content(message)
 
-    channel = channel_for_session_id(message.session_id or "", iter_bots())
-    if not channel:
-        return
-    bot = get(channel)
-    if bot is None:
-        return
-
-    route = bot.load_session_route(session, message)
-    if not route:
+    bot = None
+    route = None
+    for candidate in iter_bots():
+        route = candidate.load_session_route(session, message)
+        if route:
+            bot = candidate
+            break
+    if bot is None or route is None:
         return
 
     prefix = _assistant_prefix(session, message)

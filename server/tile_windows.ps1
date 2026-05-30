@@ -214,8 +214,17 @@ try {
     }
   }
 
+  function Restart-AllServices {
+    Write-Host "Restarting all services..."
+    Stop-AllServices
+    Start-Sleep -Milliseconds 300
+    Refresh-AllWindows
+    Write-Host "All services restarted."
+  }
+
   Write-Host "HeySure control console"
   Write-Host "S = exit all"
+  Write-Host "R = restart all"
   Write-Host "M = restart MCP"
   Write-Host "A = restart AI"
   Write-Host "G = restart Gateway"
@@ -235,6 +244,7 @@ try {
         Stop-AllServices
         $exitRequested = $true
       }
+      'R' { Restart-AllServices }
       'M' { Restart-ServiceWindow -Title 'HeySure MCP Runtime' -Script 'run_mcp.bat' }
       'A' { Restart-ServiceWindow -Title 'HeySure AI Runtime' -Script 'run_ai.bat' }
       'G' { Restart-ServiceWindow -Title 'HeySure Gateway' -Script 'run_gateway.bat' }

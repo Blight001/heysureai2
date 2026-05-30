@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from api.database import engine
-from api.models import ChatMessage, ChatSession
+from api.models import BotSessionRoute, ChatMessage, ChatSession
 from api.services.chat_persistence import _rebuild_usage_snapshots
 from connector_runtime.dispatch.agent_dispatch import get_run_session_context
 
@@ -398,6 +398,7 @@ def _switch_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optio
     from connector_runtime.bots.session_cursor import set_active_session_id
 
     scope = _conversation_base_scope(args, ai_config_id)
+    target_snapshot = None
     with Session(engine) as session:
         target = _resolve_target_session(session, user_id, scope, args)
         if not target:
@@ -407,8 +408,9 @@ def _switch_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optio
             raise HTTPException(
                 status_code=400,
                 detail="conversation.switch is only available from a bot conversation",
-            )
+        )
         channel, identity_key = ident
+        current_session_id = str((get_run_session_context() or {}).get("session_id") or "").strip()
         set_active_session_id(
             session,
             channel=channel,
@@ -418,15 +420,89 @@ def _switch_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optio
             identity_key=identity_key,
             session_id=target.session_id,
         )
+        if current_session_id:
+            _clone_bot_route(
+                session,
+                user_id=user_id,
+                ai_kind=scope["ai_kind"],
+                ai_config_id=scope["ai_config_id"],
+                channel=channel,
+                from_session_id=current_session_id,
+                to_session_id=target.session_id,
+            )
+        target_snapshot = {
+            "session_id": target.session_id,
+            "name": target.session_name,
+        }
 
     return {
         "success": True,
-        "session_id": target.session_id,
-        "name": target.session_name,
+        "session_id": target_snapshot["session_id"],
+        "name": target_snapshot["name"],
         "ai_kind": scope["ai_kind"],
         "ai_config_id": scope["ai_config_id"],
         "note": "已切换；将在你的下一条消息生效，本条回复仍发回当前对话。",
     }
+
+
+def _clone_bot_route(
+    session: Session,
+    *,
+    user_id: int,
+    ai_kind: str,
+    ai_config_id: Optional[int],
+    channel: str,
+    from_session_id: str,
+    to_session_id: str,
+) -> None:
+    from_session_id = str(from_session_id or "").strip()
+    to_session_id = str(to_session_id or "").strip()
+    if not from_session_id or not to_session_id or from_session_id == to_session_id:
+        return
+
+    source_stmt = select(BotSessionRoute).where(
+        BotSessionRoute.channel == str(channel),
+        BotSessionRoute.user_id == int(user_id),
+        BotSessionRoute.ai_kind == str(ai_kind or "core"),
+        BotSessionRoute.session_id == from_session_id,
+    )
+    if ai_config_id is not None:
+        source_stmt = source_stmt.where(BotSessionRoute.ai_config_id == int(ai_config_id))
+    else:
+        source_stmt = source_stmt.where(BotSessionRoute.ai_config_id.is_(None))
+    source = session.exec(source_stmt).first()
+    if not source:
+        return
+
+    target_stmt = select(BotSessionRoute).where(
+        BotSessionRoute.channel == str(channel),
+        BotSessionRoute.user_id == int(user_id),
+        BotSessionRoute.ai_kind == str(ai_kind or "core"),
+        BotSessionRoute.session_id == to_session_id,
+    )
+    if ai_config_id is not None:
+        target_stmt = target_stmt.where(BotSessionRoute.ai_config_id == int(ai_config_id))
+    else:
+        target_stmt = target_stmt.where(BotSessionRoute.ai_config_id.is_(None))
+    target = session.exec(target_stmt).first()
+
+    now = time.time()
+    if target is None:
+        target = BotSessionRoute(
+            channel=str(channel),
+            user_id=int(user_id),
+            ai_config_id=int(ai_config_id) if ai_config_id is not None else None,
+            ai_kind=str(ai_kind or "core"),
+            session_id=to_session_id,
+            target_json=str(source.target_json or ""),
+            source_message_id="",
+            source_event_id="",
+            next_msg_seq=1,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(target)
+        session.commit()
 
 
 def _new_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
@@ -436,6 +512,7 @@ def _new_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optional
     scope = _conversation_base_scope(args, ai_config_id)
     session_name = str(args.get("name") or args.get("session_name") or "").strip() or "新对话"
     sid = f"session_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
+    row_snapshot = None
 
     with Session(engine) as session:
         now = time.time()
@@ -451,6 +528,10 @@ def _new_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optional
         session.add(row)
         session.commit()
         session.refresh(row)
+        row_snapshot = {
+            "session_id": row.session_id,
+            "session_name": row.session_name,
+        }
 
         ident, _current = _current_identity(session, user_id, scope)
         switched = False
@@ -465,12 +546,23 @@ def _new_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optional
                 identity_key=identity_key,
                 session_id=sid,
             )
+            current_session_id = str((_current or "")).strip()
+            if current_session_id:
+                _clone_bot_route(
+                    session,
+                    user_id=user_id,
+                    ai_kind=scope["ai_kind"],
+                    ai_config_id=scope["ai_config_id"],
+                    channel=channel,
+                    from_session_id=current_session_id,
+                    to_session_id=sid,
+                )
             switched = True
 
     return {
         "success": True,
-        "session_id": row.session_id,
-        "name": row.session_name,
+        "session_id": row_snapshot["session_id"],
+        "name": row_snapshot["session_name"],
         "switched": switched,
         "ai_kind": scope["ai_kind"],
         "ai_config_id": scope["ai_config_id"],

@@ -111,9 +111,9 @@ def register_qq_session_route(
         )
     else:
         row.target_json = target_json
-        row.source_message_id = str(source_message_id or row.source_message_id or "")
-        row.source_event_id = str(source_event_id or row.source_event_id or "")
-        row.next_msg_seq = max(int(row.next_msg_seq or 1), int(next_msg_seq or 1))
+        row.source_message_id = str(source_message_id or "")
+        row.source_event_id = str(source_event_id or "")
+        row.next_msg_seq = max(1, int(next_msg_seq or 1))
         row.updated_at = now
     session.add(row)
     session.commit()
