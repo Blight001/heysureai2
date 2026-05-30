@@ -31,8 +31,8 @@ const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag
   'mcp.describe_tool': { label: 'MCP 工具详情', description: '读取某个 MCP 工具的完整说明和参数 schema。', tag: 'MCP' },
   'web.search': { label: '联网搜索', description: '使用 Tavily 搜索互联网，适合查询实时信息、外部资料和网页结果。', tag: '工作区' },
   'workspace.run_command': { label: '执行命令', description: '在工作目录中执行终端命令。', tag: '工作区' },
-  'admin.list_agents': { label: '列出智能体', description: '查看系统中的 AI 成员列表。', tag: '管理' },
-  'admin.get_overview': { label: '管理总览', description: '获取系统运行状态与关键统计。', tag: '管理' },
+  'admin.list_agents': { label: '列出智能体', description: '查看系统中的 AI 成员列表。', tag: '系统总览' },
+  'admin.get_overview': { label: '系统总览', description: '获取系统运行状态与关键统计。', tag: '系统总览' },
   'project.list_projects': { label: '项目列表', description: '查看当前用户下的项目信息。', tag: '项目' },
   'project.create_project': { label: '创建项目', description: '创建新的项目记录。', tag: '项目' },
   'project.update_project': { label: '更新项目', description: '更新项目信息与成员绑定。', tag: '项目' },
@@ -156,7 +156,7 @@ const normalizeMcpSchemaType = (rawType: unknown) => {
 const MCP_TOOL_TAG_ORDER = [
   'MCP',
   '工作区',
-  '管理',
+  '系统总览',
   '项目',
   '任务',
   '文件系统',
@@ -209,7 +209,7 @@ const getMcpToolFallbackTag = (name: string) => {
   const endpointCapabilityTag = getEndpointCapabilityTag(name)
   if (endpointCapabilityTag) return endpointCapabilityTag
   if (hasMcpPrefix(name, 'workspace')) return '工作区'
-  if (hasMcpPrefix(name, 'admin')) return '管理'
+  if (hasMcpPrefix(name, 'admin')) return '系统总览'
   if (hasMcpPrefix(name, 'desktop')) return '桌面能力'
   if (hasMcpPrefix(name, 'project')) return '项目'
   if (hasMcpPrefix(name, 'task')) return '任务'
@@ -244,7 +244,7 @@ const getMcpToolFallbackLabel = (name: string) => {
   const normalized = String(name || '').trim()
   if (!normalized) return '未命名工具'
   if (hasMcpPrefix(normalized, 'workspace')) return `工作区工具：${normalized}`
-  if (hasMcpPrefix(normalized, 'admin')) return `管理工具：${normalized}`
+  if (hasMcpPrefix(normalized, 'admin')) return `系统总览工具：${normalized}`
   if (hasMcpPrefix(normalized, 'project')) return `项目工具：${normalized}`
   if (hasMcpPrefix(normalized, 'task')) return `任务工具：${normalized}`
   if (hasMcpPrefix(normalized, 'prompt')) return `Prompt 工具：${normalized}`
@@ -327,7 +327,7 @@ export const groupMcpToolsByZhTag = (tools: string[]): McpToolGroup[] => {
 }
 
 const getMcpToolGroupParent = (tag: string) => {
-  if (tag === '管理' || tag === '项目' || tag === '任务' || tag === 'Prompt') return '管理员'
+  if (tag === '系统总览' || tag === '项目' || tag === '任务' || tag === 'Prompt') return '系统'
   if (tag === '进化' || tag === '记忆' || tag === '归档' || tag === '总结') return '进化'
   return ''
 }
@@ -353,7 +353,7 @@ export const groupMcpToolGroupsByParent = (groups: McpToolGroup[]): McpToolParen
     tools: childGroups.flatMap(group => group.tools),
   }))
 
-  const parentOrder = ['管理员', '进化']
+  const parentOrder = ['系统', '进化']
   return [...parentRows, ...standalone].sort((a, b) => {
     const aRank = parentOrder.includes(a.title) ? parentOrder.indexOf(a.title) : parentOrder.length
     const bRank = parentOrder.includes(b.title) ? parentOrder.indexOf(b.title) : parentOrder.length
