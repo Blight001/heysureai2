@@ -105,6 +105,19 @@ class QQBot(BotAdapter):
         from .service import normalize_qq_text
         return normalize_qq_text(text)
 
+    # ---- runtime tool requirements ----------------------------------------
+
+    def extra_required_mcp_tools(self) -> set:
+        # QQ conversations get the self-service context-trim tool plus the
+        # shared-pool multi-session tools, even for AI configs whose saved
+        # MCP allowlist predates them.
+        return {
+            "conversation.forget_before_current",
+            "conversation.list",
+            "conversation.switch",
+            "conversation.new",
+        }
+
     # ---- notify dispatch --------------------------------------------------
 
     def load_session_route(

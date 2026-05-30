@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 
 from api.database import get_session
 from api.database import engine
-from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
+from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, ChatSession, User
 from gateway.routers.auth import get_current_user
 from api.chat_runtime.run_state import _RUN_THREADS
 from api.chat_runtime.chat_runtime_helpers import _resolve_ai_runtime
@@ -20,6 +20,7 @@ from ._config import read_qq_config
 from .long_connection import get_qq_long_connection_state
 from .routes_store import register_qq_session_route
 from .service import diagnose_qq_config, parse_qq_text_event, send_qq_text_message
+from connector_runtime.bots.session_cursor import get_active_session_id
 import logging
 
 
@@ -82,6 +83,9 @@ def _build_qq_runtime_prompt(base_prompt: str, event: Dict[str, str]) -> str:
         "除非用户明确要求额外通知其他机器人会话，否则不要调用 MCP 工具 `user.send_message`，避免重复回复。\n"
         "如果用户要求忘掉/清除/重置/忽略此前对话或上下文，请先调用 MCP 工具 "
         "`conversation.forget_before_current`；该工具只删除当前用户消息之前的内容，不会清空当前消息。\n"
+        "当用户想要 列出/切换/新开 对话或会话时，调用 MCP 工具 "
+        "`conversation.list`（列出该 AI 的全部对话）、`conversation.switch`（切到指定对话）、"
+        "`conversation.new`（新建并切换）；切换在用户的下一条消息生效，本条回复仍发回当前对话。\n"
         f"- 来源接收目标: {target_type}:{target}\n"
         "- 默认回传策略: 优先使用收到事件里的 msg_id 做被动回复。"
     )
@@ -326,8 +330,31 @@ def handle_qq_event_payload(
         qq_event_id = event.get("event_id") or ""
         ai_kind = "assistant" if cfg.ai_role == "assistant_admin" else "core"
         session_key = f"{target_type}_{target_id}"
-        session_id = f"qq_{config_id}_{session_key}"
-        session_name = f"QQ对话 {session_key}"
+        home_session_id = f"qq_{config_id}_{session_key}"
+        # Resolve which session in the shared pool this user's message lands in.
+        # Defaults to the user's home session; follows the cursor when the AI
+        # has switched/created another conversation for this identity.
+        session_id = get_active_session_id(
+            session,
+            channel="qq",
+            user_id=int(cfg.user_id),
+            ai_config_id=int(cfg.id or config_id),
+            ai_kind=ai_kind,
+            identity_key=target_id,
+            default=home_session_id,
+        )
+        existing_session = session.exec(
+            select(ChatSession).where(
+                ChatSession.user_id == int(cfg.user_id),
+                ChatSession.ai_config_id == int(cfg.id or config_id),
+                ChatSession.ai_kind == ai_kind,
+                ChatSession.session_id == session_id,
+            )
+        ).first()
+        session_name = (
+            str(existing_session.session_name) if existing_session and existing_session.session_name
+            else f"QQ对话 {session_key}"
+        )
         register_qq_session_route(
             session,
             user_id=int(cfg.user_id),

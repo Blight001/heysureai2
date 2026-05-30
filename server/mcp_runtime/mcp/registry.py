@@ -48,6 +48,9 @@ from .tools.conversation import (
     _delete_conversation,
     _find_conversation,
     _forget_before_current,
+    _list_conversations,
+    _new_conversation,
+    _switch_conversation,
 )
 from .tools.librarian import (
     _librarian_archive,
@@ -462,6 +465,72 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
             "required": [],
         },
         handler=_delete_conversation,
+        destructive=True,
+    ))
+
+    registry.register(MCPTool(
+        name="conversation.list",
+        description=(
+            "List all conversations in this AI's shared pool (the unified 机器人对话区), "
+            "covering the web UI and every bot channel. Returns each session's id, name, "
+            "source channel, last-update time, and whether it is the active one for you. "
+            "Use when the user asks to see / list their conversations or wants to pick one to switch to."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Max sessions to return, 1-200. Defaults to 50."},
+                "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
+                "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run."},
+            },
+            "required": [],
+        },
+        handler=_list_conversations,
+    ))
+
+    registry.register(MCPTool(
+        name="conversation.switch",
+        description=(
+            "Switch the active conversation for the current user/identity to another session "
+            "in this AI's shared pool. Provide session_id, or name/query to match by title. "
+            "Takes effect from the user's NEXT message; the current reply still goes to the "
+            "current conversation. Use when the user says 'switch conversation / go back to that chat / "
+            "换个对话 / 切回刚才那个'."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Target session id to switch to."},
+                "name": {"type": "string", "description": "Match a target session by name/title when session_id is omitted."},
+                "query": {"type": "string", "description": "Alias of name."},
+                "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
+                "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run."},
+            },
+            "required": [],
+        },
+        handler=_switch_conversation,
+        destructive=True,
+    ))
+
+    registry.register(MCPTool(
+        name="conversation.new",
+        description=(
+            "Create a new conversation in this AI's shared pool and switch the current "
+            "user/identity to it. Takes effect from the user's NEXT message; the current reply "
+            "still goes to the current conversation. Use when the user says 'start a new chat / "
+            "新开一个对话'."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Name for the new conversation. Defaults to 新对话."},
+                "session_name": {"type": "string", "description": "Alias of name."},
+                "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
+                "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run."},
+            },
+            "required": [],
+        },
+        handler=_new_conversation,
         destructive=True,
     ))
 

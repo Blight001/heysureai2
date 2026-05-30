@@ -34,6 +34,11 @@ class CallRequest(BaseModel):
     user_id: int = Field(..., description="Acting user id; tools scope file/DB access to this user")
     ai_config_id: Optional[int] = None
     arguments: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    # Snapshot of the calling run's session context (session_id / channel /
+    # identity / current_user_message_id). In split deployments the worker's
+    # contextvar does not cross the process boundary, so the caller serializes
+    # it here and we re-establish it for the duration of the tool call.
+    session_context: Optional[Dict[str, Any]] = None
 
 
 def _tool_catalog() -> Dict[str, Any]:
@@ -84,12 +89,26 @@ def create_app() -> FastAPI:
     async def call_tool(req: CallRequest) -> Dict[str, Any]:
         if not registry.has(req.tool):
             raise HTTPException(status_code=404, detail=f"Unknown tool: {req.tool}")
-        return await registry.call(
-            req.tool,
-            req.user_id,
-            req.arguments or {},
-            req.ai_config_id,
-        )
+        # Re-establish the caller's run session context so tools that rely on
+        # get_run_session_context() (conversation.*, communication.*) work in
+        # the split (remote HTTP) deployment, then restore the previous value.
+        from connector_runtime.dispatch.agent_dispatch import set_run_session_context
+
+        token = set_run_session_context(req.session_context or None)
+        try:
+            return await registry.call(
+                req.tool,
+                req.user_id,
+                req.arguments or {},
+                req.ai_config_id,
+            )
+        finally:
+            try:
+                from connector_runtime.dispatch.agent_dispatch import _RUN_SESSION_CONTEXT
+
+                _RUN_SESSION_CONTEXT.reset(token)
+            except Exception:
+                set_run_session_context(None)
 
     @router.post("/mcp/reload")
     def reload_tools() -> Dict[str, Any]:
