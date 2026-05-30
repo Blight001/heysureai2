@@ -156,13 +156,19 @@ def parse_role_permissions(user) -> Dict[str, List[str]]:
 
 
 def effective_allowed_for_tier(user, tier: str, all_tool_names: Iterable[str]) -> Set[str]:
-    """Tools a given role tier may use: saved admin policy or role defaults."""
+    """Tools a given role tier may use.
+
+    If the admin has saved an explicit per-role policy it is honoured (the role
+    system stays in force). Otherwise every known tool is allowed — the curated
+    ``role_default_tools`` set is only a *default checked* hint for the UI, not a
+    hard ceiling, so an operator can grant any MCP tool to any AI from its own
+    config without first widening the role policy in System Settings."""
     names = set(all_tool_names)
     ceiling = role_ceiling_tools(tier, names)
     policy = parse_role_permissions(user)
     if tier in policy:
         return {tool for tool in policy[tier] if tool in ceiling}
-    return role_default_tools(tier, names)
+    return ceiling
 
 
 def effective_allowed_for_config(user, cfg, all_tool_names: Optional[Iterable[str]] = None) -> Set[str]:
