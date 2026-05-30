@@ -1,6 +1,22 @@
-from typing import Any, Dict, List, Optional, Set
+import time
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from api.sio import agents
+
+# In split deployments the live ``agents`` registry only exists in the process
+# that owns the agent socket server (api-gateway). ai-runtime / mcp-runtime
+# therefore cannot classify or enumerate endpoint tools from ``agents`` — they
+# resolve them from the gateway over internal HTTP (see
+# ``endpoint_tools_for_config``). These process-local caches remember the tool
+# names that resolution returned so the context-free ``is_desktop_tool`` /
+# ``is_browser_tool`` checks keep working off the gateway too. They are a union
+# across configs (classification only); per-config allow-listing and dispatch
+# still go through the scoped paths.
+_REMOTE_DESKTOP_TOOLS: Set[str] = set()
+_REMOTE_BROWSER_TOOLS: Set[str] = set()
+# (user_id, ai_config_id) -> (expiry_epoch, resolved tool set)
+_REMOTE_TOOLS_CACHE: Dict[Tuple[Optional[int], int], Tuple[float, Set[str]]] = {}
+_REMOTE_TOOLS_TTL_SECONDS = 3.0
 
 
 # ``admin.list_agents`` is a *server* bridge tool surfaced whenever any endpoint
@@ -82,14 +98,15 @@ def browser_tool_names() -> Set[str]:
 
 
 def is_desktop_tool(name: str) -> bool:
-    return str(name or "").strip() in desktop_tool_names()
+    tool = str(name or "").strip()
+    return tool in desktop_tool_names() or tool in _REMOTE_DESKTOP_TOOLS
 
 
 def is_browser_tool(name: str) -> bool:
     tool = str(name or "").strip()
     if _is_browser_namespaced(tool):
         return True
-    return tool in _reported_endpoint_tools(want_desktop=False)
+    return tool in _reported_endpoint_tools(want_desktop=False) or tool in _REMOTE_BROWSER_TOOLS
 
 
 def is_endpoint_agent_tool(name: str) -> bool:
@@ -369,6 +386,52 @@ def _scoped_tools(agent: Optional[Dict[str, Any]], agent_type: str,
     return caps & scope
 
 
+def _remember_remote_classification(tools: Set[str]) -> None:
+    """Record resolved tool names into the process-local classification caches
+    so context-free ``is_desktop_tool`` / ``is_browser_tool`` work off-gateway."""
+    for name in tools:
+        if _is_browser_namespaced(name):
+            _REMOTE_BROWSER_TOOLS.add(name)
+        else:
+            _REMOTE_DESKTOP_TOOLS.add(name)
+
+
+def _fetch_endpoint_tools_remote(ai_config_id: int, user_id: Optional[int]) -> Set[str]:
+    """Resolve endpoint tools from the api-gateway (which owns the live agent
+    registry). Cached briefly so a chat turn doesn't issue repeat calls."""
+    key = (_parse_int(user_id), ai_config_id)
+    now = time.time()
+    cached = _REMOTE_TOOLS_CACHE.get(key)
+    if cached and cached[0] > now:
+        return set(cached[1])
+    tools: Set[str] = set()
+    try:
+        import requests
+        from api.core.settings import settings
+        from api.runtime.internal_http import internal_headers
+
+        base = str(settings.api_gateway_url or "").strip().rstrip("/")
+        if base:
+            resp = requests.get(
+                f"{base}/internal/agent/endpoint-tools",
+                params={"user_id": user_id or 0, "ai_config_id": ai_config_id},
+                headers=internal_headers(),
+                timeout=4,
+            )
+            resp.raise_for_status()
+            payload = resp.json() if resp.content else {}
+            tools = {str(t).strip() for t in (payload.get("tools") or []) if str(t).strip()}
+    except Exception:
+        # Stay graceful: a transient gateway hiccup must not strip the AI of all
+        # server tools. Reuse the last good answer if we have one.
+        if cached:
+            return set(cached[1])
+        tools = set()
+    _REMOTE_TOOLS_CACHE[key] = (now + _REMOTE_TOOLS_TTL_SECONDS, set(tools))
+    _remember_remote_classification(tools)
+    return tools
+
+
 def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
     """Endpoint MCP tools available to an AI right now: the union of what its
     connected desktop and browser agents report, each narrowed by the saved
@@ -377,12 +440,35 @@ def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int
     This is the source of truth for endpoint tools in the AI's allow-list —
     they are intentionally decoupled from ``cfg.mcp_tools`` (which governs
     server-side MCP tools). A disconnected agent contributes nothing, so its
-    tools simply disappear from the AI's reach until it returns."""
+    tools simply disappear from the AI's reach until it returns.
+
+    The live agent registry only exists on the api-gateway. Off-gateway
+    processes (ai-runtime / mcp-runtime) resolve this over internal HTTP; the
+    gateway / monolith (``api_gateway_url`` empty) computes it locally."""
+    config_id = _parse_int(ai_config_id)
+    if not config_id:
+        return set()
+
+    from api.core.settings import settings
+    if str(settings.api_gateway_url or "").strip():
+        return _fetch_endpoint_tools_remote(config_id, user_id)
+    return endpoint_tools_for_config_local(config_id, user_id)
+
+
+def endpoint_tools_for_config_local(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
+    """Compute endpoint tools directly from the in-process agent registry.
+
+    Always local — never delegates — so the gateway's internal HTTP endpoint can
+    call it without risking recursion when the gateway also has
+    ``api_gateway_url`` configured to point at itself."""
+    config_id = _parse_int(ai_config_id)
+    if not config_id:
+        return set()
     tools: Set[str] = set()
     tools |= _scoped_tools(
-        get_connected_desktop_agent(ai_config_id, user_id), "desktop", ai_config_id, user_id
+        get_connected_desktop_agent(config_id, user_id), "desktop", config_id, user_id
     )
     tools |= _scoped_tools(
-        get_connected_browser_agent(ai_config_id, user_id), "browser", ai_config_id, user_id
+        get_connected_browser_agent(config_id, user_id), "browser", config_id, user_id
     )
     return tools
