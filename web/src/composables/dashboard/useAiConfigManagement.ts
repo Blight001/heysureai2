@@ -173,9 +173,13 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     }
     const optionSet = new Set(optionsForRole)
     const configured = meta.permissions?.[tier]
+    // With no explicit admin role policy, expose the full configurable set
+    // (the role ceiling = every known tool) so each AI can be granted any MCP
+    // tool directly. ``meta.defaults`` only seeds the initial checked state on
+    // a new config, it no longer caps what is selectable here.
     const allowed = Array.isArray(configured) && configured.length > 0
       ? configured.filter(tool => optionSet.has(tool))
-      : (meta.defaults?.[tier] || [])
+      : optionsForRole
     return [...allowed].sort((a, b) => a.localeCompare(b))
   })
 
