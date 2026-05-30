@@ -171,12 +171,14 @@ for _bot in iter_bots():
     app.include_router(bot_router, prefix=bot_prefix)
     logger.info(f"loaded bot router: {_bot.channel} -> {bot_prefix}")
 
-# Register Socket Events. In split deployments (CONNECTOR_RUNTIME_URL set)
-# connector-runtime owns the agent-side handlers, so api-gateway only wires
-# the user-side. In monolith mode we register both.
+# Register Socket Events. Desktop / browser agents connect to the api-gateway
+# (the single public URL they also use for REST auth), so the gateway owns the
+# agent-side handlers + the live ``agents`` registry in every deployment. Task
+# dispatch is therefore served from here too (see gateway.routers.
+# agent_dispatch_internal); ai-runtime routes endpoint-tool dispatches to this
+# process via HEYSURE_API_GATEWAY_URL.
 register_user_socket_events()
-if not settings.connector_runtime_url:
-    register_agent_socket_events()
+register_agent_socket_events()
 
 # Socket.IO App Wrapper
 sio_app = socketio.ASGIApp(sio, other_asgi_app=app)

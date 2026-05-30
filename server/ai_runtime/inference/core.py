@@ -464,13 +464,17 @@ async def _call_mcp_or_endpoint_tool(
     ai_config_id: Optional[int],
 ) -> Dict[str, object]:
     if is_endpoint_agent_tool(tool):
-        connector_url = settings.connector_runtime_url
-        if connector_url:
+        # Desktop / browser agents register their socket on the api-gateway, so
+        # endpoint-tool dispatch is served there (gateway.routers.
+        # agent_dispatch_internal). In the monolith api_gateway_url is empty and
+        # we dispatch in-process below.
+        agent_host_url = settings.api_gateway_url
+        if agent_host_url:
             return {
                 "tool": tool,
                 "destructive": True,
                 "result": await _dispatch_endpoint_via_runtime(
-                    connector_url, tool, user_id, arguments, ai_config_id
+                    agent_host_url, tool, user_id, arguments, ai_config_id
                 ),
             }
         return {
