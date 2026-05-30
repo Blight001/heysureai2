@@ -124,11 +124,11 @@ def _send_qq_text(
 
 def _start_qq_worker(worker_kwargs: Dict[str, Any]) -> str:
     import json as _json
-    from .chat_action_routes import _ai_dispatch_mode
+    from api.core.settings import settings
     from ai_runtime.worker import notify_queue
 
     run_id = str(worker_kwargs["run_id"])
-    if _ai_dispatch_mode() == "remote":
+    if settings.ai_dispatch_mode == "remote":
         extras = {
             k: worker_kwargs.get(k)
             for k in (
