@@ -464,14 +464,30 @@ const stopSessionSyncPolling = () => {
   sessionSyncPollTimer = null
 }
 
+// The streamed live bubble holds the thinking-stripped visible answer, while a
+// persisted assistant message keeps its raw content (<think>/<mcp-call> blocks
+// included). Comparing the raw strings directly misses that they are the same
+// reply, so the live bubble is never deduped against the persisted one and both
+// render until a reload clears the live state. Normalize to the visible display
+// text before comparing.
+const normalizeAssistantVisibleText = (content: string): string => {
+  const raw = String(content || '')
+  if (!raw.trim()) return ''
+  try {
+    return String(parseChatResponseInline(raw).displayText || '').trim()
+  } catch {
+    return raw.trim()
+  }
+}
+
 const upsertHistoryMessages = async (incoming: ChatMessage[]) => {
   if (!incoming.length) return
   const existingIds = new Set(chatMessages.value.map(m => m.id).filter(Boolean))
-  const liveText = (liveTargetText.value || '').trim()
+  const liveVisible = normalizeAssistantVisibleText(liveTargetText.value)
   for (const msg of incoming) {
     if (msg.id && existingIds.has(msg.id)) continue
-    const normalizedMsgContent = String(msg.content || '').trim()
-    if (liveText && msg.role === 'assistant' && normalizedMsgContent === liveText) {
+    const msgVisible = normalizeAssistantVisibleText(msg.content)
+    if (liveVisible && msg.role === 'assistant' && msgVisible === liveVisible) {
       if (isRunActive.value) {
         // Running stage: keep a single live bubble, don't duplicate with persisted history.
         continue
@@ -481,11 +497,11 @@ const upsertHistoryMessages = async (incoming: ChatMessage[]) => {
         clearLiveAssistantView()
       }
     }
-    if (msg.id && msg.role === 'assistant' && normalizedMsgContent) {
+    if (msg.id && msg.role === 'assistant' && msgVisible) {
       const localIdx = chatMessages.value.findIndex(item =>
         !item.id
         && item.role === 'assistant'
-        && String(item.content || '').trim() === normalizedMsgContent)
+        && normalizeAssistantVisibleText(item.content) === msgVisible)
       if (localIdx >= 0) {
         chatMessages.value.splice(localIdx, 1)
       }
@@ -510,11 +526,11 @@ const getLastMessageId = () => {
 }
 
 const hasAssistantMessageWithContent = (content: string) => {
-  const normalized = String(content || '').trim()
+  const normalized = normalizeAssistantVisibleText(content)
   if (!normalized) return false
   return chatMessages.value.some(msg =>
     msg.role === 'assistant'
-    && String(msg.content || '').trim() === normalized)
+    && normalizeAssistantVisibleText(msg.content) === normalized)
 }
 
 const appendLiveAssistantAsLocalMessage = async (text: string) => {
