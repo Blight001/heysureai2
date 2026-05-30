@@ -1,8 +1,8 @@
 // background.ts — HeySure Agent service worker
 // Manages: Socket.IO server connection, task dispatching, popup port communication
 import { io, Socket } from 'socket.io-client'
-import { getSettings, saveSettings, pushActivity, getActivity, getCard, getAuth } from './lib/storage'
-import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS, runCardSteps, setCardProgress, runScheduledCard } from './lib/tools'
+import { getSettings, saveSettings, pushActivity, getActivity, getAuth } from './lib/storage'
+import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS, effectiveToolDefs } from './lib/tools'
 import { callAI } from './lib/ai'
 import { screenshotToolContent } from './lib/ai'
 import {
@@ -61,10 +61,15 @@ function log(type: string, status: string, message: string, data?: any) {
   broadcast({ type: 'activity:log', entry })
 }
 
+// Server-side bound AI for this device, learned from agent:registered. null =
+// none assigned yet → the popup status indicator shows yellow instead of green.
+let boundAiConfigId: number | null = null
+
 // ── Status management ─────────────────────────────────────────────────────
 function setStatus(status: AgentStatus, reason?: string) {
   currentStatus = status
-  broadcast({ type: 'agent:status', status, reason })
+  if (status !== 'registered' && status !== 'connected') boundAiConfigId = null
+  broadcast({ type: 'agent:status', status, reason, aiConfigId: boundAiConfigId })
   const colors: Record<AgentStatus, string> = {
     disconnected: '#787878', connecting: '#f59e0b',
     connected: '#6366f1',    registered: '#22c55e',  error: '#ef4444',
@@ -139,6 +144,12 @@ interface ProbeOutcome {
   kind:    'registered' | 'rejected' | 'failed'
   socket?: Socket
   reason?: string
+  aiConfigId?: number | null
+}
+
+function parseAiConfigId(raw: any): number | null {
+  const n = typeof raw === 'number' ? raw : (raw != null && String(raw).trim() !== '' ? Number(raw) : null)
+  return Number.isFinite(n as number) ? (n as number) : null
 }
 
 // Try to register against a single URL. Resolves once the server replies
@@ -174,7 +185,7 @@ function probeRegister(url: string, timeoutMs: number): Promise<ProbeOutcome> {
     probe.on('connect', () => { void emitRegisterOn(probe) })
     probe.on('connect_error', (err: Error) => settle({ kind: 'failed', reason: err?.message || 'connect_error' }))
     probe.on('disconnect',    (reason: string) => settle({ kind: 'failed', reason: `disconnected: ${reason}` }))
-    probe.on('agent:registered',        ()           => settle({ kind: 'registered', socket: probe }))
+    probe.on('agent:registered',        (data: any)  => settle({ kind: 'registered', socket: probe, aiConfigId: parseAiConfigId(data?.aiConfigId) }))
     probe.on('agent:register_rejected', (data: any)  => settle({ kind: 'rejected',   reason: data?.reason || '注册被服务器拒绝' }))
   })
 }
@@ -196,10 +207,11 @@ async function emitRegisterOn(s: Socket): Promise<void> {
     platform:        `browser-extension (${navigator?.userAgent?.split(' ').pop() || 'chrome'})`,
     os:              { platform: 'browser', arch: 'unknown', release: '1.0', hostname: id },
     capabilities:    BROWSER_CAPABILITIES,
-    // Full self-described tool schemas. The server stores these and surfaces
-    // them in mcp.list_tools / describe_tool instead of hardcoding browser
-    // tool schemas, so a tool added here needs no server change.
-    toolDefs:        BROWSER_TOOLS,
+    // Full self-described tool schemas (with the user's local description edits
+    // merged in). The server stores these and surfaces them in mcp.list_tools /
+    // describe_tool instead of hardcoding browser tool schemas, so a tool added
+    // here — or a description edited in the popup — needs no server change.
+    toolDefs:        await effectiveToolDefs(),
     version:         '1.0.0',
     token:           auth.token || settings.agentToken || '',
     userId:          auth.userId ?? null,
@@ -259,6 +271,7 @@ async function connect() {
   try {
     let winner: Socket | null = null
     let winnerUrl = ''
+    let winnerAiConfigId: number | null = null
     let rejected: string | null = null
     const failures: Array<{ url: string; reason: string }> = []
 
@@ -268,6 +281,7 @@ async function connect() {
       if (outcome.kind === 'registered' && outcome.socket) {
         winner = outcome.socket
         winnerUrl = candidate
+        winnerAiConfigId = outcome.aiConfigId ?? null
         break
       }
       if (outcome.kind === 'rejected') {
@@ -300,6 +314,7 @@ async function connect() {
     winner.removeAllListeners()
     socket = winner
     activeSocketUrl = winnerUrl
+    boundAiConfigId = winnerAiConfigId
     setStatus('registered')
     log('system', 'success', `已连接并注册到 ${winnerUrl}`)
     if (settings.lastWorkingAgentUrl !== winnerUrl) {
@@ -339,8 +354,11 @@ function attachOperationalListeners(s: Socket, agentName: string) {
   })
 
   s.on('agent:registered', (data: any) => {
+    const raw = data?.aiConfigId
+    const parsed = typeof raw === 'number' ? raw : (raw != null && String(raw).trim() !== '' ? Number(raw) : null)
+    boundAiConfigId = Number.isFinite(parsed as number) ? (parsed as number) : null
     setStatus('registered')
-    log('system', 'success', `已注册: ${data?.name || agentName}`)
+    log('system', 'success', `已注册: ${data?.name || agentName}${boundAiConfigId == null ? '（未分配 AI）' : ''}`)
   })
 
   s.on('agent:register_rejected', (data: any) => {
@@ -549,57 +567,13 @@ async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUs
   return { text: '已达到最大迭代次数', toolsUsed, toolEvents }
 }
 
-// ── Memory card execution ─────────────────────────────────────────────────
-let cardRunning = false
-let cardStopRequested = false
-
-// Surface per-step progress (for both popup-triggered and AI-triggered runs)
-// to the activity feed and the cards UI.
-setCardProgress((cardId, index, total, note, tool, status, error) => {
-  broadcast({ type: 'card:progress', cardId, index, total, note, tool, status, error })
-  const label = `[${index + 1}/${total}] ${note}`
-  if (status === 'running')      log('card', 'running', label, { tool })
-  else if (status === 'success') log('card', 'success', `完成 ${label}`)
-  else if (status === 'error')   log('card', 'error', `失败 ${label} — ${error || ''}`)
-})
-
-async function runCard(cardId: string) {
-  if (cardRunning) {
-    log('card', 'warn', '已有卡片正在执行，请先停止')
-    return
-  }
-  const card = await getCard(cardId)
-  if (!card) {
-    broadcast({ type: 'card:done', cardId, success: false, reason: '卡片不存在' })
-    log('card', 'error', '卡片不存在')
-    return
-  }
-  cardRunning = true
-  cardStopRequested = false
-  log('card', 'info', `开始执行卡片「${card.name}」，共 ${card.steps.length} 步`)
-  try {
-    const res = await runCardSteps(card, { shouldStop: () => cardStopRequested })
-    if (res.stopped) {
-      log('card', 'warn', `已停止：${card.name}`)
-      broadcast({ type: 'card:done', cardId, success: false, reason: 'stopped' })
-    } else if (res.success) {
-      log('card', 'success', `卡片执行完成：${card.name}`)
-      broadcast({ type: 'card:done', cardId, success: true })
-    } else {
-      broadcast({ type: 'card:done', cardId, success: false, reason: res.failedStep?.error || '执行失败' })
-    }
-  } finally {
-    cardRunning = false
-  }
-}
-
 // ── Popup port management ─────────────────────────────────────────────────
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== 'popup') return
   popupPorts.add(port)
 
   // Send current state immediately
-  port.postMessage({ type: 'agent:status', status: currentStatus })
+  port.postMessage({ type: 'agent:status', status: currentStatus, aiConfigId: boundAiConfigId })
   getActivity().then(entries => {
     entries.forEach(e => port.postMessage({ type: 'activity:log', entry: e }))
   })
@@ -672,12 +646,21 @@ chrome.runtime.onConnect.addListener((port) => {
         break
       }
 
-      case 'card:run': {
-        void runCard(msg.cardId)
-        break
-      }
-      case 'card:stop': {
-        if (cardRunning) { cardStopRequested = true; log('card', 'warn', '收到停止请求') }
+      case 'mcp:test': {
+        // Run one browser tool locally and return its raw result to the popup.
+        log('task', 'running', `测试: ${msg.tool}`, msg.args)
+        try {
+          const result = await withTaskTimeout(
+            executeBrowserTool(msg.tool, msg.args || {}),
+            taskTimeoutMs({ taskId: 'mcp-test', tool: msg.tool, args: msg.args }),
+            `mcp.test ${msg.tool}`,
+          )
+          log('task', 'success', `测试完成: ${msg.tool}`)
+          port.postMessage({ type: 'mcp:test:result', requestId: msg.requestId, ok: true, result })
+        } catch (err: any) {
+          log('task', 'error', `测试失败: ${msg.tool} — ${err?.message || err}`)
+          port.postMessage({ type: 'mcp:test:result', requestId: msg.requestId, ok: false, error: err?.message || String(err) })
+        }
         break
       }
     }
@@ -687,13 +670,6 @@ chrome.runtime.onConnect.addListener((port) => {
 // ── Keepalive alarm ───────────────────────────────────────────────────────
 chrome.alarms.create('keepalive', { periodInMinutes: 0.4 })
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name.startsWith('card_schedule:')) {
-    const scheduleId = alarm.name.slice('card_schedule:'.length)
-    void runScheduledCard(scheduleId).then(res => {
-      log('card', res?.success ? 'success' : 'error', `定时卡片 ${scheduleId} ${res?.success ? '完成' : '失败'}`, res)
-    })
-    return
-  }
   if (alarm.name === 'keepalive' && socket && !socket.connected && currentStatus !== 'connecting' && !authRejected) {
     socket.connect()
   }

@@ -1,4 +1,4 @@
-import { AgentSettings, SETTING_DEFAULTS, MemoryCard, ChatMessage } from './types'
+import { AgentSettings, SETTING_DEFAULTS, ChatMessage } from './types'
 
 export async function getSettings(): Promise<AgentSettings> {
   const keys = Object.keys(SETTING_DEFAULTS)
@@ -110,32 +110,40 @@ export async function clearAvatarCache(): Promise<void> {
   await chrome.storage.local.remove(AVATAR_CACHE_KEY)
 }
 
-// ── Memory cards (automation workflows) ──────────────────────────────────────
-const CARDS_KEY = '_memory_cards'
+// ── MCP tool description overrides (local edits) ─────────────────────────────
+// The user can edit a tool's description / parameter descriptions in the MCP
+// page. Edits are stored locally and merged onto BROWSER_TOOLS before they are
+// reported to the server via agent:register -> toolDefs, so the server stays
+// the single consumer and needs no per-tool storage.
+export interface ToolDescOverride {
+  description?: string
+  // paramName -> description
+  parameters?: Record<string, string>
+}
+const TOOL_DESC_KEY = '_tool_desc_overrides'
 
-export async function getCards(): Promise<MemoryCard[]> {
-  const r = await chrome.storage.local.get(CARDS_KEY)
-  const list = (r as any)[CARDS_KEY]
-  return Array.isArray(list) ? list as MemoryCard[] : []
+export async function getToolDescOverrides(): Promise<Record<string, ToolDescOverride>> {
+  const r = await chrome.storage.local.get(TOOL_DESC_KEY)
+  const v = (r as any)[TOOL_DESC_KEY]
+  return v && typeof v === 'object' ? v as Record<string, ToolDescOverride> : {}
 }
 
-export async function setCards(cards: MemoryCard[]): Promise<void> {
-  await chrome.storage.local.set({ [CARDS_KEY]: cards })
-}
-
-export async function getCard(id: string): Promise<MemoryCard | undefined> {
-  return (await getCards()).find(c => c.id === id)
-}
-
-export async function upsertCard(card: MemoryCard): Promise<void> {
-  const cards = await getCards()
-  const idx = cards.findIndex(c => c.id === card.id)
-  if (idx >= 0) cards[idx] = card
-  else cards.push(card)
-  await setCards(cards)
-}
-
-export async function deleteCard(id: string): Promise<void> {
-  await setCards((await getCards()).filter(c => c.id !== id))
+export async function setToolDescOverride(tool: string, override: ToolDescOverride): Promise<void> {
+  const all = await getToolDescOverrides()
+  const name = String(tool || '').trim()
+  if (!name) return
+  const desc = String(override.description || '').trim()
+  const params: Record<string, string> = {}
+  for (const [k, v] of Object.entries(override.parameters || {})) {
+    const pn = String(k || '').trim()
+    const pv = String(v || '').trim()
+    if (pn && pv) params[pn] = pv
+  }
+  if (!desc && Object.keys(params).length === 0) {
+    delete all[name]
+  } else {
+    all[name] = { description: desc, parameters: params }
+  }
+  await chrome.storage.local.set({ [TOOL_DESC_KEY]: all })
 }
 

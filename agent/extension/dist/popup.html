@@ -53,266 +53,29 @@
       height:48px; background:var(--bg2); border-bottom:1px solid var(--border); flex-shrink:0;
     }
     .logo { display:flex; align-items:center; gap:7px; font-weight:700; font-size:14px; }
-    .logo-icon {
-      width:26px; height:26px; border-radius:7px;
-      display:block; object-fit:cover;
-    }
+    .logo-icon { width:26px; height:26px; border-radius:7px; display:block; object-fit:cover; }
     .logo-sub { font-size:10px; color:var(--muted); font-weight:400; margin-left:1px; }
     .spacer { flex:1; }
+
+    /* ── Status indicator (read-only: 绿/黄/红) ── */
     .status-pill {
       display:flex; align-items:center; gap:5px; padding:4px 10px;
       border-radius:20px; background:var(--surface); border:1px solid var(--border);
       font-size:11px; font-weight:500;
     }
-    .status-pill.clickable { cursor:pointer; }
-    .status-pill.clickable:hover { background:var(--surface-h); }
-    .status-dot { width:7px; height:7px; border-radius:50%; background:#787878; flex-shrink:0; transition:background var(--tr); }
-    .status-dot.connecting  { background:var(--warn);    animation:pulse 1.2s infinite; }
-    .status-dot.connected   { background:var(--accent); }
-    .status-dot.registered  { background:var(--success); animation:pulse-s 3s infinite; }
-    .status-dot.error       { background:var(--error); }
-    .status-dot.offline     { background:var(--info); }
-    @keyframes pulse   { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
+    .status-dot { width:8px; height:8px; border-radius:50%; background:#787878; flex-shrink:0; transition:background var(--tr); }
+    .status-dot.green  { background:var(--success); animation:pulse-s 3s infinite; }
+    .status-dot.yellow { background:var(--warn); }
+    .status-dot.red    { background:var(--error); }
     @keyframes pulse-s { 0%,100%{opacity:1} 50%{opacity:.6} }
-    #theme-toggle {
+
+    .icon-btn {
       width:28px; height:28px; border:none; border-radius:var(--r);
       background:var(--surface); color:var(--muted); cursor:pointer;
       display:flex; align-items:center; justify-content:center; font-size:14px;
       transition:all var(--tr);
     }
-    #theme-toggle:hover { background:var(--surface-h); color:var(--text); }
-
-    /* ── Tabs ── */
-    .tab-bar {
-      display:flex; gap:2px; padding:10px 14px 0;
-      border-bottom:1px solid var(--border); flex-shrink:0; background:var(--bg2);
-    }
-    .tab-btn {
-      padding:5px 8px; border:none; background:none; color:var(--muted);
-      font-family:var(--font); font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap;
-      border-radius:var(--r) var(--r) 0 0; transition:all var(--tr); letter-spacing:.1px;
-    }
-    .tab-btn:hover  { background:var(--surface); color:var(--text); }
-    .tab-btn.active { background:rgba(99,102,241,.15); color:var(--accent); border-bottom:2px solid var(--accent); }
-
-    /* ── Content ── */
-    #content { flex:1; overflow:hidden; display:flex; flex-direction:column; }
-    .pane { display:flex; flex-direction:column; flex:1; overflow:hidden; padding:12px 14px 14px; gap:8px; }
-    .pane.hidden { display:none; }
-    .hidden { display:none !important; }
-
-    /* ── Feed ── */
-    .pane-header { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
-    .pane-title  { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); }
-    #clear-btn   { font-size:10px; color:var(--muted); border:none; background:none; cursor:pointer; padding:2px 5px; border-radius:4px; }
-    #clear-btn:hover { background:var(--surface); color:var(--text); }
-    #feed { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding-right:3px; }
-    #feed::-webkit-scrollbar          { width:3px; }
-    #feed::-webkit-scrollbar-thumb    { background:var(--border); border-radius:2px; }
-    #feed-empty {
-      display:flex; flex-direction:column; align-items:center; justify-content:center;
-      flex:1; gap:8px; color:var(--muted);
-    }
-    #feed-empty .ei { font-size:32px; opacity:.25; }
-
-    /* ── Entry cards ── */
-    .entry { display:flex; gap:8px; animation:si .18s ease; }
-    @keyframes si { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
-    .entry-icon {
-      width:24px; height:24px; border-radius:6px; display:flex;
-      align-items:center; justify-content:center; font-size:11px; flex-shrink:0; margin-top:1px;
-    }
-    .entry-icon.success { background:rgba(34,197,94,.15); }
-    .entry-icon.error   { background:rgba(239,68,68,.15); }
-    .entry-icon.running { background:rgba(99,102,241,.15); }
-    .entry-icon.warn    { background:rgba(245,158,11,.15); }
-    .entry-icon.system  { background:rgba(139,92,246,.15); }
-    .entry-icon.info    { background:rgba(56,189,248,.15); }
-    .entry-body  { flex:1; min-width:0; background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:7px 9px; }
-    .entry-top   { display:flex; align-items:center; gap:6px; margin-bottom:2px; }
-    .entry-badge { font-size:9px; font-weight:700; text-transform:uppercase; padding:1px 4px; border-radius:3px; }
-    .entry-badge.task   { background:rgba(99,102,241,.2);  color:#a5b4fc; }
-    .entry-badge.system { background:rgba(139,92,246,.2);  color:#c4b5fd; }
-    .entry-badge.info   { background:rgba(56,189,248,.2);  color:#7dd3fc; }
-    .entry-badge.warn, .entry-badge.human { background:rgba(245,158,11,.2);  color:#fcd34d; }
-    .entry-badge.error  { background:rgba(239,68,68,.2);   color:#fca5a5; }
-    .entry-time  { font-size:9px; color:var(--muted); margin-left:auto; }
-    .entry-msg   { font-size:11px; color:var(--text); word-break:break-word; }
-
-    /* Collapsible data */
-    .toggle-btn {
-      display:inline-flex; align-items:center; gap:3px; font-size:10px; color:var(--muted);
-      cursor:pointer; margin-top:4px; padding:1px 5px; border-radius:3px; border:none; background:none;
-    }
-    .toggle-btn:hover { color:var(--accent); background:rgba(99,102,241,.1); }
-    .toggle-btn span  { display:inline-block; transition:transform .12s; }
-    .toggle-btn.open span { transform:rotate(90deg); }
-    .data-block { display:none; margin-top:5px; background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:6px; overflow:auto; max-height:120px; }
-    .data-block.show { display:block; }
-    .data-block pre { font-family:'Cascadia Code',Consolas,monospace; font-size:10px; color:var(--muted); white-space:pre-wrap; word-break:break-all; }
-
-    /* ── Chat pane ── */
-    .chat-messages {
-      flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding-right:3px;
-    }
-    .chat-messages::-webkit-scrollbar       { width:3px; }
-    .chat-messages::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
-    #chat-no-key {
-      display:flex; flex-direction:column; align-items:center; justify-content:center;
-      flex:1; gap:8px; color:var(--muted); text-align:center;
-    }
-    #chat-no-key .ki { font-size:30px; opacity:.25; }
-    .chat-msg { display:flex; gap:8px; animation:si .18s ease; }
-    .chat-msg.user  { flex-direction:row-reverse; align-self:flex-end; max-width:86%; }
-    .chat-msg.ai    { align-self:flex-start; max-width:92%; }
-    .chat-avatar {
-      width:24px; height:24px; border-radius:6px;
-      display:flex; align-items:center; justify-content:center; font-size:12px; flex-shrink:0; margin-top:2px;
-      overflow:hidden;
-    }
-    .chat-avatar img { width:100%; height:100%; object-fit:cover; display:block; }
-    .chat-msg.ai   .chat-avatar { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; }
-    .chat-msg.user .chat-avatar { background:rgba(99,102,241,.2); color:var(--accent); }
-    .chat-bubble { position:relative; padding:8px 11px; border-radius:10px; font-size:12px; line-height:1.6; word-break:break-word; }
-    .chat-msg.ai   .chat-bubble { background:var(--surface); border:1px solid var(--border); border-top-left-radius:3px; }
-    .chat-msg.user .chat-bubble { min-width:108px; padding-top:25px; background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; border-top-right-radius:3px; }
-    .chat-user-actions {
-      position:absolute; top:4px; right:5px; display:flex; gap:3px;
-      opacity:0; pointer-events:none; transform:translateY(-2px); transition:all var(--tr);
-    }
-    .chat-msg.user .chat-bubble:hover .chat-user-actions,
-    .chat-msg.user .chat-bubble:focus-within .chat-user-actions {
-      opacity:1; pointer-events:auto; transform:translateY(0);
-    }
-    .chat-action-btn {
-      height:18px; min-width:28px; padding:0 5px; border:1px solid rgba(255,255,255,.2);
-      border-radius:5px; background:rgba(255,255,255,.14); color:#fff; cursor:pointer;
-      font-family:var(--font); font-size:9px; line-height:17px;
-    }
-    .chat-action-btn:hover { background:rgba(255,255,255,.24); }
-    .chat-action-btn.danger:hover { background:rgba(239,68,68,.45); border-color:rgba(255,255,255,.35); }
-    .chat-md { display:flex; flex-direction:column; gap:6px; }
-    .chat-md p { margin:0; }
-    .chat-md h1,.chat-md h2,.chat-md h3 { font-size:12px; line-height:1.35; margin:4px 0 1px; font-weight:700; }
-    .chat-md ul,.chat-md ol { margin:0; padding-left:18px; }
-    .chat-md li + li { margin-top:2px; }
-    .chat-md blockquote { margin:0; padding-left:8px; border-left:2px solid var(--border); color:var(--muted); }
-    .chat-md hr { width:100%; border:0; border-top:1px solid var(--border); margin:2px 0; }
-    .chat-md a { color:var(--info); text-decoration:none; }
-    .chat-md a:hover { text-decoration:underline; }
-    .chat-md del { color:var(--muted); }
-    .chat-task { list-style:none; margin-left:-18px; }
-    .chat-check { display:inline-flex; width:13px; height:13px; border-radius:3px; border:1px solid var(--border); align-items:center; justify-content:center; margin-right:5px; font-size:9px; color:var(--success); vertical-align:-1px; }
-    .chat-md code { font-family:'Cascadia Code',Consolas,monospace; font-size:10px; background:var(--bg3); padding:1px 4px; border-radius:3px; }
-    .chat-table-wrap { overflow:auto; border:1px solid var(--border); border-radius:6px; }
-    .chat-table { width:100%; border-collapse:collapse; font-size:10px; min-width:220px; }
-    .chat-table th,.chat-table td { padding:5px 6px; border-bottom:1px solid var(--border); text-align:left; vertical-align:top; }
-    .chat-table th { background:var(--bg3); font-weight:700; }
-    .chat-table tr:last-child td { border-bottom:0; }
-    .chat-md pre,.chat-mcp-pre {
-      margin:0; padding:7px; border-radius:6px; background:var(--bg); border:1px solid var(--border);
-      overflow:auto; max-height:180px; font-family:'Cascadia Code',Consolas,monospace; font-size:10px; line-height:1.45; white-space:pre-wrap;
-    }
-    .chat-mcp-card {
-      border:1px solid rgba(99,102,241,.28); background:rgba(99,102,241,.08);
-      border-radius:7px; padding:7px; display:flex; flex-direction:column; gap:5px;
-    }
-    .chat-tool-image {
-      width:100%; max-height:220px; object-fit:contain; display:block;
-      border:1px solid var(--border); border-radius:6px; background:var(--bg);
-    }
-    .chat-mcp-title,.chat-tool-phase {
-      font-size:10px; font-weight:700; color:var(--accent); display:flex; align-items:center; gap:5px;
-    }
-    .chat-tool-phase { margin-bottom:6px; color:var(--muted); }
-    .chat-reasoning {
-      margin-bottom:7px; border:1px solid rgba(56,189,248,.22); background:rgba(56,189,248,.07);
-      border-radius:7px; overflow:hidden;
-    }
-    .chat-reasoning summary { cursor:pointer; padding:6px 7px; font-size:10px; font-weight:700; color:var(--info); user-select:none; }
-    .chat-reasoning-body { padding:0 7px 7px; color:var(--muted); font-size:11px; line-height:1.55; white-space:pre-wrap; }
-    .chat-empty-live { color:var(--muted); font-size:11px; }
-    .thinking { display:flex; gap:3px; align-items:center; padding:2px 0; }
-    .thinking span {
-      width:5px; height:5px; border-radius:50%; background:var(--muted);
-      display:inline-block; animation:think 1.4s infinite;
-    }
-    .thinking span:nth-child(2) { animation-delay:.2s; }
-    .thinking span:nth-child(3) { animation-delay:.4s; }
-    @keyframes think { 0%,80%,100%{transform:scale(.5);opacity:.4} 40%{transform:scale(1);opacity:1} }
-    .chat-input-row {
-      display:flex; gap:6px; padding-top:8px; flex-shrink:0; border-top:1px solid var(--border);
-    }
-    #chat-input {
-      flex:1; padding:7px 10px; background:var(--bg); border:1px solid var(--border); border-radius:var(--r);
-      color:var(--text); font-family:var(--font); font-size:12px; outline:none; resize:none;
-      line-height:1.5; max-height:90px; min-height:34px; transition:border-color var(--tr);
-    }
-    #chat-input:focus { border-color:var(--accent); }
-    #chat-input::placeholder { color:var(--muted); }
-    #chat-send {
-      width:34px; height:34px; border:none; border-radius:var(--r);
-      background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff;
-      font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center;
-      flex-shrink:0; align-self:flex-end; transition:all var(--tr);
-    }
-    #chat-send:hover    { opacity:.88; transform:translateY(-1px); }
-    #chat-send:disabled { opacity:.4; cursor:not-allowed; transform:none; }
-
-    /* ── Settings pane ── */
-    #settings-pane { overflow-y:auto; }
-    #settings-pane::-webkit-scrollbar       { width:3px; }
-    #settings-pane::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
-    .card {
-      background:var(--surface); border:1px solid var(--border); border-radius:var(--r2);
-      padding:12px; backdrop-filter:blur(10px);
-    }
-    .card + .card { margin-top:10px; }
-    .card-title {
-      font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.7px;
-      color:var(--muted); margin-bottom:10px;
-    }
-    .fg { margin-bottom:8px; }
-    .fg:last-of-type { margin-bottom:0; }
-    label { display:block; font-size:10px; font-weight:600; color:var(--muted); margin-bottom:3px; text-transform:uppercase; letter-spacing:.4px; }
-    input[type=text],input[type=password],input[type=url] {
-      width:100%; padding:6px 9px; background:var(--bg); border:1px solid var(--border);
-      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none;
-      transition:border-color var(--tr);
-    }
-    input[type=text]:focus,input[type=password]:focus,input[type=url]:focus { border-color:var(--accent); }
-    input::placeholder { color:var(--muted); }
-    select {
-      width:100%; padding:6px 9px; background:var(--bg); border:1px solid var(--border);
-      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none;
-    }
-    select:focus { border-color:var(--accent); }
-    .check-row { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
-    .check-row input[type=checkbox] { accent-color:var(--accent); }
-    .divider { height:1px; background:var(--border); margin:10px 0; }
-    .btn {
-      display:inline-flex; align-items:center; justify-content:center; gap:5px;
-      padding:7px 12px; border-radius:var(--r); border:none; font-family:var(--font);
-      font-size:11px; font-weight:600; cursor:pointer; width:100%; transition:all var(--tr);
-    }
-    .btn-primary { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; }
-    .btn-primary:hover { opacity:.88; }
-    .btn-secondary { background:var(--surface); color:var(--text); border:1px solid var(--border); }
-    .btn-secondary:hover { background:var(--surface-h); }
-    .btn-danger { background:rgba(239,68,68,.12); color:#f87171; border:1px solid rgba(239,68,68,.2); }
-    .btn-danger:hover { background:rgba(239,68,68,.22); }
-    .btn-row { display:flex; gap:6px; }
-    .btn-row .btn { flex:1; }
-    .save-feedback { font-size:10px; text-align:center; min-height:14px; margin-top:4px; }
-    .test-result { font-size:10px; padding:4px 7px; border-radius:var(--r); margin-top:5px; min-height:18px; }
-    .test-result.ok   { background:rgba(34,197,94,.1);  color:var(--success); }
-    .test-result.fail { background:rgba(239,68,68,.1);  color:var(--error); }
-
-    /* ── Footer ── */
-    #footer {
-      display:flex; gap:8px; padding:10px 14px;
-      border-top:1px solid var(--border); background:var(--bg2); flex-shrink:0;
-    }
+    .icon-btn:hover { background:var(--surface-h); color:var(--text); }
 
     /* ── User chip (logged-in account) ── */
     .user-chip {
@@ -327,20 +90,124 @@
     .user-chip .un { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .user-chip.guest { color:var(--muted); }
 
-    /* ── Login form ── */
-    .login-box { display:flex; flex-direction:column; gap:8px; }
-    .login-hint { font-size:11px; color:var(--muted); text-align:center; margin-bottom:2px; }
+    /* ── Content / MCP main area ── */
+    #content { flex:1; overflow:hidden; display:flex; flex-direction:column; }
+    .pane { display:flex; flex-direction:column; flex:1; overflow:hidden; padding:12px 14px 14px; gap:8px; }
+    .hidden { display:none !important; }
 
-    /* ── Member list ── */
-    #members-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding-right:3px; }
-    #members-list::-webkit-scrollbar { width:3px; }
-    #members-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
-    .member-card {
-      display:flex; align-items:center; gap:8px; padding:8px 9px; cursor:pointer;
-      background:var(--surface); border:1px solid var(--border); border-radius:var(--r); transition:all var(--tr);
+    .pane-header { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+    .pane-title  { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); }
+    .pane-sub    { font-size:10px; color:var(--muted); }
+
+    /* ── MCP tool list ── */
+    #mcp-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding-right:3px; }
+    #mcp-list::-webkit-scrollbar { width:3px; }
+    #mcp-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    .ns-group { }
+    .ns-title { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin:8px 0 4px; }
+    .tool-item {
+      background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+      padding:8px 10px; cursor:pointer; transition:all var(--tr);
     }
-    .member-card:hover { background:var(--surface-h); }
-    .member-card.selected { border-color:var(--accent); background:rgba(99,102,241,.12); }
+    .tool-item:hover { background:var(--surface-h); }
+    .tool-item-top { display:flex; align-items:center; gap:8px; }
+    .tool-name { font-family:'Cascadia Code',Consolas,monospace; font-size:11px; font-weight:600; color:var(--text); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tool-edited { font-size:9px; color:var(--accent); flex-shrink:0; }
+    .tool-desc { font-size:10px; color:var(--muted); margin-top:3px; word-break:break-word; }
+    .empty-note { font-size:11px; color:var(--muted); text-align:center; padding:24px 0; }
+
+    /* ── Tool detail panel ── */
+    #mcp-detail { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px; padding-right:3px; }
+    #mcp-detail::-webkit-scrollbar { width:3px; }
+    #mcp-detail::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    .detail-back { font-size:11px; color:var(--accent); border:none; background:none; cursor:pointer; padding:0; align-self:flex-start; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r2); padding:12px; }
+    .card + .card { margin-top:0; }
+    .card-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); margin-bottom:10px; }
+    .fg { margin-bottom:8px; }
+    .fg:last-child { margin-bottom:0; }
+    label { display:block; font-size:10px; font-weight:600; color:var(--muted); margin-bottom:3px; }
+    input[type=text],input[type=url] {
+      width:100%; padding:6px 9px; background:var(--bg); border:1px solid var(--border);
+      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none;
+      transition:border-color var(--tr);
+    }
+    input:focus,textarea:focus { border-color:var(--accent); }
+    input::placeholder,textarea::placeholder { color:var(--muted); }
+    textarea.ta {
+      width:100%; padding:6px 9px; background:var(--bg); border:1px solid var(--border);
+      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none; resize:vertical; min-height:48px;
+    }
+    select {
+      width:100%; padding:6px 9px; background:var(--bg); border:1px solid var(--border);
+      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none;
+    }
+    .check-row { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
+    .check-row input[type=checkbox] { accent-color:var(--accent); }
+    .divider { height:1px; background:var(--border); margin:10px 0; }
+    .mono-pre {
+      margin:0; padding:8px; border-radius:6px; background:var(--bg); border:1px solid var(--border);
+      overflow:auto; max-height:200px; font-family:'Cascadia Code',Consolas,monospace; font-size:10px; line-height:1.5; white-space:pre-wrap; word-break:break-all; color:var(--muted);
+    }
+    .param-row { padding:6px 0; border-top:1px solid var(--border); }
+    .param-row:first-child { border-top:none; }
+    .param-head { display:flex; align-items:center; gap:6px; font-size:11px; }
+    .param-name { font-family:'Cascadia Code',Consolas,monospace; font-weight:600; color:var(--text); }
+    .param-type { font-size:9px; color:var(--muted); }
+    .param-req { font-size:9px; color:var(--warn); }
+
+    .btn {
+      display:inline-flex; align-items:center; justify-content:center; gap:5px;
+      padding:7px 12px; border-radius:var(--r); border:none; font-family:var(--font);
+      font-size:11px; font-weight:600; cursor:pointer; width:100%; transition:all var(--tr);
+    }
+    .btn-primary { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; }
+    .btn-primary:hover { opacity:.88; }
+    .btn-secondary { background:var(--surface); color:var(--text); border:1px solid var(--border); }
+    .btn-secondary:hover { background:var(--surface-h); }
+    .btn-danger { background:rgba(239,68,68,.12); color:#f87171; border:1px solid rgba(239,68,68,.2); }
+    .btn-danger:hover { background:rgba(239,68,68,.22); }
+    .btn-row { display:flex; gap:6px; }
+    .btn-row .btn { flex:1; }
+    .save-feedback { font-size:10px; text-align:center; min-height:14px; margin-top:4px; }
+    .test-result { font-size:10px; padding:6px 8px; border-radius:var(--r); margin-top:6px; min-height:18px; white-space:pre-wrap; word-break:break-all; }
+    .test-result.ok   { background:rgba(34,197,94,.1);  color:var(--success); }
+    .test-result.fail { background:rgba(239,68,68,.1);  color:var(--error); }
+    .login-hint { font-size:11px; color:var(--muted); margin-bottom:6px; }
+
+    /* ── Stats grid (工具调用统计) ── */
+    .stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .stat-box { background:var(--bg); border:1px solid var(--border); border-radius:var(--r); padding:8px; text-align:center; }
+    .stat-num { font-size:18px; font-weight:700; color:var(--text); }
+    .stat-lbl { font-size:9px; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-top:2px; }
+
+    /* ── Modal (settings / login / members) ── */
+    .modal {
+      position:fixed; inset:0; z-index:60;
+      display:flex; align-items:center; justify-content:center;
+      background:rgba(0,0,0,.48); backdrop-filter:blur(4px); padding:14px;
+    }
+    .modal.hidden { display:none !important; }
+    .modal-box {
+      width:min(380px, 100%); max-height:min(90vh, 600px); overflow:auto;
+      background:var(--bg2); border:1px solid var(--border); border-radius:var(--r2);
+      padding:14px; box-shadow:0 20px 48px rgba(0,0,0,.28);
+      display:flex; flex-direction:column; gap:10px;
+    }
+    .modal-box::-webkit-scrollbar { width:3px; }
+    .modal-box::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    .modal-title-row { display:flex; align-items:center; justify-content:space-between; }
+    .modal-title { font-size:13px; font-weight:700; }
+    .modal-close { font-size:18px; color:var(--muted); border:none; background:none; cursor:pointer; padding:0 4px; border-radius:4px; }
+    .modal-close:hover { color:var(--text); }
+
+    .kv { display:flex; justify-content:space-between; gap:8px; font-size:11px; padding:3px 0; }
+    .kv .k { color:var(--muted); }
+    .kv .v { color:var(--text); text-align:right; word-break:break-word; }
+
+    /* ── Member list (read-only) ── */
+    #members-list { max-height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; }
+    .member-card { display:flex; align-items:center; gap:8px; padding:8px 9px; background:var(--surface); border:1px solid var(--border); border-radius:var(--r); }
     .member-ava { width:28px; height:28px; border-radius:7px; background:linear-gradient(135deg,var(--accent),var(--accent2)); display:flex; align-items:center; justify-content:center; font-size:13px; color:#fff; flex-shrink:0; }
     .member-info { flex:1; min-width:0; }
     .member-name { font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -351,139 +218,6 @@
     .role-badge.member  { background:rgba(99,102,241,.18); color:#a5b4fc; }
     .dot-on  { width:7px; height:7px; border-radius:50%; background:var(--success); flex-shrink:0; }
     .dot-off { width:7px; height:7px; border-radius:50%; background:var(--muted); flex-shrink:0; }
-
-    /* ── Target banner (chat & task) ── */
-    .target-banner {
-      display:flex; align-items:center; gap:6px; padding:6px 9px; border-radius:var(--r);
-      background:var(--surface); border:1px solid var(--border); font-size:11px; flex-shrink:0;
-    }
-    .target-banner .target-text { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .target-banner .tb-name { font-weight:600; color:var(--accent); }
-    .target-banner.empty { color:var(--muted); }
-    .target-clear-btn {
-      flex-shrink:0; font-size:10px; color:var(--muted); border:none; background:none;
-      cursor:pointer; padding:2px 6px; border-radius:4px;
-    }
-    .target-clear-btn:hover { background:var(--surface-h); color:var(--text); }
-    .target-clear-btn:disabled { opacity:.45; cursor:not-allowed; }
-    .chat-session-select {
-      flex-shrink:0; max-width:140px; padding:2px 4px; border-radius:5px;
-      background:var(--bg); border:1px solid var(--border); color:var(--text);
-      font-family:var(--font); font-size:10px; outline:none;
-    }
-    .chat-session-select:focus { border-color:var(--accent); }
-    .chat-session-select.hidden { display:none !important; }
-
-    /* Message-level action buttons (assistant & user). Web-style hover affordance. */
-    .chat-msg-actions {
-      position:absolute; top:-8px; display:flex; gap:3px;
-      opacity:0; pointer-events:none; transition:opacity var(--tr);
-    }
-    .chat-msg.user .chat-msg-actions  { right:-2px; }
-    .chat-msg.ai   .chat-msg-actions  { left:36px; }
-    .chat-msg:hover .chat-msg-actions { opacity:1; pointer-events:auto; }
-    .chat-msg-actions .chat-action-btn {
-      background:var(--surface); border-color:var(--border); color:var(--muted);
-      font-size:9px; line-height:16px; padding:0 6px;
-    }
-    .chat-msg-actions .chat-action-btn:hover { color:var(--text); border-color:var(--accent); }
-    .chat-msg-actions .chat-action-btn.danger {
-      color:#f87171; border-color:rgba(239,68,68,.3); background:rgba(239,68,68,.08);
-    }
-    .chat-msg-actions .chat-action-btn.danger:hover { background:rgba(239,68,68,.18); }
-
-    /* ── Task form / jobs ── */
-    #task-pane { overflow-y:auto; }
-    #task-pane::-webkit-scrollbar { width:3px; }
-    #task-pane::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
-    textarea.ta {
-      width:100%; padding:6px 9px; background:var(--bg); border:1px solid var(--border);
-      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none; resize:vertical; min-height:46px;
-    }
-    textarea.ta:focus { border-color:var(--accent); }
-    input[type=number] {
-      width:100%; padding:6px 9px; background:var(--bg); border:1px solid var(--border);
-      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none;
-    }
-    input[type=datetime-local] {
-      width:100%; padding:5px 9px; background:var(--bg); border:1px solid var(--border);
-      border-radius:var(--r); color:var(--text); font-family:var(--font); font-size:11px; outline:none;
-    }
-    .jobs-list { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
-    .job-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:8px 9px; }
-    .job-top { display:flex; align-items:center; gap:6px; margin-bottom:3px; }
-    .job-title { font-size:12px; font-weight:600; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .job-status { font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; text-transform:uppercase; }
-    .job-status.queued { background:rgba(245,158,11,.2); color:#fcd34d; }
-    .job-status.running { background:rgba(99,102,241,.2); color:#a5b4fc; }
-    .job-status.paused { background:rgba(120,120,168,.2); color:var(--muted); }
-    .job-status.completed { background:rgba(34,197,94,.2); color:#86efac; }
-    .job-status.cancelled { background:rgba(239,68,68,.2); color:#fca5a5; }
-    .job-actions { display:flex; gap:5px; margin-top:5px; }
-    .mini-btn { font-size:10px; padding:3px 8px; border-radius:5px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; }
-    .mini-btn:hover { background:var(--surface-h); }
-    .mini-btn.danger { color:#f87171; border-color:rgba(239,68,68,.25); background:rgba(239,68,68,.1); }
-
-    /* ── Member settings view ── */
-    .kv { display:flex; justify-content:space-between; gap:8px; font-size:11px; padding:3px 0; }
-    .kv .k { color:var(--muted); }
-    .kv .v { color:var(--text); text-align:right; word-break:break-word; }
-    .tool-chips { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; }
-    .tool-chip { font-size:10px; padding:2px 6px; border-radius:5px; background:var(--bg3); border:1px solid var(--border); color:var(--muted); }
-    .empty-note { font-size:11px; color:var(--muted); text-align:center; padding:18px 0; }
-
-    /* ── Memory cards ── */
-    .entry-badge.card { background:rgba(139,92,246,.2); color:#c4b5fd; }
-    .link-btn { font-size:10px; color:var(--muted); border:none; background:none; cursor:pointer; padding:2px 6px; border-radius:4px; }
-    .link-btn:hover { background:var(--surface); color:var(--text); }
-    #cards-list::-webkit-scrollbar { width:3px; }
-    #cards-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
-    .card-item { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:9px 10px; }
-    .card-item.running { border-color:var(--accent); box-shadow:0 0 0 1px rgba(99,102,241,.3); }
-    .card-item-top { display:flex; align-items:center; gap:8px; }
-    .card-item-name { font-size:12px; font-weight:600; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .card-item-meta { font-size:10px; color:var(--muted); }
-    .card-item-desc { font-size:10px; color:var(--muted); margin-top:2px; word-break:break-word; }
-    .card-item-actions { display:flex; gap:5px; margin-top:7px; flex-wrap:wrap; }
-    .card-steps { margin-top:8px; border-top:1px dashed var(--border); padding-top:7px; display:flex; flex-direction:column; gap:5px; }
-    .step-row { display:flex; gap:7px; align-items:flex-start; font-size:11px; }
-    .step-idx { width:18px; height:18px; border-radius:5px; background:var(--bg3); color:var(--muted); display:flex; align-items:center; justify-content:center; font-size:9px; flex-shrink:0; margin-top:1px; }
-    .step-row.cur .step-idx { background:var(--accent); color:#fff; }
-    .step-row.ok .step-idx { background:rgba(34,197,94,.25); color:#86efac; }
-    .step-row.err .step-idx { background:rgba(239,68,68,.25); color:#fca5a5; }
-    .step-body { min-width:0; }
-    .step-note { color:var(--text); word-break:break-word; }
-    .step-tool { font-family:'Cascadia Code',Consolas,monospace; font-size:9px; color:var(--muted); }
-    #cards-run-status { font-size:11px; color:var(--accent); min-height:16px; flex-shrink:0; }
-
-    /* ── Card modal (merge prompt) ── */
-    .card-modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; z-index:50; }
-    .card-modal-box { background:var(--bg2); border:1px solid var(--border); border-radius:var(--r2); padding:16px; width:300px; }
-    .card-modal-title { font-size:13px; font-weight:700; margin-bottom:8px; }
-    .card-modal-msg { font-size:11px; color:var(--muted); margin-bottom:12px; word-break:break-word; }
-    .card-modal-actions { display:flex; flex-direction:column; gap:6px; }
-
-    /* ── Login modal ── */
-    .login-modal {
-      position:fixed; inset:0; z-index:60;
-      display:flex; align-items:center; justify-content:center;
-      background:rgba(0,0,0,.48);
-      backdrop-filter:blur(4px);
-      padding:14px;
-    }
-    .login-modal.hidden { display:none !important; }
-    .login-modal-box {
-      width:min(360px, 100%);
-      max-height:min(88vh, 620px);
-      overflow:auto;
-      background:var(--bg2);
-      border:1px solid var(--border);
-      border-radius:var(--r2);
-      padding:12px;
-      box-shadow:0 20px 48px rgba(0,0,0,.28);
-    }
-    .login-modal-box::-webkit-scrollbar { width:3px; }
-    .login-modal-box::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
   </style>
 </head>
 <body class="dark">
@@ -501,60 +235,46 @@
       <div class="ua" id="user-ava">·</div>
       <span class="un" id="user-name">未登录</span>
     </div>
-    <div class="status-pill clickable" id="status-pill" title="点击查看 AI 成员" role="button" tabindex="0">
-      <div class="status-dot disconnected" id="status-dot"></div>
+    <!-- Status indicator: green=已连接且已分配AI, yellow=已连接未分配AI, red=未连接 -->
+    <div class="status-pill" id="status-pill" title="连接状态">
+      <div class="status-dot red" id="status-dot"></div>
       <span id="status-label">未连接</span>
     </div>
-    <button id="theme-toggle" title="切换主题">🌙</button>
+    <button class="icon-btn" id="settings-btn" title="设置">⚙</button>
+    <button class="icon-btn" id="theme-toggle" title="切换主题">🌙</button>
   </header>
 
-  <!-- Tabs -->
-  <div class="tab-bar">
-    <button class="tab-btn active" id="tab-cards">🃏 卡片</button>
-    <button class="tab-btn" id="tab-settings">⚙ 设置</button>
-  </div>
-
-  <!-- Content -->
+  <!-- Main content: MCP tool page -->
   <div id="content">
 
-    <!-- Cards pane -->
-    <div class="pane hidden" id="cards-pane">
+    <!-- MCP tool list -->
+    <div class="pane" id="mcp-list-pane">
       <div class="pane-header">
-        <span class="pane-title">记忆卡片自动化</span>
-        <div style="display:flex;gap:4px;">
-          <button class="link-btn" id="cards-import-btn">导入</button>
-          <button class="link-btn" id="cards-export-all-btn">导出全部</button>
-        </div>
+        <span class="pane-title">浏览器 MCP 工具</span>
+        <span class="pane-sub" id="mcp-count"></span>
       </div>
-
-      <div id="cards-import-box" class="card hidden">
-        <div class="card-title">导入卡片（JSON）</div>
-        <textarea class="ta" id="cards-import-text" style="min-height:90px;" placeholder='粘贴卡片 JSON，例如：&#10;{"name":"登录流程","steps":[&#10;  {"tool":"browser_navigate","args":{"url":"https://example.com"},"note":"打开页面"},&#10;  {"tool":"browser_wait","args":{"selector":"#user"},"note":"等待输入框"},&#10;  {"tool":"browser_type","args":{"selector":"#user","text":"me"},"note":"输入账号"},&#10;  {"tool":"browser_click","args":{"selector":"#go"},"note":"点击登录"}&#10;]}'></textarea>
-        <div class="btn-row" style="margin-top:8px;">
-          <button class="btn btn-secondary" id="cards-import-file-btn">从文件选择</button>
-          <button class="btn btn-primary" id="cards-import-confirm">导入</button>
-        </div>
-        <input type="file" id="cards-import-file" accept=".json,application/json" style="display:none;"/>
-        <div class="save-feedback" id="cards-import-feedback"></div>
-      </div>
-
-      <div id="cards-run-status"></div>
-
-      <div id="cards-list" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:3px;">
-        <div class="empty-note" id="cards-empty">暂无卡片，点击“导入”添加</div>
+      <div id="mcp-list">
+        <div class="empty-note">加载中…</div>
       </div>
     </div>
 
-    <!-- Settings pane -->
-    <div class="pane hidden" id="settings-pane">
+    <!-- MCP tool detail (description / params / test) -->
+    <div class="pane hidden" id="mcp-detail-pane">
+      <button class="detail-back" id="mcp-back">← 返回工具列表</button>
+      <div id="mcp-detail"></div>
+    </div>
 
-      <!-- Selected member config (read-only) -->
-      <div class="card" id="member-settings-card" style="display:none;">
-        <div class="card-title">🛡️ 成员配置（只读）</div>
-        <div id="member-settings-body"></div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-title-row">
+        <span class="modal-title">设置</span>
+        <button class="modal-close" id="settings-close">×</button>
       </div>
 
-      <!-- Offline mode + local AI Config -->
+      <!-- 1. 离线模式 / 自配模型 -->
       <div class="card">
         <div class="card-title">🤖 离线模式 / 自配模型</div>
         <div class="fg check-row" style="margin-bottom:10px;">
@@ -562,7 +282,7 @@
           <label for="cfg-offline-mode" style="margin:0;text-transform:none;font-size:11px;">启用离线模式（始终用自配模型直连，无需登录服务器）</label>
         </div>
         <div id="offline-model-config" class="hidden">
-          <div class="login-hint" style="text-align:left;margin-bottom:8px;">离线模式下对话直接调用你配置的模型并可驱动浏览器工具，不经过服务器；关闭后若已登录并选中成员则改用服务器对话。</div>
+          <div class="login-hint">离线模式下对话直接调用你配置的模型并可驱动浏览器工具，不经过服务器；关闭后若已登录则改用服务器对话。</div>
           <div class="fg"><label>服务商预设</label>
             <select id="cfg-ai-provider">
               <option value="">自定义 / 不修改</option>
@@ -573,125 +293,82 @@
               <option value="ollama">本地 Ollama</option>
             </select>
           </div>
-          <div class="fg"><label>AI Key</label><input type="password" id="cfg-ai-key" placeholder="sk-ant-... 或 sk-..."/></div>
+          <div class="fg"><label>AI Key</label><input type="text" id="cfg-ai-key" placeholder="sk-ant-... 或 sk-..."/></div>
           <div class="fg"><label>Base URL</label><input type="url" id="cfg-ai-base" placeholder="https://api.anthropic.com"/></div>
           <div class="fg"><label>模型</label><input type="text" id="cfg-ai-model" placeholder="claude-sonnet-4-5"/></div>
         </div>
       </div>
 
-      <!-- Interaction effects -->
+      <!-- 2. 模拟鼠标特效 -->
       <div class="card">
         <div class="card-title">🖱 模拟鼠标特效</div>
-        <div class="fg check-row">
+        <div class="check-row">
           <input type="checkbox" id="cfg-mouse-fx"/>
           <label for="cfg-mouse-fx" style="margin:0;text-transform:none;font-size:11px;">AI 操作时显示虚拟鼠标（点击波纹、滚动拉拽特效）</label>
         </div>
-        <div class="login-hint" style="text-align:left;margin-top:6px;">开启后，AI 点击会让虚拟光标滑向目标并弹出点击波纹，滚动时呈现“抓取拉动”的视觉反馈。</div>
       </div>
 
-      <!-- Server Config -->
+      <!-- 3. 服务器连接地址 -->
       <div class="card">
-        <div class="card-title">📡 服务器连接</div>
-        <div class="fg"><label>服务器 URL（登录）</label><input type="url" id="cfg-server" placeholder="http://localhost:3000"/></div>
-        <div class="fg">
-          <label>Agent 服务器 URL（可选）</label>
-          <input type="url" id="cfg-agent-server" placeholder="留空：自动探测"/>
-        </div>
-        <div class="login-hint" style="text-align:left;margin-top:-4px;">服务端拆分部署时填写，例如 <code>http://your-host:3002</code>。留空时插件会自动尝试登录 URL 及常见 connector-runtime 端口。</div>
-        <div class="fg check-row">
-          <input type="checkbox" id="cfg-auto-connect"/>
-          <label for="cfg-auto-connect" style="margin:0;text-transform:none;font-size:11px;">浏览器启动时自动连接</label>
-        </div>
-      </div>
-
-      <!-- Save & actions -->
-      <div class="card">
-        <button class="btn btn-primary" id="save-btn">保存所有设置</button>
+        <div class="card-title">📡 服务器连接地址</div>
+        <div class="fg"><label>服务器 URL</label><input type="url" id="cfg-server" placeholder="http://localhost:3000"/></div>
+        <button class="btn btn-primary" id="save-btn">保存</button>
         <div class="save-feedback" id="save-feedback"></div>
-        <div class="divider"></div>
-        <button class="btn btn-secondary" id="test-conn-btn">🔌 测试服务器连接</button>
-        <div class="test-result" id="test-result"></div>
+        <div class="login-hint" style="margin-top:6px;">登录后会固定自动连接服务器，设备将出现在网页端「作坊」栏目中等待分配 AI。</div>
       </div>
 
+      <!-- 4. 工具调用统计 -->
       <div class="card">
-        <div class="pane-header" style="margin-bottom:8px;">
-          <span class="pane-title">实时活动</span>
-          <button id="clear-btn">清空</button>
-        </div>
-        <div id="feed">
-          <div id="feed-empty">
-            <div class="ei">🤖</div>
-            <p style="font-size:11px">连接后将在此显示实时活动</p>
-          </div>
+        <div class="card-title">📊 工具调用统计</div>
+        <div class="stat-grid">
+          <div class="stat-box"><div class="stat-num" id="stat-total">0</div><div class="stat-lbl">总调用</div></div>
+          <div class="stat-box"><div class="stat-num" id="stat-running">0</div><div class="stat-lbl">进行中</div></div>
+          <div class="stat-box"><div class="stat-num" id="stat-success" style="color:var(--success);">0</div><div class="stat-lbl">成功</div></div>
+          <div class="stat-box"><div class="stat-num" id="stat-failed" style="color:var(--error);">0</div><div class="stat-lbl">失败</div></div>
         </div>
       </div>
-
     </div>
   </div>
 
-  <!-- Members modal -->
-  <div id="members-modal" class="login-modal hidden">
-    <div class="login-modal-box">
-      <div class="pane-header" style="margin-bottom:8px;">
-        <span class="pane-title">AI 成员</span>
-        <button id="members-modal-close" style="font-size:16px;color:var(--muted);border:none;background:none;cursor:pointer;padding:0 4px;border-radius:4px;">×</button>
+  <!-- Members modal (read-only AI list + connect/disconnect) -->
+  <div id="members-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-title-row">
+        <span class="modal-title">AI 成员</span>
+        <button class="modal-close" id="members-modal-close">×</button>
       </div>
-      <div id="members-view" class="card">
-        <div class="login-hint" style="text-align:left;margin-bottom:8px;">本设备登录后会自动连接服务器。AI 由管理员在网页端「作坊」栏目中为本设备分配，此处仅供查看。</div>
-        <div class="pane-header" style="margin-bottom:8px;">
-          <span class="pane-title">AI 成员列表（只读）</span>
-          <button id="members-refresh" style="font-size:10px;color:var(--muted);border:none;background:none;cursor:pointer;padding:2px 5px;border-radius:4px;">刷新</button>
-        </div>
-        <div id="members-list" style="max-height:320px;">
-          <div class="empty-note" id="members-empty">加载中…</div>
-        </div>
-        <div class="divider"></div>
-        <div id="connection-control-card">
-          <div class="card-title">🔗 连接控制</div>
-          <div class="btn-row">
-            <button class="btn btn-primary" id="connect-btn">连接</button>
-            <button class="btn btn-danger" id="disconnect-btn">断开</button>
-          </div>
-        </div>
+      <div class="login-hint">本设备登录后会自动连接服务器。AI 由管理员在网页端「作坊」栏目中为本设备分配，此处仅供查看。</div>
+      <div id="members-list"><div class="empty-note" id="members-empty">加载中…</div></div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="members-refresh">刷新</button>
+        <button class="btn btn-primary" id="connect-btn">连接</button>
+        <button class="btn btn-danger" id="disconnect-btn">断开</button>
       </div>
     </div>
   </div>
 
   <!-- Login modal -->
-  <div id="login-modal" class="login-modal hidden">
-    <div class="login-modal-box">
-      <div class="pane-header" style="margin-bottom:8px;">
-        <span class="pane-title">软件端账号</span>
-        <button id="login-modal-close" style="font-size:16px;color:var(--muted);border:none;background:none;cursor:pointer;padding:0 4px;border-radius:4px;">×</button>
+  <div id="login-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-title-row">
+        <span class="modal-title">软件端账号</span>
+        <button class="modal-close" id="login-modal-close">×</button>
       </div>
 
-      <div class="card" id="account-card">
-        <div id="account-status" class="kv"><span class="k">状态</span><span class="v" id="account-status-v">未登录</span></div>
+      <div class="card" id="account-card" style="display:none;">
+        <div class="kv"><span class="k">状态</span><span class="v" id="account-status-v">未登录</span></div>
         <div class="divider"></div>
-        <button class="btn btn-danger" id="logout-btn" style="display:none;">退出登录</button>
+        <button class="btn btn-danger" id="logout-btn">退出登录</button>
       </div>
 
-      <div id="login-gate" class="card login-box">
+      <div id="login-gate" class="card">
         <div class="card-title">🔐 登录软件端账号</div>
-        <div class="login-hint">使用与软件端相同的账号登录，登录后可查看 AI 成员并选择工具调用目标。</div>
+        <div class="login-hint">使用与软件端相同的账号登录，登录后设备自动连接服务器。</div>
         <div class="fg"><label>账号</label><input type="text" id="login-account" placeholder="你的账号" autocomplete="username"/></div>
-        <div class="fg"><label>密码</label><input type="password" id="login-password" placeholder="密码" autocomplete="current-password"/></div>
+        <div class="fg"><label>密码</label><input type="text" id="login-password" placeholder="密码" autocomplete="current-password" style="-webkit-text-security:disc;"/></div>
         <button class="btn btn-primary" id="login-btn">登录</button>
         <div class="save-feedback" id="login-feedback"></div>
-        <div class="login-hint" style="margin-top:4px;">服务器地址在“设置 → 服务器连接”中配置。</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Card merge prompt modal -->
-  <div id="card-modal" class="card-modal-overlay hidden">
-    <div class="card-modal-box">
-      <div class="card-modal-title">卡片已存在</div>
-      <div class="card-modal-msg" id="card-modal-msg"></div>
-      <div class="card-modal-actions">
-        <button class="btn btn-primary" id="cm-merge">合并步骤</button>
-        <button class="btn btn-secondary" id="cm-replace">替换原卡片</button>
-        <button class="btn btn-secondary" id="cm-skip">跳过</button>
+        <div class="login-hint" style="margin-top:4px;">服务器地址在「设置 → 服务器连接地址」中配置。</div>
       </div>
     </div>
   </div>

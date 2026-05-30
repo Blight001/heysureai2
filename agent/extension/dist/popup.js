@@ -1,12 +1,5 @@
 (() => {
   // src/popup/state.ts
-  var STATUS_LABELS = {
-    disconnected: "\u672A\u8FDE\u63A5",
-    connecting: "\u8FDE\u63A5\u4E2D...",
-    connected: "\u5DF2\u8FDE\u63A5",
-    registered: "\u5DF2\u6CE8\u518C\u5230\u670D\u52A1\u5668",
-    error: "\u8FDE\u63A5\u9519\u8BEF"
-  };
   var ROLE_LABELS = {
     assistant_admin: "\u8F85\u52A9\u7BA1\u7406\u5458",
     manager: "\u7BA1\u7406\u8005",
@@ -14,34 +7,27 @@
   };
   var state = {
     currentTheme: "dark",
-    activeTab: "cards",
     currentStatus: "disconnected",
-    chatHistory: [],
-    chatBusy: false,
+    // Server-side bound AI for this device (from agent:registered). null = none
+    // assigned yet → status indicator shows yellow instead of green.
+    boundAiConfigId: null,
     hasAiKey: false,
-    // Assigned in initPort(); used before assignment never happens because the
-    // listeners that read it only fire after the popup has initialised.
+    // Assigned in initPort(); listeners that read it only fire after init.
     port: void 0,
-    activeChatRequestId: null,
     serverUrl: "",
     offlineMode: false,
     localModel: "",
     auth: { token: "", account: "", userId: null, userName: "", avatar: "" },
-    // Cached data URL for the current account's avatar (hydrated from storage),
-    // used so renders are synchronous and offline-friendly. Empty = fall back to
-    // the live server URL.
+    // Cached data URL for the current account's avatar (hydrated from storage).
     avatarDataUrl: "",
     members: [],
-    selectedMemberId: null,
-    activeRunId: null,
-    cards: [],
-    expandedCardId: null,
-    runningCardId: null,
-    // Server-backed chat history. Populated only when useServerChat() is true.
-    serverSessions: [],
-    currentServerSessionId: "",
-    lastSyncedMessageId: 0,
-    chatHistoryLoading: false
+    // ── Tool-call statistics (this popup session) ──
+    stats: { total: 0, running: 0, success: 0, failed: 0 },
+    // ── MCP tool page view state ──
+    // Currently opened tool name in the detail view, or null for the list.
+    openToolName: null,
+    // Pending mcp:test requestId → resolver, so the detail view can await a run.
+    pendingTests: /* @__PURE__ */ new Map()
   };
 
   // src/popup/dom.ts
@@ -50,70 +36,49 @@
   var statusLabel = $("status-label");
   var statusPill = $("status-pill");
   var themeToggle = $("theme-toggle");
+  var settingsBtn = $("settings-btn");
   var userChip = $("user-chip");
   var userAva = $("user-ava");
   var userName = $("user-name");
-  var tabs = {
-    cards: $("tab-cards"),
-    settings: $("tab-settings")
-  };
-  var panes = {
-    cards: $("cards-pane"),
-    settings: $("settings-pane")
-  };
-  var feed = $("feed");
-  var feedEmpty = $("feed-empty");
-  var connectBtn = $("connect-btn");
-  var disconnectBtn = $("disconnect-btn");
-  var clearBtn = $("clear-btn");
-  var testConnBtn = $("test-conn-btn");
-  var testResult = $("test-result");
-  var saveFeedback = $("save-feedback");
+  var mcpListPane = $("mcp-list-pane");
+  var mcpDetailPane = $("mcp-detail-pane");
+  var mcpList = $("mcp-list");
+  var mcpCount = $("mcp-count");
+  var mcpDetail = $("mcp-detail");
+  var mcpBack = $("mcp-back");
+  var settingsModal = $("settings-modal");
+  var settingsClose = $("settings-close");
   var cfgServer = $("cfg-server");
-  var cfgAgentServer = $("cfg-agent-server");
   var cfgAiKey = $("cfg-ai-key");
   var cfgAiBase = $("cfg-ai-base");
   var cfgAiModel = $("cfg-ai-model");
-  var cfgAutoConn = $("cfg-auto-connect");
   var cfgOfflineMode = $("cfg-offline-mode");
   var offlineModelConfig = $("offline-model-config");
   var cfgAiProvider = $("cfg-ai-provider");
   var cfgMouseFx = $("cfg-mouse-fx");
   var saveBtn = $("save-btn");
-  var loginGate = $("login-gate");
-  var loginModal = $("login-modal");
-  var loginModalClose = $("login-modal-close");
+  var saveFeedback = $("save-feedback");
+  var statTotal = $("stat-total");
+  var statRunning = $("stat-running");
+  var statSuccess = $("stat-success");
+  var statFailed = $("stat-failed");
   var membersModal = $("members-modal");
   var membersModalClose = $("members-modal-close");
+  var membersList = $("members-list");
+  var membersEmpty = $("members-empty");
+  var membersRefresh = $("members-refresh");
+  var connectBtn = $("connect-btn");
+  var disconnectBtn = $("disconnect-btn");
+  var loginModal = $("login-modal");
+  var loginModalClose = $("login-modal-close");
+  var loginGate = $("login-gate");
   var accountCard = $("account-card");
+  var accountStatusV = $("account-status-v");
   var loginAccount = $("login-account");
   var loginPassword = $("login-password");
   var loginBtn = $("login-btn");
   var loginFeedback = $("login-feedback");
-  var membersRefresh = $("members-refresh");
-  var membersList = $("members-list");
-  var membersEmpty = $("members-empty");
-  var accountStatusV = $("account-status-v");
   var logoutBtn = $("logout-btn");
-  var memberSettingsCard = $("member-settings-card");
-  var connectionControlCard = $("connection-control-card");
-  var memberSettingsBody = $("member-settings-body");
-  var cardsImportBtn = $("cards-import-btn");
-  var cardsExportAllBtn = $("cards-export-all-btn");
-  var cardsImportBox = $("cards-import-box");
-  var cardsImportText = $("cards-import-text");
-  var cardsImportFileBtn = $("cards-import-file-btn");
-  var cardsImportFile = $("cards-import-file");
-  var cardsImportConfirm = $("cards-import-confirm");
-  var cardsImportFeedback = $("cards-import-feedback");
-  var cardsRunStatus = $("cards-run-status");
-  var cardsList = $("cards-list");
-  var cardsEmpty = $("cards-empty");
-  var cardModal = $("card-modal");
-  var cardModalMsg = $("card-modal-msg");
-  var cmMerge = $("cm-merge");
-  var cmReplace = $("cm-replace");
-  var cmSkip = $("cm-skip");
 
   // src/lib/types.ts
   var SETTING_DEFAULTS = {
@@ -127,7 +92,6 @@
     aiKey: "",
     aiBaseUrl: "https://api.anthropic.com",
     aiModel: "claude-sonnet-4-5",
-    autoConnect: false,
     offlineMode: false,
     mouseFx: true,
     theme: "dark",
@@ -169,17 +133,31 @@
   async function clearAvatarCache() {
     await chrome.storage.local.remove(AVATAR_CACHE_KEY);
   }
-  var CARDS_KEY = "_memory_cards";
-  async function getCards() {
-    const r = await chrome.storage.local.get(CARDS_KEY);
-    const list = r[CARDS_KEY];
-    return Array.isArray(list) ? list : [];
+  var TOOL_DESC_KEY = "_tool_desc_overrides";
+  async function getToolDescOverrides() {
+    const r = await chrome.storage.local.get(TOOL_DESC_KEY);
+    const v = r[TOOL_DESC_KEY];
+    return v && typeof v === "object" ? v : {};
   }
-  async function setCards(cards) {
-    await chrome.storage.local.set({ [CARDS_KEY]: cards });
-  }
-  async function deleteCard(id) {
-    await setCards((await getCards()).filter((c) => c.id !== id));
+  async function setToolDescOverride(tool, override) {
+    const all = await getToolDescOverrides();
+    const name = String(tool || "").trim();
+    if (!name)
+      return;
+    const desc = String(override.description || "").trim();
+    const params = {};
+    for (const [k, v] of Object.entries(override.parameters || {})) {
+      const pn = String(k || "").trim();
+      const pv = String(v || "").trim();
+      if (pn && pv)
+        params[pn] = pv;
+    }
+    if (!desc && Object.keys(params).length === 0) {
+      delete all[name];
+    } else {
+      all[name] = { description: desc, parameters: params };
+    }
+    await chrome.storage.local.set({ [TOOL_DESC_KEY]: all });
   }
 
   // src/lib/client.ts
@@ -242,16 +220,10 @@
   }
 
   // src/popup/helpers.ts
-  function fmt(ts) {
-    return new Date(ts).toTimeString().slice(0, 8);
-  }
   function roleOf(m) {
     if (m.ai_role === "assistant_admin")
       return "assistant_admin";
     return m.digital_member_role === "manager" ? "manager" : "member";
-  }
-  function memberById(id) {
-    return state.members.find((m) => m.id === id);
   }
   function normalizeAvatarUrl(avatar) {
     const raw = String(avatar || "").trim();
@@ -278,11 +250,6 @@
     } catch {
       return 0;
     }
-  }
-  function getConnectedAiShortLabel() {
-    const name = String(memberById(state.selectedMemberId)?.name || state.auth.userName || state.auth.account || "AI").trim();
-    const shortName = Array.from(name).slice(0, 2).join("") || "AI";
-    return `${shortName}...`;
   }
   function hasBrowserMcpPermission(m) {
     if (m.mcp_enabled === false)
@@ -375,7 +342,6 @@
       await refreshAvatarCache();
       updateUserChip();
       await loadMembers();
-      renderSettingsViews();
       state.port.postMessage({ type: "agent:connect" });
       closeLoginModal();
       openMembersModal();
@@ -394,11 +360,8 @@
     await clearAvatarCache();
     closeMembersModal();
     state.members = [];
-    state.selectedMemberId = null;
     updateUserChip();
     renderMembers();
-    renderSettingsViews();
-    switchTab("settings");
   }
   async function loadMembers() {
     if (!state.auth.token)
@@ -409,7 +372,6 @@
       const rows = await listConfigs(state.serverUrl, state.auth.token);
       state.members = rows.filter(hasBrowserMcpPermission);
       renderMembers();
-      renderSettingsViews();
       renderStatus();
     } catch (err) {
       if (isAuthError(err)) {
@@ -463,14 +425,6 @@
         closeLoginModal();
     });
     loginModalClose.addEventListener("click", () => closeLoginModal());
-    statusPill.addEventListener("click", () => openMembersModal());
-    statusPill.addEventListener("keydown", (e) => {
-      const key = e.key;
-      if (key === "Enter" || key === " ") {
-        e.preventDefault();
-        openMembersModal();
-      }
-    });
     membersModal.addEventListener("click", (e) => {
       if (e.target === membersModal)
         closeMembersModal();
@@ -478,299 +432,39 @@
     membersModalClose.addEventListener("click", () => closeMembersModal());
     membersRefresh.addEventListener("click", () => void loadMembers());
     logoutBtn.addEventListener("click", () => void doLogout());
-  }
-
-  // src/lib/cards.ts
-  var newId = () => "card_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-  function deriveNote(tool, args) {
-    const labels = {
-      browser_navigate: "\u8DF3\u8F6C\u9875\u9762",
-      browser_wait: "\u7B49\u5F85",
-      browser_click: "\u70B9\u51FB",
-      browser_double_click: "\u53CC\u51FB",
-      browser_right_click: "\u53F3\u952E",
-      browser_type: "\u8F93\u5165\u5185\u5BB9",
-      browser_scroll: "\u6EDA\u52A8",
-      browser_select: "\u9009\u62E9",
-      browser_press_key: "\u6309\u952E",
-      browser_drag: "\u62D6\u62FD",
-      browser_hover: "\u60AC\u505C",
-      browser_fill_form: "\u586B\u5199\u8868\u5355",
-      browser_search: "\u641C\u7D22",
-      browser_screenshot: "\u622A\u56FE",
-      browser_extract: "\u63D0\u53D6\u6570\u636E",
-      browser_get_content: "\u8BFB\u53D6\u5185\u5BB9",
-      browser_page_info: "\u67E5\u770B\u9875\u9762\u4F4D\u7F6E",
-      browser_find_popups: "\u67E5\u627E\u5F39\u7A97",
-      browser_close_popup: "\u5173\u95ED\u5F39\u7A97"
-    };
-    const base = labels[tool] || tool.replace(/^browser_/, "");
-    const hint = args?.url || args?.text || args?.selector || args?.query || (args?.direction ? `${args.direction}${args?.amount ? " " + args.amount : ""}` : "") || (args?.key ? `\u6309\u952E ${args.key}` : "") || (args?.ms ? `${args.ms}ms` : "");
-    return hint ? `${base}\uFF1A${String(hint).slice(0, 60)}` : base;
-  }
-  function normalizeStep(raw) {
-    if (!raw || typeof raw !== "object")
-      return null;
-    const tool = String(raw.tool || raw.name || "").trim();
-    if (!tool)
-      return null;
-    let args = raw.args ?? raw.arguments ?? raw.input ?? {};
-    if (typeof args === "string") {
-      try {
-        args = JSON.parse(args);
-      } catch {
-        args = {};
-      }
-    }
-    if (!args || typeof args !== "object")
-      args = {};
-    const note = String(raw.note ?? raw.remark ?? raw.comment ?? raw.\u5907\u6CE8 ?? "").trim() || deriveNote(tool, args);
-    return { tool, args, note };
-  }
-  function parseImport(text) {
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error("\u4E0D\u662F\u6709\u6548\u7684 JSON");
-    }
-    let rawCards;
-    if (Array.isArray(data))
-      rawCards = data;
-    else if (data && Array.isArray(data.cards))
-      rawCards = data.cards;
-    else if (data && (data.steps || data.name))
-      rawCards = [data];
-    else
-      throw new Error("\u672A\u627E\u5230\u5361\u7247\u6570\u636E");
-    const now = Date.now();
-    const out = [];
-    for (const rc of rawCards) {
-      if (!rc || typeof rc !== "object")
-        continue;
-      const rawSteps = Array.isArray(rc.steps) ? rc.steps : [];
-      const steps = rawSteps.map(normalizeStep).filter((s) => !!s);
-      if (steps.length === 0)
-        continue;
-      out.push({
-        id: newId(),
-        name: String(rc.name || "\u672A\u547D\u540D\u5361\u7247").trim().slice(0, 80),
-        description: String(rc.description || "").trim().slice(0, 300),
-        steps,
-        createdAt: now,
-        updatedAt: now
-      });
-    }
-    if (out.length === 0)
-      throw new Error("\u5361\u7247\u4E2D\u6CA1\u6709\u53EF\u7528\u7684\u6B65\u9AA4");
-    return out;
-  }
-  function mergeCards(existing, incoming) {
-    return {
-      ...existing,
-      description: existing.description || incoming.description,
-      steps: [...existing.steps, ...incoming.steps],
-      updatedAt: Date.now()
-    };
-  }
-  function exportCard(card) {
-    return {
-      name: card.name,
-      description: card.description,
-      steps: card.steps.map((s) => ({ tool: s.tool, args: s.args, note: s.note }))
-    };
-  }
-
-  // src/popup/cards.ts
-  function argSummary(args) {
-    try {
-      const s = JSON.stringify(args);
-      return s && s !== "{}" ? s.slice(0, 90) : "";
-    } catch {
-      return "";
-    }
-  }
-  function renderSteps(c) {
-    const rows = c.steps.map((s, i) => `
-    <div class="step-row" id="step-${c.id}-${i}">
-      <div class="step-idx">${i + 1}</div>
-      <div class="step-body">
-        <div class="step-note">${esc(s.note)}</div>
-        <div class="step-tool">${esc(s.tool)} ${esc(argSummary(s.args))}</div>
-      </div>
-    </div>`).join("");
-    return `<div class="card-steps">${rows}</div>`;
-  }
-  async function renderCards() {
-    state.cards = await getCards();
-    cardsList.querySelectorAll(".card-item").forEach((e) => e.remove());
-    if (!state.cards.length) {
-      cardsEmpty.style.display = "block";
-      return;
-    }
-    cardsEmpty.style.display = "none";
-    for (const c of state.cards) {
-      const expanded = c.id === state.expandedCardId;
-      const el = document.createElement("div");
-      el.className = "card-item" + (c.id === state.runningCardId ? " running" : "");
-      el.innerHTML = `
-      <div class="card-item-top">
-        <span class="card-item-name">${esc(c.name)}</span>
-        <span class="card-item-meta">${c.steps.length} \u6B65</span>
-      </div>
-      ${c.description ? `<div class="card-item-desc">${esc(c.description)}</div>` : ""}
-      <div class="card-item-actions">
-        ${c.id === state.runningCardId ? `<button class="mini-btn danger" data-act="stop">\u505C\u6B62</button>` : `<button class="mini-btn" data-act="run">\u25B6 \u6267\u884C</button>`}
-        <button class="mini-btn" data-act="view">${expanded ? "\u6536\u8D77" : "\u67E5\u770B"}</button>
-        <button class="mini-btn" data-act="export">\u5BFC\u51FA</button>
-        <button class="mini-btn danger" data-act="delete">\u5220\u9664</button>
-      </div>
-      ${expanded ? renderSteps(c) : ""}`;
-      el.querySelectorAll("button[data-act]").forEach((btn) => {
-        btn.addEventListener("click", () => void onCardAction(c.id, btn.dataset.act));
-      });
-      cardsList.appendChild(el);
-    }
-  }
-  async function onCardAction(id, act) {
-    const card = state.cards.find((c) => c.id === id);
-    if (!card)
-      return;
-    switch (act) {
-      case "run":
-        if (state.runningCardId) {
-          cardsRunStatus.textContent = "\u5DF2\u6709\u5361\u7247\u5728\u6267\u884C\uFF0C\u8BF7\u5148\u505C\u6B62";
-          return;
-        }
-        state.runningCardId = id;
-        state.expandedCardId = id;
-        cardsRunStatus.textContent = `\u5F00\u59CB\u6267\u884C\uFF1A${card.name}`;
-        state.port.postMessage({ type: "card:run", cardId: id });
-        await renderCards();
-        break;
-      case "stop":
-        state.port.postMessage({ type: "card:stop" });
-        break;
-      case "view":
-        state.expandedCardId = state.expandedCardId === id ? null : id;
-        await renderCards();
-        break;
-      case "export":
-        exportDownload(`${card.name || "card"}.json`, exportCard(card));
-        break;
-      case "delete":
-        if (confirm(`\u786E\u5B9A\u5220\u9664\u5361\u7247\u300C${card.name}\u300D\uFF1F\u6B64\u64CD\u4F5C\u4E0D\u53EF\u6062\u590D\u3002`)) {
-          await deleteCard(id);
-          if (state.expandedCardId === id)
-            state.expandedCardId = null;
-          await renderCards();
-        }
-        break;
-    }
-  }
-  function exportDownload(filename, data) {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename.replace(/[^\w.\-一-龥]+/g, "_");
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1e3);
-  }
-  function askMergeChoice(name) {
-    return new Promise((resolve) => {
-      cardModalMsg.textContent = `\u5361\u7247\u300C${name}\u300D\u5DF2\u5B58\u5728\uFF0C\u662F\u5426\u5408\u5E76\u6B65\u9AA4\uFF1F\u5408\u5E76\u4F1A\u628A\u5BFC\u5165\u7684\u6B65\u9AA4\u8FFD\u52A0\u5230\u73B0\u6709\u5361\u7247\u672B\u5C3E\u3002`;
-      cardModal.classList.remove("hidden");
-      const done = (r) => {
-        cardModal.classList.add("hidden");
-        cmMerge.onclick = cmReplace.onclick = cmSkip.onclick = null;
-        resolve(r);
-      };
-      cmMerge.onclick = () => done("merge");
-      cmReplace.onclick = () => done("replace");
-      cmSkip.onclick = () => done("skip");
-    });
-  }
-  async function doImportText(text) {
-    if (!text) {
-      cardsImportFeedback.textContent = "\u8BF7\u7C98\u8D34\u5361\u7247 JSON \u6216\u9009\u62E9\u6587\u4EF6";
-      cardsImportFeedback.style.color = "var(--error)";
-      return;
-    }
-    let incoming;
-    try {
-      incoming = parseImport(text);
-    } catch (e) {
-      cardsImportFeedback.textContent = `\u5BFC\u5165\u5931\u8D25\uFF1A${e?.message || e}`;
-      cardsImportFeedback.style.color = "var(--error)";
-      return;
-    }
-    state.cards = await getCards();
-    let added = 0, merged = 0, replaced = 0, skipped = 0;
-    for (const inc of incoming) {
-      const existing = state.cards.find((c) => c.name === inc.name);
-      if (existing) {
-        const choice = await askMergeChoice(inc.name);
-        if (choice === "skip") {
-          skipped++;
-          continue;
-        }
-        const idx = state.cards.findIndex((c) => c.id === existing.id);
-        if (choice === "merge") {
-          state.cards[idx] = mergeCards(existing, inc);
-          merged++;
-        } else {
-          state.cards[idx] = { ...inc, id: existing.id, createdAt: existing.createdAt };
-          replaced++;
-        }
-      } else {
-        state.cards.push(inc);
-        added++;
-      }
-    }
-    await setCards(state.cards);
-    cardsImportText.value = "";
-    cardsImportFeedback.textContent = `\u5B8C\u6210\uFF1A\u65B0\u589E ${added}\uFF0C\u5408\u5E76 ${merged}\uFF0C\u66FF\u6362 ${replaced}\uFF0C\u8DF3\u8FC7 ${skipped}`;
-    cardsImportFeedback.style.color = "var(--success)";
-    await renderCards();
-  }
-  function wireCards() {
-    cardsImportBtn.addEventListener("click", () => cardsImportBox.classList.toggle("hidden"));
-    cardsImportConfirm.addEventListener("click", () => void doImportText(cardsImportText.value.trim()));
-    cardsImportFileBtn.addEventListener("click", () => cardsImportFile.click());
-    cardsImportFile.addEventListener("change", async () => {
-      const f = cardsImportFile.files?.[0];
-      if (!f)
-        return;
-      const text = await f.text();
-      cardsImportFile.value = "";
-      cardsImportBox.classList.remove("hidden");
-      await doImportText(text);
-    });
-    cardsExportAllBtn.addEventListener("click", async () => {
-      state.cards = await getCards();
-      if (!state.cards.length) {
-        cardsRunStatus.textContent = "\u6CA1\u6709\u53EF\u5BFC\u51FA\u7684\u5361\u7247";
-        return;
-      }
-      exportDownload("heysure-cards.json", { cards: state.cards.map(exportCard) });
-    });
+    connectBtn.addEventListener("click", () => state.port.postMessage({ type: "agent:connect" }));
+    disconnectBtn.addEventListener("click", () => state.port.postMessage({ type: "agent:disconnect" }));
   }
 
   // src/popup/ui.ts
   function renderStatus() {
+    const connected = state.currentStatus === "registered" || state.currentStatus === "connected";
+    let color;
+    let label;
     if (state.offlineMode) {
-      statusDot.className = "status-dot offline";
-      statusLabel.textContent = "\u79BB\u7EBF\u6A21\u5F0F";
-      return;
+      color = "red";
+      label = "\u79BB\u7EBF\u6A21\u5F0F";
+    } else if (!connected) {
+      color = "red";
+      label = "\u672A\u8FDE\u63A5";
+    } else if (state.boundAiConfigId == null) {
+      color = "yellow";
+      label = "\u672A\u5206\u914D AI";
+    } else {
+      color = "green";
+      label = "\u5DF2\u8FDE\u63A5";
     }
-    statusDot.className = `status-dot ${state.currentStatus}`;
-    statusLabel.textContent = state.currentStatus === "registered" ? getConnectedAiShortLabel() : STATUS_LABELS[state.currentStatus] || state.currentStatus;
+    statusDot.className = `status-dot ${color}`;
+    statusLabel.textContent = label;
   }
   function setStatus(status) {
     state.currentStatus = status;
+    if (status !== "registered" && status !== "connected")
+      state.boundAiConfigId = null;
+    renderStatus();
+  }
+  function setBoundAi(aiConfigId) {
+    state.boundAiConfigId = aiConfigId;
     renderStatus();
   }
   function applyTheme(theme, persist = true) {
@@ -780,44 +474,17 @@
     if (persist)
       state.port.postMessage({ type: "settings:save", payload: { theme } });
   }
-  var ICON = { success: "\u2713", error: "\u2717", running: "\u25B6", warn: "\u26A0", system: "\u25CF", info: "\u2139", human: "?" };
-  var IC_CLS = { success: "success", error: "error", running: "running", warn: "warn", system: "system", info: "info", human: "warn" };
-  function addEntry(e) {
-    feedEmpty.style.display = "none";
-    const ic = IC_CLS[e.status] || IC_CLS[e.type] || "info";
-    const hasData = e.data !== void 0 && e.data !== null;
-    let datHtml = "";
-    if (hasData) {
-      const ds = typeof e.data === "string" ? e.data : (() => {
-        try {
-          return JSON.stringify(e.data, null, 2);
-        } catch {
-          return String(e.data);
-        }
-      })();
-      datHtml = `<button class="toggle-btn" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('show')"><span>\u25B6</span> \u8BE6\u60C5</button><div class="data-block"><pre>${esc(ds.slice(0, 2e3))}</pre></div>`;
-    }
-    const el = document.createElement("div");
-    el.className = "entry";
-    el.innerHTML = `
-    <div class="entry-icon ${ic}">${ICON[e.status] || ICON[e.type] || "\u2139"}</div>
-    <div class="entry-body">
-      <div class="entry-top"><span class="entry-badge ${e.type}">${e.type}</span><span class="entry-time">${fmt(e.timestamp)}</span></div>
-      <div class="entry-msg">${esc(e.message)}</div>${datHtml}
-    </div>`;
-    feed.appendChild(el);
-    feed.scrollTop = feed.scrollHeight;
+  function renderStats() {
+    statTotal.textContent = String(state.stats.total);
+    statRunning.textContent = String(state.stats.running);
+    statSuccess.textContent = String(state.stats.success);
+    statFailed.textContent = String(state.stats.failed);
   }
-  function switchTab(tab) {
-    state.activeTab = tab;
-    Object.keys(panes).forEach((k) => panes[k].classList.add("hidden"));
-    Object.keys(tabs).forEach((k) => tabs[k].classList.remove("active"));
-    panes[tab].classList.remove("hidden");
-    tabs[tab].classList.add("active");
-    if (tab === "settings" && state.auth.token && state.members.length === 0)
-      void loadMembers();
-    if (tab === "cards")
-      void renderCards();
+  function openSettingsModal() {
+    settingsModal.classList.remove("hidden");
+  }
+  function closeSettingsModal() {
+    settingsModal.classList.add("hidden");
   }
   function openLoginModal() {
     loginModal.classList.remove("hidden");
@@ -851,70 +518,38 @@
       userAva.textContent = "\xB7";
       userName.textContent = "\u672A\u767B\u5F55";
     }
-    connectionControlCard.classList.toggle("hidden", !auth.token);
-    memberSettingsCard.classList.toggle("hidden", !auth.token);
-    accountCard.classList.toggle("hidden", !auth.token);
+    accountCard.style.display = auth.token ? "block" : "none";
     loginGate.classList.toggle("hidden", !!auth.token);
     accountStatusV.textContent = auth.token ? `\u5DF2\u767B\u5F55\uFF1A${auth.userName || auth.account}` : "\u672A\u767B\u5F55";
-    logoutBtn.style.display = auth.token ? "block" : "none";
   }
   function updateOfflineUi() {
     offlineModelConfig.classList.toggle("hidden", !state.offlineMode);
     renderStatus();
   }
-  function renderSettingsViews() {
-    const m = memberById(state.selectedMemberId);
-    if (m) {
-      memberSettingsCard.style.display = "block";
-      let tools = [];
-      try {
-        const a = JSON.parse(m.mcp_tools || "[]");
-        if (Array.isArray(a))
-          tools = a;
-      } catch {
-      }
-      const chips = tools.length ? `<div class="tool-chips">${tools.map((t) => `<span class="tool-chip">${esc(t)}</span>`).join("")}</div>` : `<div class="empty-note">\u672A\u5206\u914D MCP \u5DE5\u5177</div>`;
-      memberSettingsBody.innerHTML = `
-      <div class="kv"><span class="k">\u540D\u79F0</span><span class="v">${esc(m.name || "")}</span></div>
-      <div class="kv"><span class="k">\u89D2\u8272</span><span class="v">${ROLE_LABELS[roleOf(m)] || roleOf(m)}</span></div>
-      <div class="kv"><span class="k">\u6A21\u578B</span><span class="v">${esc(m.model || "\u2014")}</span></div>
-      <div class="kv"><span class="k">\u5E73\u53F0</span><span class="v">${esc(m.platform || "\u2014")}</span></div>
-      <div class="kv"><span class="k">\u5DE5\u4F5C\u76EE\u5F55</span><span class="v">${esc(m.workspace_root || "\uFF08\u4EC5\u5BF9\u8BDD\uFF09")}</span></div>
-      <div class="kv"><span class="k">MCP \u5F00\u5173</span><span class="v">${m.mcp_enabled === false ? "\u5173\u95ED" : "\u5F00\u542F"}</span></div>
-      <div class="divider"></div>
-      <div class="kv"><span class="k">MCP \u5DE5\u5177\uFF08${tools.length}\uFF09</span><span class="v"></span></div>
-      ${chips}`;
-    } else {
-      memberSettingsCard.style.display = "none";
-    }
-  }
   function wireUi() {
-    ;
-    Object.keys(tabs).forEach((k) => tabs[k].addEventListener("click", () => switchTab(k)));
     themeToggle.addEventListener("click", () => applyTheme(state.currentTheme === "dark" ? "light" : "dark"));
-    clearBtn.addEventListener("click", () => {
-      feed.querySelectorAll(".entry").forEach((e) => e.remove());
-      feedEmpty.style.display = "flex";
+    settingsBtn.addEventListener("click", () => openSettingsModal());
+    settingsClose.addEventListener("click", () => closeSettingsModal());
+    settingsModal.addEventListener("click", (e) => {
+      if (e.target === settingsModal)
+        closeSettingsModal();
     });
+    statusPill.addEventListener("click", () => openMembersModal());
   }
 
   // src/popup/settings.ts
   function loadSettings(s) {
     state.serverUrl = s.serverUrl || "";
-    state.selectedMemberId = s.selectedAiConfigId || null;
     cfgServer.value = s.serverUrl || "";
-    cfgAgentServer.value = s.agentServerUrl || "";
     cfgAiKey.value = s.aiKey || "";
     cfgAiBase.value = s.aiBaseUrl || "";
     cfgAiModel.value = s.aiModel || "";
-    cfgAutoConn.checked = !!s.autoConnect;
     state.offlineMode = !!s.offlineMode;
     cfgOfflineMode.checked = state.offlineMode;
     cfgMouseFx.checked = s.mouseFx !== false;
     state.localModel = s.aiModel || "";
     state.hasAiKey = !!s.aiKey?.trim();
     updateOfflineUi();
-    renderMembers();
     applyTheme(s.theme || "dark", false);
   }
   var PROVIDER_PRESETS = {
@@ -944,19 +579,17 @@
     saveBtn.addEventListener("click", () => {
       const payload = {
         serverUrl: cfgServer.value.trim(),
-        agentServerUrl: cfgAgentServer.value.trim(),
         aiKey: cfgAiKey.value.trim(),
         aiBaseUrl: cfgAiBase.value.trim() || "https://api.anthropic.com",
         aiModel: cfgAiModel.value.trim() || "claude-sonnet-4-5",
-        autoConnect: cfgAutoConn.checked,
         offlineMode: cfgOfflineMode.checked,
         mouseFx: cfgMouseFx.checked
       };
       state.serverUrl = payload.serverUrl || "";
       state.offlineMode = !!payload.offlineMode;
       state.localModel = payload.aiModel || "";
-      state.port.postMessage({ type: "settings:save", payload });
       state.hasAiKey = !!payload.aiKey;
+      state.port.postMessage({ type: "settings:save", payload });
       updateOfflineUi();
       saveFeedback.textContent = "\u5DF2\u4FDD\u5B58 \u2713";
       saveFeedback.style.color = "var(--success)";
@@ -964,13 +597,911 @@
         saveFeedback.textContent = "";
       }, 2e3);
     });
-    testConnBtn.addEventListener("click", () => {
-      testResult.textContent = "\u6D4B\u8BD5\u4E2D...";
-      testResult.className = "test-result";
-      state.port.postMessage({ type: "connection:test" });
+  }
+
+  // src/lib/tools/definitions.ts
+  var SEARCH_ENGINES = {
+    google: "https://www.google.com/search?q=",
+    bing: "https://www.bing.com/search?q=",
+    duckduckgo: "https://duckduckgo.com/?q=",
+    baidu: "https://www.baidu.com/s?wd=",
+    github: "https://github.com/search?q=",
+    youtube: "https://www.youtube.com/results?search_query=",
+    wikipedia: "https://en.wikipedia.org/wiki/Special:Search?search=",
+    stackoverflow: "https://stackoverflow.com/search?q=",
+    npm: "https://www.npmjs.com/search?q=",
+    pypi: "https://pypi.org/search/?q=",
+    mdn: "https://developer.mozilla.org/en-US/search?q="
+  };
+  var BROWSER_TOOLS = [
+    {
+      name: "browser_navigate",
+      description: "\u5728\u5F53\u524D\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u6253\u5F00\u6307\u5B9A URL\uFF0C\u9875\u9762\u52A0\u8F7D\u5B8C\u6210\u540E\u8FD4\u56DE\u3002\u7528\u9014\uFF1A\u8DF3\u8F6C\u5230\u76EE\u6807\u7F51\u5740\u5F00\u59CB\u4E00\u6BB5\u6D4F\u89C8\u4EFB\u52A1\u3002\u573A\u666F\uFF1A\u8FDB\u5165\u767B\u5F55\u9875\u3001\u6253\u5F00\u6587\u7AE0\u3001\u8DF3\u8F6C\u5230\u540E\u53F0\u7BA1\u7406\u9875\u7B49\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "\u8981\u6253\u5F00\u7684\u7EDD\u5BF9 URL\uFF08\u9700\u5305\u542B http(s)://\uFF09\u3002" },
+          new_tab: { type: "boolean", description: "\u4E3A true \u65F6\u5728\u65B0\u6807\u7B7E\u9875\u6253\u5F00\uFF0C\u800C\u4E0D\u662F\u66FF\u6362\u5F53\u524D\u9875\u3002" }
+        },
+        required: ["url"]
+      }
+    },
+    {
+      name: "browser_screenshot",
+      description: "\u5BF9\u5F53\u524D\u6807\u7B7E\u9875\u622A\u56FE\uFF1A\u53EF\u622A\u53EF\u89C6\u533A\u3001\u6574\u9875\u3001\u67D0\u4E2A CSS/\u6587\u672C\u5339\u914D\u7684\u5143\u7D20\uFF0C\u6216\u4E00\u5757\u77E9\u5F62\u533A\u57DF\uFF0C\u8FD4\u56DE base64 \u56FE\u7247 data URL\uFF08\u622A\u56FE\u88AB\u7981\u7528\u6216\u65E0\u6743\u9650\u65F6\u8FD4\u56DE\u53EF\u8BFB\u7684\u9519\u8BEF\u8BF4\u660E\uFF09\u3002\u7528\u9014\uFF1A\u8BA9 AI\u300C\u770B\u89C1\u300D\u9875\u9762\u3002\u573A\u666F\uFF1A\u6838\u5BF9\u9875\u9762\u72B6\u6001\u3001\u4FDD\u5B58\u8BC1\u636E\u3001\u5728\u65E0\u6CD5\u8BFB\u53D6\u6587\u672C\u65F6\u6539\u7528\u89C6\u89C9\u7406\u89E3\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u8981\u622A\u56FE\u7684\u5143\u7D20 CSS selector\u3002" },
+          text: { type: "string", description: "\u5F53\u4E0D\u4F20 selector \u65F6\uFF0C\u7528\u53EF\u89C1\u6587\u672C\u5B9A\u4F4D\u8981\u622A\u56FE\u7684\u5143\u7D20\u3002" },
+          full_page: { type: "boolean", description: "\u622A\u53D6\u6574\u4E2A\u53EF\u6EDA\u52A8\u9875\u9762\u3002" },
+          x: { type: "number", description: "\u533A\u57DF\u5DE6\u4E0A\u89D2 X \u5750\u6807\uFF1B\u9664\u975E coordinate_space \u8BBE\u4E3A page\uFF0C\u5426\u5219\u6309\u89C6\u53E3\u5750\u6807\u3002" },
+          y: { type: "number", description: "\u533A\u57DF\u5DE6\u4E0A\u89D2 Y \u5750\u6807\uFF1B\u9664\u975E coordinate_space \u8BBE\u4E3A page\uFF0C\u5426\u5219\u6309\u89C6\u53E3\u5750\u6807\u3002" },
+          width: { type: "number", description: "\u533A\u57DF\u5BBD\u5EA6\uFF08CSS \u50CF\u7D20\uFF09\u3002" },
+          height: { type: "number", description: "\u533A\u57DF\u9AD8\u5EA6\uFF08CSS \u50CF\u7D20\uFF09\u3002" },
+          clip: { type: "object", description: "\u533A\u57DF\u5BF9\u8C61\u5199\u6CD5\uFF1A{x,y,width,height,coordinate_space?}\uFF0C\u4E0E x/y/width/height \u4E8C\u9009\u4E00\u3002" },
+          coordinate_space: { type: "string", enum: ["viewport", "page"], description: "x/y/clip \u7684\u5750\u6807\u7CFB\uFF1Aviewport \u89C6\u53E3\u6216 page \u6574\u9875\u3002\u9ED8\u8BA4 viewport\u3002" },
+          margin: { type: "number", description: "\u6309 selector/text \u622A\u5143\u7D20\u65F6\uFF0C\u5411\u56DB\u5468\u6269\u5C55\u7684\u989D\u5916 CSS \u50CF\u7D20\u3002" },
+          scroll_into_view: { type: "boolean", description: "\u6D4B\u91CF\u524D\u5148\u628A\u76EE\u6807\u5143\u7D20\u6EDA\u52A8\u8FDB\u89C6\u53E3\u3002\u9ED8\u8BA4 true\u3002" },
+          format: { type: "string", enum: ["png", "jpeg", "webp"], description: "\u56FE\u7247\u683C\u5F0F\u3002\u9ED8\u8BA4 png\u3002" },
+          quality: { type: "number", description: "JPEG/WebP \u8D28\u91CF\uFF0C0-100\u3002" },
+          scale: { type: "number", description: "CDP \u622A\u56FE\u7684\u7F29\u653E\u6BD4\u4F8B\u3002\u9ED8\u8BA4 1\u3002" },
+          max_area: { type: "number", description: "\u5141\u8BB8\u7684\u6700\u5927\u622A\u56FE\u9762\u79EF\uFF08CSS \u50CF\u7D20\uFF09\u3002\u9ED8\u8BA4 25000000\u3002" },
+          retries: { type: "number", description: "\u53EF\u89C6\u533A\u622A\u56FE\u9047\u5230\u6D3B\u52A8\u6807\u7B7E/\u9650\u6D41\u7B49\u4E34\u65F6\u5931\u8D25\u65F6\u7684\u91CD\u8BD5\u6B21\u6570\u3002\u9ED8\u8BA4 1\u3002" },
+          timeout_ms: { type: "number", description: "\u5355\u9636\u6BB5\u622A\u56FE\u603B\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09\u3002\u53EF\u89C6\u622A\u56FE\u9ED8\u8BA4 8000\uFF0CCDP \u9ED8\u8BA4 12000\u3002" },
+          visible_timeout_ms: { type: "number", description: "chrome.tabs.captureVisibleTab \u7684\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09\u3002\u9ED8\u8BA4 8000\u3002" },
+          cdp_timeout_ms: { type: "number", description: "\u6BCF\u6761 Chrome DevTools Protocol \u622A\u56FE\u547D\u4EE4\u7684\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09\u3002\u9ED8\u8BA4 12000\u3002" },
+          content_timeout_ms: { type: "number", description: "\u5728\u9875\u9762\u4E2D\u6D4B\u91CF selector/text \u76EE\u6807\u7684\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09\u3002\u9ED8\u8BA4 5000\u3002" },
+          max_data_url_chars: { type: "number", description: "\u7ECF Socket.IO \u8FD4\u56DE\u7684 data URL \u6700\u5927\u957F\u5EA6\u3002\u9ED8\u8BA4 8000000\u3002" },
+          allow_large_data_url: { type: "boolean", description: "\u5141\u8BB8\u8FD4\u56DE\u8D85\u8FC7 max_data_url_chars \u7684\u622A\u56FE\u3002\u9ED8\u8BA4 false\u3002" },
+          task_timeout_ms: { type: "number", description: "\u672C\u6B21\u622A\u56FE\u4EFB\u52A1\u5728\u7AEF\u70B9 agent \u4E0A\u7684\u786C\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09\u3002\u9ED8\u8BA4 35000\u3002" },
+          fallback_visible: { type: "boolean", description: "\u5143\u7D20/\u533A\u57DF/\u6574\u9875\u622A\u56FE\u65F6\uFF0C\u82E5\u7CBE\u786E CDP \u622A\u56FE\u5931\u8D25\u5219\u56DE\u9000\u4E3A\u53EF\u89C6\u533A\u622A\u56FE\u3002\u9ED8\u8BA4 false\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_click",
+      description: "\u70B9\u51FB click \u9875\u9762\u5143\u7D20\uFF0C\u53EF\u7528 CSS selector\u3001\u53EF\u89C1\u6587\u672C\u6216\u5750\u6807\u5B9A\u4F4D\u3002\u7528\u9014\uFF1A\u89E6\u53D1\u6309\u94AE\u3001\u94FE\u63A5\u3001\u52FE\u9009\u6846\u7B49\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u70B9\u300C\u767B\u5F55\u300D\u300C\u4E0B\u4E00\u6B65\u300D\u3001\u5C55\u5F00\u83DC\u5355\u3001\u6253\u5F00\u6761\u76EE\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u8981\u70B9\u51FB\u5143\u7D20\u7684\u53EF\u89C1\u6587\u672C\u3002" },
+          x: { type: "number", description: "X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          y: { type: "number", description: "Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_type",
+      description: "\u5411\u8F93\u5165\u6846 input \u6216\u6587\u672C\u57DF textarea \u8F93\u5165\u6587\u672C\u3002\u7528\u9014\uFF1A\u586B\u5199\u5355\u4E2A\u5B57\u6BB5\u3002\u573A\u666F\uFF1A\u8F93\u5165\u7528\u6237\u540D\u3001\u641C\u7D22\u8BCD\u3001\u8868\u5355\u5355\u9879\uFF08\u591A\u9879\u8BF7\u7528 browser_fill_form\uFF09\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u76EE\u6807\u8F93\u5165\u6846\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u8981\u8F93\u5165\u7684\u6587\u672C\u3002" },
+          clear_first: { type: "boolean", description: "\u8F93\u5165\u524D\u5148\u6E05\u7A7A\u5B57\u6BB5\u3002\u9ED8\u8BA4 true\u3002" },
+          submit: { type: "boolean", description: "\u8F93\u5165\u540E\u6309\u56DE\u8F66\u63D0\u4EA4\u3002" }
+        },
+        required: ["text"]
+      }
+    },
+    {
+      name: "browser_get_content",
+      description: "\u8BFB\u53D6\u5F53\u524D\u9875\u9762\u7684\u53EF\u89C1\u6587\u672C\u3001URL\u3001\u6807\u9898\u3001\u94FE\u63A5\u3001meta \u4FE1\u606F\u548C\u5F52\u4E00\u5316\u6761\u76EE\u3002\u7528\u9014\uFF1A\u4EE5\u6587\u672C\u65B9\u5F0F\u7406\u89E3\u9875\u9762\u5185\u5BB9\u3002\u573A\u666F\uFF1A\u6293\u53D6\u6587\u7AE0\u6B63\u6587\u3001\u8BFB\u53D6\u5217\u8868\u3001\u5728\u4E0D\u622A\u56FE\u65F6\u83B7\u53D6\u9875\u9762\u4FE1\u606F\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u53EA\u53D6\u8BE5 CSS selector \u8303\u56F4\u5185\u7684\u5185\u5BB9\u3002\u9ED8\u8BA4 body\u3002" },
+          include_html: { type: "boolean", description: "\u540C\u65F6\u8FD4\u56DE\uFF08\u622A\u65AD\u540E\u7684\uFF09\u539F\u59CB HTML\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_dom_snapshot",
+      description: "\u8FD4\u56DE\u7ED3\u6784\u5316\u7684 DOM \u6811\u5FEB\u7167\uFF0C\u4F5C\u4E3A\u622A\u56FE\u88AB\u7981\u7528\u6216\u4E0D\u53EF\u7528\u65F6\u7684\u6587\u672C\u66FF\u4EE3\u65B9\u6848\u3002\u7528\u9014\uFF1A\u4EE5\u5C42\u7EA7\u7ED3\u6784\u7406\u89E3\u9875\u9762\u3002\u573A\u666F\uFF1A\u5206\u6790\u590D\u6742\u5E03\u5C40\u3001\u5B9A\u4F4D\u5143\u7D20\u3001\u4E3A\u540E\u7EED\u64CD\u4F5C\u627E selector\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u53EA\u5FEB\u7167\u8BE5 CSS selector \u5B50\u6811\u3002\u9ED8\u8BA4\u6574\u9875\u3002" },
+          max_depth: { type: "number", description: "DOM \u6811\u6700\u5927\u904D\u5386\u6DF1\u5EA6\u3002" },
+          max_nodes: { type: "number", description: "\u8FD4\u56DE\u7684\u6700\u5927\u8282\u70B9\u6570\u3002" },
+          trace: { type: "boolean", description: "\u5931\u8D25\u65F6\u8FD4\u56DE\u7ED3\u6784\u5316\u7684\u9519\u8BEF\u8BCA\u65AD\u4FE1\u606F\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_search",
+      description: "\u7528\u4E3B\u6D41\u641C\u7D22\u5F15\u64CE\u68C0\u7D22\u7F51\u7EDC\u3002\u7528\u9014\uFF1A\u5728\u6D4F\u89C8\u5668\u5185\u53D1\u8D77\u4E00\u6B21\u7AD9\u70B9\u641C\u7D22\u3002\u573A\u666F\uFF1A\u7528 Google/Bing/\u767E\u5EA6\u7B49\u67E5\u8D44\u6599\uFF1B\u6CE8\u610F\u8FD9\u4F1A\u771F\u6B63\u6253\u5F00\u641C\u7D22\u7ED3\u679C\u9875\uFF08\u4E0E\u670D\u52A1\u5668\u7AEF web.search \u7684\u7EAF\u6570\u636E\u68C0\u7D22\u4E0D\u540C\uFF09\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "\u641C\u7D22\u5173\u952E\u8BCD\u3002" },
+          engine: {
+            type: "string",
+            enum: Object.keys(SEARCH_ENGINES),
+            description: "\u641C\u7D22\u5F15\u64CE\uFF0C\u9ED8\u8BA4 google\uFF1B\u53EF\u9009 bing\u3001baidu\u3001duckduckgo\u3001github \u7B49\u3002"
+          }
+        },
+        required: ["query"]
+      }
+    },
+    {
+      name: "browser_scroll",
+      description: "\u6EDA\u52A8\u5F53\u524D\u9875\u9762\uFF0C\u8FD4\u56DE\u6EDA\u52A8\u540E\u7684\u4F4D\u7F6E\uFF08scrollY\u3001\u767E\u5206\u6BD4\u3001\u662F\u5426\u5230\u9876/\u5230\u5E95\uFF09\u3001\u5B9E\u9645\u79FB\u52A8\u7684\u50CF\u7D20\u6570\uFF0C\u4EE5\u53CA\u5F53\u524D\u8FDB\u5165\u89C6\u91CE\u7684\u5C0F\u8282/\u6807\u9898\u2014\u2014\u8BA9\u4F60\u77E5\u9053\u6EDA\u5230\u4E86\u54EA\u3001\u53D8\u5316\u4E86\u4EC0\u4E48\u3002\u7528\u9014\uFF1A\u6D4F\u89C8\u957F\u9875\u9762\u3002\u573A\u666F\uFF1A\u9010\u5C4F\u9605\u8BFB\u3001\u52A0\u8F7D\u61D2\u52A0\u8F7D\u5185\u5BB9\u3001\u6EDA\u5230\u9875\u5C3E\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          direction: { type: "string", enum: ["up", "down", "top", "bottom"], description: "\u6EDA\u52A8\u65B9\u5411\uFF1Aup \u4E0A\u3001down \u4E0B\u3001top \u5230\u9876\u3001bottom \u5230\u5E95\u3002" },
+          amount: { type: "number", description: "\u6EDA\u52A8\u50CF\u7D20\u6570\u3002\u9ED8\u8BA4 400\u3002" },
+          selector: { type: "string", description: "\u53EF\u9009\uFF1A\u628A\u8BE5\u5143\u7D20\u6EDA\u52A8\u8FDB\u89C6\u53E3\uFF0C\u66FF\u4EE3\u6309 amount \u6EDA\u52A8\u3002" }
+        },
+        required: ["direction"]
+      }
+    },
+    {
+      name: "browser_wait",
+      description: "\u7B49\u5F85\u67D0\u4E2A CSS selector \u51FA\u73B0\uFF0C\u6216\u56FA\u5B9A\u7B49\u5F85\u4E00\u6BB5\u65F6\u95F4\u3002\u7528\u9014\uFF1A\u7B49\u5F85\u9875\u9762/\u5143\u7D20\u5C31\u7EEA\u540E\u518D\u64CD\u4F5C\u3002\u573A\u666F\uFF1A\u7B49\u5F02\u6B65\u52A0\u8F7D\u7684\u6309\u94AE\u51FA\u73B0\u3001\u7B49\u52A8\u753B\u7ED3\u675F\u3001\u7ED9\u9875\u9762\u7559\u51FA\u6E32\u67D3\u65F6\u95F4\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u7B49\u5F85\u51FA\u73B0\u7684 CSS \u5143\u7D20\u3002" },
+          ms: { type: "number", description: "\u56FA\u5B9A\u7B49\u5F85\u7684\u6BEB\u79D2\u6570\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_evaluate",
+      description: "\u5728\u9875\u9762\u4E0A\u4E0B\u6587\u4E2D\u6267\u884C\u4EFB\u610F JavaScript \u5E76\u8FD4\u56DE\u7ED3\u679C\uFF1B\u53EF\u7528\u65F6\u8D70 Chrome DevTools Protocol\uFF0C\u56E0\u6B64\u5728 CSP \u53D7\u9650\u9875\u9762\u4E0A\u4E5F\u80FD\u8FD0\u884C\u3002\u7528\u9014\uFF1A\u9AD8\u7EA7\u53D6\u6570/\u64CD\u4F5C\u7684\u515C\u5E95\u624B\u6BB5\u3002\u573A\u666F\uFF1A\u5185\u7F6E\u5DE5\u5177\u65E0\u6CD5\u6EE1\u8DB3\u65F6\u8BFB\u53D6\u590D\u6742\u6570\u636E\u6216\u89E6\u53D1\u7279\u6B8A\u884C\u4E3A\uFF08\u8BF7\u8C28\u614E\u4F7F\u7528\uFF09\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          code: { type: "string", description: "\u8981\u6267\u884C\u7684 JavaScript \u8868\u8FBE\u5F0F\u6216\u8BED\u53E5\u3002" },
+          function: { type: "string", description: "code \u7684\u522B\u540D\uFF0C\u4FDD\u7559\u517C\u5BB9\u3002" },
+          fn: { type: "string", description: "code \u7684\u522B\u540D\u3002" },
+          expression: { type: "string", description: "code \u7684\u522B\u540D\u3002" },
+          trace: { type: "boolean", description: "\u5931\u8D25\u65F6\u8FD4\u56DE\u7ED3\u6784\u5316\u7684 {error, code, suggestion, trace}\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_extract",
+      description: "\u4ECE\u5339\u914D selector \u7684\u5143\u7D20\u4E2D\u63D0\u53D6\u7ED3\u6784\u5316\u6570\u636E\uFF0C\u8FD4\u56DE\u5E26 tag\u3001selector\u3001\u6587\u672C\u3001\u5C5E\u6027\u53CA\u5E38\u7528\u5C5E\u6027\u522B\u540D\u7684\u5F52\u4E00\u5316\u6761\u76EE\u3002\u7528\u9014\uFF1A\u6279\u91CF\u6293\u53D6\u5217\u8868/\u8868\u683C\u3002\u573A\u666F\uFF1A\u6293\u53D6\u641C\u7D22\u7ED3\u679C\u3001\u5546\u54C1\u5217\u8868\u3001\u8868\u683C\u884C\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u8981\u67E5\u8BE2\u7684 CSS selector\u3002" },
+          attributes: { type: "array", items: { type: "string" }, description: "\u6BCF\u4E2A\u5143\u7D20\u9700\u8981\u91C7\u96C6\u7684\u5C5E\u6027\u540D\u5217\u8868\u3002" },
+          limit: { type: "number", description: "\u6700\u591A\u63D0\u53D6\u7684\u5143\u7D20\u6570\u3002\u9ED8\u8BA4 50\u3002" }
+        },
+        required: ["selector"]
+      }
+    },
+    {
+      name: "browser_find_text",
+      description: "\u67E5\u627E\u9875\u9762\u4E0A\u6240\u6709\u5305\u542B\u6307\u5B9A\u6587\u672C\u7684\u5143\u7D20\u3002\u7528\u9014\uFF1A\u6309\u6587\u5B57\u5B9A\u4F4D\u5143\u7D20\u3002\u573A\u666F\uFF1A\u627E\u5230\u542B\u67D0\u5173\u952E\u5B57\u7684\u6309\u94AE/\u94FE\u63A5\uFF0C\u518D\u914D\u5408\u70B9\u51FB\u6216\u622A\u56FE\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "\u8981\u641C\u7D22\u7684\u6587\u672C\u3002" },
+          exact: { type: "boolean", description: "\u4EC5\u7CBE\u786E\u5339\u914D\u3002" }
+        },
+        required: ["text"]
+      }
+    },
+    {
+      name: "browser_find_popups",
+      description: "\u68C0\u6D4B\u9875\u9762\u4E0A\u53EF\u89C1\u7684\u5F39\u7A97\u3001\u6A21\u6001\u6846\u3001\u5BF9\u8BDD\u6846\u3001\u62BD\u5C49\u3001\u906E\u7F69\u4EE5\u53CA\u5B83\u4EEC\u53EF\u80FD\u7684\u5173\u95ED\u6309\u94AE\u3002\u7528\u9014\uFF1A\u53D1\u73B0\u6321\u4F4F\u64CD\u4F5C\u7684\u5F39\u5C42\u3002\u573A\u666F\uFF1A\u81EA\u52A8\u5316\u5361\u4F4F\u65F6\u5148\u6392\u67E5\u5F39\u7A97\uFF0C\u518D\u51B3\u5B9A\u5982\u4F55\u5173\u95ED\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684\u5F39\u7A97\u6570\u3002\u9ED8\u8BA4 10\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_close_popup",
+      description: "\u5173\u95ED\u53EF\u89C1\u7684\u5F39\u7A97/\u6A21\u6001\u6846/\u5BF9\u8BDD\u6846\uFF1A\u4F18\u5148\u70B9\u68C0\u6D4B\u5230\u7684\u5173\u95ED\u6309\u94AE\uFF0C\u518D\u56DE\u9000\u5230 Escape/\u70B9\u906E\u7F69\u3002\u9700\u8981\u5148\u67E5\u770B\u5019\u9009\u65F6\u8BF7\u5148\u8C03\u7528 browser_find_popups\u3002\u7528\u9014\uFF1A\u6E05\u9664\u906E\u6321\u3002\u573A\u666F\uFF1A\u5173\u95ED cookie \u540C\u610F\u6761\u3001\u8BA2\u9605\u5F39\u7A97\u3001\u767B\u5F55\u5F15\u5BFC\u5C42\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u53EF\u9009\uFF1A\u8981\u5173\u95ED\u5F39\u7A97\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u53EF\u9009\uFF1A\u5F39\u7A97\u5185\u5305\u542B\u7684\u6587\u672C\uFF0C\u7528\u4E8E\u5B9A\u4F4D\u5B83\u3002" },
+          index: { type: "number", description: "browser_find_popups \u8FD4\u56DE\u7684\u5F39\u7A97\u5E8F\u53F7\u3002\u9ED8\u8BA4 0\u3002" },
+          strategy: { type: "string", enum: ["auto", "close_button", "escape", "backdrop"], description: "\u5173\u95ED\u7B56\u7565\uFF1Aauto \u81EA\u52A8\u3001close_button \u5173\u95ED\u6309\u94AE\u3001escape \u6309 Esc\u3001backdrop \u70B9\u906E\u7F69\u3002\u9ED8\u8BA4 auto\u3002" },
+          force_remove: { type: "boolean", description: "\u4E3A true \u65F6\u4F5C\u4E3A\u6700\u540E\u624B\u6BB5\u76F4\u63A5\u79FB\u9664\u5F39\u7A97 DOM \u8282\u70B9\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_fill_form",
+      description: "\u4E00\u6B21\u6027\u586B\u5199\u591A\u4E2A\u8868\u5355\u5B57\u6BB5\uFF0C\u53EF\u6309 selector\u3001name\u3001label\u3001placeholder \u6216\u5BF9\u8C61\u6620\u5C04\u5B9A\u4F4D\u63A7\u4EF6\u3002\u7528\u9014\uFF1A\u6279\u91CF\u586B\u8868\u3002\u573A\u666F\uFF1A\u767B\u5F55/\u6CE8\u518C/\u7ED3\u7B97\u7B49\u9700\u8981\u586B\u591A\u4E2A\u5B57\u6BB5\u5E76\u63D0\u4EA4\u7684\u8868\u5355\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          fields: {
+            type: "array",
+            description: '\u5B57\u6BB5\u5217\u8868\u3002\u793A\u4F8B\uFF1A[{selector:"input[name=email]", value:"me@example.com"}, {label:"Password", value:"secret"}, {selector:"#remember", action:"check"}]\uFF1B\u8FD0\u884C\u65F6\u4E5F\u63A5\u53D7\u5BF9\u8C61\u6620\u5C04\u5199\u6CD5\u3002',
+            items: {
+              type: "object",
+              properties: {
+                selector: { type: "string", description: "\u8F93\u5165\u6846/\u4E0B\u62C9/\u6587\u672C\u57DF\u7684 CSS selector\u3002" },
+                name: { type: "string", description: "\u8868\u5355\u63A7\u4EF6\u7684 name \u6216 id\uFF08\u515C\u5E95\u5B9A\u4F4D\uFF09\u3002" },
+                label: { type: "string", description: "\u5B57\u6BB5\u9644\u8FD1\u7684\u53EF\u89C1 label \u6587\u672C\u3002" },
+                placeholder: { type: "string", description: "\u7528\u4E8E\u5339\u914D\u7684 placeholder \u6587\u672C\u3002" },
+                value: { type: ["string", "number", "boolean"], description: "\u8981\u8BBE\u7F6E\u7684\u503C\u3002" },
+                action: { type: "string", enum: ["set", "type", "select", "check", "uncheck", "click"], description: "\u5982\u4F55\u5E94\u7528\u503C\uFF1Aset \u8BBE\u503C\u3001type \u6A21\u62DF\u8F93\u5165\u3001select \u9009\u62E9\u3001check/uncheck \u52FE\u9009\u3001click \u70B9\u51FB\u3002\u9ED8\u8BA4 set\u3002" }
+              }
+            }
+          },
+          submit_selector: { type: "string", description: "\u586B\u5B8C\u540E\u8981\u70B9\u51FB\u7684\u63D0\u4EA4\u6309\u94AE CSS selector\u3002" }
+        },
+        required: ["fields"]
+      }
+    },
+    {
+      name: "browser_select",
+      description: "\u5728\u539F\u751F <select> \u4E0B\u62C9\u6216\u5E38\u89C1\u81EA\u5B9A\u4E49\u4E0B\u62C9/\u5217\u8868\u6846\u4E2D\u9009\u62E9\u67D0\u9879\uFF1A\u901A\u8FC7\u70B9\u51FB\u63A7\u4EF6\u5E76\u6309\u9009\u9879\u6587\u672C/\u503C\u5339\u914D\u3002\u7528\u9014\uFF1A\u5904\u7406\u4E0B\u62C9\u9009\u62E9\u3002\u573A\u666F\uFF1A\u9009\u62E9\u56FD\u5BB6\u3001\u57CE\u5E02\u3001\u6570\u91CF\u7B49\u4E0B\u62C9\u9879\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u4E0B\u62C9/\u81EA\u5B9A\u4E49\u4E0B\u62C9\u63A7\u4EF6\u7684 CSS selector\u3002" },
+          value: { type: "string", description: "\u8981\u9009\u62E9\u7684\u9009\u9879\u503C\u6216\u53EF\u89C1\u6587\u672C\u3002" },
+          text: { type: "string", description: "value \u7684\u522B\u540D\u3002" },
+          option_text: { type: "string", description: "value \u7684\u522B\u540D\u3002" }
+        },
+        required: ["selector"]
+      }
+    },
+    {
+      name: "browser_iframe_list",
+      description: "\u5217\u51FA\u5F53\u524D\u9875\u9762\u7684 iframe/frame \u5143\u7D20\uFF0C\u5305\u542B src/name/title/\u53EF\u8BBF\u95EE\u6027\u4FE1\u606F\u548C\u89C6\u53E3\u77E9\u5F62\u3002\u7528\u9014\uFF1A\u53D1\u73B0\u5185\u5D4C\u6846\u67B6\u3002\u573A\u666F\uFF1A\u76EE\u6807\u5185\u5BB9\u5728 iframe \u4E2D\u65F6\uFF0C\u5148\u5B9A\u4F4D\u6846\u67B6\u518D\u51B3\u5B9A\u5982\u4F55\u64CD\u4F5C\u3002",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_performance",
+      description: "\u8BFB\u53D6\u9875\u9762\u6027\u80FD\u6307\u6807\u548C\u6162\u8D44\u6E90\uFF0C\u6570\u636E\u6765\u81EA PerformanceNavigationTiming \u4E0E ResourceTiming\u3002\u7528\u9014\uFF1A\u8BC4\u4F30\u9875\u9762\u52A0\u8F7D\u8868\u73B0\u3002\u573A\u666F\uFF1A\u6392\u67E5\u9875\u9762\u5361\u987F\u3001\u7EDF\u8BA1\u52A0\u8F7D\u8017\u65F6\u4E0E\u6162\u8D44\u6E90\u3002",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_network_log",
+      description: "\u4EE5\u8F7B\u91CF\u7F51\u7EDC\u65E5\u5FD7\u5F62\u5F0F\u8FD4\u56DE\u88AB\u52A8\u7684\u8D44\u6E90 timing \u6761\u76EE\u3002\u6CE8\u610F\uFF1A\u8FD9\u4E0D\u662F\u4E3B\u52A8\u7684\u8BF7\u6C42\u62E6\u622A\u3002\u7528\u9014\uFF1A\u7C97\u7565\u4E86\u89E3\u9875\u9762\u52A0\u8F7D\u4E86\u54EA\u4E9B\u8D44\u6E90\u3002\u573A\u666F\uFF1A\u68C0\u67E5\u63A5\u53E3/\u8D44\u6E90\u662F\u5426\u88AB\u52A0\u8F7D\u3001\u7EDF\u8BA1\u8BF7\u6C42\u6E05\u5355\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684\u8BF7\u6C42/\u8D44\u6E90\u6761\u76EE\u6570\u3002\u9ED8\u8BA4 20\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_file_upload",
+      description: "\u7528\u5185\u5B58\u4E2D\u7684\u6587\u4EF6\u5185\u5BB9\u586B\u5145 <input type=file>\u3002\u6CE8\u610F\uFF1A\u6269\u5C55\u65E0\u6CD5\u8BFB\u53D6\u672C\u673A\u6587\u4EF6\u7CFB\u7EDF\u8DEF\u5F84\uFF0C\u5FC5\u987B\u76F4\u63A5\u63D0\u4F9B\u5185\u5BB9\u3002\u7528\u9014\uFF1A\u4E0A\u4F20\u6587\u4EF6\u3002\u573A\u666F\uFF1A\u628A\u4E00\u6BB5\u6587\u672C/base64 \u5185\u5BB9\u4F5C\u4E3A\u6587\u4EF6\u4E0A\u4F20\u5230\u7F51\u9875\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u6587\u4EF6\u8F93\u5165\u6846\u7684 CSS selector\u3002\u9ED8\u8BA4 input[type=file]\u3002" },
+          files: {
+            type: "array",
+            description: '\u8981\u5408\u6210\u7684\u6587\u4EF6\uFF0C\u4F8B\u5982 [{name:"a.txt", content:"hello", type:"text/plain"}]\uFF0C\u6216\u8BBE\u7F6E encoding:"base64"\u3002',
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "\u6587\u4EF6\u540D\u3002" },
+                content: { type: "string", description: "\u6587\u4EF6\u5185\u5BB9\uFF08\u6309 encoding \u89E3\u91CA\uFF09\u3002" },
+                type: { type: "string", description: "MIME \u7C7B\u578B\uFF0C\u5982 text/plain\u3002" },
+                encoding: { type: "string", enum: ["text", "base64"], description: "content \u7684\u7F16\u7801\uFF1Atext \u7EAF\u6587\u672C\u6216 base64\u3002" }
+              },
+              required: ["name", "content"]
+            }
+          }
+        },
+        required: ["files"]
+      }
+    },
+    {
+      name: "browser_download",
+      description: "\u901A\u8FC7 chrome.downloads \u4ECE\u67D0\u4E2A URL \u53D1\u8D77\u6D4F\u89C8\u5668\u4E0B\u8F7D\u3002\u7528\u9014\uFF1A\u4FDD\u5B58\u6587\u4EF6\u5230\u672C\u5730\u4E0B\u8F7D\u76EE\u5F55\u3002\u573A\u666F\uFF1A\u4E0B\u8F7D\u5BFC\u51FA\u6587\u4EF6\u3001\u56FE\u7247\u3001\u9644\u4EF6\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "\u8981\u4E0B\u8F7D\u7684 URL\u3002" },
+          filename: { type: "string", description: "\u53EF\u9009\uFF1A\u4E0B\u8F7D\u76EE\u5F55\u4E0B\u7684\u76F8\u5BF9\u6587\u4EF6\u540D\u3002" },
+          save_as: { type: "boolean", description: "\u663E\u793A\u300C\u53E6\u5B58\u4E3A\u300D\u5BF9\u8BDD\u6846\u3002" }
+        },
+        required: ["url"]
+      }
+    },
+    {
+      name: "browser_cookie_list",
+      description: "\u5217\u51FA\u5F53\u524D\u6807\u7B7E\u9875 URL \u6216\u6307\u5B9A\u57DF\u540D\u7684 cookie\u3002\u7528\u9014\uFF1A\u67E5\u770B\u4F1A\u8BDD\u72B6\u6001\u3002\u573A\u666F\uFF1A\u68C0\u67E5\u767B\u5F55\u6001\u3001\u6392\u67E5\u9274\u6743 cookie \u662F\u5426\u5B58\u5728\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "cookie \u6240\u5C5E URL\u3002\u9ED8\u8BA4\u5F53\u524D\u6807\u7B7E\u9875 URL\u3002" },
+          domain: { type: "string", description: "\u53EF\u9009\uFF1A\u6309\u57DF\u540D\u8FC7\u6EE4\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_cookie_get",
+      description: "\u6309\u540D\u79F0\u8BFB\u53D6\u5F53\u524D\u6807\u7B7E\u9875 URL \u6216\u6307\u5B9A URL \u7684\u5355\u4E2A cookie\u3002\u7528\u9014\uFF1A\u53D6\u67D0\u4E2A\u5177\u4F53 cookie \u503C\u3002\u573A\u666F\uFF1A\u8BFB\u53D6 session token\u3001\u8BFB\u53D6\u504F\u597D\u8BBE\u7F6E cookie\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "cookie \u6240\u5C5E URL\u3002\u9ED8\u8BA4\u5F53\u524D\u6807\u7B7E\u9875 URL\u3002" },
+          name: { type: "string", description: "cookie \u540D\u79F0\u3002" }
+        },
+        required: ["name"]
+      }
+    },
+    {
+      name: "browser_cookie_set",
+      description: "\u4E3A\u5F53\u524D\u6807\u7B7E\u9875 URL \u6216\u6307\u5B9A URL \u8BBE\u7F6E\u5355\u4E2A cookie\u3002\u7528\u9014\uFF1A\u5199\u5165\u4F1A\u8BDD/\u504F\u597D cookie\u3002\u573A\u666F\uFF1A\u6CE8\u5165\u767B\u5F55\u6001\u3001\u8BBE\u7F6E\u8BED\u8A00\u6216\u540C\u610F\u6807\u8BB0\uFF08\u8BF7\u8C28\u614E\uFF0C\u5C5E\u5199\u5165\u64CD\u4F5C\uFF09\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "cookie \u6240\u5C5E URL\u3002\u9ED8\u8BA4\u5F53\u524D\u6807\u7B7E\u9875 URL\u3002" },
+          name: { type: "string", description: "cookie \u540D\u79F0\u3002" },
+          value: { type: "string", description: "cookie \u503C\u3002" },
+          domain: { type: "string", description: "cookie \u57DF\u540D\u3002" },
+          path: { type: "string", description: "cookie \u8DEF\u5F84\u3002" },
+          secure: { type: "boolean", description: "\u662F\u5426\u4EC5 HTTPS \u4F20\u8F93\u3002" },
+          http_only: { type: "boolean", description: "\u662F\u5426\u6807\u8BB0 HttpOnly\u3002" },
+          expiration_date: { type: "number", description: "\u8FC7\u671F\u65F6\u95F4\uFF08Unix \u79D2\uFF09\u3002" }
+        },
+        required: ["name"]
+      }
+    },
+    {
+      name: "browser_cookie_delete",
+      description: "\u6309\u540D\u79F0\u5220\u9664\u5F53\u524D\u6807\u7B7E\u9875 URL \u6216\u6307\u5B9A URL \u7684\u5355\u4E2A cookie\u3002\u7528\u9014\uFF1A\u6E05\u9664\u67D0\u4E2A cookie\u3002\u573A\u666F\uFF1A\u9000\u51FA\u767B\u5F55\u3001\u6E05\u6389\u67D0\u9879\u504F\u597D\uFF08\u5C5E\u5199\u5165\u64CD\u4F5C\uFF09\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "cookie \u6240\u5C5E URL\u3002\u9ED8\u8BA4\u5F53\u524D\u6807\u7B7E\u9875 URL\u3002" },
+          name: { type: "string", description: "cookie \u540D\u79F0\u3002" }
+        },
+        required: ["name"]
+      }
+    },
+    {
+      name: "browser_tab_list",
+      description: "\u5217\u51FA\u6240\u6709\u6253\u5F00\u7684\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u3002\u7528\u9014\uFF1A\u4E86\u89E3\u5F53\u524D\u6709\u54EA\u4E9B\u6807\u7B7E\u3002\u573A\u666F\uFF1A\u5728\u591A\u6807\u7B7E\u95F4\u5207\u6362\u3001\u5173\u95ED\u67D0\u4E2A\u6807\u7B7E\u524D\u5148\u67E5 ID\u3002",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_tab_open",
+      description: "\u7528\u6307\u5B9A URL \u6253\u5F00\u4E00\u4E2A\u65B0\u6807\u7B7E\u9875\u3002\u7528\u9014\uFF1A\u5728\u4E0D\u6253\u65AD\u5F53\u524D\u9875\u7684\u60C5\u51B5\u4E0B\u5E76\u884C\u6253\u5F00\u7F51\u5740\u3002\u573A\u666F\uFF1A\u5F00\u591A\u4E2A\u9875\u9762\u5BF9\u6BD4\u3001\u540E\u53F0\u9884\u52A0\u8F7D\u3002",
+      input_schema: {
+        type: "object",
+        properties: { url: { type: "string", description: "\u65B0\u6807\u7B7E\u9875\u8981\u6253\u5F00\u7684 URL\u3002" } },
+        required: ["url"]
+      }
+    },
+    {
+      name: "browser_tab_close",
+      description: "\u6309\u6807\u7B7E ID \u5173\u95ED\u6807\u7B7E\u9875\uFF1B\u4E0D\u4F20 ID \u5219\u5173\u95ED\u5F53\u524D\u6D3B\u52A8\u6807\u7B7E\u3002\u7528\u9014\uFF1A\u6E05\u7406\u591A\u4F59\u6807\u7B7E\u3002\u573A\u666F\uFF1A\u5B8C\u6210\u67D0\u9875\u9762\u4EFB\u52A1\u540E\u5173\u95ED\u5B83\u3002",
+      input_schema: {
+        type: "object",
+        properties: { tab_id: { type: "number", description: "\u8981\u5173\u95ED\u7684\u6807\u7B7E ID\u3002" } }
+      }
+    },
+    {
+      name: "browser_history_back",
+      description: "\u8BA9\u5F53\u524D\u6807\u7B7E\u5728\u5386\u53F2\u8BB0\u5F55\u4E2D\u540E\u9000\u4E00\u6B65\u3002\u7528\u9014\uFF1A\u8FD4\u56DE\u4E0A\u4E00\u9875\u3002\u573A\u666F\uFF1A\u8BEF\u5165\u8BE6\u60C5\u9875\u540E\u9000\u56DE\u5217\u8868\u3002",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_history_forward",
+      description: "\u8BA9\u5F53\u524D\u6807\u7B7E\u5728\u5386\u53F2\u8BB0\u5F55\u4E2D\u524D\u8FDB\u4E00\u6B65\u3002\u7528\u9014\uFF1A\u64A4\u9500\u4E00\u6B21\u540E\u9000\u3002\u573A\u666F\uFF1A\u540E\u9000\u540E\u53C8\u60F3\u56DE\u5230\u521A\u624D\u7684\u9875\u9762\u3002",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_clipboard_write",
+      description: "\u628A\u6587\u672C\u5199\u5165\u7CFB\u7EDF\u526A\u8D34\u677F\u3002\u7528\u9014\uFF1A\u590D\u5236\u5185\u5BB9\u4F9B\u5176\u4ED6\u7A0B\u5E8F\u7C98\u8D34\u3002\u573A\u666F\uFF1A\u590D\u5236\u63D0\u53D6\u5230\u7684\u7ED3\u679C\u3001\u590D\u5236\u751F\u6210\u7684\u94FE\u63A5\u3002",
+      input_schema: {
+        type: "object",
+        properties: { text: { type: "string", description: "\u8981\u590D\u5236\u5230\u526A\u8D34\u677F\u7684\u6587\u672C\u3002" } },
+        required: ["text"]
+      }
+    },
+    {
+      name: "browser_storage_get",
+      description: "\u8BFB\u53D6\u9875\u9762 localStorage \u6216 sessionStorage \u4E2D\u7684\u67D0\u4E2A key\u3002\u7528\u9014\uFF1A\u67E5\u770B\u524D\u7AEF\u5B58\u50A8\u72B6\u6001\u3002\u573A\u666F\uFF1A\u8BFB\u53D6\u767B\u5F55 token\u3001\u7528\u6237\u504F\u597D\u3001\u8349\u7A3F\u6570\u636E\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: "\u5B58\u50A8\u952E\u540D\u3002" },
+          type: { type: "string", enum: ["local", "session"], description: "\u5B58\u50A8\u7C7B\u578B\uFF1Alocal \u6216 session\u3002\u9ED8\u8BA4 local\u3002" }
+        },
+        required: ["key"]
+      }
+    },
+    {
+      name: "browser_storage_set",
+      description: "\u5728\u9875\u9762 localStorage \u6216 sessionStorage \u4E2D\u8BBE\u7F6E\u67D0\u4E2A key\u3002\u7528\u9014\uFF1A\u5199\u5165\u524D\u7AEF\u5B58\u50A8\u3002\u573A\u666F\uFF1A\u6CE8\u5165\u504F\u597D\u3001\u8BBE\u7F6E\u6807\u8BB0\u4F4D\uFF08\u5C5E\u5199\u5165\u64CD\u4F5C\uFF09\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: "\u5B58\u50A8\u952E\u540D\u3002" },
+          value: { type: "string", description: "\u8981\u5B58\u50A8\u7684\u503C\u3002" },
+          type: { type: "string", enum: ["local", "session"], description: "\u5B58\u50A8\u7C7B\u578B\uFF1Alocal \u6216 session\u3002\u9ED8\u8BA4 local\u3002" }
+        },
+        required: ["key"]
+      }
+    },
+    {
+      name: "browser_storage_remove",
+      description: "\u4ECE\u9875\u9762 localStorage \u6216 sessionStorage \u4E2D\u5220\u9664\u67D0\u4E2A key\u3002\u7528\u9014\uFF1A\u6E05\u9664\u524D\u7AEF\u5B58\u50A8\u9879\u3002\u573A\u666F\uFF1A\u6E05\u6389\u67D0\u4E2A\u6807\u8BB0\u6216\u7F13\u5B58\uFF08\u5C5E\u5199\u5165\u64CD\u4F5C\uFF09\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: "\u5B58\u50A8\u952E\u540D\u3002" },
+          type: { type: "string", enum: ["local", "session"], description: "\u5B58\u50A8\u7C7B\u578B\uFF1Alocal \u6216 session\u3002\u9ED8\u8BA4 local\u3002" }
+        },
+        required: ["key"]
+      }
+    },
+    {
+      name: "browser_storage_list",
+      description: "\u5217\u51FA\u9875\u9762 localStorage \u6216 sessionStorage \u7684 key\uFF0C\u53EF\u9009\u9644\u5E26 value\u3002\u7528\u9014\uFF1A\u76D8\u70B9\u524D\u7AEF\u5B58\u50A8\u3002\u573A\u666F\uFF1A\u6392\u67E5\u5B58\u4E86\u54EA\u4E9B\u6570\u636E\u3001\u6309\u524D\u7F00\u7B5B\u9009\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          prefix: { type: "string", description: "\u53EF\u9009\uFF1A\u6309\u952E\u540D\u524D\u7F00\u8FC7\u6EE4\u3002" },
+          include_values: { type: "boolean", description: "\u5728\u7ED3\u679C\u4E2D\u5305\u542B value\u3002" },
+          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684 key/\u6761\u76EE\u6570\u3002\u9ED8\u8BA4 100\u3002" },
+          type: { type: "string", enum: ["local", "session"], description: "\u5B58\u50A8\u7C7B\u578B\uFF1Alocal \u6216 session\u3002\u9ED8\u8BA4 local\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_session_save",
+      description: "\u4FDD\u5B58\u4E00\u4EFD\u8F7B\u91CF\u7684\u6D4F\u89C8\u5668\u4E0A\u4E0B\u6587\u5FEB\u7167\uFF1A\u5F53\u524D URL/\u6807\u9898\u52A0\u4E0A\u8BE5\u9875\u7684 localStorage/sessionStorage\u3002\u7528\u9014\uFF1A\u7559\u5B58\u4F1A\u8BDD\u73B0\u573A\u3002\u573A\u666F\uFF1A\u4FDD\u5B58\u767B\u5F55\u6001\u4EE5\u4FBF\u7A0D\u540E\u6062\u590D\u3001\u8BB0\u5F55\u67D0\u4E2A\u9875\u9762\u72B6\u6001\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "\u53EF\u9009\uFF1A\u4F1A\u8BDD id\u3002" },
+          name: { type: "string", description: "\u4FBF\u4E8E\u8BC6\u522B\u7684\u4F1A\u8BDD\u540D\u79F0\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_session_list",
+      description: "\u5217\u51FA\u5DF2\u4FDD\u5B58\u7684\u8F7B\u91CF\u6D4F\u89C8\u5668\u4E0A\u4E0B\u6587\u5FEB\u7167\u3002\u7528\u9014\uFF1A\u67E5\u770B\u53EF\u6062\u590D\u7684\u4F1A\u8BDD\u3002\u573A\u666F\uFF1A\u6062\u590D\u6216\u5220\u9664\u524D\u5148\u6D4F\u89C8\u5217\u8868\u3002",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_session_restore",
+      description: "\u6062\u590D\u4E00\u4EFD\u5DF2\u4FDD\u5B58\u7684\u8F7B\u91CF\u6D4F\u89C8\u5668\u4E0A\u4E0B\u6587\u5FEB\u7167\uFF1A\u5BFC\u822A\u5230\u5176 URL \u5E76\u8FD8\u539F\u5B58\u50A8\u3002\u7528\u9014\uFF1A\u56DE\u5230\u6B64\u524D\u4FDD\u5B58\u7684\u73B0\u573A\u3002\u573A\u666F\uFF1A\u6062\u590D\u767B\u5F55\u6001\u7EE7\u7EED\u4EFB\u52A1\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "\u4F1A\u8BDD id\u3002" },
+          name: { type: "string", description: "\u4F1A\u8BDD\u540D\u79F0\u3002" },
+          new_tab: { type: "boolean", description: "\u5728\u65B0\u6807\u7B7E\u9875\u4E2D\u6062\u590D\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_session_delete",
+      description: "\u5220\u9664\u4E00\u4EFD\u5DF2\u4FDD\u5B58\u7684\u8F7B\u91CF\u6D4F\u89C8\u5668\u4E0A\u4E0B\u6587\u5FEB\u7167\u3002\u7528\u9014\uFF1A\u6E05\u7406\u4E0D\u518D\u9700\u8981\u7684\u4F1A\u8BDD\u3002\u573A\u666F\uFF1A\u5220\u9664\u8FC7\u671F\u6216\u654F\u611F\u7684\u4F1A\u8BDD\u5FEB\u7167\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "\u4F1A\u8BDD id\u3002" },
+          name: { type: "string", description: "\u4F1A\u8BDD\u540D\u79F0\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_profile_info",
+      description: "\u8FD4\u56DE\u5F53\u524D\u6269\u5C55\u7684\u903B\u8F91 profile \u6807\u8BB0\u3002\u6CE8\u610F\uFF1A\u8FD9\u4E0D\u4F1A\u5207\u6362 Chrome \u7684\u7528\u6237\u914D\u7F6E\u6587\u4EF6\u3002\u7528\u9014\uFF1A\u67E5\u770B\u5F53\u524D\u72B6\u6001\u5206\u7EC4\u6807\u8BB0\u3002\u573A\u666F\uFF1A\u786E\u8BA4\u6B63\u5728\u4F7F\u7528\u54EA\u4E2A\u903B\u8F91 profile\u3002",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_profile_set",
+      description: "\u8BBE\u7F6E\u4E00\u4E2A\u6269\u5C55\u903B\u8F91 profile \u6807\u8BB0\u7528\u4E8E\u5206\u7EC4\u72B6\u6001\u3002\u6CE8\u610F\uFF1A\u6269\u5C55\u65E0\u6CD5\u5207\u6362 Chrome \u7528\u6237\u914D\u7F6E\u6587\u4EF6\u3002\u7528\u9014\uFF1A\u4E3A\u4F1A\u8BDD/\u72B6\u6001\u5206\u7EC4\u6253\u6807\u3002\u573A\u666F\uFF1A\u533A\u5206\u4E0D\u540C\u4EFB\u52A1\u7684\u5B58\u50A8\u5206\u7EC4\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "\u903B\u8F91 profile \u540D\u79F0\u3002" },
+          profile: { type: "string", description: "name \u7684\u522B\u540D\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_hover",
+      description: "\u628A\u9F20\u6807\u60AC\u505C hover \u5230\u67D0\u4E2A\u5143\u7D20\u4E0A\uFF0C\u4EE5\u663E\u793A tooltip \u6216\u4E0B\u62C9\u83DC\u5355\u3002\u7528\u9014\uFF1A\u89E6\u53D1\u60AC\u505C\u624D\u51FA\u73B0\u7684\u5185\u5BB9\u3002\u573A\u666F\uFF1A\u5C55\u5F00\u60AC\u505C\u83DC\u5355\u3001\u663E\u793A\u63D0\u793A\u6C14\u6CE1\u540E\u518D\u64CD\u4F5C\u3002",
+      input_schema: {
+        type: "object",
+        properties: { selector: { type: "string", description: "\u8981\u60AC\u505C\u5143\u7D20\u7684 CSS selector\u3002" } },
+        required: ["selector"]
+      }
+    },
+    {
+      name: "browser_page_info",
+      description: "\u83B7\u53D6\u4F60\u5F53\u524D\u5728\u9875\u9762\u4E0A\u7684\u4F4D\u7F6E\u4FE1\u606F\uFF1A\u6EDA\u52A8\u4F4D\u7F6E\uFF08scrollY\u3001\u767E\u5206\u6BD4\u3001\u662F\u5426\u5230\u9876/\u5230\u5E95\uFF09\u3001\u89C6\u53E3\u5C3A\u5BF8\u3001\u6574\u9875\u9AD8\u5EA6\u3001\u5F53\u524D\u5C0F\u8282\u6807\u9898\u3001\u89C6\u53E3\u5185\u6240\u6709\u6807\u9898\u3001\u5143\u7D20\u8BA1\u6570\u3002\u7528\u9014\uFF1A\u81EA\u6211\u5B9A\u4F4D\u3002\u573A\u666F\uFF1A\u6EDA\u52A8\u6216\u4EA4\u4E92\u524D\u540E\u8C03\u7528\uFF0C\u786E\u8BA4\u843D\u70B9\u548C\u9875\u9762\u7ED3\u6784\u3002",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_right_click",
+      description: "\u5728\u5143\u7D20\u4E0A\u53F3\u952E right-click\uFF08\u6253\u5F00\u4E0A\u4E0B\u6587\u83DC\u5355\uFF09\uFF0C\u53EF\u7528 CSS selector\u3001\u53EF\u89C1\u6587\u672C\u6216\u5750\u6807\u5B9A\u4F4D\u3002\u7528\u9014\uFF1A\u89E6\u53D1\u53F3\u952E\u83DC\u5355\u3002\u573A\u666F\uFF1A\u6253\u5F00\u300C\u5728\u65B0\u6807\u7B7E\u6253\u5F00\u300D\u300C\u68C0\u67E5\u300D\u7B49\u4E0A\u4E0B\u6587\u64CD\u4F5C\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u5143\u7D20\u7684\u53EF\u89C1\u6587\u672C\u3002" },
+          x: { type: "number", description: "X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          y: { type: "number", description: "Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_double_click",
+      description: "\u53CC\u51FB double-click \u5143\u7D20\uFF0C\u53EF\u7528 CSS selector\u3001\u53EF\u89C1\u6587\u672C\u6216\u5750\u6807\u5B9A\u4F4D\uFF08\u5982\u9009\u4E2D\u4E00\u4E2A\u8BCD\u6216\u6253\u5F00\u67D0\u9879\uFF09\u3002\u7528\u9014\uFF1A\u9700\u8981\u53CC\u51FB\u624D\u751F\u6548\u7684\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u53CC\u51FB\u9009\u8BCD\u3001\u53CC\u51FB\u6253\u5F00\u6587\u4EF6\u9879\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u5143\u7D20\u7684\u53EF\u89C1\u6587\u672C\u3002" },
+          x: { type: "number", description: "X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          y: { type: "number", description: "Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_drag",
+      description: "\u4ECE\u6E90\u5143\u7D20/\u70B9\u62D6\u62FD drag \u5230\u76EE\u6807\u5143\u7D20/\u70B9\u5E76\u653E\u4E0B\uFF0C\u89E6\u53D1 HTML5\u3001pointer \u548C mouse \u4E8B\u4EF6\uFF0C\u5E76\u8FD4\u56DE\u6E90\u662F\u5426\u660E\u663E\u79FB\u52A8\u7684\u8BCA\u65AD\u4FE1\u606F\u3002\u7528\u9014\uFF1A\u62D6\u653E\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u62D6\u52A8\u6392\u5E8F\u3001\u628A\u5143\u7D20\u62D6\u5165\u6295\u653E\u533A\u3001\u6ED1\u5757\u64CD\u4F5C\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u6E90\u5143\u7D20 CSS selector\u3002" },
+          text: { type: "string", description: "\u6E90\u5143\u7D20\u53EF\u89C1\u6587\u672C\u3002" },
+          x: { type: "number", description: "\u6E90\u70B9 X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          y: { type: "number", description: "\u6E90\u70B9 Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          to_selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20 CSS selector\u3002" },
+          to_text: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u53EF\u89C1\u6587\u672C\u3002" },
+          to_x: { type: "number", description: "\u76EE\u6807\u70B9 X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          to_y: { type: "number", description: "\u76EE\u6807\u70B9 Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_press_key",
+      description: "\u5728\u7126\u70B9\u5143\u7D20\u6216\u6307\u5B9A selector \u4E0A\u6309\u4E0B\u67D0\u4E2A\u952E\uFF08\u53EF\u5E26\u4FEE\u9970\u952E\uFF09\u3002\u7528\u9014\uFF1A\u952E\u76D8\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u6309 Enter \u63D0\u4EA4\u3001Escape \u5173\u95ED\u3001Tab \u5207\u6362\u3001\u65B9\u5411\u952E\u3001Ctrl+A \u7B49\u5FEB\u6377\u952E\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: '\u952E\u540D\uFF0C\u5982 "Enter"\u3001"Escape"\u3001"Tab"\u3001"ArrowDown"\u3001"a"\u3002' },
+          selector: { type: "string", description: "\u53EF\u9009\uFF1A\u6309\u952E\u524D\u5148\u805A\u7126\u7684 CSS selector\u3002" },
+          ctrl: { type: "boolean", description: "\u6309\u4F4F Ctrl\u3002" },
+          shift: { type: "boolean", description: "\u6309\u4F4F Shift\u3002" },
+          alt: { type: "boolean", description: "\u6309\u4F4F Alt\u3002" },
+          meta: { type: "boolean", description: "\u6309\u4F4F Meta/Cmd\u3002" }
+        },
+        required: ["key"]
+      }
+    },
+    {
+      name: "card_list",
+      description: "\u5217\u51FA\u5DF2\u4FDD\u5B58\u7684\u8BB0\u5FC6\u5361\u7247 card\uFF08\u81EA\u52A8\u5316\u6D41\u7A0B\uFF09\uFF0C\u8FD4\u56DE\u6BCF\u5F20\u5361\u7247\u7684 id\u3001name\u3001description \u548C\u6B65\u9AA4\u6570\u3002\u7528\u9014\uFF1A\u67E5\u770B\u53EF\u590D\u7528\u7684\u6D4F\u89C8\u5668\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u8FD0\u884C\u6216\u7F16\u8F91\u5361\u7247\u524D\u5148\u6D4F\u89C8\u6E05\u5355\u3002",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "card_get",
+      description: "\u6309 id \u6216 name \u8BFB\u53D6\u67D0\u5F20\u5DF2\u4FDD\u5B58\u5361\u7247\u7684\u5B8C\u6574\u6B65\u9AA4\u3002\u7528\u9014\uFF1A\u67E5\u770B\u6D41\u7A0B\u7EC6\u8282\u3002\u573A\u666F\uFF1A\u8FD0\u884C\u524D\u786E\u8BA4\u6B65\u9AA4\u3001\u4FEE\u590D\u524D\u5148\u68C0\u67E5\u67D0\u6B65\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "\u5361\u7247 id\u3002" },
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" }
+        }
+      }
+    },
+    {
+      name: "card_save",
+      description: "\u628A\u4E00\u8FDE\u4E32\u6D4F\u89C8\u5668\u6B65\u9AA4\u4FDD\u5B58\u4E3A\u53EF\u590D\u7528\u7684\u8BB0\u5FC6\u5361\u7247\u3002\u6B65\u9AA4\u652F\u6301 {{name}} \u5F62\u5F0F\u7684 args \u6A21\u677F\u3001\u53EF\u9009 if \u6761\u4EF6\u3001save_as \u53D8\u91CF\u4EE5\u53CA var_set \u4F2A\u6B65\u9AA4\u3002\u7528\u9014\uFF1A\u6C89\u6DC0\u53EF\u91CD\u590D\u6267\u884C\u7684\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u628A\u4E00\u6B21\u6210\u529F\u7684\u591A\u6B65\u64CD\u4F5C\u56FA\u5316\u4E0B\u6765\u53CD\u590D\u4F7F\u7528\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\u3002" },
+          description: { type: "string", description: "\u8BE5\u6D41\u7A0B\u505A\u4EC0\u4E48\u3002" },
+          mode: { type: "string", enum: ["replace", "merge", "new"], description: "\u540C\u540D\u51B2\u7A81\u65F6\u7684\u5904\u7406\uFF1Areplace \u8986\u76D6\u3001merge \u5408\u5E76\u3001new \u53E6\u5B58\u3002\u9ED8\u8BA4 replace\u3002" },
+          steps: {
+            type: "array",
+            description: "\u6309\u987A\u5E8F\u6267\u884C\u7684\u6B65\u9AA4\u3002",
+            items: {
+              type: "object",
+              properties: {
+                tool: { type: "string", description: "\u4E00\u4E2A browser_* \u5DE5\u5177\u540D\uFF0C\u5982 browser_navigate\u3002" },
+                args: { type: "object", description: "\u8BE5\u5DE5\u5177\u7684\u53C2\u6570\u3002" },
+                note: { type: "string", description: "\u5907\u6CE8\uFF1A\u7528\u81EA\u7136\u8BED\u8A00\u63CF\u8FF0\u8FD9\u4E00\u6B65\u3002" },
+                if: { type: ["string", "object", "boolean"], description: '\u53EF\u9009\u6761\u4EF6\uFF0C\u5982 "item.enabled" \u6216 {var:"last.success", equals:true}\u3002' },
+                save_as: { type: "string", description: "\u628A\u8FD9\u4E00\u6B65\u7684\u7ED3\u679C\u5B58\u5165\u67D0\u4E2A\u53D8\u91CF\u540D\u3002" }
+              },
+              required: ["tool"]
+            }
+          }
+        },
+        required: ["name", "steps"]
+      }
+    },
+    {
+      name: "card_update_step",
+      description: "\u6309 index \u4FEE\u590D\u4E00\u5F20\u5DF2\u6709\u5361\u7247\u7684\u67D0\u4E00\u6B65\u2014\u2014\u6539\u5B83\u7684 tool\u3001args \u6216 note\u3002\u7528\u9014\uFF1A\u4FEE\u8865\u6D41\u7A0B\u3002\u573A\u666F\uFF1Acard_run \u62A5\u544A\u67D0\u6B65\u5931\u8D25\u540E\uFF0C\u5355\u72EC\u4FEE\u6B63\u8BE5\u6B65\u800C\u4E0D\u5FC5\u91CD\u5B58\u6574\u5F20\u5361\u7247\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "\u5361\u7247 id\u3002" },
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
+          index: { type: "number", description: "\u8981\u4FEE\u6539\u6B65\u9AA4\u7684 0 \u8D77\u59CB\u4E0B\u6807\u3002" },
+          tool: { type: "string", description: "\u65B0\u7684\u5DE5\u5177\u540D\uFF08\u53EF\u9009\uFF09\u3002" },
+          args: { type: "object", description: "\u65B0\u7684\u53C2\u6570\uFF08\u53EF\u9009\uFF09\u3002" },
+          note: { type: "string", description: "\u65B0\u7684\u5907\u6CE8\uFF08\u53EF\u9009\uFF09\u3002" }
+        },
+        required: ["index"]
+      }
+    },
+    {
+      name: "card_run",
+      description: "\u6309 id \u6216 name \u8FD0\u884C\u4E00\u5F20\u5DF2\u4FDD\u5B58\u7684\u5361\u7247\uFF0C\u652F\u6301 {{name}} \u6A21\u677F\u53D8\u91CF\u548C\u6761\u4EF6\u6B65\u9AA4\u3002\u7528\u9014\uFF1A\u6267\u884C\u6C89\u6DC0\u597D\u7684\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u4E00\u952E\u8DD1\u901A\u767B\u5F55\u3001\u6293\u53D6\u3001\u63D0\u4EA4\u7B49\u591A\u6B65\u64CD\u4F5C\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "\u5361\u7247 id\u3002" },
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
+          variables: { type: "object", description: "\u4F9B\u6B65\u9AA4\u6A21\u677F\u548C\u6761\u4EF6\u4F7F\u7528\u7684\u53D8\u91CF\u3002" },
+          vars: { type: "object", description: "variables \u7684\u522B\u540D\u3002" }
+        }
+      }
+    },
+    {
+      name: "card_run_batch",
+      description: "\u5BF9\u6BCF\u4E2A item \u5404\u8FD0\u884C\u4E00\u6B21\u5361\u7247\uFF0C\u6BCF\u6B21\u8FD0\u884C\u53EF\u62FF\u5230\u53D8\u91CF {item, index, ...variables}\u3002\u7528\u9014\uFF1A\u6279\u91CF\u6267\u884C\u540C\u4E00\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u5BF9\u4E00\u6279\u5173\u952E\u8BCD/\u8D26\u53F7/\u94FE\u63A5\u9010\u4E2A\u8DD1\u540C\u4E00\u5957\u64CD\u4F5C\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "\u5361\u7247 id\u3002" },
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
+          items: { type: "array", description: "\u6279\u5904\u7406\u6761\u76EE\u5217\u8868\u3002" },
+          variables: { type: "object", description: "\u6BCF\u6B21\u8FD0\u884C\u5171\u4EAB\u7684\u53D8\u91CF\u3002" },
+          stop_on_error: { type: "boolean", description: "\u9047\u5230\u7B2C\u4E00\u4E2A\u5931\u8D25\u7684 item \u5C31\u505C\u6B62\u3002\u9ED8\u8BA4 true\u3002" }
+        },
+        required: ["items"]
+      }
+    },
+    {
+      name: "card_schedule",
+      description: '\u4E3A\u5361\u7247\u8BBE\u5B9A\u8BA1\u5212\u8FD0\u884C\uFF1A\u53EF\u7528 interval_minutes\u3001run_at\uFF0C\u6216\u50CF "*/15 * * * *" \u8FD9\u6837\u7684\u7B80\u5355 cron\uFF08\u57FA\u4E8E Chrome alarms\uFF09\u3002\u7528\u9014\uFF1A\u5B9A\u65F6/\u5468\u671F\u6267\u884C\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u6BCF 15 \u5206\u949F\u6293\u4E00\u6B21\u3001\u6BCF\u5929\u5B9A\u70B9\u8DD1\u4E00\u6B21\u3002',
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "\u5361\u7247 id\u3002" },
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
+          schedule_id: { type: "string", description: "\u53EF\u9009\uFF1A\u8BA1\u5212 id\u3002" },
+          interval_minutes: { type: "number", description: "\u5468\u671F\u8FD0\u884C\u7684\u95F4\u9694\u5206\u949F\u6570\u3002" },
+          run_at: { type: "string", description: "\u4E00\u6B21\u6027\u8FD0\u884C\u7684 ISO \u65F6\u95F4\u3002" },
+          cron: { type: "string", description: "\u4EC5\u652F\u6301\u7B80\u5355\u7684\u6BCF N \u5206\u949F\u8BED\u6CD5\uFF0C\u5982 */15 * * * *\u3002" },
+          variables: { type: "object", description: "\u4F20\u7ED9\u8BA1\u5212\u8FD0\u884C\u7684\u53D8\u91CF\u3002" }
+        }
+      }
+    },
+    {
+      name: "card_schedule_list",
+      description: "\u5217\u51FA\u5DF2\u8BBE\u5B9A\u7684\u5361\u7247\u8BA1\u5212\u8FD0\u884C\u3002\u7528\u9014\uFF1A\u67E5\u770B\u5B9A\u65F6\u4EFB\u52A1\u3002\u573A\u666F\uFF1A\u5220\u9664\u6216\u6392\u67E5\u67D0\u4E2A\u8BA1\u5212\u524D\u5148\u6D4F\u89C8\u5217\u8868\u3002",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "card_schedule_delete",
+      description: "\u5220\u9664\u4E00\u4E2A\u5361\u7247\u8BA1\u5212\u8FD0\u884C\u3002\u7528\u9014\uFF1A\u53D6\u6D88\u5B9A\u65F6\u3002\u573A\u666F\uFF1A\u4E0D\u518D\u9700\u8981\u67D0\u4E2A\u5468\u671F\u4EFB\u52A1\u65F6\u79FB\u9664\u5B83\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          schedule_id: { type: "string", description: "\u8BA1\u5212 id\u3002" },
+          id: { type: "string", description: "schedule_id \u7684\u522B\u540D\u3002" }
+        }
+      }
+    },
+    {
+      name: "card_delete",
+      description: "\u6309 id \u6216 name \u5220\u9664\u4E00\u5F20\u5DF2\u4FDD\u5B58\u7684\u5361\u7247\u3002\u7528\u9014\uFF1A\u6E05\u7406\u4E0D\u518D\u4F7F\u7528\u7684\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u5220\u9664\u8FC7\u671F\u6216\u9519\u8BEF\u7684\u81EA\u52A8\u5316\u5361\u7247\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "\u5361\u7247 id\u3002" },
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" }
+        }
+      }
+    }
+  ];
+  var BROWSER_CAPABILITIES = BROWSER_TOOLS.map((t) => t.name);
+
+  // src/popup/mcp.ts
+  var overrides = {};
+  function nsOf(name) {
+    if (name.startsWith("card_"))
+      return "card";
+    const i = name.indexOf("_");
+    return i > 0 ? name.slice(0, i) : name.includes(".") ? name.split(".")[0] : "other";
+  }
+  function effDescription(t) {
+    return overrides[t.name]?.description?.trim() || t.description || "";
+  }
+  function effParamDescription(tool, param, raw) {
+    return overrides[tool]?.parameters?.[param]?.trim() || raw || "";
+  }
+  function isEdited(name) {
+    const o = overrides[name];
+    return !!(o && (o.description || o.parameters && Object.keys(o.parameters).length));
+  }
+  function showList() {
+    state.openToolName = null;
+    mcpDetailPane.classList.add("hidden");
+    mcpListPane.classList.remove("hidden");
+  }
+  async function renderMcpList() {
+    overrides = await getToolDescOverrides();
+    mcpCount.textContent = `${BROWSER_TOOLS.length} \u4E2A`;
+    mcpList.innerHTML = "";
+    const groups = /* @__PURE__ */ new Map();
+    for (const t of BROWSER_TOOLS) {
+      const ns = nsOf(t.name);
+      if (!groups.has(ns))
+        groups.set(ns, []);
+      groups.get(ns).push(t);
+    }
+    for (const ns of Array.from(groups.keys()).sort()) {
+      const title = document.createElement("div");
+      title.className = "ns-title";
+      title.textContent = `${ns}/ (${groups.get(ns).length})`;
+      mcpList.appendChild(title);
+      for (const t of groups.get(ns)) {
+        const el = document.createElement("div");
+        el.className = "tool-item";
+        el.innerHTML = `
+        <div class="tool-item-top">
+          <span class="tool-name">${esc(t.name)}</span>
+          ${isEdited(t.name) ? '<span class="tool-edited">\u5DF2\u81EA\u5B9A\u4E49</span>' : ""}
+        </div>
+        <div class="tool-desc">${esc((effDescription(t) || "\uFF08\u65E0\u63CF\u8FF0\uFF09").slice(0, 110))}</div>`;
+        el.addEventListener("click", () => void openTool(t.name));
+        mcpList.appendChild(el);
+      }
+    }
+  }
+  async function openTool(name) {
+    overrides = await getToolDescOverrides();
+    const tool = BROWSER_TOOLS.find((t) => t.name === name);
+    if (!tool)
+      return;
+    state.openToolName = name;
+    mcpListPane.classList.add("hidden");
+    mcpDetailPane.classList.remove("hidden");
+    mcpDetail.scrollTop = 0;
+    renderDetail(tool);
+  }
+  function paramEntries(tool) {
+    const props = tool.input_schema?.properties || {};
+    const required = new Set(tool.input_schema?.required || []);
+    return Object.keys(props).map((p) => {
+      const cfg = props[p] || {};
+      const t = Array.isArray(cfg.type) ? cfg.type.join("|") : cfg.type || "any";
+      return { name: p, type: String(t), required: required.has(p), desc: String(cfg.description || "") };
     });
-    connectBtn.addEventListener("click", () => state.port.postMessage({ type: "agent:connect" }));
-    disconnectBtn.addEventListener("click", () => state.port.postMessage({ type: "agent:disconnect" }));
+  }
+  function renderDetail(tool) {
+    const params = paramEntries(tool);
+    const paramHtml = params.length ? params.map((p) => `
+        <div class="param-row">
+          <div class="param-head">
+            <span class="param-name">${esc(p.name)}</span>
+            <span class="param-type">${esc(p.type)}</span>
+            ${p.required ? '<span class="param-req">\u5FC5\u586B</span>' : ""}
+          </div>
+          <div class="tool-desc">${esc(effParamDescription(tool.name, p.name, p.desc) || "\uFF08\u65E0\u8BF4\u660E\uFF09")}</div>
+          <input type="text" data-param="${esc(p.name)}" class="edit-param" placeholder="\u81EA\u5B9A\u4E49\u53C2\u6570\u8BF4\u660E\uFF08\u7559\u7A7A\u7528\u9ED8\u8BA4\uFF09" value="${esc(overrides[tool.name]?.parameters?.[p.name] || "")}" style="margin-top:4px;"/>
+        </div>`).join("") : '<div class="empty-note">\u8BE5\u5DE5\u5177\u65E0\u53C2\u6570</div>';
+    const argTemplate = JSON.stringify(
+      Object.fromEntries(params.filter((p) => p.required).map((p) => [p.name, ""])),
+      null,
+      2
+    );
+    mcpDetail.innerHTML = `
+    <div class="card">
+      <div class="card-title">${esc(tool.name)}</div>
+      <div class="tool-desc" style="font-size:11px;">${esc(effDescription(tool) || "\uFF08\u65E0\u63CF\u8FF0\uFF09")}</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">\u53C2\u6570\u8BF4\u660E</div>
+      ${paramHtml}
+    </div>
+
+    <div class="card">
+      <div class="card-title">\u270F\uFE0F \u7F16\u8F91\u63CF\u8FF0\uFF08\u672C\u5730\u4FDD\u5B58\uFF0C\u968F\u4E0A\u62A5\u540C\u6B65\u7ED9\u670D\u52A1\u5668\uFF09</div>
+      <div class="fg"><label>\u5DE5\u5177\u63CF\u8FF0\uFF08\u7528\u9014 + \u4F7F\u7528\u573A\u666F\uFF09</label>
+        <textarea class="ta" id="edit-desc" placeholder="\u7559\u7A7A\u4F7F\u7528\u9ED8\u8BA4\u63CF\u8FF0">${esc(overrides[tool.name]?.description || "")}</textarea>
+      </div>
+      <button class="btn btn-primary" id="edit-save">\u4FDD\u5B58\u63CF\u8FF0</button>
+      <button class="btn btn-secondary" id="edit-reset" style="margin-top:6px;">\u6062\u590D\u9ED8\u8BA4</button>
+      <div class="save-feedback" id="edit-feedback"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">\u{1F9EA} \u6D4B\u8BD5\u8C03\u7528 (mcp.test)</div>
+      <div class="login-hint">\u5728\u672C\u6D4F\u89C8\u5668\u76F4\u63A5\u6267\u884C\u8BE5\u5DE5\u5177\u5E76\u8FD4\u56DE\u539F\u59CB\u7ED3\u679C\u3002\u8BF7\u786E\u4FDD\u6709\u4E00\u4E2A\u6D3B\u52A8\u6807\u7B7E\u9875\u3002</div>
+      <div class="fg"><label>\u53C2\u6570 (JSON)</label>
+        <textarea class="ta" id="test-args" style="min-height:70px;font-family:'Cascadia Code',Consolas,monospace;">${esc(argTemplate)}</textarea>
+      </div>
+      <button class="btn btn-primary" id="test-run">\u25B6 \u6D4B\u8BD5</button>
+      <div class="test-result" id="test-result" style="display:none;"></div>
+    </div>`;
+    mcpDetail.querySelector("#edit-save").addEventListener("click", async () => {
+      const description = mcpDetail.querySelector("#edit-desc").value;
+      const parameters = {};
+      mcpDetail.querySelectorAll(".edit-param").forEach((inp) => {
+        parameters[inp.dataset.param] = inp.value;
+      });
+      await setToolDescOverride(tool.name, { description, parameters });
+      overrides = await getToolDescOverrides();
+      const fb = mcpDetail.querySelector("#edit-feedback");
+      fb.textContent = "\u5DF2\u4FDD\u5B58 \u2713 \u4E0B\u6B21\u8FDE\u63A5\u670D\u52A1\u5668\u65F6\u540C\u6B65";
+      fb.style.color = "var(--success)";
+      state.port.postMessage({ type: "agent:connect" });
+    });
+    mcpDetail.querySelector("#edit-reset").addEventListener("click", async () => {
+      await setToolDescOverride(tool.name, { description: "", parameters: {} });
+      overrides = await getToolDescOverrides();
+      renderDetail(tool);
+      state.port.postMessage({ type: "agent:connect" });
+    });
+    mcpDetail.querySelector("#test-run").addEventListener("click", () => {
+      const out = mcpDetail.querySelector("#test-result");
+      let args = {};
+      const raw = mcpDetail.querySelector("#test-args").value.trim();
+      if (raw) {
+        try {
+          args = JSON.parse(raw);
+        } catch (e) {
+          out.style.display = "block";
+          out.className = "test-result fail";
+          out.textContent = `\u53C2\u6570 JSON \u89E3\u6790\u5931\u8D25\uFF1A${e?.message || e}`;
+          return;
+        }
+      }
+      out.style.display = "block";
+      out.className = "test-result";
+      out.textContent = "\u6267\u884C\u4E2D\u2026";
+      const requestId = Math.random().toString(36).slice(2);
+      state.pendingTests.set(requestId, (r) => {
+        if (r.ok) {
+          out.className = "test-result ok";
+          out.textContent = "\u2713 \u6210\u529F\n" + safeStringify(r.result);
+        } else {
+          out.className = "test-result fail";
+          out.textContent = "\u2717 \u5931\u8D25\uFF1A" + (r.error || "\u672A\u77E5\u9519\u8BEF");
+        }
+      });
+      state.port.postMessage({ type: "mcp:test", requestId, tool: tool.name, args });
+    });
+  }
+  function safeStringify(v) {
+    try {
+      return typeof v === "string" ? v : JSON.stringify(v, null, 2);
+    } catch {
+      return String(v);
+    }
+  }
+  function resolveTest(requestId, r) {
+    const fn = state.pendingTests.get(requestId);
+    if (fn) {
+      fn(r);
+      state.pendingTests.delete(requestId);
+    }
+  }
+  function wireMcp() {
+    mcpBack.addEventListener("click", () => showList());
   }
 
   // src/popup/index.ts
@@ -980,56 +1511,28 @@
       switch (msg.type) {
         case "agent:status":
           setStatus(msg.status);
-          break;
-        case "activity:log":
-          addEntry(msg.entry);
+          if (typeof msg.aiConfigId !== "undefined")
+            setBoundAi(msg.aiConfigId ?? null);
           break;
         case "task:start":
-          addEntry({ id: msg.data.taskId, type: "task", status: "running", message: `\u6267\u884C: ${msg.data.tool}`, data: msg.data.args, timestamp: msg.data.timestamp });
+          state.stats.total += 1;
+          state.stats.running += 1;
+          renderStats();
           break;
         case "task:result":
-          addEntry({ id: msg.data.taskId + "_r", type: "task", status: msg.data.success ? "success" : "error", message: `${msg.data.success ? "\u5B8C\u6210" : "\u5931\u8D25"}: ${msg.data.tool}`, data: msg.data.result, timestamp: msg.data.timestamp });
+          state.stats.running = Math.max(0, state.stats.running - 1);
+          if (msg.data?.success)
+            state.stats.success += 1;
+          else
+            state.stats.failed += 1;
+          renderStats();
           break;
         case "settings:data":
           loadSettings(msg.settings);
           break;
-        case "connection:result": {
-          const r = msg.result || {};
-          const http = r.http || (typeof r.status !== "undefined" ? r : null);
-          const lines = [];
-          if (http) {
-            lines.push(http.success ? `HTTP \u2713 ${http.status} \xB7 ${http.ms}ms` : `HTTP \u2717 ${http.error}`);
-          }
-          if (Array.isArray(r.agentProbes) && r.agentProbes.length) {
-            for (const p of r.agentProbes) {
-              lines.push(p.ok ? `Agent \u2713 ${p.url}` : `Agent \u2717 ${p.url} \u2014 ${p.reason || ""}`);
-            }
-            if (r.agentOkUrl)
-              lines.push(`\u5C06\u8FDE\u63A5\u5230\uFF1A${r.agentOkUrl}`);
-          } else if (r.needsLogin) {
-            lines.push("Agent: \u672A\u767B\u5F55\uFF0C\u8DF3\u8FC7\u63A2\u6D4B");
-          }
-          const ok = !!(http?.success && (!r.agentProbes?.length || r.agentOkUrl));
-          testResult.textContent = lines.join("\n") || (ok ? "\u2713 \u5DF2\u8FDE\u63A5" : "\u2717 \u672A\u8FDE\u63A5");
-          testResult.className = `test-result ${ok ? "ok" : "fail"}`;
-          testResult.style.whiteSpace = "pre-line";
+        case "mcp:test:result":
+          resolveTest(msg.requestId, { ok: msg.ok, result: msg.result, error: msg.error });
           break;
-        }
-        case "card:progress": {
-          cardsRunStatus.textContent = `\u6267\u884C\u4E2D [${msg.index + 1}/${msg.total}] ${msg.note}` + (msg.status === "error" ? ` \u2717 ${msg.error || ""}` : msg.status === "success" ? " \u2713" : "");
-          const row = document.getElementById(`step-${msg.cardId}-${msg.index}`);
-          if (row) {
-            row.classList.remove("cur", "ok", "err");
-            row.classList.add(msg.status === "success" ? "ok" : msg.status === "error" ? "err" : "cur");
-          }
-          break;
-        }
-        case "card:done": {
-          state.runningCardId = null;
-          cardsRunStatus.textContent = msg.success ? "\u2713 \u5361\u7247\u6267\u884C\u5B8C\u6210" : msg.reason === "stopped" ? "\u5DF2\u505C\u6B62" : `\u2717 \u6267\u884C\u5931\u8D25\uFF1A${msg.reason || ""}`;
-          void renderCards();
-          break;
-        }
       }
     });
     state.port.onDisconnect.addListener(() => {
@@ -1039,12 +1542,12 @@
   }
   async function init() {
     initPort();
-    switchTab("cards");
+    renderStats();
+    void renderMcpList();
     const s = await getSettings();
     state.serverUrl = s.serverUrl || "";
     state.offlineMode = !!s.offlineMode;
     state.localModel = s.aiModel || "";
-    state.selectedMemberId = s.selectedAiConfigId || null;
     state.auth = await getAuth();
     loginAccount.value = state.auth.account || "";
     updateUserChip();
@@ -1065,8 +1568,6 @@
             await doLogout();
           } else {
             console.warn("getMe failed (transient), keeping session", err);
-            loginFeedback.textContent = "\u6682\u65F6\u65E0\u6CD5\u8FDE\u63A5\u670D\u52A1\u5668\uFF0C\u7A0D\u540E\u5C06\u81EA\u52A8\u91CD\u8BD5";
-            loginFeedback.style.color = "var(--warn)";
             try {
               await loadMembers();
             } catch {
@@ -1078,7 +1579,7 @@
   }
   wireUi();
   wireMembers();
-  wireCards();
   wireSettings();
+  wireMcp();
   void init();
 })();

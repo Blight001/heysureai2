@@ -1,13 +1,12 @@
 // popup/state.ts — shared mutable state for the popup UI.
 // The popup is a single bundled IIFE; every feature module reads and writes
 // this one `state` singleton instead of passing values around. Treat it as the
-// popup's in-memory store.
+// popup's in-memory store. The popup's main area is the MCP tool page; account,
+// status, settings and the AI member list are surfaced via modals.
 
-import { AgentStatus, ChatMessage, MemoryCard } from '../lib/types'
+import { AgentStatus } from '../lib/types'
 import { AuthState } from '../lib/storage'
-import { MemberConfig, ServerChatSession } from '../lib/client'
-
-export type TabName = 'cards' | 'settings'
+import { MemberConfig } from '../lib/client'
 
 export const STATUS_LABELS: Record<string, string> = {
   disconnected: '未连接', connecting: '连接中...', connected: '已连接',
@@ -19,34 +18,28 @@ export const ROLE_LABELS: Record<string, string> = {
 
 export const state = {
   currentTheme: 'dark' as 'dark' | 'light',
-  activeTab: 'cards' as TabName,
   currentStatus: 'disconnected' as AgentStatus,
-  chatHistory: [] as ChatMessage[],
-  chatBusy: false,
+  // Server-side bound AI for this device (from agent:registered). null = none
+  // assigned yet → status indicator shows yellow instead of green.
+  boundAiConfigId: null as number | null,
   hasAiKey: false,
-  // Assigned in initPort(); used before assignment never happens because the
-  // listeners that read it only fire after the popup has initialised.
+  // Assigned in initPort(); listeners that read it only fire after init.
   port: undefined as unknown as chrome.runtime.Port,
-  activeChatRequestId: null as string | null,
 
   serverUrl: '',
   offlineMode: false,
   localModel: '',
   auth: { token: '', account: '', userId: null, userName: '', avatar: '' } as AuthState,
-  // Cached data URL for the current account's avatar (hydrated from storage),
-  // used so renders are synchronous and offline-friendly. Empty = fall back to
-  // the live server URL.
+  // Cached data URL for the current account's avatar (hydrated from storage).
   avatarDataUrl: '',
   members: [] as MemberConfig[],
-  selectedMemberId: null as number | null,
-  activeRunId: null as string | null,
-  cards: [] as MemoryCard[],
-  expandedCardId: null as string | null,
-  runningCardId: null as string | null,
 
-  // Server-backed chat history. Populated only when useServerChat() is true.
-  serverSessions: [] as ServerChatSession[],
-  currentServerSessionId: '',
-  lastSyncedMessageId: 0,
-  chatHistoryLoading: false,
+  // ── Tool-call statistics (this popup session) ──
+  stats: { total: 0, running: 0, success: 0, failed: 0 },
+
+  // ── MCP tool page view state ──
+  // Currently opened tool name in the detail view, or null for the list.
+  openToolName: null as string | null,
+  // Pending mcp:test requestId → resolver, so the detail view can await a run.
+  pendingTests: new Map<string, (r: { ok: boolean; result?: any; error?: string }) => void>(),
 }

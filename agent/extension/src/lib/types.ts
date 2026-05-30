@@ -17,7 +17,6 @@ export interface AgentSettings {
   aiKey:        string
   aiBaseUrl:    string
   aiModel:      string
-  autoConnect:  boolean
   offlineMode:  boolean
   mouseFx:      boolean
   theme:        'dark' | 'light'
@@ -35,7 +34,6 @@ export const SETTING_DEFAULTS: AgentSettings = {
   aiKey:       '',
   aiBaseUrl:   'https://api.anthropic.com',
   aiModel:     'claude-sonnet-4-5',
-  autoConnect: false,
   offlineMode: false,
   mouseFx:     true,
   theme:       'dark',
@@ -67,22 +65,6 @@ export interface ActivityEntry {
   message:   string
   data?:     any
   timestamp: number
-}
-
-// ── Memory cards (automation workflows) ─────────────────────────────────────
-export interface AutomationStep {
-  tool: string                 // a browser_* MCP tool name
-  args: Record<string, any>    // tool arguments
-  note: string                 // 备注 — human-readable description of this step
-}
-
-export interface MemoryCard {
-  id:          string
-  name:        string
-  description: string
-  steps:       AutomationStep[]
-  createdAt:   number
-  updatedAt:   number
 }
 
 // ── AI types ──────────────────────────────────────────────────────────────
@@ -125,11 +107,11 @@ export type PopupMsg =
   | { type: 'agent:selected-ai'; aiConfigId: number | null }
   | { type: 'chat:send'; messages: ChatMessage[]; requestId?: string }
   | { type: 'connection:test' }
-  | { type: 'card:run'; cardId: string }
-  | { type: 'card:stop' }
+  // MCP tool tester: run one local browser tool and return its raw result.
+  | { type: 'mcp:test'; requestId: string; tool: string; args: Record<string, any> }
 
 export type BgMsg =
-  | { type: 'agent:status';    status: AgentStatus; reason?: string }
+  | { type: 'agent:status';    status: AgentStatus; reason?: string; aiConfigId?: number | null }
   | { type: 'activity:log';    entry: ActivityEntry }
   | { type: 'task:start';      data: any }
   | { type: 'task:result';     data: any }
@@ -137,5 +119,4 @@ export type BgMsg =
   | { type: 'chat:response';   text: string; toolsUsed?: string[]; toolEvents?: ChatToolEvent[]; requestId?: string }
   | { type: 'chat:error';      error: string; requestId?: string }
   | { type: 'connection:result'; result: any }
-  | { type: 'card:progress';   cardId: string; index: number; total: number; note: string; tool: string; status: string; error?: string }
-  | { type: 'card:done';       cardId: string; success: boolean; reason?: string }
+  | { type: 'mcp:test:result'; requestId: string; ok: boolean; result?: any; error?: string }

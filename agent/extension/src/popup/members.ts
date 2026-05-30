@@ -1,19 +1,17 @@
 // popup/members.ts — software-end account: login / logout and a read-only AI
-// member list. The device no longer picks its own AI; an operator assigns one
-// from the web "作坊" (Workshop) panel. This list is purely informational so
-// users can see which AIs exist for their account.
+// member list (shown in the members modal). The device no longer picks its own
+// AI; an operator assigns one from the web "作坊" (Workshop) panel. This list is
+// purely informational.
 
 import { state, ROLE_LABELS } from './state'
 import * as dom from './dom'
 import { roleOf, toolCount, hasBrowserMcpPermission, refreshAvatarCache } from './helpers'
 import { esc } from './markdown'
-import {
-  login as apiLogin, listConfigs, isAuthError, MemberConfig,
-} from '../lib/client'
+import { login as apiLogin, listConfigs, isAuthError } from '../lib/client'
 import { saveAuth, clearAuth, getAuth, saveSettings, clearAvatarCache } from '../lib/storage'
 import {
-  updateUserChip, renderStatus, renderSettingsViews,
-  switchTab, openLoginModal, closeLoginModal, openMembersModal, closeMembersModal,
+  updateUserChip, renderStatus, openLoginModal,
+  closeLoginModal, openMembersModal, closeMembersModal,
 } from './ui'
 
 export async function doLogin() {
@@ -41,7 +39,6 @@ export async function doLogin() {
     await refreshAvatarCache()
     updateUserChip()
     await loadMembers()
-    renderSettingsViews()
     // Logged in → link to the server. The device then shows up in the web
     // Workshop panel where an operator assigns it an AI.
     state.port.postMessage({ type: 'agent:connect' })
@@ -57,21 +54,14 @@ export async function doLogin() {
 
 export async function doLogout() {
   await clearAuth()
-  // Tell the background to drop its socket so the server sees us leaving.
-  // Without this the socket stays open and the agent keeps trying to
-  // re-register with an empty token (the server now rejects this, but the
-  // socket-level connection would still show "已连接" in the popup).
   state.port.postMessage({ type: 'auth:logout' })
   state.auth = await getAuth()
   state.avatarDataUrl = ''
   await clearAvatarCache()
   closeMembersModal()
   state.members = []
-  state.selectedMemberId = null
   updateUserChip()
   renderMembers()
-  renderSettingsViews()
-  switchTab('settings')
 }
 
 export async function loadMembers() {
@@ -82,11 +72,9 @@ export async function loadMembers() {
     const rows = await listConfigs(state.serverUrl, state.auth.token)
     state.members = rows.filter(hasBrowserMcpPermission)
     renderMembers()
-    renderSettingsViews()
     renderStatus()
   } catch (err: any) {
     if (isAuthError(err)) {
-      // token expired / invalid
       await doLogout()
       dom.loginFeedback.textContent = '登录已过期，请重新登录'
       dom.loginFeedback.style.color = 'var(--warn)'
@@ -104,7 +92,6 @@ export function renderMembers() {
     return
   }
   dom.membersEmpty.style.display = 'none'
-  // Read-only list — AI assignment happens server-side in the Workshop panel.
   for (const m of state.members) {
     const role = roleOf(m)
     const el = document.createElement('div')
@@ -127,27 +114,14 @@ export function wireMembers() {
   dom.userChip.addEventListener('click', () => openLoginModal())
   dom.userChip.addEventListener('keydown', (e) => {
     const key = (e as KeyboardEvent).key
-    if (key === 'Enter' || key === ' ') {
-      e.preventDefault()
-      openLoginModal()
-    }
+    if (key === 'Enter' || key === ' ') { e.preventDefault(); openLoginModal() }
   })
-  dom.loginModal.addEventListener('click', (e) => {
-    if (e.target === dom.loginModal) closeLoginModal()
-  })
+  dom.loginModal.addEventListener('click', (e) => { if (e.target === dom.loginModal) closeLoginModal() })
   dom.loginModalClose.addEventListener('click', () => closeLoginModal())
-  dom.statusPill.addEventListener('click', () => openMembersModal())
-  dom.statusPill.addEventListener('keydown', (e) => {
-    const key = (e as KeyboardEvent).key
-    if (key === 'Enter' || key === ' ') {
-      e.preventDefault()
-      openMembersModal()
-    }
-  })
-  dom.membersModal.addEventListener('click', (e) => {
-    if (e.target === dom.membersModal) closeMembersModal()
-  })
+  dom.membersModal.addEventListener('click', (e) => { if (e.target === dom.membersModal) closeMembersModal() })
   dom.membersModalClose.addEventListener('click', () => closeMembersModal())
   dom.membersRefresh.addEventListener('click', () => void loadMembers())
   dom.logoutBtn.addEventListener('click', () => void doLogout())
+  dom.connectBtn.addEventListener('click', () => state.port.postMessage({ type: 'agent:connect' }))
+  dom.disconnectBtn.addEventListener('click', () => state.port.postMessage({ type: 'agent:disconnect' }))
 }
