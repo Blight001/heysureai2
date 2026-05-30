@@ -306,9 +306,9 @@ def endpoint_bridge_tools_for_config(ai_config_id: Optional[int], user_id: Optio
 
 def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
     """Endpoint MCP tools available to an AI right now: the union of what its
-    online desktop and browser agents advertise, each narrowed by the saved
-    per-(AI, agent-type) permission scope. No saved scope row → no restriction
-    (every reported tool is allowed).
+    online endpoint agents (Linux / desktop / browser) advertise, each narrowed
+    by that individual agent's saved per-agent permission scope. No saved scope
+    row → no restriction (every reported tool is allowed).
 
     Resolved from the shared DB presence snapshot (``api.agent_presence``) so
     every process — gateway, ai-runtime, mcp-runtime, connector — gets the same
@@ -323,8 +323,8 @@ def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int
     from api.agent_mcp_permissions import get_scope
 
     tools: Set[str] = set()
-    for agent_type, caps in online_agents_for_config(user_id, config_id):
-        atype = agent_type or "desktop"
-        scope = get_scope(user_id, config_id, atype)
+    for agent_id, _agent_type, caps in online_agents_for_config(user_id, config_id):
+        # Each individual agent has its own MCP scope. No saved row → unrestricted.
+        scope = get_scope(user_id, agent_id) if agent_id else None
         tools |= caps if scope is None else (caps & scope)
     return tools

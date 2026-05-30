@@ -122,13 +122,14 @@ def mark_all_offline() -> None:
             session.commit()
 
 
-def online_agents_for_config(user_id, ai_config_id) -> List[Tuple[str, Set[str]]]:
-    """``(agent_type, capabilities)`` for every online agent bound to a config."""
+def online_agents_for_config(user_id, ai_config_id) -> List[Tuple[str, str, Set[str]]]:
+    """``(agent_id, agent_type, capabilities)`` for every online agent bound to a
+    config. ``agent_id`` lets callers apply per-agent MCP scope."""
     cfg = _int(ai_config_id)
     if not cfg:
         return []
     uid = _int(user_id)
-    out: List[Tuple[str, Set[str]]] = []
+    out: List[Tuple[str, str, Set[str]]] = []
     with Session(engine) as session:
         rows = session.exec(
             select(EndpointAgentPresence).where(
@@ -139,7 +140,7 @@ def online_agents_for_config(user_id, ai_config_id) -> List[Tuple[str, Set[str]]
         for row in rows:
             if uid and row.user_id and row.user_id != uid:
                 continue
-            out.append((str(row.agent_type or "").strip(), _decode(row)))
+            out.append((str(row.agent_id or "").strip(), str(row.agent_type or "").strip(), _decode(row)))
     return out
 
 

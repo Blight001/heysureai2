@@ -255,6 +255,7 @@ def run_pending_migrations() -> None:
     _migrate_user_ui_plain_text_output_enabled()
     _migrate_user_role()
     _migrate_endpointagentpresence_tool_defs()
+    _migrate_agenttypemcppermission_agent_id()
     # Only run for SQLite. Postgres deployments either start fresh or are
     # seeded by the migration script, both of which produce a current schema.
     if database_dialect() != "sqlite":
@@ -415,6 +416,36 @@ def _migrate_endpointagentpresence_tool_defs() -> None:
             conn.exec_driver_sql(
                 "ALTER TABLE endpointagentpresence "
                 "ADD COLUMN IF NOT EXISTS tool_defs_json TEXT DEFAULT '{}'"
+            )
+
+
+def _migrate_agenttypemcppermission_agent_id() -> None:
+    """Add ``agent_id`` to the endpoint MCP permission table.
+
+    Scope moved from per-(AI, agent-type) to per-individual-agent. Existing rows
+    keyed only by type can't be safely remapped to a specific agent id, so they
+    back-fill ``agent_id=''`` and are simply ignored by the new per-agent lookup
+    (the agent starts unrestricted until rescoped in the Workshop). Runs on every
+    backend.
+    """
+    from ..database import engine
+    from sqlalchemy import inspect
+
+    insp = inspect(engine)
+    if "agenttypemcppermission" not in set(insp.get_table_names()):
+        return
+    columns = {col["name"] for col in insp.get_columns("agenttypemcppermission")}
+    if "agent_id" in columns:
+        return
+    if database_dialect() == "sqlite":
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                "ALTER TABLE agenttypemcppermission ADD COLUMN agent_id TEXT DEFAULT ''"
+            )
+    else:
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                "ALTER TABLE agenttypemcppermission ADD COLUMN IF NOT EXISTS agent_id TEXT DEFAULT ''"
             )
 
 

@@ -28,19 +28,21 @@ def _find_connected_agent(agent_id: str, user_id: int) -> Optional[dict]:
 
 
 def _scope_view(agent: dict, user_id: int) -> dict:
-    """Capabilities + effective allow-list for a connected agent. With no saved
-    record every reported tool is allowed (default-open)."""
+    """Capabilities + effective allow-list for a connected agent. Scope is keyed
+    per individual agent; with no saved record every reported tool is allowed
+    (default-open)."""
     agent_type = agent_type_of(agent)
+    agent_id = str(agent.get("id") or "")
     capabilities = sorted(agent_endpoint_tools(agent))
     ai_config_id = agent.get("aiConfigId") or agent.get("ai_config_id")
     try:
         ai_config_id = int(ai_config_id) if ai_config_id else None
     except (TypeError, ValueError):
         ai_config_id = None
-    scope = get_scope(user_id, ai_config_id, agent_type) if ai_config_id else None
+    scope = get_scope(user_id, agent_id) if agent_id else None
     allowed = capabilities if scope is None else sorted(set(capabilities) & scope)
     return {
-        "agentId": str(agent.get("id") or ""),
+        "agentId": agent_id,
         "agentName": str(agent.get("name") or agent.get("id") or ""),
         "agentType": agent_type,
         "platform": str(agent.get("platform") or ""),
@@ -147,36 +149,35 @@ async def set_agent_mcp_scope(
     session: Session = Depends(get_session),
     authorization: str = Header(None),
 ):
-    """Persist the endpoint MCP permission scope for a connected agent, keyed by
-    (user, assigned AI, agent type). Unknown tool names are dropped; the scope
-    is restored automatically when an agent of the same type reconnects."""
+    """Persist the endpoint MCP permission scope for a connected agent, keyed per
+    individual agent (user, agent_id). Unknown tool names are dropped; the scope
+    follows the physical device across reconnects and AI reassignment."""
     user = get_current_user(authorization, session)
     agent = _find_connected_agent(agent_id, user.id)
     if not agent:
         raise HTTPException(status_code=404, detail="设备未连接")
     agent_type = agent_type_of(agent)
     if not agent_type:
-        raise HTTPException(status_code=400, detail="该设备不是软件端 / 浏览器端 Agent")
+        raise HTTPException(status_code=400, detail="该设备不是端点 Agent")
 
     ai_config_id = agent.get("aiConfigId") or agent.get("ai_config_id")
     try:
         ai_config_id = int(ai_config_id) if ai_config_id else None
     except (TypeError, ValueError):
         ai_config_id = None
-    if not ai_config_id:
-        raise HTTPException(status_code=400, detail="请先在作坊为该设备分配 AI，再配置 MCP 权限")
-
-    cfg = session.exec(
-        select(AssistantAIConfig).where(AssistantAIConfig.id == ai_config_id)
-    ).first()
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI 配置不存在或不属于当前用户")
+    # The bound AI is recorded for reference only; scope is keyed by the agent.
+    if ai_config_id:
+        cfg = session.exec(
+            select(AssistantAIConfig).where(AssistantAIConfig.id == ai_config_id)
+        ).first()
+        if not cfg or cfg.user_id != user.id:
+            raise HTTPException(status_code=404, detail="AI 配置不存在或不属于当前用户")
 
     # Only persist tools the agent actually reports — never let stale UI state
     # widen the scope beyond the live capability set.
     capabilities = agent_endpoint_tools(agent)
     requested = {str(t).strip() for t in (payload.tools or []) if str(t).strip()}
-    set_scope(user.id, ai_config_id, agent_type, requested & capabilities)
+    set_scope(user.id, agent_id, requested & capabilities, ai_config_id=ai_config_id, agent_type=agent_type)
 
     await sio.emit("agent:list", list(agents.values()))
     return _scope_view(agent, user.id)
