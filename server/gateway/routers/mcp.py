@@ -23,7 +23,11 @@ from api.models import AssistantAIConfig
 from .auth import get_current_user
 from api.runtime.internal_http import require_internal_token
 from connector_runtime.dispatch.agent_dispatch import dispatch_endpoint_tool_and_wait
-from connector_runtime.dispatch.desktop_agent_tools import endpoint_bridge_tools_for_config, is_endpoint_agent_tool
+from connector_runtime.dispatch.desktop_agent_tools import (
+    connected_endpoint_tool_catalog,
+    endpoint_bridge_tools_for_config,
+    is_endpoint_agent_tool,
+)
 from api.services.librarian_service import intrinsic_input_schema, intrinsic_tool_description
 from api.services.task_system import with_workspace_read_by_name_compat
 
@@ -56,6 +60,11 @@ async def list_mcp_tools(
     tool_names = {str(tool.get("name") or "") for tool in tools}
     return {
         "tools": tools,
+        # Endpoint (desktop / browser) tools currently advertised by connected
+        # agents. Lets the UI list tools a desktop agent gained at runtime —
+        # e.g. a Windows agent extended with new MCP tools — beyond the static
+        # built-in lists baked into the web bundle.
+        "endpointTools": connected_endpoint_tool_catalog(),
         "userId": user.id,
         "roleOrder": CONFIGURABLE_ROLES,
         "roleLabels": ROLE_LABELS_ZH,

@@ -302,8 +302,31 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
         mcpSource: 'browser',
       }
     }
+    // Tools advertised live by connected endpoint agents — including ones a
+    // desktop/browser agent gained at runtime (extended MCP) that aren't in the
+    // static lists baked into this bundle. Keep any richer static entry already
+    // present; only fill in the names the bundle doesn't know about.
+    const dynamicEndpointTools = Array.isArray(data.endpointTools) ? data.endpointTools : []
+    for (const entry of dynamicEndpointTools) {
+      const name = String(entry?.name || '').trim()
+      if (!name || map[name]) continue
+      const source = entry?.mcpSource === 'browser' ? 'browser' : 'desktop'
+      map[name] = {
+        name,
+        description: source === 'browser'
+          ? '浏览器插件上报的执行能力，可直接在已连接浏览器插件执行。'
+          : '桌面端 Agent 上报的执行能力，可直接在已连接桌面端执行。',
+        inputSchema: { type: 'object', properties: {} },
+        destructive: false,
+        mcpSource: source,
+      }
+    }
     mcpToolMetaByName.value = map
-    const tools = Array.from(new Set([...rows.map(item => item.name), ...ENDPOINT_AGENT_MCP_TOOLS]))
+    const endpointToolNames = [
+      ...ENDPOINT_AGENT_MCP_TOOLS,
+      ...dynamicEndpointTools.map(entry => String(entry?.name || '').trim()).filter(Boolean),
+    ]
+    const tools = Array.from(new Set([...rows.map(item => item.name), ...endpointToolNames]))
     availableMcpTools.value = tools.length > 0 ? tools : [...defaultMcpTools]
 
     const asStringArrayMap = (raw: unknown): Record<string, string[]> => {
@@ -322,9 +345,9 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     const roleDefaults = asStringArrayMap(data.roleDefaults)
     const roleOrder = Array.isArray(data.roleOrder) ? data.roleOrder.map((item: unknown) => String(item || '').trim()).filter(Boolean) : []
     for (const role of roleOrder) {
-      roleOptions[role] = mergeUnique(roleOptions[role], ENDPOINT_AGENT_MCP_TOOLS)
+      roleOptions[role] = mergeUnique(roleOptions[role], endpointToolNames)
       if (role === ROLE_ASSISTANT_ADMIN) {
-        roleDefaults[role] = mergeUnique(roleDefaults[role], ENDPOINT_AGENT_MCP_TOOLS)
+        roleDefaults[role] = mergeUnique(roleDefaults[role], endpointToolNames)
       }
     }
     mcpRoleMeta.value = {
