@@ -52,19 +52,6 @@ async def agent_dispatch(req: AgentDispatchRequest) -> Dict[str, Any]:
     return {"ok": True, "task_id": task_id, "status": "pending"}
 
 
-@router.get("/endpoint-tools")
-def agent_endpoint_tools_for_config(user_id: int, ai_config_id: int) -> Dict[str, Any]:
-    """Resolve the endpoint (desktop / browser) MCP tools an AI may use right
-    now — its connected agents' reported capabilities narrowed by the saved
-    per-(AI, agent-type) scope.
-
-    Served here because the live ``agents`` registry lives in this process.
-    ai-runtime / mcp-runtime call this so their tool discovery matches what the
-    gateway can actually dispatch."""
-    from connector_runtime.dispatch.desktop_agent_tools import endpoint_tools_for_config_local
-    return {"tools": sorted(endpoint_tools_for_config_local(ai_config_id, user_id))}
-
-
 @router.get("/dispatch/result/{task_id}")
 def agent_dispatch_result(task_id: str) -> Dict[str, Any]:
     # DB-backed lookup so a gateway restart doesn't lose state.

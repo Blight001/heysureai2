@@ -143,6 +143,28 @@ def register_agent_socket_events():
             f"Agent registered: {agent_id} user={owner_user_id} "
             f"ai={agents[sid].get('aiConfigId')}"
         )
+        # Mirror this endpoint agent into the shared DB presence snapshot so
+        # ai-runtime / mcp-runtime (separate processes) can discover and
+        # classify its tools. Never let a presence write break registration.
+        try:
+            from connector_runtime.dispatch.desktop_agent_tools import (
+                agent_type_of,
+                agent_endpoint_tools,
+            )
+            from api.agent_presence import upsert_presence
+
+            atype = agent_type_of(agents[sid])
+            if atype:
+                upsert_presence(
+                    owner_user_id,
+                    agent_id,
+                    claimed_ai,
+                    atype,
+                    sorted(agent_endpoint_tools(agents[sid])),
+                    online=True,
+                )
+        except Exception:
+            logger.exception('Failed to record endpoint agent presence: %s', agent_id)
         await sio.emit('agent:registered', {'id': agent_id}, to=sid)
         await sio.emit('agent:list', list(agents.values()))
 
@@ -167,7 +189,13 @@ def register_agent_socket_events():
     @sio.on('disconnect')
     async def disconnect(sid):
         if sid in agents:
+            agent_id_for_presence = str(agents[sid].get('id') or '')
             del agents[sid]
+            try:
+                from api.agent_presence import set_offline
+                set_offline(agent_id_for_presence)
+            except Exception:
+                logger.exception('Failed to mark endpoint agent offline: %s', agent_id_for_presence)
             await sio.emit('agent:list', list(agents.values()))
 
 
