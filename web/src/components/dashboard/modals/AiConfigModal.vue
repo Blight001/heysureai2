@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import { getMcpToolZhLabel, groupMcpToolsBySource } from '@/utils/mcpTools'
 import type { ModelPreset } from '@/types'
+import type { ConnectedAgent } from '@/composables/dashboard/useDashboardData'
+import AgentMcpScopeEditor from './AgentMcpScopeEditor.vue'
 
 type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'bot'
 
@@ -12,6 +14,7 @@ interface Props {
   deleteConfirm: boolean
   settingsSection: SettingsSection | ''
   availableMcpTools: string[]
+  connectedAgents?: ConnectedAgent[]
   availableWorkspaceDirs: string[]
   workspaceDirsLoading: boolean
   workspaceDirsError: string
@@ -53,6 +56,20 @@ const closePromptDetail = () => {
 }
 
 const groupedAvailableMcpTools = computed(() => groupMcpToolsBySource(props.availableMcpTools))
+
+// Connected endpoint agents bound to the AI being edited. Their endpoint MCP
+// tools are governed per-agent (not via mcp_tools), so they get their own
+// permission editor here. Disconnected agents simply don't appear.
+const boundEndpointAgents = computed<ConnectedAgent[]>(() => {
+  const cfgId = Number(props.form?.id)
+  if (!Number.isFinite(cfgId) || cfgId <= 0) return []
+  return (props.connectedAgents || []).filter((agent) => {
+    if (Number(agent.aiConfigId) !== cfgId) return false
+    const platform = String(agent.platform || '').toLowerCase()
+    return !!agent.isWindowsDesktop || !!agent.isBrowserExtension
+      || platform.includes('desktop') || platform.includes('windows') || platform.includes('browser')
+  })
+})
 const selectedBotName = computed(() => props.form?.bot_channel === 'qq' ? 'QQ机器人' : '飞书机器人')
 const selectedModelPreset = computed(() => {
   const selectedId = String(props.form?.model_preset_id || '')
@@ -268,6 +285,20 @@ const onModelPresetChange = () => {
                 <p class="mb-2 text-[11px] text-zinc-500 dark:text-zinc-400">
                   仅显示当前角色（{{ form.ai_role_group === 'assistant_admin' ? '辅助管理员' : (form.digital_member_role === 'manager' ? '数字成员·管理者' : '数字成员·普通成员') }}）允许的 MCP 工具，可在“系统设置 → 工作区与 MCP → MCP 角色权限”中调整各角色范围。
                 </p>
+
+                <!-- Endpoint agents bound to this AI: per-agent MCP permission.
+                     These tools come from the connected device, not from the
+                     server MCP list, and only show while the device is online. -->
+                <div v-if="boundEndpointAgents.length" class="mb-3 space-y-2">
+                  <div class="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">已连接 Agent 的 MCP 权限</div>
+                  <AgentMcpScopeEditor
+                    v-for="agent in boundEndpointAgents"
+                    :key="`ai-config-agent-scope-${agent.id}`"
+                    :agent-id="agent.id"
+                    :refresh-key="`${agent.aiConfigId ?? ''}-${settingsSection}`"
+                  />
+                </div>
+
                 <div class="space-y-3 max-h-[46vh] overflow-y-auto pr-1">
                   <details
                     v-for="source in groupedAvailableMcpTools"

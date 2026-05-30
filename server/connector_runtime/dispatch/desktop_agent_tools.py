@@ -3,122 +3,82 @@ from typing import Any, Dict, List, Optional, Set
 from api.sio import agents
 
 
+# ``admin.list_agents`` is a *server* bridge tool surfaced whenever any endpoint
+# agent is connected — not a device-side tool — so it stays a fixed set.
 ENDPOINT_BRIDGE_MCP_TOOLS = {"admin.list_agents"}
-DESKTOP_AGENT_MCP_TOOLS = {
-    "fs.list",
-    "fs.read",
-    "fs.write",
-    "shell.run",
-    "git.diff",
-    "keyboard.type",
-    "keyboard.press",
-    "mouse.move",
-    "mouse.click",
-    "mouse.double_click",
-    "mouse.right_click",
-    "mouse.scroll",
-    "mouse.drag",
-    "screen.capture",
-    "screen.capture_region",
-    "screen.info",
-    "clipboard.get",
-    "clipboard.set",
-    "window.list",
-    "window.focus",
-    "window.close",
-    "process.list",
-    "process.kill",
-}
-BROWSER_AGENT_MCP_TOOLS = {
-    "browser_navigate",
-    "browser_screenshot",
-    "browser_click",
-    "browser_type",
-    "browser_get_content",
-    "browser_search",
-    "browser_scroll",
-    "browser_wait",
-    "browser_evaluate",
-    "browser_extract",
-    "browser_find_text",
-    "browser_find_popups",
-    "browser_close_popup",
-    "browser_fill_form",
-    "browser_select",
-    "browser_tab_list",
-    "browser_tab_open",
-    "browser_tab_close",
-    "browser_history_back",
-    "browser_history_forward",
-    "browser_clipboard_write",
-    "browser_storage_get",
-    "browser_hover",
-    "browser_page_info",
-    "browser_right_click",
-    "browser_double_click",
-    "browser_drag",
-    "browser_press_key",
-    "card_list",
-    "card_get",
-    "card_save",
-    "card_update_step",
-    "card_run",
-    "card_delete",
-}
+
+# The endpoint (desktop / browser) tool surface is no longer a hardcoded
+# whitelist. Each connected agent advertises its own tools in the
+# ``capabilities`` array of ``agent:register`` (see ``api/socket_events.py``),
+# and the server derives everything below from that live list. A tool a
+# Windows agent gains at runtime (``speech.*``, ``vision.*``, ``hands.*`` …)
+# therefore becomes dispatchable with no server redeploy. Browser tools are
+# recognised by their ``browser_`` / ``card_`` namespace; everything else a
+# desktop agent reports is a desktop tool.
 
 
 def _is_browser_namespaced(name: str) -> bool:
     tool = str(name or "").strip()
-    return tool in BROWSER_AGENT_MCP_TOOLS or tool.startswith("browser_") or tool.startswith("card_")
+    return tool.startswith("browser_") or tool.startswith("card_")
+
+
+def agent_type_of(agent: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Classify a connected-agent record as ``"desktop"`` / ``"browser"``."""
+    if not isinstance(agent, dict):
+        return None
+    platform = str(agent.get("platform") or "").lower()
+    if bool(agent.get("isBrowserExtension")) or "browser-extension" in platform:
+        return "browser"
+    if bool(agent.get("isWindowsDesktop")) or "desktop" in platform or "windows" in platform:
+        return "desktop"
+    return None
+
+
+def _agent_capabilities(agent: Dict[str, Any], agent_type: str) -> Set[str]:
+    """Tool names of the given type that ``agent`` reports. Browser-namespaced
+    names only ever count as browser tools, the rest as desktop tools."""
+    names: Set[str] = set()
+    for cap in agent.get("capabilities") or []:
+        name = str(cap or "").strip()
+        if not name:
+            continue
+        if agent_type == "browser":
+            if _is_browser_namespaced(name):
+                names.add(name)
+        else:
+            if not _is_browser_namespaced(name):
+                names.add(name)
+    return names
+
+
+def agent_endpoint_tools(agent: Optional[Dict[str, Any]]) -> Set[str]:
+    """Endpoint tool names a single connected agent reports, classified by its
+    own type. Used by the per-agent permission editor."""
+    atype = agent_type_of(agent)
+    if not atype or not isinstance(agent, dict):
+        return set()
+    return _agent_capabilities(agent, atype)
 
 
 def _reported_endpoint_tools(*, want_desktop: bool) -> Set[str]:
-    """Tool names advertised by currently-connected endpoint agents.
-
-    A desktop / browser agent sends its full tool surface in the
-    ``capabilities`` array of ``agent:register`` (see ``api/socket_events.py``).
-    Surfacing them here lets the server recognise and dispatch tools an agent
-    gained at runtime — e.g. a Windows desktop agent extended with new MCP
-    tools (``speech.*``, ``vision.*``, ``hands.*``, ``ear.*`` …) — without
-    editing the static built-in sets above or redeploying the server.
-
-    Browser-namespaced names always count as browser tools (they route to the
-    browser extension); everything else a desktop agent reports counts as a
-    desktop tool.
-    """
+    """Every tool name advertised by currently-connected agents of one kind."""
+    target = "desktop" if want_desktop else "browser"
     names: Set[str] = set()
     for agent in list(agents.values()):
-        if not isinstance(agent, dict):
+        if agent_type_of(agent) != target:
             continue
-        platform = str(agent.get("platform") or "").lower()
-        is_desktop = bool(agent.get("isWindowsDesktop")) or "desktop" in platform
-        is_browser = bool(agent.get("isBrowserExtension")) or "browser-extension" in platform
-        if want_desktop and not is_desktop:
-            continue
-        if not want_desktop and not is_browser:
-            continue
-        for cap in agent.get("capabilities") or []:
-            name = str(cap or "").strip()
-            if not name:
-                continue
-            if want_desktop and _is_browser_namespaced(name):
-                continue
-            if not want_desktop and not _is_browser_namespaced(name):
-                continue
-            names.add(name)
+        names.update(_agent_capabilities(agent, target))
     return names
 
 
 def desktop_tool_names() -> Set[str]:
-    """Static built-in desktop tools unioned with those reported live by a
-    connected desktop agent."""
-    return set(DESKTOP_AGENT_MCP_TOOLS) | _reported_endpoint_tools(want_desktop=True)
+    """All desktop tool names currently advertised by connected desktop agents."""
+    return _reported_endpoint_tools(want_desktop=True)
 
 
 def browser_tool_names() -> Set[str]:
-    """Static built-in browser tools unioned with those reported live by a
-    connected browser agent."""
-    return set(BROWSER_AGENT_MCP_TOOLS) | _reported_endpoint_tools(want_desktop=False)
+    """All browser tool names currently advertised by connected browser agents."""
+    return _reported_endpoint_tools(want_desktop=False)
 
 
 def is_desktop_tool(name: str) -> bool:
@@ -137,12 +97,8 @@ def is_endpoint_agent_tool(name: str) -> bool:
 
 
 def connected_endpoint_tool_catalog() -> List[Dict[str, str]]:
-    """Live endpoint tool catalog for the Workshop tool picker.
-
-    Returns every tool a connected desktop / browser agent currently
-    advertises, tagged by ``mcpSource`` so the web UI can list runtime-extended
-    tools alongside the static built-ins. Desktop wins when a name appears for
-    both sources (it never should — namespaces are disjoint)."""
+    """Live endpoint tool catalog: every tool a connected desktop / browser
+    agent currently advertises, tagged by ``mcpSource``."""
     catalog: Dict[str, str] = {}
     for name in desktop_tool_names():
         catalog[name] = "desktop"
@@ -393,3 +349,40 @@ def endpoint_bridge_tools_for_config(ai_config_id: Optional[int], user_id: Optio
     if get_connected_endpoint_agent(ai_config_id, user_id):
         return set(ENDPOINT_BRIDGE_MCP_TOOLS)
     return set()
+
+
+def _scoped_tools(agent: Optional[Dict[str, Any]], agent_type: str,
+                  ai_config_id: Optional[int], user_id: Optional[int]) -> Set[str]:
+    """Tools the AI may drive on ``agent``: its reported capabilities narrowed
+    by the saved per-(AI, type) scope. No saved row → no restriction (all
+    reported tools are allowed)."""
+    if not agent:
+        return set()
+    caps = _agent_capabilities(agent, agent_type)
+    # Lazy import keeps this dispatch module free of a hard DB dependency at
+    # import time (and avoids an import cycle through api.models).
+    from api.agent_mcp_permissions import get_scope
+
+    scope = get_scope(user_id, ai_config_id, agent_type)
+    if scope is None:
+        return caps
+    return caps & scope
+
+
+def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
+    """Endpoint MCP tools available to an AI right now: the union of what its
+    connected desktop and browser agents report, each narrowed by the saved
+    per-(AI, agent-type) permission scope.
+
+    This is the source of truth for endpoint tools in the AI's allow-list —
+    they are intentionally decoupled from ``cfg.mcp_tools`` (which governs
+    server-side MCP tools). A disconnected agent contributes nothing, so its
+    tools simply disappear from the AI's reach until it returns."""
+    tools: Set[str] = set()
+    tools |= _scoped_tools(
+        get_connected_desktop_agent(ai_config_id, user_id), "desktop", ai_config_id, user_id
+    )
+    tools |= _scoped_tools(
+        get_connected_browser_agent(ai_config_id, user_id), "browser", ai_config_id, user_id
+    )
+    return tools

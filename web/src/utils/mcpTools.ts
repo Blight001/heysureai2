@@ -19,73 +19,12 @@ export interface McpToolSourceGroup {
   tools: string[]
 }
 
-export const DESKTOP_AGENT_MCP_TOOLS = [
-  'fs.list',
-  'fs.read',
-  'fs.write',
-  'shell.run',
-  'git.diff',
-  'keyboard.type',
-  'keyboard.press',
-  'mouse.move',
-  'mouse.click',
-  'mouse.double_click',
-  'mouse.right_click',
-  'mouse.scroll',
-  'mouse.drag',
-  'screen.capture',
-  'screen.capture_region',
-  'screen.info',
-  'clipboard.get',
-  'clipboard.set',
-  'window.list',
-  'window.focus',
-  'window.close',
-  'process.list',
-  'process.kill',
-]
-
-export const BROWSER_AGENT_MCP_TOOLS = [
-  'browser_navigate',
-  'browser_screenshot',
-  'browser_click',
-  'browser_type',
-  'browser_get_content',
-  'browser_search',
-  'browser_scroll',
-  'browser_wait',
-  'browser_evaluate',
-  'browser_extract',
-  'browser_find_text',
-  'browser_find_popups',
-  'browser_close_popup',
-  'browser_fill_form',
-  'browser_select',
-  'browser_tab_list',
-  'browser_tab_open',
-  'browser_tab_close',
-  'browser_history_back',
-  'browser_history_forward',
-  'browser_clipboard_write',
-  'browser_storage_get',
-  'browser_hover',
-  'browser_page_info',
-  'browser_right_click',
-  'browser_double_click',
-  'browser_drag',
-  'browser_press_key',
-  'card_list',
-  'card_get',
-  'card_save',
-  'card_update_step',
-  'card_run',
-  'card_delete',
-]
-
-export const ENDPOINT_AGENT_MCP_TOOLS = [
-  ...DESKTOP_AGENT_MCP_TOOLS,
-  ...BROWSER_AGENT_MCP_TOOLS,
-]
+// Endpoint (desktop / browser) tool whitelists used to be hardcoded here and
+// mirrored on the server. They are gone now: endpoint tools are discovered
+// dynamically from each connected agent's reported capabilities and configured
+// via the per-agent MCP permission editor. Browser tools are still recognised
+// by their namespace (see getMcpToolSource). MCP_TOOL_ZH_META below keeps
+// friendly zh labels for the common endpoint tools (display only).
 
 const MCP_TOOL_ZH_META: Record<string, { label: string; description: string; tag: string }> = {
   'mcp.list_tools': { label: 'MCP 结构树', description: '按命名空间查看当前 AI 可用 MCP 工具树。', tag: 'MCP' },
@@ -295,10 +234,9 @@ const getSourceTag = (source?: McpToolDefinition['mcpSource']) => {
 const getMcpToolSource = (name: string): 'server' | 'desktop' | 'browser' => {
   const normalized = String(name || '').trim()
   if (!normalized) return 'server'
-  if (BROWSER_AGENT_MCP_TOOLS.includes(normalized) || hasMcpPrefix(normalized, 'browser') || hasMcpPrefix(normalized, 'card')) {
+  if (hasMcpPrefix(normalized, 'browser') || hasMcpPrefix(normalized, 'card')) {
     return 'browser'
   }
-  if (DESKTOP_AGENT_MCP_TOOLS.includes(normalized)) return 'desktop'
   return 'server'
 }
 

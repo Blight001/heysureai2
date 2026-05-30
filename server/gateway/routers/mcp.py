@@ -26,6 +26,7 @@ from connector_runtime.dispatch.agent_dispatch import dispatch_endpoint_tool_and
 from connector_runtime.dispatch.desktop_agent_tools import (
     connected_endpoint_tool_catalog,
     endpoint_bridge_tools_for_config,
+    endpoint_tools_for_config,
     is_endpoint_agent_tool,
 )
 from api.services.librarian_service import intrinsic_input_schema, intrinsic_tool_description
@@ -107,6 +108,7 @@ async def call_mcp_tool(
             allowed_tools = with_workspace_read_by_name_compat(allowed_tools)
             allowed_tools.update(MCP_INTROSPECTION_TOOLS)
             allowed_tools.update(endpoint_bridge_tools_for_config(req.ai_config_id, user.id))
+            allowed_tools.update(endpoint_tools_for_config(req.ai_config_id, user.id))
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid AI MCP tool config")
         if req.tool not in allowed_tools:
