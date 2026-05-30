@@ -3,20 +3,29 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from api.sio import agents
 
-# In split deployments the live ``agents`` registry only exists in the process
-# that owns the agent socket server (api-gateway). ai-runtime / mcp-runtime
-# therefore cannot classify or enumerate endpoint tools from ``agents`` — they
-# resolve them from the gateway over internal HTTP (see
-# ``endpoint_tools_for_config``). These process-local caches remember the tool
-# names that resolution returned so the context-free ``is_desktop_tool`` /
-# ``is_browser_tool`` checks keep working off the gateway too. They are a union
-# across configs (classification only); per-config allow-listing and dispatch
-# still go through the scoped paths.
-_REMOTE_DESKTOP_TOOLS: Set[str] = set()
-_REMOTE_BROWSER_TOOLS: Set[str] = set()
-# (user_id, ai_config_id) -> (expiry_epoch, resolved tool set)
-_REMOTE_TOOLS_CACHE: Dict[Tuple[Optional[int], int], Tuple[float, Set[str]]] = {}
-_REMOTE_TOOLS_TTL_SECONDS = 3.0
+# The live ``agents`` registry only exists in the process that owns the agent
+# socket server (api-gateway). To let every process (ai-runtime / mcp-runtime /
+# connector) discover and classify endpoint tools identically, connected agents
+# are mirrored into a shared DB presence snapshot (see ``api.agent_presence``).
+# Classification (``is_desktop_tool`` / ``is_browser_tool``) consults a short
+# TTL cache of that snapshot so it stays context-free and cheap across
+# processes.
+_TOOLNAME_CACHE: Dict[str, Any] = {"expiry": 0.0, "desktop": set(), "browser": set()}
+_TOOLNAME_TTL_SECONDS = 3.0
+
+
+def _presence_tool_names() -> Tuple[Set[str], Set[str]]:
+    now = time.time()
+    if _TOOLNAME_CACHE["expiry"] > now:
+        return _TOOLNAME_CACHE["desktop"], _TOOLNAME_CACHE["browser"]
+    try:
+        from api.agent_presence import online_tool_names
+        desktop, browser = online_tool_names()
+    except Exception:
+        desktop, browser = set(), set()
+    _TOOLNAME_CACHE.update(expiry=now + _TOOLNAME_TTL_SECONDS, desktop=desktop, browser=browser)
+    return desktop, browser
+
 
 
 # ``admin.list_agents`` is a *server* bridge tool surfaced whenever any endpoint
@@ -99,14 +108,18 @@ def browser_tool_names() -> Set[str]:
 
 def is_desktop_tool(name: str) -> bool:
     tool = str(name or "").strip()
-    return tool in desktop_tool_names() or tool in _REMOTE_DESKTOP_TOOLS
+    if tool in desktop_tool_names():
+        return True
+    return tool in _presence_tool_names()[0]
 
 
 def is_browser_tool(name: str) -> bool:
     tool = str(name or "").strip()
     if _is_browser_namespaced(tool):
         return True
-    return tool in _reported_endpoint_tools(want_desktop=False) or tool in _REMOTE_BROWSER_TOOLS
+    if tool in _reported_endpoint_tools(want_desktop=False):
+        return True
+    return tool in _presence_tool_names()[1]
 
 
 def is_endpoint_agent_tool(name: str) -> bool:
@@ -114,12 +127,14 @@ def is_endpoint_agent_tool(name: str) -> bool:
 
 
 def connected_endpoint_tool_catalog() -> List[Dict[str, str]]:
-    """Live endpoint tool catalog: every tool a connected desktop / browser
-    agent currently advertises, tagged by ``mcpSource``."""
+    """Live endpoint tool catalog: every tool an online desktop / browser agent
+    currently advertises (from the shared presence snapshot), tagged by
+    ``mcpSource``."""
+    desktop, browser = _presence_tool_names()
     catalog: Dict[str, str] = {}
-    for name in desktop_tool_names():
+    for name in desktop:
         catalog[name] = "desktop"
-    for name in browser_tool_names():
+    for name in browser:
         catalog.setdefault(name, "browser")
     return [
         {"name": name, "mcpSource": catalog[name]}
@@ -368,107 +383,27 @@ def endpoint_bridge_tools_for_config(ai_config_id: Optional[int], user_id: Optio
     return set()
 
 
-def _scoped_tools(agent: Optional[Dict[str, Any]], agent_type: str,
-                  ai_config_id: Optional[int], user_id: Optional[int]) -> Set[str]:
-    """Tools the AI may drive on ``agent``: its reported capabilities narrowed
-    by the saved per-(AI, type) scope. No saved row → no restriction (all
-    reported tools are allowed)."""
-    if not agent:
-        return set()
-    caps = _agent_capabilities(agent, agent_type)
-    # Lazy import keeps this dispatch module free of a hard DB dependency at
-    # import time (and avoids an import cycle through api.models).
-    from api.agent_mcp_permissions import get_scope
-
-    scope = get_scope(user_id, ai_config_id, agent_type)
-    if scope is None:
-        return caps
-    return caps & scope
-
-
-def _remember_remote_classification(tools: Set[str]) -> None:
-    """Record resolved tool names into the process-local classification caches
-    so context-free ``is_desktop_tool`` / ``is_browser_tool`` work off-gateway."""
-    for name in tools:
-        if _is_browser_namespaced(name):
-            _REMOTE_BROWSER_TOOLS.add(name)
-        else:
-            _REMOTE_DESKTOP_TOOLS.add(name)
-
-
-def _fetch_endpoint_tools_remote(ai_config_id: int, user_id: Optional[int]) -> Set[str]:
-    """Resolve endpoint tools from the api-gateway (which owns the live agent
-    registry). Cached briefly so a chat turn doesn't issue repeat calls."""
-    key = (_parse_int(user_id), ai_config_id)
-    now = time.time()
-    cached = _REMOTE_TOOLS_CACHE.get(key)
-    if cached and cached[0] > now:
-        return set(cached[1])
-    tools: Set[str] = set()
-    try:
-        import requests
-        from api.core.settings import settings
-        from api.runtime.internal_http import internal_headers
-
-        base = str(settings.api_gateway_url or "").strip().rstrip("/")
-        if base:
-            resp = requests.get(
-                f"{base}/internal/agent/endpoint-tools",
-                params={"user_id": user_id or 0, "ai_config_id": ai_config_id},
-                headers=internal_headers(),
-                timeout=4,
-            )
-            resp.raise_for_status()
-            payload = resp.json() if resp.content else {}
-            tools = {str(t).strip() for t in (payload.get("tools") or []) if str(t).strip()}
-    except Exception:
-        # Stay graceful: a transient gateway hiccup must not strip the AI of all
-        # server tools. Reuse the last good answer if we have one.
-        if cached:
-            return set(cached[1])
-        tools = set()
-    _REMOTE_TOOLS_CACHE[key] = (now + _REMOTE_TOOLS_TTL_SECONDS, set(tools))
-    _remember_remote_classification(tools)
-    return tools
-
-
 def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
     """Endpoint MCP tools available to an AI right now: the union of what its
-    connected desktop and browser agents report, each narrowed by the saved
-    per-(AI, agent-type) permission scope.
+    online desktop and browser agents advertise, each narrowed by the saved
+    per-(AI, agent-type) permission scope. No saved scope row → no restriction
+    (every reported tool is allowed).
 
-    This is the source of truth for endpoint tools in the AI's allow-list —
-    they are intentionally decoupled from ``cfg.mcp_tools`` (which governs
-    server-side MCP tools). A disconnected agent contributes nothing, so its
-    tools simply disappear from the AI's reach until it returns.
-
-    The live agent registry only exists on the api-gateway. Off-gateway
-    processes (ai-runtime / mcp-runtime) resolve this over internal HTTP; the
-    gateway / monolith (``api_gateway_url`` empty) computes it locally."""
+    Resolved from the shared DB presence snapshot (``api.agent_presence``) so
+    every process — gateway, ai-runtime, mcp-runtime, connector — gets the same
+    answer without the in-memory agent registry. Endpoint tools are
+    intentionally decoupled from ``cfg.mcp_tools`` (which governs server-side
+    MCP tools). A disconnected agent contributes nothing, so its tools disappear
+    from the AI's reach until it returns."""
     config_id = _parse_int(ai_config_id)
     if not config_id:
         return set()
+    from api.agent_presence import online_agents_for_config
+    from api.agent_mcp_permissions import get_scope
 
-    from api.core.settings import settings
-    if str(settings.api_gateway_url or "").strip():
-        return _fetch_endpoint_tools_remote(config_id, user_id)
-    return endpoint_tools_for_config_local(config_id, user_id)
-
-
-def endpoint_tools_for_config_local(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
-    """Compute endpoint tools directly from the in-process agent registry.
-
-    Always local — never delegates — so the gateway's internal HTTP endpoint can
-    call it without risking recursion when the gateway also has
-    ``api_gateway_url`` configured to point at itself."""
-    config_id = _parse_int(ai_config_id)
-    if not config_id:
-        return set()
     tools: Set[str] = set()
-    tools |= _scoped_tools(
-        get_connected_desktop_agent(config_id, user_id), "desktop", config_id, user_id
-    )
-    tools |= _scoped_tools(
-        get_connected_browser_agent(config_id, user_id), "browser", config_id, user_id
-    )
+    for agent_type, caps in online_agents_for_config(user_id, config_id):
+        atype = agent_type or "desktop"
+        scope = get_scope(user_id, config_id, atype)
+        tools |= caps if scope is None else (caps & scope)
     return tools

@@ -104,6 +104,14 @@ async def bind_agent_ai(
         if str(agent.get("id")) == agent_id and agent.get("userId") == user.id:
             agent["aiConfigId"] = stored
 
+    # Keep the shared DB presence snapshot in sync so off-gateway processes
+    # resolve endpoint tools against the new assignment immediately.
+    try:
+        from api.agent_presence import update_binding
+        update_binding(agent_id, stored)
+    except Exception:
+        pass
+
     await sio.emit("agent:list", list(agents.values()))
     return {"ok": True, "agentId": agent_id, "aiConfigId": stored}
 

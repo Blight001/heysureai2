@@ -46,6 +46,14 @@ register_restart_command([sys.executable, "-m", "gateway.main"])
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     create_db_and_tables()
+    # Endpoint agents register their sockets here; a fresh boot starts with an
+    # empty in-memory registry, so reset the shared presence snapshot — agents
+    # flip their own rows back online as they reconnect.
+    try:
+        from api.agent_presence import mark_all_offline
+        mark_all_offline()
+    except Exception:
+        logger.exception("failed to reset endpoint agent presence on startup")
     try:
         plugin_boot = load_plugins_on_startup()
         for entry in plugin_boot.get("plugin_errors") or []:
