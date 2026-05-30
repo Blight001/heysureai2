@@ -24,7 +24,11 @@ from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.services import valhalla_service
 from ai_runtime.inference import ai_message_service
-from connector_runtime.dispatch.agent_dispatch import dispatch_endpoint_tool_and_wait, set_run_session_context
+from connector_runtime.dispatch.agent_dispatch import (
+    dispatch_endpoint_tool_and_wait,
+    get_run_session_context,
+    set_run_session_context,
+)
 from api.services.task_completion_notify import notify_task_completion
 from connector_runtime.dispatch.desktop_agent_tools import (
     build_endpoint_tools_payload,
@@ -334,16 +338,25 @@ async def _call_mcp_via_runtime(
     import httpx
     from api.runtime.internal_http import internal_headers
 
+    # Carry the current run's session context across the process boundary so
+    # tools in mcp-runtime can resolve the active session_id / channel /
+    # identity even though they run in a separate process where the worker's
+    # contextvar is not set. None in the in-process path; harmless to send.
+    body = {
+        "tool": tool,
+        "user_id": user_id,
+        "ai_config_id": ai_config_id,
+        "arguments": arguments,
+    }
+    run_ctx = get_run_session_context()
+    if run_ctx:
+        body["session_context"] = run_ctx
+
     async with httpx.AsyncClient(base_url=runtime_url.rstrip("/"), timeout=120.0) as client:
         resp = await client.post(
             "/internal/mcp/call",
             headers=internal_headers(),
-            json={
-                "tool": tool,
-                "user_id": user_id,
-                "ai_config_id": ai_config_id,
-                "arguments": arguments,
-            },
+            json=body,
         )
         resp.raise_for_status()
         return resp.json()

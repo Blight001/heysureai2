@@ -52,7 +52,7 @@ from .defaults import (
 )
 from .admin_audit import AdminAuditLog
 from .agent_binding import AgentAiBinding
-from .bot_session_route import BotSessionRoute
+from .bot_session_route import BotSessionRoute, BotUserCursor
 from .knowledge import EvolutionInput, KnowledgeEntry, Memory, ValhallaEntry
 from .project import EvolutionProject, EvolutionProjectCreate, EvolutionProjectUpdate
 from .user import Token, User, UserCreate, UserLogin, UserRead, UserUpdate
@@ -115,4 +115,5 @@ __all__ = [
     "AIMessage",
     # bots (unified session route, channel-keyed)
     "BotSessionRoute",
+    "BotUserCursor",
 ]

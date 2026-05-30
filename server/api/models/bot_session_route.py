@@ -34,3 +34,32 @@ class BotSessionRoute(SQLModel, table=True):
     next_msg_seq: int = Field(default=1)
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)
+
+
+class BotUserCursor(SQLModel, table=True):
+    """Per-identity "active session" pointer for the unified bot conversation pool.
+
+    A single AI exposes one shared conversation pool ("机器人对话区") that spans
+    the web UI and every bot channel. This table only records *where the next
+    inbound message from a given identity should land* — it does not partition
+    or isolate the pool. ``conversation.list / switch / new`` may target any
+    session belonging to the AI regardless of channel or identity.
+
+    The per-identity cursor exists so concurrent external users talking to the
+    same AI don't clobber each other's "current session"; it is not an
+    isolation boundary. Logical uniqueness:
+    ``(channel, ai_config_id, ai_kind, identity_key)`` — upserted on read/write.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    channel: str = Field(index=True)
+    user_id: int = Field(foreign_key="user.id", index=True)  # AI owner
+    ai_config_id: int = Field(foreign_key="assistantaiconfig.id", index=True)
+    ai_kind: str = Field(default="core", index=True)
+    # Channel-agnostic identity key (QQ openid / Feishu receive_id / …),
+    # supplied by each adapter's ``route_identity_key``.
+    identity_key: str = Field(index=True)
+    # The session this identity's next inbound message will be routed to.
+    active_session_id: str = Field(default="")
+    created_at: float = Field(default_factory=time.time)
+    updated_at: float = Field(default_factory=time.time)

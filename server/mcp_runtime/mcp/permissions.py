@@ -75,6 +75,9 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "conversation.find": ROLE_MEMBER,
     "conversation.create": ROLE_MEMBER,
     "conversation.delete": ROLE_MEMBER,
+    "conversation.list": ROLE_MEMBER,
+    "conversation.switch": ROLE_MEMBER,
+    "conversation.new": ROLE_MEMBER,
     # Admin / governance — assistant_admin only.
     "admin.list_agents": ROLE_ASSISTANT_ADMIN,
     "admin.get_overview": ROLE_ASSISTANT_ADMIN,

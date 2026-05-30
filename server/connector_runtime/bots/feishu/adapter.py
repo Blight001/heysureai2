@@ -216,9 +216,15 @@ class FeishuBot(BotAdapter):
     # ---- runtime tool requirements ---------------------------------------
 
     def extra_required_mcp_tools(self) -> set:
-        # Feishu conversations need a self-service context-trim path even
-        # for older AI configs whose saved MCP allowlist predates this tool.
-        return {"conversation.forget_before_current"}
+        # Feishu conversations need a self-service context-trim path plus the
+        # shared-pool multi-session tools, even for older AI configs whose
+        # saved MCP allowlist predates them.
+        return {
+            "conversation.forget_before_current",
+            "conversation.list",
+            "conversation.switch",
+            "conversation.new",
+        }
 
     # ---- status -----------------------------------------------------------
 
