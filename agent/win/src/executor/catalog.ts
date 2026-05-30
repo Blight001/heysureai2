@@ -12,6 +12,10 @@ import { screenCapture, screenCaptureRegion, screenInfo } from '../tools/screen'
 import { clipboardGet, clipboardSet } from '../tools/clipboard'
 import { windowList, windowFocus, windowClose } from '../tools/window'
 import { processList, processKill } from '../tools/process'
+import { mouthSpeak } from '../tools/mouth'
+import { visionCaptureGlobal, visionCaptureMouse } from '../tools/vision'
+import { handsStart, handsStop, handsSnapshot, handsEvents, handsMouse } from '../tools/hands'
+import { earStart, earStop, earLatest } from '../tools/ear'
 import { registerTools } from './registry'
 
 registerTools([
@@ -53,4 +57,17 @@ registerTools([
   // Process management (windows-only — uses PowerShell)
   { id: 'process.list', platform: 'windows', handler: ({ workspaceRoot, args }) => processList(workspaceRoot, args) },
   { id: 'process.kill', platform: 'windows', handler: ({ workspaceRoot, args }) => processKill(workspaceRoot, args) },
+
+  // AI voice / vision / hands / ear helpers (windows-only)
+  { id: 'speech.speak',      platform: 'windows', handler: ({ args }) => mouthSpeak(args) },
+  { id: 'vision.capture',     platform: 'windows', handler: ({ args }) => visionCaptureGlobal(args) },
+  { id: 'vision.capture_mouse', platform: 'windows', handler: ({ args }) => visionCaptureMouse(args) },
+  { id: 'hands.start',       platform: 'windows', handler: ({ args }) => handsStart(args) },
+  { id: 'hands.stop',        platform: 'windows', handler: ({ args }) => handsStop() },
+  { id: 'hands.snapshot',    platform: 'windows', handler: ({ args }) => handsSnapshot() },
+  { id: 'hands.events',      platform: 'windows', handler: ({ args }) => handsEvents(args) },
+  { id: 'hands.mouse',       platform: 'windows', handler: ({ args }) => handsMouse(args) },
+  { id: 'ear.start',         platform: 'windows', handler: () => earStart() },
+  { id: 'ear.stop',          platform: 'windows', handler: () => earStop() },
+  { id: 'ear.latest',        platform: 'windows', handler: () => earLatest() },
 ])
