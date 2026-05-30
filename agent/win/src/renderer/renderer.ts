@@ -1,10 +1,16 @@
-// renderer.ts — HeySure Agent renderer process
+// renderer.ts — HeySure Agent desktop renderer process.
 //
-// The desktop app is a thin tool-calling endpoint. It logs in and connects to
-// the server; the AI assignment is controlled server-side from the web
-// Workshop ("作坊") panel — the device no longer picks an AI. This renderer
-// owns login, connection control and a live feed of the tool calls the agent
-// performs on the server's behalf.
+// The desktop app is a thin tool-calling endpoint. Its main area is the desktop
+// MCP tool page (list / detail / test + editable descriptions). The account,
+// the 3-state connection indicator and settings are surfaced through header
+// controls and modals. AI assignment is controlled server-side from the web
+// Workshop ("作坊") panel — the device no longer picks an AI.
+
+interface ToolDef {
+  name: string
+  description: string
+  input_schema: { type: string; properties: Record<string, any>; required?: string[] }
+}
 
 interface Window {
   heysureAPI: {
@@ -13,7 +19,7 @@ interface Window {
     connect: () => Promise<void>
     disconnect: () => Promise<void>
     getStatus: () => Promise<string>
-    onStatusChange: (cb: (status: string, reason?: string) => void) => void
+    onStatusChange: (cb: (status: string, reason?: string, aiConfigId?: number | null) => void) => void
     onActivityLog: (cb: (entry: any) => void) => void
     onTaskStart: (cb: (data: any) => void) => void
     onTaskResult: (cb: (data: any) => void) => void
@@ -22,380 +28,412 @@ interface Window {
     testConnection: () => Promise<{ success: boolean; status?: number; ms?: number; error?: string }>
     login: (params: { serverUrl: string; account: string; password: string }) => Promise<{ success: boolean; user: any }>
     logout: () => Promise<{ success: boolean }>
+    mcpList: () => Promise<{ tools: ToolDef[]; overrides: Record<string, { description?: string; parameters?: Record<string, string> }> }>
+    mcpSaveDesc: (p: { tool: string; description?: string; parameters?: Record<string, string> }) => Promise<boolean>
+    mcpTest: (p: { tool: string; args: Record<string, any> }) => Promise<{ success: boolean; result?: any; summary?: string; error?: string }>
     version: string
   }
 }
 
+const $ = (id: string) => document.getElementById(id)!
+
 // ── State ──────────────────────────────────────────────────────────────────
-type AppScreen = 'login' | 'main'
 let currentTheme: 'dark' | 'light' = 'dark'
+let currentStatus = 'disconnected'
+let boundAiConfigId: number | null = null
 let totalCalls = 0, successCalls = 0, failedCalls = 0, runningCalls = 0
-let sidebarOpen = false
-let currentConnectionStatus = 'disconnected'
+let toolDefs: ToolDef[] = []
+let overrides: Record<string, { description?: string; parameters?: Record<string, string> }> = {}
 
-// ── Screen navigation ──────────────────────────────────────────────────────
-function showScreen(screen: AppScreen) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
-  document.getElementById(`screen-${screen}`)?.classList.add('active')
-}
-
-// ── DOM refs (main screen) ─────────────────────────────────────────────────
-const feed            = document.getElementById('feed')!
-const feedEmpty       = document.getElementById('feed-empty')!
-const bodyEl          = document.getElementById('body')!
-const statusDot       = document.getElementById('status-dot')!
-const statusLabel     = document.getElementById('status-label')!
-const infoStatus      = document.getElementById('info-status')!
-const infoServer      = document.getElementById('info-server')!
-const infoWorkspace   = document.getElementById('info-workspace')!
-const statTotal       = document.getElementById('stat-total')!
-const statSuccess     = document.getElementById('stat-success')!
-const statFailed      = document.getElementById('stat-failed')!
-const statRunning     = document.getElementById('stat-running')!
-const cfgServer       = document.getElementById('cfg-server') as HTMLInputElement
-const cfgWorkspace    = document.getElementById('cfg-workspace') as HTMLInputElement
-const saveBtn         = document.getElementById('save-btn')!
-const saveFeedback    = document.getElementById('save-feedback')!
-const connectBtn      = document.getElementById('connect-btn')!
-const disconnectBtn   = document.getElementById('disconnect-btn')!
-const clearBtn        = document.getElementById('clear-btn')!
-const settingsToggle  = document.getElementById('settings-toggle')!
-const testConnBtn     = document.getElementById('test-conn-btn')!
-const testResult      = document.getElementById('test-result')!
-const headerUserChip  = document.getElementById('header-user-chip')!
-const headerUserAva   = document.getElementById('header-user-ava')!
-const headerUserName  = document.getElementById('header-user-name')!
-
-const STATUS_LABELS: Record<string, string> = {
-  disconnected: '未连接', connecting: '连接中...', connected: '已连接', registered: '已连接到服务器', error: '连接错误',
-}
-
-// ── Theme ──────────────────────────────────────────────────────────────────
-function applyTheme(theme: 'dark' | 'light', persist = true) {
-  currentTheme = theme
-  document.body.className = theme
-  const icon = theme === 'dark' ? '&#x2600;&#xFE0F;' : '&#x1F319;'
-  ;[document.getElementById('theme-toggle'), document.getElementById('theme-toggle2')].forEach(el => { if (el) el.innerHTML = icon })
-  if (persist) window.heysureAPI.setTheme(theme)
-}
-;[document.getElementById('theme-toggle'), document.getElementById('theme-toggle2')].forEach(btn =>
-  btn?.addEventListener('click', () => applyTheme(currentTheme === 'dark' ? 'light' : 'dark'))
-)
-
-// ── Status display ─────────────────────────────────────────────────────────
-function setStatus(status: string) {
-  currentConnectionStatus = status
-  const label = STATUS_LABELS[status] || status
-  statusDot.className = status
-  statusLabel.textContent = label
-  infoStatus.textContent = label
-  infoStatus.className = `info-value ${status}`
-}
-
-function updateStats() {
-  statTotal.textContent = String(totalCalls)
-  statSuccess.textContent = String(successCalls)
-  statFailed.textContent = String(failedCalls)
-  statRunning.textContent = String(runningCalls)
-}
-
-function setSidebarOpen(open: boolean) {
-  sidebarOpen = open
-  bodyEl.classList.toggle('sidebar-open', open)
-  settingsToggle.classList.toggle('active', open)
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-function formatTime(ts: number) {
-  const d = new Date(ts)
-  return [d.getHours(), d.getMinutes(), d.getSeconds()].map(n => String(n).padStart(2, '0')).join(':')
-}
-function escapeHtml(str: string) {
+function esc(str: string) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-// ── Activity feed ──────────────────────────────────────────────────────────
-function addEntry(entry: { id?: string; type: string; status: string; message: string; data?: any; timestamp: number }) {
-  feedEmpty.style.display = 'none'
-  const el = document.createElement('div')
-  el.className = 'entry'
+// ── Theme (also recolors the Electron window via setTheme IPC) ───────────────
+function applyTheme(theme: 'dark' | 'light', persist = true) {
+  currentTheme = theme
+  document.body.className = theme
+  $('theme-toggle').textContent = theme === 'dark' ? '☀️' : '🌙'
+  if (persist) window.heysureAPI.setTheme(theme)
+}
+$('theme-toggle').addEventListener('click', () => applyTheme(currentTheme === 'dark' ? 'light' : 'dark'))
 
-  const iconCls = (() => {
-    if (entry.status === 'success') return 'success'
-    if (entry.status === 'error') return 'error'
-    if (entry.status === 'running') return 'running'
-    if (entry.status === 'warn') return 'warn'
-    if (entry.type === 'system') return 'system'
-    return 'info'
-  })()
-  const badgeCls = ({ task: 'task', system: 'system', error: 'error', warn: 'warn' } as any)[entry.type] || 'info'
-  const icon = ({ success: '✓', error: '✗', running: '▶', warn: '⚠', system: '●' } as any)[entry.status] || 'ℹ'
+// ── Status indicator (green / yellow / red) ─────────────────────────────────
+const STATUS_LABELS: Record<string, string> = {
+  disconnected: '未连接', connecting: '连接中...', connected: '已连接', registered: '已连接到服务器', error: '连接错误',
+}
+function renderStatus() {
+  const connected = currentStatus === 'registered' || currentStatus === 'connected'
+  let color: 'green' | 'yellow' | 'red', label: string
+  if (!connected) { color = 'red'; label = '未连接' }
+  else if (boundAiConfigId == null) { color = 'yellow'; label = '未分配 AI' }
+  else { color = 'green'; label = '已连接' }
+  $('status-dot').className = `status-dot ${color}`
+  $('status-label').textContent = label
+  $('info-status').textContent = STATUS_LABELS[currentStatus] || currentStatus
+  $('info-ai').textContent = boundAiConfigId == null ? '未分配' : `#${boundAiConfigId}`
+}
+function setStatus(status: string, _reason?: string, aiConfigId?: number | null) {
+  currentStatus = status
+  if (status !== 'registered' && status !== 'connected') boundAiConfigId = null
+  else if (typeof aiConfigId !== 'undefined') boundAiConfigId = aiConfigId
+  renderStatus()
+}
 
-  let dataHtml = ''
-  if (entry.data !== undefined && entry.data !== null) {
-    const s = typeof entry.data === 'string' ? entry.data : JSON.stringify(entry.data, null, 2)
-    dataHtml = `<button class="entry-data-toggle" onclick="toggleData(this)"><span class="arrow">&#x25B6;</span> 详情</button><div class="entry-data"><pre>${escapeHtml(s)}</pre></div>`
+// ── Tool-call stats ──────────────────────────────────────────────────────
+function updateStats() {
+  $('stat-total').textContent = String(totalCalls)
+  $('stat-success').textContent = String(successCalls)
+  $('stat-failed').textContent = String(failedCalls)
+  $('stat-running').textContent = String(runningCalls)
+}
+
+// ── MCP tool page ──────────────────────────────────────────────────────────
+function nsOf(name: string): string {
+  if (name.includes('.')) return name.split('.')[0]
+  const i = name.indexOf('_'); return i > 0 ? name.slice(0, i) : 'other'
+}
+function isEdited(name: string): boolean {
+  const o = overrides[name]
+  return !!(o && (o.description || (o.parameters && Object.keys(o.parameters).length)))
+}
+function effDesc(t: ToolDef): string { return overrides[t.name]?.description?.trim() || t.description || '' }
+function effParam(tool: string, p: string, raw: string): string { return overrides[tool]?.parameters?.[p]?.trim() || raw || '' }
+
+function showList() {
+  $('mcp-detail-pane').classList.add('hidden')
+  $('mcp-list-pane').classList.remove('hidden')
+}
+
+async function loadMcp() {
+  const data = await window.heysureAPI.mcpList()
+  toolDefs = data.tools || []
+  overrides = data.overrides || {}
+  renderMcpList()
+}
+
+function renderMcpList() {
+  $('mcp-count').textContent = `${toolDefs.length} 个`
+  const list = $('mcp-list'); list.innerHTML = ''
+  if (!toolDefs.length) { list.innerHTML = '<div class="empty-note">无可用工具</div>'; return }
+  const groups = new Map<string, ToolDef[]>()
+  for (const t of toolDefs) {
+    const ns = nsOf(t.name)
+    if (!groups.has(ns)) groups.set(ns, [])
+    groups.get(ns)!.push(t)
   }
-  let badgeHtml = ''
-  if (entry.status === 'success' || entry.status === 'error' || entry.status === 'running') {
-    const bLabel = entry.status === 'success' ? '成功' : entry.status === 'error' ? '失败' : '进行中'
-    badgeHtml = `<span class="entry-status-badge ${entry.status}">${bLabel}</span>`
+  for (const ns of Array.from(groups.keys()).sort()) {
+    const title = document.createElement('div')
+    title.className = 'ns-title'; title.textContent = `${ns}/ (${groups.get(ns)!.length})`
+    list.appendChild(title)
+    for (const t of groups.get(ns)!) {
+      const el = document.createElement('div')
+      el.className = 'tool-item'
+      el.innerHTML = `
+        <div class="tool-item-top">
+          <span class="tool-name">${esc(t.name)}</span>
+          ${isEdited(t.name) ? '<span class="tool-edited">已自定义</span>' : ''}
+        </div>
+        <div class="tool-desc">${esc((effDesc(t) || '（无描述）').slice(0, 120))}</div>`
+      el.addEventListener('click', () => openTool(t.name))
+      list.appendChild(el)
+    }
   }
+}
 
-  el.innerHTML = `
-    <div class="entry-icon ${iconCls}">${icon}</div>
-    <div class="entry-body">
-      <div class="entry-top"><span class="entry-type ${badgeCls}">${entry.type}</span><span class="entry-time">${formatTime(entry.timestamp)}</span></div>
-      <div class="entry-message">${escapeHtml(entry.message)}</div>
-      ${badgeHtml}${dataHtml}
+function paramEntries(t: ToolDef) {
+  const props = t.input_schema?.properties || {}
+  const required = new Set(t.input_schema?.required || [])
+  return Object.keys(props).map(p => {
+    const cfg = (props as any)[p] || {}
+    const ty = Array.isArray(cfg.type) ? cfg.type.join('|') : (cfg.type || 'any')
+    return { name: p, type: String(ty), required: required.has(p), desc: String(cfg.description || '') }
+  })
+}
+
+function openTool(name: string) {
+  const tool = toolDefs.find(t => t.name === name)
+  if (!tool) return
+  $('mcp-list-pane').classList.add('hidden')
+  $('mcp-detail-pane').classList.remove('hidden')
+  $('mcp-detail').scrollTop = 0
+  renderDetail(tool)
+}
+
+function renderDetail(tool: ToolDef) {
+  const params = paramEntries(tool)
+  const paramHtml = params.length
+    ? params.map(p => `
+        <div class="param-row">
+          <div class="param-head">
+            <span class="param-name">${esc(p.name)}</span>
+            <span class="param-type">${esc(p.type)}</span>
+            ${p.required ? '<span class="param-req">必填</span>' : ''}
+          </div>
+          <div class="tool-desc">${esc(effParam(tool.name, p.name, p.desc) || '（无说明）')}</div>
+          <input type="text" data-param="${esc(p.name)}" class="edit-param" placeholder="自定义参数说明（留空用默认）" value="${esc(overrides[tool.name]?.parameters?.[p.name] || '')}" style="margin-top:5px;"/>
+        </div>`).join('')
+    : '<div class="empty-note">该工具无参数</div>'
+  const argTemplate = JSON.stringify(Object.fromEntries(params.filter(p => p.required).map(p => [p.name, ''])), null, 2)
+
+  $('mcp-detail').innerHTML = `
+    <div class="card">
+      <div class="card-title">${esc(tool.name)}</div>
+      <div class="tool-desc" style="font-size:12px;">${esc(effDesc(tool) || '（无描述）')}</div>
+    </div>
+    <div class="card">
+      <div class="card-title">参数说明</div>
+      ${paramHtml}
+    </div>
+    <div class="card">
+      <div class="card-title">✏️ 编辑描述（本地保存，随上报同步给服务器）</div>
+      <div class="fg"><label>工具描述（用途 + 使用场景）</label>
+        <textarea class="ta" id="edit-desc" placeholder="留空使用默认描述">${esc(overrides[tool.name]?.description || '')}</textarea>
+      </div>
+      <button class="btn btn-primary" id="edit-save">保存描述</button>
+      <button class="btn btn-secondary" id="edit-reset">恢复默认</button>
+      <div class="save-feedback" id="edit-feedback"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🧪 测试调用 (mcp.test)</div>
+      <div class="login-hint">在本机直接执行该工具并返回原始结果。</div>
+      <div class="fg"><label>参数 (JSON)</label>
+        <textarea class="ta" id="test-args" style="min-height:72px;font-family:'Cascadia Code',Consolas,monospace;">${esc(argTemplate)}</textarea>
+      </div>
+      <button class="btn btn-primary" id="test-run">▶ 测试</button>
+      <div class="test-result" id="test-result" style="display:none;"></div>
     </div>`
-  feed.appendChild(el)
-  feed.scrollTop = feed.scrollHeight
-}
 
-;(window as any).toggleData = function(btn: HTMLButtonElement) {
-  btn.classList.toggle('open')
-  ;(btn.nextElementSibling as HTMLElement)?.classList.toggle('visible')
+  $('edit-save').addEventListener('click', async () => {
+    const description = ($('edit-desc') as HTMLTextAreaElement).value
+    const parameters: Record<string, string> = {}
+    $('mcp-detail').querySelectorAll<HTMLInputElement>('.edit-param').forEach(inp => { parameters[inp.dataset.param!] = inp.value })
+    await window.heysureAPI.mcpSaveDesc({ tool: tool.name, description, parameters })
+    await loadMcp()
+    const fb = $('edit-feedback'); fb.textContent = '已保存 ✓ 已同步给服务器'; fb.style.color = 'var(--success)'
+  })
+  $('edit-reset').addEventListener('click', async () => {
+    await window.heysureAPI.mcpSaveDesc({ tool: tool.name, description: '', parameters: {} })
+    await loadMcp()
+    const t = toolDefs.find(x => x.name === tool.name); if (t) renderDetail(t)
+  })
+  $('test-run').addEventListener('click', async () => {
+    const out = $('test-result')
+    let args: Record<string, any> = {}
+    const raw = ($('test-args') as HTMLTextAreaElement).value.trim()
+    if (raw) {
+      try { args = JSON.parse(raw) } catch (e: any) {
+        out.style.display = 'block'; out.className = 'test-result fail'; out.textContent = `参数 JSON 解析失败：${e?.message || e}`; return
+      }
+    }
+    out.style.display = 'block'; out.className = 'test-result'; out.textContent = '执行中…'
+    try {
+      const r = await window.heysureAPI.mcpTest({ tool: tool.name, args })
+      if (r.success) { out.className = 'test-result ok'; out.textContent = '✓ 成功\n' + safeStringify(r.result) }
+      else { out.className = 'test-result fail'; out.textContent = '✗ 失败：' + (r.error || r.summary || '未知错误') }
+    } catch (err: any) {
+      out.className = 'test-result fail'; out.textContent = '✗ 失败：' + (err?.message || err)
+    }
+  })
 }
+function safeStringify(v: any): string { try { return typeof v === 'string' ? v : JSON.stringify(v, null, 2) } catch { return String(v) } }
 
-// ── Settings ───────────────────────────────────────────────────────────────
-async function loadMainSettings() {
-  const s = await window.heysureAPI.getSettings()
-  cfgServer.value = s.serverUrl || ''
-  cfgWorkspace.value = s.workspaceRoot || ''
-  infoServer.textContent    = s.serverUrl || '—'
-  infoWorkspace.textContent = s.workspaceRoot ? (s.workspaceRoot.split(/[/\\]/).pop() || s.workspaceRoot) : '—'
-  updateUserChip(s)
-  return s
+$('mcp-back').addEventListener('click', showList)
+
+// ── Settings modal ───────────────────────────────────────────────────────
+const cfgServer    = $('cfg-server') as HTMLInputElement
+const cfgWorkspace = $('cfg-workspace') as HTMLInputElement
+const cfgAiKey     = $('cfg-ai-key') as HTMLInputElement
+const cfgAiBase    = $('cfg-ai-base') as HTMLInputElement
+const cfgAiModel   = $('cfg-ai-model') as HTMLInputElement
+const cfgOffline   = $('cfg-offline-mode') as HTMLInputElement
+const cfgMouseFx   = $('cfg-mouse-fx') as HTMLInputElement
+const cfgProvider  = $('cfg-ai-provider') as HTMLSelectElement
+
+const PROVIDER_PRESETS: Record<string, { base: string; model: string }> = {
+  anthropic:  { base: 'https://api.anthropic.com', model: 'claude-sonnet-4-5' },
+  openai:     { base: 'https://api.openai.com',    model: 'gpt-4o' },
+  deepseek:   { base: 'https://api.deepseek.com',  model: 'deepseek-chat' },
+  openrouter: { base: 'https://openrouter.ai/api', model: 'anthropic/claude-3.5-sonnet' },
+  ollama:     { base: 'http://localhost:11434',    model: 'llama3.1' },
 }
+cfgProvider.addEventListener('change', () => {
+  const p = PROVIDER_PRESETS[cfgProvider.value]
+  if (p) { cfgAiBase.value = p.base; cfgAiModel.value = p.model }
+  cfgProvider.value = ''
+})
+function updateOfflineUi() { $('offline-model-config').classList.toggle('hidden', !cfgOffline.checked) }
+cfgOffline.addEventListener('change', updateOfflineUi)
 
-async function saveSettings() {
-  const settings = {
-    serverUrl: cfgServer.value.trim(),
-    workspaceRoot: cfgWorkspace.value.trim(),
-  }
+function openSettings()  { $('settings-modal').classList.remove('hidden') }
+function closeSettings() { $('settings-modal').classList.add('hidden') }
+$('settings-btn').addEventListener('click', openSettings)
+$('settings-close').addEventListener('click', closeSettings)
+$('settings-modal').addEventListener('click', e => { if (e.target === $('settings-modal')) closeSettings() })
+
+$('save-btn').addEventListener('click', async () => {
+  const fb = $('save-feedback')
   try {
-    await window.heysureAPI.saveSettings(settings)
-    infoServer.textContent = settings.serverUrl || '—'
-    infoWorkspace.textContent = settings.workspaceRoot ? (settings.workspaceRoot.split(/[/\\]/).pop() || settings.workspaceRoot) : '—'
-    saveFeedback.style.color = ''; saveFeedback.textContent = '已保存 ✓'
-    setTimeout(() => { saveFeedback.textContent = '' }, 2000)
+    await window.heysureAPI.saveSettings({
+      serverUrl: cfgServer.value.trim(),
+      workspaceRoot: cfgWorkspace.value.trim(),
+      offlineMode: cfgOffline.checked,
+      mouseFx: cfgMouseFx.checked,
+      aiKey: cfgAiKey.value.trim(),
+      aiBaseUrl: cfgAiBase.value.trim() || 'https://api.anthropic.com',
+      aiModel: cfgAiModel.value.trim() || 'claude-sonnet-4-5',
+    })
+    $('info-server').textContent = cfgServer.value.trim() || '—'
+    $('info-workspace').textContent = cfgWorkspace.value.trim() ? (cfgWorkspace.value.trim().split(/[/\\]/).pop() || cfgWorkspace.value.trim()) : '—'
+    fb.style.color = 'var(--success)'; fb.textContent = '已保存 ✓'
+    setTimeout(() => { fb.textContent = '' }, 2000)
   } catch {
-    saveFeedback.textContent = '保存失败'; saveFeedback.style.color = 'var(--error)'
-    setTimeout(() => { saveFeedback.textContent = ''; saveFeedback.style.color = '' }, 3000)
+    fb.style.color = 'var(--error)'; fb.textContent = '保存失败'
+    setTimeout(() => { fb.textContent = '' }, 3000)
   }
-}
-saveBtn.addEventListener('click', saveSettings)
-
-testConnBtn.addEventListener('click', async () => {
-  testResult.textContent = '测试中...'; testResult.className = 'test-result'
-  testConnBtn.setAttribute('disabled', 'true')
-  try {
-    const r = await window.heysureAPI.testConnection()
-    testResult.textContent = r.success ? `✓ 连接成功 (${r.status}) · ${r.ms}ms` : `✗ ${r.error}`
-    testResult.className = `test-result ${r.success ? 'success' : 'error'}`
-  } catch (err: any) {
-    testResult.textContent = `✗ ${err.message}`; testResult.className = 'test-result error'
-  } finally { testConnBtn.removeAttribute('disabled') }
 })
 
-connectBtn.addEventListener('click', () => window.heysureAPI.connect())
-disconnectBtn.addEventListener('click', () => window.heysureAPI.disconnect())
-clearBtn.addEventListener('click', () => {
-  feed.querySelectorAll('.entry').forEach(e => e.remove())
-  feedEmpty.style.display = 'flex'
-})
-settingsToggle.addEventListener('click', () => setSidebarOpen(!sidebarOpen))
+// ── Members modal (connection + AI assignment info) ─────────────────────────
+function openMembers()  { $('members-modal').classList.remove('hidden'); renderStatus() }
+function closeMembers() { $('members-modal').classList.add('hidden') }
+$('status-pill').addEventListener('click', openMembers)
+$('members-modal-close').addEventListener('click', closeMembers)
+$('members-modal').addEventListener('click', e => { if (e.target === $('members-modal')) closeMembers() })
+$('connect-btn').addEventListener('click', () => window.heysureAPI.connect())
+$('disconnect-btn').addEventListener('click', () => window.heysureAPI.disconnect())
 
+// ── Status / task events ──────────────────────────────────────────────────
 window.heysureAPI.onStatusChange(setStatus)
-window.heysureAPI.onActivityLog(addEntry)
-window.heysureAPI.onTaskStart((data) => {
-  totalCalls++; runningCalls++
-  addEntry({ id: data.taskId, type: 'task', status: 'running', message: `执行工具: ${data.tool}`, data: data.args && Object.keys(data.args).length > 0 ? data.args : undefined, timestamp: data.timestamp || Date.now() })
-  updateStats()
-})
+window.heysureAPI.onActivityLog(() => { /* feed removed; stats tracked via task events */ })
+window.heysureAPI.onTaskStart(() => { totalCalls++; runningCalls++; updateStats() })
 window.heysureAPI.onTaskResult((data) => {
   runningCalls = Math.max(0, runningCalls - 1)
   data.success ? successCalls++ : failedCalls++
-  addEntry({ id: data.taskId + '_result', type: 'task', status: data.success ? 'success' : 'error', message: `${data.success ? '完成' : '失败'}: ${data.tool}`, data: data.result ?? undefined, timestamp: data.timestamp || Date.now() })
   updateStats()
 })
 
-// ══════════════════════════════════════════════════════
-// LOGIN
-// ══════════════════════════════════════════════════════
-const loginAccountInput  = document.getElementById('login-account') as HTMLInputElement
-const loginPasswordInput = document.getElementById('login-password') as HTMLInputElement
-const loginBtn           = document.getElementById('login-btn') as HTMLButtonElement
-const loginError         = document.getElementById('login-error')!
-const loginModal         = document.getElementById('login-modal')!
-const loginModalClose    = document.getElementById('login-modal-close')!
+// ── Login ──────────────────────────────────────────────────────────────────
+const loginAccount  = $('login-account') as HTMLInputElement
+const loginPassword = $('login-password') as HTMLInputElement
+const loginBtn      = $('login-btn') as HTMLButtonElement
+const loginError    = $('login-error')
+const loginModal    = $('login-modal')
 
 function showLoginError(msg: string) { loginError.textContent = msg; loginError.classList.add('visible') }
 function clearLoginError() { loginError.classList.remove('visible') }
-
 function openLoginModal() {
-  loginModal.classList.remove('hidden')
-  clearLoginError()
-  window.heysureAPI.getSettings().then(s => {
-    loginAccountInput.value = s.userAccount || ''
-    updateUserChip(s)
-    setTimeout(() => (s.authToken ? loginModalClose : loginAccountInput).focus(), 0)
-  }).catch(() => {})
+  loginModal.classList.remove('hidden'); clearLoginError()
+  window.heysureAPI.getSettings().then(s => { loginAccount.value = s.userAccount || ''; updateUserChip(s) }).catch(() => {})
 }
-
-function closeLoginModal() {
-  loginModal.classList.add('hidden')
-}
-
-document.addEventListener('keydown', (event: KeyboardEvent) => {
-  if (event.key === 'Escape') closeLoginModal()
-})
+function closeLoginModal() { loginModal.classList.add('hidden') }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLoginModal(); closeSettings(); closeMembers() } })
 
 window.heysureAPI.onAuthExpired(async reason => {
   const s = await window.heysureAPI.getSettings()
-  updateUserChip(s)
-  openLoginModal()
-  showLoginError(reason || '登录已过期，请重新登录')
+  updateUserChip(s); openLoginModal(); showLoginError(reason || '登录已过期，请重新登录')
 })
 
 async function doLogin() {
   clearLoginError()
   const saved = await window.heysureAPI.getSettings()
   const serverUrl = (cfgServer.value.trim() || saved.serverUrl || '').trim()
-  const account   = loginAccountInput.value.trim()
-  const password  = loginPasswordInput.value
+  const account = loginAccount.value.trim()
+  const password = loginPassword.value
   if (!serverUrl) { showLoginError('请先在设置中配置服务器地址'); return }
-  if (!account)   { showLoginError('请输入账号'); return }
-  if (!password)  { showLoginError('请输入密码'); return }
-
-  loginBtn.classList.add('loading'); loginBtn.disabled = true
+  if (!account) { showLoginError('请输入账号'); return }
+  if (!password) { showLoginError('请输入密码'); return }
+  loginBtn.disabled = true
   try {
     await window.heysureAPI.login({ serverUrl, account, password })
     const s = await window.heysureAPI.getSettings()
-    loginPasswordInput.value = ''
-    updateUserChip(s)
-    closeLoginModal()
-    await loadMainSettings()
-    // Logged in → connect right away. AI is assigned later from the web Workshop.
+    loginPassword.value = ''
+    updateUserChip(s); closeLoginModal(); await loadMainSettings()
     window.heysureAPI.connect()
   } catch (err: any) {
     showLoginError(err.message || '登录失败')
   } finally {
-    loginBtn.classList.remove('loading'); loginBtn.disabled = false
+    loginBtn.disabled = false
   }
 }
 loginBtn.addEventListener('click', doLogin)
-;[loginAccountInput, loginPasswordInput].forEach(el =>
-  el.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin() })
-)
-loginModalClose.addEventListener('click', closeLoginModal)
+;[loginAccount, loginPassword].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin() }))
+$('login-modal-close').addEventListener('click', closeLoginModal)
 loginModal.addEventListener('click', e => { if (e.target === loginModal) closeLoginModal() })
 
-// ══════════════════════════════════════════════════════
-// ACCOUNT / USER CHIP
-// ══════════════════════════════════════════════════════
-const logoutBtn    = document.getElementById('logout-btn')!
-const accountInfoBlock     = document.getElementById('account-info') as HTMLElement
-const accountInfoAva       = document.getElementById('account-info-ava') as HTMLElement
-const accountInfoAvaImg    = document.getElementById('account-info-ava-img') as HTMLImageElement
-const accountInfoAvaText   = document.getElementById('account-info-ava-text') as HTMLElement
-const accountInfoName      = document.getElementById('account-info-name') as HTMLElement
-const accountInfoServer    = document.getElementById('account-info-server') as HTMLElement
-const headerUserAvaImg     = document.getElementById('header-user-ava-img') as HTMLImageElement
-const headerUserAvaText    = document.getElementById('header-user-ava-text') as HTMLElement
-const loginFormBlock       = document.getElementById('login-form') as HTMLElement
-
+// ── Account / user chip ──────────────────────────────────────────────────
 function resolveAvatarUrl(avatar: string, server: string): string {
-  const raw = (avatar || '').trim()
-  if (!raw) return ''
+  const raw = (avatar || '').trim(); if (!raw) return ''
   const base = (server || '').replace(/\/+$/, '')
-  // Preset avatars are served by the backend at /avatars/avatarsN.png. The
-  // stored value is the web console's bundled URL (e.g. /assets/avatars2-<hash>.png),
-  // so extract the 1-5 index and resolve it against the server.
   const preset = raw.match(/avatars([1-5])(?:[-.][^/]*)?\.png/i)
   if (preset) return base ? `${base}/avatars/avatars${preset[1]}.png` : ''
   if (/^(https?:|data:|blob:)/i.test(raw)) return raw
   if (!base) return raw
   return raw.startsWith('/') ? `${base}${raw}` : `${base}/${raw}`
 }
-
-function bindAvatarImage(imgEl: HTMLImageElement, container: HTMLElement, src: string, fallbackText: string, textEl: HTMLElement) {
-  textEl.textContent = fallbackText
-  container.classList.remove('has-image')
-  imgEl.onload = null
-  imgEl.onerror = null
-  if (!src) {
-    imgEl.removeAttribute('src')
-    return
-  }
+function bindAvatar(imgEl: HTMLImageElement, container: HTMLElement, src: string, fallback: string, textEl: HTMLElement) {
+  textEl.textContent = fallback; container.classList.remove('has-image')
+  imgEl.onload = null; imgEl.onerror = null
+  if (!src) { imgEl.removeAttribute('src'); return }
   imgEl.onload = () => container.classList.add('has-image')
   imgEl.onerror = () => container.classList.remove('has-image')
   imgEl.src = src
 }
-
-function setUserChip(displayName: string, avatar: string, server: string, authenticated = true, avatarDataUrl = '') {
-  const host = (() => { try { return new URL(server).hostname } catch { return server || '—' } })()
-  const shown = (displayName || '').trim()
+function updateUserChip(s: any) {
+  const authenticated = !!s.authToken
+  const shown = String(s.userName || '').trim()
   const initial = shown ? shown.slice(0, 1).toUpperCase() : '·'
-  // Prefer the cached data URL (instant, offline); fall back to the live URL.
-  const resolvedAvatar = authenticated && shown ? (avatarDataUrl || resolveAvatarUrl(avatar, server)) : ''
-  headerUserName.textContent = authenticated && shown ? shown : '未登录'
-  bindAvatarImage(headerUserAvaImg, headerUserAva, resolvedAvatar, initial, headerUserAvaText)
-  headerUserChip.classList.toggle('logged-in', !!(authenticated && shown))
-  // Login modal: swap between login form and account info
+  const avatar = authenticated && shown ? (s.userAvatarDataUrl || resolveAvatarUrl(s.userAvatar || '', s.serverUrl || '')) : ''
+  $('header-user-name').textContent = authenticated && shown ? shown : '未登录'
+  bindAvatar($('header-user-ava-img') as HTMLImageElement, $('header-user-ava'), avatar, initial, $('header-user-ava-text'))
   if (authenticated && shown) {
-    bindAvatarImage(accountInfoAvaImg, accountInfoAva, resolvedAvatar, initial, accountInfoAvaText)
-    accountInfoName.textContent = shown
-    accountInfoServer.textContent = host
-    accountInfoBlock.style.display = 'flex'
-    loginFormBlock.style.display = 'none'
+    const host = (() => { try { return new URL(s.serverUrl).hostname } catch { return s.serverUrl || '—' } })()
+    bindAvatar($('account-info-ava-img') as HTMLImageElement, $('account-info-ava'), avatar, initial, $('account-info-ava-text'))
+    $('account-info-name').textContent = shown
+    $('account-info-server').textContent = host
+    $('account-info').style.display = 'flex'
+    $('login-form').style.display = 'none'
   } else {
-    accountInfoBlock.style.display = 'none'
-    loginFormBlock.style.display = 'flex'
+    $('account-info').style.display = 'none'
+    $('login-form').style.display = 'flex'
   }
 }
-
-function updateUserChip(s: any) {
-  setUserChip(s.userName || '', s.userAvatar || '', s.serverUrl || '', !!s.authToken, s.userAvatarDataUrl || '')
-}
-
 async function doLogout() {
   await window.heysureAPI.logout()
   const s = await window.heysureAPI.getSettings()
+  cfgServer.value = s.serverUrl || ''; loginAccount.value = ''; loginPassword.value = ''
+  updateUserChip(s); clearLoginError(); closeLoginModal(); setStatus('disconnected')
+}
+$('header-user-chip').addEventListener('click', openLoginModal)
+$('logout-btn').addEventListener('click', doLogout)
+
+// ── Settings load ──────────────────────────────────────────────────────────
+async function loadMainSettings() {
+  const s = await window.heysureAPI.getSettings()
   cfgServer.value = s.serverUrl || ''
-  loginAccountInput.value = ''
-  loginPasswordInput.value = ''
+  cfgWorkspace.value = s.workspaceRoot || ''
+  cfgAiKey.value = s.aiKey || ''
+  cfgAiBase.value = s.aiBaseUrl || ''
+  cfgAiModel.value = s.aiModel || ''
+  cfgOffline.checked = !!s.offlineMode
+  cfgMouseFx.checked = s.mouseFx !== false
+  updateOfflineUi()
+  $('info-server').textContent = s.serverUrl || '—'
+  $('info-workspace').textContent = s.workspaceRoot ? (s.workspaceRoot.split(/[/\\]/).pop() || s.workspaceRoot) : '—'
   updateUserChip(s)
-  clearLoginError()
-  closeLoginModal()
-  setStatus('disconnected')
+  return s
 }
 
-headerUserChip.addEventListener('click', () => openLoginModal())
-logoutBtn.addEventListener('click', () => doLogout())
-
-// ══════════════════════════════════════════════════════
-// INIT
-// ══════════════════════════════════════════════════════
+// ── Init ─────────────────────────────────────────────────────────────────
 async function init() {
   const s = await window.heysureAPI.getSettings()
   applyTheme(s.theme || 'dark', false)
-  cfgServer.value = s.serverUrl || ''
-  loginAccountInput.value = s.userAccount || ''
-  updateUserChip(s)
+  loginAccount.value = s.userAccount || ''
   await loadMainSettings()
   updateStats()
+  await loadMcp()
   const status = await window.heysureAPI.getStatus()
   setStatus(status)
-  showScreen('main')
-
-  if (s.authToken) {
-    // Already logged in → ensure we're connected (idempotent).
-    window.heysureAPI.connect()
-  } else {
-    openLoginModal()
-  }
+  if (s.authToken) window.heysureAPI.connect()
+  else openLoginModal()
 }
-
 init().catch(console.error)
