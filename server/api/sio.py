@@ -64,6 +64,10 @@ class _RemoteSio:
                     "namespace": namespace,
                 },
             )
+        except RuntimeError as exc:
+            if "Event loop is closed" in str(exc):
+                return
+            logger.exception(f"sio-proxy forward failed event={event}")
         except Exception:
             # Logging only — emit failures should never break the worker.
             logger.exception(f"sio-proxy forward failed event={event}")

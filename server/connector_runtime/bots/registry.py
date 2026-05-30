@@ -7,6 +7,7 @@ adapter instead of branching on the channel string.
 
 from __future__ import annotations
 
+import importlib
 from typing import TYPE_CHECKING, Dict, Iterator, List, Optional
 
 from .base import BotAdapter
@@ -16,6 +17,22 @@ if TYPE_CHECKING:
 
 
 _BOTS: Dict[str, BotAdapter] = {}
+_DEFAULT_BOTS_LOADED = False
+
+
+def _load_default_bots() -> None:
+    """Import the built-in adapters once so they can self-register.
+
+    Keeping the imports lazy avoids package-import side effects in processes
+    that only need the registry helpers (for example the chat persistence
+    notify hook).
+    """
+    global _DEFAULT_BOTS_LOADED
+    if _DEFAULT_BOTS_LOADED:
+        return
+    _DEFAULT_BOTS_LOADED = True
+    importlib.import_module("connector_runtime.bots.feishu.adapter")
+    importlib.import_module("connector_runtime.bots.qq.adapter")
 
 
 def register(bot: BotAdapter) -> None:
@@ -32,6 +49,7 @@ def register(bot: BotAdapter) -> None:
 
 def get(channel: str) -> Optional[BotAdapter]:
     """Return the adapter for ``channel`` or ``None`` if unknown."""
+    _load_default_bots()
     return _BOTS.get(str(channel or "").strip().lower())
 
 
@@ -45,11 +63,13 @@ def require(channel: str) -> BotAdapter:
 
 def iter_bots() -> Iterator[BotAdapter]:
     """Yield every registered adapter (in registration order)."""
+    _load_default_bots()
     return iter(_BOTS.values())
 
 
 def all_channels() -> List[str]:
     """Return every registered channel name (whitelist for input validation)."""
+    _load_default_bots()
     return list(_BOTS.keys())
 
 
@@ -60,6 +80,7 @@ def iter_active_for_config(cfg: "AssistantAIConfig") -> Iterator[BotAdapter]:
     practice this yields zero or one adapter. The iterator shape is kept
     for future support of multi-bot configs.
     """
+    _load_default_bots()
     for bot in _BOTS.values():
         if bot.is_enabled(cfg):
             yield bot

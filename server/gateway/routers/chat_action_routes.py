@@ -1,5 +1,6 @@
 IS_ROUTER_ENTRY = False
 
+import asyncio
 import json
 import os
 import threading
@@ -8,7 +9,7 @@ import uuid
 from typing import List, Optional
 
 import requests
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
@@ -39,6 +40,37 @@ def _ai_dispatch_mode() -> str:
     (the historical monolith), api-gateway spawns a worker thread itself.
     """
     return "remote" if settings.ai_dispatch_mode == "remote" else "local"
+
+
+def _build_run_status_payload(row: ChatRun, live: dict) -> dict:
+    live_text = str(live.get("text") or "")
+    live_reasoning = str(live.get("reasoning") or "")
+    live_delta = ""
+    return {
+        "run_id": row.run_id,
+        "status": row.status,
+        "stop_requested": row.stop_requested,
+        "error_message": row.error_message,
+        "session_id": row.session_id,
+        "ai_config_id": row.ai_config_id,
+        "ai_kind": row.ai_kind,
+        "updated_at": row.updated_at,
+        "live_text": live_text,
+        "live_delta": live_delta,
+        "live_len": len(live_text),
+        "live_reasoning": live_reasoning,
+        "live_reasoning_len": len(live_reasoning),
+        "live_updated_at": live.get("updated_at"),
+        "live_phase": str(live.get("phase") or "idle"),
+        "current_tool": str(live.get("current_tool") or ""),
+        "live_prompt_tokens": int(live.get("pending_prompt_tokens") or 0),
+        "live_completion_tokens": int(live.get("pending_completion_tokens") or 0),
+        "live_total_tokens": int(live.get("pending_total_tokens") or 0),
+    }
+
+
+def _sse_event(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 @router.post("/run/start")
@@ -153,32 +185,69 @@ async def get_chat_run(
         raise HTTPException(status_code=404, detail="Run not found")
     with _RUN_STATE_LOCK:
         live = _RUN_LIVE_STATE.get(run_id) or {}
-    live_text = str(live.get("text") or "")
-    live_reasoning = str(live.get("reasoning") or "")
-    live_delta = ""
-    if after is not None and after >= 0 and after <= len(live_text):
-        live_delta = live_text[after:]
-    return {
-        "run_id": row.run_id,
-        "status": row.status,
-        "stop_requested": row.stop_requested,
-        "error_message": row.error_message,
-        "session_id": row.session_id,
-        "ai_config_id": row.ai_config_id,
-        "ai_kind": row.ai_kind,
-        "updated_at": row.updated_at,
-        "live_text": live_text,
-        "live_delta": live_delta,
-        "live_len": len(live_text),
-        "live_reasoning": live_reasoning,
-        "live_reasoning_len": len(live_reasoning),
-        "live_updated_at": live.get("updated_at"),
-        "live_phase": str(live.get("phase") or "idle"),
-        "current_tool": str(live.get("current_tool") or ""),
-        "live_prompt_tokens": int(live.get("pending_prompt_tokens") or 0),
-        "live_completion_tokens": int(live.get("pending_completion_tokens") or 0),
-        "live_total_tokens": int(live.get("pending_total_tokens") or 0),
+    payload = _build_run_status_payload(row, live)
+    if after is not None and after >= 0 and after <= len(payload["live_text"]):
+        payload["live_delta"] = payload["live_text"][after:]
+    return payload
+
+
+@router.get("/run/stream/{run_id}")
+async def stream_chat_run(
+    run_id: str,
+    request: Request,
+    after: Optional[int] = None,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    row = session.exec(
+        select(ChatRun).where(ChatRun.run_id == run_id, ChatRun.user_id == user.id)
+    ).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    async def generate():
+        last_payload_json = ""
+        last_status = ""
+        while True:
+            if await request.is_disconnected():
+                break
+
+            current_row = session.exec(
+                select(ChatRun).where(ChatRun.run_id == run_id, ChatRun.user_id == user.id)
+            ).first()
+            if not current_row:
+                yield _sse_event("error", {"run_id": run_id, "detail": "Run not found"})
+                break
+
+            with _RUN_STATE_LOCK:
+                live = dict(_RUN_LIVE_STATE.get(run_id) or {})
+
+            payload = _build_run_status_payload(current_row, live)
+            if after is not None and after >= 0 and after <= len(payload["live_text"]):
+                payload["live_delta"] = payload["live_text"][after:]
+            else:
+                payload["live_delta"] = payload["live_text"]
+
+            payload_json = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            current_status = str(payload.get("status") or "")
+            if payload_json != last_payload_json:
+                yield _sse_event("update", payload)
+                last_payload_json = payload_json
+                last_status = current_status
+
+            if current_status in {"completed", "error", "stopped"}:
+                yield _sse_event("done", payload)
+                break
+
+            await asyncio.sleep(0.12)
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
     }
+    return StreamingResponse(generate(), media_type="text/event-stream", headers=headers)
 
 @router.get("/run/active")
 async def get_active_chat_run(

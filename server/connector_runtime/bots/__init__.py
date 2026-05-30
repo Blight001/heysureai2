@@ -8,18 +8,14 @@ registry for the right adapter and invokes the methods it needs.
 Adding a new bot:
     1. Create ``bots/<name>/`` with an ``adapter.py`` that subclasses
        :class:`BotAdapter` and instantiates the adapter at import time.
-    2. Import that module here so the adapter registers on package load.
+    2. Import that module from ``connector_runtime.bots.registry`` so the
+       adapter registers when the registry is first used.
     3. Add the per-bot config columns / DB models in ``bots/<name>/models.py``
        and run a migration to add them to ``assistantaiconfig``.
 """
 
 from .base import BotAdapter
 from .registry import all_channels, get, iter_active_for_config, iter_bots, register
-
-# Importing the adapter modules triggers registration. Keep this list as the
-# canonical "which bots ship with the server" enumeration.
-from .feishu import adapter as _feishu_adapter  # noqa: F401 — side-effect import
-from .qq import adapter as _qq_adapter  # noqa: F401 — side-effect import
 
 
 __all__ = [
