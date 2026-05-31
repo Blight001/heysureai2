@@ -294,6 +294,13 @@ const toggleFileSelection = (file: string) => {
   emit('update:selectedFiles', newSelected)
 }
 const handleRefreshFiles = () => emit('refreshFiles')
+const handleToggleFileSelector = () => {
+  const nextOpen = !isFileSelectorOpen.value
+  isFileSelectorOpen.value = nextOpen
+  if (nextOpen && props.allFiles.length === 0) {
+    emit('refreshFiles')
+  }
+}
 
 const scrollToBottom = async () => {
   await nextTick()
@@ -1236,7 +1243,7 @@ onBeforeUnmount(() => {
       :selectedFiles="selectedFiles"
       :currentPath="currentPath"
       @send="sendChat"
-      @toggleFileSelector="isFileSelectorOpen = !isFileSelectorOpen"
+      @toggleFileSelector="handleToggleFileSelector"
       @closeFileSelector="isFileSelectorOpen = false"
       @navigateTo="navigateTo"
       @navigateBack="navigateBack"

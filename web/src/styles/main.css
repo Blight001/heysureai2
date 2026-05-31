@@ -119,6 +119,19 @@ select:focus {
   opacity: 0;
 }
 
+.startup-splash-enter-active,
+.startup-splash-leave-active {
+  transition:
+    opacity 0.65s ease,
+    transform 0.65s ease;
+}
+
+.startup-splash-enter-from,
+.startup-splash-leave-to {
+  opacity: 0;
+  transform: scale(1.02);
+}
+
 /* ---------------------------------------------------------------------------
  * Decorative utilities (gradient backdrop, glassmorphism)
  * ------------------------------------------------------------------------- */
@@ -131,6 +144,106 @@ select:focus {
 .animate-gradient {
   background-size: 200% 200%;
   animation: gradient-bg 15s ease infinite;
+}
+
+@keyframes startup-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+@keyframes startup-orb-float {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -18px, 0) scale(1.05);
+  }
+}
+
+.app-background-glow {
+  background:
+    radial-gradient(circle at top, rgba(113, 113, 122, 0.08), transparent 34%),
+    radial-gradient(circle at 20% 80%, rgba(228, 228, 231, 0.16), transparent 28%),
+    radial-gradient(circle at 80% 20%, rgba(212, 212, 216, 0.12), transparent 28%);
+}
+
+.dark .app-background-glow {
+  background:
+    radial-gradient(circle at top, rgba(79, 70, 229, 0.08), transparent 36%),
+    radial-gradient(circle at 25% 75%, rgba(63, 63, 70, 0.08), transparent 30%),
+    radial-gradient(circle at 80% 20%, rgba(82, 82, 91, 0.06), transparent 28%);
+}
+
+.app-background-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(28px);
+  animation: startup-orb-float 7.5s ease-in-out infinite;
+}
+
+.app-background-orb-left {
+  top: 12%;
+  left: 12%;
+  width: 18rem;
+  height: 18rem;
+  background: rgba(113, 113, 122, 0.12);
+}
+
+.dark .app-background-orb-left {
+  background: rgba(63, 63, 70, 0.22);
+}
+
+.app-background-orb-right {
+  right: 10%;
+  bottom: 14%;
+  width: 16rem;
+  height: 16rem;
+  background: rgba(212, 212, 216, 0.14);
+  animation-delay: -3.2s;
+}
+
+.dark .app-background-orb-right {
+  background: rgba(82, 82, 91, 0.18);
+}
+
+.startup-logo-shell {
+  @apply flex h-24 w-24 items-center justify-center overflow-hidden rounded-[1.75rem] border border-white/15 bg-white/10 p-4 shadow-2xl shadow-indigo-950/50 backdrop-blur;
+  box-shadow:
+    0 24px 60px rgba(2, 6, 23, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.startup-progress {
+  width: 45%;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.9), rgba(56, 189, 248, 0.95), rgba(255, 255, 255, 0));
+  animation: startup-progress 1.9s ease-in-out infinite;
+}
+
+.startup-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(26px);
+  animation: startup-orb-float 7.5s ease-in-out infinite;
+}
+
+.startup-orb-left {
+  top: 12%;
+  left: 12%;
+  width: 18rem;
+  height: 18rem;
+}
+
+.startup-orb-right {
+  right: 10%;
+  bottom: 14%;
+  width: 16rem;
+  height: 16rem;
+  animation-delay: -3.2s;
 }
 
 .glass {

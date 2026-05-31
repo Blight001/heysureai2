@@ -5,8 +5,251 @@
     <link rel="icon" type="image/png" href="/src/assets/logo/HeySure.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>HeySure-数字生命</title>
+    <style>
+      :root {
+        color-scheme: dark light;
+      }
+
+      html, body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        background:
+          linear-gradient(135deg, #fafafa 0%, #ffffff 50%, #f4f4f5 100%);
+        color: #18181b;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      html.dark body {
+        background:
+          linear-gradient(135deg, #09090b 0%, #18181b 50%, #111827 100%);
+        color: #e4e4e7;
+      }
+
+      #startup-preload {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        opacity: 1;
+        transform: translateZ(0);
+        transition: opacity 360ms ease, transform 360ms ease;
+        pointer-events: none;
+        background:
+          radial-gradient(circle at top, rgba(113, 113, 122, 0.08), transparent 36%),
+          radial-gradient(circle at 20% 80%, rgba(228, 228, 231, 0.22), transparent 28%),
+          radial-gradient(circle at 80% 20%, rgba(212, 212, 216, 0.18), transparent 28%),
+          linear-gradient(135deg, #fafafa 0%, #ffffff 50%, #f4f4f5 100%);
+      }
+
+      html.dark #startup-preload {
+        background:
+          radial-gradient(circle at top, rgba(39, 39, 42, 0.28), transparent 36%),
+          radial-gradient(circle at 25% 75%, rgba(63, 63, 70, 0.2), transparent 30%),
+          radial-gradient(circle at 80% 20%, rgba(82, 82, 91, 0.16), transparent 28%),
+          linear-gradient(135deg, #09090b 0%, #18181b 50%, #111827 100%);
+      }
+
+      #startup-preload.is-hidden {
+        opacity: 0;
+        transform: scale(1.01);
+      }
+
+      .startup-preload-orb {
+        position: absolute;
+        border-radius: 9999px;
+        filter: blur(28px);
+        animation: startup-preload-float 7.5s ease-in-out infinite;
+      }
+
+      .startup-preload-orb-left {
+        top: 12%;
+        left: 12%;
+        width: 18rem;
+        height: 18rem;
+        background: rgba(113, 113, 122, 0.12);
+      }
+
+      html.dark .startup-preload-orb-left {
+        background: rgba(63, 63, 70, 0.22);
+      }
+
+      .startup-preload-orb-right {
+        right: 10%;
+        bottom: 14%;
+        width: 16rem;
+        height: 16rem;
+        background: rgba(161, 161, 170, 0.12);
+        animation-delay: -3.2s;
+      }
+
+      html.dark .startup-preload-orb-right {
+        background: rgba(82, 82, 91, 0.18);
+      }
+
+      .startup-preload-card {
+        position: relative;
+        width: min(100%, 32rem);
+        margin: 0 1.5rem;
+        padding: 2.5rem 2rem;
+        border-radius: 1.5rem;
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        background: rgba(255, 255, 255, 0.82);
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.1);
+        backdrop-filter: blur(18px);
+        text-align: center;
+      }
+
+      html.dark .startup-preload-card {
+        border-color: rgba(39, 39, 42, 0.72);
+        background: rgba(24, 24, 27, 0.72);
+        box-shadow: 0 24px 60px rgba(2, 6, 23, 0.45);
+      }
+
+      .startup-preload-logo {
+        display: flex;
+        width: 5rem;
+        height: 5rem;
+        margin: 0 auto;
+        align-items: center;
+        justify-content: center;
+        border-radius: 1rem;
+        border: 1px solid rgba(212, 212, 216, 0.7);
+        background: linear-gradient(135deg, rgba(250, 250, 250, 0.96), rgba(245, 245, 245, 0.98));
+        box-shadow: 0 10px 25px rgba(113, 113, 122, 0.14);
+      }
+
+      html.dark .startup-preload-logo {
+        border-color: rgba(63, 63, 70, 0.75);
+        background: linear-gradient(135deg, rgba(39, 39, 42, 0.28), rgba(24, 24, 27, 0.32));
+        box-shadow: 0 10px 25px rgba(30, 41, 59, 0.35);
+      }
+
+      .startup-preload-logo img {
+        width: 3rem;
+        height: 3rem;
+        object-fit: contain;
+      }
+
+      .startup-preload-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 1.5rem;
+        padding: 0.35rem 0.75rem;
+        border-radius: 9999px;
+        border: 1px solid rgba(228, 228, 231, 0.9);
+        background: rgba(255, 255, 255, 0.92);
+        color: #71717a;
+        font-size: 0.75rem;
+        font-weight: 500;
+        letter-spacing: 0.08em;
+      }
+
+      html.dark .startup-preload-badge {
+        border-color: rgba(63, 63, 70, 0.9);
+        background: rgba(9, 9, 11, 0.6);
+        color: #a1a1aa;
+      }
+
+      .startup-preload-title {
+        margin: 1rem 0 0;
+        font-size: clamp(1.9rem, 4vw, 2.5rem);
+        font-weight: 700;
+        letter-spacing: -0.03em;
+      }
+
+      .startup-preload-subtitle {
+        margin: 0.5rem 0 0;
+        font-size: 0.98rem;
+        line-height: 1.7;
+        color: #71717a;
+      }
+
+      html.dark .startup-preload-subtitle {
+        color: #a1a1aa;
+      }
+
+      .startup-preload-track {
+        margin-top: 1.75rem;
+        height: 0.25rem;
+        overflow: hidden;
+        border-radius: 9999px;
+        background: rgba(228, 228, 231, 0.88);
+      }
+
+      html.dark .startup-preload-track {
+        background: rgba(39, 39, 42, 0.88);
+      }
+
+      .startup-preload-progress {
+        width: 45%;
+        height: 100%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(113, 113, 122, 0.95), rgba(156, 163, 175, 0.95), rgba(255, 255, 255, 0));
+        animation: startup-preload-progress 1.9s ease-in-out infinite;
+      }
+
+      @keyframes startup-preload-progress {
+        0% { transform: translateX(-120%); }
+        100% { transform: translateX(220%); }
+      }
+
+      @keyframes startup-preload-float {
+        0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+        50% { transform: translate3d(0, -18px, 0) scale(1.05); }
+      }
+    </style>
+    <script>
+      (function () {
+        const themeKey = 'heysure-ui-theme-mode'
+        const fontKey = 'heysure-ui-font-size'
+        const darkMode = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        let themeMode = darkMode ? 'dark' : 'light'
+        let fontSize = 'md'
+
+        try {
+          const storedTheme = localStorage.getItem(themeKey)
+          if (storedTheme === 'light' || storedTheme === 'dark') themeMode = storedTheme
+          const storedFont = localStorage.getItem(fontKey)
+          if (storedFont === 'sm' || storedFont === 'md' || storedFont === 'lg') fontSize = storedFont
+        } catch (err) {
+          // Ignore storage access issues and fall back to system defaults.
+        }
+
+        document.documentElement.classList.toggle('dark', themeMode === 'dark')
+        document.documentElement.style.setProperty(
+          '--app-font-size',
+          fontSize === 'sm' ? '13px' : fontSize === 'lg' ? '16px' : '14px',
+        )
+      })()
+    </script>
   </head>
   <body>
+    <div id="startup-preload" aria-hidden="true">
+      <div class="startup-preload-orb startup-preload-orb-left"></div>
+      <div class="startup-preload-orb startup-preload-orb-right"></div>
+      <div class="startup-preload-card">
+        <div class="startup-preload-logo">
+          <img src="/src/assets/logo/HeySure.png" alt="HeySure logo" />
+        </div>
+        <div class="startup-preload-badge">
+          <span style="width: 0.4rem; height: 0.4rem; border-radius: 9999px; background: #6366f1; display: inline-block;"></span>
+          专为现代团队而生
+        </div>
+        <h1 class="startup-preload-title">HeySure</h1>
+        <p class="startup-preload-subtitle">协作更高效，管理更清晰</p>
+        <div class="startup-preload-track">
+          <div class="startup-preload-progress"></div>
+        </div>
+        <p class="startup-preload-subtitle" style="margin-top: 1rem;">正在初始化界面与资源</p>
+      </div>
+    </div>
     <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>

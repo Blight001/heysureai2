@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useMessage } from '@/composables/useMessage'
 import { useMcpAndWorkspaceModal } from '@/composables/dashboard/useMcpAndWorkspaceModal'
 import { useTaskManagement } from '@/composables/dashboard/useTaskManagement'
@@ -19,17 +19,18 @@ import type { Agent, McpRoleMeta, McpToolDefinition, User } from '@/types'
 
 import logoUrl from '@/assets/logo/HeySure.png'
 import { resolveAvatarUrl } from '@/utils/avatar'
-import SystemSettingsPanel from './panels/SystemSettingsPanel.vue'
-import LeftSidebarPanel from './panels/LeftSidebarPanel.vue'
-import EvolutionArenaPanel from './panels/EvolutionArenaPanel.vue'
-import ValhallaPanel from './panels/ValhallaPanel.vue'
-import ChatInterface from '@/components/chat/ChatInterface.vue'
-import McpToolsModal from './modals/McpToolsModal.vue'
-import WorkspaceContextModal from './modals/WorkspaceContextModal.vue'
-import TaskManagementModal from './modals/TaskManagementModal.vue'
-import AiConfigModal from './modals/AiConfigModal.vue'
-import AdminModal from './modals/AdminModal.vue'
-import ProposalReviewModal from '@/components/librarian/ProposalReviewModal.vue'
+
+const SystemSettingsPanel = defineAsyncComponent(() => import('./panels/SystemSettingsPanel.vue'))
+const LeftSidebarPanel = defineAsyncComponent(() => import('./panels/LeftSidebarPanel.vue'))
+const EvolutionArenaPanel = defineAsyncComponent(() => import('./panels/EvolutionArenaPanel.vue'))
+const ValhallaPanel = defineAsyncComponent(() => import('./panels/ValhallaPanel.vue'))
+const ChatInterface = defineAsyncComponent(() => import('@/components/chat/ChatInterface.vue'))
+const McpToolsModal = defineAsyncComponent(() => import('./modals/McpToolsModal.vue'))
+const WorkspaceContextModal = defineAsyncComponent(() => import('./modals/WorkspaceContextModal.vue'))
+const TaskManagementModal = defineAsyncComponent(() => import('./modals/TaskManagementModal.vue'))
+const AiConfigModal = defineAsyncComponent(() => import('./modals/AiConfigModal.vue'))
+const AdminModal = defineAsyncComponent(() => import('./modals/AdminModal.vue'))
+const ProposalReviewModal = defineAsyncComponent(() => import('@/components/librarian/ProposalReviewModal.vue'))
 
 const { alert, confirm } = useMessage()
 
@@ -406,9 +407,10 @@ watch(
 )
 
 onMounted(async () => {
-  await createSeedData()
-  await loadMcpTools()
-  void loadProjectContext()
+  await Promise.all([
+    createSeedData(),
+    loadMcpTools(),
+  ])
   startDashboardRefreshLoop()
   document.addEventListener('visibilitychange', handleDashboardVisibilityChange)
 })
@@ -420,7 +422,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="h-screen flex flex-col bg-zinc-50 text-zinc-900 overflow-hidden font-sans dark:bg-zinc-950 dark:text-zinc-100 bg-gradient-to-br from-zinc-50 via-zinc-100 to-indigo-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-indigo-950/20 animate-gradient" @click="closeContextMenu(); closeSettings(); closeProjectFilter(); closeKnowledgeFilter(); closeUserMenu()">
+  <div class="relative isolate h-screen flex flex-col bg-zinc-50 text-zinc-900 overflow-hidden font-sans dark:bg-zinc-950 dark:text-zinc-100 bg-gradient-to-br from-zinc-50 via-zinc-100 to-indigo-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-indigo-950/20 animate-gradient" @click="closeContextMenu(); closeSettings(); closeProjectFilter(); closeKnowledgeFilter(); closeUserMenu()">
+    <div class="app-background-glow pointer-events-none absolute inset-0"></div>
+    <div class="pointer-events-none absolute inset-0 opacity-60">
+      <div class="app-background-orb app-background-orb-left"></div>
+      <div class="app-background-orb app-background-orb-right"></div>
+    </div>
+
+    <div class="relative z-[1] flex h-full flex-col">
     <!-- 顶部导航栏 -->
     <header class="glass border-b border-zinc-200/50 px-4 md:px-6 py-3 flex justify-between items-center shadow-sm z-10 h-16 shrink-0 dark:border-zinc-800/50 backdrop-blur-md">
       <div class="flex items-center gap-2 md:gap-4 overflow-hidden">
@@ -649,14 +658,15 @@ onUnmounted(() => {
               :mcpSuccessIcon="effectiveMcpSuccessIcon"
               :mcpErrorIcon="effectiveMcpErrorIcon"
               :mcpDynamicRule="mcpDynamicRule"
-              :selectedFiles="selectedFiles"
-              :allFiles="allFiles"
-              @update:selectedFiles="selectedFiles = $event"
-              @open-settings="chatTarget && openAgentSettings(chatTarget)"
-              @totalChatTokensUpdate="syncChatTokensToAgents"
-            />
-          </div>
+            :selectedFiles="selectedFiles"
+            :allFiles="allFiles"
+            @update:selectedFiles="selectedFiles = $event"
+            @open-settings="chatTarget && openAgentSettings(chatTarget)"
+            @totalChatTokensUpdate="syncChatTokensToAgents"
+            @refreshFiles="loadProjectContext"
+          />
         </div>
+      </div>
       </div>
     </Transition>
 
@@ -765,6 +775,7 @@ onUnmounted(() => {
       @close="proposalReviewOpen = false"
     />
 
+    </div>
   </div>
 </template>
 

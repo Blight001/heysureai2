@@ -6,7 +6,12 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="min-h-screen bg-zinc-950 text-zinc-100 overflow-x-hidden">
+  <div class="relative isolate min-h-screen overflow-x-hidden bg-zinc-950 text-zinc-100">
+    <div class="app-background-glow pointer-events-none absolute inset-0"></div>
+    <div class="pointer-events-none absolute inset-0 opacity-60">
+      <div class="app-background-orb app-background-orb-left"></div>
+      <div class="app-background-orb app-background-orb-right"></div>
+    </div>
 
     <!-- Navbar -->
     <nav class="fixed top-0 inset-x-0 z-50 border-b border-zinc-800/60 bg-zinc-950/85 backdrop-blur-xl">

@@ -552,12 +552,14 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     if (dashboardRefreshing && !options.force) return
     dashboardRefreshing = true
     try {
-      await loadAIAgents()
-      await loadConnectedAgents()
-      await loadValhallaEntries()
-      await loadLibrarianPending()
-      await loadKnowledgeEntries()
-      await onRefreshOpenTaskPanel()
+      await Promise.all([
+        loadAIAgents(),
+        loadConnectedAgents(),
+        loadValhallaEntries(),
+        loadLibrarianPending(),
+        loadKnowledgeEntries(),
+        onRefreshOpenTaskPanel(),
+      ])
     } finally {
       dashboardRefreshing = false
     }
@@ -565,11 +567,13 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
 
   const createSeedData = async () => {
     await loadProjects()
-    await loadAIAgents()
-    await loadConnectedAgents()
-    await loadValhallaEntries()
-    await loadLibrarianPending()
-    await loadKnowledgeEntries()
+    await Promise.all([
+      loadAIAgents(),
+      loadConnectedAgents(),
+      loadValhallaEntries(),
+      loadLibrarianPending(),
+      loadKnowledgeEntries(),
+    ])
     if (knowledgeBase.value.length === 0) {
       knowledgeBase.value = [
         { id: 'k1', title: '学习总结数据库规范 v1.0', author: '主脑·阿尔法', time: '2026-03-01', tags: ['记忆', '规范'] },

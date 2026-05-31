@@ -1,5 +1,6 @@
 import { ref, watch, type Ref } from 'vue'
 import { normalizeSystemAutoControl as normalizeTaskSystemAutoControl } from '@/utils/taskSystem'
+import { syncUiPreferencesToStorage } from '@/utils/uiPreferences'
 import type { McpRoleMeta, ModelPreset, User } from '@/types'
 import { updateProfile } from '@/api/auth'
 
@@ -354,10 +355,12 @@ Rules:
 
   watch(themeMode, value => {
     applyTheme(value)
+    syncUiPreferencesToStorage(value, fontSize.value)
   }, { immediate: true })
 
   watch(fontSize, value => {
     applyFontSize(value)
+    syncUiPreferencesToStorage(themeMode.value, value)
   }, { immediate: true })
 
   watch(
