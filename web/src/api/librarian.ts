@@ -1,4 +1,4 @@
-import { get, post } from './http'
+import { del, get, post, put } from './http'
 
 export interface KnowledgeEntryItem {
   memory_id: string
@@ -80,6 +80,57 @@ export interface KnowledgeEntryItem {
       }>
     }>
   }
+  inheritance_tools?: {
+    description: string
+    registry_url: string
+    storage_root: string
+    installed_total: number
+    installed: Array<{
+      slug: string
+      displayName: string
+      summary: string
+      version?: string | null
+      ownerHandle: string
+      source: string
+      path: string
+      registry_url: string
+      installed_at: number
+      auto_enabled: boolean
+      present: boolean
+      trust?: Record<string, any>
+    }>
+  }
+}
+
+export interface ClawHubSkillSearchResult {
+  score?: number
+  slug: string
+  displayName?: string
+  summary?: string
+  version?: string | null
+  updatedAt?: number
+  ownerHandle?: string
+  owner?: { handle?: string; displayName?: string; image?: string | null }
+  installed?: boolean
+}
+
+export interface ClawHubSkillDetail {
+  registry_url: string
+  slug: string
+  detail: Record<string, any>
+  version?: string | null
+  skill_card: string
+  scan: Record<string, any>
+  installed: boolean
+}
+
+export interface ClawHubInstalledSkillDetail {
+  slug: string
+  skill: Record<string, any>
+  skill_card: string
+  metadata: Record<string, any>
+  path?: string
+  present: boolean
 }
 
 export const listProposals = (token: string) =>
@@ -140,4 +191,50 @@ export const saveSystemPrompts = (
     '/api/librarian/system-prompts',
     { prompts },
     { token, fallbackError: '固有思路保存失败' },
+  )
+
+export const searchClawHubSkills = (token: string, q: string, limit = 20) =>
+  get<{ registry_url: string; results: ClawHubSkillSearchResult[]; total: number }>(
+    '/api/librarian/inheritance-tools/clawhub/search',
+    {
+      token,
+      query: { q, limit },
+      fallbackError: 'ClawHub 搜索失败',
+    },
+  )
+
+export const readClawHubSkill = (token: string, slug: string) =>
+  get<ClawHubSkillDetail>(
+    `/api/librarian/inheritance-tools/clawhub/${encodeURIComponent(slug)}`,
+    { token, fallbackError: 'ClawHub 技能详情加载失败' },
+  )
+
+export const installClawHubSkill = (
+  token: string,
+  slug: string,
+  opts: { version?: string | null; force?: boolean } = {},
+) =>
+  post<{ installed: boolean; skill: Record<string, any>; entry: KnowledgeEntryItem }>(
+    `/api/librarian/inheritance-tools/clawhub/${encodeURIComponent(slug)}/install`,
+    { version: opts.version || undefined, force: !!opts.force },
+    { token, fallbackError: 'ClawHub 技能安装失败' },
+  )
+
+export const readInstalledClawHubSkill = (token: string, slug: string) =>
+  get<ClawHubInstalledSkillDetail>(
+    `/api/librarian/inheritance-tools/clawhub/installed/${encodeURIComponent(slug)}`,
+    { token, fallbackError: '本地快照加载失败' },
+  )
+
+export const updateInstalledClawHubSkill = (token: string, slug: string, skillCard: string) =>
+  put<{ updated: boolean; detail: ClawHubInstalledSkillDetail; entry: KnowledgeEntryItem }>(
+    `/api/librarian/inheritance-tools/clawhub/installed/${encodeURIComponent(slug)}`,
+    { skill_card: skillCard },
+    { token, fallbackError: '本地快照保存失败' },
+  )
+
+export const deleteInstalledClawHubSkill = (token: string, slug: string) =>
+  del<{ deleted: boolean; slug: string; entry: KnowledgeEntryItem }>(
+    `/api/librarian/inheritance-tools/clawhub/installed/${encodeURIComponent(slug)}`,
+    { token, fallbackError: '本地快照删除失败' },
   )

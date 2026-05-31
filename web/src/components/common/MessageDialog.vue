@@ -70,7 +70,7 @@ const getIcon = () => {
     leave-from-class="opacity-100 scale-100"
     leave-to-class="opacity-0 scale-95"
   >
-    <div v-if="state.show" class="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
+    <div v-if="state.show" class="fixed inset-0 z-[1000] flex items-center justify-center p-4 sm:p-6">
       <!-- Backdrop -->
       <div class="fixed inset-0 bg-zinc-900/40 backdrop-blur-sm transition-opacity" @click="handleCancel"></div>
 

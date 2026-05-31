@@ -139,6 +139,21 @@ class Settings(BaseSettings):
         alias="TAVILY_API_KEY",
         description="Tavily web-search API key (used by the web.search MCP tool).",
     )
+    clawhub_registry_url: str = Field(
+        default="https://clawhub.ai",
+        alias="CLAWHUB_REGISTRY_URL",
+        description="ClawHub registry/site base URL used for skill discovery and download.",
+    )
+    clawhub_api_token: str = Field(
+        default="",
+        alias="CLAWHUB_API_TOKEN",
+        description="Optional ClawHub API token for private reads or authenticated verification calls.",
+    )
+    clawhub_use_env_proxy: bool = Field(
+        default=False,
+        alias="CLAWHUB_USE_ENV_PROXY",
+        description="When true, ClawHub HTTP requests inherit HTTPS_PROXY/HTTP_PROXY from the process environment.",
+    )
 
     # ---- Logging -------------------------------------------------------------
 
@@ -170,6 +185,8 @@ class Settings(BaseSettings):
         "ai_runtime_url",
         "agent_token",
         "tavily_api_key",
+        "clawhub_registry_url",
+        "clawhub_api_token",
         mode="before",
     )
     @classmethod

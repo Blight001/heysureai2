@@ -17,16 +17,20 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import io
 import json
 import os
 import re
+import shutil
 import time
 import uuid
+import zipfile
 from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, select
 
 from ..database import engine
+from ..integrations import clawhub
 from ..models import AssistantAIConfig, KnowledgeEntry, User
 from ..sio import sio
 from mcp_runtime.mcp.core import _resolve_ai_workspace, safe_join
@@ -39,7 +43,10 @@ logger = logging.getLogger(__name__)
 _KB_DIR = "KnowledgeBase"
 _TOPICS_DIR = "topics"
 _ARCHIVE_DIR = "archives"
+_INHERITANCE_THOUGHTS_DIR = "inheritance_thoughts"
+_CLAWHUB_REMOTE_DIR = "remote/clawhub"
 _INDEX_FILE = "index.json"
+_CLAWHUB_SKILLS_STATE_FILE = "clawhub_skills.json"
 _INTRINSIC_PROPERTIES_OVERRIDES_FILE = "intrinsic_properties_overrides.json"
 _MAX_SUMMARY_LEN = 240
 _VALID_STATUSES = {"pending", "active", "archived", "rejected"}
@@ -440,6 +447,93 @@ def _split_csv(value: str) -> List[str]:
     return [piece.strip() for piece in str(value or "").split(",") if piece.strip()]
 
 
+def _inheritance_thoughts_root(user_id: int) -> str:
+    root = os.path.join(_kb_root(user_id), _INHERITANCE_THOUGHTS_DIR)
+    os.makedirs(root, exist_ok=True)
+    os.makedirs(safe_join(root, _CLAWHUB_REMOTE_DIR), exist_ok=True)
+    return root
+
+
+def _clawhub_state_path(user_id: int) -> str:
+    return os.path.join(_inheritance_thoughts_root(user_id), _CLAWHUB_SKILLS_STATE_FILE)
+
+
+def _load_clawhub_state(user_id: int) -> Dict[str, Any]:
+    try:
+        with open(_clawhub_state_path(user_id), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception as exc:
+        logger.info(f"load clawhub state failed: {exc}")
+        return {}
+
+
+def _save_clawhub_state(user_id: int, state: Dict[str, Any]) -> None:
+    state["updated_at"] = time.time()
+    with open(_clawhub_state_path(user_id), "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def _clawhub_installed_items(user_id: int) -> List[Dict[str, Any]]:
+    state = _load_clawhub_state(user_id)
+    installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
+    items: List[Dict[str, Any]] = []
+    for slug, item in installed.items():
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        row["slug"] = str(row.get("slug") or slug)
+        rel_path = str(row.get("path") or "").strip()
+        row["present"] = bool(rel_path and os.path.isdir(safe_join(_kb_root(user_id), rel_path)))
+        items.append(row)
+    items.sort(key=lambda item: float(item.get("installed_at") or 0), reverse=True)
+    return items
+
+
+def _inheritance_thoughts_payload(user_id: int) -> Dict[str, Any]:
+    installed = _clawhub_installed_items(user_id)
+    return {
+        "description": "传承思想支持从 ClawHub 发现、校验并下载 Skill 到本地 KnowledgeBase 快照；运行时只使用本地文件。",
+        "registry_url": clawhub.registry_base_url(),
+        "storage_root": f"{_INHERITANCE_THOUGHTS_DIR}/{_CLAWHUB_REMOTE_DIR}",
+        "installed_total": len(installed),
+        "installed": installed,
+    }
+
+
+def _render_inheritance_thoughts_body(payload: Dict[str, Any]) -> str:
+    lines = [
+        "# 传承思想",
+        "",
+        str(payload.get("description") or ""),
+        "",
+        f"ClawHub：{payload.get('registry_url') or ''}",
+        f"本地目录：KnowledgeBase/{payload.get('storage_root') or ''}",
+        f"已安装：{int(payload.get('installed_total') or 0)}",
+        "",
+    ]
+    installed = payload.get("installed") if isinstance(payload.get("installed"), list) else []
+    if installed:
+        lines.append("## 已安装 ClawHub 技能")
+        lines.append("")
+        for item in installed:
+            slug = str(item.get("slug") or "")
+            name = str(item.get("displayName") or slug)
+            version = str(item.get("version") or "latest")
+            owner = str(item.get("ownerHandle") or "")
+            present = "可用" if item.get("present") else "文件缺失"
+            lines.append(f"- `{slug}` {name} · {version} · {owner} · {present}")
+            summary = str(item.get("summary") or "").strip()
+            if summary:
+                lines.append(f"  - {summary}")
+        lines.append("")
+    else:
+        lines.append("暂无已安装 ClawHub 技能。")
+    return "\n".join(lines).strip()
+
+
 def _builtin_entries(*, user_id: Optional[int] = None, with_body: bool = False) -> List[Dict[str, Any]]:
     return [
         item
@@ -493,7 +587,9 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
         elif memory_id == "builtin.inheritance_skills":
             out["body"] = ""
         elif memory_id == "builtin.inheritance_tools":
-            out["body"] = ""
+            thoughts = _inheritance_thoughts_payload(int(user_id or 0))
+            out["inheritance_tools"] = thoughts
+            out["body"] = _render_inheritance_thoughts_body(thoughts)
     return out
 
 
@@ -908,6 +1004,271 @@ def _render_system_prompts_body(payload: Dict[str, Any]) -> str:
             lines.append(str(item.get("content") or "（空）"))
             lines.append("")
     return "\n".join(lines).strip()
+
+
+# ---------- 传承思想 / ClawHub ----------
+
+_SAFE_CLAWHUB_SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@/-]{0,160}$")
+
+
+def _normalize_clawhub_slug(slug: str) -> str:
+    value = str(slug or "").strip().strip("/")
+    if not value or not _SAFE_CLAWHUB_SLUG.match(value) or ".." in value.split("/"):
+        raise ValueError("invalid ClawHub skill slug")
+    return value
+
+
+def search_clawhub_skills(*, user_id: int, query: str, limit: int = 20) -> Dict[str, Any]:
+    data = clawhub.search_skills(query, limit=limit, non_suspicious_only=True)
+    results = data.get("results") if isinstance(data.get("results"), list) else []
+    installed = {item["slug"] for item in _clawhub_installed_items(user_id) if item.get("slug")}
+    for item in results:
+        if isinstance(item, dict):
+            slug = str(item.get("slug") or "")
+            item["installed"] = slug in installed
+    return {
+        "registry_url": clawhub.registry_base_url(),
+        "results": results,
+        "total": len(results),
+    }
+
+
+def clawhub_skill_detail(*, user_id: int, slug: str) -> Dict[str, Any]:
+    slug = _normalize_clawhub_slug(slug)
+    detail = clawhub.skill_detail(slug)
+    version = _latest_clawhub_version(detail)
+    skill_card = ""
+    scan: Dict[str, Any] = {}
+    try:
+        skill_card = clawhub.skill_file(slug, "SKILL.md", version=version)
+    except Exception as exc:
+        skill_card = f"SKILL.md 读取失败：{exc}"
+    try:
+        scan = clawhub.skill_scan(slug, version=version) if version else clawhub.skill_scan(slug, tag="latest")
+    except Exception as exc:
+        scan = {"error": str(exc)}
+    return {
+        "registry_url": clawhub.registry_base_url(),
+        "slug": slug,
+        "detail": detail,
+        "version": version,
+        "skill_card": skill_card,
+        "scan": scan,
+        "installed": any(item.get("slug") == slug for item in _clawhub_installed_items(user_id)),
+    }
+
+
+def install_clawhub_skill(
+    *,
+    user_id: int,
+    slug: str,
+    version: Optional[str] = None,
+    force: bool = False,
+) -> Dict[str, Any]:
+    slug = _normalize_clawhub_slug(slug)
+    detail = clawhub.skill_detail(slug)
+    resolved_version = str(version or _latest_clawhub_version(detail) or "").strip() or None
+    scan: Dict[str, Any] = {}
+    try:
+        scan = clawhub.skill_scan(slug, version=resolved_version) if resolved_version else clawhub.skill_scan(slug, tag="latest")
+    except Exception as exc:
+        scan = {"error": str(exc)}
+    _raise_if_clawhub_blocked(detail, scan)
+
+    safe_dir_name = _slugify(slug.replace("/", "-").replace("@", "at"))
+    install_rel = f"{_INHERITANCE_THOUGHTS_DIR}/{_CLAWHUB_REMOTE_DIR}/{safe_dir_name}"
+    install_dir = safe_join(_kb_root(user_id), install_rel)
+    if os.path.exists(install_dir):
+        if not force:
+            raise ValueError("skill already installed; set force=true to update")
+        shutil.rmtree(install_dir)
+    os.makedirs(install_dir, exist_ok=True)
+
+    blob = clawhub.download_skill_zip(slug, version=resolved_version, tag=None if resolved_version else "latest")
+    _extract_skill_zip(blob, install_dir)
+    _write_clawhub_install_metadata(install_dir, slug=slug, version=resolved_version, detail=detail, scan=scan)
+
+    skill = detail.get("skill") if isinstance(detail.get("skill"), dict) else {}
+    owner = detail.get("owner") if isinstance(detail.get("owner"), dict) else {}
+    state = _load_clawhub_state(user_id)
+    installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
+    installed[slug] = {
+        "slug": slug,
+        "displayName": str(skill.get("displayName") or slug),
+        "summary": str(skill.get("summary") or ""),
+        "version": resolved_version,
+        "ownerHandle": str(owner.get("handle") or skill.get("ownerHandle") or ""),
+        "source": "remote:clawhub",
+        "path": install_rel,
+        "registry_url": clawhub.registry_base_url(),
+        "installed_at": time.time(),
+        "auto_enabled": False,
+        "trust": _clawhub_trust_summary(detail, scan),
+    }
+    state["installed"] = installed
+    _save_clawhub_state(user_id, state)
+    return {
+        "installed": True,
+        "skill": installed[slug],
+        "entry": _builtin_entry("builtin.inheritance_tools", user_id=user_id, with_body=True) or {},
+    }
+
+
+def clawhub_installed_skill_detail(*, user_id: int, slug: str) -> Dict[str, Any]:
+    slug = _normalize_clawhub_slug(slug)
+    item = _clawhub_installed_item(user_id, slug)
+    install_dir = _clawhub_installed_dir(user_id, item)
+    skill_card_path = os.path.join(install_dir, "SKILL.md")
+    skill_card = ""
+    if os.path.exists(skill_card_path):
+        with open(skill_card_path, "r", encoding="utf-8") as f:
+            skill_card = f.read()
+    metadata_path = os.path.join(install_dir, "heysure_clawhub_install.json")
+    metadata: Dict[str, Any] = {}
+    if os.path.exists(metadata_path):
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            metadata = loaded if isinstance(loaded, dict) else {}
+        except Exception as exc:
+            logger.info("read ClawHub install metadata failed: %s", exc)
+    return {
+        "slug": slug,
+        "skill": item,
+        "skill_card": skill_card,
+        "metadata": metadata,
+        "path": item.get("path"),
+        "present": os.path.isdir(install_dir),
+    }
+
+
+def update_clawhub_installed_skill(*, user_id: int, slug: str, skill_card: str) -> Dict[str, Any]:
+    slug = _normalize_clawhub_slug(slug)
+    item = _clawhub_installed_item(user_id, slug)
+    install_dir = _clawhub_installed_dir(user_id, item)
+    if not os.path.isdir(install_dir):
+        raise ValueError("installed skill files are missing")
+    _safe_write(os.path.join(install_dir, "SKILL.md"), str(skill_card or ""))
+    state = _load_clawhub_state(user_id)
+    installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
+    if isinstance(installed.get(slug), dict):
+        installed[slug]["edited_at"] = time.time()
+        state["installed"] = installed
+        _save_clawhub_state(user_id, state)
+    return {
+        "updated": True,
+        "detail": clawhub_installed_skill_detail(user_id=user_id, slug=slug),
+        "entry": _builtin_entry("builtin.inheritance_tools", user_id=user_id, with_body=True) or {},
+    }
+
+
+def delete_clawhub_installed_skill(*, user_id: int, slug: str) -> Dict[str, Any]:
+    slug = _normalize_clawhub_slug(slug)
+    item = _clawhub_installed_item(user_id, slug)
+    install_dir = _clawhub_installed_dir(user_id, item)
+    if os.path.isdir(install_dir):
+        shutil.rmtree(install_dir)
+    state = _load_clawhub_state(user_id)
+    installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
+    installed.pop(slug, None)
+    state["installed"] = installed
+    _save_clawhub_state(user_id, state)
+    return {
+        "deleted": True,
+        "slug": slug,
+        "entry": _builtin_entry("builtin.inheritance_tools", user_id=user_id, with_body=True) or {},
+    }
+
+
+def _clawhub_installed_item(user_id: int, slug: str) -> Dict[str, Any]:
+    state = _load_clawhub_state(user_id)
+    installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
+    item = installed.get(slug)
+    if not isinstance(item, dict):
+        raise ValueError("installed skill not found")
+    return dict(item)
+
+
+def _clawhub_installed_dir(user_id: int, item: Dict[str, Any]) -> str:
+    rel_path = str(item.get("path") or "").strip()
+    if not rel_path:
+        raise ValueError("installed skill path is missing")
+    return safe_join(_kb_root(user_id), rel_path)
+
+
+def _latest_clawhub_version(detail: Dict[str, Any]) -> Optional[str]:
+    latest = detail.get("latestVersion") if isinstance(detail.get("latestVersion"), dict) else {}
+    version = str(latest.get("version") or "").strip()
+    if version:
+        return version
+    skill = detail.get("skill") if isinstance(detail.get("skill"), dict) else {}
+    tags = skill.get("tags") if isinstance(skill.get("tags"), dict) else {}
+    latest_tag = str(tags.get("latest") or "").strip()
+    return latest_tag or None
+
+
+def _clawhub_trust_summary(detail: Dict[str, Any], scan: Dict[str, Any]) -> Dict[str, Any]:
+    moderation = detail.get("moderation") if isinstance(detail.get("moderation"), dict) else {}
+    scan_moderation = scan.get("moderation") if isinstance(scan.get("moderation"), dict) else {}
+    security = scan.get("security") if isinstance(scan.get("security"), dict) else {}
+    return {
+        "verdict": str(moderation.get("verdict") or security.get("status") or ""),
+        "isSuspicious": bool(moderation.get("isSuspicious") or scan_moderation.get("isSuspicious")),
+        "isMalwareBlocked": bool(moderation.get("isMalwareBlocked") or scan_moderation.get("isMalwareBlocked")),
+        "hasScanResult": bool(security.get("hasScanResult")),
+        "blockedFromDownload": bool(security.get("blockedFromDownload")),
+        "capabilityTags": security.get("capabilityTags") if isinstance(security.get("capabilityTags"), list) else [],
+    }
+
+
+def _raise_if_clawhub_blocked(detail: Dict[str, Any], scan: Dict[str, Any]) -> None:
+    trust = _clawhub_trust_summary(detail, scan)
+    verdict = str(trust.get("verdict") or "").lower()
+    if trust.get("blockedFromDownload") or trust.get("isMalwareBlocked") or verdict in {"malicious", "blocked"}:
+        raise ValueError("ClawHub blocked this skill as unsafe")
+    if trust.get("isSuspicious") or verdict == "suspicious":
+        raise ValueError("ClawHub marked this skill as suspicious")
+
+
+def _extract_skill_zip(blob: bytes, dest_dir: str) -> None:
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(blob))
+    except zipfile.BadZipFile as exc:
+        raise ValueError("ClawHub download is not a valid zip") from exc
+    dest_abs = os.path.abspath(dest_dir)
+    for info in archive.infolist():
+        name = info.filename.replace("\\", "/")
+        if not name or name.startswith("/") or name.startswith("../") or "/../" in name:
+            raise ValueError(f"unsafe zip path: {info.filename}")
+        target = os.path.abspath(os.path.join(dest_abs, name))
+        if not target.startswith(dest_abs + os.sep) and target != dest_abs:
+            raise ValueError(f"unsafe zip path: {info.filename}")
+    archive.extractall(dest_abs)
+    if not os.path.exists(os.path.join(dest_abs, "SKILL.md")):
+        entries = [name for name in os.listdir(dest_abs) if name != "__MACOSX"]
+        if len(entries) == 1:
+            wrapped_root = os.path.join(dest_abs, entries[0])
+            wrapped_card = os.path.join(wrapped_root, "SKILL.md")
+            if os.path.isdir(wrapped_root) and os.path.exists(wrapped_card):
+                for child in os.listdir(wrapped_root):
+                    shutil.move(os.path.join(wrapped_root, child), os.path.join(dest_abs, child))
+                shutil.rmtree(wrapped_root, ignore_errors=True)
+        if not os.path.exists(os.path.join(dest_abs, "SKILL.md")):
+            logger.info("installed ClawHub skill without root SKILL.md at %s", dest_abs)
+
+
+def _write_clawhub_install_metadata(dest_dir: str, *, slug: str, version: Optional[str], detail: Dict[str, Any], scan: Dict[str, Any]) -> None:
+    metadata = {
+        "source": "remote:clawhub",
+        "slug": slug,
+        "version": version,
+        "registry_url": clawhub.registry_base_url(),
+        "installed_at": time.time(),
+        "detail": detail,
+        "scan": scan,
+    }
+    with open(os.path.join(dest_dir, "heysure_clawhub_install.json"), "w", encoding="utf-8") as f:
+        json.dump(metadata, f, ensure_ascii=False, indent=2)
 
 
 # ---------- 公共接口 ----------
