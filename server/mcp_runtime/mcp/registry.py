@@ -60,6 +60,15 @@ from .tools.librarian import (
     _librarian_read,
 )
 from .tools.web_search import _web_search
+from .tools.skill_card import (
+    _skill_card_create,
+    _skill_card_delete,
+    _skill_card_get,
+    _skill_card_list,
+    _skill_card_record_run,
+    _skill_card_update,
+    _skill_card_versions,
+)
 
 
 def _register_builtin_tools(registry: MCPRegistry) -> None:
@@ -936,6 +945,177 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         },
         handler=_librarian_archive,
         destructive=True,
+    ))
+
+    # ---------- Skill Card / 沉淀技能卡片 ----------
+    registry.register(MCPTool(
+        name="skill_card.create",
+        description=(
+            "Save a reusable operation skill as a draft card so it can be replayed later "
+            "without step-by-step LLM control, and shared with other AIs. Steps must use "
+            "semantic anchors (control name / DOM selector), parameter slots ({{name}}) "
+            "instead of hardcoded values, and a per-step `assert` (postcondition). "
+            "See doc/沉淀技能卡片-设计方案.md."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Card name."},
+                "description": {"type": "string", "description": "What the skill does."},
+                "surface": {
+                    "type": "string",
+                    "enum": ["windows", "browser", "shell", "composite"],
+                    "description": "Execution surface (hard-bound). Default windows.",
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": ["private", "team", "public"],
+                    "description": "Sharing scope. Default private (smallest).",
+                },
+                "domain": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Business domains for search, e.g. ['文件操作'].",
+                },
+                "capability": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Tool names this card calls. Intersected with the caller's permissions at replay time.",
+                },
+                "params": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "Parameter slots, e.g. [{name,type,required,secret}].",
+                },
+                "preconditions": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "Checked before replay; replay is refused if unmet.",
+                },
+                "steps": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "Ordered actions, each with target (semantic anchor), args, assert, on_fail, destructive.",
+                },
+                "postconditions": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "Checked after all steps succeed.",
+                },
+                "environment_signature": {
+                    "type": "string",
+                    "description": "Recording environment, e.g. 'win11|1920x1080'. Trust is tracked per environment.",
+                },
+            },
+            "required": ["name", "steps"],
+        },
+        handler=_skill_card_create,
+        destructive=True,
+    ))
+    registry.register(MCPTool(
+        name="skill_card.list",
+        description=(
+            "Browse skill cards visible to this AI (own private cards + team/public cards). "
+            "Filter by surface / status / scope / domain / keyword."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "surface": {"type": "string", "enum": ["windows", "browser", "shell", "composite"]},
+                "status": {"type": "string", "enum": ["draft", "supervised", "trusted", "deprecated"]},
+                "scope": {"type": "string", "enum": ["private", "team", "public"]},
+                "domain": {"type": "string", "description": "Exact domain tag to match."},
+                "keyword": {"type": "string", "description": "Substring match on name/description."},
+                "include_deprecated": {"type": "boolean", "description": "Include deprecated cards. Default false."},
+            },
+        },
+        handler=_skill_card_list,
+    ))
+    registry.register(MCPTool(
+        name="skill_card.get",
+        description="Read one skill card in full (steps, params, asserts) plus its per-environment run stat when environment_signature is given.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "card_id": {"type": "string"},
+                "environment_signature": {"type": "string", "description": "Return trust stat for this environment."},
+            },
+            "required": ["card_id"],
+        },
+        handler=_skill_card_get,
+    ))
+    registry.register(MCPTool(
+        name="skill_card.update",
+        description=(
+            "Edit a card after a failed replay (self-heal). Pass expected_version for optimistic "
+            "locking; editing a public card you do not own forks a private copy instead of "
+            "mutating the shared card. Each update snapshots the previous version and bumps version."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "card_id": {"type": "string"},
+                "expected_version": {"type": "integer", "description": "Current head version, for optimistic locking."},
+                "change_summary": {"type": "string", "description": "What changed and why."},
+                "name": {"type": "string"},
+                "description": {"type": "string"},
+                "surface": {"type": "string", "enum": ["windows", "browser", "shell", "composite"]},
+                "scope": {"type": "string", "enum": ["private", "team", "public"]},
+                "status": {"type": "string", "enum": ["draft", "supervised", "trusted", "deprecated"]},
+                "domain": {"type": "array", "items": {"type": "string"}},
+                "capability": {"type": "array", "items": {"type": "string"}},
+                "params": {"type": "array", "items": {"type": "object"}},
+                "preconditions": {"type": "array", "items": {"type": "object"}},
+                "steps": {"type": "array", "items": {"type": "object"}},
+                "postconditions": {"type": "array", "items": {"type": "object"}},
+                "environment_signature": {"type": "string"},
+            },
+            "required": ["card_id"],
+        },
+        handler=_skill_card_update,
+        destructive=True,
+    ))
+    registry.register(MCPTool(
+        name="skill_card.delete",
+        description="Deprecate (soft-delete) a skill card. Only the owner AI may deprecate it.",
+        input_schema={
+            "type": "object",
+            "properties": {"card_id": {"type": "string"}},
+            "required": ["card_id"],
+        },
+        handler=_skill_card_delete,
+        destructive=True,
+    ))
+    registry.register(MCPTool(
+        name="skill_card.record_run",
+        description=(
+            "Record one replay outcome for a card in a given environment. Updates the "
+            "per-environment trust score and applies status promotion (supervised→trusted "
+            "after consecutive successes) or demotion (trusted→supervised after consecutive "
+            "failures). Trust never transfers across environments."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "card_id": {"type": "string"},
+                "environment_signature": {"type": "string", "description": "Environment the replay ran in."},
+                "success": {"type": "boolean"},
+                "failed_step": {"type": "integer", "description": "Index of the failing step when success=false."},
+            },
+            "required": ["card_id", "success"],
+        },
+        handler=_skill_card_record_run,
+        destructive=True,
+    ))
+    registry.register(MCPTool(
+        name="skill_card.versions",
+        description="List the version history of a skill card (version, author, change summary).",
+        input_schema={
+            "type": "object",
+            "properties": {"card_id": {"type": "string"}},
+            "required": ["card_id"],
+        },
+        handler=_skill_card_versions,
     ))
 
 
