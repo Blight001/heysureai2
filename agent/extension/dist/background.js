@@ -3486,6 +3486,7 @@
     mdn: "https://developer.mozilla.org/en-US/search?q="
   };
   var BROWSER_TOOLS = [
+    // ───── 导航与搜索 ─────────────────────────────────────────────────────
     {
       name: "browser_navigate",
       description: "\u5728\u5F53\u524D\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u6253\u5F00\u6307\u5B9A URL\uFF0C\u9875\u9762\u52A0\u8F7D\u5B8C\u6210\u540E\u8FD4\u56DE\u3002\u7528\u9014\uFF1A\u8DF3\u8F6C\u5230\u76EE\u6807\u7F51\u5740\u5F00\u59CB\u4E00\u6BB5\u6D4F\u89C8\u4EFB\u52A1\u3002\u573A\u666F\uFF1A\u8FDB\u5165\u767B\u5F55\u9875\u3001\u6253\u5F00\u6587\u7AE0\u3001\u8DF3\u8F6C\u5230\u540E\u53F0\u7BA1\u7406\u9875\u7B49\u3002",
@@ -3498,6 +3499,34 @@
         required: ["url"]
       }
     },
+    {
+      name: "browser_search",
+      description: "\u7528\u4E3B\u6D41\u641C\u7D22\u5F15\u64CE\u68C0\u7D22\u7F51\u7EDC\u3002\u7528\u9014\uFF1A\u5728\u6D4F\u89C8\u5668\u5185\u53D1\u8D77\u4E00\u6B21\u7AD9\u70B9\u641C\u7D22\u3002\u573A\u666F\uFF1A\u7528 Google/Bing/\u767E\u5EA6\u7B49\u67E5\u8D44\u6599\uFF1B\u6CE8\u610F\u8FD9\u4F1A\u771F\u6B63\u6253\u5F00\u641C\u7D22\u7ED3\u679C\u9875\uFF08\u4E0E\u670D\u52A1\u5668\u7AEF web.search \u7684\u7EAF\u6570\u636E\u68C0\u7D22\u4E0D\u540C\uFF09\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "\u641C\u7D22\u5173\u952E\u8BCD\u3002" },
+          engine: {
+            type: "string",
+            enum: Object.keys(SEARCH_ENGINES),
+            description: "\u641C\u7D22\u5F15\u64CE\uFF0C\u9ED8\u8BA4 google\uFF1B\u53EF\u9009 bing\u3001baidu\u3001duckduckgo\u3001github \u7B49\u3002"
+          }
+        },
+        required: ["query"]
+      }
+    },
+    {
+      name: "browser_history",
+      description: "\u5728\u5F53\u524D\u6807\u7B7E\u7684\u6D4F\u89C8\u5386\u53F2\u4E2D\u540E\u9000\u6216\u524D\u8FDB\u4E00\u6B65\u3002\u7528\u9014\uFF1A\u5728\u5DF2\u8BBF\u95EE\u8FC7\u7684\u9875\u9762\u95F4\u56DE\u9000/\u524D\u8FDB\u3002\u573A\u666F\uFF1A\u8BEF\u5165\u8BE6\u60C5\u9875\u540E\u9000\u56DE\u5217\u8868\uFF08back\uFF09\u3001\u540E\u9000\u540E\u53C8\u60F3\u56DE\u5230\u521A\u624D\u7684\u9875\u9762\uFF08forward\uFF09\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["back", "forward"], description: "\u5386\u53F2\u52A8\u4F5C\uFF1Aback \u540E\u9000\u4E00\u6B65\u3001forward \u524D\u8FDB\u4E00\u6B65\u3002" }
+        },
+        required: ["action"]
+      }
+    },
+    // ───── 页面观察 ───────────────────────────────────────────────────────
     {
       name: "browser_screenshot",
       description: "\u5BF9\u5F53\u524D\u6807\u7B7E\u9875\u622A\u56FE\uFF1A\u53EF\u622A\u53EF\u89C6\u533A\u3001\u6574\u9875\u3001\u67D0\u4E2A CSS/\u6587\u672C\u5339\u914D\u7684\u5143\u7D20\uFF0C\u6216\u4E00\u5757\u77E9\u5F62\u533A\u57DF\uFF0C\u8FD4\u56DE base64 \u56FE\u7247 data URL\uFF08\u622A\u56FE\u88AB\u7981\u7528\u6216\u65E0\u6743\u9650\u65F6\u8FD4\u56DE\u53EF\u8BFB\u7684\u9519\u8BEF\u8BF4\u660E\uFF09\u3002\u7528\u9014\uFF1A\u8BA9 AI\u300C\u770B\u89C1\u300D\u9875\u9762\u3002\u573A\u666F\uFF1A\u6838\u5BF9\u9875\u9762\u72B6\u6001\u3001\u4FDD\u5B58\u8BC1\u636E\u3001\u5728\u65E0\u6CD5\u8BFB\u53D6\u6587\u672C\u65F6\u6539\u7528\u89C6\u89C9\u7406\u89E3\u3002",
@@ -3532,33 +3561,6 @@
       }
     },
     {
-      name: "browser_click",
-      description: "\u70B9\u51FB click \u9875\u9762\u5143\u7D20\uFF0C\u53EF\u7528 CSS selector\u3001\u53EF\u89C1\u6587\u672C\u6216\u5750\u6807\u5B9A\u4F4D\u3002\u7528\u9014\uFF1A\u89E6\u53D1\u6309\u94AE\u3001\u94FE\u63A5\u3001\u52FE\u9009\u6846\u7B49\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u70B9\u300C\u767B\u5F55\u300D\u300C\u4E0B\u4E00\u6B65\u300D\u3001\u5C55\u5F00\u83DC\u5355\u3001\u6253\u5F00\u6761\u76EE\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u7684 CSS selector\u3002" },
-          text: { type: "string", description: "\u8981\u70B9\u51FB\u5143\u7D20\u7684\u53EF\u89C1\u6587\u672C\u3002" },
-          x: { type: "number", description: "X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
-          y: { type: "number", description: "Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
-        }
-      }
-    },
-    {
-      name: "browser_type",
-      description: "\u5411\u8F93\u5165\u6846 input \u6216\u6587\u672C\u57DF textarea \u8F93\u5165\u6587\u672C\u3002\u7528\u9014\uFF1A\u586B\u5199\u5355\u4E2A\u5B57\u6BB5\u3002\u573A\u666F\uFF1A\u8F93\u5165\u7528\u6237\u540D\u3001\u641C\u7D22\u8BCD\u3001\u8868\u5355\u5355\u9879\uFF08\u591A\u9879\u8BF7\u7528 browser_fill_form\uFF09\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          selector: { type: "string", description: "\u76EE\u6807\u8F93\u5165\u6846\u7684 CSS selector\u3002" },
-          text: { type: "string", description: "\u8981\u8F93\u5165\u7684\u6587\u672C\u3002" },
-          clear_first: { type: "boolean", description: "\u8F93\u5165\u524D\u5148\u6E05\u7A7A\u5B57\u6BB5\u3002\u9ED8\u8BA4 true\u3002" },
-          submit: { type: "boolean", description: "\u8F93\u5165\u540E\u6309\u56DE\u8F66\u63D0\u4EA4\u3002" }
-        },
-        required: ["text"]
-      }
-    },
-    {
       name: "browser_get_content",
       description: "\u8BFB\u53D6\u5F53\u524D\u9875\u9762\u7684\u53EF\u89C1\u6587\u672C\u3001URL\u3001\u6807\u9898\u3001\u94FE\u63A5\u3001meta \u4FE1\u606F\u548C\u5F52\u4E00\u5316\u6761\u76EE\u3002\u7528\u9014\uFF1A\u4EE5\u6587\u672C\u65B9\u5F0F\u7406\u89E3\u9875\u9762\u5185\u5BB9\u3002\u573A\u666F\uFF1A\u6293\u53D6\u6587\u7AE0\u6B63\u6587\u3001\u8BFB\u53D6\u5217\u8868\u3001\u5728\u4E0D\u622A\u56FE\u65F6\u83B7\u53D6\u9875\u9762\u4FE1\u606F\u3002",
       input_schema: {
@@ -3583,19 +3585,129 @@
       }
     },
     {
-      name: "browser_search",
-      description: "\u7528\u4E3B\u6D41\u641C\u7D22\u5F15\u64CE\u68C0\u7D22\u7F51\u7EDC\u3002\u7528\u9014\uFF1A\u5728\u6D4F\u89C8\u5668\u5185\u53D1\u8D77\u4E00\u6B21\u7AD9\u70B9\u641C\u7D22\u3002\u573A\u666F\uFF1A\u7528 Google/Bing/\u767E\u5EA6\u7B49\u67E5\u8D44\u6599\uFF1B\u6CE8\u610F\u8FD9\u4F1A\u771F\u6B63\u6253\u5F00\u641C\u7D22\u7ED3\u679C\u9875\uFF08\u4E0E\u670D\u52A1\u5668\u7AEF web.search \u7684\u7EAF\u6570\u636E\u68C0\u7D22\u4E0D\u540C\uFF09\u3002",
+      name: "browser_page_info",
+      description: "\u83B7\u53D6\u4F60\u5F53\u524D\u5728\u9875\u9762\u4E0A\u7684\u4F4D\u7F6E\u4FE1\u606F\uFF1A\u6EDA\u52A8\u4F4D\u7F6E\uFF08scrollY\u3001\u767E\u5206\u6BD4\u3001\u662F\u5426\u5230\u9876/\u5230\u5E95\uFF09\u3001\u89C6\u53E3\u5C3A\u5BF8\u3001\u6574\u9875\u9AD8\u5EA6\u3001\u5F53\u524D\u5C0F\u8282\u6807\u9898\u3001\u89C6\u53E3\u5185\u6240\u6709\u6807\u9898\u3001\u5143\u7D20\u8BA1\u6570\u3002\u7528\u9014\uFF1A\u81EA\u6211\u5B9A\u4F4D\u3002\u573A\u666F\uFF1A\u6EDA\u52A8\u6216\u4EA4\u4E92\u524D\u540E\u8C03\u7528\uFF0C\u786E\u8BA4\u843D\u70B9\u548C\u9875\u9762\u7ED3\u6784\u3002",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_find_text",
+      description: "\u67E5\u627E\u9875\u9762\u4E0A\u6240\u6709\u5305\u542B\u6307\u5B9A\u6587\u672C\u7684\u5143\u7D20\u3002\u7528\u9014\uFF1A\u6309\u6587\u5B57\u5B9A\u4F4D\u5143\u7D20\u3002\u573A\u666F\uFF1A\u627E\u5230\u542B\u67D0\u5173\u952E\u5B57\u7684\u6309\u94AE/\u94FE\u63A5\uFF0C\u518D\u914D\u5408\u70B9\u51FB\u6216\u622A\u56FE\u3002",
       input_schema: {
         type: "object",
         properties: {
-          query: { type: "string", description: "\u641C\u7D22\u5173\u952E\u8BCD\u3002" },
-          engine: {
-            type: "string",
-            enum: Object.keys(SEARCH_ENGINES),
-            description: "\u641C\u7D22\u5F15\u64CE\uFF0C\u9ED8\u8BA4 google\uFF1B\u53EF\u9009 bing\u3001baidu\u3001duckduckgo\u3001github \u7B49\u3002"
-          }
+          text: { type: "string", description: "\u8981\u641C\u7D22\u7684\u6587\u672C\u3002" },
+          exact: { type: "boolean", description: "\u4EC5\u7CBE\u786E\u5339\u914D\u3002" }
         },
-        required: ["query"]
+        required: ["text"]
+      }
+    },
+    {
+      name: "browser_find_popups",
+      description: "\u68C0\u6D4B\u9875\u9762\u4E0A\u53EF\u89C1\u7684\u5F39\u7A97\u3001\u6A21\u6001\u6846\u3001\u5BF9\u8BDD\u6846\u3001\u62BD\u5C49\u3001\u906E\u7F69\u4EE5\u53CA\u5B83\u4EEC\u53EF\u80FD\u7684\u5173\u95ED\u6309\u94AE\u3002\u7528\u9014\uFF1A\u53D1\u73B0\u6321\u4F4F\u64CD\u4F5C\u7684\u5F39\u5C42\u3002\u573A\u666F\uFF1A\u81EA\u52A8\u5316\u5361\u4F4F\u65F6\u5148\u6392\u67E5\u5F39\u7A97\uFF0C\u518D\u51B3\u5B9A\u5982\u4F55\u5173\u95ED\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684\u5F39\u7A97\u6570\u3002\u9ED8\u8BA4 10\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_performance",
+      description: "\u8BFB\u53D6\u9875\u9762\u6027\u80FD\u6307\u6807\u548C\u6162\u8D44\u6E90\uFF0C\u6570\u636E\u6765\u81EA PerformanceNavigationTiming \u4E0E ResourceTiming\u3002\u7528\u9014\uFF1A\u8BC4\u4F30\u9875\u9762\u52A0\u8F7D\u8868\u73B0\u3002\u573A\u666F\uFF1A\u6392\u67E5\u9875\u9762\u5361\u987F\u3001\u7EDF\u8BA1\u52A0\u8F7D\u8017\u65F6\u4E0E\u6162\u8D44\u6E90\u3002",
+      input_schema: { type: "object", properties: {} }
+    },
+    {
+      name: "browser_network_log",
+      description: "\u4EE5\u8F7B\u91CF\u7F51\u7EDC\u65E5\u5FD7\u5F62\u5F0F\u8FD4\u56DE\u88AB\u52A8\u7684\u8D44\u6E90 timing \u6761\u76EE\u3002\u6CE8\u610F\uFF1A\u8FD9\u4E0D\u662F\u4E3B\u52A8\u7684\u8BF7\u6C42\u62E6\u622A\u3002\u7528\u9014\uFF1A\u7C97\u7565\u4E86\u89E3\u9875\u9762\u52A0\u8F7D\u4E86\u54EA\u4E9B\u8D44\u6E90\u3002\u573A\u666F\uFF1A\u68C0\u67E5\u63A5\u53E3/\u8D44\u6E90\u662F\u5426\u88AB\u52A0\u8F7D\u3001\u7EDF\u8BA1\u8BF7\u6C42\u6E05\u5355\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684\u8BF7\u6C42/\u8D44\u6E90\u6761\u76EE\u6570\u3002\u9ED8\u8BA4 20\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_iframe_list",
+      description: "\u5217\u51FA\u5F53\u524D\u9875\u9762\u7684 iframe/frame \u5143\u7D20\uFF0C\u5305\u542B src/name/title/\u53EF\u8BBF\u95EE\u6027\u4FE1\u606F\u548C\u89C6\u53E3\u77E9\u5F62\u3002\u7528\u9014\uFF1A\u53D1\u73B0\u5185\u5D4C\u6846\u67B6\u3002\u573A\u666F\uFF1A\u76EE\u6807\u5185\u5BB9\u5728 iframe \u4E2D\u65F6\uFF0C\u5148\u5B9A\u4F4D\u6846\u67B6\u518D\u51B3\u5B9A\u5982\u4F55\u64CD\u4F5C\u3002",
+      input_schema: { type: "object", properties: {} }
+    },
+    // ───── 页面交互 ───────────────────────────────────────────────────────
+    {
+      name: "browser_click",
+      description: "\u70B9\u51FB click \u9875\u9762\u5143\u7D20\uFF0C\u53EF\u7528 CSS selector\u3001\u53EF\u89C1\u6587\u672C\u6216\u5750\u6807\u5B9A\u4F4D\u3002\u7528\u9014\uFF1A\u89E6\u53D1\u6309\u94AE\u3001\u94FE\u63A5\u3001\u52FE\u9009\u6846\u7B49\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u70B9\u300C\u767B\u5F55\u300D\u300C\u4E0B\u4E00\u6B65\u300D\u3001\u5C55\u5F00\u83DC\u5355\u3001\u6253\u5F00\u6761\u76EE\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u8981\u70B9\u51FB\u5143\u7D20\u7684\u53EF\u89C1\u6587\u672C\u3002" },
+          x: { type: "number", description: "X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          y: { type: "number", description: "Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_double_click",
+      description: "\u53CC\u51FB double-click \u5143\u7D20\uFF0C\u53EF\u7528 CSS selector\u3001\u53EF\u89C1\u6587\u672C\u6216\u5750\u6807\u5B9A\u4F4D\uFF08\u5982\u9009\u4E2D\u4E00\u4E2A\u8BCD\u6216\u6253\u5F00\u67D0\u9879\uFF09\u3002\u7528\u9014\uFF1A\u9700\u8981\u53CC\u51FB\u624D\u751F\u6548\u7684\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u53CC\u51FB\u9009\u8BCD\u3001\u53CC\u51FB\u6253\u5F00\u6587\u4EF6\u9879\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u5143\u7D20\u7684\u53EF\u89C1\u6587\u672C\u3002" },
+          x: { type: "number", description: "X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          y: { type: "number", description: "Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_right_click",
+      description: "\u5728\u5143\u7D20\u4E0A\u53F3\u952E right-click\uFF08\u6253\u5F00\u4E0A\u4E0B\u6587\u83DC\u5355\uFF09\uFF0C\u53EF\u7528 CSS selector\u3001\u53EF\u89C1\u6587\u672C\u6216\u5750\u6807\u5B9A\u4F4D\u3002\u7528\u9014\uFF1A\u89E6\u53D1\u53F3\u952E\u83DC\u5355\u3002\u573A\u666F\uFF1A\u6253\u5F00\u300C\u5728\u65B0\u6807\u7B7E\u6253\u5F00\u300D\u300C\u68C0\u67E5\u300D\u7B49\u4E0A\u4E0B\u6587\u64CD\u4F5C\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u5143\u7D20\u7684\u53EF\u89C1\u6587\u672C\u3002" },
+          x: { type: "number", description: "X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          y: { type: "number", description: "Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_type",
+      description: "\u5411\u8F93\u5165\u6846 input \u6216\u6587\u672C\u57DF textarea \u8F93\u5165\u6587\u672C\u3002\u7528\u9014\uFF1A\u586B\u5199\u5355\u4E2A\u5B57\u6BB5\u3002\u573A\u666F\uFF1A\u8F93\u5165\u7528\u6237\u540D\u3001\u641C\u7D22\u8BCD\u3001\u8868\u5355\u5355\u9879\uFF08\u591A\u9879\u8BF7\u7528 browser_fill_form\uFF09\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u76EE\u6807\u8F93\u5165\u6846\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u8981\u8F93\u5165\u7684\u6587\u672C\u3002" },
+          clear_first: { type: "boolean", description: "\u8F93\u5165\u524D\u5148\u6E05\u7A7A\u5B57\u6BB5\u3002\u9ED8\u8BA4 true\u3002" },
+          submit: { type: "boolean", description: "\u8F93\u5165\u540E\u6309\u56DE\u8F66\u63D0\u4EA4\u3002" }
+        },
+        required: ["text"]
+      }
+    },
+    {
+      name: "browser_press_key",
+      description: "\u5728\u7126\u70B9\u5143\u7D20\u6216\u6307\u5B9A selector \u4E0A\u6309\u4E0B\u67D0\u4E2A\u952E\uFF08\u53EF\u5E26\u4FEE\u9970\u952E\uFF09\u3002\u7528\u9014\uFF1A\u952E\u76D8\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u6309 Enter \u63D0\u4EA4\u3001Escape \u5173\u95ED\u3001Tab \u5207\u6362\u3001\u65B9\u5411\u952E\u3001Ctrl+A \u7B49\u5FEB\u6377\u952E\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: '\u952E\u540D\uFF0C\u5982 "Enter"\u3001"Escape"\u3001"Tab"\u3001"ArrowDown"\u3001"a"\u3002' },
+          selector: { type: "string", description: "\u53EF\u9009\uFF1A\u6309\u952E\u524D\u5148\u805A\u7126\u7684 CSS selector\u3002" },
+          ctrl: { type: "boolean", description: "\u6309\u4F4F Ctrl\u3002" },
+          shift: { type: "boolean", description: "\u6309\u4F4F Shift\u3002" },
+          alt: { type: "boolean", description: "\u6309\u4F4F Alt\u3002" },
+          meta: { type: "boolean", description: "\u6309\u4F4F Meta/Cmd\u3002" }
+        },
+        required: ["key"]
+      }
+    },
+    {
+      name: "browser_hover",
+      description: "\u628A\u9F20\u6807\u60AC\u505C hover \u5230\u67D0\u4E2A\u5143\u7D20\u4E0A\uFF0C\u4EE5\u663E\u793A tooltip \u6216\u4E0B\u62C9\u83DC\u5355\u3002\u7528\u9014\uFF1A\u89E6\u53D1\u60AC\u505C\u624D\u51FA\u73B0\u7684\u5185\u5BB9\u3002\u573A\u666F\uFF1A\u5C55\u5F00\u60AC\u505C\u83DC\u5355\u3001\u663E\u793A\u63D0\u793A\u6C14\u6CE1\u540E\u518D\u64CD\u4F5C\u3002",
+      input_schema: {
+        type: "object",
+        properties: { selector: { type: "string", description: "\u8981\u60AC\u505C\u5143\u7D20\u7684 CSS selector\u3002" } },
+        required: ["selector"]
       }
     },
     {
@@ -3623,65 +3735,19 @@
       }
     },
     {
-      name: "browser_evaluate",
-      description: "\u5728\u9875\u9762\u4E0A\u4E0B\u6587\u4E2D\u6267\u884C\u4EFB\u610F JavaScript \u5E76\u8FD4\u56DE\u7ED3\u679C\uFF1B\u53EF\u7528\u65F6\u8D70 Chrome DevTools Protocol\uFF0C\u56E0\u6B64\u5728 CSP \u53D7\u9650\u9875\u9762\u4E0A\u4E5F\u80FD\u8FD0\u884C\u3002\u7528\u9014\uFF1A\u9AD8\u7EA7\u53D6\u6570/\u64CD\u4F5C\u7684\u515C\u5E95\u624B\u6BB5\u3002\u573A\u666F\uFF1A\u5185\u7F6E\u5DE5\u5177\u65E0\u6CD5\u6EE1\u8DB3\u65F6\u8BFB\u53D6\u590D\u6742\u6570\u636E\u6216\u89E6\u53D1\u7279\u6B8A\u884C\u4E3A\uFF08\u8BF7\u8C28\u614E\u4F7F\u7528\uFF09\u3002",
+      name: "browser_drag",
+      description: "\u4ECE\u6E90\u5143\u7D20/\u70B9\u62D6\u62FD drag \u5230\u76EE\u6807\u5143\u7D20/\u70B9\u5E76\u653E\u4E0B\uFF0C\u89E6\u53D1 HTML5\u3001pointer \u548C mouse \u4E8B\u4EF6\uFF0C\u5E76\u8FD4\u56DE\u6E90\u662F\u5426\u660E\u663E\u79FB\u52A8\u7684\u8BCA\u65AD\u4FE1\u606F\u3002\u7528\u9014\uFF1A\u62D6\u653E\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u62D6\u52A8\u6392\u5E8F\u3001\u628A\u5143\u7D20\u62D6\u5165\u6295\u653E\u533A\u3001\u6ED1\u5757\u64CD\u4F5C\u3002",
       input_schema: {
         type: "object",
         properties: {
-          code: { type: "string", description: "\u8981\u6267\u884C\u7684 JavaScript \u8868\u8FBE\u5F0F\u6216\u8BED\u53E5\u3002" },
-          function: { type: "string", description: "code \u7684\u522B\u540D\uFF0C\u4FDD\u7559\u517C\u5BB9\u3002" },
-          fn: { type: "string", description: "code \u7684\u522B\u540D\u3002" },
-          expression: { type: "string", description: "code \u7684\u522B\u540D\u3002" },
-          trace: { type: "boolean", description: "\u5931\u8D25\u65F6\u8FD4\u56DE\u7ED3\u6784\u5316\u7684 {error, code, suggestion, trace}\u3002" }
-        }
-      }
-    },
-    {
-      name: "browser_extract",
-      description: "\u4ECE\u5339\u914D selector \u7684\u5143\u7D20\u4E2D\u63D0\u53D6\u7ED3\u6784\u5316\u6570\u636E\uFF0C\u8FD4\u56DE\u5E26 tag\u3001selector\u3001\u6587\u672C\u3001\u5C5E\u6027\u53CA\u5E38\u7528\u5C5E\u6027\u522B\u540D\u7684\u5F52\u4E00\u5316\u6761\u76EE\u3002\u7528\u9014\uFF1A\u6279\u91CF\u6293\u53D6\u5217\u8868/\u8868\u683C\u3002\u573A\u666F\uFF1A\u6293\u53D6\u641C\u7D22\u7ED3\u679C\u3001\u5546\u54C1\u5217\u8868\u3001\u8868\u683C\u884C\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          selector: { type: "string", description: "\u8981\u67E5\u8BE2\u7684 CSS selector\u3002" },
-          attributes: { type: "array", items: { type: "string" }, description: "\u6BCF\u4E2A\u5143\u7D20\u9700\u8981\u91C7\u96C6\u7684\u5C5E\u6027\u540D\u5217\u8868\u3002" },
-          limit: { type: "number", description: "\u6700\u591A\u63D0\u53D6\u7684\u5143\u7D20\u6570\u3002\u9ED8\u8BA4 50\u3002" }
-        },
-        required: ["selector"]
-      }
-    },
-    {
-      name: "browser_find_text",
-      description: "\u67E5\u627E\u9875\u9762\u4E0A\u6240\u6709\u5305\u542B\u6307\u5B9A\u6587\u672C\u7684\u5143\u7D20\u3002\u7528\u9014\uFF1A\u6309\u6587\u5B57\u5B9A\u4F4D\u5143\u7D20\u3002\u573A\u666F\uFF1A\u627E\u5230\u542B\u67D0\u5173\u952E\u5B57\u7684\u6309\u94AE/\u94FE\u63A5\uFF0C\u518D\u914D\u5408\u70B9\u51FB\u6216\u622A\u56FE\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          text: { type: "string", description: "\u8981\u641C\u7D22\u7684\u6587\u672C\u3002" },
-          exact: { type: "boolean", description: "\u4EC5\u7CBE\u786E\u5339\u914D\u3002" }
-        },
-        required: ["text"]
-      }
-    },
-    {
-      name: "browser_find_popups",
-      description: "\u68C0\u6D4B\u9875\u9762\u4E0A\u53EF\u89C1\u7684\u5F39\u7A97\u3001\u6A21\u6001\u6846\u3001\u5BF9\u8BDD\u6846\u3001\u62BD\u5C49\u3001\u906E\u7F69\u4EE5\u53CA\u5B83\u4EEC\u53EF\u80FD\u7684\u5173\u95ED\u6309\u94AE\u3002\u7528\u9014\uFF1A\u53D1\u73B0\u6321\u4F4F\u64CD\u4F5C\u7684\u5F39\u5C42\u3002\u573A\u666F\uFF1A\u81EA\u52A8\u5316\u5361\u4F4F\u65F6\u5148\u6392\u67E5\u5F39\u7A97\uFF0C\u518D\u51B3\u5B9A\u5982\u4F55\u5173\u95ED\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684\u5F39\u7A97\u6570\u3002\u9ED8\u8BA4 10\u3002" }
-        }
-      }
-    },
-    {
-      name: "browser_close_popup",
-      description: "\u5173\u95ED\u53EF\u89C1\u7684\u5F39\u7A97/\u6A21\u6001\u6846/\u5BF9\u8BDD\u6846\uFF1A\u4F18\u5148\u70B9\u68C0\u6D4B\u5230\u7684\u5173\u95ED\u6309\u94AE\uFF0C\u518D\u56DE\u9000\u5230 Escape/\u70B9\u906E\u7F69\u3002\u9700\u8981\u5148\u67E5\u770B\u5019\u9009\u65F6\u8BF7\u5148\u8C03\u7528 browser_find_popups\u3002\u7528\u9014\uFF1A\u6E05\u9664\u906E\u6321\u3002\u573A\u666F\uFF1A\u5173\u95ED cookie \u540C\u610F\u6761\u3001\u8BA2\u9605\u5F39\u7A97\u3001\u767B\u5F55\u5F15\u5BFC\u5C42\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          selector: { type: "string", description: "\u53EF\u9009\uFF1A\u8981\u5173\u95ED\u5F39\u7A97\u7684 CSS selector\u3002" },
-          text: { type: "string", description: "\u53EF\u9009\uFF1A\u5F39\u7A97\u5185\u5305\u542B\u7684\u6587\u672C\uFF0C\u7528\u4E8E\u5B9A\u4F4D\u5B83\u3002" },
-          index: { type: "number", description: "browser_find_popups \u8FD4\u56DE\u7684\u5F39\u7A97\u5E8F\u53F7\u3002\u9ED8\u8BA4 0\u3002" },
-          strategy: { type: "string", enum: ["auto", "close_button", "escape", "backdrop"], description: "\u5173\u95ED\u7B56\u7565\uFF1Aauto \u81EA\u52A8\u3001close_button \u5173\u95ED\u6309\u94AE\u3001escape \u6309 Esc\u3001backdrop \u70B9\u906E\u7F69\u3002\u9ED8\u8BA4 auto\u3002" },
-          force_remove: { type: "boolean", description: "\u4E3A true \u65F6\u4F5C\u4E3A\u6700\u540E\u624B\u6BB5\u76F4\u63A5\u79FB\u9664\u5F39\u7A97 DOM \u8282\u70B9\u3002" }
+          selector: { type: "string", description: "\u6E90\u5143\u7D20 CSS selector\u3002" },
+          text: { type: "string", description: "\u6E90\u5143\u7D20\u53EF\u89C1\u6587\u672C\u3002" },
+          x: { type: "number", description: "\u6E90\u70B9 X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          y: { type: "number", description: "\u6E90\u70B9 Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          to_selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20 CSS selector\u3002" },
+          to_text: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u53EF\u89C1\u6587\u672C\u3002" },
+          to_x: { type: "number", description: "\u76EE\u6807\u70B9 X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          to_y: { type: "number", description: "\u76EE\u6807\u70B9 Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
         }
       }
     },
@@ -3726,23 +3792,54 @@
       }
     },
     {
-      name: "browser_iframe_list",
-      description: "\u5217\u51FA\u5F53\u524D\u9875\u9762\u7684 iframe/frame \u5143\u7D20\uFF0C\u5305\u542B src/name/title/\u53EF\u8BBF\u95EE\u6027\u4FE1\u606F\u548C\u89C6\u53E3\u77E9\u5F62\u3002\u7528\u9014\uFF1A\u53D1\u73B0\u5185\u5D4C\u6846\u67B6\u3002\u573A\u666F\uFF1A\u76EE\u6807\u5185\u5BB9\u5728 iframe \u4E2D\u65F6\uFF0C\u5148\u5B9A\u4F4D\u6846\u67B6\u518D\u51B3\u5B9A\u5982\u4F55\u64CD\u4F5C\u3002",
-      input_schema: { type: "object", properties: {} }
-    },
-    {
-      name: "browser_performance",
-      description: "\u8BFB\u53D6\u9875\u9762\u6027\u80FD\u6307\u6807\u548C\u6162\u8D44\u6E90\uFF0C\u6570\u636E\u6765\u81EA PerformanceNavigationTiming \u4E0E ResourceTiming\u3002\u7528\u9014\uFF1A\u8BC4\u4F30\u9875\u9762\u52A0\u8F7D\u8868\u73B0\u3002\u573A\u666F\uFF1A\u6392\u67E5\u9875\u9762\u5361\u987F\u3001\u7EDF\u8BA1\u52A0\u8F7D\u8017\u65F6\u4E0E\u6162\u8D44\u6E90\u3002",
-      input_schema: { type: "object", properties: {} }
-    },
-    {
-      name: "browser_network_log",
-      description: "\u4EE5\u8F7B\u91CF\u7F51\u7EDC\u65E5\u5FD7\u5F62\u5F0F\u8FD4\u56DE\u88AB\u52A8\u7684\u8D44\u6E90 timing \u6761\u76EE\u3002\u6CE8\u610F\uFF1A\u8FD9\u4E0D\u662F\u4E3B\u52A8\u7684\u8BF7\u6C42\u62E6\u622A\u3002\u7528\u9014\uFF1A\u7C97\u7565\u4E86\u89E3\u9875\u9762\u52A0\u8F7D\u4E86\u54EA\u4E9B\u8D44\u6E90\u3002\u573A\u666F\uFF1A\u68C0\u67E5\u63A5\u53E3/\u8D44\u6E90\u662F\u5426\u88AB\u52A0\u8F7D\u3001\u7EDF\u8BA1\u8BF7\u6C42\u6E05\u5355\u3002",
+      name: "browser_close_popup",
+      description: "\u5173\u95ED\u53EF\u89C1\u7684\u5F39\u7A97/\u6A21\u6001\u6846/\u5BF9\u8BDD\u6846\uFF1A\u4F18\u5148\u70B9\u68C0\u6D4B\u5230\u7684\u5173\u95ED\u6309\u94AE\uFF0C\u518D\u56DE\u9000\u5230 Escape/\u70B9\u906E\u7F69\u3002\u9700\u8981\u5148\u67E5\u770B\u5019\u9009\u65F6\u8BF7\u5148\u8C03\u7528 browser_find_popups\u3002\u7528\u9014\uFF1A\u6E05\u9664\u906E\u6321\u3002\u573A\u666F\uFF1A\u5173\u95ED cookie \u540C\u610F\u6761\u3001\u8BA2\u9605\u5F39\u7A97\u3001\u767B\u5F55\u5F15\u5BFC\u5C42\u3002",
       input_schema: {
         type: "object",
         properties: {
-          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684\u8BF7\u6C42/\u8D44\u6E90\u6761\u76EE\u6570\u3002\u9ED8\u8BA4 20\u3002" }
+          selector: { type: "string", description: "\u53EF\u9009\uFF1A\u8981\u5173\u95ED\u5F39\u7A97\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u53EF\u9009\uFF1A\u5F39\u7A97\u5185\u5305\u542B\u7684\u6587\u672C\uFF0C\u7528\u4E8E\u5B9A\u4F4D\u5B83\u3002" },
+          index: { type: "number", description: "browser_find_popups \u8FD4\u56DE\u7684\u5F39\u7A97\u5E8F\u53F7\u3002\u9ED8\u8BA4 0\u3002" },
+          strategy: { type: "string", enum: ["auto", "close_button", "escape", "backdrop"], description: "\u5173\u95ED\u7B56\u7565\uFF1Aauto \u81EA\u52A8\u3001close_button \u5173\u95ED\u6309\u94AE\u3001escape \u6309 Esc\u3001backdrop \u70B9\u906E\u7F69\u3002\u9ED8\u8BA4 auto\u3002" },
+          force_remove: { type: "boolean", description: "\u4E3A true \u65F6\u4F5C\u4E3A\u6700\u540E\u624B\u6BB5\u76F4\u63A5\u79FB\u9664\u5F39\u7A97 DOM \u8282\u70B9\u3002" }
         }
+      }
+    },
+    // ───── 数据与脚本 ─────────────────────────────────────────────────────
+    {
+      name: "browser_evaluate",
+      description: "\u5728\u9875\u9762\u4E0A\u4E0B\u6587\u4E2D\u6267\u884C\u4EFB\u610F JavaScript \u5E76\u8FD4\u56DE\u7ED3\u679C\uFF1B\u53EF\u7528\u65F6\u8D70 Chrome DevTools Protocol\uFF0C\u56E0\u6B64\u5728 CSP \u53D7\u9650\u9875\u9762\u4E0A\u4E5F\u80FD\u8FD0\u884C\u3002\u7528\u9014\uFF1A\u9AD8\u7EA7\u53D6\u6570/\u64CD\u4F5C\u7684\u515C\u5E95\u624B\u6BB5\u3002\u573A\u666F\uFF1A\u5185\u7F6E\u5DE5\u5177\u65E0\u6CD5\u6EE1\u8DB3\u65F6\u8BFB\u53D6\u590D\u6742\u6570\u636E\u6216\u89E6\u53D1\u7279\u6B8A\u884C\u4E3A\uFF08\u8BF7\u8C28\u614E\u4F7F\u7528\uFF09\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          code: { type: "string", description: "\u8981\u6267\u884C\u7684 JavaScript \u8868\u8FBE\u5F0F\u6216\u8BED\u53E5\u3002" },
+          function: { type: "string", description: "code \u7684\u522B\u540D\uFF0C\u4FDD\u7559\u517C\u5BB9\u3002" },
+          fn: { type: "string", description: "code \u7684\u522B\u540D\u3002" },
+          expression: { type: "string", description: "code \u7684\u522B\u540D\u3002" },
+          trace: { type: "boolean", description: "\u5931\u8D25\u65F6\u8FD4\u56DE\u7ED3\u6784\u5316\u7684 {error, code, suggestion, trace}\u3002" }
+        }
+      }
+    },
+    {
+      name: "browser_extract",
+      description: "\u4ECE\u5339\u914D selector \u7684\u5143\u7D20\u4E2D\u63D0\u53D6\u7ED3\u6784\u5316\u6570\u636E\uFF0C\u8FD4\u56DE\u5E26 tag\u3001selector\u3001\u6587\u672C\u3001\u5C5E\u6027\u53CA\u5E38\u7528\u5C5E\u6027\u522B\u540D\u7684\u5F52\u4E00\u5316\u6761\u76EE\u3002\u7528\u9014\uFF1A\u6279\u91CF\u6293\u53D6\u5217\u8868/\u8868\u683C\u3002\u573A\u666F\uFF1A\u6293\u53D6\u641C\u7D22\u7ED3\u679C\u3001\u5546\u54C1\u5217\u8868\u3001\u8868\u683C\u884C\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          selector: { type: "string", description: "\u8981\u67E5\u8BE2\u7684 CSS selector\u3002" },
+          attributes: { type: "array", items: { type: "string" }, description: "\u6BCF\u4E2A\u5143\u7D20\u9700\u8981\u91C7\u96C6\u7684\u5C5E\u6027\u540D\u5217\u8868\u3002" },
+          limit: { type: "number", description: "\u6700\u591A\u63D0\u53D6\u7684\u5143\u7D20\u6570\u3002\u9ED8\u8BA4 50\u3002" }
+        },
+        required: ["selector"]
+      }
+    },
+    {
+      name: "browser_clipboard_write",
+      description: "\u628A\u6587\u672C\u5199\u5165\u7CFB\u7EDF\u526A\u8D34\u677F\u3002\u7528\u9014\uFF1A\u590D\u5236\u5185\u5BB9\u4F9B\u5176\u4ED6\u7A0B\u5E8F\u7C98\u8D34\u3002\u573A\u666F\uFF1A\u590D\u5236\u63D0\u53D6\u5230\u7684\u7ED3\u679C\u3001\u590D\u5236\u751F\u6210\u7684\u94FE\u63A5\u3002",
+      input_schema: {
+        type: "object",
+        properties: { text: { type: "string", description: "\u8981\u590D\u5236\u5230\u526A\u8D34\u677F\u7684\u6587\u672C\u3002" } },
+        required: ["text"]
       }
     },
     {
@@ -3783,276 +3880,81 @@
         required: ["url"]
       }
     },
+    // ───── 浏览器状态（资源 + action）────────────────────────────────────
     {
-      name: "browser_cookie_list",
-      description: "\u5217\u51FA\u5F53\u524D\u6807\u7B7E\u9875 URL \u6216\u6307\u5B9A\u57DF\u540D\u7684 cookie\u3002\u7528\u9014\uFF1A\u67E5\u770B\u4F1A\u8BDD\u72B6\u6001\u3002\u573A\u666F\uFF1A\u68C0\u67E5\u767B\u5F55\u6001\u3001\u6392\u67E5\u9274\u6743 cookie \u662F\u5426\u5B58\u5728\u3002",
+      name: "browser_tab",
+      description: "\u7BA1\u7406\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\uFF1A\u5217\u51FA\u3001\u65B0\u5F00\u6216\u5173\u95ED\u3002\u7528\u9014\uFF1A\u5728\u591A\u6807\u7B7E\u95F4\u7EC4\u7EC7\u5DE5\u4F5C\u3002\u573A\u666F\uFF1A\u67E5\u770B\u6709\u54EA\u4E9B\u6807\u7B7E\uFF08list\uFF09\u3001\u5E76\u884C\u6253\u5F00\u7F51\u5740\uFF08open\uFF09\u3001\u5B8C\u6210\u540E\u5173\u95ED\u6807\u7B7E\uFF08close\uFF09\u3002",
       input_schema: {
         type: "object",
         properties: {
+          action: { type: "string", enum: ["list", "open", "close"], description: "\u52A8\u4F5C\uFF1Alist \u5217\u51FA\u6240\u6709\u6807\u7B7E\u3001open \u7528 url \u65B0\u5F00\u6807\u7B7E\u3001close \u5173\u95ED tab_id\uFF08\u4E0D\u4F20\u5219\u5F53\u524D\u6807\u7B7E\uFF09\u3002" },
+          url: { type: "string", description: "action=open \u65F6\u8981\u6253\u5F00\u7684 URL\u3002" },
+          tab_id: { type: "number", description: "action=close \u65F6\u8981\u5173\u95ED\u7684\u6807\u7B7E ID\uFF1B\u4E0D\u4F20\u5219\u5173\u95ED\u5F53\u524D\u6D3B\u52A8\u6807\u7B7E\u3002" }
+        },
+        required: ["action"]
+      }
+    },
+    {
+      name: "browser_cookie",
+      description: "\u7BA1\u7406\u5F53\u524D\u6807\u7B7E\u9875 URL \u6216\u6307\u5B9A URL/\u57DF\u540D\u7684 cookie\uFF1A\u5217\u51FA\u3001\u8BFB\u53D6\u3001\u5199\u5165\u3001\u5220\u9664\u3002\u7528\u9014\uFF1A\u67E5\u770B\u6216\u64CD\u4F5C\u4F1A\u8BDD\u72B6\u6001\u3002\u573A\u666F\uFF1A\u68C0\u67E5\u767B\u5F55\u6001\uFF08list/get\uFF09\u3001\u6CE8\u5165\u767B\u5F55/\u504F\u597D cookie\uFF08set\uFF0C\u5199\u5165\uFF09\u3001\u9000\u51FA\u767B\u5F55\uFF08delete\uFF0C\u5199\u5165\uFF09\u3002",
+      input_schema: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["list", "get", "set", "delete"], description: "\u52A8\u4F5C\uFF1Alist \u5217\u51FA\u3001get \u6309 name \u53D6\u5355\u4E2A\u3001set \u5199\u5165\u3001delete \u5220\u9664\u3002" },
           url: { type: "string", description: "cookie \u6240\u5C5E URL\u3002\u9ED8\u8BA4\u5F53\u524D\u6807\u7B7E\u9875 URL\u3002" },
-          domain: { type: "string", description: "\u53EF\u9009\uFF1A\u6309\u57DF\u540D\u8FC7\u6EE4\u3002" }
-        }
-      }
-    },
-    {
-      name: "browser_cookie_get",
-      description: "\u6309\u540D\u79F0\u8BFB\u53D6\u5F53\u524D\u6807\u7B7E\u9875 URL \u6216\u6307\u5B9A URL \u7684\u5355\u4E2A cookie\u3002\u7528\u9014\uFF1A\u53D6\u67D0\u4E2A\u5177\u4F53 cookie \u503C\u3002\u573A\u666F\uFF1A\u8BFB\u53D6 session token\u3001\u8BFB\u53D6\u504F\u597D\u8BBE\u7F6E cookie\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          url: { type: "string", description: "cookie \u6240\u5C5E URL\u3002\u9ED8\u8BA4\u5F53\u524D\u6807\u7B7E\u9875 URL\u3002" },
-          name: { type: "string", description: "cookie \u540D\u79F0\u3002" }
+          domain: { type: "string", description: "action=list \u65F6\u53EF\u6309\u57DF\u540D\u8FC7\u6EE4\u3002" },
+          name: { type: "string", description: "cookie \u540D\u79F0\uFF08get/set/delete \u5FC5\u586B\uFF09\u3002" },
+          value: { type: "string", description: "action=set \u65F6\u7684 cookie \u503C\u3002" },
+          path: { type: "string", description: "action=set \u65F6\u7684 cookie \u8DEF\u5F84\u3002" },
+          secure: { type: "boolean", description: "action=set \u65F6\u662F\u5426\u4EC5 HTTPS \u4F20\u8F93\u3002" },
+          http_only: { type: "boolean", description: "action=set \u65F6\u662F\u5426\u6807\u8BB0 HttpOnly\u3002" },
+          expiration_date: { type: "number", description: "action=set \u65F6\u7684\u8FC7\u671F\u65F6\u95F4\uFF08Unix \u79D2\uFF09\u3002" }
         },
-        required: ["name"]
+        required: ["action"]
       }
     },
     {
-      name: "browser_cookie_set",
-      description: "\u4E3A\u5F53\u524D\u6807\u7B7E\u9875 URL \u6216\u6307\u5B9A URL \u8BBE\u7F6E\u5355\u4E2A cookie\u3002\u7528\u9014\uFF1A\u5199\u5165\u4F1A\u8BDD/\u504F\u597D cookie\u3002\u573A\u666F\uFF1A\u6CE8\u5165\u767B\u5F55\u6001\u3001\u8BBE\u7F6E\u8BED\u8A00\u6216\u540C\u610F\u6807\u8BB0\uFF08\u8BF7\u8C28\u614E\uFF0C\u5C5E\u5199\u5165\u64CD\u4F5C\uFF09\u3002",
+      name: "browser_storage",
+      description: "\u8BFB\u5199\u5F53\u524D\u9875\u9762\u7684 localStorage / sessionStorage\uFF1A\u8BFB\u53D6\u3001\u5199\u5165\u3001\u5220\u9664\u3001\u5217\u51FA key\u3002\u7528\u9014\uFF1A\u67E5\u770B\u6216\u64CD\u4F5C\u524D\u7AEF\u5B58\u50A8\u72B6\u6001\u3002\u573A\u666F\uFF1A\u8BFB\u53D6 token/\u504F\u597D\uFF08get/list\uFF09\u3001\u6CE8\u5165\u6807\u8BB0\u4F4D\uFF08set\uFF0C\u5199\u5165\uFF09\u3001\u6E05\u9664\u7F13\u5B58\u9879\uFF08remove\uFF0C\u5199\u5165\uFF09\u3002",
       input_schema: {
         type: "object",
         properties: {
-          url: { type: "string", description: "cookie \u6240\u5C5E URL\u3002\u9ED8\u8BA4\u5F53\u524D\u6807\u7B7E\u9875 URL\u3002" },
-          name: { type: "string", description: "cookie \u540D\u79F0\u3002" },
-          value: { type: "string", description: "cookie \u503C\u3002" },
-          domain: { type: "string", description: "cookie \u57DF\u540D\u3002" },
-          path: { type: "string", description: "cookie \u8DEF\u5F84\u3002" },
-          secure: { type: "boolean", description: "\u662F\u5426\u4EC5 HTTPS \u4F20\u8F93\u3002" },
-          http_only: { type: "boolean", description: "\u662F\u5426\u6807\u8BB0 HttpOnly\u3002" },
-          expiration_date: { type: "number", description: "\u8FC7\u671F\u65F6\u95F4\uFF08Unix \u79D2\uFF09\u3002" }
+          action: { type: "string", enum: ["get", "set", "remove", "list"], description: "\u52A8\u4F5C\uFF1Aget \u8BFB\u53D6 key\u3001set \u5199\u5165 key\u3001remove \u5220\u9664 key\u3001list \u5217\u51FA key\u3002" },
+          type: { type: "string", enum: ["local", "session"], description: "\u5B58\u50A8\u7C7B\u578B\uFF1Alocal \u6216 session\u3002\u9ED8\u8BA4 local\u3002" },
+          key: { type: "string", description: "\u5B58\u50A8\u952E\u540D\uFF08get/set/remove \u5FC5\u586B\uFF09\u3002" },
+          value: { type: "string", description: "action=set \u65F6\u8981\u5B58\u50A8\u7684\u503C\u3002" },
+          prefix: { type: "string", description: "action=list \u65F6\u6309\u952E\u540D\u524D\u7F00\u8FC7\u6EE4\u3002" },
+          include_values: { type: "boolean", description: "action=list \u65F6\u5728\u7ED3\u679C\u4E2D\u5305\u542B value\u3002" },
+          limit: { type: "number", description: "action=list \u65F6\u6700\u591A\u8FD4\u56DE\u7684 key/\u6761\u76EE\u6570\u3002\u9ED8\u8BA4 100\u3002" }
         },
-        required: ["name"]
+        required: ["action"]
       }
     },
     {
-      name: "browser_cookie_delete",
-      description: "\u6309\u540D\u79F0\u5220\u9664\u5F53\u524D\u6807\u7B7E\u9875 URL \u6216\u6307\u5B9A URL \u7684\u5355\u4E2A cookie\u3002\u7528\u9014\uFF1A\u6E05\u9664\u67D0\u4E2A cookie\u3002\u573A\u666F\uFF1A\u9000\u51FA\u767B\u5F55\u3001\u6E05\u6389\u67D0\u9879\u504F\u597D\uFF08\u5C5E\u5199\u5165\u64CD\u4F5C\uFF09\u3002",
+      name: "browser_session",
+      description: "\u7BA1\u7406\u8F7B\u91CF\u6D4F\u89C8\u5668\u4E0A\u4E0B\u6587\u5FEB\u7167\uFF08\u5F53\u524D URL/\u6807\u9898 + \u8BE5\u9875 localStorage/sessionStorage\uFF09\uFF1A\u4FDD\u5B58\u3001\u5217\u51FA\u3001\u6062\u590D\u3001\u5220\u9664\u3002\u7528\u9014\uFF1A\u7559\u5B58\u5E76\u56DE\u5230\u6B64\u524D\u7684\u4F1A\u8BDD\u73B0\u573A\u3002\u573A\u666F\uFF1A\u4FDD\u5B58\u767B\u5F55\u6001\u7A0D\u540E\u6062\u590D\uFF08save/restore\uFF09\u3001\u67E5\u770B\u53EF\u6062\u590D\u4F1A\u8BDD\uFF08list\uFF09\u3001\u6E05\u7406\u8FC7\u671F\u5FEB\u7167\uFF08delete\uFF09\u3002",
       input_schema: {
         type: "object",
         properties: {
-          url: { type: "string", description: "cookie \u6240\u5C5E URL\u3002\u9ED8\u8BA4\u5F53\u524D\u6807\u7B7E\u9875 URL\u3002" },
-          name: { type: "string", description: "cookie \u540D\u79F0\u3002" }
+          action: { type: "string", enum: ["save", "list", "restore", "delete"], description: "\u52A8\u4F5C\uFF1Asave \u4FDD\u5B58\u5F53\u524D\u73B0\u573A\u3001list \u5217\u51FA\u5FEB\u7167\u3001restore \u6062\u590D\u5FEB\u7167\u3001delete \u5220\u9664\u5FEB\u7167\u3002" },
+          id: { type: "string", description: "\u4F1A\u8BDD id\uFF08restore/delete \u7528\uFF0Csave \u53EF\u9009\uFF09\u3002" },
+          name: { type: "string", description: "\u4FBF\u4E8E\u8BC6\u522B\u7684\u4F1A\u8BDD\u540D\u79F0\uFF08restore/delete \u4E5F\u53EF\u6309 name \u5B9A\u4F4D\uFF09\u3002" },
+          new_tab: { type: "boolean", description: "action=restore \u65F6\u5728\u65B0\u6807\u7B7E\u9875\u4E2D\u6062\u590D\u3002" }
         },
-        required: ["name"]
+        required: ["action"]
       }
     },
     {
-      name: "browser_tab_list",
-      description: "\u5217\u51FA\u6240\u6709\u6253\u5F00\u7684\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u3002\u7528\u9014\uFF1A\u4E86\u89E3\u5F53\u524D\u6709\u54EA\u4E9B\u6807\u7B7E\u3002\u573A\u666F\uFF1A\u5728\u591A\u6807\u7B7E\u95F4\u5207\u6362\u3001\u5173\u95ED\u67D0\u4E2A\u6807\u7B7E\u524D\u5148\u67E5 ID\u3002",
-      input_schema: { type: "object", properties: {} }
-    },
-    {
-      name: "browser_tab_open",
-      description: "\u7528\u6307\u5B9A URL \u6253\u5F00\u4E00\u4E2A\u65B0\u6807\u7B7E\u9875\u3002\u7528\u9014\uFF1A\u5728\u4E0D\u6253\u65AD\u5F53\u524D\u9875\u7684\u60C5\u51B5\u4E0B\u5E76\u884C\u6253\u5F00\u7F51\u5740\u3002\u573A\u666F\uFF1A\u5F00\u591A\u4E2A\u9875\u9762\u5BF9\u6BD4\u3001\u540E\u53F0\u9884\u52A0\u8F7D\u3002",
-      input_schema: {
-        type: "object",
-        properties: { url: { type: "string", description: "\u65B0\u6807\u7B7E\u9875\u8981\u6253\u5F00\u7684 URL\u3002" } },
-        required: ["url"]
-      }
-    },
-    {
-      name: "browser_tab_close",
-      description: "\u6309\u6807\u7B7E ID \u5173\u95ED\u6807\u7B7E\u9875\uFF1B\u4E0D\u4F20 ID \u5219\u5173\u95ED\u5F53\u524D\u6D3B\u52A8\u6807\u7B7E\u3002\u7528\u9014\uFF1A\u6E05\u7406\u591A\u4F59\u6807\u7B7E\u3002\u573A\u666F\uFF1A\u5B8C\u6210\u67D0\u9875\u9762\u4EFB\u52A1\u540E\u5173\u95ED\u5B83\u3002",
-      input_schema: {
-        type: "object",
-        properties: { tab_id: { type: "number", description: "\u8981\u5173\u95ED\u7684\u6807\u7B7E ID\u3002" } }
-      }
-    },
-    {
-      name: "browser_history_back",
-      description: "\u8BA9\u5F53\u524D\u6807\u7B7E\u5728\u5386\u53F2\u8BB0\u5F55\u4E2D\u540E\u9000\u4E00\u6B65\u3002\u7528\u9014\uFF1A\u8FD4\u56DE\u4E0A\u4E00\u9875\u3002\u573A\u666F\uFF1A\u8BEF\u5165\u8BE6\u60C5\u9875\u540E\u9000\u56DE\u5217\u8868\u3002",
-      input_schema: { type: "object", properties: {} }
-    },
-    {
-      name: "browser_history_forward",
-      description: "\u8BA9\u5F53\u524D\u6807\u7B7E\u5728\u5386\u53F2\u8BB0\u5F55\u4E2D\u524D\u8FDB\u4E00\u6B65\u3002\u7528\u9014\uFF1A\u64A4\u9500\u4E00\u6B21\u540E\u9000\u3002\u573A\u666F\uFF1A\u540E\u9000\u540E\u53C8\u60F3\u56DE\u5230\u521A\u624D\u7684\u9875\u9762\u3002",
-      input_schema: { type: "object", properties: {} }
-    },
-    {
-      name: "browser_clipboard_write",
-      description: "\u628A\u6587\u672C\u5199\u5165\u7CFB\u7EDF\u526A\u8D34\u677F\u3002\u7528\u9014\uFF1A\u590D\u5236\u5185\u5BB9\u4F9B\u5176\u4ED6\u7A0B\u5E8F\u7C98\u8D34\u3002\u573A\u666F\uFF1A\u590D\u5236\u63D0\u53D6\u5230\u7684\u7ED3\u679C\u3001\u590D\u5236\u751F\u6210\u7684\u94FE\u63A5\u3002",
-      input_schema: {
-        type: "object",
-        properties: { text: { type: "string", description: "\u8981\u590D\u5236\u5230\u526A\u8D34\u677F\u7684\u6587\u672C\u3002" } },
-        required: ["text"]
-      }
-    },
-    {
-      name: "browser_storage_get",
-      description: "\u8BFB\u53D6\u9875\u9762 localStorage \u6216 sessionStorage \u4E2D\u7684\u67D0\u4E2A key\u3002\u7528\u9014\uFF1A\u67E5\u770B\u524D\u7AEF\u5B58\u50A8\u72B6\u6001\u3002\u573A\u666F\uFF1A\u8BFB\u53D6\u767B\u5F55 token\u3001\u7528\u6237\u504F\u597D\u3001\u8349\u7A3F\u6570\u636E\u3002",
+      name: "browser_profile",
+      description: "\u67E5\u770B\u6216\u8BBE\u7F6E\u6269\u5C55\u7684\u903B\u8F91 profile \u6807\u8BB0\uFF0C\u7528\u4E8E\u7ED9\u4F1A\u8BDD/\u72B6\u6001\u5206\u7EC4\u3002\u6CE8\u610F\uFF1A\u8FD9\u4E0D\u4F1A\u5207\u6362 Chrome \u7684\u7528\u6237\u914D\u7F6E\u6587\u4EF6\u3002\u7528\u9014\uFF1A\u533A\u5206\u4E0D\u540C\u4EFB\u52A1\u7684\u5B58\u50A8\u5206\u7EC4\u3002\u573A\u666F\uFF1A\u786E\u8BA4\u5F53\u524D profile\uFF08info\uFF09\u3001\u4E3A\u5F53\u524D\u4EFB\u52A1\u6253\u6807\uFF08set\uFF09\u3002",
       input_schema: {
         type: "object",
         properties: {
-          key: { type: "string", description: "\u5B58\u50A8\u952E\u540D\u3002" },
-          type: { type: "string", enum: ["local", "session"], description: "\u5B58\u50A8\u7C7B\u578B\uFF1Alocal \u6216 session\u3002\u9ED8\u8BA4 local\u3002" }
-        },
-        required: ["key"]
-      }
-    },
-    {
-      name: "browser_storage_set",
-      description: "\u5728\u9875\u9762 localStorage \u6216 sessionStorage \u4E2D\u8BBE\u7F6E\u67D0\u4E2A key\u3002\u7528\u9014\uFF1A\u5199\u5165\u524D\u7AEF\u5B58\u50A8\u3002\u573A\u666F\uFF1A\u6CE8\u5165\u504F\u597D\u3001\u8BBE\u7F6E\u6807\u8BB0\u4F4D\uFF08\u5C5E\u5199\u5165\u64CD\u4F5C\uFF09\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          key: { type: "string", description: "\u5B58\u50A8\u952E\u540D\u3002" },
-          value: { type: "string", description: "\u8981\u5B58\u50A8\u7684\u503C\u3002" },
-          type: { type: "string", enum: ["local", "session"], description: "\u5B58\u50A8\u7C7B\u578B\uFF1Alocal \u6216 session\u3002\u9ED8\u8BA4 local\u3002" }
-        },
-        required: ["key"]
-      }
-    },
-    {
-      name: "browser_storage_remove",
-      description: "\u4ECE\u9875\u9762 localStorage \u6216 sessionStorage \u4E2D\u5220\u9664\u67D0\u4E2A key\u3002\u7528\u9014\uFF1A\u6E05\u9664\u524D\u7AEF\u5B58\u50A8\u9879\u3002\u573A\u666F\uFF1A\u6E05\u6389\u67D0\u4E2A\u6807\u8BB0\u6216\u7F13\u5B58\uFF08\u5C5E\u5199\u5165\u64CD\u4F5C\uFF09\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          key: { type: "string", description: "\u5B58\u50A8\u952E\u540D\u3002" },
-          type: { type: "string", enum: ["local", "session"], description: "\u5B58\u50A8\u7C7B\u578B\uFF1Alocal \u6216 session\u3002\u9ED8\u8BA4 local\u3002" }
-        },
-        required: ["key"]
-      }
-    },
-    {
-      name: "browser_storage_list",
-      description: "\u5217\u51FA\u9875\u9762 localStorage \u6216 sessionStorage \u7684 key\uFF0C\u53EF\u9009\u9644\u5E26 value\u3002\u7528\u9014\uFF1A\u76D8\u70B9\u524D\u7AEF\u5B58\u50A8\u3002\u573A\u666F\uFF1A\u6392\u67E5\u5B58\u4E86\u54EA\u4E9B\u6570\u636E\u3001\u6309\u524D\u7F00\u7B5B\u9009\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          prefix: { type: "string", description: "\u53EF\u9009\uFF1A\u6309\u952E\u540D\u524D\u7F00\u8FC7\u6EE4\u3002" },
-          include_values: { type: "boolean", description: "\u5728\u7ED3\u679C\u4E2D\u5305\u542B value\u3002" },
-          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684 key/\u6761\u76EE\u6570\u3002\u9ED8\u8BA4 100\u3002" },
-          type: { type: "string", enum: ["local", "session"], description: "\u5B58\u50A8\u7C7B\u578B\uFF1Alocal \u6216 session\u3002\u9ED8\u8BA4 local\u3002" }
-        }
-      }
-    },
-    {
-      name: "browser_session_save",
-      description: "\u4FDD\u5B58\u4E00\u4EFD\u8F7B\u91CF\u7684\u6D4F\u89C8\u5668\u4E0A\u4E0B\u6587\u5FEB\u7167\uFF1A\u5F53\u524D URL/\u6807\u9898\u52A0\u4E0A\u8BE5\u9875\u7684 localStorage/sessionStorage\u3002\u7528\u9014\uFF1A\u7559\u5B58\u4F1A\u8BDD\u73B0\u573A\u3002\u573A\u666F\uFF1A\u4FDD\u5B58\u767B\u5F55\u6001\u4EE5\u4FBF\u7A0D\u540E\u6062\u590D\u3001\u8BB0\u5F55\u67D0\u4E2A\u9875\u9762\u72B6\u6001\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u53EF\u9009\uFF1A\u4F1A\u8BDD id\u3002" },
-          name: { type: "string", description: "\u4FBF\u4E8E\u8BC6\u522B\u7684\u4F1A\u8BDD\u540D\u79F0\u3002" }
-        }
-      }
-    },
-    {
-      name: "browser_session_list",
-      description: "\u5217\u51FA\u5DF2\u4FDD\u5B58\u7684\u8F7B\u91CF\u6D4F\u89C8\u5668\u4E0A\u4E0B\u6587\u5FEB\u7167\u3002\u7528\u9014\uFF1A\u67E5\u770B\u53EF\u6062\u590D\u7684\u4F1A\u8BDD\u3002\u573A\u666F\uFF1A\u6062\u590D\u6216\u5220\u9664\u524D\u5148\u6D4F\u89C8\u5217\u8868\u3002",
-      input_schema: { type: "object", properties: {} }
-    },
-    {
-      name: "browser_session_restore",
-      description: "\u6062\u590D\u4E00\u4EFD\u5DF2\u4FDD\u5B58\u7684\u8F7B\u91CF\u6D4F\u89C8\u5668\u4E0A\u4E0B\u6587\u5FEB\u7167\uFF1A\u5BFC\u822A\u5230\u5176 URL \u5E76\u8FD8\u539F\u5B58\u50A8\u3002\u7528\u9014\uFF1A\u56DE\u5230\u6B64\u524D\u4FDD\u5B58\u7684\u73B0\u573A\u3002\u573A\u666F\uFF1A\u6062\u590D\u767B\u5F55\u6001\u7EE7\u7EED\u4EFB\u52A1\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u4F1A\u8BDD id\u3002" },
-          name: { type: "string", description: "\u4F1A\u8BDD\u540D\u79F0\u3002" },
-          new_tab: { type: "boolean", description: "\u5728\u65B0\u6807\u7B7E\u9875\u4E2D\u6062\u590D\u3002" }
-        }
-      }
-    },
-    {
-      name: "browser_session_delete",
-      description: "\u5220\u9664\u4E00\u4EFD\u5DF2\u4FDD\u5B58\u7684\u8F7B\u91CF\u6D4F\u89C8\u5668\u4E0A\u4E0B\u6587\u5FEB\u7167\u3002\u7528\u9014\uFF1A\u6E05\u7406\u4E0D\u518D\u9700\u8981\u7684\u4F1A\u8BDD\u3002\u573A\u666F\uFF1A\u5220\u9664\u8FC7\u671F\u6216\u654F\u611F\u7684\u4F1A\u8BDD\u5FEB\u7167\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u4F1A\u8BDD id\u3002" },
-          name: { type: "string", description: "\u4F1A\u8BDD\u540D\u79F0\u3002" }
-        }
-      }
-    },
-    {
-      name: "browser_profile_info",
-      description: "\u8FD4\u56DE\u5F53\u524D\u6269\u5C55\u7684\u903B\u8F91 profile \u6807\u8BB0\u3002\u6CE8\u610F\uFF1A\u8FD9\u4E0D\u4F1A\u5207\u6362 Chrome \u7684\u7528\u6237\u914D\u7F6E\u6587\u4EF6\u3002\u7528\u9014\uFF1A\u67E5\u770B\u5F53\u524D\u72B6\u6001\u5206\u7EC4\u6807\u8BB0\u3002\u573A\u666F\uFF1A\u786E\u8BA4\u6B63\u5728\u4F7F\u7528\u54EA\u4E2A\u903B\u8F91 profile\u3002",
-      input_schema: { type: "object", properties: {} }
-    },
-    {
-      name: "browser_profile_set",
-      description: "\u8BBE\u7F6E\u4E00\u4E2A\u6269\u5C55\u903B\u8F91 profile \u6807\u8BB0\u7528\u4E8E\u5206\u7EC4\u72B6\u6001\u3002\u6CE8\u610F\uFF1A\u6269\u5C55\u65E0\u6CD5\u5207\u6362 Chrome \u7528\u6237\u914D\u7F6E\u6587\u4EF6\u3002\u7528\u9014\uFF1A\u4E3A\u4F1A\u8BDD/\u72B6\u6001\u5206\u7EC4\u6253\u6807\u3002\u573A\u666F\uFF1A\u533A\u5206\u4E0D\u540C\u4EFB\u52A1\u7684\u5B58\u50A8\u5206\u7EC4\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          name: { type: "string", description: "\u903B\u8F91 profile \u540D\u79F0\u3002" },
+          action: { type: "string", enum: ["info", "set"], description: "\u52A8\u4F5C\uFF1Ainfo \u67E5\u770B\u5F53\u524D profile\u3001set \u8BBE\u7F6E profile\u3002" },
+          name: { type: "string", description: "action=set \u65F6\u7684\u903B\u8F91 profile \u540D\u79F0\u3002" },
           profile: { type: "string", description: "name \u7684\u522B\u540D\u3002" }
-        }
-      }
-    },
-    {
-      name: "browser_hover",
-      description: "\u628A\u9F20\u6807\u60AC\u505C hover \u5230\u67D0\u4E2A\u5143\u7D20\u4E0A\uFF0C\u4EE5\u663E\u793A tooltip \u6216\u4E0B\u62C9\u83DC\u5355\u3002\u7528\u9014\uFF1A\u89E6\u53D1\u60AC\u505C\u624D\u51FA\u73B0\u7684\u5185\u5BB9\u3002\u573A\u666F\uFF1A\u5C55\u5F00\u60AC\u505C\u83DC\u5355\u3001\u663E\u793A\u63D0\u793A\u6C14\u6CE1\u540E\u518D\u64CD\u4F5C\u3002",
-      input_schema: {
-        type: "object",
-        properties: { selector: { type: "string", description: "\u8981\u60AC\u505C\u5143\u7D20\u7684 CSS selector\u3002" } },
-        required: ["selector"]
-      }
-    },
-    {
-      name: "browser_page_info",
-      description: "\u83B7\u53D6\u4F60\u5F53\u524D\u5728\u9875\u9762\u4E0A\u7684\u4F4D\u7F6E\u4FE1\u606F\uFF1A\u6EDA\u52A8\u4F4D\u7F6E\uFF08scrollY\u3001\u767E\u5206\u6BD4\u3001\u662F\u5426\u5230\u9876/\u5230\u5E95\uFF09\u3001\u89C6\u53E3\u5C3A\u5BF8\u3001\u6574\u9875\u9AD8\u5EA6\u3001\u5F53\u524D\u5C0F\u8282\u6807\u9898\u3001\u89C6\u53E3\u5185\u6240\u6709\u6807\u9898\u3001\u5143\u7D20\u8BA1\u6570\u3002\u7528\u9014\uFF1A\u81EA\u6211\u5B9A\u4F4D\u3002\u573A\u666F\uFF1A\u6EDA\u52A8\u6216\u4EA4\u4E92\u524D\u540E\u8C03\u7528\uFF0C\u786E\u8BA4\u843D\u70B9\u548C\u9875\u9762\u7ED3\u6784\u3002",
-      input_schema: { type: "object", properties: {} }
-    },
-    {
-      name: "browser_right_click",
-      description: "\u5728\u5143\u7D20\u4E0A\u53F3\u952E right-click\uFF08\u6253\u5F00\u4E0A\u4E0B\u6587\u83DC\u5355\uFF09\uFF0C\u53EF\u7528 CSS selector\u3001\u53EF\u89C1\u6587\u672C\u6216\u5750\u6807\u5B9A\u4F4D\u3002\u7528\u9014\uFF1A\u89E6\u53D1\u53F3\u952E\u83DC\u5355\u3002\u573A\u666F\uFF1A\u6253\u5F00\u300C\u5728\u65B0\u6807\u7B7E\u6253\u5F00\u300D\u300C\u68C0\u67E5\u300D\u7B49\u4E0A\u4E0B\u6587\u64CD\u4F5C\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u7684 CSS selector\u3002" },
-          text: { type: "string", description: "\u5143\u7D20\u7684\u53EF\u89C1\u6587\u672C\u3002" },
-          x: { type: "number", description: "X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
-          y: { type: "number", description: "Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
-        }
-      }
-    },
-    {
-      name: "browser_double_click",
-      description: "\u53CC\u51FB double-click \u5143\u7D20\uFF0C\u53EF\u7528 CSS selector\u3001\u53EF\u89C1\u6587\u672C\u6216\u5750\u6807\u5B9A\u4F4D\uFF08\u5982\u9009\u4E2D\u4E00\u4E2A\u8BCD\u6216\u6253\u5F00\u67D0\u9879\uFF09\u3002\u7528\u9014\uFF1A\u9700\u8981\u53CC\u51FB\u624D\u751F\u6548\u7684\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u53CC\u51FB\u9009\u8BCD\u3001\u53CC\u51FB\u6253\u5F00\u6587\u4EF6\u9879\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u7684 CSS selector\u3002" },
-          text: { type: "string", description: "\u5143\u7D20\u7684\u53EF\u89C1\u6587\u672C\u3002" },
-          x: { type: "number", description: "X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
-          y: { type: "number", description: "Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
-        }
-      }
-    },
-    {
-      name: "browser_drag",
-      description: "\u4ECE\u6E90\u5143\u7D20/\u70B9\u62D6\u62FD drag \u5230\u76EE\u6807\u5143\u7D20/\u70B9\u5E76\u653E\u4E0B\uFF0C\u89E6\u53D1 HTML5\u3001pointer \u548C mouse \u4E8B\u4EF6\uFF0C\u5E76\u8FD4\u56DE\u6E90\u662F\u5426\u660E\u663E\u79FB\u52A8\u7684\u8BCA\u65AD\u4FE1\u606F\u3002\u7528\u9014\uFF1A\u62D6\u653E\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u62D6\u52A8\u6392\u5E8F\u3001\u628A\u5143\u7D20\u62D6\u5165\u6295\u653E\u533A\u3001\u6ED1\u5757\u64CD\u4F5C\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          selector: { type: "string", description: "\u6E90\u5143\u7D20 CSS selector\u3002" },
-          text: { type: "string", description: "\u6E90\u5143\u7D20\u53EF\u89C1\u6587\u672C\u3002" },
-          x: { type: "number", description: "\u6E90\u70B9 X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
-          y: { type: "number", description: "\u6E90\u70B9 Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
-          to_selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20 CSS selector\u3002" },
-          to_text: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u53EF\u89C1\u6587\u672C\u3002" },
-          to_x: { type: "number", description: "\u76EE\u6807\u70B9 X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
-          to_y: { type: "number", description: "\u76EE\u6807\u70B9 Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
-        }
-      }
-    },
-    {
-      name: "browser_press_key",
-      description: "\u5728\u7126\u70B9\u5143\u7D20\u6216\u6307\u5B9A selector \u4E0A\u6309\u4E0B\u67D0\u4E2A\u952E\uFF08\u53EF\u5E26\u4FEE\u9970\u952E\uFF09\u3002\u7528\u9014\uFF1A\u952E\u76D8\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u6309 Enter \u63D0\u4EA4\u3001Escape \u5173\u95ED\u3001Tab \u5207\u6362\u3001\u65B9\u5411\u952E\u3001Ctrl+A \u7B49\u5FEB\u6377\u952E\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          key: { type: "string", description: '\u952E\u540D\uFF0C\u5982 "Enter"\u3001"Escape"\u3001"Tab"\u3001"ArrowDown"\u3001"a"\u3002' },
-          selector: { type: "string", description: "\u53EF\u9009\uFF1A\u6309\u952E\u524D\u5148\u805A\u7126\u7684 CSS selector\u3002" },
-          ctrl: { type: "boolean", description: "\u6309\u4F4F Ctrl\u3002" },
-          shift: { type: "boolean", description: "\u6309\u4F4F Shift\u3002" },
-          alt: { type: "boolean", description: "\u6309\u4F4F Alt\u3002" },
-          meta: { type: "boolean", description: "\u6309\u4F4F Meta/Cmd\u3002" }
         },
-        required: ["key"]
+        required: ["action"]
       }
     }
   ];
@@ -4846,106 +4748,156 @@ ${code}
       meta: !!args.meta
     });
   }
+  function badAction(tool, action, allowed) {
+    const got = action === void 0 || action === "" ? "(\u7A7A)" : String(action);
+    throw new Error(`${tool}: \u672A\u77E5 action\u300C${got}\u300D\uFF0C\u53EF\u9009 ${allowed.join(" / ")}`);
+  }
+  function toolTab(args) {
+    switch (args?.action) {
+      case "list":
+        return toolTabList();
+      case "open":
+        return toolTabOpen(args);
+      case "close":
+        return toolTabClose(args);
+      default:
+        return badAction("browser_tab", args?.action, ["list", "open", "close"]);
+    }
+  }
+  function toolHistory(args) {
+    switch (args?.action) {
+      case "back":
+        return toolHistoryBack();
+      case "forward":
+        return toolHistoryForward();
+      default:
+        return badAction("browser_history", args?.action, ["back", "forward"]);
+    }
+  }
+  function toolCookie(args) {
+    switch (args?.action) {
+      case "list":
+        return toolCookieList(args);
+      case "get":
+        return toolCookieGet(args);
+      case "set":
+        return toolCookieSet(args);
+      case "delete":
+        return toolCookieDelete(args);
+      default:
+        return badAction("browser_cookie", args?.action, ["list", "get", "set", "delete"]);
+    }
+  }
+  function toolStorage(args) {
+    switch (args?.action) {
+      case "get":
+        return toolStorageGet(args);
+      case "set":
+        return toolStorageSet(args);
+      case "remove":
+        return toolStorageRemove(args);
+      case "list":
+        return toolStorageList(args);
+      default:
+        return badAction("browser_storage", args?.action, ["get", "set", "remove", "list"]);
+    }
+  }
+  function toolSession(args) {
+    switch (args?.action) {
+      case "save":
+        return toolSessionSave(args);
+      case "list":
+        return toolSessionList();
+      case "restore":
+        return toolSessionRestore(args);
+      case "delete":
+        return toolSessionDelete(args);
+      default:
+        return badAction("browser_session", args?.action, ["save", "list", "restore", "delete"]);
+    }
+  }
+  function toolProfile(args) {
+    switch (args?.action) {
+      case "info":
+        return toolProfileInfo();
+      case "set":
+        return toolProfileSet(args);
+      default:
+        return badAction("browser_profile", args?.action, ["info", "set"]);
+    }
+  }
+  var HANDLERS = {
+    // Navigation & search
+    browser_navigate: toolNavigate,
+    browser_search: toolSearch,
+    browser_history: toolHistory,
+    // Page observation
+    browser_screenshot: toolScreenshot,
+    browser_get_content: toolGetContent,
+    browser_dom_snapshot: toolDomSnapshot,
+    browser_page_info: () => toolPageInfo(),
+    browser_find_text: toolFindText,
+    browser_find_popups: toolFindPopups,
+    browser_performance: () => toolPerformance(),
+    browser_network_log: toolNetworkLog,
+    browser_iframe_list: () => toolIframeList(),
+    // Interaction
+    browser_click: toolClick,
+    browser_double_click: toolDoubleClick,
+    browser_right_click: toolRightClick,
+    browser_type: toolType,
+    browser_press_key: toolPressKey,
+    browser_hover: toolHover,
+    browser_scroll: toolScroll,
+    browser_wait: toolWait,
+    browser_drag: toolDrag,
+    browser_fill_form: toolFillForm,
+    browser_select: toolSelect,
+    browser_close_popup: toolClosePopup,
+    // Data & scripting
+    browser_evaluate: toolEvaluate,
+    browser_extract: toolExtract,
+    browser_clipboard_write: toolClipboardWrite,
+    browser_file_upload: toolFileUpload,
+    browser_download: toolDownload,
+    // Browser state (merged action tools)
+    browser_tab: toolTab,
+    browser_cookie: toolCookie,
+    browser_storage: toolStorage,
+    browser_session: toolSession,
+    browser_profile: toolProfile
+  };
+  var LEGACY_ALIASES = {
+    browser_tab_list: { tool: "browser_tab", action: "list" },
+    browser_tab_open: { tool: "browser_tab", action: "open" },
+    browser_tab_close: { tool: "browser_tab", action: "close" },
+    browser_history_back: { tool: "browser_history", action: "back" },
+    browser_history_forward: { tool: "browser_history", action: "forward" },
+    browser_cookie_list: { tool: "browser_cookie", action: "list" },
+    browser_cookie_get: { tool: "browser_cookie", action: "get" },
+    browser_cookie_set: { tool: "browser_cookie", action: "set" },
+    browser_cookie_delete: { tool: "browser_cookie", action: "delete" },
+    browser_storage_get: { tool: "browser_storage", action: "get" },
+    browser_storage_set: { tool: "browser_storage", action: "set" },
+    browser_storage_remove: { tool: "browser_storage", action: "remove" },
+    browser_storage_list: { tool: "browser_storage", action: "list" },
+    browser_session_save: { tool: "browser_session", action: "save" },
+    browser_session_list: { tool: "browser_session", action: "list" },
+    browser_session_restore: { tool: "browser_session", action: "restore" },
+    browser_session_delete: { tool: "browser_session", action: "delete" },
+    browser_profile_info: { tool: "browser_profile", action: "info" },
+    browser_profile_set: { tool: "browser_profile", action: "set" }
+  };
   async function executeBrowserOnly(name, args) {
     try {
-      switch (name) {
-        case "browser_navigate":
-          return toolNavigate(args);
-        case "browser_screenshot":
-          return toolScreenshot(args);
-        case "browser_click":
-          return toolClick(args);
-        case "browser_type":
-          return toolType(args);
-        case "browser_get_content":
-          return toolGetContent(args);
-        case "browser_dom_snapshot":
-          return toolDomSnapshot(args);
-        case "browser_search":
-          return toolSearch(args);
-        case "browser_scroll":
-          return toolScroll(args);
-        case "browser_wait":
-          return toolWait(args);
-        case "browser_evaluate":
-          return toolEvaluate(args);
-        case "browser_extract":
-          return toolExtract(args);
-        case "browser_iframe_list":
-          return toolIframeList();
-        case "browser_performance":
-          return toolPerformance();
-        case "browser_network_log":
-          return toolNetworkLog(args);
-        case "browser_file_upload":
-          return toolFileUpload(args);
-        case "browser_download":
-          return toolDownload(args);
-        case "browser_cookie_list":
-          return toolCookieList(args);
-        case "browser_cookie_get":
-          return toolCookieGet(args);
-        case "browser_cookie_set":
-          return toolCookieSet(args);
-        case "browser_cookie_delete":
-          return toolCookieDelete(args);
-        case "browser_find_text":
-          return toolFindText(args);
-        case "browser_find_popups":
-          return toolFindPopups(args);
-        case "browser_close_popup":
-          return toolClosePopup(args);
-        case "browser_fill_form":
-          return toolFillForm(args);
-        case "browser_select":
-          return toolSelect(args);
-        case "browser_tab_list":
-          return toolTabList();
-        case "browser_tab_open":
-          return toolTabOpen(args);
-        case "browser_tab_close":
-          return toolTabClose(args);
-        case "browser_history_back":
-          return toolHistoryBack();
-        case "browser_history_forward":
-          return toolHistoryForward();
-        case "browser_clipboard_write":
-          return toolClipboardWrite(args);
-        case "browser_storage_get":
-          return toolStorageGet(args);
-        case "browser_storage_set":
-          return toolStorageSet(args);
-        case "browser_storage_remove":
-          return toolStorageRemove(args);
-        case "browser_storage_list":
-          return toolStorageList(args);
-        case "browser_session_save":
-          return toolSessionSave(args);
-        case "browser_session_list":
-          return toolSessionList();
-        case "browser_session_restore":
-          return toolSessionRestore(args);
-        case "browser_session_delete":
-          return toolSessionDelete(args);
-        case "browser_profile_info":
-          return toolProfileInfo();
-        case "browser_profile_set":
-          return toolProfileSet(args);
-        case "browser_hover":
-          return toolHover(args);
-        case "browser_page_info":
-          return toolPageInfo();
-        case "browser_right_click":
-          return toolRightClick(args);
-        case "browser_double_click":
-          return toolDoubleClick(args);
-        case "browser_drag":
-          return toolDrag(args);
-        case "browser_press_key":
-          return toolPressKey(args);
-        default:
-          throw new Error(`Unknown browser tool: ${name}`);
+      const alias = LEGACY_ALIASES[name];
+      if (alias) {
+        return await HANDLERS[alias.tool]({ ...args || {}, action: alias.action });
       }
+      const handler = HANDLERS[name];
+      if (!handler)
+        throw new Error(`Unknown browser tool: ${name}`);
+      return await handler(args || {});
     } catch (err) {
       if (args?.trace || args?.return_error) {
         return { success: false, error: normalizeToolError(err, name, args) };
@@ -5136,7 +5088,7 @@ Method: ${result.method || "browser_screenshot"}` }
     if (/提取|extract|抓取/.test(t))
       return "browser_extract";
     if (/标签|tab/.test(t))
-      return "browser_tab_list";
+      return "browser_tab";
     if (/内容|content|页面文本/.test(t))
       return "browser_get_content";
     return "browser_get_content";
@@ -5165,6 +5117,8 @@ Always:
           args.query = task.instruction;
         else if (toolName === "browser_navigate")
           args.url = task.instruction;
+        else if (toolName === "browser_tab")
+          args.action = "list";
       }
       try {
         const result = await executeBrowserTool(toolName, args);

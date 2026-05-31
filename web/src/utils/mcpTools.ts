@@ -61,10 +61,10 @@ const MCP_TOOL_TAG_ORDER = [
   '窗口',
   '进程',
   '浏览器导航',
-  '浏览器页面',
+  '浏览器观察',
   '浏览器交互',
   '浏览器数据',
-  '浏览器标签页',
+  '浏览器状态',
   '浏览器卡片',
   '记忆',
   '归档',
@@ -87,13 +87,19 @@ const getEndpointCapabilityTag = (name: string) => {
   if (hasMcpPrefix(name, 'window')) return '窗口'
   if (hasMcpPrefix(name, 'process')) return '进程'
 
-  if (['browser_navigate', 'browser_search', 'browser_history_back', 'browser_history_forward'].includes(name)) return '浏览器导航'
-  if (['browser_screenshot', 'browser_get_content', 'browser_extract', 'browser_find_text', 'browser_find_popups', 'browser_close_popup', 'browser_page_info'].includes(name)) return '浏览器页面'
-  if (['browser_click', 'browser_type', 'browser_scroll', 'browser_wait', 'browser_fill_form', 'browser_select', 'browser_hover', 'browser_right_click', 'browser_double_click', 'browser_drag', 'browser_press_key'].includes(name)) return '浏览器交互'
-  if (['browser_evaluate', 'browser_clipboard_write', 'browser_storage_get'].includes(name)) return '浏览器数据'
-  if (['browser_tab_list', 'browser_tab_open', 'browser_tab_close'].includes(name)) return '浏览器标签页'
+  // 浏览器工具分类与扩展端 BROWSER_TOOL_CATEGORIES 保持一致（单一来源在
+  // agent/extension/.../definitions.ts；Web 端无法直接 import 扩展代码，故镜像于此）。
+  // 兼容旧的按动词拆分的工具名（browser_cookie_get 等），它们已被合并为
+  // browser_cookie 等带 action 的工具，但历史 scope 里可能仍存有旧名。
+  if (['browser_navigate', 'browser_search', 'browser_history', 'browser_history_back', 'browser_history_forward'].includes(name)) return '浏览器导航'
+  if (['browser_screenshot', 'browser_get_content', 'browser_dom_snapshot', 'browser_page_info', 'browser_find_text', 'browser_find_popups', 'browser_performance', 'browser_network_log', 'browser_iframe_list'].includes(name)) return '浏览器观察'
+  if (['browser_click', 'browser_double_click', 'browser_right_click', 'browser_type', 'browser_press_key', 'browser_hover', 'browser_scroll', 'browser_wait', 'browser_drag', 'browser_fill_form', 'browser_select', 'browser_close_popup'].includes(name)) return '浏览器交互'
+  if (['browser_evaluate', 'browser_extract', 'browser_clipboard_write', 'browser_file_upload', 'browser_download'].includes(name)) return '浏览器数据'
+  if (['browser_tab', 'browser_cookie', 'browser_storage', 'browser_session', 'browser_profile'].includes(name)) return '浏览器状态'
   if (hasMcpPrefix(name, 'card')) return '浏览器卡片'
-  if (hasMcpPrefix(name, 'browser')) return '浏览器页面'
+  // 旧的按动词拆分工具名一律归到「浏览器状态」。
+  if (/^browser_(tab|cookie|storage|session|profile)_/.test(name)) return '浏览器状态'
+  if (hasMcpPrefix(name, 'browser')) return '浏览器观察'
 
   return ''
 }

@@ -23,7 +23,7 @@ function inferTool(instruction: string): string {
   if (/导航|打开|访问|navigate|open|go to|前往/.test(t))             return 'browser_navigate'
   if (/滚动|scroll/.test(t))                                         return 'browser_scroll'
   if (/提取|extract|抓取/.test(t))                                   return 'browser_extract'
-  if (/标签|tab/.test(t))                                            return 'browser_tab_list'
+  if (/标签|tab/.test(t))                                            return 'browser_tab'
   if (/内容|content|页面文本/.test(t))                               return 'browser_get_content'
   return 'browser_get_content'
 }
@@ -55,6 +55,7 @@ export async function executeTask(task: DispatchedTask, settings: AgentSettings)
     if (!task.tool && task.instruction && Object.keys(args).length === 0) {
       if (toolName === 'browser_search') args.query = task.instruction
       else if (toolName === 'browser_navigate') args.url = task.instruction
+      else if (toolName === 'browser_tab') args.action = 'list'
     }
     try {
       const result = await executeBrowserTool(toolName, args)

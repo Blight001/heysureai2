@@ -854,61 +854,151 @@ async function toolPressKey(args: any): Promise<any> {
   })
 }
 
+// ── Action-dispatching handlers ───────────────────────────────────────────
+// State-management ops (tab / cookie / storage / session / profile / history)
+// were previously one tool per verb. They're now a single tool that switches on
+// an `action` param. Each branch just delegates to the original impl above, so
+// behaviour is unchanged — only the tool surface is smaller.
+function badAction(tool: string, action: any, allowed: string[]): never {
+  const got = action === undefined || action === '' ? '(空)' : String(action)
+  throw new Error(`${tool}: 未知 action「${got}」，可选 ${allowed.join(' / ')}`)
+}
+
+function toolTab(args: any): Promise<any> {
+  switch (args?.action) {
+    case 'list':  return toolTabList()
+    case 'open':  return toolTabOpen(args)
+    case 'close': return toolTabClose(args)
+    default:      return badAction('browser_tab', args?.action, ['list', 'open', 'close'])
+  }
+}
+
+function toolHistory(args: any): Promise<any> {
+  switch (args?.action) {
+    case 'back':    return toolHistoryBack()
+    case 'forward': return toolHistoryForward()
+    default:        return badAction('browser_history', args?.action, ['back', 'forward'])
+  }
+}
+
+function toolCookie(args: any): Promise<any> {
+  switch (args?.action) {
+    case 'list':   return toolCookieList(args)
+    case 'get':    return toolCookieGet(args)
+    case 'set':    return toolCookieSet(args)
+    case 'delete': return toolCookieDelete(args)
+    default:       return badAction('browser_cookie', args?.action, ['list', 'get', 'set', 'delete'])
+  }
+}
+
+function toolStorage(args: any): Promise<any> {
+  switch (args?.action) {
+    case 'get':    return toolStorageGet(args)
+    case 'set':    return toolStorageSet(args)
+    case 'remove': return toolStorageRemove(args)
+    case 'list':   return toolStorageList(args)
+    default:       return badAction('browser_storage', args?.action, ['get', 'set', 'remove', 'list'])
+  }
+}
+
+function toolSession(args: any): Promise<any> {
+  switch (args?.action) {
+    case 'save':    return toolSessionSave(args)
+    case 'list':    return toolSessionList()
+    case 'restore': return toolSessionRestore(args)
+    case 'delete':  return toolSessionDelete(args)
+    default:        return badAction('browser_session', args?.action, ['save', 'list', 'restore', 'delete'])
+  }
+}
+
+function toolProfile(args: any): Promise<any> {
+  switch (args?.action) {
+    case 'info': return toolProfileInfo()
+    case 'set':  return toolProfileSet(args)
+    default:     return badAction('browser_profile', args?.action, ['info', 'set'])
+  }
+}
+
 // ── Browser-only router ───────────────────────────────────────────────────
-// Handles browser_* tools only.
+// Handles browser_* tools only. Each entry returns the tool's promise. Legacy
+// per-verb names (browser_cookie_get, …) are kept as aliases that translate to
+// the merged "tool + action" form, so older callers keep working.
+type ToolHandler = (args: any) => Promise<any>
+
+const HANDLERS: Record<string, ToolHandler> = {
+  // Navigation & search
+  browser_navigate:      toolNavigate,
+  browser_search:        toolSearch,
+  browser_history:       toolHistory,
+  // Page observation
+  browser_screenshot:    toolScreenshot,
+  browser_get_content:   toolGetContent,
+  browser_dom_snapshot:  toolDomSnapshot,
+  browser_page_info:     () => toolPageInfo(),
+  browser_find_text:     toolFindText,
+  browser_find_popups:   toolFindPopups,
+  browser_performance:   () => toolPerformance(),
+  browser_network_log:   toolNetworkLog,
+  browser_iframe_list:   () => toolIframeList(),
+  // Interaction
+  browser_click:         toolClick,
+  browser_double_click:  toolDoubleClick,
+  browser_right_click:   toolRightClick,
+  browser_type:          toolType,
+  browser_press_key:     toolPressKey,
+  browser_hover:         toolHover,
+  browser_scroll:        toolScroll,
+  browser_wait:          toolWait,
+  browser_drag:          toolDrag,
+  browser_fill_form:     toolFillForm,
+  browser_select:        toolSelect,
+  browser_close_popup:   toolClosePopup,
+  // Data & scripting
+  browser_evaluate:      toolEvaluate,
+  browser_extract:       toolExtract,
+  browser_clipboard_write: toolClipboardWrite,
+  browser_file_upload:   toolFileUpload,
+  browser_download:      toolDownload,
+  // Browser state (merged action tools)
+  browser_tab:           toolTab,
+  browser_cookie:        toolCookie,
+  browser_storage:       toolStorage,
+  browser_session:       toolSession,
+  browser_profile:       toolProfile,
+}
+
+// Legacy per-verb names → { tool, action } injected into the merged handler.
+const LEGACY_ALIASES: Record<string, { tool: string; action: string }> = {
+  browser_tab_list:       { tool: 'browser_tab',     action: 'list' },
+  browser_tab_open:       { tool: 'browser_tab',     action: 'open' },
+  browser_tab_close:      { tool: 'browser_tab',     action: 'close' },
+  browser_history_back:   { tool: 'browser_history', action: 'back' },
+  browser_history_forward:{ tool: 'browser_history', action: 'forward' },
+  browser_cookie_list:    { tool: 'browser_cookie',  action: 'list' },
+  browser_cookie_get:     { tool: 'browser_cookie',  action: 'get' },
+  browser_cookie_set:     { tool: 'browser_cookie',  action: 'set' },
+  browser_cookie_delete:  { tool: 'browser_cookie',  action: 'delete' },
+  browser_storage_get:    { tool: 'browser_storage', action: 'get' },
+  browser_storage_set:    { tool: 'browser_storage', action: 'set' },
+  browser_storage_remove: { tool: 'browser_storage', action: 'remove' },
+  browser_storage_list:   { tool: 'browser_storage', action: 'list' },
+  browser_session_save:   { tool: 'browser_session', action: 'save' },
+  browser_session_list:   { tool: 'browser_session', action: 'list' },
+  browser_session_restore:{ tool: 'browser_session', action: 'restore' },
+  browser_session_delete: { tool: 'browser_session', action: 'delete' },
+  browser_profile_info:   { tool: 'browser_profile', action: 'info' },
+  browser_profile_set:    { tool: 'browser_profile', action: 'set' },
+}
+
 export async function executeBrowserOnly(name: string, args: any): Promise<any> {
   try {
-    switch (name) {
-      case 'browser_navigate':         return toolNavigate(args)
-      case 'browser_screenshot':       return toolScreenshot(args)
-      case 'browser_click':            return toolClick(args)
-      case 'browser_type':             return toolType(args)
-      case 'browser_get_content':      return toolGetContent(args)
-      case 'browser_dom_snapshot':     return toolDomSnapshot(args)
-      case 'browser_search':           return toolSearch(args)
-      case 'browser_scroll':           return toolScroll(args)
-      case 'browser_wait':             return toolWait(args)
-      case 'browser_evaluate':         return toolEvaluate(args)
-      case 'browser_extract':          return toolExtract(args)
-      case 'browser_iframe_list':      return toolIframeList()
-      case 'browser_performance':      return toolPerformance()
-      case 'browser_network_log':      return toolNetworkLog(args)
-      case 'browser_file_upload':      return toolFileUpload(args)
-      case 'browser_download':         return toolDownload(args)
-      case 'browser_cookie_list':      return toolCookieList(args)
-      case 'browser_cookie_get':       return toolCookieGet(args)
-      case 'browser_cookie_set':       return toolCookieSet(args)
-      case 'browser_cookie_delete':    return toolCookieDelete(args)
-      case 'browser_find_text':        return toolFindText(args)
-      case 'browser_find_popups':      return toolFindPopups(args)
-      case 'browser_close_popup':      return toolClosePopup(args)
-      case 'browser_fill_form':        return toolFillForm(args)
-      case 'browser_select':           return toolSelect(args)
-      case 'browser_tab_list':         return toolTabList()
-      case 'browser_tab_open':         return toolTabOpen(args)
-      case 'browser_tab_close':        return toolTabClose(args)
-      case 'browser_history_back':     return toolHistoryBack()
-      case 'browser_history_forward':  return toolHistoryForward()
-      case 'browser_clipboard_write':  return toolClipboardWrite(args)
-      case 'browser_storage_get':      return toolStorageGet(args)
-      case 'browser_storage_set':      return toolStorageSet(args)
-      case 'browser_storage_remove':   return toolStorageRemove(args)
-      case 'browser_storage_list':     return toolStorageList(args)
-      case 'browser_session_save':     return toolSessionSave(args)
-      case 'browser_session_list':     return toolSessionList()
-      case 'browser_session_restore':  return toolSessionRestore(args)
-      case 'browser_session_delete':   return toolSessionDelete(args)
-      case 'browser_profile_info':     return toolProfileInfo()
-      case 'browser_profile_set':      return toolProfileSet(args)
-      case 'browser_hover':            return toolHover(args)
-      case 'browser_page_info':        return toolPageInfo()
-      case 'browser_right_click':      return toolRightClick(args)
-      case 'browser_double_click':     return toolDoubleClick(args)
-      case 'browser_drag':             return toolDrag(args)
-      case 'browser_press_key':        return toolPressKey(args)
-      default:
-        throw new Error(`Unknown browser tool: ${name}`)
+    const alias = LEGACY_ALIASES[name]
+    if (alias) {
+      return await HANDLERS[alias.tool]({ ...(args || {}), action: alias.action })
     }
+    const handler = HANDLERS[name]
+    if (!handler) throw new Error(`Unknown browser tool: ${name}`)
+    return await handler(args || {})
   } catch (err: any) {
     if (args?.trace || args?.return_error) {
       return { success: false, error: normalizeToolError(err, name, args) }
