@@ -131,8 +131,8 @@ const toggle = (tool: string) => {
   selected.value = next
 }
 
-const selectAll = () => {
-  selected.value = new Set(capabilities.value)
+const toggleSelectAll = () => {
+  selected.value = allSelected.value ? new Set() : new Set(capabilities.value)
 }
 
 const save = async () => {
@@ -277,10 +277,10 @@ const closeDetail = () => {
               <button
                 type="button"
                 class="text-[10px] px-2 py-0.5 rounded border border-zinc-200 text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                :disabled="allSelected"
-                @click="selectAll"
+                :disabled="capabilities.length === 0"
+                @click="toggleSelectAll"
               >
-                全选
+                {{ allSelected ? '全不选' : '全选' }}
               </button>
               <button
                 type="button"
