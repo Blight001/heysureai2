@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import ActiveAgentsPanel from './ActiveAgentsPanel.vue'
-import WorkshopPanel from './WorkshopPanel.vue'
+import KnowledgeBasePanel from './KnowledgeBasePanel.vue'
 import { deleteValhallaEntries, readValhallaEntry, type ValhallaEntry, type ValhallaEntryDetail } from '@/api/valhalla'
 import { getAuthToken } from '@/api/http'
 import { useMessage } from '@/composables/useMessage'
@@ -27,16 +27,25 @@ interface Props {
   entries: ValhallaEntry[]
   activeAgents: Agent[]
   connectedAgents: ConnectedAgent[]
+  knowledgeItems: { id: string; title: string; author: string; time: string; tags: string[] }[]
+  knowledgeTotalCount: number
+  librarianPendingCount: number
+  knowledgeFilterOpen: boolean
+  knowledgeFilterValue: 'all' | 'intrinsic' | 'personas' | 'skills' | 'tools' | 'inheritance' | 'system' | 'business'
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'refresh'): void
+  (e: 'update:knowledgeFilterOpen', value: boolean): void
+  (e: 'update:knowledgeFilterValue', value: Props['knowledgeFilterValue']): void
+  (e: 'open-proposal-review'): void
+  (e: 'refresh-user', user: import('@/types').User): void
 }>()
 
 const { alert, confirm } = useMessage()
 
-const activeTab = ref<'valhalla' | 'active' | 'workshop'>('valhalla')
+const activeTab = ref<'valhalla' | 'active' | 'knowledge'>('knowledge')
 
 // 按 job 分组，便于"任务 → 代际"的层级浏览
 type JobGroup = {
@@ -281,13 +290,13 @@ onUnmounted(() => {
     <div class="px-2 py-2 border-b border-zinc-100 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/60">
       <div class="flex p-1 bg-zinc-100/50 rounded-lg dark:bg-zinc-800/50">
         <button
-          @click="activeTab = 'valhalla'"
+          @click="activeTab = 'knowledge'"
           class="flex-1 px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 flex items-center justify-center gap-2"
-          :class="activeTab === 'valhalla'
+          :class="activeTab === 'knowledge'
             ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-400'
             : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
         >
-          <span>📜</span> 英灵殿
+          <span>📚</span> 传承知识库
         </button>
         <button
           @click="activeTab = 'active'"
@@ -299,18 +308,35 @@ onUnmounted(() => {
           <span>🌱</span> 存活 AI
         </button>
         <button
-          @click="activeTab = 'workshop'"
+          @click="activeTab = 'valhalla'"
           class="flex-1 px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 flex items-center justify-center gap-2"
-          :class="activeTab === 'workshop'
+          :class="activeTab === 'valhalla'
             ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-400'
             : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
         >
-          <span>🏭</span> 作坊
+          <span>📜</span> 英灵殿
         </button>
       </div>
     </div>
 
-    <div v-if="activeTab === 'valhalla'" class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
+    <KnowledgeBasePanel
+      v-if="activeTab === 'knowledge'"
+      class="flex-1"
+      no-glass
+      :items="knowledgeItems"
+      :total-count="knowledgeTotalCount"
+      :librarian-pending-count="librarianPendingCount"
+      :filter-open="knowledgeFilterOpen"
+      :filter-value="knowledgeFilterValue"
+      @update:filter-open="emit('update:knowledgeFilterOpen', $event)"
+      @update:filter-value="emit('update:knowledgeFilterValue', $event)"
+      @open-proposal-review="emit('open-proposal-review')"
+      @refresh-user="emit('refresh-user', $event)"
+    />
+
+    <ActiveAgentsPanel v-else-if="activeTab === 'active'" :active-agents="activeAgents" />
+
+    <div v-else class="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
       <div
         v-if="selectedCount > 0"
         class="sticky top-0 z-20 flex items-center justify-between gap-2 rounded-lg border border-indigo-200 bg-white/95 px-3 py-2 text-xs shadow-sm backdrop-blur dark:border-indigo-500/30 dark:bg-zinc-900/95"
@@ -404,9 +430,6 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
-
-    <ActiveAgentsPanel v-else-if="activeTab === 'active'" :active-agents="activeAgents" />
-    <WorkshopPanel v-else :devices="connectedAgents" :agents="activeAgents" />
 
     <div
       v-if="contextMenu.open"

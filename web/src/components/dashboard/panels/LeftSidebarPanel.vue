@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import BrainCorePanel from './BrainCorePanel.vue'
-import KnowledgeBasePanel from './KnowledgeBasePanel.vue'
-import type { User } from '@/types'
+import WorkshopPanel from './WorkshopPanel.vue'
+import type { ConnectedAgent } from '@/composables/dashboard/useDashboardData'
 
 interface Agent {
   id: string
@@ -31,34 +31,19 @@ interface Agent {
   latestThinking?: string
 }
 
-interface KnowledgeItem {
-  id: string
-  title: string
-  author: string
-  time: string
-  tags: string[]
-}
-
 interface Props {
   currentUserId?: number
   adminAgents: Agent[]
   memberAgents: Agent[]
+  activeAgents: Agent[]
+  connectedAgents: ConnectedAgent[]
   brainViewMode: 'sections' | 'all'
-  knowledgeItems: KnowledgeItem[]
-  knowledgeTotalCount: number
-  librarianPendingCount: number
-  knowledgeFilterOpen: boolean
-  knowledgeFilterValue: 'all' | 'intrinsic' | 'personas' | 'skills' | 'tools' | 'inheritance' | 'system' | 'business'
 }
 
 defineProps<Props>()
 const emit = defineEmits<{
   (e: 'context', payload: { agent: Agent; x: number; y: number }): void
   (e: 'update:brain-view-mode', value: Props['brainViewMode']): void
-  (e: 'update:knowledgeFilterOpen', value: boolean): void
-  (e: 'update:knowledgeFilterValue', value: Props['knowledgeFilterValue']): void
-  (e: 'open-proposal-review'): void
-  (e: 'refresh-user', user: User): void
   (e: 'show-tools', agent: Agent): void
   (e: 'show-context', agent: Agent): void
   (e: 'show-tasks', agent: Agent): void
@@ -92,7 +77,7 @@ const activeTab = ref<'brain' | 'knowledge'>('brain')
             ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-400' 
             : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
         >
-          <span>📚</span> 传承知识库
+          <span>🏭</span> 作坊
         </button>
       </div>
     </div>
@@ -116,19 +101,11 @@ const activeTab = ref<'brain' | 'knowledge'>('brain')
           @settings="emit('settings', $event)"
           @create-ai="emit('create-ai')"
         />
-        <KnowledgeBasePanel 
+        <WorkshopPanel
           v-else
           class="flex-1"
-          no-glass
-          :items="knowledgeItems"
-          :total-count="knowledgeTotalCount"
-          :librarian-pending-count="librarianPendingCount"
-          :filter-open="knowledgeFilterOpen"
-          :filter-value="knowledgeFilterValue"
-          @update:filter-open="emit('update:knowledgeFilterOpen', $event)"
-          @update:filter-value="emit('update:knowledgeFilterValue', $event)"
-          @open-proposal-review="emit('open-proposal-review')"
-          @refresh-user="emit('refresh-user', $event)"
+          :devices="connectedAgents"
+          :agents="activeAgents"
         />
       </Transition>
     </div>
