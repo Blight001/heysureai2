@@ -52,6 +52,17 @@ def _decode_tools(raw: str) -> Set[str]:
     return {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
 
 
+def _load_scope_rows(session: Session, user_id: int, agent_id: str):
+    return session.exec(
+        select(AgentTypeMcpPermission)
+        .where(
+            AgentTypeMcpPermission.user_id == user_id,
+            AgentTypeMcpPermission.agent_id == agent_id,
+        )
+        .order_by(AgentTypeMcpPermission.updated_at.desc(), AgentTypeMcpPermission.id.desc())
+    ).all()
+
+
 def get_scope(user_id, agent_id) -> Optional[Set[str]]:
     """Return the saved allow-list for (user, agent), or ``None`` when no row
     exists (meaning: default closed)."""
@@ -60,12 +71,12 @@ def get_scope(user_id, agent_id) -> Optional[Set[str]]:
     if uid is None or not aid:
         return None
     with Session(engine) as session:
-        row = session.exec(
-            select(AgentTypeMcpPermission).where(
-                AgentTypeMcpPermission.user_id == uid,
-                AgentTypeMcpPermission.agent_id == aid,
-            )
-        ).first()
+        rows = _load_scope_rows(session, uid, aid)
+        row = rows[0] if rows else None
+        for stale in rows[1:]:
+            session.delete(stale)
+        if rows[1:]:
+            session.commit()
         return _decode_tools(row.tools_json) if row else None
 
 
@@ -82,12 +93,10 @@ def set_scope(user_id, agent_id, tools: Iterable[str], *, ai_config_id=None, age
     cfg = _coerce_int(ai_config_id)
     atype = _normalize_type(agent_type)
     with Session(engine) as session:
-        row = session.exec(
-            select(AgentTypeMcpPermission).where(
-                AgentTypeMcpPermission.user_id == uid,
-                AgentTypeMcpPermission.agent_id == aid,
-            )
-        ).first()
+        rows = _load_scope_rows(session, uid, aid)
+        row = rows[0] if rows else None
+        for stale in rows[1:]:
+            session.delete(stale)
         if row:
             row.tools_json = encoded
             row.ai_config_id = cfg
@@ -100,3 +109,51 @@ def set_scope(user_id, agent_id, tools: Iterable[str], *, ai_config_id=None, age
             session.add(row)
         session.commit()
     return set(allowed)
+
+
+def reconcile_scope_with_capabilities(
+    user_id,
+    agent_id,
+    capabilities: Iterable[str],
+    *,
+    ai_config_id=None,
+    agent_type="",
+) -> Optional[Set[str]]:
+    """Prune any stored MCP scope entries that are no longer reported by the agent.
+
+    Called on reconnect so the persisted per-agent scope does not keep stale tools
+    after the device's advertised capability set changes.
+    """
+    uid = _coerce_int(user_id)
+    aid = _agent_id(agent_id)
+    if uid is None or not aid:
+        return None
+    live_caps = {str(item).strip() for item in (capabilities or []) if str(item).strip()}
+    cfg = _coerce_int(ai_config_id)
+    atype = _normalize_type(agent_type)
+    with Session(engine) as session:
+        rows = _load_scope_rows(session, uid, aid)
+        row = rows[0] if rows else None
+        dirty = bool(rows[1:])
+        for stale in rows[1:]:
+            session.delete(stale)
+        if not row:
+            if dirty:
+                session.commit()
+            return None
+
+        current = _decode_tools(row.tools_json)
+        reconciled = sorted(current & live_caps) if live_caps else []
+        if set(reconciled) != current:
+            row.tools_json = json.dumps(reconciled, ensure_ascii=False)
+            row.updated_at = time.time()
+            dirty = True
+        if cfg is not None and row.ai_config_id != cfg:
+            row.ai_config_id = cfg
+            dirty = True
+        if atype and row.agent_type != atype:
+            row.agent_type = atype
+            dirty = True
+        if dirty:
+            session.commit()
+        return set(reconciled)

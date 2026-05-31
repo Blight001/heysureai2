@@ -54,6 +54,14 @@ def _decode_defs(row: EndpointAgentPresence) -> Dict[str, dict]:
     return out
 
 
+def _load_presence_rows(session: Session, agent_id: str):
+    return session.exec(
+        select(EndpointAgentPresence)
+        .where(EndpointAgentPresence.agent_id == agent_id)
+        .order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
+    ).all()
+
+
 def upsert_presence(
     user_id, agent_id, ai_config_id, agent_type, capabilities, online: bool = True, tool_defs=None
 ) -> None:
@@ -64,9 +72,10 @@ def upsert_presence(
     defs = tool_defs if isinstance(tool_defs, dict) else {}
     uid = _int(user_id)
     with Session(engine) as session:
-        row = session.exec(
-            select(EndpointAgentPresence).where(EndpointAgentPresence.agent_id == aid)
-        ).first()
+        rows = _load_presence_rows(session, aid)
+        row = rows[0] if rows else None
+        for stale in rows[1:]:
+            session.delete(stale)
         if not row:
             row = EndpointAgentPresence(agent_id=aid)
             session.add(row)
@@ -85,12 +94,16 @@ def set_offline(agent_id) -> None:
     if not aid:
         return
     with Session(engine) as session:
-        row = session.exec(
-            select(EndpointAgentPresence).where(EndpointAgentPresence.agent_id == aid)
-        ).first()
+        rows = _load_presence_rows(session, aid)
+        row = rows[0] if rows else None
+        dirty = bool(rows[1:])
+        for stale in rows[1:]:
+            session.delete(stale)
         if row and row.online:
             row.online = False
             row.updated_at = time.time()
+            dirty = True
+        if dirty:
             session.commit()
 
 
@@ -99,12 +112,16 @@ def update_binding(agent_id, ai_config_id) -> None:
     if not aid:
         return
     with Session(engine) as session:
-        row = session.exec(
-            select(EndpointAgentPresence).where(EndpointAgentPresence.agent_id == aid)
-        ).first()
+        rows = _load_presence_rows(session, aid)
+        row = rows[0] if rows else None
+        dirty = bool(rows[1:])
+        for stale in rows[1:]:
+            session.delete(stale)
         if row:
             row.ai_config_id = _int(ai_config_id)
             row.updated_at = time.time()
+            dirty = True
+        if dirty:
             session.commit()
 
 
@@ -135,12 +152,17 @@ def online_agents_for_config(user_id, ai_config_id) -> List[Tuple[str, str, Set[
             select(EndpointAgentPresence).where(
                 EndpointAgentPresence.ai_config_id == cfg,
                 EndpointAgentPresence.online == True,  # noqa: E712
-            )
+            ).order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
         ).all()
+        seen_agents: Set[str] = set()
         for row in rows:
+            agent_id = str(row.agent_id or "").strip()
+            if not agent_id or agent_id in seen_agents:
+                continue
+            seen_agents.add(agent_id)
             if uid and row.user_id and row.user_id != uid:
                 continue
-            out.append((str(row.agent_id or "").strip(), str(row.agent_type or "").strip(), _decode(row)))
+            out.append((agent_id, str(row.agent_type or "").strip(), _decode(row)))
     return out
 
 
@@ -151,9 +173,16 @@ def online_tool_names() -> Tuple[Set[str], Set[str]]:
     browser: Set[str] = set()
     with Session(engine) as session:
         rows = session.exec(
-            select(EndpointAgentPresence).where(EndpointAgentPresence.online == True)  # noqa: E712
+            select(EndpointAgentPresence)
+            .where(EndpointAgentPresence.online == True)  # noqa: E712
+            .order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
         ).all()
+        seen_agents: Set[str] = set()
         for row in rows:
+            agent_id = str(row.agent_id or "").strip()
+            if not agent_id or agent_id in seen_agents:
+                continue
+            seen_agents.add(agent_id)
             caps = _decode(row)
             if str(row.agent_type or "").strip() == "browser":
                 browser |= caps
@@ -169,9 +198,16 @@ def online_tool_defs() -> Dict[str, dict]:
     out: Dict[str, dict] = {}
     with Session(engine) as session:
         rows = session.exec(
-            select(EndpointAgentPresence).where(EndpointAgentPresence.online == True)  # noqa: E712
+            select(EndpointAgentPresence)
+            .where(EndpointAgentPresence.online == True)  # noqa: E712
+            .order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
         ).all()
+        seen_agents: Set[str] = set()
         for row in rows:
+            agent_id = str(row.agent_id or "").strip()
+            if not agent_id or agent_id in seen_agents:
+                continue
+            seen_agents.add(agent_id)
             for name, spec in _decode_defs(row).items():
                 out.setdefault(name, spec)
     return out

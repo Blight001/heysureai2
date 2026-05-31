@@ -7,7 +7,7 @@
 
 ### 1.1 集成形态
 
-- Claude Code CLI 嵌入 `agent/win`(后续扩展 `agent/linux`),不进服务器
+- Claude Code CLI 嵌入 `agent/windows`(后续扩展 `agent/linux`),不进服务器
 - Electron 主进程通过 `child_process` 起子进程:
   `claude --print --output-format stream-json --input-format stream-json ...`
 - API key:MVP 由用户自填(`electron-store` 加密存储),后续支持服务器发放

@@ -47,9 +47,9 @@ web/tsconfig.tsbuildinfo
 web/tsconfig.node.tsbuildinfo
 
 # Win agent (Electron) build output
-agent/win/dist/
-agent/win/release/
-agent/win/tsconfig.tsbuildinfo
+agent/windows/dist/
+agent/windows/release/
+agent/windows/tsconfig.tsbuildinfo
 
 # Linux agent (Electron) build output
 agent/linux/dist/

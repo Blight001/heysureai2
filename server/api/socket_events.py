@@ -154,18 +154,28 @@ def register_agent_socket_events():
                 agent_endpoint_tool_defs,
             )
             from api.agent_presence import upsert_presence
+            from api.agent_mcp_permissions import reconcile_scope_with_capabilities
 
             atype = agent_type_of(agents[sid])
             if atype:
+                capabilities = sorted(agent_endpoint_tools(agents[sid]))
                 upsert_presence(
                     owner_user_id,
                     agent_id,
                     claimed_ai,
                     atype,
-                    sorted(agent_endpoint_tools(agents[sid])),
+                    capabilities,
                     online=True,
                     tool_defs=agent_endpoint_tool_defs(agents[sid]),
                 )
+                if owner_user_id is not None:
+                    reconcile_scope_with_capabilities(
+                        owner_user_id,
+                        agent_id,
+                        capabilities,
+                        ai_config_id=claimed_ai,
+                        agent_type=atype,
+                    )
         except Exception:
             logger.exception('Failed to record endpoint agent presence: %s', agent_id)
         # Include the server-side bound AI so the device can show whether an AI

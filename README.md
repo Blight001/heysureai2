@@ -101,7 +101,7 @@ Connector / Agent
 | `server/ai_runtime/` | AI worker，负责聊天队列、推理调用、消息落库和运行状态 |
 | `server/mcp_runtime/` | MCP 工具注册、插件加载、工具权限与内部调用入口 |
 | `server/connector_runtime/` | QQ、飞书等机器人连接器，以及外部 Agent 调度 |
-| `agent/win/` | Windows 桌面 Agent，具备窗口、屏幕、鼠标、键盘、剪贴板、Shell、文件等本机工具能力 |
+| `agent/windows/` | Windows 桌面 Agent，具备窗口、屏幕、鼠标、键盘、剪贴板、Shell、文件等本机工具能力 |
 | `agent/extension/` | Chrome MV3 浏览器扩展，支持浏览器自动化工具与轻量客户端能力 |
 | `doc/` | 系统理念、架构路线、机器人对话区、权限分层与 Prompt 设计文档 |
 
@@ -184,7 +184,7 @@ web\run.bat
 启动 Windows 桌面 Agent：
 
 ```bat
-agent\win\run.bat
+agent\windows\run.bat
 ```
 
 后端健康检查：
@@ -252,10 +252,16 @@ python -m ai_runtime.main
 ### Windows Agent
 
 ```bat
-cd agent\win
+cd agent\windows
 npm install
 npm run dev
 npm run build
+```
+
+一键打包 Windows 桌面 Agent：
+
+```bat
+agent\windows\build.bat
 ```
 
 ### Browser Extension

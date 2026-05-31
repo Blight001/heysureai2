@@ -37,36 +37,37 @@ def normalize_feishu_text(text: str, *, strip_markdown: bool = True) -> str:
 
     body = body.replace("\r\n", "\n").replace("\r", "\n")
 
-    # Links/images: keep the label, drop the URL and image marker.
-    body = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", body)
-    body = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", body)
+    if strip_markdown:
+        # Links/images: keep the label, drop the URL and image marker.
+        body = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", body)
+        body = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", body)
 
-    # Fenced code keeps content, drops fence punctuation and optional language.
-    body = re.sub(r"```[^\n]*\n?", "", body)
-    body = body.replace("```", "")
+        # Fenced code keeps content, drops fence punctuation and optional language.
+        body = re.sub(r"```[^\n]*\n?", "", body)
+        body = body.replace("```", "")
 
-    lines = []
-    for raw_line in body.split("\n"):
-        line = raw_line.rstrip()
-        stripped = line.strip()
-        if re.fullmatch(r"[:\-\s|]+", stripped) and "|" in stripped:
-            continue
-        line = re.sub(r"^\s{0,3}#{1,6}\s*", "", line)
-        line = re.sub(r"^\s{0,3}>\s?", "", line)
-        line = re.sub(r"^\s*[-*+]\s+", "", line)
-        line = re.sub(r"^\s*\d+[.)]\s+", "", line)
-        if "|" in line:
-            line = re.sub(r"\s*\|\s*", "  ", line).strip()
-        lines.append(line)
-    body = "\n".join(lines)
+        lines = []
+        for raw_line in body.split("\n"):
+            line = raw_line.rstrip()
+            stripped = line.strip()
+            if re.fullmatch(r"[:\-\s|]+", stripped) and "|" in stripped:
+                continue
+            line = re.sub(r"^\s{0,3}#{1,6}\s*", "", line)
+            line = re.sub(r"^\s{0,3}>\s?", "", line)
+            line = re.sub(r"^\s*[-*+]\s+", "", line)
+            line = re.sub(r"^\s*\d+[.)]\s+", "", line)
+            if "|" in line:
+                line = re.sub(r"\s*\|\s*", "  ", line).strip()
+            lines.append(line)
+        body = "\n".join(lines)
 
-    # Inline formatting marks: remove the punctuation, keep text.
-    body = re.sub(r"(?<!\w)([*_~]{1,3})(\S(?:.*?\S)?)\1(?!\w)", r"\2", body)
-    body = body.replace("`", "")
+        # Inline formatting marks: remove the punctuation, keep text.
+        body = re.sub(r"(?<!\w)([*_~]{1,3})(\S(?:.*?\S)?)\1(?!\w)", r"\2", body)
+        body = body.replace("`", "")
 
-    # Markdown task checkboxes and escaped punctuation.
-    body = re.sub(r"\[\s*[xX ]\s*\]\s*", "", body)
-    body = re.sub(r"\\([\\`*_{}\[\]()#+\-.!|>])", r"\1", body)
+        # Markdown task checkboxes and escaped punctuation.
+        body = re.sub(r"\[\s*[xX ]\s*\]\s*", "", body)
+        body = re.sub(r"\\([\\`*_{}\[\]()#+\-.!|>])", r"\1", body)
 
     # Avoid symbols stuck to CJK/ASCII after marker removal.
     body = re.sub(r"[ \t]{2,}", " ", body)

@@ -41,7 +41,7 @@ def normalize_qq_text(text: str) -> str:
     body = re.sub(r"\[\s*[xX ]\s*\]\s*", "", body)
     body = re.sub(r"\\([\\`*_{}\[\]()#+\-.!|>])", r"\1", body)
     body = re.sub(r"[ \t]{2,}", " ", body)
-    body = re.sub(r"\n{3,}", "\n\n", body)
+    body = re.sub(r"\n{2,}", "\n", body)
     return body.strip()
 
 
