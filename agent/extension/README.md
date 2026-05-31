@@ -88,6 +88,21 @@ agent/extension/
 工具以 `browser_*` 为主：通过 chrome API 或 content script 操作浏览器（导航、点击、
   输入、截图、滚动、提取等）。实现位于 `browser.ts`。
 
+共 **34 个**工具，按 `BROWSER_TOOL_CATEGORIES`（定义在 `definitions.ts`，分组的
+唯一来源）分为 5 类：
+
+| 分类 | 说明 |
+| --- | --- |
+| 导航与搜索 | navigate / search / history |
+| 页面观察 | screenshot / get_content / dom_snapshot / page_info / find_text / find_popups / performance / network_log / iframe_list |
+| 页面交互 | click / double_click / right_click / type / press_key / hover / scroll / wait / drag / fill_form / select / close_popup |
+| 数据与脚本 | evaluate / extract / clipboard_write / file_upload / download |
+| 浏览器状态 | tab / cookie / storage / session / profile（均带 `action` 参数） |
+
+「浏览器状态」类把原先按动词拆分的 19 个工具（`browser_cookie_get`、
+`browser_storage_set` 等）收敛为 6 个带 `action` 参数的工具。`browser.ts` 的路由
+保留旧名作为别名，会改写成「新工具 + action」，旧调用仍然可用。
+
 `executeBrowserTool(name, args)` 执行浏览器工具；`executeTask` 是
 服务端任务的总入口：要么直跑指定工具，要么进入 AI agentic 循环让模型自行
 选择工具。

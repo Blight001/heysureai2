@@ -2,7 +2,7 @@
 // Lists this extension's own MCP tools; opening one shows description, params,
 // editable local descriptions and a direct local test runner.
 
-import { BROWSER_TOOLS } from '../lib/tools'
+import { BROWSER_TOOLS, BROWSER_TOOL_CATEGORIES } from '../lib/tools'
 import { AIToolDef } from '../lib/types'
 import { getToolDescOverrides, setToolDescOverride } from '../lib/storage'
 import * as dom from './dom'
@@ -72,17 +72,26 @@ export async function renderMcpList() {
   overrides = await getToolDescOverrides()
   dom.mcpCount.textContent = `${BROWSER_TOOLS.length} 个`
   dom.mcpList.innerHTML = renderIntroHtml()
-  for (const t of BROWSER_TOOLS) {
-    const el = document.createElement('div')
-    el.className = 'tool-item'
-    el.innerHTML = `
-      <div class="tool-item-top">
-        <span class="tool-name">${esc(t.name)}</span>
-        ${isEdited(t.name) ? '<span class="tool-edited">已自定义</span>' : ''}
-      </div>
-      <div class="tool-desc">${esc((effDescription(t) || '（无描述）').slice(0, 110))}</div>`
-    el.addEventListener('click', () => void openTool(t.name))
-    dom.mcpList.appendChild(el)
+  const byName = new Map(BROWSER_TOOLS.map(t => [t.name, t]))
+  for (const cat of BROWSER_TOOL_CATEGORIES) {
+    const tools = cat.tools.map(n => byName.get(n)).filter((t): t is AIToolDef => !!t)
+    if (!tools.length) continue
+    const head = document.createElement('div')
+    head.className = 'tool-cat-head'
+    head.innerHTML = `<span>${esc(cat.title)}</span><span class="pane-sub">${tools.length}</span>`
+    dom.mcpList.appendChild(head)
+    for (const t of tools) {
+      const el = document.createElement('div')
+      el.className = 'tool-item'
+      el.innerHTML = `
+        <div class="tool-item-top">
+          <span class="tool-name">${esc(t.name)}</span>
+          ${isEdited(t.name) ? '<span class="tool-edited">已自定义</span>' : ''}
+        </div>
+        <div class="tool-desc">${esc((effDescription(t) || '（无描述）').slice(0, 110))}</div>`
+      el.addEventListener('click', () => void openTool(t.name))
+      dom.mcpList.appendChild(el)
+    }
   }
 }
 
