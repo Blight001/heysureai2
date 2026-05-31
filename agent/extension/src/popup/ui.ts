@@ -1,30 +1,44 @@
-// popup/ui.ts — shared presentation layer: theme, connection status, activity
-// feed, tab switching, modals, the auth chip and the read-only member settings
-// view. Feature modules call into these renderers.
+// popup/ui.ts — shared presentation layer: theme, the 3-state connection
+// indicator, settings/login/members modals, tool-call stats and the auth chip.
 
-import { AgentStatus, ActivityEntry } from '../lib/types'
-import { state, TabName, STATUS_LABELS, ROLE_LABELS } from './state'
+import { AgentStatus } from '../lib/types'
+import { state } from './state'
 import * as dom from './dom'
-import { fmt, roleOf, memberById, currentAvatarHtml, getConnectedAiShortLabel } from './helpers'
-import { esc } from './markdown'
+import { currentAvatarHtml } from './helpers'
 import { loadMembers, renderMembers } from './members'
-import { renderCards } from './cards'
 
-// ── Status display ─────────────────────────────────────────────────────────
+// ── Status indicator (green / yellow / red) ─────────────────────────────────
+// green:  connected AND an AI is assigned (boundAiConfigId set)
+// yellow: connected but no AI assigned yet
+// red:    not connected to the server
 export function renderStatus() {
+  const connected = state.currentStatus === 'registered' || state.currentStatus === 'connected'
+  let color: 'green' | 'yellow' | 'red'
+  let label: string
   if (state.offlineMode) {
-    dom.statusDot.className = 'status-dot offline'
-    dom.statusLabel.textContent = '离线模式'
-    return
+    // Offline mode never talks to the server; treat as not-connected (red).
+    color = 'red'; label = '离线模式'
+  } else if (!connected) {
+    color = 'red'; label = '未连接'
+  } else if (state.boundAiConfigId == null) {
+    color = 'yellow'; label = '未分配 AI'
+  } else {
+    color = 'green'; label = '已连接'
   }
-  dom.statusDot.className = `status-dot ${state.currentStatus}`
-  dom.statusLabel.textContent = state.currentStatus === 'registered'
-    ? getConnectedAiShortLabel()
-    : (STATUS_LABELS[state.currentStatus] || state.currentStatus)
+  dom.statusDot.className = `status-dot ${color}`
+  dom.statusLabel.textContent = label
 }
 
 export function setStatus(status: AgentStatus) {
   state.currentStatus = status
+  // Losing the connection clears any prior AI binding so we don't show green
+  // while offline; it is re-applied on the next agent:registered.
+  if (status !== 'registered' && status !== 'connected') state.boundAiConfigId = null
+  renderStatus()
+}
+
+export function setBoundAi(aiConfigId: number | null) {
+  state.boundAiConfigId = aiConfigId
   renderStatus()
 }
 
@@ -36,61 +50,29 @@ export function applyTheme(theme: 'dark' | 'light', persist = true) {
   if (persist) state.port.postMessage({ type: 'settings:save', payload: { theme } })
 }
 
-// ── Activity feed ──────────────────────────────────────────────────────────
-const ICON: Record<string, string> = { success:'✓', error:'✗', running:'▶', warn:'⚠', system:'●', info:'ℹ', human:'?' }
-const IC_CLS: Record<string, string> = { success:'success', error:'error', running:'running', warn:'warn', system:'system', info:'info', human:'warn' }
-
-export function addEntry(e: ActivityEntry) {
-  dom.feedEmpty.style.display = 'none'
-  const ic  = IC_CLS[e.status] || IC_CLS[e.type] || 'info'
-  const hasData = e.data !== undefined && e.data !== null
-  let datHtml = ''
-  if (hasData) {
-    const ds = typeof e.data === 'string' ? e.data : (() => { try { return JSON.stringify(e.data, null, 2) } catch { return String(e.data) } })()
-    datHtml = `<button class="toggle-btn" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('show')"><span>▶</span> 详情</button><div class="data-block"><pre>${esc(ds.slice(0,2000))}</pre></div>`
-  }
-  const el = document.createElement('div')
-  el.className = 'entry'
-  el.innerHTML = `
-    <div class="entry-icon ${ic}">${ICON[e.status] || ICON[e.type] || 'ℹ'}</div>
-    <div class="entry-body">
-      <div class="entry-top"><span class="entry-badge ${e.type}">${e.type}</span><span class="entry-time">${fmt(e.timestamp)}</span></div>
-      <div class="entry-msg">${esc(e.message)}</div>${datHtml}
-    </div>`
-  dom.feed.appendChild(el)
-  dom.feed.scrollTop = dom.feed.scrollHeight
-}
-
-// ── Tab switching ──────────────────────────────────────────────────────────
-export function switchTab(tab: TabName) {
-  state.activeTab = tab
-  ;(Object.keys(dom.panes) as TabName[]).forEach(k => dom.panes[k].classList.add('hidden'))
-  ;(Object.keys(dom.tabs) as TabName[]).forEach(k => dom.tabs[k].classList.remove('active'))
-  dom.panes[tab].classList.remove('hidden')
-  dom.tabs[tab].classList.add('active')
-  if (tab === 'settings' && state.auth.token && state.members.length === 0) void loadMembers()
-  if (tab === 'cards') void renderCards()
+// ── Tool-call stats ──────────────────────────────────────────────────────
+export function renderStats() {
+  dom.statTotal.textContent   = String(state.stats.total)
+  dom.statRunning.textContent = String(state.stats.running)
+  dom.statSuccess.textContent = String(state.stats.success)
+  dom.statFailed.textContent  = String(state.stats.failed)
 }
 
 // ── Modals ───────────────────────────────────────────────────────────────
+export function openSettingsModal()  { dom.settingsModal.classList.remove('hidden') }
+export function closeSettingsModal() { dom.settingsModal.classList.add('hidden') }
 export function openLoginModal() {
   dom.loginModal.classList.remove('hidden')
   updateUserChip()
-  setTimeout(() => {
-    if (!state.auth.token) dom.loginAccount.focus()
-  }, 0)
+  setTimeout(() => { if (!state.auth.token) dom.loginAccount.focus() }, 0)
 }
-export function closeLoginModal() {
-  dom.loginModal.classList.add('hidden')
-}
+export function closeLoginModal()  { dom.loginModal.classList.add('hidden') }
 export function openMembersModal() {
   dom.membersModal.classList.remove('hidden')
   if (state.auth.token && state.members.length === 0) void loadMembers()
   else renderMembers()
 }
-export function closeMembersModal() {
-  dom.membersModal.classList.add('hidden')
-}
+export function closeMembersModal() { dom.membersModal.classList.add('hidden') }
 
 // ── Auth chip ──────────────────────────────────────────────────────────────
 export function updateUserChip() {
@@ -104,13 +86,9 @@ export function updateUserChip() {
     dom.userAva.textContent = '·'
     dom.userName.textContent = '未登录'
   }
-  // Auth-gated settings blocks
-  dom.connectionControlCard.classList.toggle('hidden', !auth.token)
-  dom.memberSettingsCard.classList.toggle('hidden', !auth.token)
-  dom.accountCard.classList.toggle('hidden', !auth.token)
+  dom.accountCard.style.display = auth.token ? 'block' : 'none'
   dom.loginGate.classList.toggle('hidden', !!auth.token)
   dom.accountStatusV.textContent = auth.token ? `已登录：${auth.userName || auth.account}` : '未登录'
-  dom.logoutBtn.style.display = auth.token ? 'block' : 'none'
 }
 
 // ── Offline UI ───────────────────────────────────────────────────────────────
@@ -119,38 +97,12 @@ export function updateOfflineUi() {
   renderStatus()
 }
 
-// ── Settings (read-only views) ────────────────────────────────────────────────
-export function renderSettingsViews() {
-  // Member config card
-  const m = memberById(state.selectedMemberId)
-  if (m) {
-    dom.memberSettingsCard.style.display = 'block'
-    let tools: string[] = []
-    try { const a = JSON.parse(m.mcp_tools || '[]'); if (Array.isArray(a)) tools = a } catch { /* ignore */ }
-    const chips = tools.length
-      ? `<div class="tool-chips">${tools.map(t => `<span class="tool-chip">${esc(t)}</span>`).join('')}</div>`
-      : `<div class="empty-note">未分配 MCP 工具</div>`
-    dom.memberSettingsBody.innerHTML = `
-      <div class="kv"><span class="k">名称</span><span class="v">${esc(m.name || '')}</span></div>
-      <div class="kv"><span class="k">角色</span><span class="v">${ROLE_LABELS[roleOf(m)] || roleOf(m)}</span></div>
-      <div class="kv"><span class="k">模型</span><span class="v">${esc(m.model || '—')}</span></div>
-      <div class="kv"><span class="k">平台</span><span class="v">${esc(m.platform || '—')}</span></div>
-      <div class="kv"><span class="k">工作目录</span><span class="v">${esc(m.workspace_root || '（仅对话）')}</span></div>
-      <div class="kv"><span class="k">MCP 开关</span><span class="v">${m.mcp_enabled === false ? '关闭' : '开启'}</span></div>
-      <div class="divider"></div>
-      <div class="kv"><span class="k">MCP 工具（${tools.length}）</span><span class="v"></span></div>
-      ${chips}`
-  } else {
-    dom.memberSettingsCard.style.display = 'none'
-  }
-}
-
 // ── Wiring ───────────────────────────────────────────────────────────────
 export function wireUi() {
-  ;(Object.keys(dom.tabs) as TabName[]).forEach(k => dom.tabs[k].addEventListener('click', () => switchTab(k)))
   dom.themeToggle.addEventListener('click', () => applyTheme(state.currentTheme === 'dark' ? 'light' : 'dark'))
-  dom.clearBtn.addEventListener('click', () => {
-    dom.feed.querySelectorAll('.entry').forEach(e => e.remove())
-    dom.feedEmpty.style.display = 'flex'
-  })
+  dom.settingsBtn.addEventListener('click', () => openSettingsModal())
+  dom.settingsClose.addEventListener('click', () => closeSettingsModal())
+  dom.settingsModal.addEventListener('click', (e) => { if (e.target === dom.settingsModal) closeSettingsModal() })
+  // The status indicator opens the AI members modal so users can see assignment.
+  dom.statusPill.addEventListener('click', () => openMembersModal())
 }

@@ -167,7 +167,9 @@ def register_agent_socket_events():
                 )
         except Exception:
             logger.exception('Failed to record endpoint agent presence: %s', agent_id)
-        await sio.emit('agent:registered', {'id': agent_id}, to=sid)
+        # Include the server-side bound AI so the device can show whether an AI
+        # is assigned yet (status indicator: green = bound, yellow = none).
+        await sio.emit('agent:registered', {'id': agent_id, 'aiConfigId': claimed_ai}, to=sid)
         await sio.emit('agent:list', list(agents.values()))
 
     @sio.on('flow:log')

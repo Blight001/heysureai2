@@ -36,7 +36,10 @@ const load = async () => {
 watch(() => [props.agentId, props.refreshKey], load, { immediate: true })
 
 const capabilities = computed(() => scope.value?.capabilities || [])
-const bound = computed(() => !!scope.value?.aiConfigId)
+// Scope is keyed per individual agent, so it can be configured even before the
+// device is assigned an AI. Saving only needs a connected agent that reports
+// tools.
+const canSave = computed(() => capabilities.value.length > 0)
 const allSelected = computed(() =>
   capabilities.value.length > 0 && capabilities.value.every(t => selected.value.has(t)),
 )
@@ -59,7 +62,7 @@ const toggleAll = () => {
 }
 
 const save = async () => {
-  if (!props.agentId || !bound.value) return
+  if (!props.agentId || !canSave.value) return
   saving.value = true
   error.value = ''
   notice.value = ''
@@ -83,7 +86,7 @@ const label = (tool: string) => getMcpToolZhLabel(tool)
     <div class="flex items-center justify-between gap-2">
       <div class="min-w-0">
         <div class="text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">
-          {{ scope?.agentType === 'browser' ? '浏览器端 MCP 权限' : '软件端 MCP 权限' }}
+          {{ scope?.agentType === 'browser' ? '浏览器端 MCP 权限' : scope?.agentType === 'linux' ? 'Linux MCP 权限' : '软件端 MCP 权限' }}
         </div>
         <div class="text-[10px] text-zinc-400 dark:text-zinc-500 truncate">
           {{ scope?.agentName || agentId }}
@@ -101,7 +104,7 @@ const label = (tool: string) => getMcpToolZhLabel(tool)
         </button>
         <button
           type="button"
-          :disabled="!bound || saving || !dirty"
+          :disabled="!canSave || saving || !dirty"
           class="text-[10px] px-2 py-0.5 rounded bg-indigo-500 text-white hover:bg-indigo-600 disabled:opacity-40"
           @click="save"
         >
@@ -113,10 +116,7 @@ const label = (tool: string) => getMcpToolZhLabel(tool)
     <div v-if="loading" class="mt-2 text-[10px] text-zinc-400">加载中…</div>
     <div v-else-if="error" class="mt-2 text-[10px] text-rose-500">{{ error }}</div>
     <template v-else>
-      <div v-if="!bound" class="mt-2 text-[10px] text-amber-600 dark:text-amber-300">
-        请先为该设备分配 AI，再配置 MCP 权限。
-      </div>
-      <div v-else-if="capabilities.length === 0" class="mt-2 text-[10px] text-zinc-400">
+      <div v-if="capabilities.length === 0" class="mt-2 text-[10px] text-zinc-400">
         该设备未上报任何工具。
       </div>
       <div v-else class="mt-2 flex flex-wrap gap-1">

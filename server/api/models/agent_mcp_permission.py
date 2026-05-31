@@ -1,15 +1,21 @@
-"""Per-(AI, agent-type) endpoint MCP permission scope.
+"""Per-agent endpoint MCP permission scope.
 
-Endpoint (desktop / browser) agents advertise their full tool surface in the
-``capabilities`` array of ``agent:register``. Which of those tools a given AI is
-actually allowed to drive is stored here, keyed by ``(user_id, ai_config_id,
-agent_type)`` where ``agent_type`` is ``"desktop"`` or ``"browser"``.
+Endpoint agents (Linux / desktop / browser) advertise their full tool surface
+in the ``capabilities`` array of ``agent:register``. Which of those tools the
+agent's bound AI may actually drive is stored here, keyed by ``(user_id,
+agent_id)`` — i.e. **per individual agent**, so each connected device has its
+own independent scope (set in the Workshop panel).
 
-Keying by type (not by a volatile socket id) is what lets a reconnecting — or
-swapped — agent of the same type inherit the previously configured scope
-without re-configuration. ``tools_json`` is a JSON array of allowed tool names;
-no row means "no restriction yet" → the AI may use every tool the connected
-agent reports (see ``connector_runtime.dispatch.desktop_agent_tools``).
+``tools_json`` is a JSON array of allowed tool names; no row means "no
+restriction yet" → the bound AI may use every tool the agent reports (see
+``connector_runtime.dispatch.desktop_agent_tools``). ``ai_config_id`` and
+``agent_type`` are kept as informational columns (which AI the agent was bound
+to / its kind when the scope was last saved) but are not part of the key, so the
+scope follows the physical agent even if it is reassigned to a different AI.
+
+The class name ``AgentTypeMcpPermission`` and table are retained from the
+earlier per-type model to avoid a destructive rename; the keying is now
+per-agent.
 """
 
 import time
@@ -21,9 +27,12 @@ from sqlmodel import Field, SQLModel
 class AgentTypeMcpPermission(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", index=True)
-    ai_config_id: int = Field(foreign_key="assistantaiconfig.id", index=True)
-    # "desktop" | "browser"
-    agent_type: str = Field(index=True)
+    # Stable logical agent id (from agent:register). The scope key.
+    agent_id: str = Field(default="", index=True)
+    # Informational: the AI the agent was bound to when the scope was saved.
+    ai_config_id: Optional[int] = Field(default=None, index=True)
+    # Informational: "linux" | "desktop" | "browser".
+    agent_type: str = Field(default="", index=True)
     # JSON-encoded list of allowed endpoint tool names.
     tools_json: str = Field(default="[]")
     created_at: float = Field(default_factory=time.time)

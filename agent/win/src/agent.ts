@@ -9,7 +9,10 @@ import { normalizeServerUrl } from './server-url'
 export type AgentStatus = 'disconnected' | 'connecting' | 'connected' | 'registered' | 'error'
 
 export interface AgentEvents {
-  onStatusChange?: (status: AgentStatus, reason?: string) => void
+  // aiConfigId is the server-side bound AI (null = none assigned yet), used by
+  // the UI status indicator: green = connected + assigned, yellow = connected
+  // but unassigned, red = disconnected.
+  onStatusChange?: (status: AgentStatus, reason?: string, aiConfigId?: number | null) => void
   onTaskStart?: (taskId: string, tool: string, args: any) => void
   onTaskResult?: (taskId: string, tool: string, result: any, success: boolean) => void
   onLog?: (level: 'info' | 'warn' | 'error', message: string, data?: any) => void
@@ -26,6 +29,7 @@ export class HeySureAgent {
   private settings: AgentSettings
   private events: AgentEvents
   private _status: AgentStatus = 'disconnected'
+  private _boundAiConfigId: number | null = null
   workspaceRoot: string
 
   constructor(settings: AgentSettings, events: AgentEvents = {}) {
@@ -35,10 +39,14 @@ export class HeySureAgent {
   }
 
   get status(): AgentStatus { return this._status }
+  get boundAiConfigId(): number | null { return this._boundAiConfigId }
 
   private setStatus(s: AgentStatus, reason?: string) {
     this._status = s
-    this.events.onStatusChange?.(s, reason)
+    // Losing the connection clears the binding so we don't show green offline;
+    // it is re-applied from the next agent:registered.
+    if (s !== 'registered' && s !== 'connected') this._boundAiConfigId = null
+    this.events.onStatusChange?.(s, reason, this._boundAiConfigId)
   }
 
   private log(level: 'info' | 'warn' | 'error', msg: string, data?: any) {
@@ -90,8 +98,11 @@ export class HeySureAgent {
     })
 
     this.socket.on('agent:registered', (data: any) => {
+      const raw = data?.aiConfigId
+      const n = typeof raw === 'number' ? raw : (raw != null && String(raw).trim() !== '' ? Number(raw) : null)
+      this._boundAiConfigId = Number.isFinite(n as number) ? (n as number) : null
       this.setStatus('registered')
-      this.log('info', `注册成功: ${data?.name || this.settings.agentName}`)
+      this.log('info', `注册成功: ${data?.name || this.settings.agentName}${this._boundAiConfigId == null ? '（未分配 AI）' : ''}`)
     })
 
     this.socket.on('agent:register_rejected', (data: any) => {
@@ -126,10 +137,11 @@ export class HeySureAgent {
       platform: `win32-desktop (${os.hostname()})`,
       os: getPlatformInfo(),
       capabilities: getAvailableTools(),
-      // Full self-described tool schemas. The server stores these and surfaces
-      // them in mcp.list_tools / describe_tool instead of hardcoding desktop
-      // tool schemas, so a tool added to the catalog needs no server change.
-      toolDefs: getToolDefs(),
+      // Full self-described tool schemas (with the user's local description edits
+      // merged in). The server stores these and surfaces them in mcp.list_tools /
+      // describe_tool instead of hardcoding desktop tool schemas, so a tool added
+      // to the catalog — or a description edited in the app — needs no server change.
+      toolDefs: this.effectiveToolDefs(),
       version: '2.0.0',
       // The server requires a valid user JWT. ``authToken`` is the source
       // of truth; agentToken is kept as a legacy shared-secret fallback.
@@ -185,6 +197,36 @@ export class HeySureAgent {
       this.events.onTaskResult?.(taskId, tool, null, false)
       this.log('error', `任务 [${taskId}] 异常: ${errMsg}`)
     }
+  }
+
+  // Run a single tool locally for the MCP tester page (no server dispatch).
+  async runToolLocally(tool: string, args: Record<string, any>): Promise<{ success: boolean; result: any; summary: string }> {
+    const task: DispatchedTask = { taskId: `local-${Date.now()}`, tool, args: args || {} }
+    return executeTask(this.workspaceRoot, task)
+  }
+
+  // getToolDefs() with the user's local description edits merged in.
+  effectiveToolDefs() {
+    const overrides = (this.settings as any).toolDescOverrides || {}
+    return getToolDefs().map(def => {
+      const o = overrides[def.name]
+      if (!o) return def
+      const desc = String(o.description || '').trim()
+      const props = (def.input_schema && def.input_schema.properties) || {}
+      let nextProps = props
+      if (o.parameters && Object.keys(o.parameters).length) {
+        nextProps = {}
+        for (const [k, v] of Object.entries(props)) {
+          const pd = String(o.parameters[k] || '').trim()
+          nextProps[k] = pd ? { ...(v as any), description: pd } : v
+        }
+      }
+      return {
+        ...def,
+        description: desc || def.description,
+        input_schema: { ...def.input_schema, properties: nextProps },
+      }
+    })
   }
 
   updateSettings(newSettings: AgentSettings): void {

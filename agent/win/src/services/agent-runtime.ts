@@ -12,9 +12,9 @@ let agent: HeySureAgent | null = null
 
 function buildAgent(settings: AgentSettings): HeySureAgent {
   return new HeySureAgent(settings, {
-    onStatusChange: (status, reason) => {
+    onStatusChange: (status, reason, aiConfigId) => {
       updateTray(status)
-      getMainWindow()?.webContents.send('agent:status-changed', status, reason)
+      getMainWindow()?.webContents.send('agent:status-changed', status, reason, aiConfigId ?? null)
       sendActivityLog(
         'system',
         status === 'registered' ? 'success' : status === 'error' ? 'error' : 'info',

@@ -77,11 +77,11 @@
   // node_modules/engine.io-parser/build/esm/contrib/base64-arraybuffer.js
   var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   var lookup = typeof Uint8Array === "undefined" ? [] : new Uint8Array(256);
-  for (let i2 = 0; i2 < chars.length; i2++) {
-    lookup[chars.charCodeAt(i2)] = i2;
+  for (let i = 0; i < chars.length; i++) {
+    lookup[chars.charCodeAt(i)] = i;
   }
   var decode = (base64) => {
-    let bufferLength = base64.length * 0.75, len = base64.length, i2, p = 0, encoded1, encoded2, encoded3, encoded4;
+    let bufferLength = base64.length * 0.75, len = base64.length, i, p = 0, encoded1, encoded2, encoded3, encoded4;
     if (base64[base64.length - 1] === "=") {
       bufferLength--;
       if (base64[base64.length - 2] === "=") {
@@ -89,11 +89,11 @@
       }
     }
     const arraybuffer = new ArrayBuffer(bufferLength), bytes = new Uint8Array(arraybuffer);
-    for (i2 = 0; i2 < len; i2 += 4) {
-      encoded1 = lookup[base64.charCodeAt(i2)];
-      encoded2 = lookup[base64.charCodeAt(i2 + 1)];
-      encoded3 = lookup[base64.charCodeAt(i2 + 2)];
-      encoded4 = lookup[base64.charCodeAt(i2 + 3)];
+    for (i = 0; i < len; i += 4) {
+      encoded1 = lookup[base64.charCodeAt(i)];
+      encoded2 = lookup[base64.charCodeAt(i + 1)];
+      encoded3 = lookup[base64.charCodeAt(i + 2)];
+      encoded4 = lookup[base64.charCodeAt(i + 3)];
       bytes[p++] = encoded1 << 2 | encoded2 >> 4;
       bytes[p++] = (encoded2 & 15) << 4 | encoded3 >> 2;
       bytes[p++] = (encoded3 & 3) << 6 | encoded4 & 63;
@@ -157,13 +157,13 @@
   // node_modules/engine.io-parser/build/esm/index.js
   var SEPARATOR = String.fromCharCode(30);
   var encodePayload = (packets, callback) => {
-    const length2 = packets.length;
-    const encodedPackets = new Array(length2);
+    const length = packets.length;
+    const encodedPackets = new Array(length);
     let count = 0;
-    packets.forEach((packet, i2) => {
+    packets.forEach((packet, i) => {
       encodePacket(packet, false, (encodedPacket) => {
-        encodedPackets[i2] = encodedPacket;
-        if (++count === length2) {
+        encodedPackets[i] = encodedPacket;
+        if (++count === length) {
           callback(encodedPackets.join(SEPARATOR));
         }
       });
@@ -172,8 +172,8 @@
   var decodePayload = (encodedPayload, binaryType) => {
     const encodedPackets = encodedPayload.split(SEPARATOR);
     const packets = [];
-    for (let i2 = 0; i2 < encodedPackets.length; i2++) {
-      const decodedPacket = decodePacket(encodedPackets[i2], binaryType);
+    for (let i = 0; i < encodedPackets.length; i++) {
+      const decodedPacket = decodePacket(encodedPackets[i], binaryType);
       packets.push(decodedPacket);
       if (decodedPacket.type === "error") {
         break;
@@ -220,8 +220,8 @@
     }
     const buffer = new Uint8Array(size);
     let j = 0;
-    for (let i2 = 0; i2 < size; i2++) {
-      buffer[i2] = chunks[0][j++];
+    for (let i = 0; i < size; i++) {
+      buffer[i] = chunks[0][j++];
       if (j === chunks[0].length) {
         chunks.shift();
         j = 0;
@@ -335,10 +335,10 @@
       return this;
     }
     var cb;
-    for (var i2 = 0; i2 < callbacks.length; i2++) {
-      cb = callbacks[i2];
+    for (var i = 0; i < callbacks.length; i++) {
+      cb = callbacks[i];
       if (cb === fn || cb.fn === fn) {
-        callbacks.splice(i2, 1);
+        callbacks.splice(i, 1);
         break;
       }
     }
@@ -350,13 +350,13 @@
   Emitter.prototype.emit = function(event) {
     this._callbacks = this._callbacks || {};
     var args = new Array(arguments.length - 1), callbacks = this._callbacks["$" + event];
-    for (var i2 = 1; i2 < arguments.length; i2++) {
-      args[i2 - 1] = arguments[i2];
+    for (var i = 1; i < arguments.length; i++) {
+      args[i - 1] = arguments[i];
     }
     if (callbacks) {
       callbacks = callbacks.slice(0);
-      for (var i2 = 0, len = callbacks.length; i2 < len; ++i2) {
-        callbacks[i2].apply(this, args);
+      for (var i = 0, len = callbacks.length; i < len; ++i) {
+        callbacks[i].apply(this, args);
       }
     }
     return this;
@@ -370,7 +370,15 @@
     return !!this.listeners(event).length;
   };
 
-  // node_modules/engine.io-client/build/esm/globalThis.browser.js
+  // node_modules/engine.io-client/build/esm/globals.js
+  var nextTick = (() => {
+    const isPromiseAvailable = typeof Promise === "function" && typeof Promise.resolve === "function";
+    if (isPromiseAvailable) {
+      return (cb) => Promise.resolve().then(cb);
+    } else {
+      return (cb, setTimeoutFn) => setTimeoutFn(cb, 0);
+    }
+  })();
   var globalThisShim = (() => {
     if (typeof self !== "undefined") {
       return self;
@@ -380,6 +388,9 @@
       return Function("return this")();
     }
   })();
+  var defaultBinaryType = "arraybuffer";
+  function createCookieJar() {
+  }
 
   // node_modules/engine.io-client/build/esm/util.js
   function pick(obj, ...attr) {
@@ -409,31 +420,34 @@
     return Math.ceil((obj.byteLength || obj.size) * BASE64_OVERHEAD);
   }
   function utf8Length(str) {
-    let c = 0, length2 = 0;
-    for (let i2 = 0, l = str.length; i2 < l; i2++) {
-      c = str.charCodeAt(i2);
+    let c = 0, length = 0;
+    for (let i = 0, l = str.length; i < l; i++) {
+      c = str.charCodeAt(i);
       if (c < 128) {
-        length2 += 1;
+        length += 1;
       } else if (c < 2048) {
-        length2 += 2;
+        length += 2;
       } else if (c < 55296 || c >= 57344) {
-        length2 += 3;
+        length += 3;
       } else {
-        i2++;
-        length2 += 4;
+        i++;
+        length += 4;
       }
     }
-    return length2;
+    return length;
+  }
+  function randomString() {
+    return Date.now().toString(36).substring(3) + Math.random().toString(36).substring(2, 5);
   }
 
   // node_modules/engine.io-client/build/esm/contrib/parseqs.js
   function encode(obj) {
     let str = "";
-    for (let i2 in obj) {
-      if (obj.hasOwnProperty(i2)) {
+    for (let i in obj) {
+      if (obj.hasOwnProperty(i)) {
         if (str.length)
           str += "&";
-        str += encodeURIComponent(i2) + "=" + encodeURIComponent(obj[i2]);
+        str += encodeURIComponent(i) + "=" + encodeURIComponent(obj[i]);
       }
     }
     return str;
@@ -441,8 +455,8 @@
   function decode2(qs) {
     let qry = {};
     let pairs = qs.split("&");
-    for (let i2 = 0, l = pairs.length; i2 < l; i2++) {
-      let pair = pairs[i2].split("=");
+    for (let i = 0, l = pairs.length; i < l; i++) {
+      let pair = pairs[i].split("=");
       qry[decodeURIComponent(pair[0])] = decodeURIComponent(pair[1]);
     }
     return qry;
@@ -471,6 +485,7 @@
       this.opts = opts;
       this.query = opts.query;
       this.socket = opts.socket;
+      this.supportsBinary = !opts.forceBase64;
     }
     /**
      * Emits an error.
@@ -566,7 +581,7 @@
       return hostname.indexOf(":") === -1 ? hostname : "[" + hostname + "]";
     }
     _port() {
-      if (this.opts.port && (this.opts.secure && Number(this.opts.port !== 443) || !this.opts.secure && Number(this.opts.port) !== 80)) {
+      if (this.opts.port && (this.opts.secure && Number(this.opts.port) !== 443 || !this.opts.secure && Number(this.opts.port) !== 80)) {
         return ":" + this.opts.port;
       } else {
         return "";
@@ -578,89 +593,11 @@
     }
   };
 
-  // node_modules/engine.io-client/build/esm/contrib/yeast.js
-  var alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_".split("");
-  var length = 64;
-  var map = {};
-  var seed = 0;
-  var i = 0;
-  var prev;
-  function encode2(num) {
-    let encoded = "";
-    do {
-      encoded = alphabet[num % length] + encoded;
-      num = Math.floor(num / length);
-    } while (num > 0);
-    return encoded;
-  }
-  function yeast() {
-    const now = encode2(+/* @__PURE__ */ new Date());
-    if (now !== prev)
-      return seed = 0, prev = now;
-    return now + "." + encode2(seed++);
-  }
-  for (; i < length; i++)
-    map[alphabet[i]] = i;
-
-  // node_modules/engine.io-client/build/esm/contrib/has-cors.js
-  var value = false;
-  try {
-    value = typeof XMLHttpRequest !== "undefined" && "withCredentials" in new XMLHttpRequest();
-  } catch (err) {
-  }
-  var hasCORS = value;
-
-  // node_modules/engine.io-client/build/esm/transports/xmlhttprequest.browser.js
-  function XHR(opts) {
-    const xdomain = opts.xdomain;
-    try {
-      if ("undefined" !== typeof XMLHttpRequest && (!xdomain || hasCORS)) {
-        return new XMLHttpRequest();
-      }
-    } catch (e) {
-    }
-    if (!xdomain) {
-      try {
-        return new globalThisShim[["Active"].concat("Object").join("X")]("Microsoft.XMLHTTP");
-      } catch (e) {
-      }
-    }
-  }
-  function createCookieJar() {
-  }
-
   // node_modules/engine.io-client/build/esm/transports/polling.js
-  function empty() {
-  }
-  var hasXHR2 = function() {
-    const xhr = new XHR({
-      xdomain: false
-    });
-    return null != xhr.responseType;
-  }();
   var Polling = class extends Transport {
-    /**
-     * XHR Polling constructor.
-     *
-     * @param {Object} opts
-     * @package
-     */
-    constructor(opts) {
-      super(opts);
-      this.polling = false;
-      if (typeof location !== "undefined") {
-        const isSSL = "https:" === location.protocol;
-        let port = location.port;
-        if (!port) {
-          port = isSSL ? "443" : "80";
-        }
-        this.xd = typeof location !== "undefined" && opts.hostname !== location.hostname || port !== opts.port;
-      }
-      const forceBase64 = opts && opts.forceBase64;
-      this.supportsBinary = hasXHR2 && !forceBase64;
-      if (this.opts.withCredentials) {
-        this.cookieJar = createCookieJar();
-      }
+    constructor() {
+      super(...arguments);
+      this._polling = false;
     }
     get name() {
       return "polling";
@@ -672,7 +609,7 @@
      * @protected
      */
     doOpen() {
-      this.poll();
+      this._poll();
     }
     /**
      * Pauses polling.
@@ -686,9 +623,9 @@
         this.readyState = "paused";
         onPause();
       };
-      if (this.polling || !this.writable) {
+      if (this._polling || !this.writable) {
         let total = 0;
-        if (this.polling) {
+        if (this._polling) {
           total++;
           this.once("pollComplete", function() {
             --total || pause();
@@ -709,8 +646,8 @@
      *
      * @private
      */
-    poll() {
-      this.polling = true;
+    _poll() {
+      this._polling = true;
       this.doPoll();
       this.emitReserved("poll");
     }
@@ -732,10 +669,10 @@
       };
       decodePayload(data, this.socket.binaryType).forEach(callback);
       if ("closed" !== this.readyState) {
-        this.polling = false;
+        this._polling = false;
         this.emitReserved("pollComplete");
         if ("open" === this.readyState) {
-          this.poll();
+          this._poll();
         } else {
         }
       }
@@ -779,28 +716,49 @@
       const schema = this.opts.secure ? "https" : "http";
       const query = this.query || {};
       if (false !== this.opts.timestampRequests) {
-        query[this.opts.timestampParam] = yeast();
+        query[this.opts.timestampParam] = randomString();
       }
       if (!this.supportsBinary && !query.sid) {
         query.b64 = 1;
       }
       return this.createUri(schema, query);
     }
+  };
+
+  // node_modules/engine.io-client/build/esm/contrib/has-cors.js
+  var value = false;
+  try {
+    value = typeof XMLHttpRequest !== "undefined" && "withCredentials" in new XMLHttpRequest();
+  } catch (err) {
+  }
+  var hasCORS = value;
+
+  // node_modules/engine.io-client/build/esm/transports/polling-xhr.js
+  function empty() {
+  }
+  var BaseXHR = class extends Polling {
     /**
-     * Creates a request.
+     * XHR Polling constructor.
      *
-     * @param {String} method
-     * @private
+     * @param {Object} opts
+     * @package
      */
-    request(opts = {}) {
-      Object.assign(opts, { xd: this.xd, cookieJar: this.cookieJar }, this.opts);
-      return new Request(this.uri(), opts);
+    constructor(opts) {
+      super(opts);
+      if (typeof location !== "undefined") {
+        const isSSL = "https:" === location.protocol;
+        let port = location.port;
+        if (!port) {
+          port = isSSL ? "443" : "80";
+        }
+        this.xd = typeof location !== "undefined" && opts.hostname !== location.hostname || port !== opts.port;
+      }
     }
     /**
      * Sends data.
      *
-     * @param {String} data to send.
-     * @param {Function} called upon flush.
+     * @param {String} data - data to send.
+     * @param {Function} fn - called upon flush.
      * @private
      */
     doWrite(data, fn) {
@@ -834,39 +792,40 @@
      * @param {Object} options
      * @package
      */
-    constructor(uri, opts) {
+    constructor(createRequest, uri, opts) {
       super();
+      this.createRequest = createRequest;
       installTimerFunctions(this, opts);
-      this.opts = opts;
-      this.method = opts.method || "GET";
-      this.uri = uri;
-      this.data = void 0 !== opts.data ? opts.data : null;
-      this.create();
+      this._opts = opts;
+      this._method = opts.method || "GET";
+      this._uri = uri;
+      this._data = void 0 !== opts.data ? opts.data : null;
+      this._create();
     }
     /**
      * Creates the XHR object and sends the request.
      *
      * @private
      */
-    create() {
+    _create() {
       var _a;
-      const opts = pick(this.opts, "agent", "pfx", "key", "passphrase", "cert", "ca", "ciphers", "rejectUnauthorized", "autoUnref");
-      opts.xdomain = !!this.opts.xd;
-      const xhr = this.xhr = new XHR(opts);
+      const opts = pick(this._opts, "agent", "pfx", "key", "passphrase", "cert", "ca", "ciphers", "rejectUnauthorized", "autoUnref");
+      opts.xdomain = !!this._opts.xd;
+      const xhr = this._xhr = this.createRequest(opts);
       try {
-        xhr.open(this.method, this.uri, true);
+        xhr.open(this._method, this._uri, true);
         try {
-          if (this.opts.extraHeaders) {
+          if (this._opts.extraHeaders) {
             xhr.setDisableHeaderCheck && xhr.setDisableHeaderCheck(true);
-            for (let i2 in this.opts.extraHeaders) {
-              if (this.opts.extraHeaders.hasOwnProperty(i2)) {
-                xhr.setRequestHeader(i2, this.opts.extraHeaders[i2]);
+            for (let i in this._opts.extraHeaders) {
+              if (this._opts.extraHeaders.hasOwnProperty(i)) {
+                xhr.setRequestHeader(i, this._opts.extraHeaders[i]);
               }
             }
           }
         } catch (e) {
         }
-        if ("POST" === this.method) {
+        if ("POST" === this._method) {
           try {
             xhr.setRequestHeader("Content-type", "text/plain;charset=UTF-8");
           } catch (e) {
@@ -876,38 +835,41 @@
           xhr.setRequestHeader("Accept", "*/*");
         } catch (e) {
         }
-        (_a = this.opts.cookieJar) === null || _a === void 0 ? void 0 : _a.addCookies(xhr);
+        (_a = this._opts.cookieJar) === null || _a === void 0 ? void 0 : _a.addCookies(xhr);
         if ("withCredentials" in xhr) {
-          xhr.withCredentials = this.opts.withCredentials;
+          xhr.withCredentials = this._opts.withCredentials;
         }
-        if (this.opts.requestTimeout) {
-          xhr.timeout = this.opts.requestTimeout;
+        if (this._opts.requestTimeout) {
+          xhr.timeout = this._opts.requestTimeout;
         }
         xhr.onreadystatechange = () => {
           var _a2;
           if (xhr.readyState === 3) {
-            (_a2 = this.opts.cookieJar) === null || _a2 === void 0 ? void 0 : _a2.parseCookies(xhr);
+            (_a2 = this._opts.cookieJar) === null || _a2 === void 0 ? void 0 : _a2.parseCookies(
+              // @ts-ignore
+              xhr.getResponseHeader("set-cookie")
+            );
           }
           if (4 !== xhr.readyState)
             return;
           if (200 === xhr.status || 1223 === xhr.status) {
-            this.onLoad();
+            this._onLoad();
           } else {
             this.setTimeoutFn(() => {
-              this.onError(typeof xhr.status === "number" ? xhr.status : 0);
+              this._onError(typeof xhr.status === "number" ? xhr.status : 0);
             }, 0);
           }
         };
-        xhr.send(this.data);
+        xhr.send(this._data);
       } catch (e) {
         this.setTimeoutFn(() => {
-          this.onError(e);
+          this._onError(e);
         }, 0);
         return;
       }
       if (typeof document !== "undefined") {
-        this.index = _Request.requestsCount++;
-        _Request.requests[this.index] = this;
+        this._index = _Request.requestsCount++;
+        _Request.requests[this._index] = this;
       }
     }
     /**
@@ -915,42 +877,42 @@
      *
      * @private
      */
-    onError(err) {
-      this.emitReserved("error", err, this.xhr);
-      this.cleanup(true);
+    _onError(err) {
+      this.emitReserved("error", err, this._xhr);
+      this._cleanup(true);
     }
     /**
      * Cleans up house.
      *
      * @private
      */
-    cleanup(fromError) {
-      if ("undefined" === typeof this.xhr || null === this.xhr) {
+    _cleanup(fromError) {
+      if ("undefined" === typeof this._xhr || null === this._xhr) {
         return;
       }
-      this.xhr.onreadystatechange = empty;
+      this._xhr.onreadystatechange = empty;
       if (fromError) {
         try {
-          this.xhr.abort();
+          this._xhr.abort();
         } catch (e) {
         }
       }
       if (typeof document !== "undefined") {
-        delete _Request.requests[this.index];
+        delete _Request.requests[this._index];
       }
-      this.xhr = null;
+      this._xhr = null;
     }
     /**
      * Called upon load.
      *
      * @private
      */
-    onLoad() {
-      const data = this.xhr.responseText;
+    _onLoad() {
+      const data = this._xhr.responseText;
       if (data !== null) {
         this.emitReserved("data", data);
         this.emitReserved("success");
-        this.cleanup();
+        this._cleanup();
       }
     }
     /**
@@ -959,7 +921,7 @@
      * @package
      */
     abort() {
-      this.cleanup();
+      this._cleanup();
     }
   };
   Request.requestsCount = 0;
@@ -973,46 +935,52 @@
     }
   }
   function unloadHandler() {
-    for (let i2 in Request.requests) {
-      if (Request.requests.hasOwnProperty(i2)) {
-        Request.requests[i2].abort();
+    for (let i in Request.requests) {
+      if (Request.requests.hasOwnProperty(i)) {
+        Request.requests[i].abort();
+      }
+    }
+  }
+  var hasXHR2 = function() {
+    const xhr = newRequest({
+      xdomain: false
+    });
+    return xhr && xhr.responseType !== null;
+  }();
+  var XHR = class extends BaseXHR {
+    constructor(opts) {
+      super(opts);
+      const forceBase64 = opts && opts.forceBase64;
+      this.supportsBinary = hasXHR2 && !forceBase64;
+    }
+    request(opts = {}) {
+      Object.assign(opts, { xd: this.xd }, this.opts);
+      return new Request(newRequest, this.uri(), opts);
+    }
+  };
+  function newRequest(opts) {
+    const xdomain = opts.xdomain;
+    try {
+      if ("undefined" !== typeof XMLHttpRequest && (!xdomain || hasCORS)) {
+        return new XMLHttpRequest();
+      }
+    } catch (e) {
+    }
+    if (!xdomain) {
+      try {
+        return new globalThisShim[["Active"].concat("Object").join("X")]("Microsoft.XMLHTTP");
+      } catch (e) {
       }
     }
   }
 
-  // node_modules/engine.io-client/build/esm/transports/websocket-constructor.browser.js
-  var nextTick = (() => {
-    const isPromiseAvailable = typeof Promise === "function" && typeof Promise.resolve === "function";
-    if (isPromiseAvailable) {
-      return (cb) => Promise.resolve().then(cb);
-    } else {
-      return (cb, setTimeoutFn) => setTimeoutFn(cb, 0);
-    }
-  })();
-  var WebSocket = globalThisShim.WebSocket || globalThisShim.MozWebSocket;
-  var usingBrowserWebSocket = true;
-  var defaultBinaryType = "arraybuffer";
-
   // node_modules/engine.io-client/build/esm/transports/websocket.js
   var isReactNative = typeof navigator !== "undefined" && typeof navigator.product === "string" && navigator.product.toLowerCase() === "reactnative";
-  var WS = class extends Transport {
-    /**
-     * WebSocket transport constructor.
-     *
-     * @param {Object} opts - connection options
-     * @protected
-     */
-    constructor(opts) {
-      super(opts);
-      this.supportsBinary = !opts.forceBase64;
-    }
+  var BaseWS = class extends Transport {
     get name() {
       return "websocket";
     }
     doOpen() {
-      if (!this.check()) {
-        return;
-      }
       const uri = this.uri();
       const protocols = this.opts.protocols;
       const opts = isReactNative ? {} : pick(this.opts, "agent", "perMessageDeflate", "pfx", "key", "passphrase", "cert", "ca", "ciphers", "rejectUnauthorized", "localAddress", "protocolVersion", "origin", "maxPayload", "family", "checkServerIdentity");
@@ -1020,7 +988,7 @@
         opts.headers = this.opts.extraHeaders;
       }
       try {
-        this.ws = usingBrowserWebSocket && !isReactNative ? protocols ? new WebSocket(uri, protocols) : new WebSocket(uri) : new WebSocket(uri, protocols, opts);
+        this.ws = this.createSocket(uri, protocols, opts);
       } catch (err) {
         return this.emitReserved("error", err);
       }
@@ -1048,31 +1016,12 @@
     }
     write(packets) {
       this.writable = false;
-      for (let i2 = 0; i2 < packets.length; i2++) {
-        const packet = packets[i2];
-        const lastPacket = i2 === packets.length - 1;
+      for (let i = 0; i < packets.length; i++) {
+        const packet = packets[i];
+        const lastPacket = i === packets.length - 1;
         encodePacket(packet, this.supportsBinary, (data) => {
-          const opts = {};
-          if (!usingBrowserWebSocket) {
-            if (packet.options) {
-              opts.compress = packet.options.compress;
-            }
-            if (this.opts.perMessageDeflate) {
-              const len = (
-                // @ts-ignore
-                "string" === typeof data ? Buffer.byteLength(data) : data.length
-              );
-              if (len < this.opts.perMessageDeflate.threshold) {
-                opts.compress = false;
-              }
-            }
-          }
           try {
-            if (usingBrowserWebSocket) {
-              this.ws.send(data);
-            } else {
-              this.ws.send(data, opts);
-            }
+            this.doWrite(packet, data);
           } catch (e) {
           }
           if (lastPacket) {
@@ -1086,6 +1035,8 @@
     }
     doClose() {
       if (typeof this.ws !== "undefined") {
+        this.ws.onerror = () => {
+        };
         this.ws.close();
         this.ws = null;
       }
@@ -1099,21 +1050,21 @@
       const schema = this.opts.secure ? "wss" : "ws";
       const query = this.query || {};
       if (this.opts.timestampRequests) {
-        query[this.opts.timestampParam] = yeast();
+        query[this.opts.timestampParam] = randomString();
       }
       if (!this.supportsBinary) {
         query.b64 = 1;
       }
       return this.createUri(schema, query);
     }
-    /**
-     * Feature detection for WebSocket.
-     *
-     * @return {Boolean} whether this transport is available.
-     * @private
-     */
-    check() {
-      return !!WebSocket;
+  };
+  var WebSocketCtor = globalThisShim.WebSocket || globalThisShim.MozWebSocket;
+  var WS = class extends BaseWS {
+    createSocket(uri, protocols, opts) {
+      return !isReactNative ? protocols ? new WebSocketCtor(uri, protocols) : new WebSocketCtor(uri) : new WebSocketCtor(uri, protocols, opts);
+    }
+    doWrite(_packet, data) {
+      this.ws.send(data);
     }
   };
 
@@ -1123,22 +1074,23 @@
       return "webtransport";
     }
     doOpen() {
-      if (typeof WebTransport !== "function") {
-        return;
+      try {
+        this._transport = new WebTransport(this.createUri("https"), this.opts.transportOptions[this.name]);
+      } catch (err) {
+        return this.emitReserved("error", err);
       }
-      this.transport = new WebTransport(this.createUri("https"), this.opts.transportOptions[this.name]);
-      this.transport.closed.then(() => {
+      this._transport.closed.then(() => {
         this.onClose();
       }).catch((err) => {
         this.onError("webtransport error", err);
       });
-      this.transport.ready.then(() => {
-        this.transport.createBidirectionalStream().then((stream) => {
+      this._transport.ready.then(() => {
+        this._transport.createBidirectionalStream().then((stream) => {
           const decoderStream = createPacketDecoderStream(Number.MAX_SAFE_INTEGER, this.socket.binaryType);
           const reader = stream.readable.pipeThrough(decoderStream).getReader();
           const encoderStream = createPacketEncoderStream();
           encoderStream.readable.pipeTo(stream.writable);
-          this.writer = encoderStream.writable.getWriter();
+          this._writer = encoderStream.writable.getWriter();
           const read = () => {
             reader.read().then(({ done, value: value2 }) => {
               if (done) {
@@ -1154,16 +1106,16 @@
           if (this.query.sid) {
             packet.data = `{"sid":"${this.query.sid}"}`;
           }
-          this.writer.write(packet).then(() => this.onOpen());
+          this._writer.write(packet).then(() => this.onOpen());
         });
       });
     }
     write(packets) {
       this.writable = false;
-      for (let i2 = 0; i2 < packets.length; i2++) {
-        const packet = packets[i2];
-        const lastPacket = i2 === packets.length - 1;
-        this.writer.write(packet).then(() => {
+      for (let i = 0; i < packets.length; i++) {
+        const packet = packets[i];
+        const lastPacket = i === packets.length - 1;
+        this._writer.write(packet).then(() => {
           if (lastPacket) {
             nextTick(() => {
               this.writable = true;
@@ -1175,7 +1127,7 @@
     }
     doClose() {
       var _a;
-      (_a = this.transport) === null || _a === void 0 ? void 0 : _a.close();
+      (_a = this._transport) === null || _a === void 0 ? void 0 : _a.close();
     }
   };
 
@@ -1183,7 +1135,7 @@
   var transports = {
     websocket: WS,
     webtransport: WT,
-    polling: Polling
+    polling: XHR
   };
 
   // node_modules/engine.io-client/build/esm/contrib/parseuri.js
@@ -1205,16 +1157,16 @@
     "anchor"
   ];
   function parse(str) {
-    if (str.length > 2e3) {
+    if (str.length > 8e3) {
       throw "URI too long";
     }
     const src = str, b = str.indexOf("["), e = str.indexOf("]");
     if (b != -1 && e != -1) {
       str = str.substring(0, b) + str.substring(b, e).replace(/:/g, ";") + str.substring(e, str.length);
     }
-    let m = re.exec(str || ""), uri = {}, i2 = 14;
-    while (i2--) {
-      uri[parts[i2]] = m[i2] || "";
+    let m = re.exec(str || ""), uri = {}, i = 14;
+    while (i--) {
+      uri[parts[i]] = m[i] || "";
     }
     if (b != -1 && e != -1) {
       uri.source = src;
@@ -1247,28 +1199,40 @@
   }
 
   // node_modules/engine.io-client/build/esm/socket.js
-  var Socket = class _Socket extends Emitter {
+  var withEventListeners = typeof addEventListener === "function" && typeof removeEventListener === "function";
+  var OFFLINE_EVENT_LISTENERS = [];
+  if (withEventListeners) {
+    addEventListener("offline", () => {
+      OFFLINE_EVENT_LISTENERS.forEach((listener) => listener());
+    }, false);
+  }
+  var SocketWithoutUpgrade = class _SocketWithoutUpgrade extends Emitter {
     /**
      * Socket constructor.
      *
      * @param {String|Object} uri - uri or options
      * @param {Object} opts - options
      */
-    constructor(uri, opts = {}) {
+    constructor(uri, opts) {
       super();
       this.binaryType = defaultBinaryType;
       this.writeBuffer = [];
+      this._prevBufferLen = 0;
+      this._pingInterval = -1;
+      this._pingTimeout = -1;
+      this._maxPayload = -1;
+      this._pingTimeoutTime = Infinity;
       if (uri && "object" === typeof uri) {
         opts = uri;
         uri = null;
       }
       if (uri) {
-        uri = parse(uri);
-        opts.hostname = uri.host;
-        opts.secure = uri.protocol === "https" || uri.protocol === "wss";
-        opts.port = uri.port;
-        if (uri.query)
-          opts.query = uri.query;
+        const parsedUri = parse(uri);
+        opts.hostname = parsedUri.host;
+        opts.secure = parsedUri.protocol === "https" || parsedUri.protocol === "wss";
+        opts.port = parsedUri.port;
+        if (parsedUri.query)
+          opts.query = parsedUri.query;
       } else if (opts.host) {
         opts.hostname = parse(opts.host).host;
       }
@@ -1279,13 +1243,13 @@
       }
       this.hostname = opts.hostname || (typeof location !== "undefined" ? location.hostname : "localhost");
       this.port = opts.port || (typeof location !== "undefined" && location.port ? location.port : this.secure ? "443" : "80");
-      this.transports = opts.transports || [
-        "polling",
-        "websocket",
-        "webtransport"
-      ];
-      this.writeBuffer = [];
-      this.prevBufferLen = 0;
+      this.transports = [];
+      this._transportsByName = {};
+      opts.transports.forEach((t) => {
+        const transportName = t.prototype.name;
+        this.transports.push(transportName);
+        this._transportsByName[transportName] = t;
+      });
       this.opts = Object.assign({
         path: "/engine.io",
         agent: false,
@@ -1305,31 +1269,29 @@
       if (typeof this.opts.query === "string") {
         this.opts.query = decode2(this.opts.query);
       }
-      this.id = null;
-      this.upgrades = null;
-      this.pingInterval = null;
-      this.pingTimeout = null;
-      this.pingTimeoutTimer = null;
-      if (typeof addEventListener === "function") {
+      if (withEventListeners) {
         if (this.opts.closeOnBeforeunload) {
-          this.beforeunloadEventListener = () => {
+          this._beforeunloadEventListener = () => {
             if (this.transport) {
               this.transport.removeAllListeners();
               this.transport.close();
             }
           };
-          addEventListener("beforeunload", this.beforeunloadEventListener, false);
+          addEventListener("beforeunload", this._beforeunloadEventListener, false);
         }
         if (this.hostname !== "localhost") {
-          this.offlineEventListener = () => {
-            this.onClose("transport close", {
+          this._offlineEventListener = () => {
+            this._onClose("transport close", {
               description: "network connection lost"
             });
           };
-          addEventListener("offline", this.offlineEventListener, false);
+          OFFLINE_EVENT_LISTENERS.push(this._offlineEventListener);
         }
       }
-      this.open();
+      if (this.opts.withCredentials) {
+        this._cookieJar = createCookieJar();
+      }
+      this._open();
     }
     /**
      * Creates transport of the given type.
@@ -1351,33 +1313,23 @@
         secure: this.secure,
         port: this.port
       }, this.opts.transportOptions[name]);
-      return new transports[name](opts);
+      return new this._transportsByName[name](opts);
     }
     /**
      * Initializes transport to use and starts probe.
      *
      * @private
      */
-    open() {
-      let transport;
-      if (this.opts.rememberUpgrade && _Socket.priorWebsocketSuccess && this.transports.indexOf("websocket") !== -1) {
-        transport = "websocket";
-      } else if (0 === this.transports.length) {
+    _open() {
+      if (this.transports.length === 0) {
         this.setTimeoutFn(() => {
           this.emitReserved("error", "No transports available");
         }, 0);
         return;
-      } else {
-        transport = this.transports[0];
       }
+      const transportName = this.opts.rememberUpgrade && _SocketWithoutUpgrade.priorWebsocketSuccess && this.transports.indexOf("websocket") !== -1 ? "websocket" : this.transports[0];
       this.readyState = "opening";
-      try {
-        transport = this.createTransport(transport);
-      } catch (e) {
-        this.transports.shift();
-        this.open();
-        return;
-      }
+      const transport = this.createTransport(transportName);
       transport.open();
       this.setTransport(transport);
     }
@@ -1391,7 +1343,308 @@
         this.transport.removeAllListeners();
       }
       this.transport = transport;
-      transport.on("drain", this.onDrain.bind(this)).on("packet", this.onPacket.bind(this)).on("error", this.onError.bind(this)).on("close", (reason) => this.onClose("transport close", reason));
+      transport.on("drain", this._onDrain.bind(this)).on("packet", this._onPacket.bind(this)).on("error", this._onError.bind(this)).on("close", (reason) => this._onClose("transport close", reason));
+    }
+    /**
+     * Called when connection is deemed open.
+     *
+     * @private
+     */
+    onOpen() {
+      this.readyState = "open";
+      _SocketWithoutUpgrade.priorWebsocketSuccess = "websocket" === this.transport.name;
+      this.emitReserved("open");
+      this.flush();
+    }
+    /**
+     * Handles a packet.
+     *
+     * @private
+     */
+    _onPacket(packet) {
+      if ("opening" === this.readyState || "open" === this.readyState || "closing" === this.readyState) {
+        this.emitReserved("packet", packet);
+        this.emitReserved("heartbeat");
+        switch (packet.type) {
+          case "open":
+            this.onHandshake(JSON.parse(packet.data));
+            break;
+          case "ping":
+            this._sendPacket("pong");
+            this.emitReserved("ping");
+            this.emitReserved("pong");
+            this._resetPingTimeout();
+            break;
+          case "error":
+            const err = new Error("server error");
+            err.code = packet.data;
+            this._onError(err);
+            break;
+          case "message":
+            this.emitReserved("data", packet.data);
+            this.emitReserved("message", packet.data);
+            break;
+        }
+      } else {
+      }
+    }
+    /**
+     * Called upon handshake completion.
+     *
+     * @param {Object} data - handshake obj
+     * @private
+     */
+    onHandshake(data) {
+      this.emitReserved("handshake", data);
+      this.id = data.sid;
+      this.transport.query.sid = data.sid;
+      this._pingInterval = data.pingInterval;
+      this._pingTimeout = data.pingTimeout;
+      this._maxPayload = data.maxPayload;
+      this.onOpen();
+      if ("closed" === this.readyState)
+        return;
+      this._resetPingTimeout();
+    }
+    /**
+     * Sets and resets ping timeout timer based on server pings.
+     *
+     * @private
+     */
+    _resetPingTimeout() {
+      this.clearTimeoutFn(this._pingTimeoutTimer);
+      const delay2 = this._pingInterval + this._pingTimeout;
+      this._pingTimeoutTime = Date.now() + delay2;
+      this._pingTimeoutTimer = this.setTimeoutFn(() => {
+        this._onClose("ping timeout");
+      }, delay2);
+      if (this.opts.autoUnref) {
+        this._pingTimeoutTimer.unref();
+      }
+    }
+    /**
+     * Called on `drain` event
+     *
+     * @private
+     */
+    _onDrain() {
+      this.writeBuffer.splice(0, this._prevBufferLen);
+      this._prevBufferLen = 0;
+      if (0 === this.writeBuffer.length) {
+        this.emitReserved("drain");
+      } else {
+        this.flush();
+      }
+    }
+    /**
+     * Flush write buffers.
+     *
+     * @private
+     */
+    flush() {
+      if ("closed" !== this.readyState && this.transport.writable && !this.upgrading && this.writeBuffer.length) {
+        const packets = this._getWritablePackets();
+        this.transport.send(packets);
+        this._prevBufferLen = packets.length;
+        this.emitReserved("flush");
+      }
+    }
+    /**
+     * Ensure the encoded size of the writeBuffer is below the maxPayload value sent by the server (only for HTTP
+     * long-polling)
+     *
+     * @private
+     */
+    _getWritablePackets() {
+      const shouldCheckPayloadSize = this._maxPayload && this.transport.name === "polling" && this.writeBuffer.length > 1;
+      if (!shouldCheckPayloadSize) {
+        return this.writeBuffer;
+      }
+      let payloadSize = 1;
+      for (let i = 0; i < this.writeBuffer.length; i++) {
+        const data = this.writeBuffer[i].data;
+        if (data) {
+          payloadSize += byteLength(data);
+        }
+        if (i > 0 && payloadSize > this._maxPayload) {
+          return this.writeBuffer.slice(0, i);
+        }
+        payloadSize += 2;
+      }
+      return this.writeBuffer;
+    }
+    /**
+     * Checks whether the heartbeat timer has expired but the socket has not yet been notified.
+     *
+     * Note: this method is private for now because it does not really fit the WebSocket API, but if we put it in the
+     * `write()` method then the message would not be buffered by the Socket.IO client.
+     *
+     * @return {boolean}
+     * @private
+     */
+    /* private */
+    _hasPingExpired() {
+      if (!this._pingTimeoutTime)
+        return true;
+      const hasExpired = Date.now() > this._pingTimeoutTime;
+      if (hasExpired) {
+        this._pingTimeoutTime = 0;
+        nextTick(() => {
+          this._onClose("ping timeout");
+        }, this.setTimeoutFn);
+      }
+      return hasExpired;
+    }
+    /**
+     * Sends a message.
+     *
+     * @param {String} msg - message.
+     * @param {Object} options.
+     * @param {Function} fn - callback function.
+     * @return {Socket} for chaining.
+     */
+    write(msg, options, fn) {
+      this._sendPacket("message", msg, options, fn);
+      return this;
+    }
+    /**
+     * Sends a message. Alias of {@link Socket#write}.
+     *
+     * @param {String} msg - message.
+     * @param {Object} options.
+     * @param {Function} fn - callback function.
+     * @return {Socket} for chaining.
+     */
+    send(msg, options, fn) {
+      this._sendPacket("message", msg, options, fn);
+      return this;
+    }
+    /**
+     * Sends a packet.
+     *
+     * @param {String} type - packet type.
+     * @param {String} data.
+     * @param {Object} options.
+     * @param {Function} fn - callback function.
+     * @private
+     */
+    _sendPacket(type, data, options, fn) {
+      if ("function" === typeof data) {
+        fn = data;
+        data = void 0;
+      }
+      if ("function" === typeof options) {
+        fn = options;
+        options = null;
+      }
+      if ("closing" === this.readyState || "closed" === this.readyState) {
+        return;
+      }
+      options = options || {};
+      options.compress = false !== options.compress;
+      const packet = {
+        type,
+        data,
+        options
+      };
+      this.emitReserved("packetCreate", packet);
+      this.writeBuffer.push(packet);
+      if (fn)
+        this.once("flush", fn);
+      this.flush();
+    }
+    /**
+     * Closes the connection.
+     */
+    close() {
+      const close = () => {
+        this._onClose("forced close");
+        this.transport.close();
+      };
+      const cleanupAndClose = () => {
+        this.off("upgrade", cleanupAndClose);
+        this.off("upgradeError", cleanupAndClose);
+        close();
+      };
+      const waitForUpgrade = () => {
+        this.once("upgrade", cleanupAndClose);
+        this.once("upgradeError", cleanupAndClose);
+      };
+      if ("opening" === this.readyState || "open" === this.readyState) {
+        this.readyState = "closing";
+        if (this.writeBuffer.length) {
+          this.once("drain", () => {
+            if (this.upgrading) {
+              waitForUpgrade();
+            } else {
+              close();
+            }
+          });
+        } else if (this.upgrading) {
+          waitForUpgrade();
+        } else {
+          close();
+        }
+      }
+      return this;
+    }
+    /**
+     * Called upon transport error
+     *
+     * @private
+     */
+    _onError(err) {
+      _SocketWithoutUpgrade.priorWebsocketSuccess = false;
+      if (this.opts.tryAllTransports && this.transports.length > 1 && this.readyState === "opening") {
+        this.transports.shift();
+        return this._open();
+      }
+      this.emitReserved("error", err);
+      this._onClose("transport error", err);
+    }
+    /**
+     * Called upon transport close.
+     *
+     * @private
+     */
+    _onClose(reason, description) {
+      if ("opening" === this.readyState || "open" === this.readyState || "closing" === this.readyState) {
+        this.clearTimeoutFn(this._pingTimeoutTimer);
+        this.transport.removeAllListeners("close");
+        this.transport.close();
+        this.transport.removeAllListeners();
+        if (withEventListeners) {
+          if (this._beforeunloadEventListener) {
+            removeEventListener("beforeunload", this._beforeunloadEventListener, false);
+          }
+          if (this._offlineEventListener) {
+            const i = OFFLINE_EVENT_LISTENERS.indexOf(this._offlineEventListener);
+            if (i !== -1) {
+              OFFLINE_EVENT_LISTENERS.splice(i, 1);
+            }
+          }
+        }
+        this.readyState = "closed";
+        this.id = null;
+        this.emitReserved("close", reason, description);
+        this.writeBuffer = [];
+        this._prevBufferLen = 0;
+      }
+    }
+  };
+  SocketWithoutUpgrade.protocol = protocol;
+  var SocketWithUpgrade = class extends SocketWithoutUpgrade {
+    constructor() {
+      super(...arguments);
+      this._upgrades = [];
+    }
+    onOpen() {
+      super.onOpen();
+      if ("open" === this.readyState && this.opts.upgrade) {
+        for (let i = 0; i < this._upgrades.length; i++) {
+          this._probe(this._upgrades[i]);
+        }
+      }
     }
     /**
      * Probes a transport.
@@ -1399,10 +1652,10 @@
      * @param {String} name - transport name
      * @private
      */
-    probe(name) {
+    _probe(name) {
       let transport = this.createTransport(name);
       let failed = false;
-      _Socket.priorWebsocketSuccess = false;
+      SocketWithoutUpgrade.priorWebsocketSuccess = false;
       const onTransportOpen = () => {
         if (failed)
           return;
@@ -1415,7 +1668,7 @@
             this.emitReserved("upgrading", transport);
             if (!transport)
               return;
-            _Socket.priorWebsocketSuccess = "websocket" === transport.name;
+            SocketWithoutUpgrade.priorWebsocketSuccess = "websocket" === transport.name;
             this.transport.pause(() => {
               if (failed)
                 return;
@@ -1473,7 +1726,7 @@
       transport.once("close", onTransportClose);
       this.once("close", onclose);
       this.once("upgrading", onupgrade);
-      if (this.upgrades.indexOf("webtransport") !== -1 && name !== "webtransport") {
+      if (this._upgrades.indexOf("webtransport") !== -1 && name !== "webtransport") {
         this.setTimeoutFn(() => {
           if (!failed) {
             transport.open();
@@ -1483,256 +1736,9 @@
         transport.open();
       }
     }
-    /**
-     * Called when connection is deemed open.
-     *
-     * @private
-     */
-    onOpen() {
-      this.readyState = "open";
-      _Socket.priorWebsocketSuccess = "websocket" === this.transport.name;
-      this.emitReserved("open");
-      this.flush();
-      if ("open" === this.readyState && this.opts.upgrade) {
-        let i2 = 0;
-        const l = this.upgrades.length;
-        for (; i2 < l; i2++) {
-          this.probe(this.upgrades[i2]);
-        }
-      }
-    }
-    /**
-     * Handles a packet.
-     *
-     * @private
-     */
-    onPacket(packet) {
-      if ("opening" === this.readyState || "open" === this.readyState || "closing" === this.readyState) {
-        this.emitReserved("packet", packet);
-        this.emitReserved("heartbeat");
-        this.resetPingTimeout();
-        switch (packet.type) {
-          case "open":
-            this.onHandshake(JSON.parse(packet.data));
-            break;
-          case "ping":
-            this.sendPacket("pong");
-            this.emitReserved("ping");
-            this.emitReserved("pong");
-            break;
-          case "error":
-            const err = new Error("server error");
-            err.code = packet.data;
-            this.onError(err);
-            break;
-          case "message":
-            this.emitReserved("data", packet.data);
-            this.emitReserved("message", packet.data);
-            break;
-        }
-      } else {
-      }
-    }
-    /**
-     * Called upon handshake completion.
-     *
-     * @param {Object} data - handshake obj
-     * @private
-     */
     onHandshake(data) {
-      this.emitReserved("handshake", data);
-      this.id = data.sid;
-      this.transport.query.sid = data.sid;
-      this.upgrades = this.filterUpgrades(data.upgrades);
-      this.pingInterval = data.pingInterval;
-      this.pingTimeout = data.pingTimeout;
-      this.maxPayload = data.maxPayload;
-      this.onOpen();
-      if ("closed" === this.readyState)
-        return;
-      this.resetPingTimeout();
-    }
-    /**
-     * Sets and resets ping timeout timer based on server pings.
-     *
-     * @private
-     */
-    resetPingTimeout() {
-      this.clearTimeoutFn(this.pingTimeoutTimer);
-      this.pingTimeoutTimer = this.setTimeoutFn(() => {
-        this.onClose("ping timeout");
-      }, this.pingInterval + this.pingTimeout);
-      if (this.opts.autoUnref) {
-        this.pingTimeoutTimer.unref();
-      }
-    }
-    /**
-     * Called on `drain` event
-     *
-     * @private
-     */
-    onDrain() {
-      this.writeBuffer.splice(0, this.prevBufferLen);
-      this.prevBufferLen = 0;
-      if (0 === this.writeBuffer.length) {
-        this.emitReserved("drain");
-      } else {
-        this.flush();
-      }
-    }
-    /**
-     * Flush write buffers.
-     *
-     * @private
-     */
-    flush() {
-      if ("closed" !== this.readyState && this.transport.writable && !this.upgrading && this.writeBuffer.length) {
-        const packets = this.getWritablePackets();
-        this.transport.send(packets);
-        this.prevBufferLen = packets.length;
-        this.emitReserved("flush");
-      }
-    }
-    /**
-     * Ensure the encoded size of the writeBuffer is below the maxPayload value sent by the server (only for HTTP
-     * long-polling)
-     *
-     * @private
-     */
-    getWritablePackets() {
-      const shouldCheckPayloadSize = this.maxPayload && this.transport.name === "polling" && this.writeBuffer.length > 1;
-      if (!shouldCheckPayloadSize) {
-        return this.writeBuffer;
-      }
-      let payloadSize = 1;
-      for (let i2 = 0; i2 < this.writeBuffer.length; i2++) {
-        const data = this.writeBuffer[i2].data;
-        if (data) {
-          payloadSize += byteLength(data);
-        }
-        if (i2 > 0 && payloadSize > this.maxPayload) {
-          return this.writeBuffer.slice(0, i2);
-        }
-        payloadSize += 2;
-      }
-      return this.writeBuffer;
-    }
-    /**
-     * Sends a message.
-     *
-     * @param {String} msg - message.
-     * @param {Object} options.
-     * @param {Function} callback function.
-     * @return {Socket} for chaining.
-     */
-    write(msg, options, fn) {
-      this.sendPacket("message", msg, options, fn);
-      return this;
-    }
-    send(msg, options, fn) {
-      this.sendPacket("message", msg, options, fn);
-      return this;
-    }
-    /**
-     * Sends a packet.
-     *
-     * @param {String} type: packet type.
-     * @param {String} data.
-     * @param {Object} options.
-     * @param {Function} fn - callback function.
-     * @private
-     */
-    sendPacket(type, data, options, fn) {
-      if ("function" === typeof data) {
-        fn = data;
-        data = void 0;
-      }
-      if ("function" === typeof options) {
-        fn = options;
-        options = null;
-      }
-      if ("closing" === this.readyState || "closed" === this.readyState) {
-        return;
-      }
-      options = options || {};
-      options.compress = false !== options.compress;
-      const packet = {
-        type,
-        data,
-        options
-      };
-      this.emitReserved("packetCreate", packet);
-      this.writeBuffer.push(packet);
-      if (fn)
-        this.once("flush", fn);
-      this.flush();
-    }
-    /**
-     * Closes the connection.
-     */
-    close() {
-      const close = () => {
-        this.onClose("forced close");
-        this.transport.close();
-      };
-      const cleanupAndClose = () => {
-        this.off("upgrade", cleanupAndClose);
-        this.off("upgradeError", cleanupAndClose);
-        close();
-      };
-      const waitForUpgrade = () => {
-        this.once("upgrade", cleanupAndClose);
-        this.once("upgradeError", cleanupAndClose);
-      };
-      if ("opening" === this.readyState || "open" === this.readyState) {
-        this.readyState = "closing";
-        if (this.writeBuffer.length) {
-          this.once("drain", () => {
-            if (this.upgrading) {
-              waitForUpgrade();
-            } else {
-              close();
-            }
-          });
-        } else if (this.upgrading) {
-          waitForUpgrade();
-        } else {
-          close();
-        }
-      }
-      return this;
-    }
-    /**
-     * Called upon transport error
-     *
-     * @private
-     */
-    onError(err) {
-      _Socket.priorWebsocketSuccess = false;
-      this.emitReserved("error", err);
-      this.onClose("transport error", err);
-    }
-    /**
-     * Called upon transport close.
-     *
-     * @private
-     */
-    onClose(reason, description) {
-      if ("opening" === this.readyState || "open" === this.readyState || "closing" === this.readyState) {
-        this.clearTimeoutFn(this.pingTimeoutTimer);
-        this.transport.removeAllListeners("close");
-        this.transport.close();
-        this.transport.removeAllListeners();
-        if (typeof removeEventListener === "function") {
-          removeEventListener("beforeunload", this.beforeunloadEventListener, false);
-          removeEventListener("offline", this.offlineEventListener, false);
-        }
-        this.readyState = "closed";
-        this.id = null;
-        this.emitReserved("close", reason, description);
-        this.writeBuffer = [];
-        this.prevBufferLen = 0;
-      }
+      this._upgrades = this._filterUpgrades(data.upgrades);
+      super.onHandshake(data);
     }
     /**
      * Filters upgrades, returning only those matching client transports.
@@ -1740,18 +1746,24 @@
      * @param {Array} upgrades - server upgrades
      * @private
      */
-    filterUpgrades(upgrades) {
+    _filterUpgrades(upgrades) {
       const filteredUpgrades = [];
-      let i2 = 0;
-      const j = upgrades.length;
-      for (; i2 < j; i2++) {
-        if (~this.transports.indexOf(upgrades[i2]))
-          filteredUpgrades.push(upgrades[i2]);
+      for (let i = 0; i < upgrades.length; i++) {
+        if (~this.transports.indexOf(upgrades[i]))
+          filteredUpgrades.push(upgrades[i]);
       }
       return filteredUpgrades;
     }
   };
-  Socket.protocol = protocol;
+  var Socket = class extends SocketWithUpgrade {
+    constructor(uri, opts = {}) {
+      const o = typeof uri === "object" ? uri : opts;
+      if (!o.transports || o.transports && typeof o.transports[0] === "string") {
+        o.transports = (o.transports || ["polling", "websocket", "webtransport"]).map((transportName) => transports[transportName]).filter((t) => !!t);
+      }
+      super(uri, o);
+    }
+  };
 
   // node_modules/engine.io-client/build/esm/index.js
   var protocol2 = Socket.protocol;
@@ -1820,8 +1832,8 @@
       return false;
     }
     if (Array.isArray(obj)) {
-      for (let i2 = 0, l = obj.length; i2 < l; i2++) {
-        if (hasBinary(obj[i2])) {
+      for (let i = 0, l = obj.length; i < l; i++) {
+        if (hasBinary(obj[i])) {
           return true;
         }
       }
@@ -1859,8 +1871,8 @@
       return placeholder;
     } else if (Array.isArray(data)) {
       const newData = new Array(data.length);
-      for (let i2 = 0; i2 < data.length; i2++) {
-        newData[i2] = _deconstructPacket(data[i2], buffers);
+      for (let i = 0; i < data.length; i++) {
+        newData[i] = _deconstructPacket(data[i], buffers);
       }
       return newData;
     } else if (typeof data === "object" && !(data instanceof Date)) {
@@ -1890,8 +1902,8 @@
         throw new Error("illegal attachments");
       }
     } else if (Array.isArray(data)) {
-      for (let i2 = 0; i2 < data.length; i2++) {
-        data[i2] = _reconstructPacket(data[i2], buffers);
+      for (let i = 0; i < data.length; i++) {
+        data[i] = _reconstructPacket(data[i], buffers);
       }
     } else if (typeof data === "object") {
       for (const key in data) {
@@ -2043,7 +2055,7 @@
      * @return {Object} packet
      */
     decodeString(str) {
-      let i2 = 0;
+      let i = 0;
       const p = {
         type: Number(str.charAt(0))
       };
@@ -2051,11 +2063,11 @@
         throw new Error("unknown packet type " + p.type);
       }
       if (p.type === PacketType.BINARY_EVENT || p.type === PacketType.BINARY_ACK) {
-        const start = i2 + 1;
-        while (str.charAt(++i2) !== "-" && i2 != str.length) {
+        const start = i + 1;
+        while (str.charAt(++i) !== "-" && i != str.length) {
         }
-        const buf = str.substring(start, i2);
-        if (buf != Number(buf) || str.charAt(i2) !== "-") {
+        const buf = str.substring(start, i);
+        if (buf != Number(buf) || str.charAt(i) !== "-") {
           throw new Error("Illegal attachments");
         }
         const n = Number(buf);
@@ -2066,35 +2078,35 @@
         }
         p.attachments = n;
       }
-      if ("/" === str.charAt(i2 + 1)) {
-        const start = i2 + 1;
-        while (++i2) {
-          const c = str.charAt(i2);
+      if ("/" === str.charAt(i + 1)) {
+        const start = i + 1;
+        while (++i) {
+          const c = str.charAt(i);
           if ("," === c)
             break;
-          if (i2 === str.length)
+          if (i === str.length)
             break;
         }
-        p.nsp = str.substring(start, i2);
+        p.nsp = str.substring(start, i);
       } else {
         p.nsp = "/";
       }
-      const next = str.charAt(i2 + 1);
+      const next = str.charAt(i + 1);
       if ("" !== next && Number(next) == next) {
-        const start = i2 + 1;
-        while (++i2) {
-          const c = str.charAt(i2);
+        const start = i + 1;
+        while (++i) {
+          const c = str.charAt(i);
           if (null == c || Number(c) != c) {
-            --i2;
+            --i;
             break;
           }
-          if (i2 === str.length)
+          if (i === str.length)
             break;
         }
-        p.id = Number(str.substring(start, i2 + 1));
+        p.id = Number(str.substring(start, i + 1));
       }
-      if (str.charAt(++i2)) {
-        const payload = this.tryParse(str.substr(i2));
+      if (str.charAt(++i)) {
+        const payload = this.tryParse(str.substr(i));
         if (_Decoder.isPayloadValid(p.type, payload)) {
           p.data = payload;
         } else {
@@ -2358,6 +2370,7 @@
      * @return self
      */
     emit(ev, ...args) {
+      var _a, _b, _c;
       if (RESERVED_EVENTS2.hasOwnProperty(ev)) {
         throw new Error('"' + ev.toString() + '" is a reserved event name');
       }
@@ -2378,10 +2391,11 @@
         this._registerAckCallback(id, ack);
         packet.id = id;
       }
-      const isTransportWritable = this.io.engine && this.io.engine.transport && this.io.engine.transport.writable;
-      const discardPacket = this.flags.volatile && (!isTransportWritable || !this.connected);
+      const isTransportWritable = (_b = (_a = this.io.engine) === null || _a === void 0 ? void 0 : _a.transport) === null || _b === void 0 ? void 0 : _b.writable;
+      const isConnected = this.connected && !((_c = this.io.engine) === null || _c === void 0 ? void 0 : _c._hasPingExpired());
+      const discardPacket = this.flags.volatile && !isTransportWritable;
       if (discardPacket) {
-      } else if (this.connected) {
+      } else if (isConnected) {
         this.notifyOutgoingListeners(packet);
         this.packet(packet);
       } else {
@@ -2402,9 +2416,9 @@
       }
       const timer = this.io.setTimeoutFn(() => {
         delete this.acks[id];
-        for (let i2 = 0; i2 < this.sendBuffer.length; i2++) {
-          if (this.sendBuffer[i2].id === id) {
-            this.sendBuffer.splice(i2, 1);
+        for (let i = 0; i < this.sendBuffer.length; i++) {
+          if (this.sendBuffer[i].id === id) {
+            this.sendBuffer.splice(i, 1);
           }
         }
         ack.call(this, new Error("operation has timed out"));
@@ -2461,7 +2475,6 @@
       };
       args.push((err, ...responseArgs) => {
         if (packet !== this._queue[0]) {
-          return;
         }
         const hasError = err !== null;
         if (hasError) {
@@ -2693,8 +2706,8 @@
       this._pid = pid;
       this.connected = true;
       this.emitBuffered();
-      this.emitReserved("connect");
       this._drainQueue(true);
+      this.emitReserved("connect");
     }
     /**
      * Emit buffered events (received and emitted).
@@ -2866,9 +2879,9 @@
       }
       if (listener) {
         const listeners = this._anyListeners;
-        for (let i2 = 0; i2 < listeners.length; i2++) {
-          if (listener === listeners[i2]) {
-            listeners.splice(i2, 1);
+        for (let i = 0; i < listeners.length; i++) {
+          if (listener === listeners[i]) {
+            listeners.splice(i, 1);
             return this;
           }
         }
@@ -2944,9 +2957,9 @@
       }
       if (listener) {
         const listeners = this._anyOutgoingListeners;
-        for (let i2 = 0; i2 < listeners.length; i2++) {
-          if (listener === listeners[i2]) {
-            listeners.splice(i2, 1);
+        for (let i = 0; i < listeners.length; i++) {
+          if (listener === listeners[i]) {
+            listeners.splice(i, 1);
             return this;
           }
         }
@@ -3049,6 +3062,9 @@
       if (!arguments.length)
         return this._reconnection;
       this._reconnection = !!v;
+      if (!v) {
+        this.skipReconnect = true;
+      }
       return this;
     }
     reconnectionAttempts(v) {
@@ -3165,7 +3181,14 @@
       this._readyState = "open";
       this.emitReserved("open");
       const socket2 = this.engine;
-      this.subs.push(on(socket2, "ping", this.onping.bind(this)), on(socket2, "data", this.ondata.bind(this)), on(socket2, "error", this.onerror.bind(this)), on(socket2, "close", this.onclose.bind(this)), on(this.decoder, "decoded", this.ondecoded.bind(this)));
+      this.subs.push(
+        on(socket2, "ping", this.onping.bind(this)),
+        on(socket2, "data", this.ondata.bind(this)),
+        on(socket2, "error", this.onerror.bind(this)),
+        on(socket2, "close", this.onclose.bind(this)),
+        // @ts-ignore
+        on(this.decoder, "decoded", this.ondecoded.bind(this))
+      );
     }
     /**
      * Called upon a ping.
@@ -3245,8 +3268,8 @@
      */
     _packet(packet) {
       const encodedPackets = this.encoder.encode(packet);
-      for (let i2 = 0; i2 < encodedPackets.length; i2++) {
-        this.engine.write(encodedPackets[i2], packet.options);
+      for (let i = 0; i < encodedPackets.length; i++) {
+        this.engine.write(encodedPackets[i], packet.options);
       }
     }
     /**
@@ -3268,8 +3291,6 @@
       this.skipReconnect = true;
       this._reconnecting = false;
       this.onclose("forced close");
-      if (this.engine)
-        this.engine.close();
     }
     /**
      * Alias for close()
@@ -3280,12 +3301,18 @@
       return this._close();
     }
     /**
-     * Called upon engine close.
+     * Called when:
+     *
+     * - the low-level engine is closed
+     * - the parser encountered a badly formatted packet
+     * - all sockets are disconnected
      *
      * @private
      */
     onclose(reason, description) {
+      var _a;
       this.cleanup();
+      (_a = this.engine) === null || _a === void 0 ? void 0 : _a.close();
       this.backoff.reset();
       this._readyState = "closed";
       this.emitReserved("close", reason, description);
@@ -3393,7 +3420,6 @@
     aiKey: "",
     aiBaseUrl: "https://api.anthropic.com",
     aiModel: "claude-sonnet-4-5",
-    autoConnect: false,
     offlineMode: false,
     mouseFx: true,
     theme: "dark",
@@ -3430,17 +3456,11 @@
     const r = await chrome.storage.local.get(AUTH_KEY);
     return { ...AUTH_DEFAULT, ...r[AUTH_KEY] || {} };
   }
-  var CARDS_KEY = "_memory_cards";
-  async function getCards() {
-    const r = await chrome.storage.local.get(CARDS_KEY);
-    const list = r[CARDS_KEY];
-    return Array.isArray(list) ? list : [];
-  }
-  async function setCards(cards) {
-    await chrome.storage.local.set({ [CARDS_KEY]: cards });
-  }
-  async function getCard(id) {
-    return (await getCards()).find((c) => c.id === id);
+  var TOOL_DESC_KEY = "_tool_desc_overrides";
+  async function getToolDescOverrides() {
+    const r = await chrome.storage.local.get(TOOL_DESC_KEY);
+    const v = r[TOOL_DESC_KEY];
+    return v && typeof v === "object" ? v : {};
   }
 
   // src/lib/tools/definitions.ts
@@ -3460,111 +3480,111 @@
   var BROWSER_TOOLS = [
     {
       name: "browser_navigate",
-      description: "Navigate the active browser tab to a URL. Returns when the page has loaded.",
+      description: "\u5728\u5F53\u524D\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u6253\u5F00\u6307\u5B9A URL\uFF0C\u9875\u9762\u52A0\u8F7D\u5B8C\u6210\u540E\u8FD4\u56DE\u3002\u7528\u9014\uFF1A\u8DF3\u8F6C\u5230\u76EE\u6807\u7F51\u5740\u5F00\u59CB\u4E00\u6BB5\u6D4F\u89C8\u4EFB\u52A1\u3002\u573A\u666F\uFF1A\u8FDB\u5165\u767B\u5F55\u9875\u3001\u6253\u5F00\u6587\u7AE0\u3001\u8DF3\u8F6C\u5230\u540E\u53F0\u7BA1\u7406\u9875\u7B49\u3002",
       input_schema: {
         type: "object",
         properties: {
-          url: { type: "string", description: "Absolute URL to navigate to" },
-          new_tab: { type: "boolean", description: "Open in a new tab instead of current" }
+          url: { type: "string", description: "\u8981\u6253\u5F00\u7684\u7EDD\u5BF9 URL\uFF08\u9700\u5305\u542B http(s)://\uFF09\u3002" },
+          new_tab: { type: "boolean", description: "\u4E3A true \u65F6\u5728\u65B0\u6807\u7B7E\u9875\u6253\u5F00\uFF0C\u800C\u4E0D\u662F\u66FF\u6362\u5F53\u524D\u9875\u3002" }
         },
         required: ["url"]
       }
     },
     {
       name: "browser_screenshot",
-      description: "Capture a screenshot of the current tab, full page, a CSS/text-matched element, or a rectangular region. Returns a base64 image data URL, or a readable disabled/permission error if screenshots are not allowed.",
+      description: "\u5BF9\u5F53\u524D\u6807\u7B7E\u9875\u622A\u56FE\uFF1A\u53EF\u622A\u53EF\u89C6\u533A\u3001\u6574\u9875\u3001\u67D0\u4E2A CSS/\u6587\u672C\u5339\u914D\u7684\u5143\u7D20\uFF0C\u6216\u4E00\u5757\u77E9\u5F62\u533A\u57DF\uFF0C\u8FD4\u56DE base64 \u56FE\u7247 data URL\uFF08\u622A\u56FE\u88AB\u7981\u7528\u6216\u65E0\u6743\u9650\u65F6\u8FD4\u56DE\u53EF\u8BFB\u7684\u9519\u8BEF\u8BF4\u660E\uFF09\u3002\u7528\u9014\uFF1A\u8BA9 AI\u300C\u770B\u89C1\u300D\u9875\u9762\u3002\u573A\u666F\uFF1A\u6838\u5BF9\u9875\u9762\u72B6\u6001\u3001\u4FDD\u5B58\u8BC1\u636E\u3001\u5728\u65E0\u6CD5\u8BFB\u53D6\u6587\u672C\u65F6\u6539\u7528\u89C6\u89C9\u7406\u89E3\u3002",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "CSS selector of an element to screenshot." },
-          text: { type: "string", description: "Visible text used to find an element to screenshot when selector is omitted." },
-          full_page: { type: "boolean", description: "Capture the full scrollable page." },
-          x: { type: "number", description: "Region left coordinate. Defaults to viewport coordinates unless coordinate_space is page." },
-          y: { type: "number", description: "Region top coordinate. Defaults to viewport coordinates unless coordinate_space is page." },
-          width: { type: "number", description: "Region width in CSS pixels." },
-          height: { type: "number", description: "Region height in CSS pixels." },
-          clip: { type: "object", description: "Alternative region object: {x,y,width,height,coordinate_space?}." },
-          coordinate_space: { type: "string", enum: ["viewport", "page"], description: "Coordinate space for x/y/clip. Default viewport." },
-          margin: { type: "number", description: "Extra CSS pixels around selector/text element screenshots." },
-          scroll_into_view: { type: "boolean", description: "Scroll selector/text target into view before measuring it. Default true." },
-          format: { type: "string", enum: ["png", "jpeg", "webp"], description: "Image format. Default png." },
-          quality: { type: "number", description: "JPEG/WebP quality, 0-100." },
-          scale: { type: "number", description: "CDP clip scale. Default 1." },
-          max_area: { type: "number", description: "Maximum screenshot area in CSS pixels. Default 25000000." },
-          retries: { type: "number", description: "Retry count for simple visible-tab capture on transient active-tab/rate-limit failures. Default 1." },
-          timeout_ms: { type: "number", description: "Overall per-stage screenshot timeout in milliseconds. Default 8000 for visible capture and 12000 for CDP." },
-          visible_timeout_ms: { type: "number", description: "Timeout for chrome.tabs.captureVisibleTab in milliseconds. Default 8000." },
-          cdp_timeout_ms: { type: "number", description: "Timeout for each Chrome DevTools Protocol screenshot command in milliseconds. Default 12000." },
-          content_timeout_ms: { type: "number", description: "Timeout for measuring selector/text target in the page. Default 5000." },
-          max_data_url_chars: { type: "number", description: "Maximum data URL payload length returned over Socket.IO. Default 8000000." },
-          allow_large_data_url: { type: "boolean", description: "Allow returning a screenshot payload larger than max_data_url_chars. Default false." },
-          task_timeout_ms: { type: "number", description: "Endpoint agent hard timeout for this dispatched screenshot task. Default 35000." },
-          fallback_visible: { type: "boolean", description: "For element/region/full-page screenshots, fall back to visible-tab screenshot if precise CDP capture fails. Default false." }
+          selector: { type: "string", description: "\u8981\u622A\u56FE\u7684\u5143\u7D20 CSS selector\u3002" },
+          text: { type: "string", description: "\u5F53\u4E0D\u4F20 selector \u65F6\uFF0C\u7528\u53EF\u89C1\u6587\u672C\u5B9A\u4F4D\u8981\u622A\u56FE\u7684\u5143\u7D20\u3002" },
+          full_page: { type: "boolean", description: "\u622A\u53D6\u6574\u4E2A\u53EF\u6EDA\u52A8\u9875\u9762\u3002" },
+          x: { type: "number", description: "\u533A\u57DF\u5DE6\u4E0A\u89D2 X \u5750\u6807\uFF1B\u9664\u975E coordinate_space \u8BBE\u4E3A page\uFF0C\u5426\u5219\u6309\u89C6\u53E3\u5750\u6807\u3002" },
+          y: { type: "number", description: "\u533A\u57DF\u5DE6\u4E0A\u89D2 Y \u5750\u6807\uFF1B\u9664\u975E coordinate_space \u8BBE\u4E3A page\uFF0C\u5426\u5219\u6309\u89C6\u53E3\u5750\u6807\u3002" },
+          width: { type: "number", description: "\u533A\u57DF\u5BBD\u5EA6\uFF08CSS \u50CF\u7D20\uFF09\u3002" },
+          height: { type: "number", description: "\u533A\u57DF\u9AD8\u5EA6\uFF08CSS \u50CF\u7D20\uFF09\u3002" },
+          clip: { type: "object", description: "\u533A\u57DF\u5BF9\u8C61\u5199\u6CD5\uFF1A{x,y,width,height,coordinate_space?}\uFF0C\u4E0E x/y/width/height \u4E8C\u9009\u4E00\u3002" },
+          coordinate_space: { type: "string", enum: ["viewport", "page"], description: "x/y/clip \u7684\u5750\u6807\u7CFB\uFF1Aviewport \u89C6\u53E3\u6216 page \u6574\u9875\u3002\u9ED8\u8BA4 viewport\u3002" },
+          margin: { type: "number", description: "\u6309 selector/text \u622A\u5143\u7D20\u65F6\uFF0C\u5411\u56DB\u5468\u6269\u5C55\u7684\u989D\u5916 CSS \u50CF\u7D20\u3002" },
+          scroll_into_view: { type: "boolean", description: "\u6D4B\u91CF\u524D\u5148\u628A\u76EE\u6807\u5143\u7D20\u6EDA\u52A8\u8FDB\u89C6\u53E3\u3002\u9ED8\u8BA4 true\u3002" },
+          format: { type: "string", enum: ["png", "jpeg", "webp"], description: "\u56FE\u7247\u683C\u5F0F\u3002\u9ED8\u8BA4 png\u3002" },
+          quality: { type: "number", description: "JPEG/WebP \u8D28\u91CF\uFF0C0-100\u3002" },
+          scale: { type: "number", description: "CDP \u622A\u56FE\u7684\u7F29\u653E\u6BD4\u4F8B\u3002\u9ED8\u8BA4 1\u3002" },
+          max_area: { type: "number", description: "\u5141\u8BB8\u7684\u6700\u5927\u622A\u56FE\u9762\u79EF\uFF08CSS \u50CF\u7D20\uFF09\u3002\u9ED8\u8BA4 25000000\u3002" },
+          retries: { type: "number", description: "\u53EF\u89C6\u533A\u622A\u56FE\u9047\u5230\u6D3B\u52A8\u6807\u7B7E/\u9650\u6D41\u7B49\u4E34\u65F6\u5931\u8D25\u65F6\u7684\u91CD\u8BD5\u6B21\u6570\u3002\u9ED8\u8BA4 1\u3002" },
+          timeout_ms: { type: "number", description: "\u5355\u9636\u6BB5\u622A\u56FE\u603B\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09\u3002\u53EF\u89C6\u622A\u56FE\u9ED8\u8BA4 8000\uFF0CCDP \u9ED8\u8BA4 12000\u3002" },
+          visible_timeout_ms: { type: "number", description: "chrome.tabs.captureVisibleTab \u7684\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09\u3002\u9ED8\u8BA4 8000\u3002" },
+          cdp_timeout_ms: { type: "number", description: "\u6BCF\u6761 Chrome DevTools Protocol \u622A\u56FE\u547D\u4EE4\u7684\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09\u3002\u9ED8\u8BA4 12000\u3002" },
+          content_timeout_ms: { type: "number", description: "\u5728\u9875\u9762\u4E2D\u6D4B\u91CF selector/text \u76EE\u6807\u7684\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09\u3002\u9ED8\u8BA4 5000\u3002" },
+          max_data_url_chars: { type: "number", description: "\u7ECF Socket.IO \u8FD4\u56DE\u7684 data URL \u6700\u5927\u957F\u5EA6\u3002\u9ED8\u8BA4 8000000\u3002" },
+          allow_large_data_url: { type: "boolean", description: "\u5141\u8BB8\u8FD4\u56DE\u8D85\u8FC7 max_data_url_chars \u7684\u622A\u56FE\u3002\u9ED8\u8BA4 false\u3002" },
+          task_timeout_ms: { type: "number", description: "\u672C\u6B21\u622A\u56FE\u4EFB\u52A1\u5728\u7AEF\u70B9 agent \u4E0A\u7684\u786C\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09\u3002\u9ED8\u8BA4 35000\u3002" },
+          fallback_visible: { type: "boolean", description: "\u5143\u7D20/\u533A\u57DF/\u6574\u9875\u622A\u56FE\u65F6\uFF0C\u82E5\u7CBE\u786E CDP \u622A\u56FE\u5931\u8D25\u5219\u56DE\u9000\u4E3A\u53EF\u89C6\u533A\u622A\u56FE\u3002\u9ED8\u8BA4 false\u3002" }
         }
       }
     },
     {
       name: "browser_click",
-      description: "Click an element on the page by CSS selector, visible text, or coordinates.",
+      description: "\u70B9\u51FB click \u9875\u9762\u5143\u7D20\uFF0C\u53EF\u7528 CSS selector\u3001\u53EF\u89C1\u6587\u672C\u6216\u5750\u6807\u5B9A\u4F4D\u3002\u7528\u9014\uFF1A\u89E6\u53D1\u6309\u94AE\u3001\u94FE\u63A5\u3001\u52FE\u9009\u6846\u7B49\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u70B9\u300C\u767B\u5F55\u300D\u300C\u4E0B\u4E00\u6B65\u300D\u3001\u5C55\u5F00\u83DC\u5355\u3001\u6253\u5F00\u6761\u76EE\u3002",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "CSS selector" },
-          text: { type: "string", description: "Visible text of the element to click" },
-          x: { type: "number", description: "X coordinate (px)" },
-          y: { type: "number", description: "Y coordinate (px)" }
+          selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u8981\u70B9\u51FB\u5143\u7D20\u7684\u53EF\u89C1\u6587\u672C\u3002" },
+          x: { type: "number", description: "X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          y: { type: "number", description: "Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
         }
       }
     },
     {
       name: "browser_type",
-      description: "Type text into an input field or textarea.",
+      description: "\u5411\u8F93\u5165\u6846 input \u6216\u6587\u672C\u57DF textarea \u8F93\u5165\u6587\u672C\u3002\u7528\u9014\uFF1A\u586B\u5199\u5355\u4E2A\u5B57\u6BB5\u3002\u573A\u666F\uFF1A\u8F93\u5165\u7528\u6237\u540D\u3001\u641C\u7D22\u8BCD\u3001\u8868\u5355\u5355\u9879\uFF08\u591A\u9879\u8BF7\u7528 browser_fill_form\uFF09\u3002",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "CSS selector of the input" },
-          text: { type: "string", description: "Text to type" },
-          clear_first: { type: "boolean", description: "Clear the field before typing (default true)" },
-          submit: { type: "boolean", description: "Press Enter after typing" }
+          selector: { type: "string", description: "\u76EE\u6807\u8F93\u5165\u6846\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u8981\u8F93\u5165\u7684\u6587\u672C\u3002" },
+          clear_first: { type: "boolean", description: "\u8F93\u5165\u524D\u5148\u6E05\u7A7A\u5B57\u6BB5\u3002\u9ED8\u8BA4 true\u3002" },
+          submit: { type: "boolean", description: "\u8F93\u5165\u540E\u6309\u56DE\u8F66\u63D0\u4EA4\u3002" }
         },
         required: ["text"]
       }
     },
     {
       name: "browser_get_content",
-      description: "Get the visible text content, URL, title, links, meta info, and normalized items from the current page.",
+      description: "\u8BFB\u53D6\u5F53\u524D\u9875\u9762\u7684\u53EF\u89C1\u6587\u672C\u3001URL\u3001\u6807\u9898\u3001\u94FE\u63A5\u3001meta \u4FE1\u606F\u548C\u5F52\u4E00\u5316\u6761\u76EE\u3002\u7528\u9014\uFF1A\u4EE5\u6587\u672C\u65B9\u5F0F\u7406\u89E3\u9875\u9762\u5185\u5BB9\u3002\u573A\u666F\uFF1A\u6293\u53D6\u6587\u7AE0\u6B63\u6587\u3001\u8BFB\u53D6\u5217\u8868\u3001\u5728\u4E0D\u622A\u56FE\u65F6\u83B7\u53D6\u9875\u9762\u4FE1\u606F\u3002",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "Limit content to this CSS selector (default: body)" },
-          include_html: { type: "boolean", description: "Also return raw HTML (truncated)" }
+          selector: { type: "string", description: "\u53EA\u53D6\u8BE5 CSS selector \u8303\u56F4\u5185\u7684\u5185\u5BB9\u3002\u9ED8\u8BA4 body\u3002" },
+          include_html: { type: "boolean", description: "\u540C\u65F6\u8FD4\u56DE\uFF08\u622A\u65AD\u540E\u7684\uFF09\u539F\u59CB HTML\u3002" }
         }
       }
     },
     {
       name: "browser_dom_snapshot",
-      description: "Return a structured DOM tree snapshot as a text-friendly alternative when screenshots are disabled or unavailable.",
+      description: "\u8FD4\u56DE\u7ED3\u6784\u5316\u7684 DOM \u6811\u5FEB\u7167\uFF0C\u4F5C\u4E3A\u622A\u56FE\u88AB\u7981\u7528\u6216\u4E0D\u53EF\u7528\u65F6\u7684\u6587\u672C\u66FF\u4EE3\u65B9\u6848\u3002\u7528\u9014\uFF1A\u4EE5\u5C42\u7EA7\u7ED3\u6784\u7406\u89E3\u9875\u9762\u3002\u573A\u666F\uFF1A\u5206\u6790\u590D\u6742\u5E03\u5C40\u3001\u5B9A\u4F4D\u5143\u7D20\u3001\u4E3A\u540E\u7EED\u64CD\u4F5C\u627E selector\u3002",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "Root selector (default body)" },
-          max_depth: { type: "number", description: "Maximum DOM depth (default 4, max 8)" },
-          max_nodes: { type: "number", description: "Maximum nodes to return (default 120, max 1000)" },
-          trace: { type: "boolean", description: "Return structured error trace instead of throwing" }
+          selector: { type: "string", description: "\u53EA\u5FEB\u7167\u8BE5 CSS selector \u5B50\u6811\u3002\u9ED8\u8BA4\u6574\u9875\u3002" },
+          max_depth: { type: "number", description: "DOM \u6811\u6700\u5927\u904D\u5386\u6DF1\u5EA6\u3002" },
+          max_nodes: { type: "number", description: "\u8FD4\u56DE\u7684\u6700\u5927\u8282\u70B9\u6570\u3002" },
+          trace: { type: "boolean", description: "\u5931\u8D25\u65F6\u8FD4\u56DE\u7ED3\u6784\u5316\u7684\u9519\u8BEF\u8BCA\u65AD\u4FE1\u606F\u3002" }
         }
       }
     },
     {
       name: "browser_search",
-      description: "Search the web using a popular search engine.",
+      description: "\u7528\u4E3B\u6D41\u641C\u7D22\u5F15\u64CE\u68C0\u7D22\u7F51\u7EDC\u3002\u7528\u9014\uFF1A\u5728\u6D4F\u89C8\u5668\u5185\u53D1\u8D77\u4E00\u6B21\u7AD9\u70B9\u641C\u7D22\u3002\u573A\u666F\uFF1A\u7528 Google/Bing/\u767E\u5EA6\u7B49\u67E5\u8D44\u6599\uFF1B\u6CE8\u610F\u8FD9\u4F1A\u771F\u6B63\u6253\u5F00\u641C\u7D22\u7ED3\u679C\u9875\uFF08\u4E0E\u670D\u52A1\u5668\u7AEF web.search \u7684\u7EAF\u6570\u636E\u68C0\u7D22\u4E0D\u540C\uFF09\u3002",
       input_schema: {
         type: "object",
         properties: {
-          query: { type: "string", description: "Search query" },
+          query: { type: "string", description: "\u641C\u7D22\u5173\u952E\u8BCD\u3002" },
           engine: {
             type: "string",
             enum: Object.keys(SEARCH_ENGINES),
-            description: "Search engine (default: google)"
+            description: "\u641C\u7D22\u5F15\u64CE\uFF0C\u9ED8\u8BA4 google\uFF1B\u53EF\u9009 bing\u3001baidu\u3001duckduckgo\u3001github \u7B49\u3002"
           }
         },
         required: ["query"]
@@ -3572,168 +3592,168 @@
     },
     {
       name: "browser_scroll",
-      description: "Scroll the current page. Returns the resulting scroll position (scrollY, percent, atTop/atBottom), how many pixels actually moved, and which section/headings are now in view \u2014 so you know where you landed and what changed.",
+      description: "\u6EDA\u52A8\u5F53\u524D\u9875\u9762\uFF0C\u8FD4\u56DE\u6EDA\u52A8\u540E\u7684\u4F4D\u7F6E\uFF08scrollY\u3001\u767E\u5206\u6BD4\u3001\u662F\u5426\u5230\u9876/\u5230\u5E95\uFF09\u3001\u5B9E\u9645\u79FB\u52A8\u7684\u50CF\u7D20\u6570\uFF0C\u4EE5\u53CA\u5F53\u524D\u8FDB\u5165\u89C6\u91CE\u7684\u5C0F\u8282/\u6807\u9898\u2014\u2014\u8BA9\u4F60\u77E5\u9053\u6EDA\u5230\u4E86\u54EA\u3001\u53D8\u5316\u4E86\u4EC0\u4E48\u3002\u7528\u9014\uFF1A\u6D4F\u89C8\u957F\u9875\u9762\u3002\u573A\u666F\uFF1A\u9010\u5C4F\u9605\u8BFB\u3001\u52A0\u8F7D\u61D2\u52A0\u8F7D\u5185\u5BB9\u3001\u6EDA\u5230\u9875\u5C3E\u3002",
       input_schema: {
         type: "object",
         properties: {
-          direction: { type: "string", enum: ["up", "down", "top", "bottom"], description: "Scroll direction" },
-          amount: { type: "number", description: "Pixels to scroll (default 400)" },
-          selector: { type: "string", description: "Optional: scroll this element into view instead of by amount" }
+          direction: { type: "string", enum: ["up", "down", "top", "bottom"], description: "\u6EDA\u52A8\u65B9\u5411\uFF1Aup \u4E0A\u3001down \u4E0B\u3001top \u5230\u9876\u3001bottom \u5230\u5E95\u3002" },
+          amount: { type: "number", description: "\u6EDA\u52A8\u50CF\u7D20\u6570\u3002\u9ED8\u8BA4 400\u3002" },
+          selector: { type: "string", description: "\u53EF\u9009\uFF1A\u628A\u8BE5\u5143\u7D20\u6EDA\u52A8\u8FDB\u89C6\u53E3\uFF0C\u66FF\u4EE3\u6309 amount \u6EDA\u52A8\u3002" }
         },
         required: ["direction"]
       }
     },
     {
       name: "browser_wait",
-      description: "Wait for a CSS selector to appear or for a fixed duration.",
+      description: "\u7B49\u5F85\u67D0\u4E2A CSS selector \u51FA\u73B0\uFF0C\u6216\u56FA\u5B9A\u7B49\u5F85\u4E00\u6BB5\u65F6\u95F4\u3002\u7528\u9014\uFF1A\u7B49\u5F85\u9875\u9762/\u5143\u7D20\u5C31\u7EEA\u540E\u518D\u64CD\u4F5C\u3002\u573A\u666F\uFF1A\u7B49\u5F02\u6B65\u52A0\u8F7D\u7684\u6309\u94AE\u51FA\u73B0\u3001\u7B49\u52A8\u753B\u7ED3\u675F\u3001\u7ED9\u9875\u9762\u7559\u51FA\u6E32\u67D3\u65F6\u95F4\u3002",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "Wait for this CSS element to appear" },
-          ms: { type: "number", description: "Wait for this many milliseconds" }
+          selector: { type: "string", description: "\u7B49\u5F85\u51FA\u73B0\u7684 CSS \u5143\u7D20\u3002" },
+          ms: { type: "number", description: "\u56FA\u5B9A\u7B49\u5F85\u7684\u6BEB\u79D2\u6570\u3002" }
         }
       }
     },
     {
       name: "browser_evaluate",
-      description: "Execute arbitrary JavaScript in the page context and return the result. Uses Chrome DevTools Protocol when available so it works on CSP-restricted pages.",
+      description: "\u5728\u9875\u9762\u4E0A\u4E0B\u6587\u4E2D\u6267\u884C\u4EFB\u610F JavaScript \u5E76\u8FD4\u56DE\u7ED3\u679C\uFF1B\u53EF\u7528\u65F6\u8D70 Chrome DevTools Protocol\uFF0C\u56E0\u6B64\u5728 CSP \u53D7\u9650\u9875\u9762\u4E0A\u4E5F\u80FD\u8FD0\u884C\u3002\u7528\u9014\uFF1A\u9AD8\u7EA7\u53D6\u6570/\u64CD\u4F5C\u7684\u515C\u5E95\u624B\u6BB5\u3002\u573A\u666F\uFF1A\u5185\u7F6E\u5DE5\u5177\u65E0\u6CD5\u6EE1\u8DB3\u65F6\u8BFB\u53D6\u590D\u6742\u6570\u636E\u6216\u89E6\u53D1\u7279\u6B8A\u884C\u4E3A\uFF08\u8BF7\u8C28\u614E\u4F7F\u7528\uFF09\u3002",
       input_schema: {
         type: "object",
         properties: {
-          code: { type: "string", description: "JavaScript expression or statements to execute" },
-          function: { type: "string", description: "Alias for code, kept for compatibility" },
-          fn: { type: "string", description: "Alias for code" },
-          expression: { type: "string", description: "Alias for code" },
-          trace: { type: "boolean", description: "Return structured {error, code, suggestion, trace} on failure" }
+          code: { type: "string", description: "\u8981\u6267\u884C\u7684 JavaScript \u8868\u8FBE\u5F0F\u6216\u8BED\u53E5\u3002" },
+          function: { type: "string", description: "code \u7684\u522B\u540D\uFF0C\u4FDD\u7559\u517C\u5BB9\u3002" },
+          fn: { type: "string", description: "code \u7684\u522B\u540D\u3002" },
+          expression: { type: "string", description: "code \u7684\u522B\u540D\u3002" },
+          trace: { type: "boolean", description: "\u5931\u8D25\u65F6\u8FD4\u56DE\u7ED3\u6784\u5316\u7684 {error, code, suggestion, trace}\u3002" }
         }
       }
     },
     {
       name: "browser_extract",
-      description: "Extract structured data from elements matching a selector. Returns normalized items with tag, selector, text, attributes, and common attribute aliases.",
+      description: "\u4ECE\u5339\u914D selector \u7684\u5143\u7D20\u4E2D\u63D0\u53D6\u7ED3\u6784\u5316\u6570\u636E\uFF0C\u8FD4\u56DE\u5E26 tag\u3001selector\u3001\u6587\u672C\u3001\u5C5E\u6027\u53CA\u5E38\u7528\u5C5E\u6027\u522B\u540D\u7684\u5F52\u4E00\u5316\u6761\u76EE\u3002\u7528\u9014\uFF1A\u6279\u91CF\u6293\u53D6\u5217\u8868/\u8868\u683C\u3002\u573A\u666F\uFF1A\u6293\u53D6\u641C\u7D22\u7ED3\u679C\u3001\u5546\u54C1\u5217\u8868\u3001\u8868\u683C\u884C\u3002",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "CSS selector to query" },
-          attributes: { type: "array", items: { type: "string" }, description: "Attributes to collect per element" },
-          limit: { type: "number", description: "Max number of elements (default 50)" }
+          selector: { type: "string", description: "\u8981\u67E5\u8BE2\u7684 CSS selector\u3002" },
+          attributes: { type: "array", items: { type: "string" }, description: "\u6BCF\u4E2A\u5143\u7D20\u9700\u8981\u91C7\u96C6\u7684\u5C5E\u6027\u540D\u5217\u8868\u3002" },
+          limit: { type: "number", description: "\u6700\u591A\u63D0\u53D6\u7684\u5143\u7D20\u6570\u3002\u9ED8\u8BA4 50\u3002" }
         },
         required: ["selector"]
       }
     },
     {
       name: "browser_find_text",
-      description: "Find all elements that contain specific text on the page.",
+      description: "\u67E5\u627E\u9875\u9762\u4E0A\u6240\u6709\u5305\u542B\u6307\u5B9A\u6587\u672C\u7684\u5143\u7D20\u3002\u7528\u9014\uFF1A\u6309\u6587\u5B57\u5B9A\u4F4D\u5143\u7D20\u3002\u573A\u666F\uFF1A\u627E\u5230\u542B\u67D0\u5173\u952E\u5B57\u7684\u6309\u94AE/\u94FE\u63A5\uFF0C\u518D\u914D\u5408\u70B9\u51FB\u6216\u622A\u56FE\u3002",
       input_schema: {
         type: "object",
         properties: {
-          text: { type: "string", description: "Text to search for" },
-          exact: { type: "boolean", description: "Exact match only" }
+          text: { type: "string", description: "\u8981\u641C\u7D22\u7684\u6587\u672C\u3002" },
+          exact: { type: "boolean", description: "\u4EC5\u7CBE\u786E\u5339\u914D\u3002" }
         },
         required: ["text"]
       }
     },
     {
       name: "browser_find_popups",
-      description: "Detect visible popups, modals, dialogs, drawers, overlays, and their likely close buttons on the current page.",
+      description: "\u68C0\u6D4B\u9875\u9762\u4E0A\u53EF\u89C1\u7684\u5F39\u7A97\u3001\u6A21\u6001\u6846\u3001\u5BF9\u8BDD\u6846\u3001\u62BD\u5C49\u3001\u906E\u7F69\u4EE5\u53CA\u5B83\u4EEC\u53EF\u80FD\u7684\u5173\u95ED\u6309\u94AE\u3002\u7528\u9014\uFF1A\u53D1\u73B0\u6321\u4F4F\u64CD\u4F5C\u7684\u5F39\u5C42\u3002\u573A\u666F\uFF1A\u81EA\u52A8\u5316\u5361\u4F4F\u65F6\u5148\u6392\u67E5\u5F39\u7A97\uFF0C\u518D\u51B3\u5B9A\u5982\u4F55\u5173\u95ED\u3002",
       input_schema: {
         type: "object",
         properties: {
-          limit: { type: "number", description: "Maximum popups to return (default 10)" }
+          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684\u5F39\u7A97\u6570\u3002\u9ED8\u8BA4 10\u3002" }
         }
       }
     },
     {
       name: "browser_close_popup",
-      description: "Close a visible popup/modal/dialog. Uses detected close buttons first, then Escape/backdrop fallback. Call browser_find_popups first when you need to inspect candidates.",
+      description: "\u5173\u95ED\u53EF\u89C1\u7684\u5F39\u7A97/\u6A21\u6001\u6846/\u5BF9\u8BDD\u6846\uFF1A\u4F18\u5148\u70B9\u68C0\u6D4B\u5230\u7684\u5173\u95ED\u6309\u94AE\uFF0C\u518D\u56DE\u9000\u5230 Escape/\u70B9\u906E\u7F69\u3002\u9700\u8981\u5148\u67E5\u770B\u5019\u9009\u65F6\u8BF7\u5148\u8C03\u7528 browser_find_popups\u3002\u7528\u9014\uFF1A\u6E05\u9664\u906E\u6321\u3002\u573A\u666F\uFF1A\u5173\u95ED cookie \u540C\u610F\u6761\u3001\u8BA2\u9605\u5F39\u7A97\u3001\u767B\u5F55\u5F15\u5BFC\u5C42\u3002",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "Optional CSS selector of the popup to close" },
-          text: { type: "string", description: "Optional text contained by the popup to identify it" },
-          index: { type: "number", description: "Popup index from browser_find_popups (default 0)" },
-          strategy: { type: "string", enum: ["auto", "close_button", "escape", "backdrop"], description: "Close strategy (default auto)" },
-          force_remove: { type: "boolean", description: "If true, remove the popup DOM node as a last resort" }
+          selector: { type: "string", description: "\u53EF\u9009\uFF1A\u8981\u5173\u95ED\u5F39\u7A97\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u53EF\u9009\uFF1A\u5F39\u7A97\u5185\u5305\u542B\u7684\u6587\u672C\uFF0C\u7528\u4E8E\u5B9A\u4F4D\u5B83\u3002" },
+          index: { type: "number", description: "browser_find_popups \u8FD4\u56DE\u7684\u5F39\u7A97\u5E8F\u53F7\u3002\u9ED8\u8BA4 0\u3002" },
+          strategy: { type: "string", enum: ["auto", "close_button", "escape", "backdrop"], description: "\u5173\u95ED\u7B56\u7565\uFF1Aauto \u81EA\u52A8\u3001close_button \u5173\u95ED\u6309\u94AE\u3001escape \u6309 Esc\u3001backdrop \u70B9\u906E\u7F69\u3002\u9ED8\u8BA4 auto\u3002" },
+          force_remove: { type: "boolean", description: "\u4E3A true \u65F6\u4F5C\u4E3A\u6700\u540E\u624B\u6BB5\u76F4\u63A5\u79FB\u9664\u5F39\u7A97 DOM \u8282\u70B9\u3002" }
         }
       }
     },
     {
       name: "browser_fill_form",
-      description: "Fill multiple form fields in one call. Fields can target controls by selector, name, label, placeholder, or an object map.",
+      description: "\u4E00\u6B21\u6027\u586B\u5199\u591A\u4E2A\u8868\u5355\u5B57\u6BB5\uFF0C\u53EF\u6309 selector\u3001name\u3001label\u3001placeholder \u6216\u5BF9\u8C61\u6620\u5C04\u5B9A\u4F4D\u63A7\u4EF6\u3002\u7528\u9014\uFF1A\u6279\u91CF\u586B\u8868\u3002\u573A\u666F\uFF1A\u767B\u5F55/\u6CE8\u518C/\u7ED3\u7B97\u7B49\u9700\u8981\u586B\u591A\u4E2A\u5B57\u6BB5\u5E76\u63D0\u4EA4\u7684\u8868\u5355\u3002",
       input_schema: {
         type: "object",
         properties: {
           fields: {
             type: "array",
-            description: 'List of fields. Examples: [{selector:"input[name=email]", value:"me@example.com"}, {label:"Password", value:"secret"}, {selector:"#remember", action:"check"}]. Object map form is also accepted by the runtime.',
+            description: '\u5B57\u6BB5\u5217\u8868\u3002\u793A\u4F8B\uFF1A[{selector:"input[name=email]", value:"me@example.com"}, {label:"Password", value:"secret"}, {selector:"#remember", action:"check"}]\uFF1B\u8FD0\u884C\u65F6\u4E5F\u63A5\u53D7\u5BF9\u8C61\u6620\u5C04\u5199\u6CD5\u3002',
             items: {
               type: "object",
               properties: {
-                selector: { type: "string", description: "CSS selector for the input/select/textarea" },
-                name: { type: "string", description: "Form control name or id fallback" },
-                label: { type: "string", description: "Visible label text near the field" },
-                placeholder: { type: "string", description: "Placeholder text to match" },
-                value: { type: ["string", "number", "boolean"], description: "Value to set" },
-                action: { type: "string", enum: ["set", "type", "select", "check", "uncheck", "click"], description: "How to apply the value (default set)" }
+                selector: { type: "string", description: "\u8F93\u5165\u6846/\u4E0B\u62C9/\u6587\u672C\u57DF\u7684 CSS selector\u3002" },
+                name: { type: "string", description: "\u8868\u5355\u63A7\u4EF6\u7684 name \u6216 id\uFF08\u515C\u5E95\u5B9A\u4F4D\uFF09\u3002" },
+                label: { type: "string", description: "\u5B57\u6BB5\u9644\u8FD1\u7684\u53EF\u89C1 label \u6587\u672C\u3002" },
+                placeholder: { type: "string", description: "\u7528\u4E8E\u5339\u914D\u7684 placeholder \u6587\u672C\u3002" },
+                value: { type: ["string", "number", "boolean"], description: "\u8981\u8BBE\u7F6E\u7684\u503C\u3002" },
+                action: { type: "string", enum: ["set", "type", "select", "check", "uncheck", "click"], description: "\u5982\u4F55\u5E94\u7528\u503C\uFF1Aset \u8BBE\u503C\u3001type \u6A21\u62DF\u8F93\u5165\u3001select \u9009\u62E9\u3001check/uncheck \u52FE\u9009\u3001click \u70B9\u51FB\u3002\u9ED8\u8BA4 set\u3002" }
               }
             }
           },
-          submit_selector: { type: "string", description: "CSS selector of submit button to click after filling" }
+          submit_selector: { type: "string", description: "\u586B\u5B8C\u540E\u8981\u70B9\u51FB\u7684\u63D0\u4EA4\u6309\u94AE CSS selector\u3002" }
         },
         required: ["fields"]
       }
     },
     {
       name: "browser_select",
-      description: "Select an option in a native <select> dropdown or a common custom dropdown/listbox by clicking the control and matching option text/value.",
+      description: "\u5728\u539F\u751F <select> \u4E0B\u62C9\u6216\u5E38\u89C1\u81EA\u5B9A\u4E49\u4E0B\u62C9/\u5217\u8868\u6846\u4E2D\u9009\u62E9\u67D0\u9879\uFF1A\u901A\u8FC7\u70B9\u51FB\u63A7\u4EF6\u5E76\u6309\u9009\u9879\u6587\u672C/\u503C\u5339\u914D\u3002\u7528\u9014\uFF1A\u5904\u7406\u4E0B\u62C9\u9009\u62E9\u3002\u573A\u666F\uFF1A\u9009\u62E9\u56FD\u5BB6\u3001\u57CE\u5E02\u3001\u6570\u91CF\u7B49\u4E0B\u62C9\u9879\u3002",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "CSS selector of the select/custom dropdown control" },
-          value: { type: "string", description: "Option value or visible text to select" },
-          text: { type: "string", description: "Alias for value" },
-          option_text: { type: "string", description: "Alias for value" }
+          selector: { type: "string", description: "\u4E0B\u62C9/\u81EA\u5B9A\u4E49\u4E0B\u62C9\u63A7\u4EF6\u7684 CSS selector\u3002" },
+          value: { type: "string", description: "\u8981\u9009\u62E9\u7684\u9009\u9879\u503C\u6216\u53EF\u89C1\u6587\u672C\u3002" },
+          text: { type: "string", description: "value \u7684\u522B\u540D\u3002" },
+          option_text: { type: "string", description: "value \u7684\u522B\u540D\u3002" }
         },
         required: ["selector"]
       }
     },
     {
       name: "browser_iframe_list",
-      description: "List iframe/frame elements on the current page, including src/name/title/accessibility and viewport rect.",
+      description: "\u5217\u51FA\u5F53\u524D\u9875\u9762\u7684 iframe/frame \u5143\u7D20\uFF0C\u5305\u542B src/name/title/\u53EF\u8BBF\u95EE\u6027\u4FE1\u606F\u548C\u89C6\u53E3\u77E9\u5F62\u3002\u7528\u9014\uFF1A\u53D1\u73B0\u5185\u5D4C\u6846\u67B6\u3002\u573A\u666F\uFF1A\u76EE\u6807\u5185\u5BB9\u5728 iframe \u4E2D\u65F6\uFF0C\u5148\u5B9A\u4F4D\u6846\u67B6\u518D\u51B3\u5B9A\u5982\u4F55\u64CD\u4F5C\u3002",
       input_schema: { type: "object", properties: {} }
     },
     {
       name: "browser_performance",
-      description: "Read page performance metrics and slow resources from PerformanceNavigationTiming and ResourceTiming.",
+      description: "\u8BFB\u53D6\u9875\u9762\u6027\u80FD\u6307\u6807\u548C\u6162\u8D44\u6E90\uFF0C\u6570\u636E\u6765\u81EA PerformanceNavigationTiming \u4E0E ResourceTiming\u3002\u7528\u9014\uFF1A\u8BC4\u4F30\u9875\u9762\u52A0\u8F7D\u8868\u73B0\u3002\u573A\u666F\uFF1A\u6392\u67E5\u9875\u9762\u5361\u987F\u3001\u7EDF\u8BA1\u52A0\u8F7D\u8017\u65F6\u4E0E\u6162\u8D44\u6E90\u3002",
       input_schema: { type: "object", properties: {} }
     },
     {
       name: "browser_network_log",
-      description: "Return passive resource timing entries as a lightweight network log. This is not active request interception.",
+      description: "\u4EE5\u8F7B\u91CF\u7F51\u7EDC\u65E5\u5FD7\u5F62\u5F0F\u8FD4\u56DE\u88AB\u52A8\u7684\u8D44\u6E90 timing \u6761\u76EE\u3002\u6CE8\u610F\uFF1A\u8FD9\u4E0D\u662F\u4E3B\u52A8\u7684\u8BF7\u6C42\u62E6\u622A\u3002\u7528\u9014\uFF1A\u7C97\u7565\u4E86\u89E3\u9875\u9762\u52A0\u8F7D\u4E86\u54EA\u4E9B\u8D44\u6E90\u3002\u573A\u666F\uFF1A\u68C0\u67E5\u63A5\u53E3/\u8D44\u6E90\u662F\u5426\u88AB\u52A0\u8F7D\u3001\u7EDF\u8BA1\u8BF7\u6C42\u6E05\u5355\u3002",
       input_schema: {
         type: "object",
         properties: {
-          limit: { type: "number", description: "Maximum request/resource entries to return (default 20)" }
+          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684\u8BF7\u6C42/\u8D44\u6E90\u6761\u76EE\u6570\u3002\u9ED8\u8BA4 20\u3002" }
         }
       }
     },
     {
       name: "browser_file_upload",
-      description: "Populate an <input type=file> using in-memory file contents. Local filesystem paths cannot be read by the extension.",
+      description: "\u7528\u5185\u5B58\u4E2D\u7684\u6587\u4EF6\u5185\u5BB9\u586B\u5145 <input type=file>\u3002\u6CE8\u610F\uFF1A\u6269\u5C55\u65E0\u6CD5\u8BFB\u53D6\u672C\u673A\u6587\u4EF6\u7CFB\u7EDF\u8DEF\u5F84\uFF0C\u5FC5\u987B\u76F4\u63A5\u63D0\u4F9B\u5185\u5BB9\u3002\u7528\u9014\uFF1A\u4E0A\u4F20\u6587\u4EF6\u3002\u573A\u666F\uFF1A\u628A\u4E00\u6BB5\u6587\u672C/base64 \u5185\u5BB9\u4F5C\u4E3A\u6587\u4EF6\u4E0A\u4F20\u5230\u7F51\u9875\u3002",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "CSS selector of file input (default input[type=file])" },
+          selector: { type: "string", description: "\u6587\u4EF6\u8F93\u5165\u6846\u7684 CSS selector\u3002\u9ED8\u8BA4 input[type=file]\u3002" },
           files: {
             type: "array",
-            description: 'Files to synthesize, e.g. [{name:"a.txt", content:"hello", type:"text/plain"}] or encoding:"base64"',
+            description: '\u8981\u5408\u6210\u7684\u6587\u4EF6\uFF0C\u4F8B\u5982 [{name:"a.txt", content:"hello", type:"text/plain"}]\uFF0C\u6216\u8BBE\u7F6E encoding:"base64"\u3002',
             items: {
               type: "object",
               properties: {
-                name: { type: "string" },
-                content: { type: "string" },
-                type: { type: "string" },
-                encoding: { type: "string", enum: ["text", "base64"] }
+                name: { type: "string", description: "\u6587\u4EF6\u540D\u3002" },
+                content: { type: "string", description: "\u6587\u4EF6\u5185\u5BB9\uFF08\u6309 encoding \u89E3\u91CA\uFF09\u3002" },
+                type: { type: "string", description: "MIME \u7C7B\u578B\uFF0C\u5982 text/plain\u3002" },
+                encoding: { type: "string", enum: ["text", "base64"], description: "content \u7684\u7F16\u7801\uFF1Atext \u7EAF\u6587\u672C\u6216 base64\u3002" }
               },
               required: ["name", "content"]
             }
@@ -3744,325 +3764,325 @@
     },
     {
       name: "browser_download",
-      description: "Start a browser download from a URL using chrome.downloads.",
+      description: "\u901A\u8FC7 chrome.downloads \u4ECE\u67D0\u4E2A URL \u53D1\u8D77\u6D4F\u89C8\u5668\u4E0B\u8F7D\u3002\u7528\u9014\uFF1A\u4FDD\u5B58\u6587\u4EF6\u5230\u672C\u5730\u4E0B\u8F7D\u76EE\u5F55\u3002\u573A\u666F\uFF1A\u4E0B\u8F7D\u5BFC\u51FA\u6587\u4EF6\u3001\u56FE\u7247\u3001\u9644\u4EF6\u3002",
       input_schema: {
         type: "object",
         properties: {
-          url: { type: "string", description: "URL to download" },
-          filename: { type: "string", description: "Optional relative filename under the downloads folder" },
-          save_as: { type: "boolean", description: "Show Save As dialog" }
+          url: { type: "string", description: "\u8981\u4E0B\u8F7D\u7684 URL\u3002" },
+          filename: { type: "string", description: "\u53EF\u9009\uFF1A\u4E0B\u8F7D\u76EE\u5F55\u4E0B\u7684\u76F8\u5BF9\u6587\u4EF6\u540D\u3002" },
+          save_as: { type: "boolean", description: "\u663E\u793A\u300C\u53E6\u5B58\u4E3A\u300D\u5BF9\u8BDD\u6846\u3002" }
         },
         required: ["url"]
       }
     },
     {
       name: "browser_cookie_list",
-      description: "List cookies for the active tab URL or a given domain.",
+      description: "\u5217\u51FA\u5F53\u524D\u6807\u7B7E\u9875 URL \u6216\u6307\u5B9A\u57DF\u540D\u7684 cookie\u3002\u7528\u9014\uFF1A\u67E5\u770B\u4F1A\u8BDD\u72B6\u6001\u3002\u573A\u666F\uFF1A\u68C0\u67E5\u767B\u5F55\u6001\u3001\u6392\u67E5\u9274\u6743 cookie \u662F\u5426\u5B58\u5728\u3002",
       input_schema: {
         type: "object",
         properties: {
-          url: { type: "string", description: "Cookie URL (default active tab URL)" },
-          domain: { type: "string", description: "Optional domain filter" }
+          url: { type: "string", description: "cookie \u6240\u5C5E URL\u3002\u9ED8\u8BA4\u5F53\u524D\u6807\u7B7E\u9875 URL\u3002" },
+          domain: { type: "string", description: "\u53EF\u9009\uFF1A\u6309\u57DF\u540D\u8FC7\u6EE4\u3002" }
         }
       }
     },
     {
       name: "browser_cookie_get",
-      description: "Get one cookie by name for the active tab URL or a provided URL.",
+      description: "\u6309\u540D\u79F0\u8BFB\u53D6\u5F53\u524D\u6807\u7B7E\u9875 URL \u6216\u6307\u5B9A URL \u7684\u5355\u4E2A cookie\u3002\u7528\u9014\uFF1A\u53D6\u67D0\u4E2A\u5177\u4F53 cookie \u503C\u3002\u573A\u666F\uFF1A\u8BFB\u53D6 session token\u3001\u8BFB\u53D6\u504F\u597D\u8BBE\u7F6E cookie\u3002",
       input_schema: {
         type: "object",
         properties: {
-          url: { type: "string", description: "Cookie URL (default active tab URL)" },
-          name: { type: "string", description: "Cookie name" }
+          url: { type: "string", description: "cookie \u6240\u5C5E URL\u3002\u9ED8\u8BA4\u5F53\u524D\u6807\u7B7E\u9875 URL\u3002" },
+          name: { type: "string", description: "cookie \u540D\u79F0\u3002" }
         },
         required: ["name"]
       }
     },
     {
       name: "browser_cookie_set",
-      description: "Set one cookie for the active tab URL or a provided URL.",
+      description: "\u4E3A\u5F53\u524D\u6807\u7B7E\u9875 URL \u6216\u6307\u5B9A URL \u8BBE\u7F6E\u5355\u4E2A cookie\u3002\u7528\u9014\uFF1A\u5199\u5165\u4F1A\u8BDD/\u504F\u597D cookie\u3002\u573A\u666F\uFF1A\u6CE8\u5165\u767B\u5F55\u6001\u3001\u8BBE\u7F6E\u8BED\u8A00\u6216\u540C\u610F\u6807\u8BB0\uFF08\u8BF7\u8C28\u614E\uFF0C\u5C5E\u5199\u5165\u64CD\u4F5C\uFF09\u3002",
       input_schema: {
         type: "object",
         properties: {
-          url: { type: "string", description: "Cookie URL (default active tab URL)" },
-          name: { type: "string", description: "Cookie name" },
-          value: { type: "string", description: "Cookie value" },
-          domain: { type: "string" },
-          path: { type: "string" },
-          secure: { type: "boolean" },
-          http_only: { type: "boolean" },
-          expiration_date: { type: "number", description: "Unix seconds" }
+          url: { type: "string", description: "cookie \u6240\u5C5E URL\u3002\u9ED8\u8BA4\u5F53\u524D\u6807\u7B7E\u9875 URL\u3002" },
+          name: { type: "string", description: "cookie \u540D\u79F0\u3002" },
+          value: { type: "string", description: "cookie \u503C\u3002" },
+          domain: { type: "string", description: "cookie \u57DF\u540D\u3002" },
+          path: { type: "string", description: "cookie \u8DEF\u5F84\u3002" },
+          secure: { type: "boolean", description: "\u662F\u5426\u4EC5 HTTPS \u4F20\u8F93\u3002" },
+          http_only: { type: "boolean", description: "\u662F\u5426\u6807\u8BB0 HttpOnly\u3002" },
+          expiration_date: { type: "number", description: "\u8FC7\u671F\u65F6\u95F4\uFF08Unix \u79D2\uFF09\u3002" }
         },
         required: ["name"]
       }
     },
     {
       name: "browser_cookie_delete",
-      description: "Delete one cookie by name for the active tab URL or a provided URL.",
+      description: "\u6309\u540D\u79F0\u5220\u9664\u5F53\u524D\u6807\u7B7E\u9875 URL \u6216\u6307\u5B9A URL \u7684\u5355\u4E2A cookie\u3002\u7528\u9014\uFF1A\u6E05\u9664\u67D0\u4E2A cookie\u3002\u573A\u666F\uFF1A\u9000\u51FA\u767B\u5F55\u3001\u6E05\u6389\u67D0\u9879\u504F\u597D\uFF08\u5C5E\u5199\u5165\u64CD\u4F5C\uFF09\u3002",
       input_schema: {
         type: "object",
         properties: {
-          url: { type: "string", description: "Cookie URL (default active tab URL)" },
-          name: { type: "string", description: "Cookie name" }
+          url: { type: "string", description: "cookie \u6240\u5C5E URL\u3002\u9ED8\u8BA4\u5F53\u524D\u6807\u7B7E\u9875 URL\u3002" },
+          name: { type: "string", description: "cookie \u540D\u79F0\u3002" }
         },
         required: ["name"]
       }
     },
     {
       name: "browser_tab_list",
-      description: "List all open browser tabs.",
+      description: "\u5217\u51FA\u6240\u6709\u6253\u5F00\u7684\u6D4F\u89C8\u5668\u6807\u7B7E\u9875\u3002\u7528\u9014\uFF1A\u4E86\u89E3\u5F53\u524D\u6709\u54EA\u4E9B\u6807\u7B7E\u3002\u573A\u666F\uFF1A\u5728\u591A\u6807\u7B7E\u95F4\u5207\u6362\u3001\u5173\u95ED\u67D0\u4E2A\u6807\u7B7E\u524D\u5148\u67E5 ID\u3002",
       input_schema: { type: "object", properties: {} }
     },
     {
       name: "browser_tab_open",
-      description: "Open a new tab with the given URL.",
+      description: "\u7528\u6307\u5B9A URL \u6253\u5F00\u4E00\u4E2A\u65B0\u6807\u7B7E\u9875\u3002\u7528\u9014\uFF1A\u5728\u4E0D\u6253\u65AD\u5F53\u524D\u9875\u7684\u60C5\u51B5\u4E0B\u5E76\u884C\u6253\u5F00\u7F51\u5740\u3002\u573A\u666F\uFF1A\u5F00\u591A\u4E2A\u9875\u9762\u5BF9\u6BD4\u3001\u540E\u53F0\u9884\u52A0\u8F7D\u3002",
       input_schema: {
         type: "object",
-        properties: { url: { type: "string", description: "URL for the new tab" } },
+        properties: { url: { type: "string", description: "\u65B0\u6807\u7B7E\u9875\u8981\u6253\u5F00\u7684 URL\u3002" } },
         required: ["url"]
       }
     },
     {
       name: "browser_tab_close",
-      description: "Close a tab by its ID, or the active tab if no ID given.",
+      description: "\u6309\u6807\u7B7E ID \u5173\u95ED\u6807\u7B7E\u9875\uFF1B\u4E0D\u4F20 ID \u5219\u5173\u95ED\u5F53\u524D\u6D3B\u52A8\u6807\u7B7E\u3002\u7528\u9014\uFF1A\u6E05\u7406\u591A\u4F59\u6807\u7B7E\u3002\u573A\u666F\uFF1A\u5B8C\u6210\u67D0\u9875\u9762\u4EFB\u52A1\u540E\u5173\u95ED\u5B83\u3002",
       input_schema: {
         type: "object",
-        properties: { tab_id: { type: "number", description: "Tab ID to close" } }
+        properties: { tab_id: { type: "number", description: "\u8981\u5173\u95ED\u7684\u6807\u7B7E ID\u3002" } }
       }
     },
     {
       name: "browser_history_back",
-      description: "Navigate the current tab back in history.",
+      description: "\u8BA9\u5F53\u524D\u6807\u7B7E\u5728\u5386\u53F2\u8BB0\u5F55\u4E2D\u540E\u9000\u4E00\u6B65\u3002\u7528\u9014\uFF1A\u8FD4\u56DE\u4E0A\u4E00\u9875\u3002\u573A\u666F\uFF1A\u8BEF\u5165\u8BE6\u60C5\u9875\u540E\u9000\u56DE\u5217\u8868\u3002",
       input_schema: { type: "object", properties: {} }
     },
     {
       name: "browser_history_forward",
-      description: "Navigate the current tab forward in history.",
+      description: "\u8BA9\u5F53\u524D\u6807\u7B7E\u5728\u5386\u53F2\u8BB0\u5F55\u4E2D\u524D\u8FDB\u4E00\u6B65\u3002\u7528\u9014\uFF1A\u64A4\u9500\u4E00\u6B21\u540E\u9000\u3002\u573A\u666F\uFF1A\u540E\u9000\u540E\u53C8\u60F3\u56DE\u5230\u521A\u624D\u7684\u9875\u9762\u3002",
       input_schema: { type: "object", properties: {} }
     },
     {
       name: "browser_clipboard_write",
-      description: "Write text to the system clipboard.",
+      description: "\u628A\u6587\u672C\u5199\u5165\u7CFB\u7EDF\u526A\u8D34\u677F\u3002\u7528\u9014\uFF1A\u590D\u5236\u5185\u5BB9\u4F9B\u5176\u4ED6\u7A0B\u5E8F\u7C98\u8D34\u3002\u573A\u666F\uFF1A\u590D\u5236\u63D0\u53D6\u5230\u7684\u7ED3\u679C\u3001\u590D\u5236\u751F\u6210\u7684\u94FE\u63A5\u3002",
       input_schema: {
         type: "object",
-        properties: { text: { type: "string", description: "Text to copy" } },
+        properties: { text: { type: "string", description: "\u8981\u590D\u5236\u5230\u526A\u8D34\u677F\u7684\u6587\u672C\u3002" } },
         required: ["text"]
       }
     },
     {
       name: "browser_storage_get",
-      description: "Read a key from the page's localStorage or sessionStorage.",
+      description: "\u8BFB\u53D6\u9875\u9762 localStorage \u6216 sessionStorage \u4E2D\u7684\u67D0\u4E2A key\u3002\u7528\u9014\uFF1A\u67E5\u770B\u524D\u7AEF\u5B58\u50A8\u72B6\u6001\u3002\u573A\u666F\uFF1A\u8BFB\u53D6\u767B\u5F55 token\u3001\u7528\u6237\u504F\u597D\u3001\u8349\u7A3F\u6570\u636E\u3002",
       input_schema: {
         type: "object",
         properties: {
-          key: { type: "string", description: "Storage key" },
-          type: { type: "string", enum: ["local", "session"], description: "Storage type (default: local)" }
+          key: { type: "string", description: "\u5B58\u50A8\u952E\u540D\u3002" },
+          type: { type: "string", enum: ["local", "session"], description: "\u5B58\u50A8\u7C7B\u578B\uFF1Alocal \u6216 session\u3002\u9ED8\u8BA4 local\u3002" }
         },
         required: ["key"]
       }
     },
     {
       name: "browser_storage_set",
-      description: "Set a key in the page localStorage or sessionStorage.",
+      description: "\u5728\u9875\u9762 localStorage \u6216 sessionStorage \u4E2D\u8BBE\u7F6E\u67D0\u4E2A key\u3002\u7528\u9014\uFF1A\u5199\u5165\u524D\u7AEF\u5B58\u50A8\u3002\u573A\u666F\uFF1A\u6CE8\u5165\u504F\u597D\u3001\u8BBE\u7F6E\u6807\u8BB0\u4F4D\uFF08\u5C5E\u5199\u5165\u64CD\u4F5C\uFF09\u3002",
       input_schema: {
         type: "object",
         properties: {
-          key: { type: "string", description: "Storage key" },
-          value: { type: "string", description: "Value to store" },
-          type: { type: "string", enum: ["local", "session"], description: "Storage type (default: local)" }
+          key: { type: "string", description: "\u5B58\u50A8\u952E\u540D\u3002" },
+          value: { type: "string", description: "\u8981\u5B58\u50A8\u7684\u503C\u3002" },
+          type: { type: "string", enum: ["local", "session"], description: "\u5B58\u50A8\u7C7B\u578B\uFF1Alocal \u6216 session\u3002\u9ED8\u8BA4 local\u3002" }
         },
         required: ["key"]
       }
     },
     {
       name: "browser_storage_remove",
-      description: "Remove a key from the page localStorage or sessionStorage.",
+      description: "\u4ECE\u9875\u9762 localStorage \u6216 sessionStorage \u4E2D\u5220\u9664\u67D0\u4E2A key\u3002\u7528\u9014\uFF1A\u6E05\u9664\u524D\u7AEF\u5B58\u50A8\u9879\u3002\u573A\u666F\uFF1A\u6E05\u6389\u67D0\u4E2A\u6807\u8BB0\u6216\u7F13\u5B58\uFF08\u5C5E\u5199\u5165\u64CD\u4F5C\uFF09\u3002",
       input_schema: {
         type: "object",
         properties: {
-          key: { type: "string", description: "Storage key" },
-          type: { type: "string", enum: ["local", "session"], description: "Storage type (default: local)" }
+          key: { type: "string", description: "\u5B58\u50A8\u952E\u540D\u3002" },
+          type: { type: "string", enum: ["local", "session"], description: "\u5B58\u50A8\u7C7B\u578B\uFF1Alocal \u6216 session\u3002\u9ED8\u8BA4 local\u3002" }
         },
         required: ["key"]
       }
     },
     {
       name: "browser_storage_list",
-      description: "List keys from the page localStorage or sessionStorage, optionally including values.",
+      description: "\u5217\u51FA\u9875\u9762 localStorage \u6216 sessionStorage \u7684 key\uFF0C\u53EF\u9009\u9644\u5E26 value\u3002\u7528\u9014\uFF1A\u76D8\u70B9\u524D\u7AEF\u5B58\u50A8\u3002\u573A\u666F\uFF1A\u6392\u67E5\u5B58\u4E86\u54EA\u4E9B\u6570\u636E\u3001\u6309\u524D\u7F00\u7B5B\u9009\u3002",
       input_schema: {
         type: "object",
         properties: {
-          prefix: { type: "string", description: "Optional key prefix filter" },
-          include_values: { type: "boolean", description: "Include values in the response" },
-          limit: { type: "number", description: "Maximum keys/items (default 100)" },
-          type: { type: "string", enum: ["local", "session"], description: "Storage type (default: local)" }
+          prefix: { type: "string", description: "\u53EF\u9009\uFF1A\u6309\u952E\u540D\u524D\u7F00\u8FC7\u6EE4\u3002" },
+          include_values: { type: "boolean", description: "\u5728\u7ED3\u679C\u4E2D\u5305\u542B value\u3002" },
+          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684 key/\u6761\u76EE\u6570\u3002\u9ED8\u8BA4 100\u3002" },
+          type: { type: "string", enum: ["local", "session"], description: "\u5B58\u50A8\u7C7B\u578B\uFF1Alocal \u6216 session\u3002\u9ED8\u8BA4 local\u3002" }
         }
       }
     },
     {
       name: "browser_session_save",
-      description: "Save a lightweight browser context snapshot: current URL/title plus localStorage/sessionStorage for the page.",
+      description: "\u4FDD\u5B58\u4E00\u4EFD\u8F7B\u91CF\u7684\u6D4F\u89C8\u5668\u4E0A\u4E0B\u6587\u5FEB\u7167\uFF1A\u5F53\u524D URL/\u6807\u9898\u52A0\u4E0A\u8BE5\u9875\u7684 localStorage/sessionStorage\u3002\u7528\u9014\uFF1A\u7559\u5B58\u4F1A\u8BDD\u73B0\u573A\u3002\u573A\u666F\uFF1A\u4FDD\u5B58\u767B\u5F55\u6001\u4EE5\u4FBF\u7A0D\u540E\u6062\u590D\u3001\u8BB0\u5F55\u67D0\u4E2A\u9875\u9762\u72B6\u6001\u3002",
       input_schema: {
         type: "object",
         properties: {
-          id: { type: "string", description: "Optional session id" },
-          name: { type: "string", description: "Friendly session name" }
+          id: { type: "string", description: "\u53EF\u9009\uFF1A\u4F1A\u8BDD id\u3002" },
+          name: { type: "string", description: "\u4FBF\u4E8E\u8BC6\u522B\u7684\u4F1A\u8BDD\u540D\u79F0\u3002" }
         }
       }
     },
     {
       name: "browser_session_list",
-      description: "List saved lightweight browser context snapshots.",
+      description: "\u5217\u51FA\u5DF2\u4FDD\u5B58\u7684\u8F7B\u91CF\u6D4F\u89C8\u5668\u4E0A\u4E0B\u6587\u5FEB\u7167\u3002\u7528\u9014\uFF1A\u67E5\u770B\u53EF\u6062\u590D\u7684\u4F1A\u8BDD\u3002\u573A\u666F\uFF1A\u6062\u590D\u6216\u5220\u9664\u524D\u5148\u6D4F\u89C8\u5217\u8868\u3002",
       input_schema: { type: "object", properties: {} }
     },
     {
       name: "browser_session_restore",
-      description: "Restore a saved lightweight browser context snapshot by navigating to its URL and restoring storage.",
+      description: "\u6062\u590D\u4E00\u4EFD\u5DF2\u4FDD\u5B58\u7684\u8F7B\u91CF\u6D4F\u89C8\u5668\u4E0A\u4E0B\u6587\u5FEB\u7167\uFF1A\u5BFC\u822A\u5230\u5176 URL \u5E76\u8FD8\u539F\u5B58\u50A8\u3002\u7528\u9014\uFF1A\u56DE\u5230\u6B64\u524D\u4FDD\u5B58\u7684\u73B0\u573A\u3002\u573A\u666F\uFF1A\u6062\u590D\u767B\u5F55\u6001\u7EE7\u7EED\u4EFB\u52A1\u3002",
       input_schema: {
         type: "object",
         properties: {
-          id: { type: "string", description: "Session id" },
-          name: { type: "string", description: "Session name" },
-          new_tab: { type: "boolean", description: "Restore into a new tab" }
+          id: { type: "string", description: "\u4F1A\u8BDD id\u3002" },
+          name: { type: "string", description: "\u4F1A\u8BDD\u540D\u79F0\u3002" },
+          new_tab: { type: "boolean", description: "\u5728\u65B0\u6807\u7B7E\u9875\u4E2D\u6062\u590D\u3002" }
         }
       }
     },
     {
       name: "browser_session_delete",
-      description: "Delete a saved lightweight browser context snapshot.",
+      description: "\u5220\u9664\u4E00\u4EFD\u5DF2\u4FDD\u5B58\u7684\u8F7B\u91CF\u6D4F\u89C8\u5668\u4E0A\u4E0B\u6587\u5FEB\u7167\u3002\u7528\u9014\uFF1A\u6E05\u7406\u4E0D\u518D\u9700\u8981\u7684\u4F1A\u8BDD\u3002\u573A\u666F\uFF1A\u5220\u9664\u8FC7\u671F\u6216\u654F\u611F\u7684\u4F1A\u8BDD\u5FEB\u7167\u3002",
       input_schema: {
         type: "object",
         properties: {
-          id: { type: "string", description: "Session id" },
-          name: { type: "string", description: "Session name" }
+          id: { type: "string", description: "\u4F1A\u8BDD id\u3002" },
+          name: { type: "string", description: "\u4F1A\u8BDD\u540D\u79F0\u3002" }
         }
       }
     },
     {
       name: "browser_profile_info",
-      description: "Return the current extension logical profile marker. This does not switch Chrome user profiles.",
+      description: "\u8FD4\u56DE\u5F53\u524D\u6269\u5C55\u7684\u903B\u8F91 profile \u6807\u8BB0\u3002\u6CE8\u610F\uFF1A\u8FD9\u4E0D\u4F1A\u5207\u6362 Chrome \u7684\u7528\u6237\u914D\u7F6E\u6587\u4EF6\u3002\u7528\u9014\uFF1A\u67E5\u770B\u5F53\u524D\u72B6\u6001\u5206\u7EC4\u6807\u8BB0\u3002\u573A\u666F\uFF1A\u786E\u8BA4\u6B63\u5728\u4F7F\u7528\u54EA\u4E2A\u903B\u8F91 profile\u3002",
       input_schema: { type: "object", properties: {} }
     },
     {
       name: "browser_profile_set",
-      description: "Set an extension logical profile marker for grouping state. Chrome user-profile switching is not available to extensions.",
+      description: "\u8BBE\u7F6E\u4E00\u4E2A\u6269\u5C55\u903B\u8F91 profile \u6807\u8BB0\u7528\u4E8E\u5206\u7EC4\u72B6\u6001\u3002\u6CE8\u610F\uFF1A\u6269\u5C55\u65E0\u6CD5\u5207\u6362 Chrome \u7528\u6237\u914D\u7F6E\u6587\u4EF6\u3002\u7528\u9014\uFF1A\u4E3A\u4F1A\u8BDD/\u72B6\u6001\u5206\u7EC4\u6253\u6807\u3002\u573A\u666F\uFF1A\u533A\u5206\u4E0D\u540C\u4EFB\u52A1\u7684\u5B58\u50A8\u5206\u7EC4\u3002",
       input_schema: {
         type: "object",
         properties: {
-          name: { type: "string", description: "Logical profile name" },
-          profile: { type: "string", description: "Alias for name" }
+          name: { type: "string", description: "\u903B\u8F91 profile \u540D\u79F0\u3002" },
+          profile: { type: "string", description: "name \u7684\u522B\u540D\u3002" }
         }
       }
     },
     {
       name: "browser_hover",
-      description: "Hover the mouse over an element to reveal tooltips or dropdowns.",
+      description: "\u628A\u9F20\u6807\u60AC\u505C hover \u5230\u67D0\u4E2A\u5143\u7D20\u4E0A\uFF0C\u4EE5\u663E\u793A tooltip \u6216\u4E0B\u62C9\u83DC\u5355\u3002\u7528\u9014\uFF1A\u89E6\u53D1\u60AC\u505C\u624D\u51FA\u73B0\u7684\u5185\u5BB9\u3002\u573A\u666F\uFF1A\u5C55\u5F00\u60AC\u505C\u83DC\u5355\u3001\u663E\u793A\u63D0\u793A\u6C14\u6CE1\u540E\u518D\u64CD\u4F5C\u3002",
       input_schema: {
         type: "object",
-        properties: { selector: { type: "string", description: "CSS selector of element to hover" } },
+        properties: { selector: { type: "string", description: "\u8981\u60AC\u505C\u5143\u7D20\u7684 CSS selector\u3002" } },
         required: ["selector"]
       }
     },
     {
       name: "browser_page_info",
-      description: "Get where you currently are on the page: scroll position (scrollY, percent, atTop/atBottom), viewport size, full page height, the current section heading, all headings now visible in the viewport, and element counts. Call this to orient yourself before/after scrolling or interacting.",
+      description: "\u83B7\u53D6\u4F60\u5F53\u524D\u5728\u9875\u9762\u4E0A\u7684\u4F4D\u7F6E\u4FE1\u606F\uFF1A\u6EDA\u52A8\u4F4D\u7F6E\uFF08scrollY\u3001\u767E\u5206\u6BD4\u3001\u662F\u5426\u5230\u9876/\u5230\u5E95\uFF09\u3001\u89C6\u53E3\u5C3A\u5BF8\u3001\u6574\u9875\u9AD8\u5EA6\u3001\u5F53\u524D\u5C0F\u8282\u6807\u9898\u3001\u89C6\u53E3\u5185\u6240\u6709\u6807\u9898\u3001\u5143\u7D20\u8BA1\u6570\u3002\u7528\u9014\uFF1A\u81EA\u6211\u5B9A\u4F4D\u3002\u573A\u666F\uFF1A\u6EDA\u52A8\u6216\u4EA4\u4E92\u524D\u540E\u8C03\u7528\uFF0C\u786E\u8BA4\u843D\u70B9\u548C\u9875\u9762\u7ED3\u6784\u3002",
       input_schema: { type: "object", properties: {} }
     },
     {
       name: "browser_right_click",
-      description: "Right-click (open the context menu) on an element by CSS selector, visible text, or coordinates.",
+      description: "\u5728\u5143\u7D20\u4E0A\u53F3\u952E right-click\uFF08\u6253\u5F00\u4E0A\u4E0B\u6587\u83DC\u5355\uFF09\uFF0C\u53EF\u7528 CSS selector\u3001\u53EF\u89C1\u6587\u672C\u6216\u5750\u6807\u5B9A\u4F4D\u3002\u7528\u9014\uFF1A\u89E6\u53D1\u53F3\u952E\u83DC\u5355\u3002\u573A\u666F\uFF1A\u6253\u5F00\u300C\u5728\u65B0\u6807\u7B7E\u6253\u5F00\u300D\u300C\u68C0\u67E5\u300D\u7B49\u4E0A\u4E0B\u6587\u64CD\u4F5C\u3002",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "CSS selector" },
-          text: { type: "string", description: "Visible text of the element" },
-          x: { type: "number", description: "X coordinate (px)" },
-          y: { type: "number", description: "Y coordinate (px)" }
+          selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u5143\u7D20\u7684\u53EF\u89C1\u6587\u672C\u3002" },
+          x: { type: "number", description: "X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          y: { type: "number", description: "Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
         }
       }
     },
     {
       name: "browser_double_click",
-      description: "Double-click an element by CSS selector, visible text, or coordinates (e.g. to select a word or open an item).",
+      description: "\u53CC\u51FB double-click \u5143\u7D20\uFF0C\u53EF\u7528 CSS selector\u3001\u53EF\u89C1\u6587\u672C\u6216\u5750\u6807\u5B9A\u4F4D\uFF08\u5982\u9009\u4E2D\u4E00\u4E2A\u8BCD\u6216\u6253\u5F00\u67D0\u9879\uFF09\u3002\u7528\u9014\uFF1A\u9700\u8981\u53CC\u51FB\u624D\u751F\u6548\u7684\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u53CC\u51FB\u9009\u8BCD\u3001\u53CC\u51FB\u6253\u5F00\u6587\u4EF6\u9879\u3002",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "CSS selector" },
-          text: { type: "string", description: "Visible text of the element" },
-          x: { type: "number", description: "X coordinate (px)" },
-          y: { type: "number", description: "Y coordinate (px)" }
+          selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u7684 CSS selector\u3002" },
+          text: { type: "string", description: "\u5143\u7D20\u7684\u53EF\u89C1\u6587\u672C\u3002" },
+          x: { type: "number", description: "X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          y: { type: "number", description: "Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
         }
       }
     },
     {
       name: "browser_drag",
-      description: "Drag from a source element/point and drop onto a target element/point. Fires HTML5, pointer, and mouse events, and returns diagnostics showing whether the source visibly moved.",
+      description: "\u4ECE\u6E90\u5143\u7D20/\u70B9\u62D6\u62FD drag \u5230\u76EE\u6807\u5143\u7D20/\u70B9\u5E76\u653E\u4E0B\uFF0C\u89E6\u53D1 HTML5\u3001pointer \u548C mouse \u4E8B\u4EF6\uFF0C\u5E76\u8FD4\u56DE\u6E90\u662F\u5426\u660E\u663E\u79FB\u52A8\u7684\u8BCA\u65AD\u4FE1\u606F\u3002\u7528\u9014\uFF1A\u62D6\u653E\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u62D6\u52A8\u6392\u5E8F\u3001\u628A\u5143\u7D20\u62D6\u5165\u6295\u653E\u533A\u3001\u6ED1\u5757\u64CD\u4F5C\u3002",
       input_schema: {
         type: "object",
         properties: {
-          selector: { type: "string", description: "Source CSS selector" },
-          text: { type: "string", description: "Source visible text" },
-          x: { type: "number", description: "Source X coordinate (px)" },
-          y: { type: "number", description: "Source Y coordinate (px)" },
-          to_selector: { type: "string", description: "Target CSS selector" },
-          to_text: { type: "string", description: "Target visible text" },
-          to_x: { type: "number", description: "Target X coordinate (px)" },
-          to_y: { type: "number", description: "Target Y coordinate (px)" }
+          selector: { type: "string", description: "\u6E90\u5143\u7D20 CSS selector\u3002" },
+          text: { type: "string", description: "\u6E90\u5143\u7D20\u53EF\u89C1\u6587\u672C\u3002" },
+          x: { type: "number", description: "\u6E90\u70B9 X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          y: { type: "number", description: "\u6E90\u70B9 Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          to_selector: { type: "string", description: "\u76EE\u6807\u5143\u7D20 CSS selector\u3002" },
+          to_text: { type: "string", description: "\u76EE\u6807\u5143\u7D20\u53EF\u89C1\u6587\u672C\u3002" },
+          to_x: { type: "number", description: "\u76EE\u6807\u70B9 X \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" },
+          to_y: { type: "number", description: "\u76EE\u6807\u70B9 Y \u5750\u6807\uFF08\u50CF\u7D20\uFF09\u3002" }
         }
       }
     },
     {
       name: "browser_press_key",
-      description: "Press a keyboard key (optionally with modifiers) on the focused element or a given selector. Useful for Enter, Escape, Tab, Arrow keys, or shortcuts like Ctrl+A.",
+      description: "\u5728\u7126\u70B9\u5143\u7D20\u6216\u6307\u5B9A selector \u4E0A\u6309\u4E0B\u67D0\u4E2A\u952E\uFF08\u53EF\u5E26\u4FEE\u9970\u952E\uFF09\u3002\u7528\u9014\uFF1A\u952E\u76D8\u4EA4\u4E92\u3002\u573A\u666F\uFF1A\u6309 Enter \u63D0\u4EA4\u3001Escape \u5173\u95ED\u3001Tab \u5207\u6362\u3001\u65B9\u5411\u952E\u3001Ctrl+A \u7B49\u5FEB\u6377\u952E\u3002",
       input_schema: {
         type: "object",
         properties: {
-          key: { type: "string", description: 'Key name, e.g. "Enter", "Escape", "Tab", "ArrowDown", "a"' },
-          selector: { type: "string", description: "Optional CSS selector to focus before pressing" },
-          ctrl: { type: "boolean", description: "Hold Ctrl" },
-          shift: { type: "boolean", description: "Hold Shift" },
-          alt: { type: "boolean", description: "Hold Alt" },
-          meta: { type: "boolean", description: "Hold Meta/Cmd" }
+          key: { type: "string", description: '\u952E\u540D\uFF0C\u5982 "Enter"\u3001"Escape"\u3001"Tab"\u3001"ArrowDown"\u3001"a"\u3002' },
+          selector: { type: "string", description: "\u53EF\u9009\uFF1A\u6309\u952E\u524D\u5148\u805A\u7126\u7684 CSS selector\u3002" },
+          ctrl: { type: "boolean", description: "\u6309\u4F4F Ctrl\u3002" },
+          shift: { type: "boolean", description: "\u6309\u4F4F Shift\u3002" },
+          alt: { type: "boolean", description: "\u6309\u4F4F Alt\u3002" },
+          meta: { type: "boolean", description: "\u6309\u4F4F Meta/Cmd\u3002" }
         },
         required: ["key"]
       }
     },
     {
       name: "card_list",
-      description: "List saved memory cards (automation workflows). Returns each card id, name, description and step count.",
+      description: "\u5217\u51FA\u5DF2\u4FDD\u5B58\u7684\u8BB0\u5FC6\u5361\u7247 card\uFF08\u81EA\u52A8\u5316\u6D41\u7A0B\uFF09\uFF0C\u8FD4\u56DE\u6BCF\u5F20\u5361\u7247\u7684 id\u3001name\u3001description \u548C\u6B65\u9AA4\u6570\u3002\u7528\u9014\uFF1A\u67E5\u770B\u53EF\u590D\u7528\u7684\u6D4F\u89C8\u5668\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u8FD0\u884C\u6216\u7F16\u8F91\u5361\u7247\u524D\u5148\u6D4F\u89C8\u6E05\u5355\u3002",
       input_schema: { type: "object", properties: {} }
     },
     {
       name: "card_get",
-      description: "Get the full steps of a saved card by id or name. Use this to inspect a card before running or fixing it.",
+      description: "\u6309 id \u6216 name \u8BFB\u53D6\u67D0\u5F20\u5DF2\u4FDD\u5B58\u5361\u7247\u7684\u5B8C\u6574\u6B65\u9AA4\u3002\u7528\u9014\uFF1A\u67E5\u770B\u6D41\u7A0B\u7EC6\u8282\u3002\u573A\u666F\uFF1A\u8FD0\u884C\u524D\u786E\u8BA4\u6B65\u9AA4\u3001\u4FEE\u590D\u524D\u5148\u68C0\u67E5\u67D0\u6B65\u3002",
       input_schema: {
         type: "object",
         properties: {
-          id: { type: "string", description: "Card id" },
-          name: { type: "string", description: "Card name (used if id omitted)" }
+          id: { type: "string", description: "\u5361\u7247 id\u3002" },
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" }
         }
       }
     },
     {
       name: "card_save",
-      description: "Save a sequence of browser steps as a reusable memory card. Steps support args templates like {{name}}, optional if conditions, save_as variables, and var_set pseudo steps.",
+      description: "\u628A\u4E00\u8FDE\u4E32\u6D4F\u89C8\u5668\u6B65\u9AA4\u4FDD\u5B58\u4E3A\u53EF\u590D\u7528\u7684\u8BB0\u5FC6\u5361\u7247\u3002\u6B65\u9AA4\u652F\u6301 {{name}} \u5F62\u5F0F\u7684 args \u6A21\u677F\u3001\u53EF\u9009 if \u6761\u4EF6\u3001save_as \u53D8\u91CF\u4EE5\u53CA var_set \u4F2A\u6B65\u9AA4\u3002\u7528\u9014\uFF1A\u6C89\u6DC0\u53EF\u91CD\u590D\u6267\u884C\u7684\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u628A\u4E00\u6B21\u6210\u529F\u7684\u591A\u6B65\u64CD\u4F5C\u56FA\u5316\u4E0B\u6765\u53CD\u590D\u4F7F\u7528\u3002",
       input_schema: {
         type: "object",
         properties: {
-          name: { type: "string", description: "Card name" },
-          description: { type: "string", description: "What this workflow does" },
-          mode: { type: "string", enum: ["replace", "merge", "new"], description: "On name conflict (default replace)" },
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\u3002" },
+          description: { type: "string", description: "\u8BE5\u6D41\u7A0B\u505A\u4EC0\u4E48\u3002" },
+          mode: { type: "string", enum: ["replace", "merge", "new"], description: "\u540C\u540D\u51B2\u7A81\u65F6\u7684\u5904\u7406\uFF1Areplace \u8986\u76D6\u3001merge \u5408\u5E76\u3001new \u53E6\u5B58\u3002\u9ED8\u8BA4 replace\u3002" },
           steps: {
             type: "array",
-            description: "Ordered steps to perform",
+            description: "\u6309\u987A\u5E8F\u6267\u884C\u7684\u6B65\u9AA4\u3002",
             items: {
               type: "object",
               properties: {
-                tool: { type: "string", description: "A browser_* tool name, e.g. browser_navigate" },
-                args: { type: "object", description: "Arguments for that tool" },
-                note: { type: "string", description: "\u5907\u6CE8\uFF1Aplain-language description of this step" },
-                if: { type: ["string", "object", "boolean"], description: 'Optional condition, e.g. "item.enabled" or {var:"last.success", equals:true}' },
-                save_as: { type: "string", description: "Save this step result into a variable name" }
+                tool: { type: "string", description: "\u4E00\u4E2A browser_* \u5DE5\u5177\u540D\uFF0C\u5982 browser_navigate\u3002" },
+                args: { type: "object", description: "\u8BE5\u5DE5\u5177\u7684\u53C2\u6570\u3002" },
+                note: { type: "string", description: "\u5907\u6CE8\uFF1A\u7528\u81EA\u7136\u8BED\u8A00\u63CF\u8FF0\u8FD9\u4E00\u6B65\u3002" },
+                if: { type: ["string", "object", "boolean"], description: '\u53EF\u9009\u6761\u4EF6\uFF0C\u5982 "item.enabled" \u6216 {var:"last.success", equals:true}\u3002' },
+                save_as: { type: "string", description: "\u628A\u8FD9\u4E00\u6B65\u7684\u7ED3\u679C\u5B58\u5165\u67D0\u4E2A\u53D8\u91CF\u540D\u3002" }
               },
               required: ["tool"]
             }
@@ -4073,88 +4093,88 @@
     },
     {
       name: "card_update_step",
-      description: "Fix one step of an existing card by index \u2014 change its tool, args, or note. Use this to repair a card after card_run reports a failed step.",
+      description: "\u6309 index \u4FEE\u590D\u4E00\u5F20\u5DF2\u6709\u5361\u7247\u7684\u67D0\u4E00\u6B65\u2014\u2014\u6539\u5B83\u7684 tool\u3001args \u6216 note\u3002\u7528\u9014\uFF1A\u4FEE\u8865\u6D41\u7A0B\u3002\u573A\u666F\uFF1Acard_run \u62A5\u544A\u67D0\u6B65\u5931\u8D25\u540E\uFF0C\u5355\u72EC\u4FEE\u6B63\u8BE5\u6B65\u800C\u4E0D\u5FC5\u91CD\u5B58\u6574\u5F20\u5361\u7247\u3002",
       input_schema: {
         type: "object",
         properties: {
-          id: { type: "string", description: "Card id" },
-          name: { type: "string", description: "Card name (used if id omitted)" },
-          index: { type: "number", description: "0-based index of the step to update" },
-          tool: { type: "string", description: "New tool name (optional)" },
-          args: { type: "object", description: "New arguments (optional)" },
-          note: { type: "string", description: "New \u5907\u6CE8 (optional)" }
+          id: { type: "string", description: "\u5361\u7247 id\u3002" },
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
+          index: { type: "number", description: "\u8981\u4FEE\u6539\u6B65\u9AA4\u7684 0 \u8D77\u59CB\u4E0B\u6807\u3002" },
+          tool: { type: "string", description: "\u65B0\u7684\u5DE5\u5177\u540D\uFF08\u53EF\u9009\uFF09\u3002" },
+          args: { type: "object", description: "\u65B0\u7684\u53C2\u6570\uFF08\u53EF\u9009\uFF09\u3002" },
+          note: { type: "string", description: "\u65B0\u7684\u5907\u6CE8\uFF08\u53EF\u9009\uFF09\u3002" }
         },
         required: ["index"]
       }
     },
     {
       name: "card_run",
-      description: "Run a saved card by id or name. Supports variables for {{name}} templates and conditional steps.",
+      description: "\u6309 id \u6216 name \u8FD0\u884C\u4E00\u5F20\u5DF2\u4FDD\u5B58\u7684\u5361\u7247\uFF0C\u652F\u6301 {{name}} \u6A21\u677F\u53D8\u91CF\u548C\u6761\u4EF6\u6B65\u9AA4\u3002\u7528\u9014\uFF1A\u6267\u884C\u6C89\u6DC0\u597D\u7684\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u4E00\u952E\u8DD1\u901A\u767B\u5F55\u3001\u6293\u53D6\u3001\u63D0\u4EA4\u7B49\u591A\u6B65\u64CD\u4F5C\u3002",
       input_schema: {
         type: "object",
         properties: {
-          id: { type: "string", description: "Card id" },
-          name: { type: "string", description: "Card name (used if id omitted)" },
-          variables: { type: "object", description: "Variables available to step templates and conditions" },
-          vars: { type: "object", description: "Alias for variables" }
+          id: { type: "string", description: "\u5361\u7247 id\u3002" },
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
+          variables: { type: "object", description: "\u4F9B\u6B65\u9AA4\u6A21\u677F\u548C\u6761\u4EF6\u4F7F\u7528\u7684\u53D8\u91CF\u3002" },
+          vars: { type: "object", description: "variables \u7684\u522B\u540D\u3002" }
         }
       }
     },
     {
       name: "card_run_batch",
-      description: "Run a saved card once per item. Each run receives variables {item, index, ...variables}.",
+      description: "\u5BF9\u6BCF\u4E2A item \u5404\u8FD0\u884C\u4E00\u6B21\u5361\u7247\uFF0C\u6BCF\u6B21\u8FD0\u884C\u53EF\u62FF\u5230\u53D8\u91CF {item, index, ...variables}\u3002\u7528\u9014\uFF1A\u6279\u91CF\u6267\u884C\u540C\u4E00\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u5BF9\u4E00\u6279\u5173\u952E\u8BCD/\u8D26\u53F7/\u94FE\u63A5\u9010\u4E2A\u8DD1\u540C\u4E00\u5957\u64CD\u4F5C\u3002",
       input_schema: {
         type: "object",
         properties: {
-          id: { type: "string", description: "Card id" },
-          name: { type: "string", description: "Card name (used if id omitted)" },
-          items: { type: "array", description: "Batch items" },
-          variables: { type: "object", description: "Shared variables for every run" },
-          stop_on_error: { type: "boolean", description: "Stop at first failed item (default true)" }
+          id: { type: "string", description: "\u5361\u7247 id\u3002" },
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
+          items: { type: "array", description: "\u6279\u5904\u7406\u6761\u76EE\u5217\u8868\u3002" },
+          variables: { type: "object", description: "\u6BCF\u6B21\u8FD0\u884C\u5171\u4EAB\u7684\u53D8\u91CF\u3002" },
+          stop_on_error: { type: "boolean", description: "\u9047\u5230\u7B2C\u4E00\u4E2A\u5931\u8D25\u7684 item \u5C31\u505C\u6B62\u3002\u9ED8\u8BA4 true\u3002" }
         },
         required: ["items"]
       }
     },
     {
       name: "card_schedule",
-      description: 'Schedule a card with interval_minutes, run_at, or simple cron like "*/15 * * * *". Uses Chrome alarms.',
+      description: '\u4E3A\u5361\u7247\u8BBE\u5B9A\u8BA1\u5212\u8FD0\u884C\uFF1A\u53EF\u7528 interval_minutes\u3001run_at\uFF0C\u6216\u50CF "*/15 * * * *" \u8FD9\u6837\u7684\u7B80\u5355 cron\uFF08\u57FA\u4E8E Chrome alarms\uFF09\u3002\u7528\u9014\uFF1A\u5B9A\u65F6/\u5468\u671F\u6267\u884C\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u6BCF 15 \u5206\u949F\u6293\u4E00\u6B21\u3001\u6BCF\u5929\u5B9A\u70B9\u8DD1\u4E00\u6B21\u3002',
       input_schema: {
         type: "object",
         properties: {
-          id: { type: "string", description: "Card id" },
-          name: { type: "string", description: "Card name (used if id omitted)" },
-          schedule_id: { type: "string", description: "Optional schedule id" },
-          interval_minutes: { type: "number", description: "Recurring interval" },
-          run_at: { type: "string", description: "One-shot ISO datetime" },
-          cron: { type: "string", description: "Only simple every-N-minutes syntax is supported, e.g. */15 * * * *" },
-          variables: { type: "object", description: "Variables passed to the scheduled run" }
+          id: { type: "string", description: "\u5361\u7247 id\u3002" },
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
+          schedule_id: { type: "string", description: "\u53EF\u9009\uFF1A\u8BA1\u5212 id\u3002" },
+          interval_minutes: { type: "number", description: "\u5468\u671F\u8FD0\u884C\u7684\u95F4\u9694\u5206\u949F\u6570\u3002" },
+          run_at: { type: "string", description: "\u4E00\u6B21\u6027\u8FD0\u884C\u7684 ISO \u65F6\u95F4\u3002" },
+          cron: { type: "string", description: "\u4EC5\u652F\u6301\u7B80\u5355\u7684\u6BCF N \u5206\u949F\u8BED\u6CD5\uFF0C\u5982 */15 * * * *\u3002" },
+          variables: { type: "object", description: "\u4F20\u7ED9\u8BA1\u5212\u8FD0\u884C\u7684\u53D8\u91CF\u3002" }
         }
       }
     },
     {
       name: "card_schedule_list",
-      description: "List scheduled card runs.",
+      description: "\u5217\u51FA\u5DF2\u8BBE\u5B9A\u7684\u5361\u7247\u8BA1\u5212\u8FD0\u884C\u3002\u7528\u9014\uFF1A\u67E5\u770B\u5B9A\u65F6\u4EFB\u52A1\u3002\u573A\u666F\uFF1A\u5220\u9664\u6216\u6392\u67E5\u67D0\u4E2A\u8BA1\u5212\u524D\u5148\u6D4F\u89C8\u5217\u8868\u3002",
       input_schema: { type: "object", properties: {} }
     },
     {
       name: "card_schedule_delete",
-      description: "Delete a scheduled card run.",
+      description: "\u5220\u9664\u4E00\u4E2A\u5361\u7247\u8BA1\u5212\u8FD0\u884C\u3002\u7528\u9014\uFF1A\u53D6\u6D88\u5B9A\u65F6\u3002\u573A\u666F\uFF1A\u4E0D\u518D\u9700\u8981\u67D0\u4E2A\u5468\u671F\u4EFB\u52A1\u65F6\u79FB\u9664\u5B83\u3002",
       input_schema: {
         type: "object",
         properties: {
-          schedule_id: { type: "string", description: "Schedule id" },
-          id: { type: "string", description: "Alias for schedule_id" }
+          schedule_id: { type: "string", description: "\u8BA1\u5212 id\u3002" },
+          id: { type: "string", description: "schedule_id \u7684\u522B\u540D\u3002" }
         }
       }
     },
     {
       name: "card_delete",
-      description: "Delete a saved card by id or name.",
+      description: "\u6309 id \u6216 name \u5220\u9664\u4E00\u5F20\u5DF2\u4FDD\u5B58\u7684\u5361\u7247\u3002\u7528\u9014\uFF1A\u6E05\u7406\u4E0D\u518D\u4F7F\u7528\u7684\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u5220\u9664\u8FC7\u671F\u6216\u9519\u8BEF\u7684\u81EA\u52A8\u5316\u5361\u7247\u3002",
       input_schema: {
         type: "object",
         properties: {
-          id: { type: "string", description: "Card id" },
-          name: { type: "string", description: "Card name (used if id omitted)" }
+          id: { type: "string", description: "\u5361\u7247 id\u3002" },
+          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" }
         }
       }
     }
@@ -4333,7 +4353,7 @@
   async function captureVisibleTab(windowId, args, retries = 1) {
     let lastErr;
     const timeoutMs = boundedTimeout(args.visible_timeout_ms ?? args.timeout_ms, 8e3);
-    for (let i2 = 0; i2 <= retries; i2++) {
+    for (let i = 0; i <= retries; i++) {
       try {
         return await withTimeout(
           chrome.tabs.captureVisibleTab(windowId, {
@@ -4346,7 +4366,7 @@
       } catch (err) {
         lastErr = err;
         const message = err?.message || String(err);
-        if (i2 >= retries || !isRetryableCaptureError(message))
+        if (i >= retries || !isRetryableCaptureError(message))
           break;
         await delay(300);
       }
@@ -5057,363 +5077,8 @@ ${code}
     }
   }
 
-  // src/lib/cards.ts
-  var newId = () => "card_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-  function deriveNote(tool, args) {
-    const labels = {
-      browser_navigate: "\u8DF3\u8F6C\u9875\u9762",
-      browser_wait: "\u7B49\u5F85",
-      browser_click: "\u70B9\u51FB",
-      browser_double_click: "\u53CC\u51FB",
-      browser_right_click: "\u53F3\u952E",
-      browser_type: "\u8F93\u5165\u5185\u5BB9",
-      browser_scroll: "\u6EDA\u52A8",
-      browser_select: "\u9009\u62E9",
-      browser_press_key: "\u6309\u952E",
-      browser_drag: "\u62D6\u62FD",
-      browser_hover: "\u60AC\u505C",
-      browser_fill_form: "\u586B\u5199\u8868\u5355",
-      browser_search: "\u641C\u7D22",
-      browser_screenshot: "\u622A\u56FE",
-      browser_extract: "\u63D0\u53D6\u6570\u636E",
-      browser_get_content: "\u8BFB\u53D6\u5185\u5BB9",
-      browser_page_info: "\u67E5\u770B\u9875\u9762\u4F4D\u7F6E",
-      browser_find_popups: "\u67E5\u627E\u5F39\u7A97",
-      browser_close_popup: "\u5173\u95ED\u5F39\u7A97"
-    };
-    const base = labels[tool] || tool.replace(/^browser_/, "");
-    const hint = args?.url || args?.text || args?.selector || args?.query || (args?.direction ? `${args.direction}${args?.amount ? " " + args.amount : ""}` : "") || (args?.key ? `\u6309\u952E ${args.key}` : "") || (args?.ms ? `${args.ms}ms` : "");
-    return hint ? `${base}\uFF1A${String(hint).slice(0, 60)}` : base;
-  }
-
-  // src/lib/tools/cards.ts
-  var cardProgress = null;
-  function setCardProgress(fn) {
-    cardProgress = fn;
-  }
-  function getPath(obj, path) {
-    return String(path).split(".").reduce((cur, part) => cur == null ? void 0 : cur[part], obj);
-  }
-  function applyVars(value2, vars) {
-    if (typeof value2 === "string") {
-      return value2.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, key) => {
-        const v = getPath(vars, key);
-        return v === void 0 || v === null ? "" : String(v);
-      });
-    }
-    if (Array.isArray(value2))
-      return value2.map((v) => applyVars(v, vars));
-    if (value2 && typeof value2 === "object") {
-      const out = {};
-      for (const [k, v] of Object.entries(value2))
-        out[k] = applyVars(v, vars);
-      return out;
-    }
-    return value2;
-  }
-  function shouldRunStep(step, vars) {
-    const cond = step.if ?? step.args?.if;
-    if (cond === void 0 || cond === null || cond === "")
-      return true;
-    if (typeof cond === "boolean")
-      return cond;
-    if (typeof cond === "string")
-      return !!getPath(vars, cond);
-    if (typeof cond === "object") {
-      const actual = getPath(vars, String(cond.var || cond.path || ""));
-      if ("exists" in cond)
-        return cond.exists ? actual !== void 0 : actual === void 0;
-      if ("equals" in cond)
-        return actual === cond.equals;
-      if ("not_equals" in cond)
-        return actual !== cond.not_equals;
-      if ("contains" in cond)
-        return String(actual || "").includes(String(cond.contains));
-    }
-    return true;
-  }
-  async function runCardSteps(card, opts = {}) {
-    const total = card.steps.length;
-    const results = [];
-    const vars = { ...opts.variables || {} };
-    for (let i2 = 0; i2 < total; i2++) {
-      if (opts.shouldStop?.())
-        return { success: false, stopped: true, results };
-      const step = card.steps[i2];
-      if (!shouldRunStep(step, vars)) {
-        const skipped = { index: i2, note: step.note, tool: step.tool, status: "success", skipped: true, preview: "skipped by condition" };
-        results.push(skipped);
-        cardProgress?.(card.id, i2, total, step.note, step.tool, "success");
-        continue;
-      }
-      if (/^card[_.]/i.test(step.tool)) {
-        const r = { index: i2, note: step.note, tool: step.tool, status: "error", error: "\u5361\u7247\u6B65\u9AA4\u4E0D\u5141\u8BB8\u8C03\u7528\u5361\u7247\u5DE5\u5177\uFF08\u907F\u514D\u9012\u5F52\uFF09" };
-        results.push(r);
-        cardProgress?.(card.id, i2, total, step.note, step.tool, "error", r.error);
-        return { success: false, results, failedStep: r };
-      }
-      cardProgress?.(card.id, i2, total, step.note, step.tool, "running");
-      try {
-        const args = applyVars(step.args || {}, vars);
-        if (step.tool === "var_set") {
-          vars[String(args.name)] = args.value;
-          results.push({ index: i2, note: step.note, tool: step.tool, status: "success", preview: `${args.name}=${JSON.stringify(args.value)}` });
-          cardProgress?.(card.id, i2, total, step.note, step.tool, "success");
-          continue;
-        }
-        const result = await executeBrowserOnly(step.tool, args);
-        if (step.save_as || args.save_as_var)
-          vars[String(step.save_as || args.save_as_var)] = result;
-        vars.last = result;
-        let preview = "";
-        try {
-          preview = (typeof result === "string" ? result : JSON.stringify(result)).slice(0, 180);
-        } catch {
-        }
-        results.push({ index: i2, note: step.note, tool: step.tool, status: "success", preview });
-        cardProgress?.(card.id, i2, total, step.note, step.tool, "success");
-      } catch (err) {
-        const msg = err?.message || String(err);
-        const r = { index: i2, note: step.note, tool: step.tool, status: "error", error: msg };
-        results.push(r);
-        cardProgress?.(card.id, i2, total, step.note, step.tool, "error", msg);
-        return { success: false, results, failedStep: r };
-      }
-    }
-    return { success: true, results };
-  }
-  function byIdOrName(cards, args) {
-    if (args?.id)
-      return cards.find((c) => c.id === String(args.id));
-    if (args?.name)
-      return cards.find((c) => c.name === String(args.name));
-    return void 0;
-  }
-  function normalizeSteps(rawSteps) {
-    const out = [];
-    for (const rs of Array.isArray(rawSteps) ? rawSteps : []) {
-      if (!rs || typeof rs !== "object")
-        continue;
-      const tool = String(rs.tool || rs.name || "").trim();
-      if (!tool)
-        continue;
-      let a = rs.args ?? rs.arguments ?? rs.input ?? {};
-      if (typeof a === "string") {
-        try {
-          a = JSON.parse(a);
-        } catch {
-          a = {};
-        }
-      }
-      if (!a || typeof a !== "object")
-        a = {};
-      const note = String(rs.note ?? rs.remark ?? "").trim() || deriveNote(tool, a);
-      out.push({ tool, args: a, note });
-    }
-    return out;
-  }
-  async function toolCardList() {
-    const cards = await getCards();
-    return { success: true, count: cards.length, cards: cards.map((c) => ({ id: c.id, name: c.name, description: c.description, steps: c.steps.length })) };
-  }
-  async function toolCardGet(args) {
-    const card = byIdOrName(await getCards(), args);
-    if (!card)
-      throw new Error("\u5361\u7247\u4E0D\u5B58\u5728");
-    return { success: true, card: { id: card.id, name: card.name, description: card.description, steps: card.steps } };
-  }
-  async function toolCardSave(args) {
-    const name = String(args.name || "").trim();
-    if (!name)
-      throw new Error("name \u5FC5\u586B");
-    const steps = normalizeSteps(args.steps);
-    if (!steps.length)
-      throw new Error("steps \u4E0D\u80FD\u4E3A\u7A7A");
-    const mode = ["replace", "merge", "new"].includes(args.mode) ? args.mode : "replace";
-    const cards = await getCards();
-    const now = Date.now();
-    const existing = cards.find((c) => c.name === name);
-    if (existing && mode !== "new") {
-      existing.steps = mode === "merge" ? [...existing.steps, ...steps] : steps;
-      if (args.description !== void 0)
-        existing.description = String(args.description || "");
-      existing.updatedAt = now;
-      await setCards(cards);
-      return { success: true, action: mode, id: existing.id, name, steps: existing.steps.length };
-    }
-    const card = { id: newId(), name, description: String(args.description || ""), steps, createdAt: now, updatedAt: now };
-    cards.push(card);
-    await setCards(cards);
-    return { success: true, action: "created", id: card.id, name, steps: steps.length };
-  }
-  async function toolCardUpdateStep(args) {
-    const cards = await getCards();
-    const card = byIdOrName(cards, args);
-    if (!card)
-      throw new Error("\u5361\u7247\u4E0D\u5B58\u5728");
-    const idx = Number(args.index);
-    if (!(idx >= 0 && idx < card.steps.length))
-      throw new Error(`index \u8D8A\u754C\uFF08\u5361\u7247\u6709 ${card.steps.length} \u6B65\uFF09`);
-    const step = card.steps[idx];
-    if (args.tool !== void 0)
-      step.tool = String(args.tool);
-    if (args.note !== void 0)
-      step.note = String(args.note);
-    if (args.args !== void 0) {
-      let a = args.args;
-      if (typeof a === "string") {
-        try {
-          a = JSON.parse(a);
-        } catch {
-        }
-      }
-      if (a && typeof a === "object")
-        step.args = a;
-    }
-    card.updatedAt = Date.now();
-    await setCards(cards);
-    return { success: true, id: card.id, index: idx, step };
-  }
-  async function toolCardDelete(args) {
-    const cards = await getCards();
-    const card = byIdOrName(cards, args);
-    if (!card)
-      throw new Error("\u5361\u7247\u4E0D\u5B58\u5728");
-    await setCards(cards.filter((c) => c.id !== card.id));
-    return { success: true, id: card.id, name: card.name };
-  }
-  async function toolCardRun(args) {
-    const card = byIdOrName(await getCards(), args);
-    if (!card)
-      throw new Error("\u5361\u7247\u4E0D\u5B58\u5728");
-    const res = await runCardSteps(card, { variables: args.variables || args.vars || {} });
-    return {
-      success: res.success,
-      cardId: card.id,
-      name: card.name,
-      total: card.steps.length,
-      completed: res.results.filter((r) => r.status === "success").length,
-      failedStep: res.failedStep,
-      results: res.results
-    };
-  }
-  async function toolCardRunBatch(args) {
-    const card = byIdOrName(await getCards(), args);
-    if (!card)
-      throw new Error("\u5361\u7247\u4E0D\u5B58\u5728");
-    const rows = Array.isArray(args.items) ? args.items : [];
-    if (!rows.length)
-      throw new Error("items \u4E0D\u80FD\u4E3A\u7A7A");
-    const results = [];
-    for (let i2 = 0; i2 < rows.length; i2++) {
-      const variables = { ...args.variables || {}, item: rows[i2], index: i2 };
-      const res = await runCardSteps(card, { variables });
-      results.push({ index: i2, success: res.success, completed: res.results.filter((r) => r.status === "success" && !r.skipped).length, failedStep: res.failedStep, results: res.results });
-      if (!res.success && args.stop_on_error !== false)
-        break;
-    }
-    return { success: results.every((r) => r.success), cardId: card.id, name: card.name, total: rows.length, results };
-  }
-  var SCHEDULE_KEY = "_card_schedules";
-  async function getSchedules() {
-    const r = await chrome.storage.local.get(SCHEDULE_KEY);
-    return Array.isArray(r[SCHEDULE_KEY]) ? r[SCHEDULE_KEY] : [];
-  }
-  async function setSchedules(schedules) {
-    await chrome.storage.local.set({ [SCHEDULE_KEY]: schedules });
-  }
-  function cronEveryMinutes(cron) {
-    const m = String(cron || "").trim().match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/);
-    if (!m)
-      return null;
-    const n = Number(m[1]);
-    return n >= 1 ? n : null;
-  }
-  async function toolCardSchedule(args) {
-    const card = byIdOrName(await getCards(), args);
-    if (!card)
-      throw new Error("\u5361\u7247\u4E0D\u5B58\u5728");
-    const id = String(args.schedule_id || `schedule_${Date.now()}`);
-    const interval = args.interval_minutes ? Number(args.interval_minutes) : args.cron ? cronEveryMinutes(String(args.cron)) : null;
-    const runAt = args.run_at ? Date.parse(String(args.run_at)) : 0;
-    const schedule = {
-      id,
-      cardId: card.id,
-      name: args.name || `${card.name} schedule`,
-      cron: args.cron || "",
-      intervalMinutes: interval,
-      runAt: Number.isFinite(runAt) ? runAt : 0,
-      variables: args.variables || {},
-      enabled: true,
-      createdAt: Date.now(),
-      lastRunAt: 0
-    };
-    if (!interval && !schedule.runAt) {
-      return { success: false, error: { code: "UNSUPPORTED_CRON", message: 'Only interval_minutes, run_at, or simple cron like "*/15 * * * *" is supported.', suggestion: "Use interval_minutes for recurring schedules." } };
-    }
-    const schedules = (await getSchedules()).filter((s) => s.id !== id);
-    schedules.push(schedule);
-    await setSchedules(schedules);
-    const alarmInfo = interval ? { periodInMinutes: interval, delayInMinutes: Math.max(0.1, interval) } : { when: schedule.runAt };
-    chrome.alarms.create(`card_schedule:${id}`, alarmInfo);
-    return { success: true, schedule };
-  }
-  async function toolCardScheduleList() {
-    const schedules = await getSchedules();
-    return { success: true, count: schedules.length, schedules };
-  }
-  async function toolCardScheduleDelete(args) {
-    const schedules = await getSchedules();
-    const kept = schedules.filter((s) => s.id !== args.schedule_id && s.id !== args.id);
-    const deleted = schedules.length - kept.length;
-    await setSchedules(kept);
-    await chrome.alarms.clear(`card_schedule:${args.schedule_id || args.id}`);
-    return { success: true, deleted };
-  }
-  async function runScheduledCard(scheduleId) {
-    const schedules = await getSchedules();
-    const schedule = schedules.find((s) => s.id === scheduleId);
-    if (!schedule || schedule.enabled === false)
-      return { success: false, reason: "schedule not found or disabled" };
-    const card = (await getCards()).find((c) => c.id === schedule.cardId);
-    if (!card)
-      return { success: false, reason: "card not found" };
-    const res = await runCardSteps(card, { variables: schedule.variables || {} });
-    schedule.lastRunAt = Date.now();
-    await setSchedules(schedules);
-    return { success: res.success, scheduleId, cardId: card.id, results: res.results, failedStep: res.failedStep };
-  }
-  async function executeCardTool(name, args) {
-    switch (name) {
-      case "card_list":
-        return toolCardList();
-      case "card_get":
-        return toolCardGet(args);
-      case "card_save":
-        return toolCardSave(args);
-      case "card_update_step":
-        return toolCardUpdateStep(args);
-      case "card_run":
-        return toolCardRun(args);
-      case "card_run_batch":
-        return toolCardRunBatch(args);
-      case "card_schedule":
-        return toolCardSchedule(args);
-      case "card_schedule_list":
-        return toolCardScheduleList();
-      case "card_schedule_delete":
-        return toolCardScheduleDelete(args);
-      case "card_delete":
-        return toolCardDelete(args);
-      default:
-        throw new Error(`Unknown card tool: ${name}`);
-    }
-  }
-
   // src/lib/tools/router.ts
   async function executeBrowserTool(name, args) {
-    if (name.startsWith("card_"))
-      return executeCardTool(name, args);
     return executeBrowserOnly(name, args);
   }
 
@@ -5681,6 +5346,31 @@ Always:
     }
   }
 
+  // src/lib/tools/overrides.ts
+  async function effectiveToolDefs() {
+    const overrides = await getToolDescOverrides();
+    return BROWSER_TOOLS.map((tool) => {
+      const o = overrides[tool.name];
+      if (!o)
+        return tool;
+      const desc = (o.description || "").trim();
+      const props = tool.input_schema?.properties || {};
+      let nextProps = props;
+      if (o.parameters && Object.keys(o.parameters).length) {
+        nextProps = {};
+        for (const [k, v] of Object.entries(props)) {
+          const pd = (o.parameters[k] || "").trim();
+          nextProps[k] = pd ? { ...v, description: pd } : v;
+        }
+      }
+      return {
+        ...tool,
+        description: desc || tool.description,
+        input_schema: { ...tool.input_schema, properties: nextProps }
+      };
+    });
+  }
+
   // src/background.ts
   var socket = null;
   var currentStatus = "disconnected";
@@ -5720,9 +5410,12 @@ Always:
     void pushActivity(entry);
     broadcast({ type: "activity:log", entry });
   }
+  var boundAiConfigId = null;
   function setStatus(status, reason) {
     currentStatus = status;
-    broadcast({ type: "agent:status", status, reason });
+    if (status !== "registered" && status !== "connected")
+      boundAiConfigId = null;
+    broadcast({ type: "agent:status", status, reason, aiConfigId: boundAiConfigId });
     const colors = {
       disconnected: "#787878",
       connecting: "#f59e0b",
@@ -5787,6 +5480,10 @@ Always:
     }
     return list;
   }
+  function parseAiConfigId(raw) {
+    const n = typeof raw === "number" ? raw : raw != null && String(raw).trim() !== "" ? Number(raw) : null;
+    return Number.isFinite(n) ? n : null;
+  }
   function probeRegister(url2, timeoutMs) {
     return new Promise((resolve) => {
       const probe = lookup2(url2, {
@@ -5819,7 +5516,7 @@ Always:
       });
       probe.on("connect_error", (err) => settle({ kind: "failed", reason: err?.message || "connect_error" }));
       probe.on("disconnect", (reason) => settle({ kind: "failed", reason: `disconnected: ${reason}` }));
-      probe.on("agent:registered", () => settle({ kind: "registered", socket: probe }));
+      probe.on("agent:registered", (data) => settle({ kind: "registered", socket: probe, aiConfigId: parseAiConfigId(data?.aiConfigId) }));
       probe.on("agent:register_rejected", (data) => settle({ kind: "rejected", reason: data?.reason || "\u6CE8\u518C\u88AB\u670D\u52A1\u5668\u62D2\u7EDD" }));
     });
   }
@@ -5837,6 +5534,11 @@ Always:
       platform: `browser-extension (${navigator?.userAgent?.split(" ").pop() || "chrome"})`,
       os: { platform: "browser", arch: "unknown", release: "1.0", hostname: id },
       capabilities: BROWSER_CAPABILITIES,
+      // Full self-described tool schemas (with the user's local description edits
+      // merged in). The server stores these and surfaces them in mcp.list_tools /
+      // describe_tool instead of hardcoding browser tool schemas, so a tool added
+      // here — or a description edited in the popup — needs no server change.
+      toolDefs: await effectiveToolDefs(),
       version: "1.0.0",
       token: auth.token || settings.agentToken || "",
       userId: auth.userId ?? null,
@@ -5887,6 +5589,7 @@ Always:
     try {
       let winner = null;
       let winnerUrl = "";
+      let winnerAiConfigId = null;
       let rejected = null;
       const failures = [];
       for (const candidate of candidates) {
@@ -5895,6 +5598,7 @@ Always:
         if (outcome.kind === "registered" && outcome.socket) {
           winner = outcome.socket;
           winnerUrl = candidate;
+          winnerAiConfigId = outcome.aiConfigId ?? null;
           break;
         }
         if (outcome.kind === "rejected") {
@@ -5923,6 +5627,7 @@ ${failures.map((f) => `\xB7 ${f.url} \u2014 ${f.reason}`).join("\n")}
       winner.removeAllListeners();
       socket = winner;
       activeSocketUrl = winnerUrl;
+      boundAiConfigId = winnerAiConfigId;
       setStatus("registered");
       log("system", "success", `\u5DF2\u8FDE\u63A5\u5E76\u6CE8\u518C\u5230 ${winnerUrl}`);
       if (settings.lastWorkingAgentUrl !== winnerUrl) {
@@ -5951,8 +5656,11 @@ ${failures.map((f) => `\xB7 ${f.url} \u2014 ${f.reason}`).join("\n")}
       log("system", "error", `\u8FDE\u63A5\u5931\u8D25: ${err.message}`);
     });
     s.on("agent:registered", (data) => {
+      const raw = data?.aiConfigId;
+      const parsed = typeof raw === "number" ? raw : raw != null && String(raw).trim() !== "" ? Number(raw) : null;
+      boundAiConfigId = Number.isFinite(parsed) ? parsed : null;
       setStatus("registered");
-      log("system", "success", `\u5DF2\u6CE8\u518C: ${data?.name || agentName}`);
+      log("system", "success", `\u5DF2\u6CE8\u518C: ${data?.name || agentName}${boundAiConfigId == null ? "\uFF08\u672A\u5206\u914D AI\uFF09" : ""}`);
     });
     s.on("agent:register_rejected", (data) => {
       const reason = data?.reason || "\u6CE8\u518C\u88AB\u670D\u52A1\u5668\u62D2\u7EDD";
@@ -6147,52 +5855,11 @@ Respond in the same language as the user. For factual questions, search the web 
     }
     return { text: "\u5DF2\u8FBE\u5230\u6700\u5927\u8FED\u4EE3\u6B21\u6570", toolsUsed, toolEvents };
   }
-  var cardRunning = false;
-  var cardStopRequested = false;
-  setCardProgress((cardId, index, total, note, tool, status, error) => {
-    broadcast({ type: "card:progress", cardId, index, total, note, tool, status, error });
-    const label = `[${index + 1}/${total}] ${note}`;
-    if (status === "running")
-      log("card", "running", label, { tool });
-    else if (status === "success")
-      log("card", "success", `\u5B8C\u6210 ${label}`);
-    else if (status === "error")
-      log("card", "error", `\u5931\u8D25 ${label} \u2014 ${error || ""}`);
-  });
-  async function runCard(cardId) {
-    if (cardRunning) {
-      log("card", "warn", "\u5DF2\u6709\u5361\u7247\u6B63\u5728\u6267\u884C\uFF0C\u8BF7\u5148\u505C\u6B62");
-      return;
-    }
-    const card = await getCard(cardId);
-    if (!card) {
-      broadcast({ type: "card:done", cardId, success: false, reason: "\u5361\u7247\u4E0D\u5B58\u5728" });
-      log("card", "error", "\u5361\u7247\u4E0D\u5B58\u5728");
-      return;
-    }
-    cardRunning = true;
-    cardStopRequested = false;
-    log("card", "info", `\u5F00\u59CB\u6267\u884C\u5361\u7247\u300C${card.name}\u300D\uFF0C\u5171 ${card.steps.length} \u6B65`);
-    try {
-      const res = await runCardSteps(card, { shouldStop: () => cardStopRequested });
-      if (res.stopped) {
-        log("card", "warn", `\u5DF2\u505C\u6B62\uFF1A${card.name}`);
-        broadcast({ type: "card:done", cardId, success: false, reason: "stopped" });
-      } else if (res.success) {
-        log("card", "success", `\u5361\u7247\u6267\u884C\u5B8C\u6210\uFF1A${card.name}`);
-        broadcast({ type: "card:done", cardId, success: true });
-      } else {
-        broadcast({ type: "card:done", cardId, success: false, reason: res.failedStep?.error || "\u6267\u884C\u5931\u8D25" });
-      }
-    } finally {
-      cardRunning = false;
-    }
-  }
   chrome.runtime.onConnect.addListener((port) => {
     if (port.name !== "popup")
       return;
     popupPorts.add(port);
-    port.postMessage({ type: "agent:status", status: currentStatus });
+    port.postMessage({ type: "agent:status", status: currentStatus, aiConfigId: boundAiConfigId });
     getActivity().then((entries) => {
       entries.forEach((e) => port.postMessage({ type: "activity:log", entry: e }));
     });
@@ -6219,10 +5886,10 @@ Respond in the same language as the user. For factual questions, search the web 
           break;
         }
         case "settings:save": {
-          const prev2 = await getSettings();
+          const prev = await getSettings();
           const payload = { ...msg.payload };
-          const serverUrlChanged = payload.serverUrl !== void 0 && payload.serverUrl !== prev2.serverUrl;
-          const agentUrlChanged = payload.agentServerUrl !== void 0 && payload.agentServerUrl !== prev2.agentServerUrl;
+          const serverUrlChanged = payload.serverUrl !== void 0 && payload.serverUrl !== prev.serverUrl;
+          const agentUrlChanged = payload.agentServerUrl !== void 0 && payload.agentServerUrl !== prev.agentServerUrl;
           if ((serverUrlChanged || agentUrlChanged) && payload.lastWorkingAgentUrl === void 0) {
             payload.lastWorkingAgentUrl = "";
           }
@@ -6254,14 +5921,19 @@ Respond in the same language as the user. For factual questions, search the web 
           port.postMessage({ type: "connection:result", result });
           break;
         }
-        case "card:run": {
-          void runCard(msg.cardId);
-          break;
-        }
-        case "card:stop": {
-          if (cardRunning) {
-            cardStopRequested = true;
-            log("card", "warn", "\u6536\u5230\u505C\u6B62\u8BF7\u6C42");
+        case "mcp:test": {
+          log("task", "running", `\u6D4B\u8BD5: ${msg.tool}`, msg.args);
+          try {
+            const result = await withTaskTimeout(
+              executeBrowserTool(msg.tool, msg.args || {}),
+              taskTimeoutMs({ taskId: "mcp-test", tool: msg.tool, args: msg.args }),
+              `mcp.test ${msg.tool}`
+            );
+            log("task", "success", `\u6D4B\u8BD5\u5B8C\u6210: ${msg.tool}`);
+            port.postMessage({ type: "mcp:test:result", requestId: msg.requestId, ok: true, result });
+          } catch (err) {
+            log("task", "error", `\u6D4B\u8BD5\u5931\u8D25: ${msg.tool} \u2014 ${err?.message || err}`);
+            port.postMessage({ type: "mcp:test:result", requestId: msg.requestId, ok: false, error: err?.message || String(err) });
           }
           break;
         }
@@ -6270,13 +5942,6 @@ Respond in the same language as the user. For factual questions, search the web 
   });
   chrome.alarms.create("keepalive", { periodInMinutes: 0.4 });
   chrome.alarms.onAlarm.addListener((alarm) => {
-    if (alarm.name.startsWith("card_schedule:")) {
-      const scheduleId = alarm.name.slice("card_schedule:".length);
-      void runScheduledCard(scheduleId).then((res) => {
-        log("card", res?.success ? "success" : "error", `\u5B9A\u65F6\u5361\u7247 ${scheduleId} ${res?.success ? "\u5B8C\u6210" : "\u5931\u8D25"}`, res);
-      });
-      return;
-    }
     if (alarm.name === "keepalive" && socket && !socket.connected && currentStatus !== "connecting" && !authRejected) {
       socket.connect();
     }

@@ -28,6 +28,16 @@ interface AgentSettings {
   selectedAiConfigRole: string
   selectedAiConfigLifecycle: string
   selectedAiConfigProject: string
+  // Mouse-effect toggle (simulated cursor on AI operations), parity with the
+  // browser extension's setting.
+  mouseFx: boolean
+  // Offline mode (use the self-configured model directly), parity with the
+  // browser extension. Persisted here; honoured by the runtime where supported.
+  offlineMode: boolean
+  // Local per-tool description edits, merged onto getToolDefs() before they are
+  // reported to the server via agent:register -> toolDefs. Keyed by tool id.
+  // { [toolId]: { description?: string; parameters?: { [param]: string } } }
+  toolDescOverrides: Record<string, { description?: string; parameters?: Record<string, string> }>
 }
 
 const defaults: AgentSettings = {
@@ -54,6 +64,9 @@ const defaults: AgentSettings = {
   selectedAiConfigRole: 'member',
   selectedAiConfigLifecycle: 'working',
   selectedAiConfigProject: '',
+  mouseFx: true,
+  offlineMode: false,
+  toolDescOverrides: {},
 }
 
 export const store = new Store<AgentSettings>({ defaults })
