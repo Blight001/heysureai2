@@ -45,6 +45,16 @@ electron_1.contextBridge.exposeInMainWorld('heysureAPI', {
     mcpList: () => electron_1.ipcRenderer.invoke('mcp:list'),
     mcpSaveDesc: (payload) => electron_1.ipcRenderer.invoke('mcp:save-desc', payload),
     mcpTest: (payload) => electron_1.ipcRenderer.invoke('mcp:test', payload),
+    // Offline chat window
+    openOfflineChat: () => electron_1.ipcRenderer.invoke('offline-chat:open'),
+    getOfflineChatConfig: () => electron_1.ipcRenderer.invoke('offline-chat:get-config'),
+    saveOfflinePrompt: (prompt) => electron_1.ipcRenderer.invoke('offline-chat:save-prompt', prompt),
+    sendOfflineChat: (payload) => electron_1.ipcRenderer.invoke('offline-chat:send', payload),
+    onOfflineChatProgress: (cb) => {
+        const handler = (_, event) => cb(event);
+        electron_1.ipcRenderer.on('offline-chat:progress', handler);
+        return () => electron_1.ipcRenderer.removeListener('offline-chat:progress', handler);
+    },
     // Version
     version: process.env.npm_package_version || '1.0.0',
 });

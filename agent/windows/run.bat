@@ -18,4 +18,3 @@ if not exist "node_modules" (
 echo Starting HeySure Agent Windows desktop app...
 call npm run dev
 
-pause

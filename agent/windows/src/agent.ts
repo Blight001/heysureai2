@@ -55,6 +55,11 @@ export class HeySureAgent {
 
   connect(): void {
     if (this.socket?.connected) return
+    if (this.settings.offlineMode) {
+      this.setStatus('disconnected')
+      this.log('info', '离线模式已启用，跳过服务器连接')
+      return
+    }
     // Hard gate: an agent that hasn't logged in cannot talk to the server.
     // Without this guard the socket would open transport-level, the UI would
     // flash "已连接", then the server would reject agent:register a moment

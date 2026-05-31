@@ -1,0 +1,346 @@
+type ChatMessage = { role: 'user' | 'assistant'; content: string }
+type OfflineToolDef = { name: string; description: string }
+type Segment =
+  | { type: 'message'; role: 'user' | 'assistant'; content: string }
+  | { type: 'think'; content: string }
+  | { type: 'mcp'; tool: string; success: boolean; arguments: Record<string, any>; result: any; summary: string }
+const api = (window as any).heysureAPI as {
+  getSettings: () => Promise<any>
+  saveSettings: (settings: any) => Promise<any>
+  getOfflineChatConfig: () => Promise<{ offlineMode: boolean; prompt: string; aiBaseUrl: string; aiModel: string; hasAiKey: boolean }>
+  saveOfflinePrompt: (prompt: string) => Promise<boolean>
+  sendOfflineChat: (payload: { requestId?: string; messages: ChatMessage[]; prompt?: string; allowedTools?: string[] }) => Promise<{
+    text: string
+    think?: string
+    toolsUsed: string[]
+    toolEvents: Array<{ tool: string; arguments: Record<string, any>; success: boolean; result: any; summary: string }>
+  }>
+  onOfflineChatProgress: (cb: (event: any) => void) => () => void
+  mcpList: () => Promise<{ tools: OfflineToolDef[] }>
+}
+
+const q = (id: string) => document.getElementById(id)!
+const messagesEl = q('messages')
+const inputEl = q('input') as HTMLTextAreaElement
+const sendBtn = q('send-btn') as HTMLButtonElement
+const recallBtn = q('recall-btn') as HTMLButtonElement
+const modelBtn = q('model-btn') as HTMLButtonElement
+const promptBtn = q('prompt-btn') as HTMLButtonElement
+const toolsBtn = q('tools-btn') as HTMLButtonElement
+const modelPanel = q('model-panel')
+const promptPanel = q('prompt-panel')
+const toolPanel = q('tool-panel')
+const cfgProvider = q('cfg-ai-provider') as HTMLSelectElement
+const cfgAiKey = q('cfg-ai-key') as HTMLInputElement
+const cfgAiBase = q('cfg-ai-base') as HTMLInputElement
+const cfgAiModel = q('cfg-ai-model') as HTMLInputElement
+const modelSave = q('model-save') as HTMLButtonElement
+const modelFeedback = q('model-feedback')
+const promptInput = q('prompt-input') as HTMLTextAreaElement
+const promptSave = q('prompt-save') as HTMLButtonElement
+const promptFeedback = q('prompt-feedback')
+const modelMeta = q('model-meta')
+const toolSearch = q('tool-search') as HTMLInputElement
+const toolListEl = q('tool-list')
+const toolCount = q('tool-count')
+const toolsAllBtn = q('tools-all') as HTMLButtonElement
+const toolsNoneBtn = q('tools-none') as HTMLButtonElement
+
+let messages: ChatMessage[] = []
+let segments: Segment[] = []
+let offlineToolDefs: OfflineToolDef[] = []
+let allowedTools = new Set<string>()
+let sending = false
+let activeRequestId = ''
+let liveAssistantIndex = -1
+let liveThinkIndex = -1
+let liveToolEvents = 0
+
+const PROVIDER_PRESETS: Record<string, { base: string; model: string }> = {
+  anthropic:  { base: 'https://api.anthropic.com', model: 'claude-sonnet-4-5' },
+  openai:     { base: 'https://api.openai.com',    model: 'gpt-4o' },
+  deepseek:   { base: 'https://api.deepseek.com',  model: 'deepseek-chat' },
+  openrouter: { base: 'https://openrouter.ai/api', model: 'anthropic/claude-3.5-sonnet' },
+  ollama:     { base: 'http://localhost:11434',    model: 'llama3.1' },
+}
+
+function escapeHtml(str: string): string {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+function render() {
+  messagesEl.innerHTML = ''
+  if (!segments.length) {
+    const empty = document.createElement('div')
+    empty.className = 'msg system'
+    empty.textContent = '输入消息后，AI 会直接使用本机模型配置，并可调用本机 MCP 工具。'
+    messagesEl.appendChild(empty)
+  }
+  for (const item of segments) {
+    if (item.type === 'message') {
+      const el = document.createElement('div')
+      el.className = `msg ${item.role}`
+      el.innerHTML = escapeHtml(item.content)
+      messagesEl.appendChild(el)
+    } else if (item.type === 'think') {
+      messagesEl.appendChild(detailsSegment('深度思考', item.content, true))
+    } else {
+      const status = item.summary === '执行中...' ? '执行中' : (item.success ? '成功' : '失败')
+      const body = [
+        `工具: ${item.tool}`,
+        `状态: ${status}`,
+        '',
+        '参数:',
+        offlineSafeStringify(item.arguments),
+        '',
+        '结果:',
+        offlineSafeStringify(item.result ?? item.summary),
+      ].join('\n')
+      messagesEl.appendChild(detailsSegment(`MCP 工具 · ${item.tool}`, body, false, item.success, status))
+    }
+  }
+  messagesEl.scrollTop = messagesEl.scrollHeight
+  recallBtn.disabled = sending || segments.length === 0
+  sendBtn.disabled = sending
+}
+
+function detailsSegment(label: string, content: string, open = false, success = true, statusText?: string): HTMLElement {
+  const el = document.createElement('details')
+  el.className = 'segment'
+  el.open = open
+  el.innerHTML = `
+    <summary>
+      <span>${escapeHtml(label)}</span>
+      ${label.startsWith('MCP') ? `<span class="seg-status ${success ? '' : 'fail'}">${escapeHtml(statusText || (success ? '成功' : '失败'))}</span>` : ''}
+    </summary>
+    <div class="segment-body">${escapeHtml(content)}</div>`
+  return el
+}
+
+function offlineSafeStringify(value: any): string {
+  if (typeof value === 'string') return value
+  try { return JSON.stringify(value, null, 2) } catch { return String(value) }
+}
+
+function renderTools() {
+  const keyword = toolSearch.value.trim().toLowerCase()
+  const visible = offlineToolDefs.filter(t => !keyword || t.name.toLowerCase().includes(keyword) || String(t.description || '').toLowerCase().includes(keyword))
+  toolCount.textContent = `本次对话可用 ${allowedTools.size}/${offlineToolDefs.length} 个 MCP 工具`
+  toolListEl.innerHTML = ''
+  for (const tool of visible) {
+    const label = document.createElement('label')
+    label.className = 'tool-item'
+    label.title = tool.description || tool.name
+    label.innerHTML = `<input type="checkbox" ${allowedTools.has(tool.name) ? 'checked' : ''}/><span>${escapeHtml(tool.name)}</span>`
+    label.querySelector('input')!.addEventListener('change', e => {
+      const checked = (e.target as HTMLInputElement).checked
+      if (checked) allowedTools.add(tool.name)
+      else allowedTools.delete(tool.name)
+      renderTools()
+    })
+    toolListEl.appendChild(label)
+  }
+}
+
+function insertBeforeLiveAssistant(segment: Segment): number {
+  if (liveAssistantIndex >= 0 && segments[liveAssistantIndex]?.type === 'message') {
+    segments.splice(liveAssistantIndex, 0, segment)
+    const inserted = liveAssistantIndex
+    liveAssistantIndex += 1
+    if (liveThinkIndex >= inserted) liveThinkIndex += 1
+    return inserted
+  }
+  segments.push(segment)
+  return segments.length - 1
+}
+
+function ensureLiveAssistantSegment(): number {
+  if (liveAssistantIndex >= 0 && segments[liveAssistantIndex]?.type === 'message') return liveAssistantIndex
+  segments.push({ type: 'message', role: 'assistant', content: '' })
+  liveAssistantIndex = segments.length - 1
+  return liveAssistantIndex
+}
+
+function ensureLiveThinkSegment(): number {
+  if (liveThinkIndex >= 0 && segments[liveThinkIndex]?.type === 'think') return liveThinkIndex
+  liveThinkIndex = insertBeforeLiveAssistant({ type: 'think', content: '' })
+  return liveThinkIndex
+}
+
+function applyProgress(event: any) {
+  if (!activeRequestId || event?.requestId !== activeRequestId) return
+  if (event.type === 'think_delta' && event.text) {
+    const idx = ensureLiveThinkSegment()
+    ;(segments[idx] as any).content += String(event.text)
+    render()
+    return
+  }
+  if (event.type === 'text_delta' && event.text) {
+    const idx = ensureLiveAssistantSegment()
+    ;(segments[idx] as any).content += String(event.text)
+    render()
+    return
+  }
+  if (event.type === 'tool_start') {
+    insertBeforeLiveAssistant({
+      type: 'mcp',
+      tool: event.tool || 'unknown',
+      success: true,
+      arguments: event.arguments || {},
+      result: null,
+      summary: '执行中...',
+    })
+    liveToolEvents++
+    render()
+    return
+  }
+  if (event.type === 'tool_result' && event.event) {
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const seg = segments[i]
+      if (seg.type === 'mcp' && seg.tool === event.event.tool && seg.summary === '执行中...') {
+        segments[i] = { type: 'mcp', ...event.event }
+        render()
+        return
+      }
+    }
+    insertBeforeLiveAssistant({ type: 'mcp', ...event.event })
+    liveToolEvents++
+    render()
+  }
+}
+
+function renderModelMeta(settings: any) {
+  const offline = !!settings.offlineMode
+  const model = String(settings.aiModel || '').trim() || '未配置模型'
+  const base = String(settings.aiBaseUrl || '').trim() || '未配置 Base URL'
+  const keySuffix = settings.aiKey ? '' : ' · 未配置 AI Key'
+  modelMeta.textContent = offline ? `${model} · ${base}${keySuffix}` : '离线模式未启用'
+}
+
+async function loadModelSettings() {
+  const s = await api.getSettings()
+  cfgAiKey.value = s.aiKey || ''
+  cfgAiBase.value = s.aiBaseUrl || ''
+  cfgAiModel.value = s.aiModel || ''
+  renderModelMeta(s)
+}
+
+async function send() {
+  const text = inputEl.value.trim()
+  if (!text || sending) return
+  inputEl.value = ''
+  messages.push({ role: 'user', content: text })
+  segments.push({ type: 'message', role: 'user', content: text })
+  sending = true
+  activeRequestId = `offline-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  liveAssistantIndex = -1
+  liveThinkIndex = -1
+  liveToolEvents = 0
+  render()
+  const pending = document.createElement('div')
+  pending.className = 'msg system'
+  pending.textContent = 'AI 正在处理...'
+  messagesEl.appendChild(pending)
+  messagesEl.scrollTop = messagesEl.scrollHeight
+  try {
+    const result = await api.sendOfflineChat({
+      requestId: activeRequestId,
+      messages,
+      prompt: promptInput.value.trim(),
+      allowedTools: Array.from(allowedTools),
+    })
+    if (result.think) {
+      if (liveThinkIndex >= 0 && segments[liveThinkIndex]?.type === 'think') (segments[liveThinkIndex] as any).content = result.think
+      else liveThinkIndex = insertBeforeLiveAssistant({ type: 'think', content: result.think })
+    }
+    if (liveToolEvents === 0) {
+      for (const ev of result.toolEvents || []) insertBeforeLiveAssistant({ type: 'mcp', ...ev })
+    }
+    messages.push({ role: 'assistant', content: result.text || '完成' })
+    if (liveAssistantIndex >= 0 && segments[liveAssistantIndex]?.type === 'message') {
+      ;(segments[liveAssistantIndex] as any).content = result.text || '完成'
+    } else {
+      segments.push({ type: 'message', role: 'assistant', content: result.text || '完成' })
+    }
+  } catch (err: any) {
+    messages.push({ role: 'assistant', content: `失败：${err?.message || err}` })
+    segments.push({ type: 'message', role: 'assistant', content: `失败：${err?.message || err}` })
+  } finally {
+    sending = false
+    activeRequestId = ''
+    render()
+    inputEl.focus()
+  }
+}
+
+function recall() {
+  if (sending || !messages.length) return
+  if (messages[messages.length - 1]?.role === 'assistant') messages.pop()
+  if (messages[messages.length - 1]?.role === 'user') messages.pop()
+  const lastUser = segments.map((s, i) => s.type === 'message' && s.role === 'user' ? i : -1).filter(i => i >= 0).pop()
+  if (typeof lastUser === 'number') segments = segments.slice(0, lastUser)
+  render()
+}
+
+async function initOfflineChat() {
+  const cfg = await api.getOfflineChatConfig()
+  const mcp = await api.mcpList()
+  offlineToolDefs = (mcp.tools || []).map(t => ({ name: t.name, description: t.description || '' }))
+  allowedTools = new Set(offlineToolDefs.map(t => t.name))
+  promptInput.value = cfg.prompt || ''
+  await loadModelSettings()
+  render()
+  renderTools()
+  inputEl.focus()
+}
+
+sendBtn.addEventListener('click', send)
+recallBtn.addEventListener('click', recall)
+modelBtn.addEventListener('click', () => modelPanel.classList.toggle('open'))
+promptBtn.addEventListener('click', () => promptPanel.classList.toggle('open'))
+toolsBtn.addEventListener('click', () => toolPanel.classList.toggle('open'))
+cfgProvider.addEventListener('change', () => {
+  const p = PROVIDER_PRESETS[cfgProvider.value]
+  if (p) { cfgAiBase.value = p.base; cfgAiModel.value = p.model }
+  cfgProvider.value = ''
+})
+modelSave.addEventListener('click', async () => {
+  try {
+    const settings = await api.saveSettings({
+      aiKey: cfgAiKey.value.trim(),
+      aiBaseUrl: cfgAiBase.value.trim() || 'https://api.anthropic.com',
+      aiModel: cfgAiModel.value.trim() || 'claude-sonnet-4-5',
+    })
+    renderModelMeta(settings)
+    modelFeedback.textContent = '已保存'
+    setTimeout(() => { modelFeedback.textContent = '' }, 1600)
+  } catch (err: any) {
+    modelFeedback.textContent = err?.message || '保存失败'
+    setTimeout(() => { modelFeedback.textContent = '' }, 2500)
+  }
+})
+promptSave.addEventListener('click', async () => {
+  await api.saveOfflinePrompt(promptInput.value)
+  promptFeedback.textContent = '已保存'
+  setTimeout(() => { promptFeedback.textContent = '' }, 1600)
+})
+toolSearch.addEventListener('input', renderTools)
+toolsAllBtn.addEventListener('click', () => {
+  allowedTools = new Set(offlineToolDefs.map(t => t.name))
+  renderTools()
+})
+toolsNoneBtn.addEventListener('click', () => {
+  allowedTools.clear()
+  renderTools()
+})
+inputEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    send()
+  }
+})
+api.onOfflineChatProgress(applyProgress)
+
+initOfflineChat().catch(err => {
+  modelMeta.textContent = err?.message || String(err)
+})

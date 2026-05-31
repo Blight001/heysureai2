@@ -49,6 +49,7 @@ export function registerSettingsIpc(): void {
       sendActivityLog('system', 'warn', '未登录，已取消 AI 成员自动注册选择')
     }
     getAgent()?.updateSettings(store.store)
+    if (store.get('offlineMode')) getAgent()?.disconnect()
     return store.store
   })
 

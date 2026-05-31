@@ -6,6 +6,7 @@ import { registerAgentIpc } from './agent'
 import { registerAuthIpc } from './auth'
 import { registerAiConfigIpc } from './ai-config'
 import { registerMcpIpc } from './mcp'
+import { registerOfflineChatIpc } from './offline-chat'
 
 export function registerAllIpc(): void {
   registerSettingsIpc()
@@ -13,4 +14,5 @@ export function registerAllIpc(): void {
   registerAuthIpc()
   registerAiConfigIpc()
   registerMcpIpc()
+  registerOfflineChatIpc()
 }

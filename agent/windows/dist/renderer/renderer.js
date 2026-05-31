@@ -9,6 +9,7 @@ const $ = (id) => document.getElementById(id);
 const windowMinBtn = $('window-min-btn');
 const windowMaxBtn = $('window-max-btn');
 const windowCloseBtn = $('window-close-btn');
+const offlineChatBtn = $('offline-chat-btn');
 // ── State ──────────────────────────────────────────────────────────────────
 let currentTheme = 'dark';
 let currentStatus = 'disconnected';
@@ -258,29 +259,14 @@ $('mcp-back').addEventListener('click', showList);
 // ── Settings modal ───────────────────────────────────────────────────────
 const cfgServer = $('cfg-server');
 const cfgWorkspace = $('cfg-workspace');
-const cfgAiKey = $('cfg-ai-key');
-const cfgAiBase = $('cfg-ai-base');
-const cfgAiModel = $('cfg-ai-model');
 const cfgOffline = $('cfg-offline-mode');
 const cfgMouseFx = $('cfg-mouse-fx');
-const cfgProvider = $('cfg-ai-provider');
-const PROVIDER_PRESETS = {
-    anthropic: { base: 'https://api.anthropic.com', model: 'claude-sonnet-4-5' },
-    openai: { base: 'https://api.openai.com', model: 'gpt-4o' },
-    deepseek: { base: 'https://api.deepseek.com', model: 'deepseek-chat' },
-    openrouter: { base: 'https://openrouter.ai/api', model: 'anthropic/claude-3.5-sonnet' },
-    ollama: { base: 'http://localhost:11434', model: 'llama3.1' },
-};
-cfgProvider.addEventListener('change', () => {
-    const p = PROVIDER_PRESETS[cfgProvider.value];
-    if (p) {
-        cfgAiBase.value = p.base;
-        cfgAiModel.value = p.model;
-    }
-    cfgProvider.value = '';
-});
-function updateOfflineUi() { $('offline-model-config').classList.toggle('hidden', !cfgOffline.checked); }
-cfgOffline.addEventListener('change', updateOfflineUi);
+function updateOfflineChatButton() {
+    offlineChatBtn.classList.toggle('active', cfgOffline.checked);
+    offlineChatBtn.title = cfgOffline.checked ? '打开离线对话' : '离线模式未启用';
+}
+cfgOffline.addEventListener('change', updateOfflineChatButton);
+offlineChatBtn.addEventListener('click', () => window.heysureAPI.openOfflineChat());
 function openSettings() { $('settings-modal').classList.remove('hidden'); }
 function closeSettings() { $('settings-modal').classList.add('hidden'); }
 $('settings-btn').addEventListener('click', openSettings);
@@ -295,10 +281,11 @@ $('save-btn').addEventListener('click', async () => {
             workspaceRoot: cfgWorkspace.value.trim(),
             offlineMode: cfgOffline.checked,
             mouseFx: cfgMouseFx.checked,
-            aiKey: cfgAiKey.value.trim(),
-            aiBaseUrl: cfgAiBase.value.trim() || 'https://api.anthropic.com',
-            aiModel: cfgAiModel.value.trim() || 'claude-sonnet-4-5',
         });
+        if (cfgOffline.checked) {
+            setStatus('disconnected');
+            window.heysureAPI.openOfflineChat();
+        }
         $('info-server').textContent = cfgServer.value.trim() || '—';
         $('info-workspace').textContent = cfgWorkspace.value.trim() ? (cfgWorkspace.value.trim().split(/[/\\]/).pop() || cfgWorkspace.value.trim()) : '—';
         fb.style.color = 'var(--success)';
@@ -477,12 +464,9 @@ async function loadMainSettings() {
     const s = await window.heysureAPI.getSettings();
     cfgServer.value = s.serverUrl || '';
     cfgWorkspace.value = s.workspaceRoot || '';
-    cfgAiKey.value = s.aiKey || '';
-    cfgAiBase.value = s.aiBaseUrl || '';
-    cfgAiModel.value = s.aiModel || '';
     cfgOffline.checked = !!s.offlineMode;
     cfgMouseFx.checked = s.mouseFx !== false;
-    updateOfflineUi();
+    updateOfflineChatButton();
     $('info-server').textContent = s.serverUrl || '—';
     $('info-workspace').textContent = s.workspaceRoot ? (s.workspaceRoot.split(/[/\\]/).pop() || s.workspaceRoot) : '—';
     loginAccount.value = s.userAccount || '';
@@ -504,7 +488,9 @@ async function init() {
     await loadMcp();
     const status = await window.heysureAPI.getStatus();
     setStatus(status);
-    if (s.authToken)
+    if (s.offlineMode)
+        window.heysureAPI.openOfflineChat();
+    else if (s.authToken)
         window.heysureAPI.connect();
     else
         openLoginModal();

@@ -46,6 +46,8 @@ function registerSettingsIpc() {
             (0, activity_log_1.sendActivityLog)('system', 'warn', '未登录，已取消 AI 成员自动注册选择');
         }
         (0, agent_runtime_1.getAgent)()?.updateSettings(store_1.store.store);
+        if (store_1.store.get('offlineMode'))
+            (0, agent_runtime_1.getAgent)()?.disconnect();
         return store_1.store.store;
     });
     electron_1.ipcMain.handle('theme:set', (_event, theme) => {

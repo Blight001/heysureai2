@@ -46,6 +46,17 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   mcpSaveDesc: (payload: { tool: string; description?: string; parameters?: Record<string, string> }) =>
     ipcRenderer.invoke('mcp:save-desc', payload),
   mcpTest: (payload: { tool: string; args: Record<string, any> }) => ipcRenderer.invoke('mcp:test', payload),
+  // Offline chat window
+  openOfflineChat: () => ipcRenderer.invoke('offline-chat:open'),
+  getOfflineChatConfig: () => ipcRenderer.invoke('offline-chat:get-config'),
+  saveOfflinePrompt: (prompt: string) => ipcRenderer.invoke('offline-chat:save-prompt', prompt),
+  sendOfflineChat: (payload: { requestId?: string; messages: Array<{ role: 'user' | 'assistant'; content: string }>; prompt?: string; allowedTools?: string[] }) =>
+    ipcRenderer.invoke('offline-chat:send', payload),
+  onOfflineChatProgress: (cb: (event: any) => void) => {
+    const handler = (_: any, event: any) => cb(event)
+    ipcRenderer.on('offline-chat:progress', handler)
+    return () => ipcRenderer.removeListener('offline-chat:progress', handler)
+  },
   // Version
   version: process.env.npm_package_version || '1.0.0',
 })

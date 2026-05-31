@@ -37,6 +37,7 @@
     .user-chip .un { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .status-pill { display:flex; align-items:center; gap:6px; padding:5px 12px; border-radius:20px; background:var(--surface); border:1px solid var(--border); font-size:11px; font-weight:500; cursor:pointer; -webkit-app-region:no-drag; }
     .status-pill:hover { background:var(--surface-h); }
+    .offline-chat-btn.active { color:#fff; background:linear-gradient(135deg,var(--success),var(--info)); }
     .status-dot { width:9px; height:9px; border-radius:50%; background:#787878; flex-shrink:0; transition:background var(--tr); }
     .status-dot.green { background:var(--success); animation:pulse 3s infinite; }
     .status-dot.yellow { background:var(--warn); }
@@ -163,6 +164,7 @@
       <span id="status-label">未连接</span>
     </div>
     <button class="icon-btn" id="settings-btn" title="设置">⚙</button>
+    <button class="icon-btn offline-chat-btn" id="offline-chat-btn" title="离线对话">💬</button>
     <button class="icon-btn" id="theme-toggle" title="切换主题">🌙</button>
     <div class="window-btns" aria-label="窗口控制">
       <button class="window-btn min" id="window-min-btn" title="最小化" aria-label="最小化"><span class="window-icon"></span></button>
@@ -202,21 +204,7 @@
           <input type="checkbox" id="cfg-offline-mode"/>
           <label for="cfg-offline-mode" style="margin:0;text-transform:none;font-size:12px;">启用离线模式（用自配模型直连，无需登录服务器）</label>
         </div>
-        <div id="offline-model-config" class="hidden">
-          <div class="fg"><label>服务商预设</label>
-            <select id="cfg-ai-provider">
-              <option value="">自定义 / 不修改</option>
-              <option value="anthropic">Anthropic Claude</option>
-              <option value="openai">OpenAI</option>
-              <option value="deepseek">DeepSeek</option>
-              <option value="openrouter">OpenRouter</option>
-              <option value="ollama">本地 Ollama</option>
-            </select>
-          </div>
-          <div class="fg"><label>AI Key</label><input type="text" id="cfg-ai-key" placeholder="sk-ant-... 或 sk-..."/></div>
-          <div class="fg"><label>Base URL</label><input type="url" id="cfg-ai-base" placeholder="https://api.anthropic.com"/></div>
-          <div class="fg"><label>模型</label><input type="text" id="cfg-ai-model" placeholder="claude-sonnet-4-5"/></div>
-        </div>
+        <div class="login-hint">模型服务商、Key、Base URL 和模型名称在离线对话窗口中配置。</div>
       </div>
 
       <!-- 2. 模拟鼠标特效 -->
