@@ -29,8 +29,8 @@ def _find_connected_agent(agent_id: str, user_id: int) -> Optional[dict]:
 
 def _scope_view(agent: dict, user_id: int) -> dict:
     """Capabilities + effective allow-list for a connected agent. Scope is keyed
-    per individual agent; with no saved record every reported tool is allowed
-    (default-open)."""
+    per individual agent; with no saved record no endpoint tool is allowed
+    (default-closed)."""
     agent_type = agent_type_of(agent)
     agent_id = str(agent.get("id") or "")
     capabilities = sorted(agent_endpoint_tools(agent))
@@ -40,7 +40,7 @@ def _scope_view(agent: dict, user_id: int) -> dict:
     except (TypeError, ValueError):
         ai_config_id = None
     scope = get_scope(user_id, agent_id) if agent_id else None
-    allowed = capabilities if scope is None else sorted(set(capabilities) & scope)
+    allowed = [] if scope is None else sorted(set(capabilities) & scope)
     return {
         "agentId": agent_id,
         "agentName": str(agent.get("name") or agent.get("id") or ""),

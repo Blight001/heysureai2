@@ -142,14 +142,17 @@ const renderedThinkText = computed(() => {
 <template>
   <div
     class="flex flex-col gap-1.5"
-    :class="(isFrontPromptMessage || isTaskCompleteNotice) ? 'items-center' : ((props.message.role === 'user' && !isSystemNoticeMessage) ? 'items-end' : 'items-start')"
+    :class="[
+      (isFrontPromptMessage || isTaskCompleteNotice) ? 'items-center' : ((props.message.role === 'user' && !isSystemNoticeMessage) ? 'items-end' : 'items-start'),
+      isMcpToolMessage ? '!mt-0.5' : ''
+    ]"
   >
     <div
       class="group relative max-w-[95%]"
       :class="isPlainAssistantMessage ? 'sm:max-w-[92%]' : 'sm:max-w-[85%]'"
     >
       <!-- Think Block -->
-      <div v-if="renderedThinkText" class="mb-1">
+      <div v-if="renderedThinkText" class="mb-0.5">
         <details class="transition-all">
           <summary class="py-0.5 text-[11px] leading-4 text-zinc-500 font-medium cursor-pointer hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-300 transition-colors select-none">
             {{ props.thinkingIcon ? `${props.thinkingIcon} ` : '' }}深度思考

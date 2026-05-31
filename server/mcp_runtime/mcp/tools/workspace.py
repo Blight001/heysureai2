@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from api.database import engine
+from api.agent_bindings import get_binding
 from api.models import AIRuntimeStatus, AssistantAIConfig
 from api.sio import agents
 from ..core import generate_file_tree, get_project_root, safe_join
@@ -150,12 +151,36 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
         "sandboxed": True,
     }
 
-def _list_connected_socket_agents() -> List[Dict[str, Any]]:
+def _parse_int(value: Any) -> Optional[int]:
+    try:
+        parsed = int(value)
+        return parsed if parsed > 0 else None
+    except Exception:
+        return None
+
+
+def _list_connected_socket_agents(
+    user_id: Optional[int] = None,
+    ai_config_id: Optional[int] = None,
+) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
+    expected_user_id = _parse_int(user_id)
+    expected_ai_config_id = _parse_int(ai_config_id)
     for item in list(agents.values()):
         row = dict(item) if isinstance(item, dict) else {"value": item}
+        agent_user_id = _parse_int(row.get("userId") or row.get("user_id"))
+        if expected_user_id and agent_user_id and agent_user_id != expected_user_id:
+            continue
+
+        agent_id = str(row.get("id") or "").strip()
+        bound_ai_config_id = get_binding(expected_user_id, agent_id) if expected_user_id and agent_id else None
+        if expected_ai_config_id and bound_ai_config_id != expected_ai_config_id:
+            continue
+
+        row["aiConfigId"] = bound_ai_config_id
+        row["ai_config_id"] = bound_ai_config_id
         row["source"] = "socket"
-        row["dispatchable"] = True
+        row["dispatchable"] = bound_ai_config_id is not None
         out.append(row)
     return out
 
@@ -195,7 +220,7 @@ def _list_managed_ai_agents(user_id: int) -> List[Dict[str, Any]]:
     return out
 
 def _list_agents(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    connected_agents = _list_connected_socket_agents()
+    connected_agents = _list_connected_socket_agents(user_id, ai_config_id)
     managed_agents = _list_managed_ai_agents(user_id)
     all_agents = connected_agents + managed_agents
     return {
@@ -221,7 +246,7 @@ def _get_overview(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int
             ).first()
             if cfg:
                 cfg_db_uri = cfg.database_uri
-    connected_agents = _list_connected_socket_agents()
+    connected_agents = _list_connected_socket_agents(user_id, ai_config_id)
     managed_agents = _list_managed_ai_agents(user_id)
     all_agents = connected_agents + managed_agents
     return {

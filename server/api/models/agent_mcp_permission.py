@@ -6,9 +6,9 @@ agent's bound AI may actually drive is stored here, keyed by ``(user_id,
 agent_id)`` — i.e. **per individual agent**, so each connected device has its
 own independent scope (set in the Workshop panel).
 
-``tools_json`` is a JSON array of allowed tool names; no row means "no
-restriction yet" → the bound AI may use every tool the agent reports (see
-``connector_runtime.dispatch.desktop_agent_tools``). ``ai_config_id`` and
+``tools_json`` is a JSON array of allowed tool names; no row means "closed"
+→ the bound AI may not use tools from that agent until the Workshop saves a
+scope (see ``connector_runtime.dispatch.desktop_agent_tools``). ``ai_config_id`` and
 ``agent_type`` are kept as informational columns (which AI the agent was bound
 to / its kind when the scope was last saved) but are not part of the key, so the
 scope follows the physical agent even if it is reassigned to a different AI.

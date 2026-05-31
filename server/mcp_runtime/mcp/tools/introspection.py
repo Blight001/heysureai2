@@ -36,6 +36,7 @@ def _allowed_tool_names(user_id: int, ai_config_id: Optional[int]) -> set[str]:
     from connector_runtime.dispatch.desktop_agent_tools import (
         endpoint_bridge_tools_for_config,
         endpoint_tools_for_config,
+        strip_endpoint_tool_config_names,
     )
     from api.services.task_system import with_workspace_read_by_name_compat
     import json
@@ -61,6 +62,7 @@ def _allowed_tool_names(user_id: int, ai_config_id: Optional[int]) -> set[str]:
             allowed.update(str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip())
     except Exception:
         pass
+    allowed = strip_endpoint_tool_config_names(allowed)
     allowed = with_workspace_read_by_name_compat(allowed)
     allowed.update(endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
     allowed.update(endpoint_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))

@@ -1,8 +1,18 @@
-import { getRobot, sleep } from './shared/robot'
+import { getRobot, sleep, smoothMoveMouse } from './shared/robot'
 
-function ensurePosition(args: any) {
+async function ensurePosition(args: any) {
   if (args.x !== undefined && args.y !== undefined) {
-    getRobot().moveMouseSmooth(Number(args.x), Number(args.y))
+    await smoothMoveMouse(Number(args.x), Number(args.y), moveOptions(args))
+  }
+}
+
+function moveOptions(args: any) {
+  return {
+    speed: args.speed !== undefined ? Number(args.speed) : undefined,
+    minSteps: args.min_steps !== undefined ? Number(args.min_steps) : undefined,
+    maxSteps: args.max_steps !== undefined ? Number(args.max_steps) : undefined,
+    intervalMs: args.interval_ms !== undefined ? Number(args.interval_ms) : undefined,
+    jitter: args.jitter,
   }
 }
 
@@ -10,7 +20,7 @@ export async function mouseMove(args: any) {
   const x = Number(args.x)
   const y = Number(args.y)
   const smooth = args.smooth !== false
-  if (smooth) getRobot().moveMouseSmooth(x, y)
+  if (smooth) await smoothMoveMouse(x, y, moveOptions(args))
   else getRobot().moveMouse(x, y)
   return { success: true, position: { x, y } }
 }
@@ -18,7 +28,7 @@ export async function mouseMove(args: any) {
 export async function mouseClick(args: any) {
   const button = String(args.button || 'left').toLowerCase()
   if (args.x !== undefined && args.y !== undefined) {
-    ensurePosition(args); await sleep(50)
+    await ensurePosition(args); await sleep(30)
   }
   const btn = button === 'right' ? 'right' : button === 'middle' ? 'middle' : 'left'
   getRobot().mouseClick(btn)
@@ -27,7 +37,7 @@ export async function mouseClick(args: any) {
 
 export async function mouseDoubleClick(args: any) {
   if (args.x !== undefined && args.y !== undefined) {
-    ensurePosition(args); await sleep(50)
+    await ensurePosition(args); await sleep(30)
   }
   getRobot().mouseClick('left', true)
   return { success: true, double_click: true, position: getRobot().getMousePos() }
@@ -35,7 +45,7 @@ export async function mouseDoubleClick(args: any) {
 
 export async function mouseRightClick(args: any) {
   if (args.x !== undefined && args.y !== undefined) {
-    ensurePosition(args); await sleep(50)
+    await ensurePosition(args); await sleep(30)
   }
   getRobot().mouseClick('right')
   return { success: true, right_click: true, position: getRobot().getMousePos() }
@@ -57,9 +67,9 @@ export async function mouseDrag(args: any) {
   const toX = Number(args.to_x || args.x2 || 0)
   const toY = Number(args.to_y || args.y2 || 0)
   const robot = getRobot()
-  robot.moveMouseSmooth(fromX, fromY); await sleep(50)
+  await smoothMoveMouse(fromX, fromY, moveOptions(args)); await sleep(30)
   robot.mouseToggle('down', 'left'); await sleep(50)
-  robot.moveMouseSmooth(toX, toY); await sleep(50)
+  await smoothMoveMouse(toX, toY, moveOptions(args)); await sleep(50)
   robot.mouseToggle('up', 'left')
   return { success: true, from: { x: fromX, y: fromY }, to: { x: toX, y: toY } }
 }

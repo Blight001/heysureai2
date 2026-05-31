@@ -902,7 +902,11 @@ def _run_worker_impl(
                         effective_tool_allowlist = {
                             str(tool).strip() for tool in tools if isinstance(tool, str) and str(tool).strip()
                         }
-                        effective_tool_allowlist = with_workspace_read_by_name_compat(effective_tool_allowlist)
+                        from connector_runtime.dispatch.desktop_agent_tools import strip_endpoint_tool_config_names
+
+                        effective_tool_allowlist = strip_endpoint_tool_config_names(
+                            with_workspace_read_by_name_compat(effective_tool_allowlist)
+                        )
                         effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user_id))
                         effective_tool_allowlist.update(endpoint_tools_for_config(ai_config_id, user_id))
                         if ai_config_id is not None:

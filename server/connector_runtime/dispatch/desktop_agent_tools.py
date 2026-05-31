@@ -58,10 +58,43 @@ ENDPOINT_BRIDGE_MCP_TOOLS = {"admin.list_agents"}
 # recognised by their ``browser_`` / ``card_`` namespace; everything else a
 # desktop agent reports is a desktop tool.
 
+ENDPOINT_TOOL_PREFIXES = (
+    "browser_",
+    "card_",
+    "fs.",
+    "shell.",
+    "git.",
+    "keyboard.",
+    "mouse.",
+    "screen.",
+    "clipboard.",
+    "window.",
+    "process.",
+    "display.",
+    "ear.",
+    "hands.",
+)
+
 
 def _is_browser_namespaced(name: str) -> bool:
     tool = str(name or "").strip()
     return tool.startswith("browser_") or tool.startswith("card_")
+
+
+def is_endpoint_tool_config_name(name: str) -> bool:
+    """Static guard for endpoint tools accidentally stored in AI ``mcp_tools``.
+
+    Runtime availability still comes from live agent capabilities + per-agent
+    scope. This prefix test only strips legacy endpoint entries from persisted
+    AI config / task override allow-lists, where dynamic presence lookups are
+    the wrong source of truth.
+    """
+    tool = str(name or "").strip()
+    return bool(tool) and tool.startswith(ENDPOINT_TOOL_PREFIXES)
+
+
+def strip_endpoint_tool_config_names(names: Set[str]) -> Set[str]:
+    return {name for name in names if not is_endpoint_tool_config_name(name)}
 
 
 def agent_type_of(agent: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -308,7 +341,7 @@ def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int
     """Endpoint MCP tools available to an AI right now: the union of what its
     online endpoint agents (Linux / desktop / browser) advertise, each narrowed
     by that individual agent's saved per-agent permission scope. No saved scope
-    row → no restriction (every reported tool is allowed).
+    row → no endpoint tools are allowed.
 
     Resolved from the shared DB presence snapshot (``api.agent_presence``) so
     every process — gateway, ai-runtime, mcp-runtime, connector — gets the same
@@ -324,7 +357,9 @@ def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int
 
     tools: Set[str] = set()
     for agent_id, _agent_type, caps in online_agents_for_config(user_id, config_id):
-        # Each individual agent has its own MCP scope. No saved row → unrestricted.
+        # Each individual agent has its own MCP scope. No saved row → closed.
         scope = get_scope(user_id, agent_id) if agent_id else None
-        tools |= caps if scope is None else (caps & scope)
+        if scope is None:
+            continue
+        tools |= caps & scope
     return tools

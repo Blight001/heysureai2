@@ -68,12 +68,14 @@ def _resolve_ai_runtime(session: Session, user: User, ai_kind: str, ai_config_id
     return cfg, api_key, base_url, model, system_prompt
 
 def _parse_allowed_tools(raw: Optional[str]) -> set[str]:
+    from connector_runtime.dispatch.desktop_agent_tools import strip_endpoint_tool_config_names
+
     try:
         parsed = json.loads(raw or "[]")
         if not isinstance(parsed, list):
             return set()
         raw_tools = {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
-        return with_workspace_read_by_name_compat(raw_tools)
+        return strip_endpoint_tool_config_names(with_workspace_read_by_name_compat(raw_tools))
     except Exception:
         return set()
 

@@ -6,10 +6,10 @@ the scope on every endpoint tool call) and the Workshop / AI-settings editors
 ``api.models.agent_mcp_permission``.
 
 Scope is keyed by ``(user_id, agent_id)`` — each individual connected agent has
-its own allow-list. A missing row means "unrestricted" — the bound AI may use
-every tool the agent reports. Callers distinguish that from an explicit empty
-allow-list: ``get_scope`` returns ``None`` for "no record" and a (possibly
-empty) ``set`` when a row exists.
+its own allow-list. A missing row means "closed" — the bound AI may not use any
+tool from that agent until the Workshop saves a scope. Callers distinguish that
+from an explicit empty allow-list: ``get_scope`` returns ``None`` for "no
+record" and a (possibly empty) ``set`` when a row exists.
 """
 
 import json
@@ -54,7 +54,7 @@ def _decode_tools(raw: str) -> Set[str]:
 
 def get_scope(user_id, agent_id) -> Optional[Set[str]]:
     """Return the saved allow-list for (user, agent), or ``None`` when no row
-    exists (meaning: no restriction configured yet)."""
+    exists (meaning: default closed)."""
     uid = _coerce_int(user_id)
     aid = _agent_id(agent_id)
     if uid is None or not aid:

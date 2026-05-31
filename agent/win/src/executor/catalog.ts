@@ -14,6 +14,7 @@ import {
   mouseMove, mouseClick, mouseDoubleClick, mouseRightClick, mouseScroll, mouseDrag,
 } from '../tools/mouse'
 import { screenCapture, screenCaptureRegion, screenInfo } from '../tools/screen'
+import { displayBox, displayClear } from '../tools/display'
 import { clipboardGet, clipboardSet } from '../tools/clipboard'
 import { windowList, windowFocus, windowClose } from '../tools/window'
 import { processList, processKill } from '../tools/process'
@@ -100,6 +101,9 @@ registerTools([
       x: { type: 'number', description: '目标 X 坐标（像素）。' },
       y: { type: 'number', description: '目标 Y 坐标（像素）。' },
       smooth: { type: 'boolean', description: '是否平滑移动。默认 true。' },
+      speed: { type: 'number', description: '平滑移动速度，表示每步大约移动的像素数；越大越快。默认 100。' },
+      interval_ms: { type: 'number', description: '平滑移动每步间隔毫秒数；越小越快。默认 3。' },
+      jitter: { type: 'boolean', description: '是否加入轻微拟人抖动。默认 true。' },
     }, ['x', 'y']),
     handler: ({ args }) => mouseMove(args),
   },
@@ -110,6 +114,8 @@ registerTools([
       x: { type: 'number', description: '点击前移动到的 X 坐标（像素）。' },
       y: { type: 'number', description: '点击前移动到的 Y 坐标（像素）。' },
       button: { type: 'string', description: '鼠标键：left、right 或 middle。默认 left。' },
+      speed: { type: 'number', description: '移动到点击点的平滑速度；越大越快。默认 100。' },
+      interval_ms: { type: 'number', description: '移动到点击点时每步间隔毫秒数。默认 3。' },
     }),
     handler: ({ args }) => mouseClick(args),
   },
@@ -119,6 +125,8 @@ registerTools([
     inputSchema: OBJ({
       x: { type: 'number', description: '双击前移动到的 X 坐标（像素）。' },
       y: { type: 'number', description: '双击前移动到的 Y 坐标（像素）。' },
+      speed: { type: 'number', description: '移动到双击点的平滑速度；越大越快。默认 100。' },
+      interval_ms: { type: 'number', description: '移动到双击点时每步间隔毫秒数。默认 3。' },
     }),
     handler: ({ args }) => mouseDoubleClick(args),
   },
@@ -128,6 +136,8 @@ registerTools([
     inputSchema: OBJ({
       x: { type: 'number', description: '右键前移动到的 X 坐标（像素）。' },
       y: { type: 'number', description: '右键前移动到的 Y 坐标（像素）。' },
+      speed: { type: 'number', description: '移动到右键点的平滑速度；越大越快。默认 100。' },
+      interval_ms: { type: 'number', description: '移动到右键点时每步间隔毫秒数。默认 3。' },
     }),
     handler: ({ args }) => mouseRightClick(args),
   },
@@ -150,8 +160,36 @@ registerTools([
       from_y: { type: 'number', description: '起点 Y 坐标（像素）。' },
       to_x: { type: 'number', description: '终点 X 坐标（像素）。' },
       to_y: { type: 'number', description: '终点 Y 坐标（像素）。' },
+      speed: { type: 'number', description: '平滑拖动速度，表示每步大约移动的像素数；越大越快。默认 100。' },
+      interval_ms: { type: 'number', description: '平滑拖动每步间隔毫秒数；越小越快。默认 3。' },
     }, ['from_x', 'from_y', 'to_x', 'to_y']),
     handler: ({ args }) => mouseDrag(args),
+  },
+
+  // Display overlay (windows-only via Electron transparent BrowserWindow)
+  {
+    id: 'display.box', platform: 'windows',
+    description: '在桌面最上层短暂显示矩形框。用途：高亮 AI 识别到的屏幕区域。场景：标记 OCR/视觉定位到的按钮、文字、图片区域。',
+    inputSchema: OBJ({
+      top: { type: 'number', description: '矩形框左上角 Y 坐标（像素）。' },
+      left: { type: 'number', description: '矩形框左上角 X 坐标（像素）。' },
+      x: { type: 'number', description: 'left 的别名。' },
+      y: { type: 'number', description: 'top 的别名。' },
+      width: { type: 'number', description: '矩形框宽度（像素）。' },
+      height: { type: 'number', description: '矩形框高度（像素）。' },
+      duration: { type: 'number', description: '显示持续时间（毫秒）。默认 1000。' },
+      duration_ms: { type: 'number', description: 'duration 的别名。' },
+      color: { type: 'string', description: '主框颜色。默认 red。' },
+      label: { type: 'string', description: '可选标签，会显示在框左上方。' },
+      sub_boxes: { type: 'array', description: '子框列表。可传 BoxDisplay.py 风格的四点数组，坐标相对主框；也可传 {left, top, width, height, color}。' },
+    }, ['width', 'height']),
+    handler: ({ args }) => displayBox(args),
+  },
+  {
+    id: 'display.clear', platform: 'windows',
+    description: '清除当前所有桌面高亮框。用途：移除 display.box 创建的 overlay。场景：任务结束或重新标记前清屏。',
+    inputSchema: OBJ({}),
+    handler: ({ args }) => displayClear(args),
   },
 
   // Screen (windows-only via Electron desktopCapturer + robotjs)

@@ -89,6 +89,8 @@ def _looks_like_mcp_template(text: str) -> bool:
     return ("<mcp-call>" in src and has_tools_line and has_rules_line)
 
 def _parse_allowed_tools_for_cfg(cfg: Optional[AssistantAIConfig]) -> set[str]:
+    from connector_runtime.dispatch.desktop_agent_tools import strip_endpoint_tool_config_names
+
     if not cfg:
         return set()
     try:
@@ -96,7 +98,7 @@ def _parse_allowed_tools_for_cfg(cfg: Optional[AssistantAIConfig]) -> set[str]:
         if not isinstance(parsed, list):
             return set()
         raw_tools = {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
-        raw_tools = with_workspace_read_by_name_compat(raw_tools)
+        raw_tools = strip_endpoint_tool_config_names(with_workspace_read_by_name_compat(raw_tools))
         raw_tools.update(MCP_INTROSPECTION_TOOLS)
         raw_tools.update(endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
         raw_tools.update(endpoint_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
@@ -391,7 +393,9 @@ def _build_mcp_stream_warning(
             parsed_allowed = json.loads(cfg.mcp_tools or "[]")
             if isinstance(parsed_allowed, list):
                 allowed_tools = {str(v).strip() for v in parsed_allowed if isinstance(v, str) and str(v).strip()}
-                allowed_tools = with_workspace_read_by_name_compat(allowed_tools)
+                from connector_runtime.dispatch.desktop_agent_tools import strip_endpoint_tool_config_names
+
+                allowed_tools = strip_endpoint_tool_config_names(with_workspace_read_by_name_compat(allowed_tools))
         except Exception:
             allowed_tools = set()
 

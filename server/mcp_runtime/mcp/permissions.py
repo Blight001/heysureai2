@@ -178,6 +178,8 @@ def effective_allowed_for_config(user, cfg, all_tool_names: Optional[Iterable[st
 
 def clamp_tools_json(user, tier: str, mcp_tools_json: Optional[str]) -> str:
     """Narrow a stored mcp_tools JSON array to what ``tier`` is allowed to use."""
+    from connector_runtime.dispatch.desktop_agent_tools import is_endpoint_tool_config_name
+
     names = all_registry_tool_names()
     allowed = effective_allowed_for_tier(user, tier, names)
     try:
@@ -196,7 +198,11 @@ def clamp_tools_json(user, tier: str, mcp_tools_json: Optional[str]) -> str:
     for tool in requested:
         if tool.startswith("workspace.") and tool != "workspace.run_command":
             continue
-        # Unknown (dynamic) tools are governed elsewhere; keep them as-is.
+        # Endpoint desktop/browser tools are governed exclusively by
+        # AgentMcpPermission, not by AssistantAIConfig.mcp_tools.
+        if is_endpoint_tool_config_name(tool):
+            continue
+        # Unknown non-endpoint tools are governed elsewhere; keep them as-is.
         if tool not in names or tool in allowed:
             if tool not in seen:
                 clamped.append(tool)

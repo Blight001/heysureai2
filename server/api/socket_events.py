@@ -97,11 +97,12 @@ def register_agent_socket_events():
         # Devices no longer pick their own AI — they log in and connect, then an
         # operator assigns a server-side AI from the Workshop panel. Re-apply any
         # persisted binding for this (user, agent) so the assignment survives
-        # reconnects. A payload aiConfigId (legacy clients) is honoured only as a
-        # fallback when no server-side binding exists.
+        # reconnects. The persisted binding is the only source of truth: after an
+        # operator clears the assignment, a reconnecting client must not revive a
+        # stale locally-saved aiConfigId.
         agent_id = str(info.get('id') or sid)
         bound_ai = get_binding(owner_user_id, agent_id) if owner_user_id is not None else None
-        claimed_ai = bound_ai if bound_ai is not None else info.get('aiConfigId')
+        claimed_ai = bound_ai
         if owner_user_id is not None and not _ai_config_belongs_to_user(claimed_ai, owner_user_id):
             logger.warning(
                 f"Agent registration rejected (AI ownership mismatch): "

@@ -256,6 +256,8 @@ def run_pending_migrations() -> None:
     _migrate_user_role()
     _migrate_endpointagentpresence_tool_defs()
     _migrate_agenttypemcppermission_agent_id()
+    _migrate_agenttypemcppermission_nullable_ai_config()
+    _migrate_assistantaiconfig_strip_endpoint_mcp_tools()
     # Only run for SQLite. Postgres deployments either start fresh or are
     # seeded by the migration script, both of which produce a current schema.
     if database_dialect() != "sqlite":
@@ -425,7 +427,7 @@ def _migrate_agenttypemcppermission_agent_id() -> None:
     Scope moved from per-(AI, agent-type) to per-individual-agent. Existing rows
     keyed only by type can't be safely remapped to a specific agent id, so they
     back-fill ``agent_id=''`` and are simply ignored by the new per-agent lookup
-    (the agent starts unrestricted until rescoped in the Workshop). Runs on every
+    (the agent starts closed until rescoped in the Workshop). Runs on every
     backend.
     """
     from ..database import engine
@@ -446,6 +448,87 @@ def _migrate_agenttypemcppermission_agent_id() -> None:
         with engine.begin() as conn:
             conn.exec_driver_sql(
                 "ALTER TABLE agenttypemcppermission ADD COLUMN IF NOT EXISTS agent_id TEXT DEFAULT ''"
+            )
+
+
+def _migrate_agenttypemcppermission_nullable_ai_config() -> None:
+    """Allow endpoint MCP scopes to be saved before an agent is assigned.
+
+    The permission scope is keyed by ``(user_id, agent_id)`` now; ``ai_config_id``
+    is only informational. Older Postgres databases still have a NOT NULL
+    constraint from the previous per-(AI, type) schema, which breaks saving MCP
+    permissions for an unassigned Workshop agent.
+    """
+    from ..database import engine
+    from sqlalchemy import inspect
+
+    insp = inspect(engine)
+    if "agenttypemcppermission" not in set(insp.get_table_names()):
+        return
+    columns = {
+        col["name"]: col
+        for col in insp.get_columns("agenttypemcppermission")
+    }
+    column = columns.get("ai_config_id")
+    if not column or column.get("nullable", True):
+        return
+
+    if database_dialect() == "postgresql":
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                "ALTER TABLE agenttypemcppermission ALTER COLUMN ai_config_id DROP NOT NULL"
+            )
+
+
+def _migrate_assistantaiconfig_strip_endpoint_mcp_tools() -> None:
+    """Remove legacy endpoint-agent tools from AI ``mcp_tools`` JSON.
+
+    Desktop/browser tools used to be stored directly on the AI config in some
+    old rows. They are now controlled only by per-agent Workshop scope; leaving
+    stale names here makes ``mcp.list_tools`` expose them even after the AI's
+    visible MCP list is unchecked.
+    """
+    from ..database import engine
+    from sqlalchemy import inspect, text
+    from connector_runtime.dispatch.desktop_agent_tools import is_endpoint_tool_config_name
+
+    insp = inspect(engine)
+    if "assistantaiconfig" not in set(insp.get_table_names()):
+        return
+    columns = {col["name"] for col in insp.get_columns("assistantaiconfig")}
+    if "mcp_tools" not in columns:
+        return
+
+    with engine.begin() as conn:
+        rows = conn.execute(text("SELECT id, mcp_tools FROM assistantaiconfig")).mappings().all()
+        for row in rows:
+            try:
+                parsed = json.loads(row.get("mcp_tools") or "[]")
+            except Exception:
+                continue
+            if not isinstance(parsed, list):
+                continue
+            next_tools = []
+            seen = set()
+            changed = False
+            for item in parsed:
+                tool = str(item or "").strip() if isinstance(item, str) else ""
+                if not tool:
+                    changed = True
+                    continue
+                if is_endpoint_tool_config_name(tool):
+                    changed = True
+                    continue
+                if tool in seen:
+                    changed = True
+                    continue
+                next_tools.append(tool)
+                seen.add(tool)
+            if not changed:
+                continue
+            conn.execute(
+                text("UPDATE assistantaiconfig SET mcp_tools = :tools WHERE id = :id"),
+                {"tools": json.dumps(next_tools, ensure_ascii=False), "id": row["id"]},
             )
 
 

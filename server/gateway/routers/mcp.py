@@ -28,6 +28,7 @@ from connector_runtime.dispatch.desktop_agent_tools import (
     endpoint_bridge_tools_for_config,
     endpoint_tools_for_config,
     is_endpoint_agent_tool,
+    strip_endpoint_tool_config_names,
 )
 from api.services.librarian_service import intrinsic_input_schema, intrinsic_tool_description
 from api.services.task_system import with_workspace_read_by_name_compat
@@ -105,7 +106,7 @@ async def call_mcp_tool(
             if not isinstance(parsed_allowed, list):
                 raise ValueError("mcp_tools must be a JSON array")
             allowed_tools = {str(item).strip() for item in parsed_allowed if isinstance(item, str) and str(item).strip()}
-            allowed_tools = with_workspace_read_by_name_compat(allowed_tools)
+            allowed_tools = strip_endpoint_tool_config_names(with_workspace_read_by_name_compat(allowed_tools))
             allowed_tools.update(MCP_INTROSPECTION_TOOLS)
             allowed_tools.update(endpoint_bridge_tools_for_config(req.ai_config_id, user.id))
             allowed_tools.update(endpoint_tools_for_config(req.ai_config_id, user.id))
