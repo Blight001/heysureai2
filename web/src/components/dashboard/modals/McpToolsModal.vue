@@ -34,6 +34,29 @@ const editNotice = ref('')
 const draftDescription = ref('')
 const draftParams = ref<Array<{ name: string; description: string }>>([])
 
+const introItems = [
+  {
+    key: 'MCP',
+    title: '模型上下文协议',
+    description: '模型通过 MCP 发现工具、读取说明并发起调用。这里展示的是当前页面可用的 MCP 工具集合。',
+  },
+  {
+    key: 'list_tools',
+    title: '查看工具列表',
+    description: '用于先看有哪些工具可用，再决定是否展开某个 namespace 或某个具体工具。',
+  },
+  {
+    key: 'describe_tool',
+    title: '读取工具详情',
+    description: '用于查看单个工具的用途、参数定义和参数说明，适合在正式调用前确认输入格式。',
+  },
+  {
+    key: '权限范围',
+    title: '当前可见范围',
+    description: '这里只展示当前账号、角色或已连接设备允许使用的工具，不等于系统全部工具。',
+  },
+] as const
+
 const groupByNamespace = (items: McpToolDefinition[]) => {
   const buckets = new Map<string, McpToolDefinition[]>()
   for (const tool of items) {
@@ -126,6 +149,27 @@ watch(() => props.show, (show) => {
     <div v-if="props.show" class="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center" @click="emit('close')">
       <div class="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700 w-[560px] max-h-[75vh] p-4 overflow-auto" @click.stop>
         <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-100 mb-3">{{ props.title }} 的 MCP 工具说明</div>
+        <div class="mb-3 rounded-lg border border-indigo-200/80 bg-indigo-50/70 px-3 py-2.5 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <div class="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">基础 MCP 介绍</div>
+            <div class="text-[10px] text-indigo-500 dark:text-indigo-400">先看概念，再看工具</div>
+          </div>
+          <div class="space-y-1.5">
+            <div
+              v-for="item in introItems"
+              :key="item.key"
+              class="flex items-start gap-2 rounded-md border border-indigo-100 bg-white/70 px-2.5 py-2 dark:border-indigo-900/40 dark:bg-zinc-950/50"
+            >
+              <div class="min-w-[88px] shrink-0 font-mono text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
+                {{ item.key }}
+              </div>
+              <div class="min-w-0">
+                <div class="text-[11px] font-medium text-zinc-800 dark:text-zinc-100">{{ item.title }}</div>
+                <div class="mt-0.5 text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-400">{{ item.description }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
         <div v-if="editNotice" class="mb-3 text-xs text-emerald-600 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 rounded-lg px-3 py-2">
           {{ editNotice }}
         </div>

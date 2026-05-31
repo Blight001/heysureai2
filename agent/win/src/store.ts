@@ -15,6 +15,8 @@ interface AgentSettings {
   aiModel: string
   // Auth
   userAccount: string
+  userPassword: string
+  rememberLogin: boolean
   userName: string
   userAvatar: string
   // Cached data URL of the current account's avatar (fetched from the backend),
@@ -54,6 +56,8 @@ const defaults: AgentSettings = {
   aiBaseUrl: process.env.AI_BASE_URL || 'https://api.anthropic.com',
   aiModel: process.env.AI_MODEL || 'claude-sonnet-4-5',
   userAccount: '',
+  userPassword: '',
+  rememberLogin: false,
   userName: '',
   userAvatar: '',
   userAvatarDataUrl: '',

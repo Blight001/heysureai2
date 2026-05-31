@@ -37,13 +37,41 @@ function paramEntries(t: AIToolDef) {
   })
 }
 
+function renderIntroHtml() {
+  return `
+    <div class="mcp-intro">
+      <div class="mcp-intro-title">
+        <span>基础 MCP 介绍</span>
+        <span class="pane-sub">先看概念，再看工具</span>
+      </div>
+      <div class="mcp-intro-list">
+        <div class="mcp-intro-item">
+          <div class="mcp-intro-key">MCP</div>
+          <div class="mcp-intro-text">模型上下文协议。这里展示的是浏览器插件对外提供的工具能力，AI 可以按名称调用这些工具完成浏览器操作。</div>
+        </div>
+        <div class="mcp-intro-item">
+          <div class="mcp-intro-key">list_tools</div>
+          <div class="mcp-intro-text">用于查看当前可用工具列表。先看列表，再决定要不要展开具体工具详情。</div>
+        </div>
+        <div class="mcp-intro-item">
+          <div class="mcp-intro-key">describe_tool</div>
+          <div class="mcp-intro-text">用于读取某个工具的用途、参数和说明。需要知道怎么传参时，先看这里。</div>
+        </div>
+        <div class="mcp-intro-item">
+          <div class="mcp-intro-key">test</div>
+          <div class="mcp-intro-text">用于在当前浏览器环境中直接测试一个工具，便于验证描述和参数是否正确。</div>
+        </div>
+      </div>
+    </div>`
+}
+
 export async function renderMcpList() {
   state.openToolName = null
   dom.mcpDetailPane.classList.add('hidden')
   dom.mcpListPane.classList.remove('hidden')
   overrides = await getToolDescOverrides()
   dom.mcpCount.textContent = `${BROWSER_TOOLS.length} 个`
-  dom.mcpList.innerHTML = ''
+  dom.mcpList.innerHTML = renderIntroHtml()
   for (const t of BROWSER_TOOLS) {
     const el = document.createElement('div')
     el.className = 'tool-item'

@@ -7,8 +7,8 @@ import {
 } from '../services/agent-runtime'
 
 export function registerAuthIpc(): void {
-  ipcMain.handle('auth:login', async (_event, params: { serverUrl: string; account: string; password: string }) => {
-    const { serverUrl, account, password } = params
+  ipcMain.handle('auth:login', async (_event, params: { serverUrl: string; account: string; password: string; remember?: boolean }) => {
+    const { serverUrl, account, password, remember } = params
     if (!serverUrl) throw new Error('服务器 URL 不能为空')
 
     let base: string
@@ -22,7 +22,9 @@ export function registerAuthIpc(): void {
 
     store.set('serverUrl', base)
     store.set('authToken', data.access_token)
-    store.set('userAccount', account)
+    store.set('userAccount', remember ? account : '')
+    store.set('userPassword', remember ? password : '')
+    store.set('rememberLogin', !!remember)
     store.set('userName', String(data.user?.name || data.user?.nickname || account))
     store.set('userAvatar', String(data.user?.avatar || ''))
     store.set('userId', data.user?.id ?? null)
@@ -36,7 +38,14 @@ export function registerAuthIpc(): void {
     // Disconnect any live socket first so the server sees us leaving.
     getAgent()?.disconnect()
     store.set('authToken', '')
-    store.set('userAccount', '')
+    if (store.get('rememberLogin')) {
+      store.set('userAccount', store.get('userAccount') || '')
+      store.set('userPassword', store.get('userPassword') || '')
+    } else {
+      store.set('userAccount', '')
+      store.set('userPassword', '')
+    }
+    store.set('rememberLogin', !!store.get('rememberLogin'))
     store.set('userName', '')
     store.set('userAvatar', '')
     store.set('userAvatarDataUrl', '')

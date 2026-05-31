@@ -138,13 +138,6 @@ const lifecycleClass = (lifecycle?: string) => {
   }
 }
 
-const lastTaskClass = (status?: string | null) => {
-  if (status === 'success') return 'text-emerald-600 dark:text-emerald-400'
-  if (status === 'failed' || status === 'error') return 'text-rose-600 dark:text-rose-400'
-  if (status === 'running' || status === 'dispatching') return 'text-indigo-600 dark:text-indigo-400'
-  return 'text-zinc-500 dark:text-zinc-400'
-}
-
 const linkedMember = (device: ConnectedAgent) => {
   const id = Number(device.aiConfigId)
   if (!Number.isFinite(id) || id <= 0) return undefined
@@ -206,19 +199,28 @@ const memberStatusBadgeClass = (device: ConnectedAgent) => hasLinkedMember(devic
             {{ memberStatusLabel(device) }}
           </span>
         </div>
-        <template v-if="hasLinkedMember(device)">
-          <div class="text-xs font-semibold text-emerald-800 dark:text-emerald-100">
-            {{ linkedMember(device)?.name }}
-          </div>
-          <div class="mt-0.5 text-[10px] text-emerald-700/80 dark:text-emerald-200/80">
-            ID: {{ device.aiConfigId }}
-            <span v-if="linkedMember(device)?.projectName"> · {{ linkedMember(device)?.projectName }}</span>
-          </div>
-          <div class="mt-0.5 text-[10px] text-emerald-700/80 dark:text-emerald-200/80 truncate">
-            {{ linkedMember(device)?.currentTaskTitle || linkedMember(device)?.currentTask || '等待任务' }}
-          </div>
-        </template>
-        <div v-else class="text-xs font-medium text-amber-700 dark:text-amber-200">未链接成员</div>
+        <div class="flex items-center gap-2 text-[10px] leading-tight">
+          <span
+            class="min-w-0 flex-1 truncate font-semibold"
+            :class="hasLinkedMember(device)
+              ? 'text-emerald-800 dark:text-emerald-100'
+              : 'text-amber-700 dark:text-amber-200'"
+          >
+            {{ hasLinkedMember(device) ? linkedMember(device)?.name : '未链接成员' }}
+          </span>
+          <span
+            v-if="hasLinkedMember(device)"
+            class="shrink-0 whitespace-nowrap text-emerald-700/80 dark:text-emerald-200/80"
+          >
+            ID: {{ device.aiConfigId }}<span v-if="linkedMember(device)?.projectName"> · {{ linkedMember(device)?.projectName }}</span>
+          </span>
+        </div>
+        <div
+          v-if="hasLinkedMember(device)"
+          class="mt-0.5 truncate text-[10px] leading-tight text-emerald-700/80 dark:text-emerald-200/80"
+        >
+          {{ linkedMember(device)?.currentTaskTitle || linkedMember(device)?.currentTask || '等待任务' }}
+        </div>
 
         <!-- Assign / reassign control (operator picks the server-side AI) -->
         <div class="mt-2 flex items-center gap-1.5">
@@ -252,19 +254,6 @@ const memberStatusBadgeClass = (device: ConnectedAgent) => hasLinkedMember(devic
           </button>
         </div>
         <div v-if="errors[device.id]" class="mt-1 text-[10px] text-rose-500">{{ errors[device.id] }}</div>
-      </div>
-
-      <div class="mt-2 grid grid-cols-2 gap-2 text-[10px]">
-        <div class="rounded bg-zinc-50 px-2 py-1 dark:bg-zinc-800/50">
-          <div class="text-zinc-400">最近任务</div>
-          <div class="truncate" :class="lastTaskClass(device.lastTaskStatus)">
-            {{ device.lastTaskStatus || '暂无' }}
-          </div>
-        </div>
-        <div class="rounded bg-zinc-50 px-2 py-1 dark:bg-zinc-800/50">
-          <div class="text-zinc-400">任务ID</div>
-          <div class="text-zinc-500 dark:text-zinc-400 truncate">{{ device.lastTaskId || '无' }}</div>
-        </div>
       </div>
 
       <!-- Endpoint agents: edit their per-(AI, type) MCP permission scope. -->

@@ -29,7 +29,7 @@ export const state = {
   serverUrl: '',
   offlineMode: false,
   localModel: '',
-  auth: { token: '', account: '', userId: null, userName: '', avatar: '' } as AuthState,
+  auth: { token: '', account: '', password: '', rememberLogin: false, userId: null, userName: '', avatar: '' } as AuthState,
   // Cached data URL for the current account's avatar (hydrated from storage).
   avatarDataUrl: '',
   members: [] as MemberConfig[],

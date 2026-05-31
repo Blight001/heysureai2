@@ -30,7 +30,7 @@ interface Window {
     closeWindow: () => Promise<boolean>
     isWindowMaximized: () => Promise<boolean>
     testConnection: () => Promise<{ success: boolean; status?: number; ms?: number; error?: string }>
-    login: (params: { serverUrl: string; account: string; password: string }) => Promise<{ success: boolean; user: any }>
+    login: (params: { serverUrl: string; account: string; password: string; remember?: boolean }) => Promise<{ success: boolean; user: any }>
     logout: () => Promise<{ success: boolean }>
     mcpList: () => Promise<{ tools: ToolDef[]; overrides: Record<string, { description?: string; parameters?: Record<string, string> }> }>
     mcpSaveDesc: (p: { tool: string; description?: string; parameters?: Record<string, string> }) => Promise<boolean>
@@ -335,6 +335,7 @@ window.heysureAPI.onTaskResult((data) => {
 // ── Login ──────────────────────────────────────────────────────────────────
 const loginAccount  = $('login-account') as HTMLInputElement
 const loginPassword = $('login-password') as HTMLInputElement
+const loginRemember = $('login-remember') as HTMLInputElement
 const loginBtn      = $('login-btn') as HTMLButtonElement
 const loginError    = $('login-error')
 const loginModal    = $('login-modal')
@@ -343,7 +344,12 @@ function showLoginError(msg: string) { loginError.textContent = msg; loginError.
 function clearLoginError() { loginError.classList.remove('visible') }
 function openLoginModal() {
   loginModal.classList.remove('hidden'); clearLoginError()
-  window.heysureAPI.getSettings().then(s => { loginAccount.value = s.userAccount || ''; updateUserChip(s) }).catch(() => {})
+  window.heysureAPI.getSettings().then(s => {
+    loginAccount.value = s.userAccount || ''
+    loginPassword.value = s.userPassword || ''
+    loginRemember.checked = !!s.rememberLogin
+    updateUserChip(s)
+  }).catch(() => {})
 }
 function closeLoginModal() { loginModal.classList.add('hidden') }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLoginModal(); closeSettings(); closeMembers() } })
@@ -359,14 +365,18 @@ async function doLogin() {
   const serverUrl = (cfgServer.value.trim() || saved.serverUrl || '').trim()
   const account = loginAccount.value.trim()
   const password = loginPassword.value
+  const remember = loginRemember.checked
   if (!serverUrl) { showLoginError('请先在设置中配置服务器地址'); return }
   if (!account) { showLoginError('请输入账号'); return }
   if (!password) { showLoginError('请输入密码'); return }
   loginBtn.disabled = true
   try {
-    await window.heysureAPI.login({ serverUrl, account, password })
+    await window.heysureAPI.login({ serverUrl, account, password, remember })
     const s = await window.heysureAPI.getSettings()
-    loginPassword.value = ''
+    if (!remember) {
+      loginAccount.value = ''
+      loginPassword.value = ''
+    }
     updateUserChip(s); closeLoginModal(); await loadMainSettings()
     window.heysureAPI.connect()
   } catch (err: any) {
@@ -420,7 +430,10 @@ function updateUserChip(s: any) {
 async function doLogout() {
   await window.heysureAPI.logout()
   const s = await window.heysureAPI.getSettings()
-  cfgServer.value = s.serverUrl || ''; loginAccount.value = ''; loginPassword.value = ''
+  cfgServer.value = s.serverUrl || ''
+  loginAccount.value = s.userAccount || ''
+  loginPassword.value = s.userPassword || ''
+  loginRemember.checked = !!s.rememberLogin
   updateUserChip(s); clearLoginError(); closeLoginModal(); setStatus('disconnected')
 }
 $('header-user-chip').addEventListener('click', openLoginModal)
@@ -439,6 +452,9 @@ async function loadMainSettings() {
   updateOfflineUi()
   $('info-server').textContent = s.serverUrl || '—'
   $('info-workspace').textContent = s.workspaceRoot ? (s.workspaceRoot.split(/[/\\]/).pop() || s.workspaceRoot) : '—'
+  loginAccount.value = s.userAccount || ''
+  loginPassword.value = s.userPassword || ''
+  loginRemember.checked = !!s.rememberLogin
   updateUserChip(s)
   return s
 }
@@ -449,6 +465,8 @@ async function init() {
   applyTheme(s.theme || 'dark', false)
   syncWindowMaxButton(await window.heysureAPI.isWindowMaximized())
   loginAccount.value = s.userAccount || ''
+  loginPassword.value = s.userPassword || ''
+  loginRemember.checked = !!s.rememberLogin
   await loadMainSettings()
   updateStats()
   await loadMcp()

@@ -64,13 +64,23 @@ export async function getActivity(): Promise<any[]> {
 export interface AuthState {
   token:    string
   account:  string
+  password: string
+  rememberLogin: boolean
   userId:   number | null
   userName: string
   avatar:   string
 }
 
 const AUTH_KEY = '_auth_state'
-const AUTH_DEFAULT: AuthState = { token: '', account: '', userId: null, userName: '', avatar: '' }
+const AUTH_DEFAULT: AuthState = {
+  token: '',
+  account: '',
+  password: '',
+  rememberLogin: false,
+  userId: null,
+  userName: '',
+  avatar: '',
+}
 
 export async function getAuth(): Promise<AuthState> {
   const r = await chrome.storage.local.get(AUTH_KEY)
@@ -84,8 +94,15 @@ export async function saveAuth(state: Partial<AuthState>): Promise<void> {
 
 export async function clearAuth(): Promise<void> {
   const current = await getAuth()
-  // Keep the last account for convenience, drop the token.
-  await chrome.storage.local.set({ [AUTH_KEY]: { ...AUTH_DEFAULT, account: current.account } })
+  const remembered = !!current.rememberLogin
+  await chrome.storage.local.set({
+    [AUTH_KEY]: {
+      ...AUTH_DEFAULT,
+      account: remembered ? current.account : '',
+      password: remembered ? current.password : '',
+      rememberLogin: remembered,
+    },
+  })
 }
 
 // ── Avatar cache (current account only) ──────────────────────────────────────

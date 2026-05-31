@@ -33,7 +33,7 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   // Connection test
   testConnection: () => ipcRenderer.invoke('connection:test'),
   // Auth
-  login: (params: { serverUrl: string; account: string; password: string }) =>
+  login: (params: { serverUrl: string; account: string; password: string; remember?: boolean }) =>
     ipcRenderer.invoke('auth:login', params),
   logout: () => ipcRenderer.invoke('auth:logout'),
   // AI Config

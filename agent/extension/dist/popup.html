@@ -102,6 +102,30 @@
     #mcp-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding-right:3px; }
     #mcp-list::-webkit-scrollbar { width:3px; }
     #mcp-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    .mcp-intro {
+      background:linear-gradient(180deg, rgba(99,102,241,.12), rgba(99,102,241,.04));
+      border:1px solid rgba(99,102,241,.24);
+      border-radius:var(--r2);
+      padding:10px;
+    }
+    .mcp-intro-title {
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+      font-size:11px; font-weight:700; color:var(--text); margin-bottom:8px;
+    }
+    .mcp-intro-list { display:flex; flex-direction:column; gap:6px; }
+    .mcp-intro-item {
+      display:flex; gap:8px; align-items:flex-start;
+      padding:7px 8px; border-radius:var(--r);
+      background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06);
+    }
+    .mcp-intro-key {
+      flex-shrink:0; min-width:76px;
+      font-family:'Cascadia Code',Consolas,monospace; font-size:10px; font-weight:700;
+      color:#c7d2fe;
+    }
+    .mcp-intro-text {
+      font-size:10px; color:var(--muted); line-height:1.45; min-width:0;
+    }
     .tool-item {
       background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
       padding:8px 10px; cursor:pointer; transition:all var(--tr);
@@ -358,6 +382,10 @@
         <div class="login-hint">使用与软件端相同的账号登录，登录后设备自动连接服务器。</div>
         <div class="fg"><label>账号</label><input type="text" id="login-account" placeholder="你的账号" autocomplete="username"/></div>
         <div class="fg"><label>密码</label><input type="text" id="login-password" placeholder="密码" autocomplete="current-password" style="-webkit-text-security:disc;"/></div>
+        <div class="check-row">
+          <input type="checkbox" id="login-remember"/>
+          <label for="login-remember" style="margin:0;text-transform:none;font-size:11px;">记住账号和密码</label>
+        </div>
         <button class="btn btn-primary" id="login-btn">登录</button>
         <div class="save-feedback" id="login-feedback"></div>
         <div class="login-hint" style="margin-top:4px;">服务器地址在「设置 → 服务器连接地址」中配置。</div>

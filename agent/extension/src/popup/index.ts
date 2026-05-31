@@ -62,6 +62,8 @@ async function init() {
   state.localModel = s.aiModel || ''
   state.auth = await getAuth()
   dom.loginAccount.value = state.auth.account || ''
+  dom.loginPassword.value = state.auth.password || ''
+  dom.loginRemember.checked = !!state.auth.rememberLogin
   updateUserChip()
   updateOfflineUi()
   void refreshAvatarCache().then(updateUserChip)

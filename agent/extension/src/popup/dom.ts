@@ -59,6 +59,7 @@ export const accountCard  = $('account-card')
 export const accountStatusV = $('account-status-v')
 export const loginAccount = $('login-account') as HTMLInputElement
 export const loginPassword = $('login-password') as HTMLInputElement
+export const loginRemember = $('login-remember') as HTMLInputElement
 export const loginBtn     = $('login-btn') as HTMLButtonElement
 export const loginFeedback = $('login-feedback')
 export const logoutBtn    = $('logout-btn') as HTMLButtonElement

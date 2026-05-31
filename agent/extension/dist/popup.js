@@ -12,7 +12,7 @@
     serverUrl: "",
     offlineMode: false,
     localModel: "",
-    auth: { token: "", account: "", userId: null, userName: "", avatar: "" },
+    auth: { token: "", account: "", password: "", rememberLogin: false, userId: null, userName: "", avatar: "" },
     // Cached data URL for the current account's avatar (hydrated from storage).
     avatarDataUrl: "",
     members: [],
@@ -71,6 +71,7 @@
   var accountStatusV = $("account-status-v");
   var loginAccount = $("login-account");
   var loginPassword = $("login-password");
+  var loginRemember = $("login-remember");
   var loginBtn = $("login-btn");
   var loginFeedback = $("login-feedback");
   var logoutBtn = $("logout-btn");
@@ -103,7 +104,15 @@
     await chrome.storage.local.set(partial);
   }
   var AUTH_KEY = "_auth_state";
-  var AUTH_DEFAULT = { token: "", account: "", userId: null, userName: "", avatar: "" };
+  var AUTH_DEFAULT = {
+    token: "",
+    account: "",
+    password: "",
+    rememberLogin: false,
+    userId: null,
+    userName: "",
+    avatar: ""
+  };
   async function getAuth() {
     const r = await chrome.storage.local.get(AUTH_KEY);
     return { ...AUTH_DEFAULT, ...r[AUTH_KEY] || {} };
@@ -114,7 +123,15 @@
   }
   async function clearAuth() {
     const current = await getAuth();
-    await chrome.storage.local.set({ [AUTH_KEY]: { ...AUTH_DEFAULT, account: current.account } });
+    const remembered = !!current.rememberLogin;
+    await chrome.storage.local.set({
+      [AUTH_KEY]: {
+        ...AUTH_DEFAULT,
+        account: remembered ? current.account : "",
+        password: remembered ? current.password : "",
+        rememberLogin: remembered
+      }
+    });
   }
   var AVATAR_CACHE_KEY = "_avatar_cache";
   async function getAvatarCache() {
@@ -303,9 +320,21 @@
     loginFeedback.style.color = "var(--muted)";
     try {
       const { token, user } = await login(state.serverUrl, account, password);
-      state.auth = { token, account, userId: user?.id ?? null, userName: user?.name || account, avatar: user?.avatar || "" };
+      const rememberLogin = loginRemember.checked;
+      state.auth = {
+        token,
+        account: rememberLogin ? account : "",
+        password: rememberLogin ? password : "",
+        rememberLogin,
+        userId: user?.id ?? null,
+        userName: user?.name || account,
+        avatar: user?.avatar || ""
+      };
       await saveAuth(state.auth);
-      loginPassword.value = "";
+      if (!rememberLogin) {
+        loginAccount.value = "";
+        loginPassword.value = "";
+      }
       loginFeedback.textContent = "\u767B\u5F55\u6210\u529F \u2713";
       loginFeedback.style.color = "var(--success)";
       updateUserChip();
@@ -325,6 +354,9 @@
     await clearAuth();
     state.port.postMessage({ type: "auth:logout" });
     state.auth = await getAuth();
+    loginAccount.value = state.auth.account || "";
+    loginPassword.value = state.auth.password || "";
+    loginRemember.checked = !!state.auth.rememberLogin;
     state.avatarDataUrl = "";
     await clearAvatarCache();
     closeMembersModal();
@@ -418,6 +450,9 @@
   function openLoginModal() {
     loginModal.classList.remove("hidden");
     updateUserChip();
+    loginAccount.value = state.auth.account || "";
+    loginPassword.value = state.auth.password || "";
+    loginRemember.checked = !!state.auth.rememberLogin;
     setTimeout(() => {
       if (!state.auth.token)
         loginAccount.focus();
@@ -1137,13 +1172,40 @@
       return { name: p, type: String(ty), required: required.has(p), desc: String(cfg.description || "") };
     });
   }
+  function renderIntroHtml() {
+    return `
+    <div class="mcp-intro">
+      <div class="mcp-intro-title">
+        <span>\u57FA\u7840 MCP \u4ECB\u7ECD</span>
+        <span class="pane-sub">\u5148\u770B\u6982\u5FF5\uFF0C\u518D\u770B\u5DE5\u5177</span>
+      </div>
+      <div class="mcp-intro-list">
+        <div class="mcp-intro-item">
+          <div class="mcp-intro-key">MCP</div>
+          <div class="mcp-intro-text">\u6A21\u578B\u4E0A\u4E0B\u6587\u534F\u8BAE\u3002\u8FD9\u91CC\u5C55\u793A\u7684\u662F\u6D4F\u89C8\u5668\u63D2\u4EF6\u5BF9\u5916\u63D0\u4F9B\u7684\u5DE5\u5177\u80FD\u529B\uFF0CAI \u53EF\u4EE5\u6309\u540D\u79F0\u8C03\u7528\u8FD9\u4E9B\u5DE5\u5177\u5B8C\u6210\u6D4F\u89C8\u5668\u64CD\u4F5C\u3002</div>
+        </div>
+        <div class="mcp-intro-item">
+          <div class="mcp-intro-key">list_tools</div>
+          <div class="mcp-intro-text">\u7528\u4E8E\u67E5\u770B\u5F53\u524D\u53EF\u7528\u5DE5\u5177\u5217\u8868\u3002\u5148\u770B\u5217\u8868\uFF0C\u518D\u51B3\u5B9A\u8981\u4E0D\u8981\u5C55\u5F00\u5177\u4F53\u5DE5\u5177\u8BE6\u60C5\u3002</div>
+        </div>
+        <div class="mcp-intro-item">
+          <div class="mcp-intro-key">describe_tool</div>
+          <div class="mcp-intro-text">\u7528\u4E8E\u8BFB\u53D6\u67D0\u4E2A\u5DE5\u5177\u7684\u7528\u9014\u3001\u53C2\u6570\u548C\u8BF4\u660E\u3002\u9700\u8981\u77E5\u9053\u600E\u4E48\u4F20\u53C2\u65F6\uFF0C\u5148\u770B\u8FD9\u91CC\u3002</div>
+        </div>
+        <div class="mcp-intro-item">
+          <div class="mcp-intro-key">test</div>
+          <div class="mcp-intro-text">\u7528\u4E8E\u5728\u5F53\u524D\u6D4F\u89C8\u5668\u73AF\u5883\u4E2D\u76F4\u63A5\u6D4B\u8BD5\u4E00\u4E2A\u5DE5\u5177\uFF0C\u4FBF\u4E8E\u9A8C\u8BC1\u63CF\u8FF0\u548C\u53C2\u6570\u662F\u5426\u6B63\u786E\u3002</div>
+        </div>
+      </div>
+    </div>`;
+  }
   async function renderMcpList() {
     state.openToolName = null;
     mcpDetailPane.classList.add("hidden");
     mcpListPane.classList.remove("hidden");
     overrides = await getToolDescOverrides();
     mcpCount.textContent = `${BROWSER_TOOLS.length} \u4E2A`;
-    mcpList.innerHTML = "";
+    mcpList.innerHTML = renderIntroHtml();
     for (const t of BROWSER_TOOLS) {
       const el = document.createElement("div");
       el.className = "tool-item";
@@ -1320,6 +1382,8 @@
     state.localModel = s.aiModel || "";
     state.auth = await getAuth();
     loginAccount.value = state.auth.account || "";
+    loginPassword.value = state.auth.password || "";
+    loginRemember.checked = !!state.auth.rememberLogin;
     updateUserChip();
     updateOfflineUi();
     void refreshAvatarCache().then(updateUserChip);

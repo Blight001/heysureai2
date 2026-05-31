@@ -66,6 +66,9 @@ export function closeSettingsModal() { dom.settingsModal.classList.add('hidden')
 export function openLoginModal() {
   dom.loginModal.classList.remove('hidden')
   updateUserChip()
+  dom.loginAccount.value = state.auth.account || ''
+  dom.loginPassword.value = state.auth.password || ''
+  dom.loginRemember.checked = !!state.auth.rememberLogin
   setTimeout(() => { if (!state.auth.token) dom.loginAccount.focus() }, 0)
 }
 export function closeLoginModal()  { dom.loginModal.classList.add('hidden') }

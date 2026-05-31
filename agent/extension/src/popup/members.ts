@@ -36,9 +36,21 @@ export async function doLogin() {
   dom.loginFeedback.style.color = 'var(--muted)'
   try {
     const { token, user } = await apiLogin(state.serverUrl, account, password)
-    state.auth = { token, account, userId: user?.id ?? null, userName: user?.name || account, avatar: user?.avatar || '' }
+    const rememberLogin = dom.loginRemember.checked
+    state.auth = {
+      token,
+      account: rememberLogin ? account : '',
+      password: rememberLogin ? password : '',
+      rememberLogin,
+      userId: user?.id ?? null,
+      userName: user?.name || account,
+      avatar: user?.avatar || '',
+    }
     await saveAuth(state.auth)
-    dom.loginPassword.value = ''
+    if (!rememberLogin) {
+      dom.loginAccount.value = ''
+      dom.loginPassword.value = ''
+    }
     dom.loginFeedback.textContent = '登录成功 ✓'
     dom.loginFeedback.style.color = 'var(--success)'
     updateUserChip()
@@ -61,6 +73,9 @@ export async function doLogout() {
   await clearAuth()
   state.port.postMessage({ type: 'auth:logout' })
   state.auth = await getAuth()
+  dom.loginAccount.value = state.auth.account || ''
+  dom.loginPassword.value = state.auth.password || ''
+  dom.loginRemember.checked = !!state.auth.rememberLogin
   state.avatarDataUrl = ''
   await clearAvatarCache()
   closeMembersModal()
