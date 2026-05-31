@@ -43,7 +43,10 @@ def _load_connector_runtime_bot_statuses() -> Tuple[Dict[str, Dict[int, Dict[str
     """
     if not CONNECTOR_RUNTIME_URL:
         return _empty_bot_statuses(), None
-    client = InternalClient(CONNECTOR_RUNTIME_URL, timeout=8.0)
+    # Bot status is dashboard decoration, not a critical save-path dependency.
+    # Keep this short so a stopped connector-runtime does not make config saves
+    # feel stuck when the frontend refreshes cards after saving.
+    client = InternalClient(CONNECTOR_RUNTIME_URL, timeout=1.5)
     try:
         payload = client.get("/internal/bot/statuses")
     except Exception as exc:

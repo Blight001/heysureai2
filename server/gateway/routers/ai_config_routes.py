@@ -12,6 +12,7 @@ from connector_runtime.bots import all_channels, iter_bots
 
 logger = logging.getLogger(__name__)
 from api.database import get_session
+from api.core.settings import settings
 from mcp_runtime.mcp.permissions import clamp_tools_json, config_role_tier
 from api.models import (
     AIRuntimeStatus,
@@ -37,12 +38,29 @@ def _normalize_bot_channel(value) -> str:
     return channel if channel in set(all_channels()) else "feishu"
 
 
-def _restart_all_bot_long_connections() -> None:
-    """Best-effort kick every registered bot's long-connection client.
+def _bot_runtime_snapshot(cfg: AssistantAIConfig) -> dict:
+    """Return the bot-facing fields that can affect long connections."""
+    out = {"bot_channel": str(getattr(cfg, "bot_channel", "") or "").strip().lower()}
+    for bot in iter_bots():
+        out[bot.channel] = {
+            "enabled": bool(bot.is_enabled(cfg)),
+            "config": bot.read_config(cfg),
+        }
+    return out
 
-    Each adapter is idempotent — already-running clients just reload their
-    config; missing clients spin up.
+
+def _refresh_bot_long_connections_if_needed(changed: bool) -> None:
+    """Best-effort refresh for in-process bot long-connection clients.
+
+    In split deployments connector-runtime owns the upstream clients and
+    already polls config every few seconds. Starting them from gateway would
+    duplicate clients and can block config saves.
     """
+    if not changed:
+        return
+    if settings.connector_runtime_url:
+        logger.debug("skip gateway bot refresh; connector-runtime owns bot clients")
+        return
     for bot in iter_bots():
         try:
             bot.start_long_connections()
@@ -142,7 +160,9 @@ async def create_ai_config(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
-    _restart_all_bot_long_connections()
+    _refresh_bot_long_connections_if_needed(
+        any(bool(item.get("enabled")) for item in _bot_runtime_snapshot(cfg).values() if isinstance(item, dict))
+    )
     return cfg
 
 
@@ -178,6 +198,7 @@ async def update_ai_config(
     cfg = session.get(AssistantAIConfig, config_id)
     if not cfg or cfg.user_id != user.id:
         raise HTTPException(status_code=404, detail="AI config not found")
+    bot_snapshot_before = _bot_runtime_snapshot(cfg)
     updates = body.model_dump(exclude_unset=True)
     if "model_preset_id" in updates or "model" in updates:
         updates.update(
@@ -219,7 +240,9 @@ async def update_ai_config(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
-    _restart_all_bot_long_connections()
+    _refresh_bot_long_connections_if_needed(
+        bot_snapshot_before != _bot_runtime_snapshot(cfg)
+    )
 
     status = session.exec(
         select(AIRuntimeStatus).where(
