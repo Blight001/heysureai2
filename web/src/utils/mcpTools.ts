@@ -399,28 +399,14 @@ export const groupMcpToolsBySource = (tools: string[]): McpToolSourceGroup[] => 
 }
 
 export const withMcpToolLocale = (tool: McpToolDefinition): McpToolDefinition => {
-  const meta = MCP_TOOL_ZH_META[tool.name]
   const sourceTag = getSourceTag(tool.mcpSource)
-  const isDesktopCapability = tool.mcpSource === 'desktop'
-  const isBrowserCapability = tool.mcpSource === 'browser' || hasMcpPrefix(tool.name, 'browser') || hasMcpPrefix(tool.name, 'card')
   const rawDescription = String(tool.description || '').trim()
-  const sourceSpecificDescription = (() => {
-    if (isDesktopCapability) return '桌面端 Agent 上报的执行能力，可用于本机文件、命令行、鼠标键盘、窗口、屏幕和剪贴板操作。服务端 AI 可直接调用并在已连接桌面端执行。'
-    if (isBrowserCapability) return '浏览器插件上报的执行能力，可用于网页导航、点击、输入、滚动、标签页管理、弹窗处理和页面数据读取。服务端 AI 可直接调用并在已连接浏览器插件执行。'
-    return ''
-  })()
-  const zhDescription = sourceSpecificDescription
-    || rawDescription
-    || meta?.description
-    || '暂无中文说明'
+  const zhDescription = rawDescription
   const tags = sourceTag ? [sourceTag] : [getMcpToolZhTag(tool.name)]
   if (tool.destructive) tags.push('高风险')
-  const sourceSpecificLabel = (() => {
-    return ''
-  })()
   return {
     ...tool,
-    zhLabel: sourceSpecificLabel || meta?.label || tool.name,
+    zhLabel: tool.name,
     zhDescription,
     zhTags: tags,
   }

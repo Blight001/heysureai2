@@ -596,17 +596,11 @@ def intrinsic_input_schema(user_id: int, tool_name: str, schema: Dict[str, Any])
 
 
 def _intrinsic_tool_description(name: str, raw: str) -> str:
-    mapped = _INTRINSIC_TOOL_DESCRIPTIONS_ZH.get(str(name or "").strip(), "")
-    if mapped:
-        return mapped
-    return raw if raw else "该工具暂无详细说明，请根据工具名和参数 schema 判断用途。"
+    return str(raw or "").strip()
 
 
 def _intrinsic_param_description(tool_name: str, name: str, raw: str) -> str:
-    mapped = _INTRINSIC_PARAM_DESCRIPTIONS_ZH.get(str(name or "").strip(), "")
-    if mapped:
-        return mapped
-    return raw if raw else f"{name} 参数。"
+    return str(raw or "").strip()
 
 
 def _intrinsic_properties_overrides_path(user_id: int) -> str:

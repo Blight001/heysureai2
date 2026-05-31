@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from api.database import get_session
+from api.agent_presence import online_tool_defs
 from mcp_runtime.mcp import registry
 from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
 from mcp_runtime.mcp.loader import reload_registry
@@ -30,7 +31,6 @@ from connector_runtime.dispatch.desktop_agent_tools import (
     is_endpoint_agent_tool,
     strip_endpoint_tool_config_names,
 )
-from api.services.librarian_service import intrinsic_input_schema, intrinsic_tool_description
 from api.services.task_system import with_workspace_read_by_name_compat
 
 router = APIRouter()
@@ -53,13 +53,10 @@ async def list_mcp_tools(
     for tool in tools:
         name = str(tool.get("name") or "")
         tool["minRole"] = tool_min_role(name)
-        tool["description"] = intrinsic_tool_description(user.id, name, str(tool.get("description") or ""))
-        tool["inputSchema"] = intrinsic_input_schema(
-            user.id,
-            name,
-            tool.get("inputSchema") if isinstance(tool.get("inputSchema"), dict) else {},
-        )
+        tool["description"] = str(tool.get("description") or "").strip()
+        tool["inputSchema"] = tool.get("inputSchema") if isinstance(tool.get("inputSchema"), dict) else {}
     tool_names = {str(tool.get("name") or "") for tool in tools}
+    endpoint_defs = online_tool_defs()
     return {
         "tools": tools,
         # Endpoint (desktop / browser) tools currently advertised by connected
@@ -67,6 +64,14 @@ async def list_mcp_tools(
         # e.g. a Windows agent extended with new MCP tools — beyond the static
         # built-in lists baked into the web bundle.
         "endpointTools": connected_endpoint_tool_catalog(),
+        "endpointToolDefs": [
+            {
+                "name": name,
+                "description": str(spec.get("description") or "").strip(),
+                "inputSchema": spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {},
+            }
+            for name, spec in sorted(endpoint_defs.items())
+        ],
         "userId": user.id,
         "roleOrder": CONFIGURABLE_ROLES,
         "roleLabels": ROLE_LABELS_ZH,

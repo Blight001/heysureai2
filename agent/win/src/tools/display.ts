@@ -82,6 +82,20 @@ function renderHtml(bounds: Electron.Rectangle, boxes: ReturnType<typeof normali
   }))
   return `<!doctype html>
 <html>
+<head>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    width: 100%;
+    height: 100%;
+  }
+  canvas {
+    display: block;
+  }
+</style>
+</head>
 <body>
 <canvas id="c"></canvas>
 <script>

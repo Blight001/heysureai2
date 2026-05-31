@@ -86,7 +86,7 @@ const label = (tool: string) => getMcpToolZhLabel(tool)
     <div class="flex items-center justify-between gap-2">
       <div class="min-w-0">
         <div class="text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">
-          {{ scope?.agentType === 'browser' ? '浏览器端 MCP 权限' : scope?.agentType === 'linux' ? 'Linux MCP 权限' : '软件端 MCP 权限' }}
+          {{ scope?.agentType === 'browser' ? '浏览器端 MCP 权限' : '软件端 MCP 权限' }}
         </div>
         <div class="text-[10px] text-zinc-400 dark:text-zinc-500 truncate">
           {{ scope?.agentName || agentId }}

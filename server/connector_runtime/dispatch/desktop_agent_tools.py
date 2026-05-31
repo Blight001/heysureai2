@@ -230,38 +230,26 @@ _GENERIC_ENDPOINT_SCHEMA: Dict[str, Any] = {
 
 
 def endpoint_tool_description(name: str) -> str:
-    """Description for an endpoint tool. Prefers the agent's own reported
-    description; falls back to a generic line keyed by tool type. The server
-    no longer hardcodes per-tool text."""
+    """Description for an endpoint tool.
+
+    The agent is the source of truth. If it does not report a description, the
+    backend returns an empty string instead of inventing one.
+    """
     tool = str(name or "").strip()
     reported = _presence_tool_defs().get(tool)
     if reported and reported.get("description"):
-        return str(reported["description"])
-    if is_browser_tool(tool):
-        return (
-            f"Run browser MCP tool `{tool}` on the connected browser extension bound to this AI. "
-            "Pass the tool's normal arguments directly as this function's JSON arguments. "
-            "The server waits for the browser result and returns it to the conversation."
-        )
-    if is_desktop_tool(tool):
-        return (
-            f"Run desktop/software MCP tool `{tool}` on the connected desktop agent bound to this AI. "
-            "Pass the tool's normal arguments directly as this function's JSON arguments. "
-            "The server waits for the desktop result and returns it to the conversation."
-        )
-    return f"Run endpoint MCP tool `{tool}` on the connected endpoint agent."
+        return str(reported["description"]).strip()
+    return ""
 
 
 def endpoint_tool_input_schema(name: str) -> Dict[str, Any]:
-    """Input schema for an endpoint tool, taken verbatim from the agent's own
-    reported ``toolDefs``. Agents that report no schema fall back to a generic
-    permissive object schema."""
+    """Input schema for an endpoint tool, taken verbatim from the agent."""
     tool = str(name or "").strip()
     reported = _presence_tool_defs().get(tool)
     schema = reported.get("input_schema") if reported else None
     if isinstance(schema, dict) and schema:
         return schema
-    return dict(_GENERIC_ENDPOINT_SCHEMA)
+    return {}
 
 
 def build_endpoint_tools_payload(allowed_tools: Optional[Set[str]] = None) -> List[Dict[str, Any]]:

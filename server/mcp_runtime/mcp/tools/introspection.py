@@ -6,6 +6,7 @@ from sqlmodel import Session, select
 from api.database import engine
 from api.models import AssistantAIConfig, User
 from api.models.defaults import DEFAULT_MCP_NAMESPACE_HINTS
+from api.agent_presence import online_tool_defs
 from ..core import MCP_INTROSPECTION_TOOLS
 
 
@@ -88,8 +89,7 @@ def _resolve_tool_alias(name: str, allowed: set[str]) -> str:
 
 def _mcp_list_tools(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int] = None):
     from ..registry import registry
-    from connector_runtime.dispatch.desktop_agent_tools import endpoint_tool_description, is_endpoint_agent_tool
-    from api.services.librarian_service import intrinsic_tool_description
+    from connector_runtime.dispatch.desktop_agent_tools import is_endpoint_agent_tool
 
     allowed = _allowed_tool_names(user_id, ai_config_id)
     namespace_filter = str(args.get("namespace") or "").strip()
@@ -102,6 +102,7 @@ def _mcp_list_tools(user_id: int, args: Dict[str, Any], ai_config_id: Optional[i
         raise HTTPException(status_code=400, detail="mode must be namespaces, namespace, or all")
     groups: Dict[str, list[dict]] = {}
     seen: set[str] = set()
+    endpoint_defs = online_tool_defs()
     for item in registry.list_tools():
         name = str(item.get("name") or "").strip()
         if not name or name not in allowed:
@@ -113,7 +114,8 @@ def _mcp_list_tools(user_id: int, args: Dict[str, Any], ai_config_id: Optional[i
         groups.setdefault(namespace, []).append(
             {
                 "name": name,
-                "description": intrinsic_tool_description(user_id, name, str(item.get("description") or "")),
+                "description": str(item.get("description") or "").strip(),
+                "inputSchema": item.get("inputSchema") if isinstance(item.get("inputSchema"), dict) else {},
                 "destructive": bool(item.get("destructive")),
             }
         )
@@ -123,10 +125,12 @@ def _mcp_list_tools(user_id: int, args: Dict[str, Any], ai_config_id: Optional[i
         namespace = _tool_namespace(name)
         if namespace_filter and namespace != namespace_filter:
             continue
+        spec = endpoint_defs.get(name) or {}
         groups.setdefault(namespace, []).append(
             {
                 "name": name,
-                "description": intrinsic_tool_description(user_id, name, endpoint_tool_description(name)),
+                "description": str(spec.get("description") or "").strip(),
+                "inputSchema": spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {},
                 "destructive": True,
             }
         )
@@ -168,12 +172,8 @@ def _mcp_list_tools(user_id: int, args: Dict[str, Any], ai_config_id: Optional[i
 
 def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int] = None):
     from ..registry import registry
-    from connector_runtime.dispatch.desktop_agent_tools import (
-        endpoint_tool_description,
-        endpoint_tool_input_schema,
-        is_endpoint_agent_tool,
-    )
-    from api.services.librarian_service import intrinsic_input_schema, intrinsic_tool_description
+    from connector_runtime.dispatch.desktop_agent_tools import is_endpoint_agent_tool
+    endpoint_defs = online_tool_defs()
 
     name = str(args.get("tool") or args.get("name") or "").strip()
     if not name:
@@ -184,11 +184,12 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
     if name not in allowed:
         raise HTTPException(status_code=403, detail=f"Tool is not allowed for this AI: {requested_name}")
     if is_endpoint_agent_tool(name):
+        spec = endpoint_defs.get(name) or {}
         return {
             "name": name,
             "requested_name": requested_name,
-            "description": intrinsic_tool_description(user_id, name, endpoint_tool_description(name)),
-            "inputSchema": intrinsic_input_schema(user_id, name, endpoint_tool_input_schema(name)),
+            "description": str(spec.get("description") or "").strip(),
+            "inputSchema": spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {},
             "destructive": True,
             "call_format": {
                 "tool": name,
@@ -199,8 +200,8 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
     return {
         "name": tool.name,
         "requested_name": requested_name,
-        "description": intrinsic_tool_description(user_id, tool.name, tool.description),
-        "inputSchema": intrinsic_input_schema(user_id, tool.name, tool.input_schema),
+        "description": str(tool.description or "").strip(),
+        "inputSchema": tool.input_schema if isinstance(tool.input_schema, dict) else {},
         "destructive": tool.destructive,
         "call_format": {
             "tool": tool.name,
