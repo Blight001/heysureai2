@@ -39,11 +39,6 @@ When completing a task:
 4. If a popup/modal/dialog blocks the page, use browser_find_popups to inspect it and browser_close_popup to close it
 5. Extract or summarize the result
 
-Memory cards (automation workflows):
-- When the user asks to save/remember a sequence of actions as a card, call card_save with name + steps, where each step is { tool, args, note } and note (备注) explains the step.
-- To replay a workflow, call card_run by name or id.
-- If card_run reports a failedStep, diagnose the cause (inspect the page with browser_page_info/browser_get_content, re-check the selector), then fix that step with card_update_step and run the card again. Repeat until it succeeds or you can explain why it cannot.
-
 Always:
 - After scrolling, read the returned position (scrollY, percent, atTop/atBottom, section, visible headings) so you know where you landed and what changed
 - Be methodical and verify each step

@@ -2,7 +2,13 @@ import { ipcMain } from 'electron'
 import { store, AgentSettings } from '../store'
 import { getAgent, clearAiSelectionIfLoggedOut } from '../services/agent-runtime'
 import { sendActivityLog } from '../services/activity-log'
-import { setMainWindowTheme } from '../windows/main-window'
+import {
+  setMainWindowTheme,
+  minimizeMainWindow,
+  toggleMaximizeMainWindow,
+  closeMainWindow,
+  isMainWindowMaximized,
+} from '../windows/main-window'
 import { resolveBaseUrl, serverFetch, ServerError } from '../services/server-client'
 import { cacheUserAvatar } from '../services/avatar-cache'
 
@@ -50,5 +56,23 @@ export function registerSettingsIpc(): void {
     store.set('theme', theme)
     setMainWindowTheme(theme)
     return true
+  })
+
+  ipcMain.handle('window:minimize', () => {
+    minimizeMainWindow()
+    return true
+  })
+
+  ipcMain.handle('window:toggle-maximize', () => {
+    return toggleMaximizeMainWindow()
+  })
+
+  ipcMain.handle('window:close', () => {
+    closeMainWindow()
+    return true
+  })
+
+  ipcMain.handle('window:is-maximized', () => {
+    return isMainWindowMaximized()
   })
 }

@@ -1,8 +1,8 @@
 // popup/state.ts — shared mutable state for the popup UI.
 // The popup is a single bundled IIFE; every feature module reads and writes
 // this one `state` singleton instead of passing values around. Treat it as the
-// popup's in-memory store. The popup's main area is the MCP tool page; account,
-// status, settings and the AI member list are surfaced via modals.
+// popup's in-memory store. Account, status, settings and the AI member list are
+// surfaced via modals.
 
 import { AgentStatus } from '../lib/types'
 import { AuthState } from '../lib/storage'

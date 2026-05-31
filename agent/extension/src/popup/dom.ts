@@ -45,9 +45,9 @@ export const statFailed   = $('stat-failed')
 // Members modal
 export const membersModal = $('members-modal')
 export const membersModalClose = $('members-modal-close')
-export const membersList  = $('members-list')
-export const membersEmpty = $('members-empty')
-export const membersRefresh = $('members-refresh')
+export const connectionStatusV = $('connection-status-v')
+export const aiStatusV = $('ai-status-v')
+export const serverStatusV = $('server-status-v')
 export const connectBtn   = $('connect-btn')
 export const disconnectBtn = $('disconnect-btn')
 

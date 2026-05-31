@@ -1,10 +1,5 @@
 (() => {
   // src/popup/state.ts
-  var ROLE_LABELS = {
-    assistant_admin: "\u8F85\u52A9\u7BA1\u7406\u5458",
-    manager: "\u7BA1\u7406\u8005",
-    member: "\u666E\u901A\u6210\u5458"
-  };
   var state = {
     currentTheme: "dark",
     currentStatus: "disconnected",
@@ -64,9 +59,9 @@
   var statFailed = $("stat-failed");
   var membersModal = $("members-modal");
   var membersModalClose = $("members-modal-close");
-  var membersList = $("members-list");
-  var membersEmpty = $("members-empty");
-  var membersRefresh = $("members-refresh");
+  var connectionStatusV = $("connection-status-v");
+  var aiStatusV = $("ai-status-v");
+  var serverStatusV = $("server-status-v");
   var connectBtn = $("connect-btn");
   var disconnectBtn = $("disconnect-btn");
   var loginModal = $("login-modal");
@@ -209,10 +204,6 @@
   async function getMe(serverUrl, token) {
     return requestJson(`${trimUrl(serverUrl)}/api/auth/me`, { headers: authHeaders(token) }, "\u83B7\u53D6\u7528\u6237\u4FE1\u606F\u5931\u8D25");
   }
-  async function listConfigs(serverUrl, token) {
-    const rows = await requestJson(`${trimUrl(serverUrl)}/api/ai/configs`, { headers: authHeaders(token) }, "AI \u6210\u5458\u5217\u8868\u52A0\u8F7D\u5931\u8D25");
-    return Array.isArray(rows) ? rows : [];
-  }
 
   // src/popup/markdown.ts
   function esc(s) {
@@ -220,11 +211,6 @@
   }
 
   // src/popup/helpers.ts
-  function roleOf(m) {
-    if (m.ai_role === "assistant_admin")
-      return "assistant_admin";
-    return m.digital_member_role === "manager" ? "manager" : "member";
-  }
   function normalizeAvatarUrl(avatar) {
     const raw = String(avatar || "").trim();
     if (!raw)
@@ -242,29 +228,6 @@
   function avatarHtml(src, fallback) {
     const safeSrc = normalizeAvatarUrl(src);
     return safeSrc ? `<img src="${esc(safeSrc)}" alt="" />` : esc(fallback);
-  }
-  function toolCount(m) {
-    try {
-      const a = JSON.parse(m.mcp_tools || "[]");
-      return Array.isArray(a) ? a.length : 0;
-    } catch {
-      return 0;
-    }
-  }
-  function hasBrowserMcpPermission(m) {
-    if (m.mcp_enabled === false)
-      return false;
-    try {
-      const parsed = JSON.parse(m.mcp_tools || "[]");
-      if (!Array.isArray(parsed))
-        return false;
-      return parsed.some((tool) => {
-        const name = String(tool || "").trim();
-        return name.startsWith("browser_") || name.startsWith("card_");
-      });
-    } catch {
-      return false;
-    }
   }
   function fetchAsDataUrl(url) {
     return fetch(url).then((resp) => {
@@ -309,6 +272,13 @@
   }
 
   // src/popup/members.ts
+  function renderConnectionInfo() {
+    const connected = state.currentStatus === "registered" || state.currentStatus === "connected";
+    connectionStatusV.textContent = connected ? "\u5DF2\u8FDE\u63A5\u5230\u670D\u52A1\u5668" : "\u672A\u8FDE\u63A5\u5230\u670D\u52A1\u5668";
+    aiStatusV.textContent = state.boundAiConfigId == null ? "\u672A\u5206\u914D" : "\u5DF2\u5206\u914D AI";
+    serverStatusV.textContent = state.serverUrl || "-";
+    renderStatus();
+  }
   async function doLogin() {
     const configuredServerUrl = cfgServer.value.trim();
     if (configuredServerUrl && configuredServerUrl !== state.serverUrl) {
@@ -341,7 +311,6 @@
       updateUserChip();
       await refreshAvatarCache();
       updateUserChip();
-      await loadMembers();
       state.port.postMessage({ type: "agent:connect" });
       closeLoginModal();
       openMembersModal();
@@ -359,52 +328,11 @@
     state.avatarDataUrl = "";
     await clearAvatarCache();
     closeMembersModal();
-    state.members = [];
     updateUserChip();
-    renderMembers();
-  }
-  async function loadMembers() {
-    if (!state.auth.token)
-      return;
-    membersEmpty.textContent = "\u52A0\u8F7D\u4E2D\u2026";
-    membersEmpty.style.display = "block";
-    try {
-      const rows = await listConfigs(state.serverUrl, state.auth.token);
-      state.members = rows.filter(hasBrowserMcpPermission);
-      renderMembers();
-      renderStatus();
-    } catch (err) {
-      if (isAuthError(err)) {
-        await doLogout();
-        loginFeedback.textContent = "\u767B\u5F55\u5DF2\u8FC7\u671F\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55";
-        loginFeedback.style.color = "var(--warn)";
-        return;
-      }
-      membersEmpty.textContent = `\u52A0\u8F7D\u5931\u8D25\uFF1A${err?.message || err}`;
-    }
+    renderConnectionInfo();
   }
   function renderMembers() {
-    membersList.querySelectorAll(".member-card").forEach((e) => e.remove());
-    if (!state.members.length) {
-      membersEmpty.style.display = "block";
-      membersEmpty.textContent = state.auth.token ? "\u6682\u65E0\u53EF\u663E\u793A\u7684 AI \u6210\u5458" : "\u8BF7\u5148\u767B\u5F55";
-      return;
-    }
-    membersEmpty.style.display = "none";
-    for (const m of state.members) {
-      const role = roleOf(m);
-      const el = document.createElement("div");
-      el.className = "member-card";
-      el.innerHTML = `
-      <div class="${m.enabled === false ? "dot-off" : "dot-on"}"></div>
-      <div class="member-ava">${esc((m.name || "?").slice(0, 1))}</div>
-      <div class="member-info">
-        <div class="member-name">${esc(m.name || "\u672A\u547D\u540D")}</div>
-        <div class="member-meta">${esc(m.model || "\u2014")} \xB7 MCP ${toolCount(m)} \u9879</div>
-      </div>
-      <span class="role-badge ${role}">${ROLE_LABELS[role] || role}</span>`;
-      membersList.appendChild(el);
-    }
+    renderConnectionInfo();
   }
   function wireMembers() {
     loginBtn.addEventListener("click", () => void doLogin());
@@ -430,7 +358,6 @@
         closeMembersModal();
     });
     membersModalClose.addEventListener("click", () => closeMembersModal());
-    membersRefresh.addEventListener("click", () => void loadMembers());
     logoutBtn.addEventListener("click", () => void doLogout());
     connectBtn.addEventListener("click", () => state.port.postMessage({ type: "agent:connect" }));
     disconnectBtn.addEventListener("click", () => state.port.postMessage({ type: "agent:disconnect" }));
@@ -449,7 +376,7 @@
       label = "\u672A\u8FDE\u63A5";
     } else if (state.boundAiConfigId == null) {
       color = "yellow";
-      label = "\u672A\u5206\u914D AI";
+      label = "\u672A\u5206\u914D";
     } else {
       color = "green";
       label = "\u5DF2\u8FDE\u63A5";
@@ -462,10 +389,12 @@
     if (status !== "registered" && status !== "connected")
       state.boundAiConfigId = null;
     renderStatus();
+    renderMembers();
   }
   function setBoundAi(aiConfigId) {
     state.boundAiConfigId = aiConfigId;
     renderStatus();
+    renderMembers();
   }
   function applyTheme(theme, persist = true) {
     state.currentTheme = theme;
@@ -499,10 +428,7 @@
   }
   function openMembersModal() {
     membersModal.classList.remove("hidden");
-    if (state.auth.token && state.members.length === 0)
-      void loadMembers();
-    else
-      renderMembers();
+    renderMembers();
   }
   function closeMembersModal() {
     membersModal.classList.add("hidden");
@@ -525,6 +451,7 @@
   function updateOfflineUi() {
     offlineModelConfig.classList.toggle("hidden", !state.offlineMode);
     renderStatus();
+    renderMembers();
   }
   function wireUi() {
     themeToggle.addEventListener("click", () => applyTheme(state.currentTheme === "dark" ? "light" : "dark"));
@@ -1182,196 +1109,55 @@
         },
         required: ["key"]
       }
-    },
-    {
-      name: "card_list",
-      description: "\u5217\u51FA\u5DF2\u4FDD\u5B58\u7684\u8BB0\u5FC6\u5361\u7247 card\uFF08\u81EA\u52A8\u5316\u6D41\u7A0B\uFF09\uFF0C\u8FD4\u56DE\u6BCF\u5F20\u5361\u7247\u7684 id\u3001name\u3001description \u548C\u6B65\u9AA4\u6570\u3002\u7528\u9014\uFF1A\u67E5\u770B\u53EF\u590D\u7528\u7684\u6D4F\u89C8\u5668\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u8FD0\u884C\u6216\u7F16\u8F91\u5361\u7247\u524D\u5148\u6D4F\u89C8\u6E05\u5355\u3002",
-      input_schema: { type: "object", properties: {} }
-    },
-    {
-      name: "card_get",
-      description: "\u6309 id \u6216 name \u8BFB\u53D6\u67D0\u5F20\u5DF2\u4FDD\u5B58\u5361\u7247\u7684\u5B8C\u6574\u6B65\u9AA4\u3002\u7528\u9014\uFF1A\u67E5\u770B\u6D41\u7A0B\u7EC6\u8282\u3002\u573A\u666F\uFF1A\u8FD0\u884C\u524D\u786E\u8BA4\u6B65\u9AA4\u3001\u4FEE\u590D\u524D\u5148\u68C0\u67E5\u67D0\u6B65\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u5361\u7247 id\u3002" },
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" }
-        }
-      }
-    },
-    {
-      name: "card_save",
-      description: "\u628A\u4E00\u8FDE\u4E32\u6D4F\u89C8\u5668\u6B65\u9AA4\u4FDD\u5B58\u4E3A\u53EF\u590D\u7528\u7684\u8BB0\u5FC6\u5361\u7247\u3002\u6B65\u9AA4\u652F\u6301 {{name}} \u5F62\u5F0F\u7684 args \u6A21\u677F\u3001\u53EF\u9009 if \u6761\u4EF6\u3001save_as \u53D8\u91CF\u4EE5\u53CA var_set \u4F2A\u6B65\u9AA4\u3002\u7528\u9014\uFF1A\u6C89\u6DC0\u53EF\u91CD\u590D\u6267\u884C\u7684\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u628A\u4E00\u6B21\u6210\u529F\u7684\u591A\u6B65\u64CD\u4F5C\u56FA\u5316\u4E0B\u6765\u53CD\u590D\u4F7F\u7528\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\u3002" },
-          description: { type: "string", description: "\u8BE5\u6D41\u7A0B\u505A\u4EC0\u4E48\u3002" },
-          mode: { type: "string", enum: ["replace", "merge", "new"], description: "\u540C\u540D\u51B2\u7A81\u65F6\u7684\u5904\u7406\uFF1Areplace \u8986\u76D6\u3001merge \u5408\u5E76\u3001new \u53E6\u5B58\u3002\u9ED8\u8BA4 replace\u3002" },
-          steps: {
-            type: "array",
-            description: "\u6309\u987A\u5E8F\u6267\u884C\u7684\u6B65\u9AA4\u3002",
-            items: {
-              type: "object",
-              properties: {
-                tool: { type: "string", description: "\u4E00\u4E2A browser_* \u5DE5\u5177\u540D\uFF0C\u5982 browser_navigate\u3002" },
-                args: { type: "object", description: "\u8BE5\u5DE5\u5177\u7684\u53C2\u6570\u3002" },
-                note: { type: "string", description: "\u5907\u6CE8\uFF1A\u7528\u81EA\u7136\u8BED\u8A00\u63CF\u8FF0\u8FD9\u4E00\u6B65\u3002" },
-                if: { type: ["string", "object", "boolean"], description: '\u53EF\u9009\u6761\u4EF6\uFF0C\u5982 "item.enabled" \u6216 {var:"last.success", equals:true}\u3002' },
-                save_as: { type: "string", description: "\u628A\u8FD9\u4E00\u6B65\u7684\u7ED3\u679C\u5B58\u5165\u67D0\u4E2A\u53D8\u91CF\u540D\u3002" }
-              },
-              required: ["tool"]
-            }
-          }
-        },
-        required: ["name", "steps"]
-      }
-    },
-    {
-      name: "card_update_step",
-      description: "\u6309 index \u4FEE\u590D\u4E00\u5F20\u5DF2\u6709\u5361\u7247\u7684\u67D0\u4E00\u6B65\u2014\u2014\u6539\u5B83\u7684 tool\u3001args \u6216 note\u3002\u7528\u9014\uFF1A\u4FEE\u8865\u6D41\u7A0B\u3002\u573A\u666F\uFF1Acard_run \u62A5\u544A\u67D0\u6B65\u5931\u8D25\u540E\uFF0C\u5355\u72EC\u4FEE\u6B63\u8BE5\u6B65\u800C\u4E0D\u5FC5\u91CD\u5B58\u6574\u5F20\u5361\u7247\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u5361\u7247 id\u3002" },
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
-          index: { type: "number", description: "\u8981\u4FEE\u6539\u6B65\u9AA4\u7684 0 \u8D77\u59CB\u4E0B\u6807\u3002" },
-          tool: { type: "string", description: "\u65B0\u7684\u5DE5\u5177\u540D\uFF08\u53EF\u9009\uFF09\u3002" },
-          args: { type: "object", description: "\u65B0\u7684\u53C2\u6570\uFF08\u53EF\u9009\uFF09\u3002" },
-          note: { type: "string", description: "\u65B0\u7684\u5907\u6CE8\uFF08\u53EF\u9009\uFF09\u3002" }
-        },
-        required: ["index"]
-      }
-    },
-    {
-      name: "card_run",
-      description: "\u6309 id \u6216 name \u8FD0\u884C\u4E00\u5F20\u5DF2\u4FDD\u5B58\u7684\u5361\u7247\uFF0C\u652F\u6301 {{name}} \u6A21\u677F\u53D8\u91CF\u548C\u6761\u4EF6\u6B65\u9AA4\u3002\u7528\u9014\uFF1A\u6267\u884C\u6C89\u6DC0\u597D\u7684\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u4E00\u952E\u8DD1\u901A\u767B\u5F55\u3001\u6293\u53D6\u3001\u63D0\u4EA4\u7B49\u591A\u6B65\u64CD\u4F5C\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u5361\u7247 id\u3002" },
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
-          variables: { type: "object", description: "\u4F9B\u6B65\u9AA4\u6A21\u677F\u548C\u6761\u4EF6\u4F7F\u7528\u7684\u53D8\u91CF\u3002" },
-          vars: { type: "object", description: "variables \u7684\u522B\u540D\u3002" }
-        }
-      }
-    },
-    {
-      name: "card_run_batch",
-      description: "\u5BF9\u6BCF\u4E2A item \u5404\u8FD0\u884C\u4E00\u6B21\u5361\u7247\uFF0C\u6BCF\u6B21\u8FD0\u884C\u53EF\u62FF\u5230\u53D8\u91CF {item, index, ...variables}\u3002\u7528\u9014\uFF1A\u6279\u91CF\u6267\u884C\u540C\u4E00\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u5BF9\u4E00\u6279\u5173\u952E\u8BCD/\u8D26\u53F7/\u94FE\u63A5\u9010\u4E2A\u8DD1\u540C\u4E00\u5957\u64CD\u4F5C\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u5361\u7247 id\u3002" },
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
-          items: { type: "array", description: "\u6279\u5904\u7406\u6761\u76EE\u5217\u8868\u3002" },
-          variables: { type: "object", description: "\u6BCF\u6B21\u8FD0\u884C\u5171\u4EAB\u7684\u53D8\u91CF\u3002" },
-          stop_on_error: { type: "boolean", description: "\u9047\u5230\u7B2C\u4E00\u4E2A\u5931\u8D25\u7684 item \u5C31\u505C\u6B62\u3002\u9ED8\u8BA4 true\u3002" }
-        },
-        required: ["items"]
-      }
-    },
-    {
-      name: "card_schedule",
-      description: '\u4E3A\u5361\u7247\u8BBE\u5B9A\u8BA1\u5212\u8FD0\u884C\uFF1A\u53EF\u7528 interval_minutes\u3001run_at\uFF0C\u6216\u50CF "*/15 * * * *" \u8FD9\u6837\u7684\u7B80\u5355 cron\uFF08\u57FA\u4E8E Chrome alarms\uFF09\u3002\u7528\u9014\uFF1A\u5B9A\u65F6/\u5468\u671F\u6267\u884C\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u6BCF 15 \u5206\u949F\u6293\u4E00\u6B21\u3001\u6BCF\u5929\u5B9A\u70B9\u8DD1\u4E00\u6B21\u3002',
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u5361\u7247 id\u3002" },
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
-          schedule_id: { type: "string", description: "\u53EF\u9009\uFF1A\u8BA1\u5212 id\u3002" },
-          interval_minutes: { type: "number", description: "\u5468\u671F\u8FD0\u884C\u7684\u95F4\u9694\u5206\u949F\u6570\u3002" },
-          run_at: { type: "string", description: "\u4E00\u6B21\u6027\u8FD0\u884C\u7684 ISO \u65F6\u95F4\u3002" },
-          cron: { type: "string", description: "\u4EC5\u652F\u6301\u7B80\u5355\u7684\u6BCF N \u5206\u949F\u8BED\u6CD5\uFF0C\u5982 */15 * * * *\u3002" },
-          variables: { type: "object", description: "\u4F20\u7ED9\u8BA1\u5212\u8FD0\u884C\u7684\u53D8\u91CF\u3002" }
-        }
-      }
-    },
-    {
-      name: "card_schedule_list",
-      description: "\u5217\u51FA\u5DF2\u8BBE\u5B9A\u7684\u5361\u7247\u8BA1\u5212\u8FD0\u884C\u3002\u7528\u9014\uFF1A\u67E5\u770B\u5B9A\u65F6\u4EFB\u52A1\u3002\u573A\u666F\uFF1A\u5220\u9664\u6216\u6392\u67E5\u67D0\u4E2A\u8BA1\u5212\u524D\u5148\u6D4F\u89C8\u5217\u8868\u3002",
-      input_schema: { type: "object", properties: {} }
-    },
-    {
-      name: "card_schedule_delete",
-      description: "\u5220\u9664\u4E00\u4E2A\u5361\u7247\u8BA1\u5212\u8FD0\u884C\u3002\u7528\u9014\uFF1A\u53D6\u6D88\u5B9A\u65F6\u3002\u573A\u666F\uFF1A\u4E0D\u518D\u9700\u8981\u67D0\u4E2A\u5468\u671F\u4EFB\u52A1\u65F6\u79FB\u9664\u5B83\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          schedule_id: { type: "string", description: "\u8BA1\u5212 id\u3002" },
-          id: { type: "string", description: "schedule_id \u7684\u522B\u540D\u3002" }
-        }
-      }
-    },
-    {
-      name: "card_delete",
-      description: "\u6309 id \u6216 name \u5220\u9664\u4E00\u5F20\u5DF2\u4FDD\u5B58\u7684\u5361\u7247\u3002\u7528\u9014\uFF1A\u6E05\u7406\u4E0D\u518D\u4F7F\u7528\u7684\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u5220\u9664\u8FC7\u671F\u6216\u9519\u8BEF\u7684\u81EA\u52A8\u5316\u5361\u7247\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u5361\u7247 id\u3002" },
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" }
-        }
-      }
     }
   ];
   var BROWSER_CAPABILITIES = BROWSER_TOOLS.map((t) => t.name);
 
   // src/popup/mcp.ts
   var overrides = {};
-  function nsOf(name) {
-    if (name.startsWith("card_"))
-      return "card";
-    const i = name.indexOf("_");
-    return i > 0 ? name.slice(0, i) : name.includes(".") ? name.split(".")[0] : "other";
-  }
-  function effDescription(t) {
-    return overrides[t.name]?.description?.trim() || t.description || "";
-  }
-  function effParamDescription(tool, param, raw) {
-    return overrides[tool]?.parameters?.[param]?.trim() || raw || "";
+  function esc2(str) {
+    return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   }
   function isEdited(name) {
     const o = overrides[name];
     return !!(o && (o.description || o.parameters && Object.keys(o.parameters).length));
   }
-  function showList() {
+  function effDescription(t) {
+    return overrides[t.name]?.description?.trim() || t.description || "";
+  }
+  function effParamDesc(tool, param, raw) {
+    return overrides[tool]?.parameters?.[param]?.trim() || raw || "";
+  }
+  function paramEntries(t) {
+    const props = t.input_schema?.properties || {};
+    const required = new Set(t.input_schema?.required || []);
+    return Object.keys(props).map((p) => {
+      const cfg = props[p] || {};
+      const ty = Array.isArray(cfg.type) ? cfg.type.join("|") : cfg.type || "any";
+      return { name: p, type: String(ty), required: required.has(p), desc: String(cfg.description || "") };
+    });
+  }
+  async function renderMcpList() {
     state.openToolName = null;
     mcpDetailPane.classList.add("hidden");
     mcpListPane.classList.remove("hidden");
-  }
-  async function renderMcpList() {
     overrides = await getToolDescOverrides();
     mcpCount.textContent = `${BROWSER_TOOLS.length} \u4E2A`;
     mcpList.innerHTML = "";
-    const groups = /* @__PURE__ */ new Map();
     for (const t of BROWSER_TOOLS) {
-      const ns = nsOf(t.name);
-      if (!groups.has(ns))
-        groups.set(ns, []);
-      groups.get(ns).push(t);
-    }
-    for (const ns of Array.from(groups.keys()).sort()) {
-      const title = document.createElement("div");
-      title.className = "ns-title";
-      title.textContent = `${ns}/ (${groups.get(ns).length})`;
-      mcpList.appendChild(title);
-      for (const t of groups.get(ns)) {
-        const el = document.createElement("div");
-        el.className = "tool-item";
-        el.innerHTML = `
-        <div class="tool-item-top">
-          <span class="tool-name">${esc(t.name)}</span>
-          ${isEdited(t.name) ? '<span class="tool-edited">\u5DF2\u81EA\u5B9A\u4E49</span>' : ""}
-        </div>
-        <div class="tool-desc">${esc((effDescription(t) || "\uFF08\u65E0\u63CF\u8FF0\uFF09").slice(0, 110))}</div>`;
-        el.addEventListener("click", () => void openTool(t.name));
-        mcpList.appendChild(el);
-      }
+      const el = document.createElement("div");
+      el.className = "tool-item";
+      el.innerHTML = `
+      <div class="tool-item-top">
+        <span class="tool-name">${esc2(t.name)}</span>
+        ${isEdited(t.name) ? '<span class="tool-edited">\u5DF2\u81EA\u5B9A\u4E49</span>' : ""}
+      </div>
+      <div class="tool-desc">${esc2((effDescription(t) || "\uFF08\u65E0\u63CF\u8FF0\uFF09").slice(0, 110))}</div>`;
+      el.addEventListener("click", () => void openTool(t.name));
+      mcpList.appendChild(el);
     }
   }
   async function openTool(name) {
-    overrides = await getToolDescOverrides();
     const tool = BROWSER_TOOLS.find((t) => t.name === name);
     if (!tool)
       return;
@@ -1379,62 +1165,47 @@
     mcpListPane.classList.add("hidden");
     mcpDetailPane.classList.remove("hidden");
     mcpDetail.scrollTop = 0;
-    renderDetail(tool);
+    await renderDetail(tool);
   }
-  function paramEntries(tool) {
-    const props = tool.input_schema?.properties || {};
-    const required = new Set(tool.input_schema?.required || []);
-    return Object.keys(props).map((p) => {
-      const cfg = props[p] || {};
-      const t = Array.isArray(cfg.type) ? cfg.type.join("|") : cfg.type || "any";
-      return { name: p, type: String(t), required: required.has(p), desc: String(cfg.description || "") };
-    });
-  }
-  function renderDetail(tool) {
+  async function renderDetail(tool) {
+    overrides = await getToolDescOverrides();
     const params = paramEntries(tool);
     const paramHtml = params.length ? params.map((p) => `
         <div class="param-row">
           <div class="param-head">
-            <span class="param-name">${esc(p.name)}</span>
-            <span class="param-type">${esc(p.type)}</span>
+            <span class="param-name">${esc2(p.name)}</span>
+            <span class="param-type">${esc2(p.type)}</span>
             ${p.required ? '<span class="param-req">\u5FC5\u586B</span>' : ""}
           </div>
-          <div class="tool-desc">${esc(effParamDescription(tool.name, p.name, p.desc) || "\uFF08\u65E0\u8BF4\u660E\uFF09")}</div>
-          <input type="text" data-param="${esc(p.name)}" class="edit-param" placeholder="\u81EA\u5B9A\u4E49\u53C2\u6570\u8BF4\u660E\uFF08\u7559\u7A7A\u7528\u9ED8\u8BA4\uFF09" value="${esc(overrides[tool.name]?.parameters?.[p.name] || "")}" style="margin-top:4px;"/>
+          <div class="tool-desc">${esc2(effParamDesc(tool.name, p.name, p.desc) || "\uFF08\u65E0\u8BF4\u660E\uFF09")}</div>
+          <input type="text" data-param="${esc2(p.name)}" class="edit-param" placeholder="\u81EA\u5B9A\u4E49\u53C2\u6570\u8BF4\u660E\uFF08\u7559\u7A7A\u7528\u9ED8\u8BA4\uFF09" value="${esc2(overrides[tool.name]?.parameters?.[p.name] || "")}" style="margin-top:5px;"/>
         </div>`).join("") : '<div class="empty-note">\u8BE5\u5DE5\u5177\u65E0\u53C2\u6570</div>';
-    const argTemplate = JSON.stringify(
-      Object.fromEntries(params.filter((p) => p.required).map((p) => [p.name, ""])),
-      null,
-      2
-    );
+    const argTemplate = JSON.stringify(Object.fromEntries(params.filter((p) => p.required).map((p) => [p.name, ""])), null, 2);
     mcpDetail.innerHTML = `
     <div class="card">
-      <div class="card-title">${esc(tool.name)}</div>
-      <div class="tool-desc" style="font-size:11px;">${esc(effDescription(tool) || "\uFF08\u65E0\u63CF\u8FF0\uFF09")}</div>
+      <div class="card-title">${esc2(tool.name)}</div>
+      <div class="tool-desc" style="font-size:11px;">${esc2(effDescription(tool) || "\uFF08\u65E0\u63CF\u8FF0\uFF09")}</div>
     </div>
-
     <div class="card">
       <div class="card-title">\u53C2\u6570\u8BF4\u660E</div>
       ${paramHtml}
     </div>
-
     <div class="card">
-      <div class="card-title">\u270F\uFE0F \u7F16\u8F91\u63CF\u8FF0\uFF08\u672C\u5730\u4FDD\u5B58\uFF0C\u968F\u4E0A\u62A5\u540C\u6B65\u7ED9\u670D\u52A1\u5668\uFF09</div>
+      <div class="card-title">\u7F16\u8F91\u63CF\u8FF0\uFF08\u672C\u5730\u4FDD\u5B58\uFF0C\u968F\u4E0A\u62A5\u540C\u6B65\u7ED9\u670D\u52A1\u5668\uFF09</div>
       <div class="fg"><label>\u5DE5\u5177\u63CF\u8FF0\uFF08\u7528\u9014 + \u4F7F\u7528\u573A\u666F\uFF09</label>
-        <textarea class="ta" id="edit-desc" placeholder="\u7559\u7A7A\u4F7F\u7528\u9ED8\u8BA4\u63CF\u8FF0">${esc(overrides[tool.name]?.description || "")}</textarea>
+        <textarea class="ta" id="edit-desc" placeholder="\u7559\u7A7A\u4F7F\u7528\u9ED8\u8BA4\u63CF\u8FF0">${esc2(overrides[tool.name]?.description || "")}</textarea>
       </div>
       <button class="btn btn-primary" id="edit-save">\u4FDD\u5B58\u63CF\u8FF0</button>
-      <button class="btn btn-secondary" id="edit-reset" style="margin-top:6px;">\u6062\u590D\u9ED8\u8BA4</button>
+      <button class="btn btn-secondary" id="edit-reset">\u6062\u590D\u9ED8\u8BA4</button>
       <div class="save-feedback" id="edit-feedback"></div>
     </div>
-
     <div class="card">
-      <div class="card-title">\u{1F9EA} \u6D4B\u8BD5\u8C03\u7528 (mcp.test)</div>
-      <div class="login-hint">\u5728\u672C\u6D4F\u89C8\u5668\u76F4\u63A5\u6267\u884C\u8BE5\u5DE5\u5177\u5E76\u8FD4\u56DE\u539F\u59CB\u7ED3\u679C\u3002\u8BF7\u786E\u4FDD\u6709\u4E00\u4E2A\u6D3B\u52A8\u6807\u7B7E\u9875\u3002</div>
+      <div class="card-title">\u6D4B\u8BD5\u8C03\u7528 (mcp.test)</div>
+      <div class="login-hint">\u5728\u5F53\u524D\u6D4F\u89C8\u5668\u73AF\u5883\u76F4\u63A5\u6267\u884C\u8BE5\u5DE5\u5177\u5E76\u8FD4\u56DE\u539F\u59CB\u7ED3\u679C\u3002</div>
       <div class="fg"><label>\u53C2\u6570 (JSON)</label>
-        <textarea class="ta" id="test-args" style="min-height:70px;font-family:'Cascadia Code',Consolas,monospace;">${esc(argTemplate)}</textarea>
+        <textarea class="ta" id="test-args" style="min-height:70px;font-family:'Cascadia Code',Consolas,monospace;">${esc2(argTemplate)}</textarea>
       </div>
-      <button class="btn btn-primary" id="test-run">\u25B6 \u6D4B\u8BD5</button>
+      <button class="btn btn-primary" id="test-run">\u6D4B\u8BD5</button>
       <div class="test-result" id="test-result" style="display:none;"></div>
     </div>`;
     mcpDetail.querySelector("#edit-save").addEventListener("click", async () => {
@@ -1444,17 +1215,16 @@
         parameters[inp.dataset.param] = inp.value;
       });
       await setToolDescOverride(tool.name, { description, parameters });
-      overrides = await getToolDescOverrides();
-      const fb = mcpDetail.querySelector("#edit-feedback");
-      fb.textContent = "\u5DF2\u4FDD\u5B58 \u2713 \u4E0B\u6B21\u8FDE\u63A5\u670D\u52A1\u5668\u65F6\u540C\u6B65";
-      fb.style.color = "var(--success)";
       state.port.postMessage({ type: "agent:connect" });
+      const fb = mcpDetail.querySelector("#edit-feedback");
+      fb.textContent = "\u5DF2\u4FDD\u5B58\uFF0C\u7A0D\u540E\u540C\u6B65\u7ED9\u670D\u52A1\u5668";
+      fb.style.color = "var(--success)";
+      await renderDetail(tool);
     });
     mcpDetail.querySelector("#edit-reset").addEventListener("click", async () => {
       await setToolDescOverride(tool.name, { description: "", parameters: {} });
-      overrides = await getToolDescOverrides();
-      renderDetail(tool);
       state.port.postMessage({ type: "agent:connect" });
+      await renderDetail(tool);
     });
     mcpDetail.querySelector("#test-run").addEventListener("click", () => {
       const out = mcpDetail.querySelector("#test-result");
@@ -1473,14 +1243,14 @@
       out.style.display = "block";
       out.className = "test-result";
       out.textContent = "\u6267\u884C\u4E2D\u2026";
-      const requestId = Math.random().toString(36).slice(2);
+      const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       state.pendingTests.set(requestId, (r) => {
         if (r.ok) {
           out.className = "test-result ok";
-          out.textContent = "\u2713 \u6210\u529F\n" + safeStringify(r.result);
+          out.textContent = "\u6210\u529F\n" + safeStringify(r.result);
         } else {
           out.className = "test-result fail";
-          out.textContent = "\u2717 \u5931\u8D25\uFF1A" + (r.error || "\u672A\u77E5\u9519\u8BEF");
+          out.textContent = "\u5931\u8D25\uFF1A" + (r.error || "\u672A\u77E5\u9519\u8BEF");
         }
       });
       state.port.postMessage({ type: "mcp:test", requestId, tool: tool.name, args });
@@ -1495,13 +1265,13 @@
   }
   function resolveTest(requestId, r) {
     const fn = state.pendingTests.get(requestId);
-    if (fn) {
-      fn(r);
-      state.pendingTests.delete(requestId);
-    }
+    if (!fn)
+      return;
+    state.pendingTests.delete(requestId);
+    fn(r);
   }
   function wireMcp() {
-    mcpBack.addEventListener("click", () => showList());
+    mcpBack.addEventListener("click", () => void renderMcpList());
   }
 
   // src/popup/index.ts
@@ -1562,16 +1332,11 @@
           await saveAuth({ userName: state.auth.userName, avatar: state.auth.avatar });
           await refreshAvatarCache();
           updateUserChip();
-          await loadMembers();
         } catch (err) {
           if (isAuthError(err)) {
             await doLogout();
           } else {
             console.warn("getMe failed (transient), keeping session", err);
-            try {
-              await loadMembers();
-            } catch {
-            }
           }
         }
       })();

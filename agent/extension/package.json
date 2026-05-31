@@ -5,10 +5,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build":   "node build.js",
-    "dev":     "node build.js --watch",
-    "icons":   "node scripts/gen-icons.js",
-    "prebuild": "node scripts/gen-icons.js"
+    "build": "node build.js",
+    "dev": "node build.js --watch"
   },
   "dependencies": {
     "socket.io-client": "^4.7.5"

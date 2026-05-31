@@ -54,7 +54,6 @@
     }
     .logo { display:flex; align-items:center; gap:7px; font-weight:700; font-size:14px; }
     .logo-icon { width:26px; height:26px; border-radius:7px; display:block; object-fit:cover; }
-    .logo-sub { font-size:10px; color:var(--muted); font-weight:400; margin-left:1px; }
     .spacer { flex:1; }
 
     /* ── Status indicator (read-only: 绿/黄/红) ── */
@@ -103,8 +102,6 @@
     #mcp-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding-right:3px; }
     #mcp-list::-webkit-scrollbar { width:3px; }
     #mcp-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
-    .ns-group { }
-    .ns-title { font-size:10px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin:8px 0 4px; }
     .tool-item {
       background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
       padding:8px 10px; cursor:pointer; transition:all var(--tr);
@@ -145,17 +142,12 @@
     .check-row { display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
     .check-row input[type=checkbox] { accent-color:var(--accent); }
     .divider { height:1px; background:var(--border); margin:10px 0; }
-    .mono-pre {
-      margin:0; padding:8px; border-radius:6px; background:var(--bg); border:1px solid var(--border);
-      overflow:auto; max-height:200px; font-family:'Cascadia Code',Consolas,monospace; font-size:10px; line-height:1.5; white-space:pre-wrap; word-break:break-all; color:var(--muted);
-    }
     .param-row { padding:6px 0; border-top:1px solid var(--border); }
     .param-row:first-child { border-top:none; }
     .param-head { display:flex; align-items:center; gap:6px; font-size:11px; }
     .param-name { font-family:'Cascadia Code',Consolas,monospace; font-weight:600; color:var(--text); }
     .param-type { font-size:9px; color:var(--muted); }
     .param-req { font-size:9px; color:var(--warn); }
-
     .btn {
       display:inline-flex; align-items:center; justify-content:center; gap:5px;
       padding:7px 12px; border-radius:var(--r); border:none; font-family:var(--font);
@@ -228,7 +220,6 @@
     <div class="logo">
       <img class="logo-icon" src="icons/icon48.png" alt="HeySure Agent"/>
       <span>HeySure Agent</span>
-      <span class="logo-sub">Browser</span>
     </div>
     <div class="spacer"></div>
     <div class="user-chip guest clickable" id="user-chip" title="点击查看或登录软件端账号" role="button" tabindex="0">
@@ -246,8 +237,6 @@
 
   <!-- Main content: MCP tool page -->
   <div id="content">
-
-    <!-- MCP tool list -->
     <div class="pane" id="mcp-list-pane">
       <div class="pane-header">
         <span class="pane-title">浏览器 MCP 工具</span>
@@ -258,12 +247,10 @@
       </div>
     </div>
 
-    <!-- MCP tool detail (description / params / test) -->
     <div class="pane hidden" id="mcp-detail-pane">
       <button class="detail-back" id="mcp-back">← 返回工具列表</button>
       <div id="mcp-detail"></div>
     </div>
-
   </div>
 
   <!-- Settings modal -->
@@ -330,17 +317,22 @@
     </div>
   </div>
 
-  <!-- Members modal (read-only AI list + connect/disconnect) -->
+  <!-- Connection / AI assignment modal -->
   <div id="members-modal" class="modal hidden">
     <div class="modal-box">
       <div class="modal-title-row">
-        <span class="modal-title">AI 成员</span>
+        <span class="modal-title">连接与 AI 分配</span>
         <button class="modal-close" id="members-modal-close">×</button>
       </div>
-      <div class="login-hint">本设备登录后会自动连接服务器。AI 由管理员在网页端「作坊」栏目中为本设备分配，此处仅供查看。</div>
-      <div id="members-list"><div class="empty-note" id="members-empty">加载中…</div></div>
+      <div class="login-hint">本设备登录后自动连接服务器。AI 由管理员在网页端「作坊」栏目中为本设备分配。</div>
+      <div class="card">
+        <div class="kv"><span class="k">连接状态</span><span class="v" id="connection-status-v">未连接到服务器</span></div>
+        <div class="divider"></div>
+        <div class="kv"><span class="k">AI 分配</span><span class="v" id="ai-status-v">未分配</span></div>
+        <div class="divider"></div>
+        <div class="kv"><span class="k">服务器</span><span class="v" id="server-status-v">-</span></div>
+      </div>
       <div class="btn-row">
-        <button class="btn btn-secondary" id="members-refresh">刷新</button>
         <button class="btn btn-primary" id="connect-btn">连接</button>
         <button class="btn btn-danger" id="disconnect-btn">断开</button>
       </div>

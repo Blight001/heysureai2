@@ -1,8 +1,8 @@
 // popup/index.ts — HeySure Agent popup entry / orchestrator.
-// The popup's main area is the browser MCP tool page (list / detail / test +
-// editable descriptions). A logged-in account, the connection status indicator
-// and settings are surfaced through header controls and modals. This file owns
-// the background port dispatch, startup flow and listener wiring.
+// The popup's main area is the browser MCP tool page. A logged-in account, the
+// connection status indicator and settings are surfaced through header controls
+// and modals. This file owns the background port dispatch, startup flow and
+// listener wiring.
 
 import { BgMsg } from '../lib/types'
 import { state } from './state'
@@ -13,7 +13,7 @@ import { refreshAvatarCache } from './helpers'
 import {
   setStatus, setBoundAi, updateUserChip, updateOfflineUi, renderStats, wireUi,
 } from './ui'
-import { loadMembers, doLogout, wireMembers } from './members'
+import { doLogout, wireMembers } from './members'
 import { loadSettings, wireSettings } from './settings'
 import { renderMcpList, wireMcp, resolveTest } from './mcp'
 
@@ -74,13 +74,11 @@ async function init() {
         await saveAuth({ userName: state.auth.userName, avatar: state.auth.avatar })
         await refreshAvatarCache()
         updateUserChip()
-        await loadMembers()
       } catch (err: any) {
         if (isAuthError(err)) {
           await doLogout()
         } else {
           console.warn('getMe failed (transient), keeping session', err)
-          try { await loadMembers() } catch { /* still down — leave session intact */ }
         }
       }
     })()

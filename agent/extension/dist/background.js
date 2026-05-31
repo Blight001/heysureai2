@@ -4046,137 +4046,6 @@
         },
         required: ["key"]
       }
-    },
-    {
-      name: "card_list",
-      description: "\u5217\u51FA\u5DF2\u4FDD\u5B58\u7684\u8BB0\u5FC6\u5361\u7247 card\uFF08\u81EA\u52A8\u5316\u6D41\u7A0B\uFF09\uFF0C\u8FD4\u56DE\u6BCF\u5F20\u5361\u7247\u7684 id\u3001name\u3001description \u548C\u6B65\u9AA4\u6570\u3002\u7528\u9014\uFF1A\u67E5\u770B\u53EF\u590D\u7528\u7684\u6D4F\u89C8\u5668\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u8FD0\u884C\u6216\u7F16\u8F91\u5361\u7247\u524D\u5148\u6D4F\u89C8\u6E05\u5355\u3002",
-      input_schema: { type: "object", properties: {} }
-    },
-    {
-      name: "card_get",
-      description: "\u6309 id \u6216 name \u8BFB\u53D6\u67D0\u5F20\u5DF2\u4FDD\u5B58\u5361\u7247\u7684\u5B8C\u6574\u6B65\u9AA4\u3002\u7528\u9014\uFF1A\u67E5\u770B\u6D41\u7A0B\u7EC6\u8282\u3002\u573A\u666F\uFF1A\u8FD0\u884C\u524D\u786E\u8BA4\u6B65\u9AA4\u3001\u4FEE\u590D\u524D\u5148\u68C0\u67E5\u67D0\u6B65\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u5361\u7247 id\u3002" },
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" }
-        }
-      }
-    },
-    {
-      name: "card_save",
-      description: "\u628A\u4E00\u8FDE\u4E32\u6D4F\u89C8\u5668\u6B65\u9AA4\u4FDD\u5B58\u4E3A\u53EF\u590D\u7528\u7684\u8BB0\u5FC6\u5361\u7247\u3002\u6B65\u9AA4\u652F\u6301 {{name}} \u5F62\u5F0F\u7684 args \u6A21\u677F\u3001\u53EF\u9009 if \u6761\u4EF6\u3001save_as \u53D8\u91CF\u4EE5\u53CA var_set \u4F2A\u6B65\u9AA4\u3002\u7528\u9014\uFF1A\u6C89\u6DC0\u53EF\u91CD\u590D\u6267\u884C\u7684\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u628A\u4E00\u6B21\u6210\u529F\u7684\u591A\u6B65\u64CD\u4F5C\u56FA\u5316\u4E0B\u6765\u53CD\u590D\u4F7F\u7528\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\u3002" },
-          description: { type: "string", description: "\u8BE5\u6D41\u7A0B\u505A\u4EC0\u4E48\u3002" },
-          mode: { type: "string", enum: ["replace", "merge", "new"], description: "\u540C\u540D\u51B2\u7A81\u65F6\u7684\u5904\u7406\uFF1Areplace \u8986\u76D6\u3001merge \u5408\u5E76\u3001new \u53E6\u5B58\u3002\u9ED8\u8BA4 replace\u3002" },
-          steps: {
-            type: "array",
-            description: "\u6309\u987A\u5E8F\u6267\u884C\u7684\u6B65\u9AA4\u3002",
-            items: {
-              type: "object",
-              properties: {
-                tool: { type: "string", description: "\u4E00\u4E2A browser_* \u5DE5\u5177\u540D\uFF0C\u5982 browser_navigate\u3002" },
-                args: { type: "object", description: "\u8BE5\u5DE5\u5177\u7684\u53C2\u6570\u3002" },
-                note: { type: "string", description: "\u5907\u6CE8\uFF1A\u7528\u81EA\u7136\u8BED\u8A00\u63CF\u8FF0\u8FD9\u4E00\u6B65\u3002" },
-                if: { type: ["string", "object", "boolean"], description: '\u53EF\u9009\u6761\u4EF6\uFF0C\u5982 "item.enabled" \u6216 {var:"last.success", equals:true}\u3002' },
-                save_as: { type: "string", description: "\u628A\u8FD9\u4E00\u6B65\u7684\u7ED3\u679C\u5B58\u5165\u67D0\u4E2A\u53D8\u91CF\u540D\u3002" }
-              },
-              required: ["tool"]
-            }
-          }
-        },
-        required: ["name", "steps"]
-      }
-    },
-    {
-      name: "card_update_step",
-      description: "\u6309 index \u4FEE\u590D\u4E00\u5F20\u5DF2\u6709\u5361\u7247\u7684\u67D0\u4E00\u6B65\u2014\u2014\u6539\u5B83\u7684 tool\u3001args \u6216 note\u3002\u7528\u9014\uFF1A\u4FEE\u8865\u6D41\u7A0B\u3002\u573A\u666F\uFF1Acard_run \u62A5\u544A\u67D0\u6B65\u5931\u8D25\u540E\uFF0C\u5355\u72EC\u4FEE\u6B63\u8BE5\u6B65\u800C\u4E0D\u5FC5\u91CD\u5B58\u6574\u5F20\u5361\u7247\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u5361\u7247 id\u3002" },
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
-          index: { type: "number", description: "\u8981\u4FEE\u6539\u6B65\u9AA4\u7684 0 \u8D77\u59CB\u4E0B\u6807\u3002" },
-          tool: { type: "string", description: "\u65B0\u7684\u5DE5\u5177\u540D\uFF08\u53EF\u9009\uFF09\u3002" },
-          args: { type: "object", description: "\u65B0\u7684\u53C2\u6570\uFF08\u53EF\u9009\uFF09\u3002" },
-          note: { type: "string", description: "\u65B0\u7684\u5907\u6CE8\uFF08\u53EF\u9009\uFF09\u3002" }
-        },
-        required: ["index"]
-      }
-    },
-    {
-      name: "card_run",
-      description: "\u6309 id \u6216 name \u8FD0\u884C\u4E00\u5F20\u5DF2\u4FDD\u5B58\u7684\u5361\u7247\uFF0C\u652F\u6301 {{name}} \u6A21\u677F\u53D8\u91CF\u548C\u6761\u4EF6\u6B65\u9AA4\u3002\u7528\u9014\uFF1A\u6267\u884C\u6C89\u6DC0\u597D\u7684\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u4E00\u952E\u8DD1\u901A\u767B\u5F55\u3001\u6293\u53D6\u3001\u63D0\u4EA4\u7B49\u591A\u6B65\u64CD\u4F5C\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u5361\u7247 id\u3002" },
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
-          variables: { type: "object", description: "\u4F9B\u6B65\u9AA4\u6A21\u677F\u548C\u6761\u4EF6\u4F7F\u7528\u7684\u53D8\u91CF\u3002" },
-          vars: { type: "object", description: "variables \u7684\u522B\u540D\u3002" }
-        }
-      }
-    },
-    {
-      name: "card_run_batch",
-      description: "\u5BF9\u6BCF\u4E2A item \u5404\u8FD0\u884C\u4E00\u6B21\u5361\u7247\uFF0C\u6BCF\u6B21\u8FD0\u884C\u53EF\u62FF\u5230\u53D8\u91CF {item, index, ...variables}\u3002\u7528\u9014\uFF1A\u6279\u91CF\u6267\u884C\u540C\u4E00\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u5BF9\u4E00\u6279\u5173\u952E\u8BCD/\u8D26\u53F7/\u94FE\u63A5\u9010\u4E2A\u8DD1\u540C\u4E00\u5957\u64CD\u4F5C\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u5361\u7247 id\u3002" },
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
-          items: { type: "array", description: "\u6279\u5904\u7406\u6761\u76EE\u5217\u8868\u3002" },
-          variables: { type: "object", description: "\u6BCF\u6B21\u8FD0\u884C\u5171\u4EAB\u7684\u53D8\u91CF\u3002" },
-          stop_on_error: { type: "boolean", description: "\u9047\u5230\u7B2C\u4E00\u4E2A\u5931\u8D25\u7684 item \u5C31\u505C\u6B62\u3002\u9ED8\u8BA4 true\u3002" }
-        },
-        required: ["items"]
-      }
-    },
-    {
-      name: "card_schedule",
-      description: '\u4E3A\u5361\u7247\u8BBE\u5B9A\u8BA1\u5212\u8FD0\u884C\uFF1A\u53EF\u7528 interval_minutes\u3001run_at\uFF0C\u6216\u50CF "*/15 * * * *" \u8FD9\u6837\u7684\u7B80\u5355 cron\uFF08\u57FA\u4E8E Chrome alarms\uFF09\u3002\u7528\u9014\uFF1A\u5B9A\u65F6/\u5468\u671F\u6267\u884C\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u6BCF 15 \u5206\u949F\u6293\u4E00\u6B21\u3001\u6BCF\u5929\u5B9A\u70B9\u8DD1\u4E00\u6B21\u3002',
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u5361\u7247 id\u3002" },
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" },
-          schedule_id: { type: "string", description: "\u53EF\u9009\uFF1A\u8BA1\u5212 id\u3002" },
-          interval_minutes: { type: "number", description: "\u5468\u671F\u8FD0\u884C\u7684\u95F4\u9694\u5206\u949F\u6570\u3002" },
-          run_at: { type: "string", description: "\u4E00\u6B21\u6027\u8FD0\u884C\u7684 ISO \u65F6\u95F4\u3002" },
-          cron: { type: "string", description: "\u4EC5\u652F\u6301\u7B80\u5355\u7684\u6BCF N \u5206\u949F\u8BED\u6CD5\uFF0C\u5982 */15 * * * *\u3002" },
-          variables: { type: "object", description: "\u4F20\u7ED9\u8BA1\u5212\u8FD0\u884C\u7684\u53D8\u91CF\u3002" }
-        }
-      }
-    },
-    {
-      name: "card_schedule_list",
-      description: "\u5217\u51FA\u5DF2\u8BBE\u5B9A\u7684\u5361\u7247\u8BA1\u5212\u8FD0\u884C\u3002\u7528\u9014\uFF1A\u67E5\u770B\u5B9A\u65F6\u4EFB\u52A1\u3002\u573A\u666F\uFF1A\u5220\u9664\u6216\u6392\u67E5\u67D0\u4E2A\u8BA1\u5212\u524D\u5148\u6D4F\u89C8\u5217\u8868\u3002",
-      input_schema: { type: "object", properties: {} }
-    },
-    {
-      name: "card_schedule_delete",
-      description: "\u5220\u9664\u4E00\u4E2A\u5361\u7247\u8BA1\u5212\u8FD0\u884C\u3002\u7528\u9014\uFF1A\u53D6\u6D88\u5B9A\u65F6\u3002\u573A\u666F\uFF1A\u4E0D\u518D\u9700\u8981\u67D0\u4E2A\u5468\u671F\u4EFB\u52A1\u65F6\u79FB\u9664\u5B83\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          schedule_id: { type: "string", description: "\u8BA1\u5212 id\u3002" },
-          id: { type: "string", description: "schedule_id \u7684\u522B\u540D\u3002" }
-        }
-      }
-    },
-    {
-      name: "card_delete",
-      description: "\u6309 id \u6216 name \u5220\u9664\u4E00\u5F20\u5DF2\u4FDD\u5B58\u7684\u5361\u7247\u3002\u7528\u9014\uFF1A\u6E05\u7406\u4E0D\u518D\u4F7F\u7528\u7684\u6D41\u7A0B\u3002\u573A\u666F\uFF1A\u5220\u9664\u8FC7\u671F\u6216\u9519\u8BEF\u7684\u81EA\u52A8\u5316\u5361\u7247\u3002",
-      input_schema: {
-        type: "object",
-        properties: {
-          id: { type: "string", description: "\u5361\u7247 id\u3002" },
-          name: { type: "string", description: "\u5361\u7247\u540D\u79F0\uFF08\u672A\u4F20 id \u65F6\u4F7F\u7528\uFF09\u3002" }
-        }
-      }
     }
   ];
   var BROWSER_CAPABILITIES = BROWSER_TOOLS.map((t) => t.name);
@@ -5274,11 +5143,6 @@ When completing a task:
 4. If a popup/modal/dialog blocks the page, use browser_find_popups to inspect it and browser_close_popup to close it
 5. Extract or summarize the result
 
-Memory cards (automation workflows):
-- When the user asks to save/remember a sequence of actions as a card, call card_save with name + steps, where each step is { tool, args, note } and note (\u5907\u6CE8) explains the step.
-- To replay a workflow, call card_run by name or id.
-- If card_run reports a failedStep, diagnose the cause (inspect the page with browser_page_info/browser_get_content, re-check the selector), then fix that step with card_update_step and run the card again. Repeat until it succeeds or you can explain why it cannot.
-
 Always:
 - After scrolling, read the returned position (scrollY, percent, atTop/atBottom, section, visible headings) so you know where you landed and what changed
 - Be methodical and verify each step
@@ -5377,6 +5241,7 @@ Always:
   var taskOutcomes = /* @__PURE__ */ new Map();
   var popupPorts = /* @__PURE__ */ new Set();
   var _machineId = null;
+  var currentAgentId = null;
   var connecting = false;
   var activeSocketUrl = null;
   var authRejected = false;
@@ -5409,6 +5274,9 @@ Always:
     const entry = mkEntry(type, status, message, data);
     void pushActivity(entry);
     broadcast({ type: "activity:log", entry });
+  }
+  function refreshPopupStatus() {
+    broadcast({ type: "agent:status", status: currentStatus, aiConfigId: boundAiConfigId });
   }
   var boundAiConfigId = null;
   function setStatus(status, reason) {
@@ -5526,6 +5394,7 @@ Always:
     if (settings.offlineMode)
       return;
     const id = settings.agentId || await getMachineId();
+    currentAgentId = id;
     s.emit("agent:register", {
       id,
       aiConfigId: null,
@@ -5661,6 +5530,21 @@ ${failures.map((f) => `\xB7 ${f.url} \u2014 ${f.reason}`).join("\n")}
       boundAiConfigId = Number.isFinite(parsed) ? parsed : null;
       setStatus("registered");
       log("system", "success", `\u5DF2\u6CE8\u518C: ${data?.name || agentName}${boundAiConfigId == null ? "\uFF08\u672A\u5206\u914D AI\uFF09" : ""}`);
+    });
+    s.on("agent:list", (rows) => {
+      if (!currentAgentId || !Array.isArray(rows))
+        return;
+      const mine = rows.find((row) => String(row?.id || "") === currentAgentId);
+      if (!mine)
+        return;
+      const raw = mine?.aiConfigId ?? mine?.ai_config_id;
+      const parsed = typeof raw === "number" ? raw : raw != null && String(raw).trim() !== "" ? Number(raw) : null;
+      const nextAiConfigId = Number.isFinite(parsed) ? parsed : null;
+      if (nextAiConfigId !== boundAiConfigId) {
+        boundAiConfigId = nextAiConfigId;
+        refreshPopupStatus();
+        log("system", "info", `AI \u7ED1\u5B9A\u5DF2\u66F4\u65B0: ${boundAiConfigId == null ? "\u672A\u5206\u914D" : `#${boundAiConfigId}`}`);
+      }
     });
     s.on("agent:register_rejected", (data) => {
       const reason = data?.reason || "\u6CE8\u518C\u88AB\u670D\u52A1\u5668\u62D2\u7EDD";
@@ -5806,10 +5690,6 @@ what changed.
 
 If a popup/modal/dialog blocks the page, call browser_find_popups to inspect detected dialogs and
 browser_close_popup to close the matching one before continuing.
-
-Memory cards: when the user asks to save a sequence of actions, call card_save (steps are
-{tool,args,note}, where note is a \u5907\u6CE8). Replay with card_run by name/id. If card_run returns a
-failedStep, diagnose it, fix that step with card_update_step, and run again until it works.
 
 When asked to complete tasks, use the available tools systematically and summarize what you did.
 Respond in the same language as the user. For factual questions, search the web if needed.`;

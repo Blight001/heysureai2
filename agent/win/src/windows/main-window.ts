@@ -3,6 +3,10 @@ import * as path from 'path'
 import { store } from '../store'
 
 const DEFAULT_BOUNDS = { width: 900, height: 660 }
+const THEME_WINDOW_COLORS = {
+  dark: '#0e0e1a',
+  light: '#f0f0ff',
+} as const
 
 let mainWindow: BrowserWindow | null = null
 
@@ -18,10 +22,10 @@ export function createMainWindow(): BrowserWindow {
     minWidth: 700,
     minHeight: 500,
     icon: iconPath,
-    frame: true,
+    frame: false,
     autoHideMenuBar: true,
     title: 'HeySure Agent',
-    backgroundColor: store.get('theme') === 'light' ? '#f0f0ff' : '#0e0e1a',
+    backgroundColor: THEME_WINDOW_COLORS[store.get('theme') === 'light' ? 'light' : 'dark'],
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -54,5 +58,24 @@ export function getMainWindow(): BrowserWindow | null {
 }
 
 export function setMainWindowTheme(theme: 'dark' | 'light'): void {
-  mainWindow?.setBackgroundColor(theme === 'light' ? '#f0f0ff' : '#0e0e1a')
+  mainWindow?.setBackgroundColor(THEME_WINDOW_COLORS[theme])
+}
+
+export function minimizeMainWindow(): void {
+  mainWindow?.minimize()
+}
+
+export function toggleMaximizeMainWindow(): boolean {
+  if (!mainWindow) return false
+  if (mainWindow.isMaximized()) mainWindow.unmaximize()
+  else mainWindow.maximize()
+  return mainWindow.isMaximized()
+}
+
+export function closeMainWindow(): void {
+  mainWindow?.close()
+}
+
+export function isMainWindowMaximized(): boolean {
+  return !!mainWindow?.isMaximized()
 }

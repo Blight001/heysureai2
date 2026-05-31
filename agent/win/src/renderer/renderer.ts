@@ -1,10 +1,10 @@
 // renderer.ts — HeySure Agent desktop renderer process.
 //
 // The desktop app is a thin tool-calling endpoint. Its main area is the desktop
-// MCP tool page (list / detail / test + editable descriptions). The account,
-// the 3-state connection indicator and settings are surfaced through header
-// controls and modals. AI assignment is controlled server-side from the web
-// Workshop ("作坊") panel — the device no longer picks an AI.
+// MCP tool page. The account, the 3-state connection indicator and settings are
+// surfaced through header controls and modals. AI assignment is controlled
+// server-side from the web Workshop ("作坊") panel — the device no longer picks
+// an AI.
 
 interface ToolDef {
   name: string
@@ -25,6 +25,10 @@ interface Window {
     onTaskResult: (cb: (data: any) => void) => void
     onAuthExpired: (cb: (reason: string) => void) => void
     setTheme: (theme: 'dark' | 'light') => Promise<void>
+    minimizeWindow: () => Promise<boolean>
+    toggleMaximizeWindow: () => Promise<boolean>
+    closeWindow: () => Promise<boolean>
+    isWindowMaximized: () => Promise<boolean>
     testConnection: () => Promise<{ success: boolean; status?: number; ms?: number; error?: string }>
     login: (params: { serverUrl: string; account: string; password: string }) => Promise<{ success: boolean; user: any }>
     logout: () => Promise<{ success: boolean }>
@@ -36,6 +40,9 @@ interface Window {
 }
 
 const $ = (id: string) => document.getElementById(id)!
+const windowMinBtn = $('window-min-btn') as HTMLButtonElement
+const windowMaxBtn = $('window-max-btn') as HTMLButtonElement
+const windowCloseBtn = $('window-close-btn') as HTMLButtonElement
 
 // ── State ──────────────────────────────────────────────────────────────────
 let currentTheme: 'dark' | 'light' = 'dark'
@@ -52,11 +59,24 @@ function esc(str: string) {
 // ── Theme (also recolors the Electron window via setTheme IPC) ───────────────
 function applyTheme(theme: 'dark' | 'light', persist = true) {
   currentTheme = theme
+  document.documentElement.className = theme
   document.body.className = theme
   $('theme-toggle').textContent = theme === 'dark' ? '☀️' : '🌙'
   if (persist) window.heysureAPI.setTheme(theme)
 }
 $('theme-toggle').addEventListener('click', () => applyTheme(currentTheme === 'dark' ? 'light' : 'dark'))
+
+function syncWindowMaxButton(isMaximized: boolean) {
+  windowMaxBtn.classList.toggle('restore', isMaximized)
+  windowMaxBtn.classList.toggle('max', !isMaximized)
+  windowMaxBtn.title = isMaximized ? '还原' : '最大化'
+  windowMaxBtn.setAttribute('aria-label', isMaximized ? '还原' : '最大化')
+}
+windowMinBtn.addEventListener('click', () => window.heysureAPI.minimizeWindow())
+windowMaxBtn.addEventListener('click', async () => {
+  syncWindowMaxButton(await window.heysureAPI.toggleMaximizeWindow())
+})
+windowCloseBtn.addEventListener('click', () => window.heysureAPI.closeWindow())
 
 // ── Status indicator (green / yellow / red) ─────────────────────────────────
 const STATUS_LABELS: Record<string, string> = {
@@ -186,7 +206,7 @@ function renderDetail(tool: ToolDef) {
       ${paramHtml}
     </div>
     <div class="card">
-      <div class="card-title">✏️ 编辑描述（本地保存，随上报同步给服务器）</div>
+      <div class="card-title">编辑描述（本地保存，随上报同步给服务器）</div>
       <div class="fg"><label>工具描述（用途 + 使用场景）</label>
         <textarea class="ta" id="edit-desc" placeholder="留空使用默认描述">${esc(overrides[tool.name]?.description || '')}</textarea>
       </div>
@@ -195,12 +215,12 @@ function renderDetail(tool: ToolDef) {
       <div class="save-feedback" id="edit-feedback"></div>
     </div>
     <div class="card">
-      <div class="card-title">🧪 测试调用 (mcp.test)</div>
+      <div class="card-title">测试调用 (mcp.test)</div>
       <div class="login-hint">在本机直接执行该工具并返回原始结果。</div>
       <div class="fg"><label>参数 (JSON)</label>
         <textarea class="ta" id="test-args" style="min-height:72px;font-family:'Cascadia Code',Consolas,monospace;">${esc(argTemplate)}</textarea>
       </div>
-      <button class="btn btn-primary" id="test-run">▶ 测试</button>
+      <button class="btn btn-primary" id="test-run">测试</button>
       <div class="test-result" id="test-result" style="display:none;"></div>
     </div>`
 
@@ -229,10 +249,10 @@ function renderDetail(tool: ToolDef) {
     out.style.display = 'block'; out.className = 'test-result'; out.textContent = '执行中…'
     try {
       const r = await window.heysureAPI.mcpTest({ tool: tool.name, args })
-      if (r.success) { out.className = 'test-result ok'; out.textContent = '✓ 成功\n' + safeStringify(r.result) }
-      else { out.className = 'test-result fail'; out.textContent = '✗ 失败：' + (r.error || r.summary || '未知错误') }
+      if (r.success) { out.className = 'test-result ok'; out.textContent = '成功\n' + safeStringify(r.result) }
+      else { out.className = 'test-result fail'; out.textContent = '失败：' + (r.error || r.summary || '未知错误') }
     } catch (err: any) {
-      out.className = 'test-result fail'; out.textContent = '✗ 失败：' + (err?.message || err)
+      out.className = 'test-result fail'; out.textContent = '失败：' + (err?.message || err)
     }
   })
 }
@@ -427,6 +447,7 @@ async function loadMainSettings() {
 async function init() {
   const s = await window.heysureAPI.getSettings()
   applyTheme(s.theme || 'dark', false)
+  syncWindowMaxButton(await window.heysureAPI.isWindowMaximized())
   loginAccount.value = s.userAccount || ''
   await loadMainSettings()
   updateStats()

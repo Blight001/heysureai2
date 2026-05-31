@@ -16,6 +16,7 @@ let currentStatus: AgentStatus   = 'disconnected'
 const taskOutcomes = new Map<string, any>()
 const popupPorts   = new Set<chrome.runtime.Port>()
 let _machineId:    string | null = null
+let currentAgentId: string | null = null
 // Set while connect() is probing candidate URLs so a parallel call (e.g.
 // from the keepalive alarm or popup) doesn't kick off a second probe.
 let connecting = false
@@ -59,6 +60,10 @@ function log(type: string, status: string, message: string, data?: any) {
   const entry = mkEntry(type, status, message, data)
   void pushActivity(entry)
   broadcast({ type: 'activity:log', entry })
+}
+
+function refreshPopupStatus() {
+  broadcast({ type: 'agent:status', status: currentStatus, aiConfigId: boundAiConfigId })
 }
 
 // Server-side bound AI for this device, learned from agent:registered. null =
@@ -195,6 +200,7 @@ async function emitRegisterOn(s: Socket): Promise<void> {
   const auth = await getAuth()
   if (settings.offlineMode) return
   const id = settings.agentId || await getMachineId()
+  currentAgentId = id
   // The extension no longer picks its own AI — it logs in and connects, then an
   // operator assigns a server-side AI to this device from the web Workshop
   // ("作坊") panel. The server re-applies that binding on every register, so we
@@ -361,6 +367,20 @@ function attachOperationalListeners(s: Socket, agentName: string) {
     log('system', 'success', `已注册: ${data?.name || agentName}${boundAiConfigId == null ? '（未分配 AI）' : ''}`)
   })
 
+  s.on('agent:list', (rows: any[]) => {
+    if (!currentAgentId || !Array.isArray(rows)) return
+    const mine = rows.find(row => String(row?.id || '') === currentAgentId)
+    if (!mine) return
+    const raw = mine?.aiConfigId ?? mine?.ai_config_id
+    const parsed = typeof raw === 'number' ? raw : (raw != null && String(raw).trim() !== '' ? Number(raw) : null)
+    const nextAiConfigId = Number.isFinite(parsed as number) ? (parsed as number) : null
+    if (nextAiConfigId !== boundAiConfigId) {
+      boundAiConfigId = nextAiConfigId
+      refreshPopupStatus()
+      log('system', 'info', `AI 绑定已更新: ${boundAiConfigId == null ? '未分配' : `#${boundAiConfigId}`}`)
+    }
+  })
+
   s.on('agent:register_rejected', (data: any) => {
     const reason = data?.reason || '注册被服务器拒绝'
     // Non-transient: the token is invalid/expired or the AI no longer
@@ -513,10 +533,6 @@ what changed.
 If a popup/modal/dialog blocks the page, call browser_find_popups to inspect detected dialogs and
 browser_close_popup to close the matching one before continuing.
 
-Memory cards: when the user asks to save a sequence of actions, call card_save (steps are
-{tool,args,note}, where note is a 备注). Replay with card_run by name/id. If card_run returns a
-failedStep, diagnose it, fix that step with card_update_step, and run again until it works.
-
 When asked to complete tasks, use the available tools systematically and summarize what you did.
 Respond in the same language as the user. For factual questions, search the web if needed.`
 
@@ -663,6 +679,7 @@ chrome.runtime.onConnect.addListener((port) => {
         }
         break
       }
+
     }
   })
 })

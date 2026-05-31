@@ -5,7 +5,7 @@ import { AgentStatus } from '../lib/types'
 import { state } from './state'
 import * as dom from './dom'
 import { currentAvatarHtml } from './helpers'
-import { loadMembers, renderMembers } from './members'
+import { renderMembers } from './members'
 
 // ── Status indicator (green / yellow / red) ─────────────────────────────────
 // green:  connected AND an AI is assigned (boundAiConfigId set)
@@ -21,7 +21,7 @@ export function renderStatus() {
   } else if (!connected) {
     color = 'red'; label = '未连接'
   } else if (state.boundAiConfigId == null) {
-    color = 'yellow'; label = '未分配 AI'
+    color = 'yellow'; label = '未分配'
   } else {
     color = 'green'; label = '已连接'
   }
@@ -35,11 +35,13 @@ export function setStatus(status: AgentStatus) {
   // while offline; it is re-applied on the next agent:registered.
   if (status !== 'registered' && status !== 'connected') state.boundAiConfigId = null
   renderStatus()
+  renderMembers()
 }
 
 export function setBoundAi(aiConfigId: number | null) {
   state.boundAiConfigId = aiConfigId
   renderStatus()
+  renderMembers()
 }
 
 // ── Theme ──────────────────────────────────────────────────────────────────
@@ -69,8 +71,7 @@ export function openLoginModal() {
 export function closeLoginModal()  { dom.loginModal.classList.add('hidden') }
 export function openMembersModal() {
   dom.membersModal.classList.remove('hidden')
-  if (state.auth.token && state.members.length === 0) void loadMembers()
-  else renderMembers()
+  renderMembers()
 }
 export function closeMembersModal() { dom.membersModal.classList.add('hidden') }
 
@@ -95,6 +96,7 @@ export function updateUserChip() {
 export function updateOfflineUi() {
   dom.offlineModelConfig.classList.toggle('hidden', !state.offlineMode)
   renderStatus()
+  renderMembers()
 }
 
 // ── Wiring ───────────────────────────────────────────────────────────────
@@ -103,6 +105,6 @@ export function wireUi() {
   dom.settingsBtn.addEventListener('click', () => openSettingsModal())
   dom.settingsClose.addEventListener('click', () => closeSettingsModal())
   dom.settingsModal.addEventListener('click', (e) => { if (e.target === dom.settingsModal) closeSettingsModal() })
-  // The status indicator opens the AI members modal so users can see assignment.
+  // The status indicator opens the connection / AI assignment modal.
   dom.statusPill.addEventListener('click', () => openMembersModal())
 }

@@ -41,7 +41,7 @@ export function hasBrowserMcpPermission(m: MemberConfig): boolean {
     if (!Array.isArray(parsed)) return false
     return parsed.some(tool => {
       const name = String(tool || '').trim()
-      return name.startsWith('browser_') || name.startsWith('card_')
+      return name.startsWith('browser_')
     })
   } catch {
     return false

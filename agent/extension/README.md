@@ -25,9 +25,7 @@ agent/extension/
 ├── popup.html              # 弹窗 UI 骨架 + 内联样式
 ├── build.js                # esbuild 入口配置
 ├── tsconfig.json           # 编译配置（仅用于类型检查；打包走 esbuild）
-├── icons/                  # 16/48/128 图标 + 源 logo
-├── scripts/
-│   └── gen-icons.js        # 从源 logo 生成三种尺寸图标
+├── icons/                  # 16/48/128 图标
 ├── dist/                   # 构建产物（manifest 引用，需要随仓库一起入库）
 └── src/
     ├── background.ts       # service worker 入口：socket.io、任务派发、popup 端口
@@ -47,21 +45,18 @@ agent/extension/
     │   ├── members.ts      #   登录登出 + AI 成员加载/渲染/选择
     │   ├── chat.ts         #   对话子系统（服务端轮询 + 本地、会话、消息操作）
     │   ├── tasks.ts        #   任务安排与作业列表
-    │   ├── cards.ts        #   记忆卡片：执行/查看/导入导出
     │   ├── settings.ts     #   设置表单：加载/保存/预设/测试连接/连接控制
     │   └── markdown.ts     #   纯渲染工具：Markdown / MCP 调用块 / 推理块
     └── lib/                # 跨入口共享的库代码
-        ├── types.ts        #   AgentSettings、ChatMessage、MemoryCard、消息类型等
-        ├── storage.ts      #   chrome.storage 封装（设置 / 鉴权 / 历史 / 卡片）
+        ├── types.ts        #   AgentSettings、ChatMessage、消息类型等
+        ├── storage.ts      #   chrome.storage 封装（设置 / 鉴权 / 历史）
         ├── ai.ts           #   Anthropic / OpenAI 兼容的 callAI
         ├── client.ts       #   软件端 REST 客户端（登录、AI 成员、任务）
-        ├── cards.ts        #   卡片导入/导出/合并解析
         └── tools/          # MCP 工具目录
             ├── index.ts    #   对外公开 API（re-export）
             ├── definitions.ts   # BROWSER_TOOLS schema + SEARCH_ENGINES
             ├── browser.ts  #   browser_* 工具实现 + executeBrowserOnly 路由
-            ├── cards.ts    #   card_* 工具实现 + runCardSteps 引擎
-            ├── router.ts   #   合并路由 executeBrowserTool（browser_* + card_*）
+            ├── router.ts   #   executeBrowserTool 路由（browser_*）
             └── executor.ts #   executeTask：服务端任务执行器（含 AI agent 循环）
 ```
 
@@ -79,7 +74,7 @@ agent/extension/
                                 └──────────┘
 ```
 
-- **background**：服务端的 socket、AI 循环、卡片执行调度都在这里。
+- **background**：服务端的 socket、AI 循环和任务执行调度都在这里。
   调 `lib/tools` 实际执行工具。
 - **content**：注入到每个网页，负责真正动 DOM。background 通过
   `chrome.tabs.sendMessage` 发请求；content/actions.ts 根据 `action` 字段分派
@@ -90,15 +85,10 @@ agent/extension/
 
 ## 工具体系（lib/tools/）
 
-工具分两类：
-
-- `browser_*`：通过 chrome API 或 content script 操作浏览器（导航、点击、
+工具以 `browser_*` 为主：通过 chrome API 或 content script 操作浏览器（导航、点击、
   输入、截图、滚动、提取等）。实现位于 `browser.ts`。
-- `card_*`：记忆卡片，即一组 `browser_*` 步骤组成的可重用工作流。
-  实现位于 `cards.ts`，运行引擎 `runCardSteps` 负责按顺序执行步骤、上报进度、
-  在失败时返回 `failedStep` 供 AI 诊断后用 `card_update_step` 修复。
 
-`executeBrowserTool(name, args)` 根据前缀分派到对应路由；`executeTask` 是
+`executeBrowserTool(name, args)` 执行浏览器工具；`executeTask` 是
 服务端任务的总入口：要么直跑指定工具，要么进入 AI agentic 循环让模型自行
 选择工具。
 
@@ -106,6 +96,5 @@ agent/extension/
 
 - TypeScript 类型检查：`npx tsc --noEmit`
 - 修改 src/ 后必须 `npm run build` 更新 dist/（manifest 直接引用 dist/）
-- 图标变更：把新 logo 放到 `icons/extension_logo.png`，运行 `npm run icons`
 - 切换包的 popup UI 在 `popup.html` + `src/popup/`；服务端通信在
   `src/background.ts` + `src/lib/client.ts`

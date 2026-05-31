@@ -855,8 +855,7 @@ async function toolPressKey(args: any): Promise<any> {
 }
 
 // ── Browser-only router ───────────────────────────────────────────────────
-// Handles browser_* tools only. The combined router (router.ts) layers
-// card_* dispatch on top for the public executeBrowserTool.
+// Handles browser_* tools only.
 export async function executeBrowserOnly(name: string, args: any): Promise<any> {
   try {
     switch (name) {
