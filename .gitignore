@@ -51,6 +51,11 @@ agent/win/dist/
 agent/win/release/
 agent/win/tsconfig.tsbuildinfo
 
+# Linux agent (Electron) build output
+agent/linux/dist/
+agent/linux/release/
+agent/linux/tsconfig.tsbuildinfo
+
 # Build artifacts
 *.out
 *.exe
