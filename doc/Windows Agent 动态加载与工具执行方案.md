@@ -456,3 +456,185 @@ resources/mcp/
 - 需要严格的企业部署和强类型边界
 
 这不意味着 Python 不行，而是说明某些局部能力可以再单独优化，不必一开始就把主程序做重。
+
+## 12. 与现有 Electron Agent 的对接（落地修正）
+
+> 本节是对前面方案的**现实校正**。前 11 节默认“主程序用 Python”，但当前仓库的
+> `agent/windows` 已经是一套成型的 **Electron + TypeScript** 应用（`package.json`
+> 里是 electron 28 + robotjs + electron-builder，已能打包 NSIS 安装包）。因此“主程序
+> 换 Python”等于推倒重来，与“快速上手”的初衷相悖。本节给出折中：**保留前面所有架构思想，
+> 但主控壳继续用 TS，Python 只作为子进程工具的实现语言。**
+
+### 12.1 现状盘点
+
+`agent/windows` 已经具备前面方案想要的大半能力：
+
+- `src/executor/registry.ts`：工具注册表（`ToolDefinition { id, platform, handler, description, inputSchema }`），就是第 6 节想要的“统一接口 + 清单”。
+- `src/executor/catalog.ts`：内置工具目录，自带中文 description 和 JSON Schema，注册时通过 `agent:register` 的 `toolDefs` 上报服务器——已经实现了第 6.3 节“代码即说明、服务器不再硬编码 schema”。
+- `src/executor/index.ts`：`executeTask` 按 tool id 分发，带 try/catch、summary——就是第 4 节的 Unified Tool Runner 雏形。
+- `src/tools/*`：14 个内置进程内工具（screen、mouse、keyboard、clipboard、shell、vision…）。
+- `src/ipc/mcp.ts`：MCP 链路已接到 TS 侧。
+
+也就是说：**第 5.1 节“进程内工具”这条线已经跑通了**，缺的只是第 5.2 / 第 7 节的“进程外脚本工具”这条扩展线。
+
+### 12.2 修正后的选型
+
+| 层 | 前文建议 | 修正为 |
+|----|----------|--------|
+| 主控壳 / 编排 | Python 主程序 | **保持 TS（现有 Electron `executor`）** |
+| 进程内工具 | Python 插件 | **保持 TS（现有 `tools/*`）** |
+| 进程外脚本工具 | Python/PS1 子进程 | **照搬：Python/PS1 子进程，stdin/stdout JSON** |
+| 工具清单 | `tool.json` + 头部注释 | **照搬** |
+| 安全边界 | 白名单/超时/分级/审计 | **照搬，由 TS 主控统一实施** |
+
+结论：**前 11 节里除了“主程序语言”这一项，其余全部采纳。** Python 不做主控，只做
+高危/异构能力的子进程实现，正好对应第 3.2 节“启动独立子进程”这条最稳的路。
+
+### 12.3 落地路径：给 executor 加一个 subprocess 工具加载器
+
+不改动现有任何内置工具，只**新增一个加载器**，开机时扫描 `resources/mcp/`，把每个
+外部脚本工具**注册成一条普通 `ToolDefinition`**——其 `handler` 不是 JS 函数，而是
+“拉起子进程、喂 JSON、收 JSON”。对 `executeTask` 和服务器完全透明：它们看到的还是
+一个有 id / description / inputSchema 的工具。
+
+目录约定（沿用第 6.1 / 第 7.1 节）：
+
+```text
+agent/windows/resources/mcp/
+  file-search/
+    tool.json        # 机器可读：id、入口、命令、权限、JSON Schema
+    tool.py          # 实现 + 头部 docstring 说明
+  powershell-report/
+    tool.json
+    main.ps1
+```
+
+`tool.json` 字段（用真正的 JSON Schema 做参数校验，不要靠注释解析）：
+
+```json
+{
+  "id": "ext.file_search",
+  "version": "1.0.0",
+  "runtime": "python",
+  "entry": "tool.py",
+  "platform": "windows",
+  "permissions": ["fs.read"],
+  "timeout_ms": 30000,
+  "description": "在指定目录下按关键字搜索文件。",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "root": { "type": "string", "description": "搜索根目录（相对工作区）。" },
+      "keyword": { "type": "string", "description": "文件名关键字。" }
+    },
+    "required": ["keyword"]
+  }
+}
+```
+
+加载器（新增 `src/executor/external.ts`，约 30 行核心逻辑）：
+
+```ts
+import { spawn } from 'node:child_process'
+import { readdirSync, readFileSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { registerTool, ToolPlatform } from './registry'
+
+const RUNTIME_CMD: Record<string, string> = {
+  python: 'python',
+  powershell: 'pwsh',
+}
+
+// 开机调用一次：扫描 resources/mcp/，把每个外部脚本工具注册成 ToolDefinition。
+export function loadExternalTools(mcpRoot: string): void {
+  if (!existsSync(mcpRoot)) return
+  for (const dir of readdirSync(mcpRoot, { withFileTypes: true })) {
+    if (!dir.isDirectory()) continue
+    const toolDir = join(mcpRoot, dir.name)
+    const manifestPath = join(toolDir, 'tool.json')
+    if (!existsSync(manifestPath)) continue
+
+    const m = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    const cmd = RUNTIME_CMD[m.runtime]
+    if (!cmd) continue // 未知 runtime：跳过（白名单优先，见第 8.2 节）
+
+    registerTool({
+      id: m.id,
+      platform: (m.platform || 'windows') as ToolPlatform,
+      description: m.description,
+      inputSchema: m.input_schema,
+      handler: ({ workspaceRoot, args }) =>
+        runSubprocessTool(cmd, join(toolDir, m.entry), args, {
+          workspaceRoot,
+          timeoutMs: m.timeout_ms ?? 30000,
+        }),
+    })
+  }
+}
+
+// stdin 喂 JSON，stdout 收 JSON，超时 kill，退出码非 0 视为失败（第 7.2 / 8.3 节）。
+function runSubprocessTool(
+  cmd: string, script: string, args: Record<string, any>,
+  opts: { workspaceRoot: string; timeoutMs: number },
+): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, [script], { cwd: opts.workspaceRoot })
+    let out = '', err = ''
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('tool timeout')) }, opts.timeoutMs)
+
+    child.stdout.on('data', d => { out += d })
+    child.stderr.on('data', d => { err += d })
+    child.on('error', reject)
+    child.on('close', code => {
+      clearTimeout(timer)
+      if (code !== 0) return reject(new Error(err || `exit ${code}`))
+      try { resolve(JSON.parse(out)) } catch { reject(new Error('invalid JSON from tool: ' + out.slice(0, 200))) }
+    })
+    child.stdin.write(JSON.stringify(args))
+    child.stdin.end()
+  })
+}
+```
+
+在 `src/executor/index.ts`（或 `catalog` 之后）调用一次 `loadExternalTools(<resources/mcp 绝对路径>)`
+即可——之后这些 Python/PS1 工具就和内置工具一样出现在 `listToolDefs()` 上报、被
+`executeTask` 分发，**服务器侧零改动**。
+
+对应的 `tool.py` 骨架（头部 docstring 即说明，见第 6.2 节）：
+
+```python
+"""
+name: ext.file_search
+summary: 在指定目录下按关键字搜索文件名。
+version: 1.0.0
+permissions: fs.read
+"""
+import sys, json, os
+
+def main():
+    args = json.loads(sys.stdin.read() or "{}")
+    root = args.get("root", ".")
+    kw = args.get("keyword", "")
+    hits = [os.path.join(dp, f)
+            for dp, _, fs in os.walk(root) for f in fs if kw in f]
+    json.dump({"ok": True, "matches": hits[:200]}, sys.stdout)
+
+if __name__ == "__main__":
+    main()
+```
+
+### 12.4 这样做的收益与待补点
+
+收益：
+
+- **不丢现有链路**：Electron + robotjs + 已注册的 14 个工具原封不动。
+- **吃到动态扩展红利**：新增一个 Python/PS1 工具 = 往 `resources/mcp/` 放一个目录，重启即生效，无需改 TS 编译产物。
+- **安全边界统一**：白名单（未知 runtime 跳过）、超时 kill、退出码、stderr 日志全部由 TS 主控实施，符合第 8 章。
+- **服务器透明**：外部工具复用现有 `toolDefs` 上报通道，“代码即说明”照样成立。
+
+仍需补的点（前文埋的坑，落地时别忘）：
+
+- **大二进制返回**：截图 base64 走 stdout 会很笨重。约定大产物落盘到工作区、stdout 只回路径（与现有 `screen.capture` 的 `upload_to_server` 思路一致）。
+- **热加载/卸载**：上面是“开机扫描”。要做运行时热加载，需补 `registry` 的反注册和版本切换；进程内工具难热卸载，外部子进程工具天然好做——这也是把高频变更能力放子进程的又一个理由。
+- **参数校验**：`input_schema` 已是 JSON Schema，建议在 `handler` 入口加一道校验再 spawn，别把未校验参数直接喂给脚本。
+- **权限授予**：`permissions` 字段目前只是声明，谁授予、是否需要用户确认，要接到主控的分级授权（第 8.1 节）上。
