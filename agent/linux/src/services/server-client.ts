@@ -1,0 +1,106 @@
+// Thin wrapper around Electron's `net.fetch` for talking to the HeySure server.
+// Centralizes URL normalization, auth header injection, timeout, and error
+// extraction so the IPC handlers don't each reinvent it.
+
+import { net } from 'electron'
+import { normalizeServerUrl } from '../server-url'
+import type { AgentSettings } from '../store'
+import { clearStoredAuthSession } from './auth-state'
+
+const DEFAULT_TIMEOUT_MS = 10_000
+
+export class ServerError extends Error {
+  status: number
+  detail?: any
+  constructor(message: string, status: number, detail?: any) {
+    super(message)
+    this.status = status
+    this.detail = detail
+  }
+}
+
+export interface ServerRequestOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  body?: any
+  token?: string | null
+  timeoutMs?: number
+  failureMessage?: string
+}
+
+export function resolveBaseUrl(rawUrl: string): string {
+  return normalizeServerUrl(rawUrl)
+}
+
+// Variant that requires an authenticated session (throws if missing).
+export function requireAuth(settings: AgentSettings): { base: string; token: string } {
+  if (!settings.serverUrl || !settings.authToken) throw new Error('未登录')
+  return { base: resolveBaseUrl(settings.serverUrl), token: settings.authToken }
+}
+
+// Variant that also requires a selected AI config (most chat/task endpoints).
+export function requireAuthWithAi(settings: AgentSettings): {
+  base: string; token: string; aiConfigId: number
+} {
+  const { base, token } = requireAuth(settings)
+  if (!settings.selectedAiConfigId) throw new Error('未选择 AI 成员')
+  return { base, token, aiConfigId: Number(settings.selectedAiConfigId) }
+}
+
+async function readJson(res: Response, fallback: string, wasAuthenticated = false): Promise<any> {
+  const text = await res.text()
+  let data: any = {}
+  if (text) {
+    try { data = JSON.parse(text) } catch { data = { detail: text } }
+  }
+  if (!res.ok) {
+    const message = res.status === 401 && wasAuthenticated
+      ? '登录已过期，请重新登录'
+      : data?.detail || data?.error || `${fallback} (${res.status})`
+    if (res.status === 401 && wasAuthenticated) {
+      clearStoredAuthSession()
+    }
+    throw new ServerError(
+      message,
+      res.status,
+      data,
+    )
+  }
+  return data
+}
+
+export async function serverFetch<T = any>(
+  base: string,
+  pathname: string,
+  opts: ServerRequestOptions = {},
+): Promise<T> {
+  const method = opts.method || 'GET'
+  const headers: Record<string, string> = {}
+  if (opts.token) headers['Authorization'] = `Bearer ${opts.token}`
+  if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
+
+  const res = await net.fetch(`${base}${pathname}`, {
+    method,
+    headers,
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    signal: AbortSignal.timeout(opts.timeoutMs || DEFAULT_TIMEOUT_MS),
+  })
+
+  return readJson(res, opts.failureMessage || `请求失败`, !!opts.token)
+}
+
+// Health-probe used by the "test connection" button. Falls back to the root
+// path if /health is not implemented and returns latency in ms.
+export async function pingServer(rawUrl: string): Promise<{ success: true; status: number; ms: number } | { success: false; error: string }> {
+  const value = String(rawUrl || '').trim()
+  if (!value) return { success: false, error: '未配置服务器 URL' }
+  let base: string
+  try { base = resolveBaseUrl(value) } catch { return { success: false, error: '服务器 URL 格式无效' } }
+  try {
+    const start = Date.now()
+    const res = await net.fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) })
+      .catch(() => net.fetch(base, { signal: AbortSignal.timeout(5000) }))
+    return { success: true, status: res.status, ms: Date.now() - start }
+  } catch (err: any) {
+    return { success: false, error: err.message || String(err) }
+  }
+}
