@@ -3,7 +3,7 @@ import time
 
 from sqlmodel import Session, select
 
-from api.agent_bindings import get_binding
+from api.agent_bindings import get_binding, set_binding
 from api.database import engine
 from api.models import AssistantAIConfig
 from api.sio import (
@@ -36,6 +36,40 @@ def _ai_config_belongs_to_user(ai_config_id, user_id: int) -> bool:
             select(AssistantAIConfig).where(AssistantAIConfig.id == cfg_id)
         ).first()
         return bool(cfg and cfg.user_id == user_id)
+
+
+def _coerce_positive_int(value):
+    try:
+        parsed = int(value)
+        return parsed if parsed > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _has_live_same_type_ai_binding(*, user_id: int, ai_config_id: int, agent_id: str, agent_info: dict) -> bool:
+    """Whether another live endpoint agent of the same type already owns this AI."""
+    try:
+        from connector_runtime.dispatch.desktop_agent_tools import agent_type_of
+    except Exception:
+        return False
+    incoming_type = agent_type_of(agent_info)
+    if incoming_type not in {"desktop", "browser"}:
+        return False
+    target_cfg = _coerce_positive_int(ai_config_id)
+    if not target_cfg:
+        return False
+    target_agent_id = str(agent_id or "").strip()
+    for agent in agents.values():
+        existing_id = str(agent.get("id") or "").strip()
+        if not existing_id or existing_id == target_agent_id:
+            continue
+        if _coerce_positive_int(agent.get("userId") or agent.get("user_id")) != user_id:
+            continue
+        if _coerce_positive_int(agent.get("aiConfigId") or agent.get("ai_config_id")) != target_cfg:
+            continue
+        if agent_type_of(agent) == incoming_type:
+            return True
+    return False
 
 
 def register_user_socket_events():
@@ -114,6 +148,22 @@ def register_agent_socket_events():
                 to=sid,
             )
             return
+        if (
+            owner_user_id is not None
+            and claimed_ai
+            and _has_live_same_type_ai_binding(
+                user_id=owner_user_id,
+                ai_config_id=claimed_ai,
+                agent_id=agent_id,
+                agent_info=info,
+            )
+        ):
+            logger.warning(
+                f"Agent persisted binding ignored (duplicate same-type AI binding): "
+                f"agent={agent_id} user={owner_user_id} ai={claimed_ai}"
+            )
+            set_binding(owner_user_id, agent_id, None)
+            claimed_ai = None
 
         # Idempotent: drop any stale socket entry for the same logical agent id
         # so a reconnect updates the socketId instead of duplicating the agent.
