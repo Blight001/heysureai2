@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from api.agent_bindings import set_binding
 from api.agent_mcp_permissions import get_scope, set_scope
 from api.database import get_session
-from api.models import AssistantAIConfig
+from api.models import AgentAiBinding, AssistantAIConfig, EndpointAgentPresence
 from .auth import get_current_user
 from api.sio import sio, agents, agent_token_required
 from connector_runtime.dispatch.desktop_agent_tools import agent_endpoint_tools, agent_type_of
@@ -24,6 +24,55 @@ def _find_connected_agent(agent_id: str, user_id: int) -> Optional[dict]:
     for agent in agents.values():
         if str(agent.get("id") or "") == aid and agent.get("userId") == user_id:
             return agent
+    return None
+
+
+def _presence_agent_type(session: Session, user_id: int, agent_id: str) -> Optional[str]:
+    aid = str(agent_id or "").strip()
+    if not aid:
+        return None
+    row = session.exec(
+        select(EndpointAgentPresence)
+        .where(
+            EndpointAgentPresence.agent_id == aid,
+            EndpointAgentPresence.user_id == user_id,
+        )
+        .order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
+    ).first()
+    agent_type = str(row.agent_type or "").strip() if row else ""
+    return agent_type if agent_type in {"desktop", "browser"} else None
+
+
+def _agent_type_for_binding(session: Session, user_id: int, agent_id: str) -> Optional[str]:
+    connected = _find_connected_agent(agent_id, user_id)
+    live_type = agent_type_of(connected)
+    if live_type:
+        return live_type
+    return _presence_agent_type(session, user_id, agent_id)
+
+
+def _existing_same_type_binding(
+    session: Session,
+    *,
+    user_id: int,
+    ai_config_id: int,
+    agent_id: str,
+    agent_type: str,
+) -> Optional[str]:
+    """Return another bound agent id for this AI/type, if one exists."""
+    target_id = str(agent_id or "").strip()
+    rows = session.exec(
+        select(AgentAiBinding).where(
+            AgentAiBinding.user_id == user_id,
+            AgentAiBinding.ai_config_id == ai_config_id,
+        )
+    ).all()
+    for row in rows:
+        existing_id = str(row.agent_id or "").strip()
+        if not existing_id or existing_id == target_id:
+            continue
+        if _agent_type_for_binding(session, user_id, existing_id) == agent_type:
+            return existing_id
     return None
 
 
@@ -92,11 +141,27 @@ async def bind_agent_ai(
 
     cfg_id = payload.aiConfigId
     if cfg_id:
+        cfg_id = int(cfg_id)
         cfg = session.exec(
-            select(AssistantAIConfig).where(AssistantAIConfig.id == int(cfg_id))
+            select(AssistantAIConfig).where(AssistantAIConfig.id == cfg_id)
         ).first()
         if not cfg or cfg.user_id != user.id:
             raise HTTPException(status_code=404, detail="AI 配置不存在或不属于当前用户")
+        agent_type = _agent_type_for_binding(session, user.id, agent_id)
+        if agent_type:
+            existing_agent_id = _existing_same_type_binding(
+                session,
+                user_id=user.id,
+                ai_config_id=cfg_id,
+                agent_id=agent_id,
+                agent_type=agent_type,
+            )
+            if existing_agent_id:
+                type_label = "浏览器插件" if agent_type == "browser" else "软件端"
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"该 AI 已绑定一个{type_label} Agent（{existing_agent_id}），请先解绑后再绑定新的 Agent",
+                )
 
     stored = set_binding(user.id, agent_id, cfg_id)
 

@@ -71,8 +71,14 @@ def get_current_user_from_token(token: str = Depends(lambda x: x), session: Sess
         )
     return get_current_user(token, session)
 
-def get_current_user(token: str, session: Session = Depends(get_session)):
+def get_current_user(token: str | None, session: Session = Depends(get_session)):
     try:
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing authentication token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         if token.startswith("Bearer "):
             token = token.split(" ")[1]
         payload = decode_access_token(token)
