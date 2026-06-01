@@ -22,6 +22,7 @@ import { mouthSpeak } from '../tools/mouth'
 import { visionCaptureGlobal, visionCaptureMouse } from '../tools/vision'
 import { handsStart, handsStop, handsSnapshot, handsEvents, handsMouse } from '../tools/hands'
 import { earStart, earStop, earLatest } from '../tools/ear'
+import { cardExecute } from './card-replay'
 import { registerTools } from './registry'
 
 const OBJ = (properties: Record<string, any>, required: string[] = []) => ({
@@ -357,5 +358,18 @@ registerTools([
     description: '返回最近一次识别到的语音转写结果。用途：取最新听到的内容。场景：读取用户刚说的话再做处理。',
     inputSchema: OBJ({}),
     handler: () => earLatest(),
+  },
+
+  // Skill-card local replay（S2，沉淀技能卡片 §4.2/§4.3）
+  {
+    id: 'card.execute', platform: 'windows',
+    description: '在本端一口气重放一张已沉淀的技能卡片（确定性回放，不逐步过 LLM）。用途：复用已验证的动作序列。场景：先用 skill_card.prepare_execution 在服务端做权限交集+参数代入拿到 resolved 卡片，再用本工具重放；任一步定位歧义/断言不过会停在该步并回传失败现场（failed_step + 期望/实际 + 截图）供 AI 改卡并从失败步续跑。',
+    inputSchema: OBJ({
+      resolved: { type: 'object', description: 'skill_card.prepare_execution 返回的 resolved：已代入参数的 steps + app_scope + pre/postconditions。' },
+      card: { type: 'object', description: 'resolved 的别名，可直接传卡片主体。' },
+      resume_from: { type: 'number', description: '从该步号续跑（自愈用），小于此步号的步骤跳过。默认 0。' },
+      dry_run: { type: 'boolean', description: '只走流程不真正执行动作，用于 teach 卡「查看学习效果」（§4.0）。默认 false。' },
+    }),
+    handler: ({ workspaceRoot, args }) => cardExecute({ workspaceRoot, args }),
   },
 ])

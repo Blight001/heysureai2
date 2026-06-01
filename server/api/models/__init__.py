@@ -58,7 +58,7 @@ from .agent_presence import EndpointAgentPresence
 from .bot_session_route import BotSessionRoute, BotUserCursor
 from .knowledge import EvolutionInput, KnowledgeEntry, Memory, ValhallaEntry
 from .project import EvolutionProject, EvolutionProjectCreate, EvolutionProjectUpdate
-from .skill_card import SkillCard, SkillCardRunStat, SkillCardVersion
+from .skill_card import SkillCard, SkillCardRecording, SkillCardRunStat, SkillCardVersion
 from .user import Token, User, UserCreate, UserLogin, UserRead, UserUpdate
 
 __all__ = [
@@ -114,6 +114,7 @@ __all__ = [
     "EvolutionProjectUpdate",
     # skill cards
     "SkillCard",
+    "SkillCardRecording",
     "SkillCardRunStat",
     "SkillCardVersion",
     # knowledge

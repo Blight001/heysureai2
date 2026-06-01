@@ -65,9 +65,16 @@ from .tools.skill_card import (
     _skill_card_delete,
     _skill_card_get,
     _skill_card_list,
+    _skill_card_prepare_execution,
     _skill_card_record_run,
     _skill_card_update,
     _skill_card_versions,
+)
+from .tools.recorder import (
+    _recorder_annotate,
+    _recorder_start,
+    _recorder_status,
+    _recorder_stop,
 )
 
 
@@ -982,6 +989,10 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
                     "items": {"type": "string"},
                     "description": "Tool names this card calls. Intersected with the caller's permissions at replay time.",
                 },
+                "app_scope": {
+                    "type": "object",
+                    "description": "Scope lock so recognition only happens inside the target window (§2.2): {process, window_match, on_missing}.",
+                },
                 "params": {
                     "type": "array",
                     "items": {"type": "object"},
@@ -1064,6 +1075,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
                 "status": {"type": "string", "enum": ["draft", "supervised", "trusted", "deprecated"]},
                 "domain": {"type": "array", "items": {"type": "string"}},
                 "capability": {"type": "array", "items": {"type": "string"}},
+                "app_scope": {"type": "object", "description": "Scope lock (§2.2): {process, window_match, on_missing}."},
                 "params": {"type": "array", "items": {"type": "object"}},
                 "preconditions": {"type": "array", "items": {"type": "object"}},
                 "steps": {"type": "array", "items": {"type": "object"}},
@@ -1108,6 +1120,27 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         destructive=True,
     ))
     registry.register(MCPTool(
+        name="skill_card.prepare_execution",
+        description=(
+            "Gate and resolve a skill card before replay (§4.2/§6.1/§6.2). Checks the card's "
+            "capability is a subset of available_tools (refuses otherwise — cards never escalate "
+            "privilege), that all required params are supplied and every {{slot}} resolves, then "
+            "returns param-substituted steps + app_scope ready to dispatch via card.execute. "
+            "Reports back the outcome with skill_card.record_run afterward."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "card_id": {"type": "string"},
+                "params": {"type": "object", "description": "Slot->value map substituted into steps/app_scope."},
+                "available_tools": {"type": "array", "items": {"type": "string"}, "description": "Caller's currently allowed tools, for the capability intersection."},
+                "version": {"type": "integer", "description": "Pin a specific version; refuses if head has moved (§6.4)."},
+            },
+            "required": ["card_id"],
+        },
+        handler=_skill_card_prepare_execution,
+    ))
+    registry.register(MCPTool(
         name="skill_card.versions",
         description="List the version history of a skill card (version, author, change summary).",
         input_schema={
@@ -1116,6 +1149,79 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
             "required": ["card_id"],
         },
         handler=_skill_card_versions,
+    ))
+
+    # ---------- Recorder / 录制（AI 自挂咽喉点，§4） ----------
+    registry.register(MCPTool(
+        name="recorder.start",
+        description=(
+            "Start recording your own desktop/browser actions into a draft skill card. "
+            "Turn this on, then perform the operation normally — every operation-class tool "
+            "call you make (mouse/keyboard/window/...) is auto-captured at the dispatch "
+            "chokepoint. Call recorder.stop to process the buffer into a draft card. "
+            "Use mode='teach' for important/destructive/shared cards: you confirm each step's "
+            "assertion and disambiguation via recorder.annotate. See §4.0/§4.1."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Card name."},
+                "description": {"type": "string"},
+                "surface": {"type": "string", "enum": ["windows", "browser", "shell", "composite"]},
+                "scope": {"type": "string", "enum": ["private", "team", "public"]},
+                "mode": {"type": "string", "enum": ["auto", "teach"], "description": "auto=自动抄录；teach=逐步人工确认。默认 auto。"},
+                "domain": {"type": "array", "items": {"type": "string"}},
+                "app_scope": {"type": "object", "description": "Scope lock (§2.2): {process, window_match, on_missing}."},
+                "environment_signature": {"type": "string"},
+                "session_id": {"type": "string"},
+            },
+            "required": ["name"],
+        },
+        handler=_recorder_start,
+    ))
+    registry.register(MCPTool(
+        name="recorder.status",
+        description="Report the active recording for this AI (name, mode, captured event/operation counts), or that nothing is recording.",
+        input_schema={"type": "object", "properties": {}},
+        handler=_recorder_status,
+    ))
+    registry.register(MCPTool(
+        name="recorder.annotate",
+        description=(
+            "teach mode: attach a human-confirmed assertion / disambiguator / secret flag to a "
+            "recorded operation step (§2.3 铁律三, §4.0). Defaults to the latest captured "
+            "operation step; pass step_index (0-based over operation steps) to target another."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "step_index": {"type": "integer", "description": "0-based index over operation steps. Default: latest."},
+                "assertion": {"type": "object", "description": "Expected post-state, e.g. {check, value, timeout_ms}."},
+                "disambiguate": {"type": "object", "description": "Disambiguator (§2.3): {anchor, relation, then}."},
+                "secret": {"type": "boolean", "description": "Mark this step's typed value as secret → parameterized, not stored."},
+                "params": {"type": "array", "items": {"type": "object"}, "description": "Extra portable param slots, e.g. [{name,type,required}]."},
+                "note": {"type": "string"},
+            },
+        },
+        handler=_recorder_annotate,
+    ))
+    registry.register(MCPTool(
+        name="recorder.stop",
+        description=(
+            "Stop recording and process the captured buffer into a draft skill card: noise "
+            "filtering, anchor extraction (image/coord + vision fallback), secret redaction, "
+            "and per-step assertions (§4.1). Returns the created draft card. Pass cancel=true "
+            "to discard without creating a card, or drop_tail=N to drop the last N steps."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "drop_tail": {"type": "integer", "description": "Drop the last N captured operation steps (trial-and-error tail)."},
+                "cancel": {"type": "boolean", "description": "Discard the recording without creating a card."},
+            },
+        },
+        handler=_recorder_stop,
+        destructive=True,
     ))
 
 
