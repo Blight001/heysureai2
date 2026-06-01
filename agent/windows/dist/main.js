@@ -16,6 +16,21 @@ electron_1.app.setName('HeySure Agent');
 if (process.platform === 'win32') {
     electron_1.app.setAppUserModelId('com.heysure.agent.win');
 }
+const hasSingleInstanceLock = electron_1.app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+    ;
+    electron_1.app.isQuitting = true;
+    electron_1.app.quit();
+}
+electron_1.app.on('second-instance', () => {
+    const w = (0, main_window_1.getMainWindow)();
+    if (!w)
+        return;
+    if (w.isMinimized())
+        w.restore();
+    w.show();
+    w.focus();
+});
 async function bootstrap() {
     (0, capture_bridge_1.initCapture)();
     (0, agent_runtime_1.clearAiSelectionIfLoggedOut)();
@@ -54,7 +69,9 @@ async function bootstrap() {
         (0, agent_runtime_1.getAgent)()?.connect();
     }
 }
-electron_1.app.whenReady().then(bootstrap);
+if (hasSingleInstanceLock) {
+    electron_1.app.whenReady().then(bootstrap);
+}
 // Keep running in tray when all windows are closed
 electron_1.app.on('window-all-closed', (e) => { e.preventDefault(); });
 electron_1.app.on('before-quit', () => {

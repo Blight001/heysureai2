@@ -19,6 +19,20 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.heysure.agent.win')
 }
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  ;(app as any).isQuitting = true
+  app.quit()
+}
+
+app.on('second-instance', () => {
+  const w = getMainWindow()
+  if (!w) return
+  if (w.isMinimized()) w.restore()
+  w.show()
+  w.focus()
+})
+
 async function bootstrap(): Promise<void> {
   initCapture()
 
@@ -56,7 +70,9 @@ async function bootstrap(): Promise<void> {
   }
 }
 
-app.whenReady().then(bootstrap)
+if (hasSingleInstanceLock) {
+  app.whenReady().then(bootstrap)
+}
 
 // Keep running in tray when all windows are closed
 app.on('window-all-closed', (e: Event) => { e.preventDefault() })

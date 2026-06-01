@@ -254,6 +254,7 @@ registerTools([
     description: '按标题或进程 id 关闭窗口。用途：关掉某个窗口。场景：完成任务后关闭对话框或应用窗口（属写入/变更操作）。',
     inputSchema: OBJ({
       title: { type: 'string', description: '要匹配的窗口标题子串。' },
+      hwnd: { type: 'number', description: '要关闭的窗口句柄。优先用于精确关闭 window.list 返回的窗口。' },
       pid: { type: 'number', description: '要关闭其窗口的进程 id。' },
     }),
     handler: ({ workspaceRoot, args }) => windowClose(workspaceRoot, args),

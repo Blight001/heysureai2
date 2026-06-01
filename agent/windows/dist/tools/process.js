@@ -19,9 +19,53 @@ async function processKill(workspaceRoot, args) {
     const pid = args.pid ? Number(args.pid) : null;
     if (!name && !pid)
         throw new Error('name or pid is required for process.kill');
-    const command = pid
-        ? `${powershell_1.PS} "Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue"`
-        : `${powershell_1.PS} "Stop-Process -Name '${(0, powershell_1.psStr)(name)}' -Force -ErrorAction SilentlyContinue"`;
-    const result = await (0, shell_1.runCommand)(workspaceRoot, { command });
-    return { success: result.exitCode === 0, name: name || null, pid: pid || null };
+    const target = pid
+        ? `Get-Process -Id ${pid} -ErrorAction SilentlyContinue`
+        : `Get-Process -Name ${(0, powershell_1.quotePsSingle)(name)} -ErrorAction SilentlyContinue`;
+    const script = `
+$errors = New-Object System.Collections.Generic.List[string]
+$methods = New-Object System.Collections.Generic.List[string]
+$targets = @(${target})
+$matched = @($targets | Select-Object @{N='pid';E={$_.Id}},@{N='name';E={$_.Name}})
+foreach ($p in $targets) {
+  try {
+    Stop-Process -Id $p.Id -Force -ErrorAction Stop
+    $methods.Add("Stop-Process:$($p.Id)")
+  } catch {
+    $errors.Add("Stop-Process:$($p.Id): $($_.Exception.Message)")
+  }
+}
+Start-Sleep -Milliseconds 400
+$alive = @(${target})
+foreach ($p in $alive) {
+  try {
+    $taskkill = & taskkill.exe /PID $p.Id /T /F 2>&1
+    $methods.Add("taskkill:$($p.Id)")
+    if ($LASTEXITCODE -ne 0) { $errors.Add("taskkill:$($p.Id): $taskkill") }
+  } catch {
+    $errors.Add("taskkill:$($p.Id): $($_.Exception.Message)")
+  }
+}
+Start-Sleep -Milliseconds 400
+$remaining = @(${target} | Select-Object @{N='pid';E={$_.Id}},@{N='name';E={$_.Name}})
+[PSCustomObject]@{
+  success = ($matched.Count -gt 0 -and $remaining.Count -eq 0)
+  matched = @($matched)
+  methods = @($methods)
+  remaining = @($remaining)
+  errors = @($errors)
+} | ConvertTo-Json -Compress
+`;
+    const result = await (0, powershell_1.runPowerShellScript)(script, { cwd: workspaceRoot });
+    const parsed = (0, powershell_1.parsePsJson)(result.stdout, []);
+    const payload = Array.isArray(parsed) ? parsed[0] : parsed;
+    return {
+        success: result.exitCode === 0 && !!payload?.success,
+        name: name || null,
+        pid: pid || null,
+        matched: payload?.matched || [],
+        methods: payload?.methods || [],
+        remaining: payload?.remaining || [],
+        errors: payload?.errors || (result.stderr ? [result.stderr] : []),
+    };
 }

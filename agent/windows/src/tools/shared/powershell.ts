@@ -3,8 +3,7 @@
 // and scripts that contain arbitrary text payloads.
 
 import { spawn, type SpawnOptionsWithoutStdio } from 'child_process'
-
-export const PS = 'powershell.exe -NonInteractive -NoProfile -Command'
+import { existsSync } from 'fs'
 
 // Escape a value for safe embedding in a PowerShell single-quoted string
 // that is itself wrapped in cmd.exe double quotes. Reject values containing
@@ -29,38 +28,79 @@ export function parsePsJson<T>(stdout: string, fallback: T): T {
 }
 
 export function encodePowerShellScript(script: string): string {
-  return Buffer.from(script, 'utf16le').toString('base64')
+  const prelude = [
+    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+    '$OutputEncoding = [System.Text.Encoding]::UTF8',
+  ].join('\n')
+  return Buffer.from(`${prelude}\n${script}`, 'utf16le').toString('base64')
 }
 
 export function quotePsSingle(value: string): string {
   return `'${String(value).replace(/'/g, "''")}'`
 }
 
+function powerShellCandidates(): string[] {
+  const root = process.env.SystemRoot || 'C:\\Windows'
+  return [
+    `${root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`,
+    `${root}\\Sysnative\\WindowsPowerShell\\v1.0\\powershell.exe`,
+    'powershell.exe',
+    'pwsh.exe',
+  ]
+}
+
+function getPowerShellCommand(): string {
+  return powerShellCandidates().find(cmd => cmd.includes('\\') && existsSync(cmd)) || 'powershell.exe'
+}
+
+export const PS = `"${getPowerShellCommand()}" -NonInteractive -NoProfile -Command`
+
 export function runPowerShellScript(
   script: string,
   options: SpawnOptionsWithoutStdio = {},
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodePowerShellScript(script)]
+  const commands = powerShellCandidates()
+  let index = 0
+
   return new Promise(resolve => {
-    const child = spawn(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodePowerShellScript(script)],
-      { windowsHide: true, ...options },
-    )
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', chunk => { stdout += chunk.toString() })
-    child.stderr.on('data', chunk => { stderr += chunk.toString() })
-    child.on('error', err => {
-      stderr += err.message
-      resolve({ exitCode: 1, stdout: stdout.trim(), stderr: stderr.trim() })
-    })
-    child.on('close', code => {
-      resolve({
-        exitCode: typeof code === 'number' ? code : 0,
-        stdout: stdout.trim(),
-        stderr: stderr.trim(),
+    const runNext = (lastError = '') => {
+      const command = commands[index++]
+      if (!command) {
+        resolve({ exitCode: 1, stdout: '', stderr: lastError || 'PowerShell is not available' })
+        return
+      }
+
+      if (command.includes('\\') && !existsSync(command)) {
+        runNext(lastError)
+        return
+      }
+
+      const child = spawn(
+        command,
+        args,
+        { windowsHide: true, ...options },
+      )
+      let stdout = ''
+      let stderr = ''
+      let spawnFailed = false
+      child.stdout.on('data', chunk => { stdout += chunk.toString() })
+      child.stderr.on('data', chunk => { stderr += chunk.toString() })
+      child.on('error', err => {
+        spawnFailed = true
+        runNext([stderr, err.message].filter(Boolean).join('\n').trim())
       })
-    })
+      child.on('close', code => {
+        if (spawnFailed) return
+        resolve({
+          exitCode: typeof code === 'number' ? code : 0,
+          stdout: stdout.trim(),
+          stderr: stderr.trim(),
+        })
+      })
+    }
+
+    runNext()
   })
 }
 
@@ -69,7 +109,7 @@ export function spawnPowerShellScript(
   options: SpawnOptionsWithoutStdio = {},
 ) {
   return spawn(
-    'powershell.exe',
+    getPowerShellCommand(),
     ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encodePowerShellScript(script)],
     { windowsHide: true, ...options },
   )

@@ -23,16 +23,16 @@
     .btn.danger { color:#fca5a5; background:rgba(239,68,68,.10); }
     .btn:disabled { opacity:.55; cursor:not-allowed; }
     main { min-height:0; display:flex; flex-direction:column; }
-    #messages { flex:1; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
+    #messages { flex:1; min-height:0; overflow:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
     #messages::-webkit-scrollbar, textarea::-webkit-scrollbar { width:6px; }
     #messages::-webkit-scrollbar-thumb, textarea::-webkit-scrollbar-thumb { background:var(--border); border-radius:4px; }
-    .msg { max-width:min(92%, 780px); padding:10px 12px; border:1px solid var(--border); border-radius:var(--r); white-space:pre-wrap; word-break:break-word; line-height:1.55; }
+    .msg { flex:0 0 auto; max-width:min(92%, 780px); padding:10px 12px; border:1px solid var(--border); border-radius:var(--r); white-space:pre-wrap; word-break:break-word; line-height:1.55; }
     .msg.user { align-self:flex-end; background:var(--user); border-color:rgba(255,255,255,.14); }
     .msg.assistant { align-self:flex-start; background:var(--ai); }
     .msg.system { align-self:center; max-width:90%; color:var(--muted); background:transparent; border-style:dashed; font-size:12px; text-align:center; }
     .tools { color:#9ee7ff; margin-top:8px; font-size:11px; }
-    details.segment { width:min(92%, 780px); max-width:92%; align-self:flex-start; border:1px solid var(--border); border-radius:var(--r); background:var(--panel2); overflow:hidden; }
-    details.segment summary { cursor:pointer; list-style:none; padding:8px 10px; display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; font-weight:700; }
+    details.segment { flex:0 0 auto; width:min(92%, 780px); max-width:92%; align-self:flex-start; border:1px solid var(--border); border-radius:var(--r); background:var(--panel2); overflow:hidden; }
+    details.segment summary { min-height:34px; cursor:pointer; list-style:none; padding:8px 10px; display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; font-weight:700; }
     details.segment summary::-webkit-details-marker { display:none; }
     .segment-body { min-height:48px; max-height:320px; overflow:auto; padding:10px; border-top:1px solid var(--border); background:#0b1220; color:#d9e6f7; white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; font:11px/1.5 'Cascadia Code',Consolas,monospace; }
     .seg-status { margin-left:auto; color:var(--success); }
