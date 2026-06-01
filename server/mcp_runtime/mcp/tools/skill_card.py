@@ -1,18 +1,22 @@
 """Skill Card MCP tools — store / retrieve / version reusable operation skills.
 
-S1 数据地基：卡片的 CRUD、版本历史与按环境执行统计。设计见
-``doc/沉淀技能卡片-设计方案.md``。重放执行（``card.execute``）与失败自愈属于 S2/S3，
-在 endpoint agent 侧实现，这里只负责服务端存取与治理规则：
+S1 数据地基 + S2 重放前置：卡片的 CRUD、版本历史、按环境执行统计，以及重放前的
+权限交集 + 参数代入（``prepare_execution``）。设计见 ``doc/沉淀技能卡片-设计方案.md``。
+真正的本地重放循环（``card.execute``）在 endpoint agent 侧实现，这里负责服务端存取、
+治理规则与重放闸门：
 
 - 可见性按 scope 收敛（private 仅创建者 AI；team/public 同账号下其它 AI 可见）
 - 写入用乐观锁（expected_version）避免并发改卡互相覆盖（§6.4）
 - 改非自己拥有的 public 卡默认 fork（copy-on-heal），不原地改（§6.4）
 - 信任分按 (card, environment_signature) 维度累计，跨环境不继承（§6.3）
+- ``prepare_execution``：capability 与**调用方**可用工具取交集（§6.2），`{{slot}}`
+  代入实参并校验必填（§6.1），通过后才返回 resolved 卡片供 endpoint 重放
 
-能力契约（capability）与调用方权限的交集校验发生在执行端（§6.2），不在存取层。
+``card_capability_gate`` / ``resolve_card_steps`` 是可单测的纯函数（见 tests）。
 """
 
 import json
+import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional
@@ -80,6 +84,72 @@ def _str_list(value: Any) -> List[str]:
     return out
 
 
+_PARAM_SLOT_RE = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")
+
+
+def card_capability_gate(capability: List[str], available_tools: Any) -> Dict[str, Any]:
+    """权限按调用方收敛（§6.2）：卡片只声明 capability，运行时与**调用方**可用工具
+    取交集；缺任一所需工具即拒绝。卡片永远不能成为提权后门。纯函数，可单测。"""
+    needed = _str_list(capability)
+    allowed = set(_str_list(available_tools))
+    missing = [t for t in needed if t not in allowed]
+    return {"ok": not missing, "missing": missing, "required": needed}
+
+
+def _substitute_slots(value: Any, params: Dict[str, Any], missing: set) -> Any:
+    """递归把 {{slot}} 替换成入参值（§6.1 全参数化）。整串就是一个槽时保留原类型，
+    否则按字符串内插。未提供的必填槽记入 ``missing``。"""
+    if isinstance(value, str):
+        whole = _PARAM_SLOT_RE.fullmatch(value.strip())
+        if whole:
+            name = whole.group(1)
+            if name in params:
+                return params[name]
+            missing.add(name)
+            return value
+
+        def _repl(m: "re.Match") -> str:
+            name = m.group(1)
+            if name in params:
+                return str(params[name])
+            missing.add(name)
+            return m.group(0)
+
+        return _PARAM_SLOT_RE.sub(_repl, value)
+    if isinstance(value, list):
+        return [_substitute_slots(v, params, missing) for v in value]
+    if isinstance(value, dict):
+        return {k: _substitute_slots(v, params, missing) for k, v in value.items()}
+    return value
+
+
+def resolve_card_steps(
+    steps: Any, app_scope: Any, params: Dict[str, Any], param_specs: Any,
+) -> Dict[str, Any]:
+    """把参数值代入 steps/app_scope，并校验必填参数齐备（§6.1）。纯函数，可单测。
+
+    返回 ``{ok, steps, app_scope, missing_params}``。``missing_params`` 既包含 spec 里
+    required 但未传的，也包含 step 里出现却没对应入参的槽。"""
+    params = params or {}
+    missing: set = set()
+    resolved_steps = _substitute_slots(steps or [], params, missing)
+    resolved_scope = _substitute_slots(app_scope, params, missing) if app_scope else app_scope
+
+    for spec in (param_specs or []):
+        if not isinstance(spec, dict):
+            continue
+        name = str(spec.get("name") or "").strip()
+        if name and spec.get("required") and name not in params:
+            missing.add(name)
+
+    return {
+        "ok": not missing,
+        "steps": resolved_steps,
+        "app_scope": resolved_scope,
+        "missing_params": sorted(missing),
+    }
+
+
 def _card_to_dict(row: SkillCard, *, full: bool = True) -> Dict[str, Any]:
     base: Dict[str, Any] = {
         "card_id": row.card_id,
@@ -99,6 +169,7 @@ def _card_to_dict(row: SkillCard, *, full: bool = True) -> Dict[str, Any]:
     if full:
         base.update({
             "capability": _loads(row.capability, []),
+            "app_scope": _loads(row.app_scope, None),
             "params": _loads(row.params, []),
             "preconditions": _loads(row.preconditions, []),
             "steps": _loads(row.steps, []),
@@ -165,6 +236,7 @@ def _skill_card_create(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
         version=1,
         domain=_dumps(_str_list(args.get("domain"))),
         capability=_dumps(_str_list(args.get("capability"))),
+        app_scope=_dumps(args.get("app_scope")) if args.get("app_scope") else None,
         params=_dumps(args.get("params") or []),
         preconditions=_dumps(args.get("preconditions") or []),
         steps=_dumps(steps),
@@ -232,6 +304,68 @@ def _skill_card_get(user_id: int, args: Dict[str, Any], ai_config_id: Optional[i
         return {"card": card, "stat": stat}
 
 
+def _skill_card_prepare_execution(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    """Gate + resolve a card for replay before dispatching ``card.execute`` to an endpoint.
+
+    Three checks before a card may run (§4.2 step 1, §6.1, §6.2):
+    1. capability ⊆ caller's available tools (else refuse — no privilege escalation);
+    2. all required params supplied and every ``{{slot}}`` resolvable;
+    3. status not deprecated.
+
+    Returns the param-substituted steps + app_scope + preconditions/postconditions so
+    the endpoint can replay deterministically. Does NOT itself dispatch — the caller
+    dispatches ``card.execute`` with ``resolved`` then reports back via
+    ``skill_card.record_run``.
+    """
+    card_id = _require(args.get("card_id"), "card_id")
+    params = args.get("params") or {}
+    if not isinstance(params, dict):
+        raise HTTPException(status_code=400, detail="params must be an object mapping slot->value")
+    available_tools = args.get("available_tools") or args.get("caller_tools") or []
+    pin_version = args.get("version")
+
+    with Session(engine) as session:
+        row = _visible_card(session, user_id, ai_config_id, card_id)
+        if row.status == "deprecated":
+            return {"ok": False, "reason": "deprecated", "card_id": card_id}
+        if pin_version is not None and int(pin_version) != int(row.version):
+            # 版本钉选（§6.4）：调用方 pin 了某版本，但 head 已变 → 让调用方决定。
+            return {
+                "ok": False,
+                "reason": "version_mismatch",
+                "pinned": int(pin_version),
+                "head": int(row.version),
+            }
+
+        capability = _loads(row.capability, [])
+        gate = card_capability_gate(capability, available_tools)
+        if not gate["ok"]:
+            return {"ok": False, "reason": "missing_capability", **gate}
+
+        resolved = resolve_card_steps(
+            _loads(row.steps, []),
+            _loads(row.app_scope, None),
+            params,
+            _loads(row.params, []),
+        )
+        if not resolved["ok"]:
+            return {"ok": False, "reason": "missing_params", "missing_params": resolved["missing_params"]}
+
+        return {
+            "ok": True,
+            "card_id": card_id,
+            "version": row.version,
+            "surface": row.surface,
+            "status": row.status,
+            "resolved": {
+                "steps": resolved["steps"],
+                "app_scope": resolved["app_scope"],
+                "preconditions": _loads(row.preconditions, []),
+                "postconditions": _loads(row.postconditions, []),
+            },
+        }
+
+
 def _skill_card_update(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     """Update a card's head, snapshotting the previous version.
 
@@ -290,6 +424,7 @@ def _fork_card(
         version=1,
         domain=src.domain,
         capability=src.capability,
+        app_scope=src.app_scope,
         params=src.params,
         preconditions=src.preconditions,
         steps=src.steps,
@@ -320,6 +455,8 @@ def _apply_card_fields(row: SkillCard, args: Dict[str, Any]) -> None:
         row.domain = _dumps(_str_list(args.get("domain")))
     if "capability" in args:
         row.capability = _dumps(_str_list(args.get("capability")))
+    if "app_scope" in args:
+        row.app_scope = _dumps(args.get("app_scope")) if args.get("app_scope") else None
     if "params" in args:
         row.params = _dumps(args.get("params") or [])
     if "preconditions" in args:
