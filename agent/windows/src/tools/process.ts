@@ -15,7 +15,7 @@ export async function processList(workspaceRoot: string, args: any = {}) {
 export async function processKill(workspaceRoot: string, args: any) {
   const name = String(args.name || '')
   const pid = args.pid ? Number(args.pid) : null
-  if (!name && !pid) throw new Error('name or pid is required for process.kill')
+  if (!name && !pid) throw new Error('name or pid is required for process termination')
 
   const target = pid
     ? `Get-Process -Id ${pid} -ErrorAction SilentlyContinue`

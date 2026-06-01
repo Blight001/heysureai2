@@ -1,5 +1,6 @@
 type ChatMessage = { role: 'user' | 'assistant'; content: string }
 type OfflineToolDef = { name: string; description: string }
+type TokenUsage = { inputTokens: number; outputTokens: number; totalTokens: number; estimated?: boolean }
 type Segment =
   | { type: 'message'; role: 'user' | 'assistant'; content: string }
   | { type: 'think'; content: string }
@@ -14,7 +15,9 @@ const api = (window as any).heysureAPI as {
     think?: string
     toolsUsed: string[]
     toolEvents: Array<{ tool: string; arguments: Record<string, any>; success: boolean; result: any; summary: string }>
+    usage?: TokenUsage
   }>
+  cancelOfflineChat: (payload: { requestId?: string }) => Promise<boolean>
   onOfflineChatProgress: (cb: (event: any) => void) => () => void
   mcpList: () => Promise<{ tools: OfflineToolDef[] }>
 }
@@ -43,6 +46,7 @@ const modelMeta = q('model-meta')
 const toolSearch = q('tool-search') as HTMLInputElement
 const toolListEl = q('tool-list')
 const toolCount = q('tool-count')
+const tokenStatsEl = q('token-stats')
 const toolsAllBtn = q('tools-all') as HTMLButtonElement
 const toolsNoneBtn = q('tools-none') as HTMLButtonElement
 
@@ -55,6 +59,9 @@ let activeRequestId = ''
 let liveAssistantIndex = -1
 let liveThinkIndex = -1
 let liveToolEvents = 0
+let streamedThink = false
+let cancelRequested = false
+let tokenTotals: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
 
 const PROVIDER_PRESETS: Record<string, { base: string; model: string }> = {
   anthropic:  { base: 'https://api.anthropic.com', model: 'claude-sonnet-4-5' },
@@ -83,7 +90,10 @@ function render() {
       el.innerHTML = escapeHtml(item.content)
       messagesEl.appendChild(el)
     } else if (item.type === 'think') {
-      messagesEl.appendChild(detailsSegment('深度思考', item.content, true))
+      if (!item.content.trim()) continue
+      const el = detailsSegment('深度思考', item.content, true)
+      el.classList.add('think')
+      messagesEl.appendChild(el)
     } else {
       const status = item.summary === '执行中...' ? '执行中' : (item.success ? '成功' : '失败')
       const body = [
@@ -100,8 +110,9 @@ function render() {
     }
   }
   messagesEl.scrollTop = messagesEl.scrollHeight
+  tokenStatsEl.textContent = formatTokenUsage()
   recallBtn.disabled = sending || segments.length === 0
-  sendBtn.disabled = sending
+  syncSendButton()
 }
 
 function detailsSegment(label: string, content: string, open = false, success = true, statusText?: string): HTMLElement {
@@ -117,9 +128,49 @@ function detailsSegment(label: string, content: string, open = false, success = 
   return el
 }
 
+function appendThinkDelta(text: string) {
+  const delta = String(text || '')
+  if (!delta) return
+  streamedThink = true
+  if (liveThinkIndex < 0 || segments[liveThinkIndex]?.type !== 'think') {
+    liveThinkIndex = insertBeforeLiveAssistant({ type: 'think', content: '' })
+  }
+  const seg = segments[liveThinkIndex]
+  if (seg?.type !== 'think') return
+  seg.content += delta
+  render()
+}
+
+function appendFinalThink(text: string) {
+  const content = String(text || '').trim()
+  if (!content) return
+  insertBeforeLiveAssistant({ type: 'think', content })
+}
+
 function offlineSafeStringify(value: any): string {
   if (typeof value === 'string') return value
   try { return JSON.stringify(value, null, 2) } catch { return String(value) }
+}
+
+function syncSendButton() {
+  sendBtn.textContent = sending ? '停止' : '发送'
+  sendBtn.title = sending ? '停止当前生成' : '发送消息'
+  sendBtn.classList.toggle('stop', sending)
+  sendBtn.classList.toggle('primary', !sending)
+  sendBtn.disabled = !sending && !inputEl.value.trim()
+}
+
+function addTokenUsage(usage?: TokenUsage) {
+  if (!usage) return
+  tokenTotals.inputTokens += Number(usage.inputTokens || 0)
+  tokenTotals.outputTokens += Number(usage.outputTokens || 0)
+  tokenTotals.totalTokens += Number(usage.totalTokens || 0)
+  tokenTotals.estimated = tokenTotals.estimated || !!usage.estimated
+}
+
+function formatTokenUsage(): string {
+  const suffix = tokenTotals.estimated ? '（含估算）' : ''
+  return `本次会话累计 Token：输入 ${tokenTotals.inputTokens} / 输出 ${tokenTotals.outputTokens} / 总计 ${tokenTotals.totalTokens}${suffix}`
 }
 
 function renderTools() {
@@ -161,18 +212,10 @@ function ensureLiveAssistantSegment(): number {
   return liveAssistantIndex
 }
 
-function ensureLiveThinkSegment(): number {
-  if (liveThinkIndex >= 0 && segments[liveThinkIndex]?.type === 'think') return liveThinkIndex
-  liveThinkIndex = insertBeforeLiveAssistant({ type: 'think', content: '' })
-  return liveThinkIndex
-}
-
 function applyProgress(event: any) {
   if (!activeRequestId || event?.requestId !== activeRequestId) return
   if (event.type === 'think_delta' && event.text) {
-    const idx = ensureLiveThinkSegment()
-    ;(segments[idx] as any).content += String(event.text)
-    render()
+    appendThinkDelta(event.text)
     return
   }
   if (event.type === 'text_delta' && event.text) {
@@ -217,6 +260,12 @@ function renderModelMeta(settings: any) {
   modelMeta.textContent = offline ? `${model} · ${base}${keySuffix}` : '离线模式未启用'
 }
 
+function isCanceledError(err: any): boolean {
+  const name = String(err?.name || '')
+  const message = String(err?.message || err || '')
+  return name === 'AbortError' || /已停止|aborted|canceled|cancelled/i.test(message)
+}
+
 async function loadModelSettings() {
   const s = await api.getSettings()
   cfgAiKey.value = s.aiKey || ''
@@ -236,6 +285,8 @@ async function send() {
   liveAssistantIndex = -1
   liveThinkIndex = -1
   liveToolEvents = 0
+  streamedThink = false
+  cancelRequested = false
   render()
   const pending = document.createElement('div')
   pending.className = 'msg system'
@@ -249,27 +300,44 @@ async function send() {
       prompt: promptInput.value.trim(),
       allowedTools: Array.from(allowedTools),
     })
-    if (result.think) {
-      if (liveThinkIndex >= 0 && segments[liveThinkIndex]?.type === 'think') (segments[liveThinkIndex] as any).content = result.think
-      else liveThinkIndex = insertBeforeLiveAssistant({ type: 'think', content: result.think })
-    }
-    if (liveToolEvents === 0) {
-      for (const ev of result.toolEvents || []) insertBeforeLiveAssistant({ type: 'mcp', ...ev })
-    }
-    messages.push({ role: 'assistant', content: result.text || '完成' })
-    if (liveAssistantIndex >= 0 && segments[liveAssistantIndex]?.type === 'message') {
-      ;(segments[liveAssistantIndex] as any).content = result.text || '完成'
-    } else {
-      segments.push({ type: 'message', role: 'assistant', content: result.text || '完成' })
+    addTokenUsage(result.usage)
+    if (!cancelRequested) {
+      if (result.think && !streamedThink) {
+        appendFinalThink(result.think)
+      }
+      if (liveToolEvents === 0) {
+        for (const ev of result.toolEvents || []) insertBeforeLiveAssistant({ type: 'mcp', ...ev })
+      }
+      messages.push({ role: 'assistant', content: result.text || '完成' })
+      if (liveAssistantIndex >= 0 && segments[liveAssistantIndex]?.type === 'message') {
+        ;(segments[liveAssistantIndex] as any).content = result.text || '完成'
+      } else {
+        segments.push({ type: 'message', role: 'assistant', content: result.text || '完成' })
+      }
     }
   } catch (err: any) {
-    messages.push({ role: 'assistant', content: `失败：${err?.message || err}` })
-    segments.push({ type: 'message', role: 'assistant', content: `失败：${err?.message || err}` })
+    if (!isCanceledError(err)) {
+      messages.push({ role: 'assistant', content: `失败：${err?.message || err}` })
+      segments.push({ type: 'message', role: 'assistant', content: `失败：${err?.message || err}` })
+    }
   } finally {
     sending = false
     activeRequestId = ''
+    cancelRequested = false
     render()
     inputEl.focus()
+  }
+}
+
+async function stopSending() {
+  if (!sending || !activeRequestId) return
+  const requestId = activeRequestId
+  cancelRequested = true
+  activeRequestId = ''
+  try {
+    await api.cancelOfflineChat({ requestId })
+  } catch {
+    // Ignore cancellation transport errors; the send promise will settle.
   }
 }
 
@@ -294,11 +362,17 @@ async function initOfflineChat() {
   inputEl.focus()
 }
 
-sendBtn.addEventListener('click', send)
+sendBtn.addEventListener('click', () => {
+  if (sending) void stopSending()
+  else void send()
+})
 recallBtn.addEventListener('click', recall)
 modelBtn.addEventListener('click', () => modelPanel.classList.toggle('open'))
 promptBtn.addEventListener('click', () => promptPanel.classList.toggle('open'))
 toolsBtn.addEventListener('click', () => toolPanel.classList.toggle('open'))
+inputEl.addEventListener('input', () => {
+  if (!sending) syncSendButton()
+})
 cfgProvider.addEventListener('change', () => {
   const p = PROVIDER_PRESETS[cfgProvider.value]
   if (p) { cfgAiBase.value = p.base; cfgAiModel.value = p.model }

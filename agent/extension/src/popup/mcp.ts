@@ -7,6 +7,7 @@ import { AIToolDef } from '../lib/types'
 import { getToolDescOverrides, setToolDescOverride } from '../lib/storage'
 import * as dom from './dom'
 import { state } from './state'
+import { sendToBackground } from './transport'
 
 let overrides: Record<string, { description?: string; parameters?: Record<string, string> }> = {}
 
@@ -158,7 +159,7 @@ async function renderDetail(tool: AIToolDef) {
     })
     await setToolDescOverride(tool.name, { description, parameters })
     // Re-report toolDefs so the server picks up the edit without reconnecting.
-    state.port.postMessage({ type: 'agent:connect' })
+    sendToBackground({ type: 'agent:connect' })
     const fb = dom.mcpDetail.querySelector('#edit-feedback') as HTMLElement
     fb.textContent = '已保存，稍后同步给服务器'
     fb.style.color = 'var(--success)'
@@ -167,7 +168,7 @@ async function renderDetail(tool: AIToolDef) {
 
   dom.mcpDetail.querySelector('#edit-reset')!.addEventListener('click', async () => {
     await setToolDescOverride(tool.name, { description: '', parameters: {} })
-    state.port.postMessage({ type: 'agent:connect' })
+    sendToBackground({ type: 'agent:connect' })
     await renderDetail(tool)
   })
 
@@ -191,7 +192,7 @@ async function renderDetail(tool: AIToolDef) {
         out.textContent = '失败：' + (r.error || '未知错误')
       }
     })
-    state.port.postMessage({ type: 'mcp:test', requestId, tool: tool.name, args })
+    sendToBackground({ type: 'mcp:test', requestId, tool: tool.name, args })
   })
 }
 

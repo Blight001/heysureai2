@@ -3,6 +3,7 @@
 
 import { AgentStatus } from '../lib/types'
 import { state } from './state'
+import { sendToBackground } from './transport'
 import * as dom from './dom'
 import { currentAvatarHtml } from './helpers'
 import { renderMembers } from './members'
@@ -49,7 +50,7 @@ export function applyTheme(theme: 'dark' | 'light', persist = true) {
   state.currentTheme = theme
   document.body.className = theme
   dom.themeToggle.textContent = theme === 'dark' ? '☀️' : '🌙'
-  if (persist) state.port.postMessage({ type: 'settings:save', payload: { theme } })
+  if (persist) sendToBackground({ type: 'settings:save', payload: { theme } })
 }
 
 // ── Tool-call stats ──────────────────────────────────────────────────────

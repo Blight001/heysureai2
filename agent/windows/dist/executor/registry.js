@@ -1,6 +1,6 @@
 "use strict";
 // Tool registry — single source of truth for what the agent can execute.
-// Each tool is one entry mapping a stable id (e.g. "screen.capture") to:
+// Each tool is one entry mapping a stable id (e.g. "desktop.tool") to:
 //   - handler: async function that performs the work
 //   - platform: which platforms the tool is available on
 //

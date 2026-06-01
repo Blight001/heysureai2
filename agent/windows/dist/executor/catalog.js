@@ -7,20 +7,17 @@
 // 的 toolDefs 上报给服务器，是 AI 在 mcp.list_tools / mcp.describe_tool 中看到的
 // 权威说明——服务器不再硬编码桌面工具的描述与 schema。新增工具只需在此追加一条。
 Object.defineProperty(exports, "__esModule", { value: true });
-const filesystem_1 = require("../tools/filesystem");
 const shell_1 = require("../tools/shell");
-const git_1 = require("../tools/git");
 const keyboard_1 = require("../tools/keyboard");
 const mouse_1 = require("../tools/mouse");
-const screen_1 = require("../tools/screen");
 const display_1 = require("../tools/display");
 const clipboard_1 = require("../tools/clipboard");
 const window_1 = require("../tools/window");
-const process_1 = require("../tools/process");
 const mouth_1 = require("../tools/mouth");
 const vision_1 = require("../tools/vision");
 const hands_1 = require("../tools/hands");
 const ear_1 = require("../tools/ear");
+const card_replay_1 = require("./card-replay");
 const registry_1 = require("./registry");
 const OBJ = (properties, required = []) => ({
     type: 'object',
@@ -29,32 +26,7 @@ const OBJ = (properties, required = []) => ({
     additionalProperties: true,
 });
 (0, registry_1.registerTools)([
-    // Filesystem (cross-platform)
-    {
-        id: 'fs.list', platform: 'all',
-        description: '列出 agent 工作区某个路径下的文件和子目录。用途：浏览工作区结构。场景：操作文件前先看目录里有什么。',
-        inputSchema: OBJ({ path: { type: 'string', description: '相对工作区根目录的目录路径。默认 "."。' } }),
-        handler: ({ workspaceRoot, args }) => (0, filesystem_1.listFiles)(workspaceRoot, args),
-    },
-    {
-        id: 'fs.read', platform: 'all',
-        description: '读取 agent 工作区中某个文件的内容。用途：查看文件正文。场景：读取配置、日志、代码或数据文件。',
-        inputSchema: OBJ({
-            path: { type: 'string', description: '相对工作区根目录的文件路径。' },
-            maxBytes: { type: 'number', description: '截断前最多读取的字节数。' },
-        }, ['path']),
-        handler: ({ workspaceRoot, args }) => (0, filesystem_1.readFile)(workspaceRoot, args),
-    },
-    {
-        id: 'fs.write', platform: 'all',
-        description: '在 agent 工作区中创建或覆盖一个文件。用途：写入文件内容（属写入操作）。场景：保存生成结果、写配置、落地导出数据。',
-        inputSchema: OBJ({
-            path: { type: 'string', description: '相对工作区根目录的文件路径。' },
-            content: { type: 'string', description: '要写入的完整文件内容。' },
-        }, ['path', 'content']),
-        handler: ({ workspaceRoot, args }) => (0, filesystem_1.writeFile)(workspaceRoot, args),
-    },
-    // Shell & git (cross-platform)
+    // Shell (cross-platform)
     {
         id: 'shell.run', platform: 'all',
         description: '在 agent 工作区中执行一条 shell 命令并返回输出。用途：运行命令行工具。场景：构建、测试、安装依赖、调用脚本（属高权限操作，请谨慎）。',
@@ -64,12 +36,6 @@ const OBJ = (properties, required = []) => ({
             timeout_ms: { type: 'number', description: '硬超时（毫秒）。' },
         }, ['command']),
         handler: ({ workspaceRoot, args }) => (0, shell_1.runCommand)(workspaceRoot, args),
-    },
-    {
-        id: 'git.diff', platform: 'all',
-        description: '查看工作区（或某个子目录）当前的 git diff。用途：了解代码改动。场景：提交前检查改了什么、向用户汇报变更。',
-        inputSchema: OBJ({ cwd: { type: 'string', description: '相对工作区根目录的仓库目录。' } }),
-        handler: ({ workspaceRoot, args }) => (0, git_1.gitDiff)(workspaceRoot, args),
     },
     // Keyboard (windows-only via robotjs)
     {
@@ -184,35 +150,6 @@ const OBJ = (properties, required = []) => ({
         inputSchema: OBJ({}),
         handler: ({ args }) => (0, display_1.displayClear)(args),
     },
-    // Screen (windows-only via Electron desktopCapturer + robotjs)
-    {
-        id: 'screen.capture', platform: 'windows',
-        description: '对某个桌面显示器整屏截图。默认服务器会把图片存到用户的 Screenshots 工作区目录。用途：让 AI 看见整个屏幕。场景：核对桌面状态、保存当前画面。',
-        inputSchema: OBJ({
-            display: { type: 'number', description: '要截图的显示器序号。默认 0。' },
-            screen: { type: 'number', description: 'display 的别名。' },
-            upload_to_server: { type: 'boolean', description: '默认 true：存到服务器并返回其工作区路径。' },
-        }),
-        handler: ({ args }) => (0, screen_1.screenCapture)(args),
-    },
-    {
-        id: 'screen.capture_region', platform: 'windows',
-        description: '截取桌面上的一块矩形区域。用途：只看屏幕的某一部分。场景：截取某个窗口区域、某块状态信息。',
-        inputSchema: OBJ({
-            x: { type: 'number', description: '区域左上角 X 坐标（像素）。' },
-            y: { type: 'number', description: '区域左上角 Y 坐标（像素）。' },
-            width: { type: 'number', description: '区域宽度（像素）。' },
-            height: { type: 'number', description: '区域高度（像素）。' },
-            upload_to_server: { type: 'boolean', description: '默认 true：存到服务器并返回其工作区路径。' },
-        }, ['width', 'height']),
-        handler: ({ args }) => (0, screen_1.screenCaptureRegion)(args),
-    },
-    {
-        id: 'screen.info', platform: 'windows',
-        description: '列出桌面的显示器及其分辨率。用途：了解屏幕布局。场景：多屏环境下确定要操作哪块屏、换算坐标。',
-        inputSchema: OBJ({}),
-        handler: ({ args }) => (0, screen_1.screenInfo)(args),
-    },
     // Clipboard (Electron clipboard is cross-platform but our app is Windows-targeted)
     {
         id: 'clipboard.get', platform: 'windows',
@@ -248,22 +185,6 @@ const OBJ = (properties, required = []) => ({
             pid: { type: 'number', description: '要关闭其窗口的进程 id。' },
         }),
         handler: ({ workspaceRoot, args }) => (0, window_1.windowClose)(workspaceRoot, args),
-    },
-    // Process management (windows-only — uses PowerShell)
-    {
-        id: 'process.list', platform: 'windows',
-        description: '列出正在运行的进程，可按名称过滤。用途：查看进程状态。场景：确认某程序是否在运行、找到要结束的进程。',
-        inputSchema: OBJ({ filter: { type: 'string', description: '按进程名子串过滤。' } }),
-        handler: ({ workspaceRoot, args }) => (0, process_1.processList)(workspaceRoot, args),
-    },
-    {
-        id: 'process.kill', platform: 'windows',
-        description: '按名称或进程 id 结束一个进程。用途：终止程序（属高风险操作）。场景：关闭卡死或多余的进程。',
-        inputSchema: OBJ({
-            name: { type: 'string', description: '要结束的进程名。' },
-            pid: { type: 'number', description: '要结束的进程 id。' },
-        }),
-        handler: ({ workspaceRoot, args }) => (0, process_1.processKill)(workspaceRoot, args),
     },
     // AI voice / vision / hands / ear helpers (windows-only)
     {
@@ -345,5 +266,17 @@ const OBJ = (properties, required = []) => ({
         description: '返回最近一次识别到的语音转写结果。用途：取最新听到的内容。场景：读取用户刚说的话再做处理。',
         inputSchema: OBJ({}),
         handler: () => (0, ear_1.earLatest)(),
+    },
+    // Skill-card local replay（S2，沉淀技能卡片 §4.2/§4.3）
+    {
+        id: 'card.execute', platform: 'windows',
+        description: '在本端一口气重放一张已沉淀的技能卡片（确定性回放，不逐步过 LLM）。用途：复用已验证的动作序列。场景：先用 skill_card.prepare_execution 在服务端做权限交集+参数代入拿到 resolved 卡片，再用本工具重放；任一步定位歧义/断言不过会停在该步并回传失败现场（failed_step + 期望/实际 + 截图）供 AI 改卡并从失败步续跑。',
+        inputSchema: OBJ({
+            resolved: { type: 'object', description: 'skill_card.prepare_execution 返回的 resolved：已代入参数的 steps + app_scope + pre/postconditions。' },
+            card: { type: 'object', description: 'resolved 的别名，可直接传卡片主体。' },
+            resume_from: { type: 'number', description: '从该步号续跑（自愈用），小于此步号的步骤跳过。默认 0。' },
+            dry_run: { type: 'boolean', description: '只走流程不真正执行动作，用于 teach 卡「查看学习效果」（§4.0）。默认 false。' },
+        }),
+        handler: ({ workspaceRoot, args }) => (0, card_replay_1.cardExecute)({ workspaceRoot, args }),
     },
 ]);

@@ -288,6 +288,82 @@
     return avatarHtml(state.avatarDataUrl || state.auth.avatar, fallback);
   }
 
+  // src/popup/transport.ts
+  var currentPort = null;
+  var messageHandler = null;
+  var reconnectTimer = null;
+  var pendingMessages = [];
+  function clearReconnectTimer() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+  }
+  function scheduleReconnect() {
+    if (!messageHandler || reconnectTimer)
+      return;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connectPort();
+    }, 1e3);
+  }
+  function flushPendingMessages() {
+    if (!currentPort || !messageHandler)
+      return;
+    while (pendingMessages.length) {
+      const msg = pendingMessages.shift();
+      try {
+        currentPort.postMessage(msg);
+      } catch {
+        pendingMessages.unshift(msg);
+        currentPort = null;
+        scheduleReconnect();
+        return;
+      }
+    }
+  }
+  function connectPort() {
+    if (!messageHandler)
+      return;
+    if (currentPort)
+      return currentPort;
+    const port = chrome.runtime.connect({ name: "popup" });
+    currentPort = port;
+    state.port = port;
+    port.onMessage.addListener(messageHandler);
+    port.onDisconnect.addListener(() => {
+      if (currentPort !== port)
+        return;
+      currentPort = null;
+      scheduleReconnect();
+    });
+    flushPendingMessages();
+    return port;
+  }
+  function initPopupPort(onMessage) {
+    messageHandler = onMessage;
+    clearReconnectTimer();
+    connectPort();
+  }
+  function sendToBackground(msg) {
+    if (!currentPort) {
+      pendingMessages.push(msg);
+      scheduleReconnect();
+      connectPort();
+      return false;
+    }
+    try {
+      currentPort.postMessage(msg);
+      return true;
+    } catch {
+      pendingMessages.push(msg);
+      currentPort = null;
+      scheduleReconnect();
+      connectPort();
+      return false;
+    }
+  }
+
   // src/popup/members.ts
   function renderConnectionInfo() {
     const connected = state.currentStatus === "registered" || state.currentStatus === "connected";
@@ -301,7 +377,7 @@
     if (configuredServerUrl && configuredServerUrl !== state.serverUrl) {
       state.serverUrl = configuredServerUrl;
       await saveSettings({ serverUrl: state.serverUrl });
-      state.port.postMessage({ type: "settings:save", payload: { serverUrl: state.serverUrl } });
+      sendToBackground({ type: "settings:save", payload: { serverUrl: state.serverUrl } });
     }
     const account = loginAccount.value.trim();
     const password = loginPassword.value;
@@ -340,7 +416,7 @@
       updateUserChip();
       await refreshAvatarCache();
       updateUserChip();
-      state.port.postMessage({ type: "agent:connect" });
+      sendToBackground({ type: "agent:connect" });
       closeLoginModal();
       openMembersModal();
     } catch (err) {
@@ -352,7 +428,7 @@
   }
   async function doLogout() {
     await clearAuth();
-    state.port.postMessage({ type: "auth:logout" });
+    sendToBackground({ type: "auth:logout" });
     state.auth = await getAuth();
     loginAccount.value = state.auth.account || "";
     loginPassword.value = state.auth.password || "";
@@ -391,8 +467,8 @@
     });
     membersModalClose.addEventListener("click", () => closeMembersModal());
     logoutBtn.addEventListener("click", () => void doLogout());
-    connectBtn.addEventListener("click", () => state.port.postMessage({ type: "agent:connect" }));
-    disconnectBtn.addEventListener("click", () => state.port.postMessage({ type: "agent:disconnect" }));
+    connectBtn.addEventListener("click", () => sendToBackground({ type: "agent:connect" }));
+    disconnectBtn.addEventListener("click", () => sendToBackground({ type: "agent:disconnect" }));
   }
 
   // src/popup/ui.ts
@@ -433,7 +509,7 @@
     document.body.className = theme;
     themeToggle.textContent = theme === "dark" ? "\u2600\uFE0F" : "\u{1F319}";
     if (persist)
-      state.port.postMessage({ type: "settings:save", payload: { theme } });
+      sendToBackground({ type: "settings:save", payload: { theme } });
   }
   function renderStats() {
     statTotal.textContent = String(state.stats.total);
@@ -533,10 +609,10 @@
     cfgOfflineMode.addEventListener("change", () => {
       state.offlineMode = cfgOfflineMode.checked;
       updateOfflineUi();
-      state.port.postMessage({ type: "settings:save", payload: { offlineMode: state.offlineMode } });
+      sendToBackground({ type: "settings:save", payload: { offlineMode: state.offlineMode } });
     });
     cfgMouseFx.addEventListener("change", () => {
-      state.port.postMessage({ type: "settings:save", payload: { mouseFx: cfgMouseFx.checked } });
+      sendToBackground({ type: "settings:save", payload: { mouseFx: cfgMouseFx.checked } });
     });
     saveBtn.addEventListener("click", () => {
       const payload = {
@@ -551,7 +627,7 @@
       state.offlineMode = !!payload.offlineMode;
       state.localModel = payload.aiModel || "";
       state.hasAiKey = !!payload.aiKey;
-      state.port.postMessage({ type: "settings:save", payload });
+      sendToBackground({ type: "settings:save", payload });
       updateOfflineUi();
       saveFeedback.textContent = "\u5DF2\u4FDD\u5B58 \u2713";
       saveFeedback.style.color = "var(--success)";
@@ -1240,7 +1316,7 @@
         parameters[inp.dataset.param] = inp.value;
       });
       await setToolDescOverride(tool.name, { description, parameters });
-      state.port.postMessage({ type: "agent:connect" });
+      sendToBackground({ type: "agent:connect" });
       const fb = mcpDetail.querySelector("#edit-feedback");
       fb.textContent = "\u5DF2\u4FDD\u5B58\uFF0C\u7A0D\u540E\u540C\u6B65\u7ED9\u670D\u52A1\u5668";
       fb.style.color = "var(--success)";
@@ -1248,7 +1324,7 @@
     });
     mcpDetail.querySelector("#edit-reset").addEventListener("click", async () => {
       await setToolDescOverride(tool.name, { description: "", parameters: {} });
-      state.port.postMessage({ type: "agent:connect" });
+      sendToBackground({ type: "agent:connect" });
       await renderDetail(tool);
     });
     mcpDetail.querySelector("#test-run").addEventListener("click", () => {
@@ -1278,7 +1354,7 @@
           out.textContent = "\u5931\u8D25\uFF1A" + (r.error || "\u672A\u77E5\u9519\u8BEF");
         }
       });
-      state.port.postMessage({ type: "mcp:test", requestId, tool: tool.name, args });
+      sendToBackground({ type: "mcp:test", requestId, tool: tool.name, args });
     });
   }
   function safeStringify(v) {
@@ -1300,43 +1376,37 @@
   }
 
   // src/popup/index.ts
-  function initPort() {
-    state.port = chrome.runtime.connect({ name: "popup" });
-    state.port.onMessage.addListener((msg) => {
-      switch (msg.type) {
-        case "agent:status":
-          setStatus(msg.status);
-          if (typeof msg.aiConfigId !== "undefined")
-            setBoundAi(msg.aiConfigId ?? null);
-          break;
-        case "task:start":
-          state.stats.total += 1;
-          state.stats.running += 1;
-          renderStats();
-          break;
-        case "task:result":
-          state.stats.running = Math.max(0, state.stats.running - 1);
-          if (msg.data?.success)
-            state.stats.success += 1;
-          else
-            state.stats.failed += 1;
-          renderStats();
-          break;
-        case "settings:data":
-          loadSettings(msg.settings);
-          break;
-        case "mcp:test:result":
-          resolveTest(msg.requestId, { ok: msg.ok, result: msg.result, error: msg.error });
-          break;
-      }
-    });
-    state.port.onDisconnect.addListener(() => {
-      setTimeout(initPort, 1e3);
-    });
-    state.port.postMessage({ type: "settings:get" });
+  function handleBackgroundMessage(msg) {
+    switch (msg.type) {
+      case "agent:status":
+        setStatus(msg.status);
+        if (typeof msg.aiConfigId !== "undefined")
+          setBoundAi(msg.aiConfigId ?? null);
+        break;
+      case "task:start":
+        state.stats.total += 1;
+        state.stats.running += 1;
+        renderStats();
+        break;
+      case "task:result":
+        state.stats.running = Math.max(0, state.stats.running - 1);
+        if (msg.data?.success)
+          state.stats.success += 1;
+        else
+          state.stats.failed += 1;
+        renderStats();
+        break;
+      case "settings:data":
+        loadSettings(msg.settings);
+        break;
+      case "mcp:test:result":
+        resolveTest(msg.requestId, { ok: msg.ok, result: msg.result, error: msg.error });
+        break;
+    }
   }
   async function init() {
-    initPort();
+    initPopupPort(handleBackgroundMessage);
+    sendToBackground({ type: "settings:get" });
     renderStats();
     void renderMcpList();
     const s = await getSettings();

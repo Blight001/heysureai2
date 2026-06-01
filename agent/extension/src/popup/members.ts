@@ -3,6 +3,7 @@
 // operator assigns one from the web "作坊" (Workshop) panel.
 
 import { state } from './state'
+import { sendToBackground } from './transport'
 import * as dom from './dom'
 import { refreshAvatarCache } from './helpers'
 import { login as apiLogin } from '../lib/client'
@@ -25,7 +26,7 @@ export async function doLogin() {
   if (configuredServerUrl && configuredServerUrl !== state.serverUrl) {
     state.serverUrl = configuredServerUrl
     await saveSettings({ serverUrl: state.serverUrl })
-    state.port.postMessage({ type: 'settings:save', payload: { serverUrl: state.serverUrl } })
+    sendToBackground({ type: 'settings:save', payload: { serverUrl: state.serverUrl } })
   }
   const account = dom.loginAccount.value.trim()
   const password = dom.loginPassword.value
@@ -58,7 +59,7 @@ export async function doLogin() {
     updateUserChip()
     // Logged in → link to the server. The device then shows up in the web
     // Workshop panel where an operator assigns it an AI.
-    state.port.postMessage({ type: 'agent:connect' })
+    sendToBackground({ type: 'agent:connect' })
     closeLoginModal()
     openMembersModal()
   } catch (err: any) {
@@ -71,7 +72,7 @@ export async function doLogin() {
 
 export async function doLogout() {
   await clearAuth()
-  state.port.postMessage({ type: 'auth:logout' })
+  sendToBackground({ type: 'auth:logout' })
   state.auth = await getAuth()
   dom.loginAccount.value = state.auth.account || ''
   dom.loginPassword.value = state.auth.password || ''
@@ -100,6 +101,6 @@ export function wireMembers() {
   dom.membersModal.addEventListener('click', (e) => { if (e.target === dom.membersModal) closeMembersModal() })
   dom.membersModalClose.addEventListener('click', () => closeMembersModal())
   dom.logoutBtn.addEventListener('click', () => void doLogout())
-  dom.connectBtn.addEventListener('click', () => state.port.postMessage({ type: 'agent:connect' }))
-  dom.disconnectBtn.addEventListener('click', () => state.port.postMessage({ type: 'agent:disconnect' }))
+  dom.connectBtn.addEventListener('click', () => sendToBackground({ type: 'agent:connect' }))
+  dom.disconnectBtn.addEventListener('click', () => sendToBackground({ type: 'agent:disconnect' }))
 }

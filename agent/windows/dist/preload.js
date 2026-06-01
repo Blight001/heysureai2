@@ -50,6 +50,7 @@ electron_1.contextBridge.exposeInMainWorld('heysureAPI', {
     getOfflineChatConfig: () => electron_1.ipcRenderer.invoke('offline-chat:get-config'),
     saveOfflinePrompt: (prompt) => electron_1.ipcRenderer.invoke('offline-chat:save-prompt', prompt),
     sendOfflineChat: (payload) => electron_1.ipcRenderer.invoke('offline-chat:send', payload),
+    cancelOfflineChat: (payload) => electron_1.ipcRenderer.invoke('offline-chat:cancel', payload),
     onOfflineChatProgress: (cb) => {
         const handler = (_, event) => cb(event);
         electron_1.ipcRenderer.on('offline-chat:progress', handler);

@@ -16,7 +16,16 @@ async function getActiveTab(): Promise<chrome.tabs.Tab> {
 
 async function contentMsg(tabId: number, msg: any): Promise<any> {
   try {
-    const res = await chrome.tabs.sendMessage(tabId, msg)
+    const res = await new Promise<any>((resolve, reject) => {
+      chrome.tabs.sendMessage(tabId, msg, (response) => {
+        const err = chrome.runtime.lastError
+        if (err) {
+          reject(err)
+          return
+        }
+        resolve(response)
+      })
+    })
     if (res?.error) {
       const detail = typeof res.error === 'object'
         ? res.error

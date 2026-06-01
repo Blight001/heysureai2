@@ -5,14 +5,11 @@ export const IS_MAC = process.platform === 'darwin'
 export const IS_LINUX = process.platform === 'linux'
 
 export const WINDOWS_CAPABILITIES = [
-  'fs.list', 'fs.read', 'fs.write',
-  'shell.run', 'git.diff',
+  'shell.run',
   'keyboard.type', 'keyboard.press',
   'mouse.move', 'mouse.click', 'mouse.double_click', 'mouse.right_click', 'mouse.scroll', 'mouse.drag',
-  'screen.capture', 'screen.capture_region', 'screen.info',
   'clipboard.get', 'clipboard.set',
   'window.list', 'window.focus', 'window.close',
-  'process.list', 'process.kill',
   'speech.speak',
   'vision.capture', 'vision.capture_mouse',
   'hands.start', 'hands.stop', 'hands.snapshot', 'hands.events', 'hands.mouse',
@@ -20,8 +17,7 @@ export const WINDOWS_CAPABILITIES = [
 ]
 
 export const OTHER_CAPABILITIES = [
-  'fs.list', 'fs.read', 'fs.write',
-  'shell.run', 'git.diff',
+  'shell.run',
 ]
 
 export function getCapabilities(): string[] {

@@ -18,7 +18,7 @@ async function processKill(workspaceRoot, args) {
     const name = String(args.name || '');
     const pid = args.pid ? Number(args.pid) : null;
     if (!name && !pid)
-        throw new Error('name or pid is required for process.kill');
+        throw new Error('name or pid is required for process termination');
     const target = pid
         ? `Get-Process -Id ${pid} -ErrorAction SilentlyContinue`
         : `Get-Process -Name ${(0, powershell_1.quotePsSingle)(name)} -ErrorAction SilentlyContinue`;

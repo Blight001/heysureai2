@@ -10,6 +10,9 @@
 // 这里收到的是 resolved 卡片：steps 里的 {{slot}} 已被实参替换，capability 已校验过。
 
 import { getTool, ToolHandlerArgs } from './registry'
+import { writeFile } from '../tools/filesystem'
+import { processKill } from '../tools/process'
+import { screenCapture } from '../tools/screen'
 
 type Json = Record<string, any>
 
@@ -65,8 +68,6 @@ const ACT_TO_TOOL: Record<string, string> = {
   set_clipboard: 'clipboard.set',
   focus_window: 'window.focus',
   close_window: 'window.close',
-  kill_process: 'process.kill',
-  write_file: 'fs.write',
   run_shell: 'shell.run',
 }
 
@@ -97,9 +98,8 @@ function windowMatches(win: Json, needle: string): boolean {
 async function captureFailureShot(workspaceRoot: string): Promise<string | undefined> {
   // 失败现场带一张截图，供 AI 视觉判断（§4.3）。截图失败不应掩盖原始故障。
   try {
-    const res = await callTool(workspaceRoot, 'screen.capture', { upload_to_server: true })
-    const payload = res?.result || res
-    return payload?.path || payload?.dataUrl || payload?.workspacePath
+    const payload = await screenCapture({ upload_to_server: true })
+    return payload?.path || payload?.dataUrl
   } catch {
     return undefined
   }
@@ -292,7 +292,11 @@ export async function cardExecute({ workspaceRoot, args }: ToolHandlerArgs): Pro
 
     if (!dryRun) {
       try {
-        const res = await callTool(workspaceRoot, tool, callArgs)
+        const res = step.act === 'kill_process'
+          ? await processKill(workspaceRoot, callArgs)
+          : step.act === 'write_file'
+            ? await writeFile(workspaceRoot, callArgs)
+            : await callTool(workspaceRoot, tool, callArgs)
         if (res && res.success === false) {
           return await failureScene(workspaceRoot, step, 'exec_error', res.error || res.stderr || 'tool reported failure')
         }

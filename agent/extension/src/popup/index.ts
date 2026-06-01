@@ -10,6 +10,7 @@ import * as dom from './dom'
 import { getAuth, saveAuth, getSettings } from '../lib/storage'
 import { getMe, isAuthError } from '../lib/client'
 import { refreshAvatarCache } from './helpers'
+import { initPopupPort, sendToBackground } from './transport'
 import {
   setStatus, setBoundAi, updateUserChip, updateOfflineUi, renderStats, wireUi,
 } from './ui'
@@ -18,42 +19,36 @@ import { loadSettings, wireSettings } from './settings'
 import { renderMcpList, wireMcp, resolveTest } from './mcp'
 
 // ── Port & background messages ────────────────────────────────────────────
-function initPort() {
-  state.port = chrome.runtime.connect({ name: 'popup' })
-
-  state.port.onMessage.addListener((msg: BgMsg) => {
-    switch (msg.type) {
-      case 'agent:status':
-        setStatus(msg.status)
-        if (typeof msg.aiConfigId !== 'undefined') setBoundAi(msg.aiConfigId ?? null)
-        break
-      case 'task:start':
-        state.stats.total += 1
-        state.stats.running += 1
-        renderStats()
-        break
-      case 'task:result':
-        state.stats.running = Math.max(0, state.stats.running - 1)
-        if (msg.data?.success) state.stats.success += 1
-        else state.stats.failed += 1
-        renderStats()
-        break
-      case 'settings:data':
-        loadSettings(msg.settings)
-        break
-      case 'mcp:test:result':
-        resolveTest(msg.requestId, { ok: msg.ok, result: msg.result, error: msg.error })
-        break
-    }
-  })
-
-  state.port.onDisconnect.addListener(() => { setTimeout(initPort, 1000) })
-  state.port.postMessage({ type: 'settings:get' })
+function handleBackgroundMessage(msg: BgMsg) {
+  switch (msg.type) {
+    case 'agent:status':
+      setStatus(msg.status)
+      if (typeof msg.aiConfigId !== 'undefined') setBoundAi(msg.aiConfigId ?? null)
+      break
+    case 'task:start':
+      state.stats.total += 1
+      state.stats.running += 1
+      renderStats()
+      break
+    case 'task:result':
+      state.stats.running = Math.max(0, state.stats.running - 1)
+      if (msg.data?.success) state.stats.success += 1
+      else state.stats.failed += 1
+      renderStats()
+      break
+    case 'settings:data':
+      loadSettings(msg.settings)
+      break
+    case 'mcp:test:result':
+      resolveTest(msg.requestId, { ok: msg.ok, result: msg.result, error: msg.error })
+      break
+  }
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
 async function init() {
-  initPort()
+  initPopupPort(handleBackgroundMessage)
+  sendToBackground({ type: 'settings:get' })
   renderStats()
   void renderMcpList()
   const s = await getSettings()

@@ -4,6 +4,7 @@
 
 import { AgentSettings } from '../lib/types'
 import { state } from './state'
+import { sendToBackground } from './transport'
 import * as dom from './dom'
 import { updateOfflineUi, applyTheme } from './ui'
 
@@ -42,12 +43,12 @@ export function wireSettings() {
   dom.cfgOfflineMode.addEventListener('change', () => {
     state.offlineMode = dom.cfgOfflineMode.checked
     updateOfflineUi()
-    state.port.postMessage({ type: 'settings:save', payload: { offlineMode: state.offlineMode } })
+    sendToBackground({ type: 'settings:save', payload: { offlineMode: state.offlineMode } })
   })
 
   // Mouse-effect toggle persists immediately; content scripts react via storage.
   dom.cfgMouseFx.addEventListener('change', () => {
-    state.port.postMessage({ type: 'settings:save', payload: { mouseFx: dom.cfgMouseFx.checked } })
+    sendToBackground({ type: 'settings:save', payload: { mouseFx: dom.cfgMouseFx.checked } })
   })
 
   dom.saveBtn.addEventListener('click', () => {
@@ -63,7 +64,7 @@ export function wireSettings() {
     state.offlineMode = !!payload.offlineMode
     state.localModel = payload.aiModel || ''
     state.hasAiKey = !!(payload.aiKey)
-    state.port.postMessage({ type: 'settings:save', payload })
+    sendToBackground({ type: 'settings:save', payload })
     updateOfflineUi()
     dom.saveFeedback.textContent = '已保存 ✓'
     dom.saveFeedback.style.color = 'var(--success)'

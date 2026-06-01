@@ -17,11 +17,19 @@ export interface OfflineToolEvent {
   summary: string
 }
 
+export interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  estimated?: boolean
+}
+
 export interface OfflineChatResult {
   text: string
   think?: string
   toolsUsed: string[]
   toolEvents: OfflineToolEvent[]
+  usage?: TokenUsage
 }
 
 export type OfflineChatProgress =
@@ -41,6 +49,7 @@ interface AIResponse {
   text?: string
   think?: string
   toolUses?: AIToolUse[]
+  usage?: TokenUsage
 }
 
 function stringifyContent(content: any): string {
@@ -102,6 +111,102 @@ function toolNameFromProvider(name: string, nameMap: Map<string, string>): strin
   return nameMap.get(name) || name
 }
 
+function toNumber(value: any): number | undefined {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : undefined
+}
+
+function normalizeUsage(raw: any): TokenUsage | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+
+  const anthropicInput = [
+    toNumber(raw.input_tokens),
+    toNumber(raw.cache_creation_input_tokens),
+    toNumber(raw.cache_read_input_tokens),
+  ].filter((n): n is number => typeof n === 'number')
+  const promptTokens = toNumber(raw.prompt_tokens)
+  const completionTokens = toNumber(raw.completion_tokens)
+  const inputTokens = anthropicInput.length
+    ? anthropicInput.reduce((sum, n) => sum + n, 0)
+    : promptTokens
+  const outputTokens = toNumber(raw.output_tokens) ?? completionTokens
+  let totalTokens = toNumber(raw.total_tokens)
+
+  if (totalTokens === undefined && inputTokens !== undefined && outputTokens !== undefined) {
+    totalTokens = inputTokens + outputTokens
+  }
+  if (inputTokens === undefined && totalTokens !== undefined && outputTokens !== undefined) {
+    return {
+      inputTokens: Math.max(0, totalTokens - outputTokens),
+      outputTokens,
+      totalTokens,
+    }
+  }
+  if (outputTokens === undefined && totalTokens !== undefined && inputTokens !== undefined) {
+    return {
+      inputTokens,
+      outputTokens: Math.max(0, totalTokens - inputTokens),
+      totalTokens,
+    }
+  }
+  if (inputTokens === undefined || outputTokens === undefined) return undefined
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens: totalTokens ?? inputTokens + outputTokens,
+  }
+}
+
+function estimateTokensFromText(text: string): number {
+  const raw = String(text || '')
+  if (!raw.trim()) return 0
+  let estimate = 0
+  for (const ch of raw) {
+    if (/\s/.test(ch)) continue
+    if (/[\u4e00-\u9fff]/.test(ch)) estimate += 1
+    else if (/[A-Za-z0-9_]/.test(ch)) estimate += 0.25
+    else estimate += 0.5
+  }
+  return Math.max(1, Math.ceil(estimate))
+}
+
+function estimateUsageFromCall(systemPrompt: string, messages: any[], tools: any[], resp: AIResponse): TokenUsage {
+  const inputText = [systemPrompt, JSON.stringify(messages), JSON.stringify(tools)].join('\n')
+  const outputText = [resp.text || '', resp.think || '', JSON.stringify(resp.toolUses || [])].join('\n')
+  const inputTokens = estimateTokensFromText(inputText)
+  const outputTokens = estimateTokensFromText(outputText)
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens: inputTokens + outputTokens,
+    estimated: true,
+  }
+}
+
+function shouldRetryWithoutStreamUsage(status: number, data: any): boolean {
+  if (status !== 400 && status !== 422) return false
+  const message = String(data?.error?.message || data?.message || '')
+  return /stream_options|include_usage|unknown field|additional property|invalid.*stream/i.test(message)
+}
+
+function createAbortError(): Error {
+  const err = new Error('已停止')
+  err.name = 'AbortError'
+  return err
+}
+
+function isAbortError(err: any, signal?: AbortSignal): boolean {
+  if (signal?.aborted) return true
+  const name = String(err?.name || '')
+  const message = String(err?.message || err || '')
+  return name === 'AbortError' || /aborted|canceled|cancelled|已停止/i.test(message)
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw createAbortError()
+}
+
 function splitThink(text: string): { text: string; think?: string } {
   const raw = String(text || '')
   const match = raw.match(/<think>\s*([\s\S]*?)\s*<\/think>/i)
@@ -112,7 +217,12 @@ function splitThink(text: string): { text: string; think?: string } {
   }
 }
 
-async function streamOpenAiResponse(res: Response, nameMap: Map<string, string>, onProgress?: (event: OfflineChatProgress) => void): Promise<AIResponse> {
+async function streamOpenAiResponse(
+  res: Response,
+  nameMap: Map<string, string>,
+  onProgress?: (event: OfflineChatProgress) => void,
+  signal?: AbortSignal,
+): Promise<AIResponse> {
   const reader = res.body?.getReader()
   if (!reader) throw new Error('AI API did not return a readable stream')
 
@@ -120,6 +230,7 @@ async function streamOpenAiResponse(res: Response, nameMap: Map<string, string>,
   let buffer = ''
   let text = ''
   let think = ''
+  let usage: TokenUsage | undefined
   const calls = new Map<number, { id: string; name: string; arguments: string }>()
 
   const handlePayload = (payload: string) => {
@@ -127,6 +238,7 @@ async function streamOpenAiResponse(res: Response, nameMap: Map<string, string>,
     if (!raw || raw === '[DONE]') return
     let data: any
     try { data = JSON.parse(raw) } catch { return }
+    if (data.usage) usage = normalizeUsage(data.usage) || usage
     const delta = data.choices?.[0]?.delta || {}
     const reasoning = delta.reasoning_content || delta.reasoning || delta.reasoning_text
     if (reasoning) {
@@ -148,6 +260,7 @@ async function streamOpenAiResponse(res: Response, nameMap: Map<string, string>,
   }
 
   while (true) {
+    throwIfAborted(signal)
     const { done, value } = await reader.read()
     if (done) break
     buffer += decoder.decode(value, { stream: true })
@@ -175,7 +288,7 @@ async function streamOpenAiResponse(res: Response, nameMap: Map<string, string>,
       name: toolNameFromProvider(tc.name, nameMap),
       input: (() => { try { return JSON.parse(tc.arguments || '{}') } catch { return {} } })(),
     }))
-  return { text, think: think.trim() || undefined, toolUses: toolUses.length ? toolUses : undefined }
+  return { text, think: think.trim() || undefined, toolUses: toolUses.length ? toolUses : undefined, usage }
 }
 
 async function callAI(
@@ -183,6 +296,7 @@ async function callAI(
   systemPrompt: string,
   allowedTools?: string[],
   onProgress?: (event: OfflineChatProgress) => void,
+  signal?: AbortSignal,
 ): Promise<AIResponse> {
   const s = store.store
   const baseUrl = String(s.aiBaseUrl || '').replace(/\/+$/, '')
@@ -225,6 +339,7 @@ async function callAI(
         model,
         max_tokens: 4096,
         stream: true,
+        stream_options: { include_usage: true },
         messages: [{ role: 'system', content: systemPrompt }, ...openAiMessages(messages, nameMap)],
         ...(tools.length ? { tools: tools.map(t => {
           return {
@@ -234,37 +349,46 @@ async function callAI(
         }) } : {}),
       }
 
-  const res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) })
-  if (!res.ok) {
-    const data: any = await res.json().catch(() => ({}))
-    throw new Error(data?.error?.message || `AI API error ${res.status}`)
+  const fetchOnce = async (payload: any): Promise<Response> => {
+    throwIfAborted(signal)
+    return fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(payload), signal })
   }
-  if (!isAnthropic) return streamOpenAiResponse(res, nameMap, onProgress)
 
-  const data: any = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data?.error?.message || `AI API error ${res.status}`)
+  try {
+    let res = await fetchOnce(body)
+    if (!res.ok) {
+      const data: any = await res.json().catch(() => ({}))
+      if (!isAnthropic && shouldRetryWithoutStreamUsage(res.status, data)) {
+        const fallbackBody = { ...body }
+        delete fallbackBody.stream_options
+        res = await fetchOnce(fallbackBody)
+        if (!res.ok) {
+          const retryData: any = await res.json().catch(() => ({}))
+          throw new Error(retryData?.error?.message || retryData?.message || `AI API error ${res.status}`)
+        }
+      } else {
+        throw new Error(data?.error?.message || data?.message || `AI API error ${res.status}`)
+      }
+    }
 
-  if (isAnthropic) {
+    let resp: AIResponse
+    if (!isAnthropic) {
+      resp = await streamOpenAiResponse(res, nameMap, onProgress, signal)
+      if (!resp.usage) resp.usage = estimateUsageFromCall(systemPrompt, messages, tools, resp)
+      return resp
+    }
+
+    const data: any = await res.json().catch(() => ({}))
     const text = (data.content || []).filter((b: any) => b.type === 'text').map((b: any) => b.text || '').join('\n').trim()
     const toolUses = (data.content || [])
       .filter((b: any) => b.type === 'tool_use')
       .map((tu: any) => ({ ...tu, name: toolNameFromProvider(tu.name, nameMap) }))
-    return { text, toolUses: toolUses.length ? toolUses : undefined }
+    resp = { text, toolUses: toolUses.length ? toolUses : undefined, usage: normalizeUsage(data.usage) || estimateUsageFromCall(systemPrompt, messages, tools, { text, toolUses: toolUses.length ? toolUses : undefined }) }
+    return resp
+  } catch (err: any) {
+    if (isAbortError(err, signal)) throw createAbortError()
+    throw err
   }
-
-  const choice = data.choices?.[0]
-  const calls = choice?.message?.tool_calls || []
-  if (calls.length) {
-    return {
-      toolUses: calls.map((tc: any) => ({
-        type: 'tool_use',
-        id: tc.id,
-        name: toolNameFromProvider(tc.function?.name || '', nameMap),
-        input: (() => { try { return JSON.parse(tc.function?.arguments || '{}') } catch { return {} } })(),
-      })),
-    }
-  }
-  return { text: choice?.message?.content || '', think: choice?.message?.reasoning_content || undefined }
 }
 
 export async function runOfflineChat(
@@ -272,29 +396,49 @@ export async function runOfflineChat(
   prompt?: string,
   allowedTools?: string[],
   onProgress?: (event: OfflineChatProgress) => void,
+  signal?: AbortSignal,
 ): Promise<OfflineChatResult> {
   const basePrompt = String(prompt || store.get('offlinePrompt') || '').trim()
-  const systemPrompt = `${basePrompt}\n\n如果任务需要说明处理思路，可用 <think>...</think> 输出简短、可公开的思考摘要；不要在其中输出敏感信息、密钥或冗长推理。`
+  const systemPrompt = `${basePrompt}\n\n如果任务需要说明处理思路，可用 <think>...</think> 输出简短、可公开的思考摘要；尽量保持为一个连续栏目，不要刻意空行分段；不要在其中输出敏感信息、密钥或冗长推理。`
   const messages: any[] = userMessages.map(m => ({ role: m.role, content: m.content }))
   const toolsUsed: string[] = []
   const toolEvents: OfflineToolEvent[] = []
+  const usageTotal: TokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
   const maxTurns = 12
 
+  const addUsage = (usage?: TokenUsage) => {
+    if (!usage) return
+    usageTotal.inputTokens += Number(usage.inputTokens || 0)
+    usageTotal.outputTokens += Number(usage.outputTokens || 0)
+    usageTotal.totalTokens += Number(usage.totalTokens || 0)
+    usageTotal.estimated = usageTotal.estimated || !!usage.estimated
+  }
+
   for (let i = 0; i < maxTurns; i++) {
-    const resp = await callAI(messages, systemPrompt, allowedTools, onProgress)
+    throwIfAborted(signal)
+    const resp = await callAI(messages, systemPrompt, allowedTools, onProgress, signal)
+    addUsage(resp.usage)
     if (!resp.toolUses?.length) {
       const parsed = splitThink(resp.text || '完成')
-      return { text: parsed.text || '完成', think: resp.think || parsed.think, toolsUsed, toolEvents }
+      return {
+        text: parsed.text || '完成',
+        think: resp.think || parsed.think,
+        toolsUsed,
+        toolEvents,
+        usage: usageTotal.totalTokens > 0 ? usageTotal : undefined,
+      }
     }
 
     messages.push({ role: 'assistant', content: resp.toolUses })
     const toolResults: any[] = []
     for (const tu of resp.toolUses) {
+      throwIfAborted(signal)
       toolsUsed.push(tu.name)
       onProgress?.({ type: 'tool_start', tool: tu.name, arguments: tu.input || {} })
       sendActivityLog('task', 'running', `[离线AI工具] ${tu.name}`, tu.input)
       try {
         const r = await getAgent()?.runToolLocally(tu.name, tu.input || {})
+        throwIfAborted(signal)
         const content = r?.success ? r.result : `Error: ${r?.summary || '工具执行失败'}`
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content, is_error: !r?.success })
         const event = {
@@ -324,5 +468,5 @@ export async function runOfflineChat(
     messages.push({ role: 'user', content: toolResults })
   }
 
-  return { text: '已达到最大工具调用轮次。', toolsUsed, toolEvents }
+  return { text: '已达到最大工具调用轮次。', toolsUsed, toolEvents, usage: usageTotal.totalTokens > 0 ? usageTotal : undefined }
 }

@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   saveOfflinePrompt: (prompt: string) => ipcRenderer.invoke('offline-chat:save-prompt', prompt),
   sendOfflineChat: (payload: { requestId?: string; messages: Array<{ role: 'user' | 'assistant'; content: string }>; prompt?: string; allowedTools?: string[] }) =>
     ipcRenderer.invoke('offline-chat:send', payload),
+  cancelOfflineChat: (payload: { requestId?: string }) => ipcRenderer.invoke('offline-chat:cancel', payload),
   onOfflineChatProgress: (cb: (event: any) => void) => {
     const handler = (_: any, event: any) => cb(event)
     ipcRenderer.on('offline-chat:progress', handler)

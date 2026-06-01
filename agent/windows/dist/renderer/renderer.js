@@ -13,10 +13,162 @@ const offlineChatBtn = $('offline-chat-btn');
 // ── State ──────────────────────────────────────────────────────────────────
 let currentTheme = 'dark';
 let currentStatus = 'disconnected';
+let offlineModeEnabled = false;
 let boundAiConfigId = null;
 let totalCalls = 0, successCalls = 0, failedCalls = 0, runningCalls = 0;
 let toolDefs = [];
 let overrides = {};
+const PARENT_ORDER = ['sensory', 'learning', 'tool', 'other'];
+const PARENT_META = {
+    sensory: { zh: '感官类', en: 'SENSORY' },
+    learning: { zh: '学习类', en: 'LEARNING' },
+    tool: { zh: '工具类', en: 'TOOLS' },
+    other: { zh: '其他类', en: 'OTHER' },
+};
+const GROUP_META = {
+    mouse: { zh: '鼠标', en: 'MOUSE', parent: 'sensory' },
+    keyboard: { zh: '键盘', en: 'KEYBOARD', parent: 'sensory' },
+    speech: { zh: '语音', en: 'SPEECH', parent: 'sensory' },
+    vision: { zh: '视觉', en: 'VISION', parent: 'sensory' },
+    ear: { zh: '听觉', en: 'EAR', parent: 'sensory' },
+    hands: { zh: '手势', en: 'HANDS', parent: 'learning' },
+    display: { zh: '显示', en: 'DISPLAY', parent: 'tool' },
+    clipboard: { zh: '剪贴板', en: 'CLIPBOARD', parent: 'tool' },
+    card: { zh: '卡片', en: 'CARD', parent: 'tool' },
+    shell: { zh: '命令行', en: 'SHELL', parent: 'tool' },
+    window: { zh: '窗口', en: 'WINDOW', parent: 'tool' },
+};
+const GROUP_ORDER = {
+    sensory: ['mouse', 'keyboard', 'speech', 'vision', 'ear'],
+    learning: ['hands'],
+    tool: ['display', 'clipboard', 'card', 'shell', 'window'],
+    other: [],
+};
+const KNOWN_GROUPS = new Set([
+    'mouse',
+    'keyboard',
+    'speech',
+    'vision',
+    'ear',
+    'hands',
+    'display',
+    'clipboard',
+    'card',
+    'shell',
+    'window',
+]);
+const TOOL_LABELS = {
+    'mouse.move': { zh: '鼠标移动', en: 'Mouse Move' },
+    'mouse.click': { zh: '鼠标点击', en: 'Mouse Click' },
+    'mouse.double_click': { zh: '鼠标双击', en: 'Mouse Double Click' },
+    'mouse.right_click': { zh: '鼠标右键', en: 'Mouse Right Click' },
+    'mouse.scroll': { zh: '鼠标滚动', en: 'Mouse Scroll' },
+    'mouse.drag': { zh: '鼠标拖拽', en: 'Mouse Drag' },
+    'keyboard.type': { zh: '键盘输入', en: 'Type Text' },
+    'keyboard.press': { zh: '键盘按键', en: 'Press Keys' },
+    'speech.speak': { zh: '语音朗读', en: 'Speak' },
+    'vision.capture': { zh: '屏幕采集', en: 'Screen Capture' },
+    'vision.capture_mouse': { zh: '鼠标区域采集', en: 'Mouse Area Capture' },
+    'ear.start': { zh: '开始听写', en: 'Start Listening' },
+    'ear.stop': { zh: '停止听写', en: 'Stop Listening' },
+    'ear.latest': { zh: '最新转写', en: 'Latest Transcript' },
+    'display.box': { zh: '屏幕高亮', en: 'Highlight Box' },
+    'display.clear': { zh: '清除高亮', en: 'Clear Highlights' },
+    'clipboard.get': { zh: '读取剪贴板', en: 'Get Clipboard' },
+    'clipboard.set': { zh: '写入剪贴板', en: 'Set Clipboard' },
+    'card.execute': { zh: '技能卡重放', en: 'Card Replay' },
+    'shell.run': { zh: '命令执行', en: 'Run Command' },
+    'window.list': { zh: '窗口列表', en: 'List Windows' },
+    'window.focus': { zh: '窗口聚焦', en: 'Focus Window' },
+    'window.close': { zh: '关闭窗口', en: 'Close Window' },
+    'hands.start': { zh: '开始输入采集', en: 'Start Capture' },
+    'hands.stop': { zh: '停止输入采集', en: 'Stop Capture' },
+    'hands.snapshot': { zh: '输入快照', en: 'Input Snapshot' },
+    'hands.events': { zh: '输入事件', en: 'Input Events' },
+    'hands.mouse': { zh: '鼠标输入', en: 'Mouse Input' },
+};
+function toTitleCase(value) {
+    return String(value)
+        .replace(/[._-]+/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
+}
+function toolGroupKey(name) {
+    const raw = String(name || '');
+    const ns = raw.includes('.') ? raw.split('.')[0] : raw.includes('_') ? raw.slice(0, raw.indexOf('_')) : raw;
+    const key = ns.toLowerCase();
+    return KNOWN_GROUPS.has(key) ? key : 'other';
+}
+function groupMeta(name) {
+    const key = toolGroupKey(name);
+    return GROUP_META[key] || { zh: toTitleCase(key), en: toTitleCase(key).toUpperCase(), parent: 'other' };
+}
+function toolMeta(name) {
+    const group = toolGroupKey(name);
+    const gMeta = GROUP_META[group];
+    const meta = TOOL_LABELS[name];
+    return {
+        zh: meta?.zh || toTitleCase(name),
+        en: meta?.en || toTitleCase(name),
+        group,
+        parent: gMeta?.parent || 'other',
+    };
+}
+function renderToolItem(tool) {
+    const meta = toolMeta(tool.name);
+    return `
+    <div class="tool-item" data-tool="${esc(tool.name)}">
+      <div class="tool-item-top">
+        <div class="tool-title">
+          <span class="tool-name">${esc(meta.zh)}</span>
+          <span class="tool-name-sub">${esc(meta.en)}</span>
+        </div>
+        ${isEdited(tool.name) ? '<span class="tool-edited">已自定义</span>' : ''}
+      </div>
+      <div class="tool-desc">${esc((effDesc(tool) || '（无描述）').slice(0, 120))}</div>
+    </div>`;
+}
+function renderGroup(parent, group, tools) {
+    if (!tools.length)
+        return '';
+    const meta = GROUP_META[group] || groupMeta(group);
+    return `
+    <section class="mcp-group" data-group="${esc(group)}">
+      <div class="mcp-group-title">
+        <span class="mcp-group-zh">${esc(meta.zh)}</span>
+        <span class="mcp-group-en">${esc(meta.en)}</span>
+        <span class="mcp-group-count">${tools.length} 个</span>
+      </div>
+      <div class="mcp-group-items">
+        ${tools.map(renderToolItem).join('')}
+      </div>
+    </section>`;
+}
+function renderParentSection(parent, childMap, open = false) {
+    const orderedGroups = parent === 'other'
+        ? Array.from(childMap.keys()).sort()
+        : GROUP_ORDER[parent].filter(group => childMap.has(group));
+    if (!orderedGroups.length)
+        return '';
+    const count = orderedGroups.reduce((sum, group) => sum + (childMap.get(group)?.length || 0), 0);
+    const body = orderedGroups.map(group => renderGroup(parent, group, childMap.get(group) || [])).join('');
+    return `
+    <details class="mcp-parent" data-parent="${parent}"${open ? ' open' : ''}>
+      <summary>
+        <span class="mcp-parent-summary-left">
+          <span class="mcp-chevron"></span>
+          <span class="mcp-parent-labels">
+            <span class="mcp-parent-zh">${esc(PARENT_META[parent].zh)}</span>
+            <span class="mcp-parent-en">${esc(PARENT_META[parent].en)}</span>
+          </span>
+        </span>
+        <span class="mcp-parent-count">${count} 个</span>
+      </summary>
+      <div class="mcp-parent-body">${body}</div>
+    </details>`;
+}
 function esc(str) {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -41,11 +193,21 @@ windowMaxBtn.addEventListener('click', async () => {
     syncWindowMaxButton(await window.heysureAPI.toggleMaximizeWindow());
 });
 windowCloseBtn.addEventListener('click', () => window.heysureAPI.closeWindow());
-// ── Status indicator (green / yellow / red) ─────────────────────────────────
+// ── Status indicator (green / yellow / red / blue offline) ─────────────────
 const STATUS_LABELS = {
     disconnected: '未连接', connecting: '连接中...', connected: '已连接', registered: '已连接到服务器', error: '连接错误',
 };
 function renderStatus() {
+    const statusPill = $('status-pill');
+    statusPill.classList.toggle('offline', offlineModeEnabled);
+    if (offlineModeEnabled) {
+        $('status-dot').className = 'status-dot blue';
+        $('status-label').textContent = '离线模式';
+        statusPill.title = '离线模式';
+        $('info-status').textContent = '离线模式';
+        $('info-ai').textContent = '—';
+        return;
+    }
     const connected = currentStatus === 'registered' || currentStatus === 'connected';
     let color, label;
     if (!connected) {
@@ -62,6 +224,7 @@ function renderStatus() {
     }
     $('status-dot').className = `status-dot ${color}`;
     $('status-label').textContent = label;
+    statusPill.title = '连接状态';
     $('info-status').textContent = STATUS_LABELS[currentStatus] || currentStatus;
     $('info-ai').textContent = boundAiConfigId == null ? '未分配' : `#${boundAiConfigId}`;
 }
@@ -81,12 +244,6 @@ function updateStats() {
     $('stat-running').textContent = String(runningCalls);
 }
 // ── MCP tool page ──────────────────────────────────────────────────────────
-function nsOf(name) {
-    if (name.includes('.'))
-        return name.split('.')[0];
-    const i = name.indexOf('_');
-    return i > 0 ? name.slice(0, i) : 'other';
-}
 function isEdited(name) {
     const o = overrides[name];
     return !!(o && (o.description || (o.parameters && Object.keys(o.parameters).length)));
@@ -98,44 +255,49 @@ function showList() {
     $('mcp-list-pane').classList.remove('hidden');
 }
 async function loadMcp() {
+    const list = $('mcp-list');
+    const openParents = new Set(Array.from(list.querySelectorAll('details.mcp-parent[open]')).map(el => el.dataset.parent || ''));
+    const scrollTop = list.scrollTop;
     const data = await window.heysureAPI.mcpList();
     toolDefs = data.tools || [];
     overrides = data.overrides || {};
-    renderMcpList();
+    renderMcpList(openParents, scrollTop);
 }
-function renderMcpList() {
-    $('mcp-count').textContent = `${toolDefs.length} 个`;
+function renderMcpList(openParents = new Set(), scrollTop = 0) {
     const list = $('mcp-list');
-    list.innerHTML = '';
-    if (!toolDefs.length) {
-        list.innerHTML = '<div class="empty-note">无可用工具</div>';
-        return;
+    const parentMaps = new Map();
+    for (const parent of PARENT_ORDER)
+        parentMaps.set(parent, new Map());
+    for (const tool of toolDefs) {
+        const meta = toolMeta(tool.name);
+        const parent = meta.parent;
+        if (!parentMaps.has(parent))
+            parentMaps.set(parent, new Map());
+        const groupMap = parentMaps.get(parent);
+        const groupKey = meta.group;
+        if (!groupMap.has(groupKey))
+            groupMap.set(groupKey, []);
+        groupMap.get(groupKey).push(tool);
     }
-    const groups = new Map();
-    for (const t of toolDefs) {
-        const ns = nsOf(t.name);
-        if (!groups.has(ns))
-            groups.set(ns, []);
-        groups.get(ns).push(t);
-    }
-    for (const ns of Array.from(groups.keys()).sort()) {
-        const title = document.createElement('div');
-        title.className = 'ns-title';
-        title.textContent = `${ns}/ (${groups.get(ns).length})`;
-        list.appendChild(title);
-        for (const t of groups.get(ns)) {
-            const el = document.createElement('div');
-            el.className = 'tool-item';
-            el.innerHTML = `
-        <div class="tool-item-top">
-          <span class="tool-name">${esc(t.name)}</span>
-          ${isEdited(t.name) ? '<span class="tool-edited">已自定义</span>' : ''}
-        </div>
-        <div class="tool-desc">${esc((effDesc(t) || '（无描述）').slice(0, 120))}</div>`;
-            el.addEventListener('click', () => openTool(t.name));
-            list.appendChild(el);
+    const renderedParents = [];
+    const html = [];
+    for (const parent of PARENT_ORDER) {
+        const childMap = parentMaps.get(parent);
+        if (!childMap || !childMap.size)
+            continue;
+        const open = openParents.has(parent);
+        const parentHtml = renderParentSection(parent, childMap, open);
+        if (parentHtml) {
+            renderedParents.push(parent);
+            html.push(parentHtml);
         }
     }
+    list.innerHTML = html.length ? html.join('') : '<div class="empty-note">无可用工具</div>';
+    $('mcp-count').textContent = html.length ? `${toolDefs.length} 个 · ${renderedParents.length} 类` : '0 个';
+    list.querySelectorAll('.tool-item').forEach(el => {
+        el.addEventListener('click', () => openTool(el.dataset.tool || ''));
+    });
+    list.scrollTop = scrollTop;
 }
 function paramEntries(t) {
     const props = t.input_schema?.properties || {};
@@ -156,6 +318,7 @@ function openTool(name) {
     renderDetail(tool);
 }
 function renderDetail(tool) {
+    const meta = toolMeta(tool.name);
     const params = paramEntries(tool);
     const paramHtml = params.length
         ? params.map(p => `
@@ -172,7 +335,13 @@ function renderDetail(tool) {
     const argTemplate = JSON.stringify(Object.fromEntries(params.filter(p => p.required).map(p => [p.name, ''])), null, 2);
     $('mcp-detail').innerHTML = `
     <div class="card">
-      <div class="card-title">${esc(tool.name)}</div>
+      <div class="tool-title-row">
+        <div class="tool-title-stack">
+          <div class="tool-title-main">${esc(meta.zh)}</div>
+          <div class="tool-title-sub">${esc(meta.en)}</div>
+        </div>
+        <div class="tool-title-id">${esc(tool.name)}</div>
+      </div>
       <div class="tool-desc" style="font-size:12px;">${esc(effDesc(tool) || '（无描述）')}</div>
     </div>
     <div class="card">
@@ -282,10 +451,10 @@ $('save-btn').addEventListener('click', async () => {
             offlineMode: cfgOffline.checked,
             mouseFx: cfgMouseFx.checked,
         });
-        if (cfgOffline.checked) {
-            setStatus('disconnected');
+        offlineModeEnabled = cfgOffline.checked;
+        setStatus(await window.heysureAPI.getStatus());
+        if (cfgOffline.checked)
             window.heysureAPI.openOfflineChat();
-        }
         $('info-server').textContent = cfgServer.value.trim() || '—';
         $('info-workspace').textContent = cfgWorkspace.value.trim() ? (cfgWorkspace.value.trim().split(/[/\\]/).pop() || cfgWorkspace.value.trim()) : '—';
         fb.style.color = 'var(--success)';
@@ -466,7 +635,9 @@ async function loadMainSettings() {
     cfgWorkspace.value = s.workspaceRoot || '';
     cfgOffline.checked = !!s.offlineMode;
     cfgMouseFx.checked = s.mouseFx !== false;
+    offlineModeEnabled = !!s.offlineMode;
     updateOfflineChatButton();
+    renderStatus();
     $('info-server').textContent = s.serverUrl || '—';
     $('info-workspace').textContent = s.workspaceRoot ? (s.workspaceRoot.split(/[/\\]/).pop() || s.workspaceRoot) : '—';
     loginAccount.value = s.userAccount || '';

@@ -1,6 +1,7 @@
 import logging
 import os
 from datetime import timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlmodel import Session, select
@@ -71,7 +72,7 @@ def get_current_user_from_token(token: str = Depends(lambda x: x), session: Sess
         )
     return get_current_user(token, session)
 
-def get_current_user(token: str | None, session: Session = Depends(get_session)):
+def get_current_user(token: Optional[str], session: Session = Depends(get_session)):
     try:
         if not token:
             raise HTTPException(
@@ -164,7 +165,7 @@ async def login(user_in: UserLogin, session: Session = Depends(get_session)):
 @router.put("/profile", response_model=UserRead)
 async def update_profile(
     user_update: UserUpdate,
-    authorization: str = Header(None),
+    authorization: Optional[str] = Header(None),
     session: Session = Depends(get_session)
 ):
     if not authorization:
@@ -253,7 +254,7 @@ async def update_profile(
     return user
 
 @router.get("/me", response_model=UserRead)
-async def read_users_me(authorization: str = Header(None), session: Session = Depends(get_session)):
+async def read_users_me(authorization: Optional[str] = Header(None), session: Session = Depends(get_session)):
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authentication token")
     return get_current_user(authorization, session)

@@ -3,6 +3,8 @@ import { store } from '../store'
 import { showOfflineChatWindow } from '../windows/offline-chat-window'
 import { runOfflineChat, OfflineChatMessage } from '../services/offline-ai'
 
+const offlineChatControllers = new Map<string, AbortController>()
+
 export function registerOfflineChatIpc(): void {
   ipcMain.handle('offline-chat:open', () => {
     showOfflineChatWindow()
@@ -27,8 +29,23 @@ export function registerOfflineChatIpc(): void {
     const messages = Array.isArray(payload?.messages) ? payload.messages : []
     const allowedTools = Array.isArray(payload?.allowedTools) ? payload.allowedTools : undefined
     const requestId = String(payload?.requestId || '')
-    return runOfflineChat(messages, payload?.prompt, allowedTools, progress => {
-      event.sender.send('offline-chat:progress', { requestId, ...progress })
-    })
+    const controller = new AbortController()
+    if (requestId) offlineChatControllers.set(requestId, controller)
+    try {
+      return await runOfflineChat(messages, payload?.prompt, allowedTools, progress => {
+        event.sender.send('offline-chat:progress', { requestId, ...progress })
+      }, controller.signal)
+    } finally {
+      if (requestId) offlineChatControllers.delete(requestId)
+    }
+  })
+
+  ipcMain.handle('offline-chat:cancel', (_event, payload: { requestId?: string }) => {
+    const requestId = String(payload?.requestId || '')
+    if (!requestId) return false
+    const controller = offlineChatControllers.get(requestId)
+    if (!controller) return false
+    controller.abort()
+    return true
   })
 }
