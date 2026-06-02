@@ -12,15 +12,19 @@ from api.core.config import CONNECTOR_RUNTIME_URL
 from api.database import get_session
 from api.runtime.internal_http import InternalClient
 from api.models import (
+    AgentAiBinding,
+    AgentTypeMcpPermission,
     AITaskJob,
     AIRuntimeStatus,
     AssistantAIConfig,
     ChatMessage,
     ChatRun,
     ChatSession,
+    EndpointAgentPresence,
     ChatSessionCreate,
     TokenUsageSnapshot,
 )
+from api.sio import agents, sio
 from .auth import get_current_user
 from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.services.model_presets import resolve_model_preset
@@ -128,8 +132,53 @@ async def delete_ai_config(
     for row in session_rows:
         session.delete(row)
 
+    binding_rows = session.exec(
+        select(AgentAiBinding).where(
+            AgentAiBinding.user_id == user.id,
+            AgentAiBinding.ai_config_id == config_id,
+        )
+    ).all()
+    for row in binding_rows:
+        session.delete(row)
+
+    presence_rows = session.exec(
+        select(EndpointAgentPresence).where(
+            EndpointAgentPresence.user_id == user.id,
+            EndpointAgentPresence.ai_config_id == config_id,
+        )
+    ).all()
+    for row in presence_rows:
+        row.ai_config_id = None
+        row.updated_at = time.time()
+        session.add(row)
+
+    scope_rows = session.exec(
+        select(AgentTypeMcpPermission).where(
+            AgentTypeMcpPermission.user_id == user.id,
+            AgentTypeMcpPermission.ai_config_id == config_id,
+        )
+    ).all()
+    for row in scope_rows:
+        row.ai_config_id = None
+        row.updated_at = time.time()
+        session.add(row)
+
     session.delete(cfg)
     session.commit()
+
+    changed_live = False
+    for agent in agents.values():
+        if agent.get("userId") != user.id:
+            continue
+        try:
+            bound_id = int(agent.get("aiConfigId") or agent.get("ai_config_id") or 0)
+        except (TypeError, ValueError):
+            bound_id = 0
+        if bound_id == config_id:
+            agent["aiConfigId"] = None
+            changed_live = True
+    if changed_live:
+        await sio.emit("agent:list", list(agents.values()))
     return {"success": True}
 
 @router.get("/runtime-status")

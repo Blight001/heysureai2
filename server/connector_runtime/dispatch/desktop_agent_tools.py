@@ -280,15 +280,12 @@ def _iter_agents_for_config(ai_config_id: Optional[int], user_id: Optional[int] 
     config_id = _parse_int(ai_config_id)
     if not config_id:
         return
-    expected_id = f"win-desktop-{config_id}"
     expected_user_id = _parse_int(user_id)
 
     for agent in list(agents.values()):
         if not isinstance(agent, dict):
             continue
         agent_config_id = _parse_int(agent.get("aiConfigId") or agent.get("ai_config_id"))
-        if agent_config_id is None and str(agent.get("id") or "") == expected_id:
-            agent_config_id = config_id
         if agent_config_id != config_id:
             continue
         agent_user_id = _parse_int(agent.get("userId") or agent.get("user_id"))

@@ -22,6 +22,7 @@ const revealContent = ref(false)
 
 let revealTimer: number | undefined
 let preloadRemovalTimer: number | undefined
+let startupFallbackTimer: number | undefined
 let removeLoadListener: (() => void) | undefined
 
 const hideStaticPreload = () => {
@@ -52,6 +53,11 @@ const onUpdateSuccess = (userData: User) => {
 }
 
 onMounted(() => {
+  startupFallbackTimer = window.setTimeout(() => {
+    hideStaticPreload()
+    revealApp()
+  }, 2500)
+
   requestAnimationFrame(() => {
     hideStaticPreload()
   })
@@ -80,6 +86,9 @@ onBeforeUnmount(() => {
   }
   if (preloadRemovalTimer !== undefined) {
     window.clearTimeout(preloadRemovalTimer)
+  }
+  if (startupFallbackTimer !== undefined) {
+    window.clearTimeout(startupFallbackTimer)
   }
 })
 </script>

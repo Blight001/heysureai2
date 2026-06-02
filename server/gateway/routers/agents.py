@@ -140,6 +140,7 @@ async def bind_agent_ai(
         raise HTTPException(status_code=400, detail="agentId required")
 
     cfg_id = payload.aiConfigId
+    previous_same_type_agent_id = None
     if cfg_id:
         cfg_id = int(cfg_id)
         cfg = session.exec(
@@ -157,25 +158,31 @@ async def bind_agent_ai(
                 agent_type=agent_type,
             )
             if existing_agent_id:
-                type_label = "浏览器插件" if agent_type == "browser" else "软件端"
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"该 AI 已绑定一个{type_label} Agent（{existing_agent_id}），请先解绑后再绑定新的 Agent",
-                )
+                previous_same_type_agent_id = existing_agent_id
 
     stored = set_binding(user.id, agent_id, cfg_id)
+    if previous_same_type_agent_id:
+        set_binding(user.id, previous_same_type_agent_id, None)
 
     # Reflect the assignment on any live socket(s) for this agent right away so
     # the next dispatch routes correctly without waiting for a reconnect.
     for agent in agents.values():
         if str(agent.get("id")) == agent_id and agent.get("userId") == user.id:
             agent["aiConfigId"] = stored
+        elif (
+            previous_same_type_agent_id
+            and str(agent.get("id")) == previous_same_type_agent_id
+            and agent.get("userId") == user.id
+        ):
+            agent["aiConfigId"] = None
 
     # Keep the shared DB presence snapshot in sync so off-gateway processes
     # resolve endpoint tools against the new assignment immediately.
     try:
         from api.agent_presence import update_binding
         update_binding(agent_id, stored)
+        if previous_same_type_agent_id:
+            update_binding(previous_same_type_agent_id, None)
     except Exception:
         pass
 
