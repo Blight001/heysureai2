@@ -43,6 +43,7 @@ const emit = defineEmits<{
   (e: 'logout'): void
   (e: 'updateProfile'): void
   (e: 'refreshUser', user: User): void
+  (e: 'ready'): void
 }>()
 
 const selectedFiles = ref<string[]>([])
@@ -407,10 +408,15 @@ watch(
 )
 
 onMounted(async () => {
-  await Promise.all([
-    createSeedData(),
-    loadMcpTools(),
-  ])
+  try {
+    await Promise.all([
+      createSeedData(),
+      loadMcpTools(),
+    ])
+  } finally {
+    // 即使初始化部分失败，也通知外层撤下加载遮罩，避免界面卡在加载态
+    emit('ready')
+  }
   startDashboardRefreshLoop()
   document.addEventListener('visibilitychange', handleDashboardVisibilityChange)
 })

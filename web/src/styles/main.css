@@ -220,7 +220,7 @@ select:focus {
 .startup-progress {
   width: 45%;
   background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.9), rgba(56, 189, 248, 0.95), rgba(255, 255, 255, 0));
+    linear-gradient(90deg, rgba(255, 255, 255, 0), rgba(129, 140, 248, 0.9), rgba(99, 102, 241, 0.95), rgba(255, 255, 255, 0));
   animation: startup-progress 1.9s ease-in-out infinite;
 }
 
