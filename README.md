@@ -1,5 +1,7 @@
 <p align="center">
-  <img src="web/src/assets/logo/HeySure.png" alt="HeySure AI" width="160" />
+  <img src="server/static/extension.png" alt="extension.png" width="160" />
+  <img src="server/static/HeySure.png" alt="HeySure AI" width="160" />
+  <img src="server/static/windows.png" alt="windows.png" width="160" />
 </p>
 
 <h1 align="center">HeySure AI 2.0</h1>
