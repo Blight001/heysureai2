@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAuth } from '@/composables/useAuth'
 import type { User } from '@/types'
 import heySureLogo from '@/assets/logo/HeySure.png'
@@ -19,11 +19,38 @@ const showLogin = ref(false)
 const showProfile = ref(false)
 const showSplash = ref(true)
 const revealContent = ref(false)
+// 登录成功 / 会话恢复后需等待控制台数据就绪，避免直接显示空白界面
+const dashboardLoading = ref(false)
+
+const showStartupOverlay = computed(() => showSplash.value || dashboardLoading.value)
+const startupHint = computed(() =>
+  dashboardLoading.value && !showSplash.value ? '正在载入控制台与成员数据' : '正在初始化界面与资源',
+)
 
 let revealTimer: number | undefined
 let preloadRemovalTimer: number | undefined
 let startupFallbackTimer: number | undefined
+let dashboardLoadingFallbackTimer: number | undefined
 let removeLoadListener: (() => void) | undefined
+
+const startDashboardLoading = () => {
+  dashboardLoading.value = true
+  if (dashboardLoadingFallbackTimer !== undefined) {
+    window.clearTimeout(dashboardLoadingFallbackTimer)
+  }
+  // 兜底：即使控制台未上报就绪，也在超时后撤下遮罩，避免永久卡住
+  dashboardLoadingFallbackTimer = window.setTimeout(() => {
+    dashboardLoading.value = false
+  }, 8000)
+}
+
+const onDashboardReady = () => {
+  dashboardLoading.value = false
+  if (dashboardLoadingFallbackTimer !== undefined) {
+    window.clearTimeout(dashboardLoadingFallbackTimer)
+    dashboardLoadingFallbackTimer = undefined
+  }
+}
 
 const hideStaticPreload = () => {
   const preload = document.getElementById('startup-preload')
@@ -46,6 +73,15 @@ const onLoginSuccess = (userData: User, token: string) => {
   handleLoginSuccess(userData, token)
   showLogin.value = false
 }
+
+// 登录态从无到有时拉起加载遮罩，登出时立即撤下
+watch(
+  () => !!user.value,
+  (loggedIn) => {
+    if (loggedIn) startDashboardLoading()
+    else onDashboardReady()
+  },
+)
 
 const onUpdateSuccess = (userData: User) => {
   updateUser(userData)
@@ -90,6 +126,9 @@ onBeforeUnmount(() => {
   if (startupFallbackTimer !== undefined) {
     window.clearTimeout(startupFallbackTimer)
   }
+  if (dashboardLoadingFallbackTimer !== undefined) {
+    window.clearTimeout(dashboardLoadingFallbackTimer)
+  }
 })
 </script>
 
@@ -117,6 +156,7 @@ onBeforeUnmount(() => {
         @logout="logout"
         @update-profile="showProfile = true"
         @refresh-user="updateUser"
+        @ready="onDashboardReady"
       />
     </div>
 
@@ -138,7 +178,7 @@ onBeforeUnmount(() => {
 
     <Transition name="startup-splash">
       <div
-        v-if="showSplash"
+        v-if="showStartupOverlay"
         class="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden"
         :class="isDarkStartup
           ? 'bg-zinc-950 text-zinc-100'
@@ -187,7 +227,7 @@ onBeforeUnmount(() => {
                 <div class="startup-progress h-full rounded-full"></div>
               </div>
               <p class="mt-4 text-sm" :class="isDarkStartup ? 'text-zinc-500' : 'text-zinc-500'">
-                正在初始化界面与资源
+                {{ startupHint }}
               </p>
             </div>
           </div>
