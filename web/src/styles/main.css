@@ -236,6 +236,11 @@ select:focus {
   left: 12%;
   width: 18rem;
   height: 18rem;
+  background: rgba(113, 113, 122, 0.12);
+}
+
+.dark .startup-orb-left {
+  background: rgba(63, 63, 70, 0.22);
 }
 
 .startup-orb-right {
@@ -243,7 +248,12 @@ select:focus {
   bottom: 14%;
   width: 16rem;
   height: 16rem;
+  background: rgba(161, 161, 170, 0.12);
   animation-delay: -3.2s;
+}
+
+.dark .startup-orb-right {
+  background: rgba(82, 82, 91, 0.18);
 }
 
 .glass {
