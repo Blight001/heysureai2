@@ -16,6 +16,13 @@ export interface CaptureOpts {
   cropRegion?: { x: number; y: number; width: number; height: number }
 }
 
+export interface CaptureDisplayGeometry {
+  id: number
+  scaleFactor: number
+  bounds: { x: number; y: number; width: number; height: number }
+  size: { width: number; height: number }
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
@@ -60,6 +67,28 @@ export async function executeCapture(opts: CaptureOpts = {}): Promise<Buffer> {
   let img = source.thumbnail
   if (opts.cropRegion) img = img.crop(opts.cropRegion)
   return img.toPNG()
+}
+
+export function getCaptureDisplayGeometry(displayIndex = 0): CaptureDisplayGeometry {
+  const displays = screen.getAllDisplays()
+  const idx = displays.length > 0
+    ? Math.min(Math.max(displayIndex, 0), displays.length - 1)
+    : 0
+  const display = displays[idx] || screen.getPrimaryDisplay()
+  return {
+    id: display.id,
+    scaleFactor: display.scaleFactor,
+    bounds: {
+      x: display.bounds.x,
+      y: display.bounds.y,
+      width: display.bounds.width,
+      height: display.bounds.height,
+    },
+    size: {
+      width: display.size.width,
+      height: display.size.height,
+    },
+  }
 }
 
 export function initCapture(): void {

@@ -28,6 +28,7 @@ from mcp_runtime.mcp.loader import load_plugins_on_startup
 from api.runtime import heartbeat as heartbeat_module
 from ai_runtime.inference.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
 from api.chat_runtime.chat_scheduler import process_task_scheduler
+from api.services.temp_image_store import cleanup_expired_temp_images
 
 
 # Ensure logging is configured when the app is loaded by uvicorn (which
@@ -112,6 +113,12 @@ async def lifespan(app: FastAPI):
                         logger.warning(f"watchdog reaped stale runs: {reaped}")
                 except Exception:
                     logger.exception("watchdog reap failed")
+                try:
+                    removed = cleanup_expired_temp_images()
+                    if removed:
+                        logger.info(f"removed expired temporary images: {removed}")
+                except Exception:
+                    logger.exception("temporary image cleanup failed")
             await asyncio.sleep(3)
 
     task = asyncio.create_task(periodic_scan())

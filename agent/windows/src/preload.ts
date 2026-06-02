@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+function cleanIpcError(err: any): Error {
+  const message = String(err?.message || err || '')
+  const cleaned = message.replace(/^Error invoking remote method '[^']+': Error:\s*/i, '')
+  return new Error(cleaned || message || '请求失败')
+}
+
 contextBridge.exposeInMainWorld('heysureAPI', {
   // Settings
   getSettings: () => ipcRenderer.invoke('settings:get'),
@@ -51,7 +57,7 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   getOfflineChatConfig: () => ipcRenderer.invoke('offline-chat:get-config'),
   saveOfflinePrompt: (prompt: string) => ipcRenderer.invoke('offline-chat:save-prompt', prompt),
   sendOfflineChat: (payload: { requestId?: string; messages: Array<{ role: 'user' | 'assistant'; content: string }>; prompt?: string; allowedTools?: string[] }) =>
-    ipcRenderer.invoke('offline-chat:send', payload),
+    ipcRenderer.invoke('offline-chat:send', payload).catch((err: any) => { throw cleanIpcError(err) }),
   cancelOfflineChat: (payload: { requestId?: string }) => ipcRenderer.invoke('offline-chat:cancel', payload),
   onOfflineChatProgress: (cb: (event: any) => void) => {
     const handler = (_: any, event: any) => cb(event)

@@ -39,7 +39,9 @@ exports.screenInfo = screenInfo;
 const os = __importStar(require("os"));
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
+const url_1 = require("url");
 const capture_bridge_1 = require("../capture-bridge");
+const coordinates_1 = require("./shared/coordinates");
 function pngSize(buf) {
     if (buf.length <= 24)
         return { width: 0, height: 0 };
@@ -51,10 +53,23 @@ async function screenCapture(args = {}) {
     const savePath = String(args.path || path.join(os.tmpdir(), `hs_screen_${Date.now()}.png`));
     fs.writeFileSync(savePath, buf);
     const { width, height } = pngSize(buf);
-    const dataUrl = args.upload_to_server === false || args.return_data_url === false
-        ? undefined
-        : `data:image/png;base64,${buf.toString('base64')}`;
-    return { success: true, path: savePath, dataUrl, width, height, bytes: buf.length, display: displayIndex };
+    const displayGeometry = (0, capture_bridge_1.getCaptureDisplayGeometry)(displayIndex);
+    (0, coordinates_1.rememberCaptureGeometry)({ capture: { width, height }, display: displayGeometry });
+    const image_url = (0, url_1.pathToFileURL)(savePath).href;
+    return {
+        success: true,
+        path: savePath,
+        image_url,
+        width,
+        height,
+        bytes: buf.length,
+        display: displayIndex,
+        calibration: {
+            display: displayGeometry,
+            scale_x: width > 0 ? displayGeometry.bounds.width / width : 1,
+            scale_y: height > 0 ? displayGeometry.bounds.height / height : 1,
+        },
+    };
 }
 async function screenCaptureRegion(args) {
     const { x = 0, y = 0, width, height } = args;
@@ -63,10 +78,8 @@ async function screenCaptureRegion(args) {
     const buf = await (0, capture_bridge_1.executeCapture)({ cropRegion: { x: Number(x), y: Number(y), width: Number(width), height: Number(height) } });
     const savePath = String(args.path || path.join(os.tmpdir(), `hs_region_${Date.now()}.png`));
     fs.writeFileSync(savePath, buf);
-    const dataUrl = args.upload_to_server === false || args.return_data_url === false
-        ? undefined
-        : `data:image/png;base64,${buf.toString('base64')}`;
-    return { success: true, path: savePath, dataUrl, x, y, width, height, bytes: buf.length };
+    const image_url = (0, url_1.pathToFileURL)(savePath).href;
+    return { success: true, path: savePath, image_url, x, y, width, height, bytes: buf.length };
 }
 async function screenInfo(_args = {}) {
     let robot = null;
@@ -80,5 +93,6 @@ async function screenInfo(_args = {}) {
         success: true,
         screen: { width: screenSize.width, height: screenSize.height },
         cursor: { x: mousePos.x, y: mousePos.y },
+        calibration: (0, coordinates_1.getCoordinateCalibration)(),
     };
 }

@@ -659,6 +659,7 @@ def _browser_screenshot_image_message(tool: str, tool_result: Dict[str, object])
     result_payload = tool_result.get("result", tool_result)
     if not isinstance(result_payload, dict):
         return None
+    public_image_url = str(result_payload.get("image_url") or result_payload.get("public_url") or "").strip()
     data_url = str(result_payload.get("dataUrl") or "").strip()
     if not data_url.startswith("data:image/"):
         server_path = str(result_payload.get("server_path") or "").strip()
@@ -676,7 +677,8 @@ def _browser_screenshot_image_message(tool: str, tool_result: Dict[str, object])
             except Exception:
                 data_url = ""
     if not data_url.startswith("data:image/"):
-        return None
+        if not public_image_url.startswith(("http://", "https://")):
+            return None
     detail = "\n".join(
         part for part in [
             "浏览器截图已捕获。你已经收到这张图片，请直接查看视觉内容并继续，不要让用户打开本地路径。",
@@ -689,7 +691,7 @@ def _browser_screenshot_image_message(tool: str, tool_result: Dict[str, object])
         "role": "user",
         "content": [
             {"type": "text", "text": detail},
-            {"type": "image_url", "image_url": {"url": data_url}},
+            {"type": "image_url", "image_url": {"url": public_image_url or data_url}},
         ],
     }
 

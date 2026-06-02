@@ -1,7 +1,9 @@
 import * as os from 'os'
 import * as path from 'path'
 import * as fs from 'fs'
-import { executeCapture } from '../capture-bridge'
+import { pathToFileURL } from 'url'
+import { executeCapture, getCaptureDisplayGeometry } from '../capture-bridge'
+import { getCoordinateCalibration, rememberCaptureGeometry } from './shared/coordinates'
 
 function pngSize(buf: Buffer): { width: number; height: number } {
   if (buf.length <= 24) return { width: 0, height: 0 }
@@ -14,10 +16,23 @@ export async function screenCapture(args: any = {}) {
   const savePath = String(args.path || path.join(os.tmpdir(), `hs_screen_${Date.now()}.png`))
   fs.writeFileSync(savePath, buf)
   const { width, height } = pngSize(buf)
-  const dataUrl = args.upload_to_server === false || args.return_data_url === false
-    ? undefined
-    : `data:image/png;base64,${buf.toString('base64')}`
-  return { success: true, path: savePath, dataUrl, width, height, bytes: buf.length, display: displayIndex }
+  const displayGeometry = getCaptureDisplayGeometry(displayIndex)
+  rememberCaptureGeometry({ capture: { width, height }, display: displayGeometry })
+  const image_url = pathToFileURL(savePath).href
+  return {
+    success: true,
+    path: savePath,
+    image_url,
+    width,
+    height,
+    bytes: buf.length,
+    display: displayIndex,
+    calibration: {
+      display: displayGeometry,
+      scale_x: width > 0 ? displayGeometry.bounds.width / width : 1,
+      scale_y: height > 0 ? displayGeometry.bounds.height / height : 1,
+    },
+  }
 }
 
 export async function screenCaptureRegion(args: any) {
@@ -26,10 +41,8 @@ export async function screenCaptureRegion(args: any) {
   const buf = await executeCapture({ cropRegion: { x: Number(x), y: Number(y), width: Number(width), height: Number(height) } })
   const savePath = String(args.path || path.join(os.tmpdir(), `hs_region_${Date.now()}.png`))
   fs.writeFileSync(savePath, buf)
-  const dataUrl = args.upload_to_server === false || args.return_data_url === false
-    ? undefined
-    : `data:image/png;base64,${buf.toString('base64')}`
-  return { success: true, path: savePath, dataUrl, x, y, width, height, bytes: buf.length }
+  const image_url = pathToFileURL(savePath).href
+  return { success: true, path: savePath, image_url, x, y, width, height, bytes: buf.length }
 }
 
 export async function screenInfo(_args: any = {}) {
@@ -41,5 +54,6 @@ export async function screenInfo(_args: any = {}) {
     success: true,
     screen: { width: screenSize.width, height: screenSize.height },
     cursor: { x: mousePos.x, y: mousePos.y },
+    calibration: getCoordinateCalibration(),
   }
 }

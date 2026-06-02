@@ -99,7 +99,7 @@ async function captureFailureShot(workspaceRoot: string): Promise<string | undef
   // 失败现场带一张截图，供 AI 视觉判断（§4.3）。截图失败不应掩盖原始故障。
   try {
     const payload = await screenCapture({ upload_to_server: true })
-    return payload?.path || payload?.dataUrl
+    return payload?.image_url || payload?.path
   } catch {
     return undefined
   }

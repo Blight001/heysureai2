@@ -8,6 +8,7 @@
 // function". Running directly in main removes the IPC hop entirely.
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.executeCapture = executeCapture;
+exports.getCaptureDisplayGeometry = getCaptureDisplayGeometry;
 exports.initCapture = initCapture;
 const electron_1 = require("electron");
 const constants_1 = require("./constants");
@@ -42,6 +43,27 @@ async function executeCapture(opts = {}) {
     if (opts.cropRegion)
         img = img.crop(opts.cropRegion);
     return img.toPNG();
+}
+function getCaptureDisplayGeometry(displayIndex = 0) {
+    const displays = electron_1.screen.getAllDisplays();
+    const idx = displays.length > 0
+        ? Math.min(Math.max(displayIndex, 0), displays.length - 1)
+        : 0;
+    const display = displays[idx] || electron_1.screen.getPrimaryDisplay();
+    return {
+        id: display.id,
+        scaleFactor: display.scaleFactor,
+        bounds: {
+            x: display.bounds.x,
+            y: display.bounds.y,
+            width: display.bounds.width,
+            height: display.bounds.height,
+        },
+        size: {
+            width: display.size.width,
+            height: display.size.height,
+        },
+    };
 }
 function initCapture() {
     if (!electron_1.screen || typeof electron_1.screen.getPrimaryDisplay !== 'function') {

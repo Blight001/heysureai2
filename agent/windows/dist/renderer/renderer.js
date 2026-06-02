@@ -430,6 +430,14 @@ const cfgServer = $('cfg-server');
 const cfgWorkspace = $('cfg-workspace');
 const cfgOffline = $('cfg-offline-mode');
 const cfgMouseFx = $('cfg-mouse-fx');
+const cfgMouseScaleX = $('cfg-mouse-scale-x');
+const cfgMouseScaleY = $('cfg-mouse-scale-y');
+const cfgMouseOffsetX = $('cfg-mouse-offset-x');
+const cfgMouseOffsetY = $('cfg-mouse-offset-y');
+function numericInputValue(input, fallback) {
+    const n = Number(input.value);
+    return Number.isFinite(n) ? n : fallback;
+}
 function updateOfflineChatButton() {
     offlineChatBtn.classList.toggle('active', cfgOffline.checked);
     offlineChatBtn.title = cfgOffline.checked ? '打开离线对话' : '离线模式未启用';
@@ -450,6 +458,10 @@ $('save-btn').addEventListener('click', async () => {
             workspaceRoot: cfgWorkspace.value.trim(),
             offlineMode: cfgOffline.checked,
             mouseFx: cfgMouseFx.checked,
+            mouseCoordinateScaleX: numericInputValue(cfgMouseScaleX, 1),
+            mouseCoordinateScaleY: numericInputValue(cfgMouseScaleY, 1),
+            mouseCoordinateOffsetX: numericInputValue(cfgMouseOffsetX, 0),
+            mouseCoordinateOffsetY: numericInputValue(cfgMouseOffsetY, 0),
         });
         offlineModeEnabled = cfgOffline.checked;
         setStatus(await window.heysureAPI.getStatus());
@@ -635,6 +647,10 @@ async function loadMainSettings() {
     cfgWorkspace.value = s.workspaceRoot || '';
     cfgOffline.checked = !!s.offlineMode;
     cfgMouseFx.checked = s.mouseFx !== false;
+    cfgMouseScaleX.value = String(Number.isFinite(Number(s.mouseCoordinateScaleX)) ? Number(s.mouseCoordinateScaleX) : 1);
+    cfgMouseScaleY.value = String(Number.isFinite(Number(s.mouseCoordinateScaleY)) ? Number(s.mouseCoordinateScaleY) : 1);
+    cfgMouseOffsetX.value = String(Number.isFinite(Number(s.mouseCoordinateOffsetX)) ? Number(s.mouseCoordinateOffsetX) : 0);
+    cfgMouseOffsetY.value = String(Number.isFinite(Number(s.mouseCoordinateOffsetY)) ? Number(s.mouseCoordinateOffsetY) : 0);
     offlineModeEnabled = !!s.offlineMode;
     updateOfflineChatButton();
     renderStatus();

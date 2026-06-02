@@ -119,6 +119,19 @@ class Settings(BaseSettings):
         default=False,
         description="Enable uvicorn --reload (only useful in dev).",
     )
+    public_base_url: str = Field(
+        default="",
+        description="Public HTTP(S) base URL used when generating externally fetchable "
+        "links, for example https://api.example.com. Empty = derive from request host.",
+    )
+    temp_image_ttl_seconds: int = Field(
+        default=60 * 60 * 24,
+        description="How long temporary images remain available before cleanup.",
+    )
+    temp_image_max_bytes: int = Field(
+        default=10 * 1024 * 1024,
+        description="Maximum size accepted by the temporary image upload endpoints.",
+    )
 
     # ---- Auth / Socket.IO ----------------------------------------------------
 
@@ -187,6 +200,7 @@ class Settings(BaseSettings):
         "tavily_api_key",
         "clawhub_registry_url",
         "clawhub_api_token",
+        "public_base_url",
         mode="before",
     )
     @classmethod

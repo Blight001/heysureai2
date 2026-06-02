@@ -33,6 +33,11 @@ interface AgentSettings {
   // Mouse-effect toggle (simulated cursor on AI operations), parity with the
   // browser extension's setting.
   mouseFx: boolean
+  // Mouse coordinate calibration. Input coordinates are screenshot pixels.
+  mouseCoordinateScaleX: number
+  mouseCoordinateScaleY: number
+  mouseCoordinateOffsetX: number
+  mouseCoordinateOffsetY: number
   // Offline mode (use the self-configured model directly), parity with the
   // browser extension. Persisted here; honoured by the runtime where supported.
   offlineMode: boolean
@@ -70,6 +75,10 @@ const defaults: AgentSettings = {
   selectedAiConfigLifecycle: 'working',
   selectedAiConfigProject: '',
   mouseFx: true,
+  mouseCoordinateScaleX: 1,
+  mouseCoordinateScaleY: 1,
+  mouseCoordinateOffsetX: 0,
+  mouseCoordinateOffsetY: 0,
   offlineMode: false,
   offlinePrompt: '你是 HeySure AI，运行在 Windows 桌面端的离线模式中。你可以直接回答用户，也可以调用本机 MCP 工具完成文件、窗口、键鼠、剪贴板、终端等桌面任务。需要操作电脑时优先使用工具，并用和用户相同的语言回复。',
   toolDescOverrides: {},

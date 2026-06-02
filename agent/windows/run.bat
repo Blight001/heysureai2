@@ -4,6 +4,10 @@ setlocal
 cd /d "%~dp0"
 
 set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+rem Optional mouse calibration in screenshot pixels.
+rem Mouse calibration is available in app Settings.
+rem You can still override with HEYSURE_MOUSE_X_OFFSET / HEYSURE_MOUSE_Y_OFFSET before launch.
+rem If clicks are consistently too far left/right, use HEYSURE_MOUSE_X_OFFSET.
 
 if not exist "node_modules" (
   echo Installing dependencies...

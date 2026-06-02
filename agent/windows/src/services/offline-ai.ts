@@ -2,6 +2,9 @@ import { store } from '../store'
 import { getAgent } from './agent-runtime'
 import { getToolDefs } from '../executor'
 import { sendActivityLog } from './activity-log'
+import * as fs from 'fs'
+import * as path from 'path'
+import { fileURLToPath } from 'url'
 
 type Role = 'user' | 'assistant'
 export interface OfflineChatMessage {
@@ -57,6 +60,111 @@ function stringifyContent(content: any): string {
   try { return JSON.stringify(content) } catch { return String(content) }
 }
 
+function imageMimeFromPath(imagePath: string): string | null {
+  const ext = path.extname(imagePath).toLowerCase().replace('.', '')
+  if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg'
+  if (ext === 'png') return 'image/png'
+  if (ext === 'webp') return 'image/webp'
+  if (ext === 'gif') return 'image/gif'
+  return null
+}
+
+function localImagePathFromValue(value: any): string | null {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  try {
+    const filePath = raw.startsWith('file://') ? fileURLToPath(raw) : raw
+    if (!imageMimeFromPath(filePath)) return null
+    if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) return null
+    return filePath
+  } catch {
+    return null
+  }
+}
+
+function collectLocalImagePaths(value: any, seen = new Set<any>()): string[] {
+  if (value == null || seen.has(value)) return []
+  if (typeof value === 'object') seen.add(value)
+
+  if (typeof value === 'string') {
+    const p = localImagePathFromValue(value)
+    return p ? [p] : []
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap(item => collectLocalImagePaths(item, seen))
+  }
+  if (typeof value !== 'object') return []
+
+  const direct = [
+    localImagePathFromValue(value.path),
+    localImagePathFromValue(value.image_url),
+    localImagePathFromValue(value.screenshot_path),
+  ].filter((p): p is string => !!p)
+  return [
+    ...direct,
+    ...collectLocalImagePaths(value.result, seen),
+    ...collectLocalImagePaths(value.content, seen),
+  ]
+}
+
+function imageContentBlocksFromToolResults(toolResults: any[]): any[] {
+  const seen = new Set<string>()
+  const images: any[] = []
+  for (const tr of toolResults) {
+    if (tr?.is_error) continue
+    for (const imagePath of collectLocalImagePaths(tr?.content)) {
+      const resolved = path.resolve(imagePath)
+      if (seen.has(resolved)) continue
+      seen.add(resolved)
+      const mediaType = imageMimeFromPath(resolved)
+      if (!mediaType) continue
+      try {
+        const data = fs.readFileSync(resolved).toString('base64')
+        images.push({
+          type: 'image_url',
+          image_url: { url: `data:${mediaType};base64,${data}` },
+        })
+      } catch {
+        // If a screenshot was removed between capture and model call, keep the tool result text only.
+      }
+    }
+  }
+  return images
+}
+
+function screenshotCoordinateHint(toolResults: any[]): string {
+  const screenshots: string[] = []
+  for (const tr of toolResults) {
+    if (tr?.is_error) continue
+    const content = tr?.content
+    const width = Number(content?.width)
+    const height = Number(content?.height)
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) continue
+    if (!collectLocalImagePaths(content).length) continue
+    screenshots.push(`${Math.round(width)}x${Math.round(height)}`)
+  }
+  const sizeText = screenshots.length ? `当前截图尺寸：${Array.from(new Set(screenshots)).join('、')}。` : ''
+  return [
+    '视觉工具已返回截图，并在后续消息中附上对应的 base64 data URL。',
+    sizeText,
+    '后续调用 mouse.* 工具时，x/y 必须使用截图左上角为原点的原始截图像素坐标，不要使用 0-1000 归一化坐标。',
+    '点击桌面图标、按钮、菜单项时要选目标可点击区域的视觉中心；桌面图标优先点图标图案中心，不要点文字标签上缘或控件边缘。',
+  ].filter(Boolean).join(' ')
+}
+
+function toolResultContentWithImages(toolResults: any[]): any[] {
+  const imageBlocks = imageContentBlocksFromToolResults(toolResults)
+  if (!imageBlocks.length) return toolResults
+  return [
+    ...toolResults,
+    {
+      type: 'text',
+      text: screenshotCoordinateHint(toolResults),
+    },
+    ...imageBlocks,
+  ]
+}
+
 function providerToolName(name: string, nameMap: Map<string, string>): string {
   const safe = toolNameForProvider(name)
   nameMap.set(safe, name)
@@ -65,10 +173,30 @@ function providerToolName(name: string, nameMap: Map<string, string>): string {
 
 function providerMessages(messages: any[], nameMap: Map<string, string>): any[] {
   return messages.map(msg => {
-    if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+    if (Array.isArray(msg.content)) {
+      const content = msg.content.map((b: any) => {
+        if (msg.role === 'assistant' && b?.type === 'tool_use') {
+          return { ...b, name: providerToolName(b.name, nameMap) }
+        }
+        if (b?.type === 'image_url') {
+          const url = String(b.image_url?.url || '')
+          const match = url.match(/^data:([^;,]+);base64,(.+)$/)
+          if (match) {
+            return {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: match[1],
+                data: match[2],
+              },
+            }
+          }
+        }
+        return b
+      })
       return {
         ...msg,
-        content: msg.content.map((b: any) => b?.type === 'tool_use' ? { ...b, name: providerToolName(b.name, nameMap) } : b),
+        content,
       }
     }
     return msg
@@ -92,10 +220,21 @@ function openAiMessages(messages: any[], nameMap: Map<string, string>): any[] {
       }
     }
     if (msg.role === 'user' && Array.isArray(msg.content)) {
+      const userBlocks: any[] = []
       for (const tr of msg.content) {
-        if (tr?.type !== 'tool_result') continue
-        out.push({ role: 'tool', tool_call_id: tr.tool_use_id || 'call_0', content: stringifyContent(tr.content) })
+        if (tr?.type === 'tool_result') {
+          out.push({ role: 'tool', tool_call_id: tr.tool_use_id || 'call_0', content: stringifyContent(tr.content) })
+          continue
+        }
+        if (tr?.type === 'image_url') {
+          userBlocks.push(tr)
+          continue
+        }
+        if (tr?.type === 'text') {
+          userBlocks.push(tr)
+        }
       }
+      if (userBlocks.length) out.push({ role: 'user', content: userBlocks })
       continue
     }
     out.push({ role: msg.role, content: stringifyContent(msg.content) })
@@ -188,6 +327,43 @@ function shouldRetryWithoutStreamUsage(status: number, data: any): boolean {
   if (status !== 400 && status !== 422) return false
   const message = String(data?.error?.message || data?.message || '')
   return /stream_options|include_usage|unknown field|additional property|invalid.*stream/i.test(message)
+}
+
+async function readApiError(res: Response): Promise<any> {
+  const text = await res.text().catch(() => '')
+  if (!text) return {}
+  try {
+    return JSON.parse(text)
+  } catch {
+    return { raw: text }
+  }
+}
+
+function compactDetail(value: any): string {
+  if (value == null) return ''
+  if (typeof value === 'string') return value.trim()
+  try { return JSON.stringify(value, null, 2) } catch { return String(value) }
+}
+
+function apiErrorMessage(status: number, endpoint: string, data: any): string {
+  const detail = data?.error?.message || data?.message || data?.detail || data?.raw || data
+  const parts = [
+    `AI API error ${status}`,
+    `URL: ${endpoint}`,
+  ]
+  const detailText = compactDetail(detail)
+  if (detailText) parts.push(`原因: ${detailText}`)
+  return parts.join('\n')
+}
+
+function buildEndpoint(baseUrl: string, isAnthropic: boolean): string {
+  const base = baseUrl.replace(/\/+$/, '')
+  if (isAnthropic) {
+    return /\/v1\/messages$/i.test(base) ? base : `${base}/v1/messages`
+  }
+  if (/\/chat\/completions$/i.test(base)) return base
+  if (/\/(?:v1|api\/v\d+)$/i.test(base)) return `${base}/chat/completions`
+  return `${base}/v1/chat/completions`
 }
 
 function createAbortError(): Error {
@@ -307,7 +483,7 @@ async function callAI(
   if (!model) throw new Error('未配置模型')
 
   const isAnthropic = baseUrl.includes('anthropic.com')
-  const endpoint = isAnthropic ? `${baseUrl}/v1/messages` : `${baseUrl}/v1/chat/completions`
+  const endpoint = buildEndpoint(baseUrl, isAnthropic)
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (isAnthropic) {
     headers['x-api-key'] = apiKey
@@ -357,17 +533,17 @@ async function callAI(
   try {
     let res = await fetchOnce(body)
     if (!res.ok) {
-      const data: any = await res.json().catch(() => ({}))
+      const data: any = await readApiError(res)
       if (!isAnthropic && shouldRetryWithoutStreamUsage(res.status, data)) {
         const fallbackBody = { ...body }
         delete fallbackBody.stream_options
         res = await fetchOnce(fallbackBody)
         if (!res.ok) {
-          const retryData: any = await res.json().catch(() => ({}))
-          throw new Error(retryData?.error?.message || retryData?.message || `AI API error ${res.status}`)
+          const retryData: any = await readApiError(res)
+          throw new Error(apiErrorMessage(res.status, endpoint, retryData))
         }
       } else {
-        throw new Error(data?.error?.message || data?.message || `AI API error ${res.status}`)
+        throw new Error(apiErrorMessage(res.status, endpoint, data))
       }
     }
 
@@ -399,7 +575,7 @@ export async function runOfflineChat(
   signal?: AbortSignal,
 ): Promise<OfflineChatResult> {
   const basePrompt = String(prompt || store.get('offlinePrompt') || '').trim()
-  const systemPrompt = `${basePrompt}\n\n如果任务需要说明处理思路，可用 <think>...</think> 输出简短、可公开的思考摘要；尽量保持为一个连续栏目，不要刻意空行分段；不要在其中输出敏感信息、密钥或冗长推理。`
+  const systemPrompt = `${basePrompt}\n\n坐标规则：当你根据 vision.capture / vision.capture_mouse 的截图调用 mouse.* 工具时，x/y 使用截图左上角为原点的原始截图像素坐标；不要使用 0-1000 归一化坐标。点击目标时选择可点击区域中心，桌面图标优先点图标图案中心，不要点文字标签上缘或边缘。\n\n如果任务需要说明处理思路，可用 <think>...</think> 输出简短、可公开的思考摘要；尽量保持为一个连续栏目，不要刻意空行分段；不要在其中输出敏感信息、密钥或冗长推理。`
   const messages: any[] = userMessages.map(m => ({ role: m.role, content: m.content }))
   const toolsUsed: string[] = []
   const toolEvents: OfflineToolEvent[] = []
@@ -465,7 +641,7 @@ export async function runOfflineChat(
         sendActivityLog('task', 'error', `离线工具异常: ${tu.name} - ${err?.message || err}`)
       }
     }
-    messages.push({ role: 'user', content: toolResults })
+    messages.push({ role: 'user', content: toolResultContentWithImages(toolResults) })
   }
 
   return { text: '已达到最大工具调用轮次。', toolsUsed, toolEvents, usage: usageTotal.totalTokens > 0 ? usageTotal : undefined }

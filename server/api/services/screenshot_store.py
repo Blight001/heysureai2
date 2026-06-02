@@ -5,6 +5,8 @@ import time
 from typing import Any, Dict, Optional
 
 from ..core.config import user_workspace_dir
+from ..core.settings import settings
+from .temp_image_store import save_temp_image
 
 DATA_URL_RE = re.compile(r"^data:image/(?P<ext>png|jpeg|jpg|webp);base64,(?P<data>.+)$", re.IGNORECASE | re.DOTALL)
 
@@ -54,13 +56,25 @@ def persist_screenshot_result(
     with open(abs_path, "wb") as fh:
         fh.write(raw)
     rel_path = os.path.relpath(abs_path, root).replace(os.sep, "/")
-    return {
+    saved = {
         "server_path": abs_path,
         "workspace_path": rel_path,
         "file_name": filename,
         "bytes": len(raw),
         "media_type": "image",
     }
+    if settings.public_base_url:
+        try:
+            temp_filename, temp_media_type, _ = save_temp_image(raw, ext)
+            public_url = f"{settings.public_base_url.rstrip('/')}/tmp-images/{temp_filename}"
+            saved["public_url"] = public_url
+            saved["image_url"] = public_url
+            saved["temp_file_name"] = temp_filename
+            saved["temp_media_type"] = temp_media_type
+            saved["temp_ttl_seconds"] = int(settings.temp_image_ttl_seconds)
+        except Exception:
+            pass
+    return saved
 
 
 def attach_persisted_screenshot(
@@ -88,4 +102,7 @@ def attach_persisted_screenshot(
     next_result["file_name"] = saved["file_name"]
     next_result["media_type"] = saved["media_type"]
     next_result["bytes"] = saved["bytes"]
+    for key in ("public_url", "image_url", "temp_file_name", "temp_media_type", "temp_ttl_seconds"):
+        if key in saved:
+            next_result[key] = saved[key]
     return next_result

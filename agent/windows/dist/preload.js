@@ -1,6 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const electron_1 = require("electron");
+function cleanIpcError(err) {
+    const message = String(err?.message || err || '');
+    const cleaned = message.replace(/^Error invoking remote method '[^']+': Error:\s*/i, '');
+    return new Error(cleaned || message || '请求失败');
+}
 electron_1.contextBridge.exposeInMainWorld('heysureAPI', {
     // Settings
     getSettings: () => electron_1.ipcRenderer.invoke('settings:get'),
@@ -49,7 +54,7 @@ electron_1.contextBridge.exposeInMainWorld('heysureAPI', {
     openOfflineChat: () => electron_1.ipcRenderer.invoke('offline-chat:open'),
     getOfflineChatConfig: () => electron_1.ipcRenderer.invoke('offline-chat:get-config'),
     saveOfflinePrompt: (prompt) => electron_1.ipcRenderer.invoke('offline-chat:save-prompt', prompt),
-    sendOfflineChat: (payload) => electron_1.ipcRenderer.invoke('offline-chat:send', payload),
+    sendOfflineChat: (payload) => electron_1.ipcRenderer.invoke('offline-chat:send', payload).catch((err) => { throw cleanIpcError(err); }),
     cancelOfflineChat: (payload) => electron_1.ipcRenderer.invoke('offline-chat:cancel', payload),
     onOfflineChatProgress: (cb) => {
         const handler = (_, event) => cb(event);
