@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
-from api.core.config import USER_WORKSPACE_SUBFOLDERS, user_workspace_dir
+from api.core.config import ai_workspace_dirname, user_workspace_dir
 from api.database import engine
 from api.models import AIRuntimeStatus, AssistantAIConfig
 from api.sio import sio
@@ -28,23 +28,34 @@ def get_mcp_runtime_overrides() -> Optional[Dict[str, Any]]:
     return _MCP_RUNTIME_OVERRIDES.get()
 
 def _resolve_ai_workspace(user_id: int, ai_config_id: Optional[int]) -> str:
-    default_root = user_workspace_dir(user_id)
+    """Resolve an AI's own working directory.
+
+    Each AI gets its own subdirectory under the user workspace
+    (``<id>-<slug>``); admin AIs share ``_admins``. An explicit
+    ``workspace_root`` on the config still acts as a custom override (kept
+    sandboxed inside the user workspace). Callers that pass no
+    ``ai_config_id`` get the user-root (shared) directory.
+
+    Note: the shared knowledge base is resolved separately
+    (``user_shared_knowledge_dir``) so it stays one-per-user across AIs.
+    """
+    user_root = user_workspace_dir(user_id)
 
     def bounded_workspace(raw_workspace: str) -> str:
         raw = str(raw_workspace or "").strip()
         if not raw or raw == ".":
-            candidate = default_root
+            candidate = user_root
         elif os.path.isabs(raw):
             candidate = os.path.abspath(raw)
         else:
-            candidate = os.path.abspath(os.path.join(default_root, raw))
+            candidate = os.path.abspath(os.path.join(user_root, raw))
 
-        abs_default = os.path.abspath(default_root)
+        abs_root = os.path.abspath(user_root)
         try:
-            common = os.path.commonpath([abs_default, candidate])
+            common = os.path.commonpath([abs_root, candidate])
         except ValueError:
             common = ""
-        if common != abs_default:
+        if common != abs_root:
             raise HTTPException(status_code=403, detail="Workspace root outside user workspace is not allowed")
         return candidate
 
@@ -60,7 +71,7 @@ def _resolve_ai_workspace(user_id: int, ai_config_id: Optional[int]) -> str:
         return bounded_workspace(override_ws)
 
     if not ai_config_id:
-        return default_root
+        return user_root
     with Session(engine) as session:
         cfg = session.exec(
             select(AssistantAIConfig).where(
@@ -68,19 +79,18 @@ def _resolve_ai_workspace(user_id: int, ai_config_id: Optional[int]) -> str:
                 AssistantAIConfig.id == ai_config_id,
             )
         ).first()
-    if not cfg or not cfg.workspace_root:
-        return default_root
-    raw = cfg.workspace_root.strip()
-    return bounded_workspace(raw)
+    if not cfg:
+        return user_root
+    raw = str(cfg.workspace_root or "").strip()
+    if raw and raw != ".":
+        # Explicit custom override (still sandboxed to the user workspace).
+        return bounded_workspace(raw)
+    # Computed per-AI / admin-shared default directory.
+    return bounded_workspace(ai_workspace_dirname(cfg.id, cfg.name, cfg.ai_role))
 
 def get_project_root(user_id: int, ai_config_id: Optional[int] = None) -> str:
     workspace_dir = _resolve_ai_workspace(user_id, ai_config_id)
-
-    if not os.path.exists(workspace_dir):
-        os.makedirs(workspace_dir, exist_ok=True)
-        for folder in USER_WORKSPACE_SUBFOLDERS:
-            os.makedirs(os.path.join(workspace_dir, folder), exist_ok=True)
-
+    os.makedirs(workspace_dir, exist_ok=True)
     return workspace_dir
 
 def safe_join(root: str, *paths: str) -> str:

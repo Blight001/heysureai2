@@ -33,7 +33,8 @@ from ..database import engine
 from ..integrations import clawhub
 from ..models import AssistantAIConfig, KnowledgeEntry, User
 from ..sio import sio
-from mcp_runtime.mcp.core import _resolve_ai_workspace, safe_join
+from ..core.config import user_shared_knowledge_dir
+from mcp_runtime.mcp.core import safe_join
 import logging
 
 
@@ -224,32 +225,16 @@ _INTRINSIC_PARAM_DESCRIPTIONS_ZH = {
 # ---------- 路径与工具 ----------
 
 def _kb_root(user_id: int) -> str:
-    """每用户一份 KB（共享所有 AI，避免按 ai_config_id 切割）。
-    复用主 librarian 配置或任意配置解析 workspace 即可。"""
-    cfg_id = _pick_librarian_or_any_config_id(user_id) or 0
-    ws = _resolve_ai_workspace(user_id, cfg_id) if cfg_id else _resolve_ai_workspace(user_id, None)
-    root = os.path.join(ws, _KB_DIR)
+    """每用户一份 KB（共享所有 AI）。
+
+    知识库固定挂在用户根目录下（``<user_workspace>/KnowledgeBase``），不随
+    各 AI 的独立工作目录切割——图书管理员每用户最多一个，知识对该用户的
+    所有 AI 可见。"""
+    root = user_shared_knowledge_dir(user_id)
     os.makedirs(root, exist_ok=True)
     os.makedirs(os.path.join(root, _TOPICS_DIR), exist_ok=True)
     os.makedirs(os.path.join(root, _ARCHIVE_DIR), exist_ok=True)
     return root
-
-
-def _pick_librarian_or_any_config_id(user_id: int) -> Optional[int]:
-    with Session(engine) as session:
-        librarian = session.exec(
-            select(AssistantAIConfig).where(
-                AssistantAIConfig.user_id == user_id,
-                AssistantAIConfig.is_librarian == True,  # noqa: E712
-            )
-        ).first()
-        if librarian:
-            return librarian.id
-        any_cfg = session.exec(
-            select(AssistantAIConfig).where(AssistantAIConfig.user_id == user_id)
-            .order_by(AssistantAIConfig.sort_order.asc(), AssistantAIConfig.created_at.asc())
-        ).first()
-        return any_cfg.id if any_cfg else None
 
 
 def get_librarian_config_id(user_id: int) -> Optional[int]:

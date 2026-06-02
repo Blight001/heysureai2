@@ -7,6 +7,7 @@ from ``api.core.settings`` directly.
 """
 
 import os
+import re
 
 from .settings import SERVER_DIR, SQLITE_FILE, SQLITE_URL, settings
 
@@ -15,17 +16,51 @@ from .settings import SERVER_DIR, SQLITE_FILE, SQLITE_URL, settings
 DATA_DIR = os.path.join(SERVER_DIR, "data")
 WORKSPACE_DIR = os.path.join(DATA_DIR, "workspace")
 
-USER_WORKSPACE_SUBFOLDERS = (
-    "Valhalla",
-    "BrainCore",
-    "KnowledgeBase",
-    "EvolutionArena",
-    "SystemSetting",
-)
+# Folders seeded once at the user-root level and SHARED across all of the
+# user's AIs. Only the knowledge base remains file-backed; the rest of what
+# used to be "sedimentation folders" (Valhalla sessions, EvolutionArena,
+# SystemSetting, BrainCore) now lives in the database, so they are gone.
+USER_SHARED_SUBFOLDERS = ("KnowledgeBase",)
+
+# Backwards-compatible alias for older imports. It now only seeds the shared
+# knowledge base.
+USER_WORKSPACE_SUBFOLDERS = USER_SHARED_SUBFOLDERS
+
+# Admin AIs (``ai_role == "assistant_admin"``) share a single working
+# directory instead of each getting their own.
+ADMIN_WORKSPACE_DIRNAME = "_admins"
 
 
 def user_workspace_dir(user_id: int) -> str:
     return os.path.join(WORKSPACE_DIR, str(user_id))
+
+
+def user_shared_knowledge_dir(user_id: int) -> str:
+    """The user-level, AI-shared knowledge base root."""
+    return os.path.join(user_workspace_dir(user_id), "KnowledgeBase")
+
+
+def _ai_dir_slug(name: str) -> str:
+    """Readable, filesystem-safe slug from an AI name (keeps CJK)."""
+    raw = str(name or "").strip().lower()
+    cleaned = re.sub(r"[^0-9a-z一-鿿]+", "-", raw).strip("-")
+    if len(cleaned) > 40:
+        cleaned = cleaned[:40].strip("-")
+    return cleaned or "ai"
+
+
+def ai_workspace_dirname(ai_config_id, name, ai_role) -> str:
+    """Per-AI working directory name under the user workspace.
+
+    Admin AIs share ``_admins``; every other AI gets a readable
+    ``<id>-<slug>`` directory so workspace folders are no longer opaque
+    integers.
+    """
+    if str(ai_role or "").strip() == "assistant_admin":
+        return ADMIN_WORKSPACE_DIRNAME
+    slug = _ai_dir_slug(name)
+    cid = int(ai_config_id or 0)
+    return f"{cid}-{slug}" if cid else slug
 
 
 # ---------- Legacy aliases (delegate to settings) ----------

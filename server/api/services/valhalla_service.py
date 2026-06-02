@@ -1,20 +1,17 @@
-"""英灵殿（Valhalla）落盘服务。
+"""英灵殿（Valhalla）代际传承服务。
 
 设计原则：
-- 真相在文件（Valhalla/<job_id>/g<N>/*.md + *.json），数据库 ValhallaEntry 仅做检索索引；
+- 数据全部存数据库（``ValhallaEntry``）：完整遗言正文存 ``content``，未完成/
+  产出/Token 统计存对应的 ``*_json`` 列。不再落任何文件。
 - 后端钩子自动写入，AI 无感（不依赖 AI 自觉调任何工具）；
 - 任一步出错都不应影响主任务链路：所有写入都包在 best-effort try。
-
-参考：Anthropic Claude Memory Tool 的"文件式记忆目录"范式。
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import shutil
 import time
 from typing import Any, Dict, List, Optional
 
@@ -27,52 +24,11 @@ from ..models import (
     ChatMessage,
     ValhallaEntry,
 )
-from mcp_runtime.mcp.core import _resolve_ai_workspace, safe_join
 
 
 logger = logging.getLogger(__name__)
 
-_VALHALLA_DIR = "Valhalla"
-_REGISTRY_FILE = "memorial_registry.json"
 _MAX_EXCERPT_LEN = 280
-
-
-# ---------- 路径工具 ----------
-
-def _valhalla_root(user_id: int, ai_config_id: int) -> str:
-    """返回 <workspace_root>/Valhalla 的绝对路径，必要时创建。"""
-    ws = _resolve_ai_workspace(user_id, ai_config_id)
-    root = os.path.join(ws, _VALHALLA_DIR)
-    os.makedirs(root, exist_ok=True)
-    return root
-
-
-def _job_dir(user_id: int, ai_config_id: int, job_id: str) -> str:
-    root = _valhalla_root(user_id, ai_config_id)
-    safe_id = _safe_slug(job_id) or "unknown"
-    job_dir = safe_join(root, safe_id)
-    os.makedirs(job_dir, exist_ok=True)
-    return job_dir
-
-
-def _gen_dir(user_id: int, ai_config_id: int, job_id: str, generation: int) -> str:
-    base = _job_dir(user_id, ai_config_id, job_id)
-    gen = f"g{max(1, int(generation or 1))}"
-    gen_dir = safe_join(base, gen)
-    os.makedirs(gen_dir, exist_ok=True)
-    return gen_dir
-
-
-def _safe_slug(text: str) -> str:
-    raw = str(text or "").strip()
-    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", raw)
-    return cleaned.strip("._") or ""
-
-
-def _rel_to_valhalla(user_id: int, ai_config_id: int, abs_path: str) -> str:
-    root = _valhalla_root(user_id, ai_config_id)
-    rel = os.path.relpath(abs_path, root)
-    return rel.replace(os.sep, "/")
 
 
 # ---------- 数据采集 ----------
@@ -273,7 +229,7 @@ def _render_last_words(
             else:
                 blocks.append(f"- `{tool}` → {art.get('args_preview') or ''}")
         if len(artifacts) > 30:
-            blocks.append(f"- …其余 {len(artifacts) - 30} 项见 artifacts.json")
+            blocks.append(f"- …其余 {len(artifacts) - 30} 项见 artifacts 列表")
         blocks.append("")
     blocks.append("## Token 生命周期")
     blocks.append("")
@@ -322,77 +278,6 @@ def _ai_name_static(cfg: AssistantAIConfig) -> str:
     return str(cfg.name or "").strip() or f"AI-{cfg.id}"
 
 
-# ---------- 注册表维护 ----------
-
-def _read_registry(root: str) -> Dict[str, Any]:
-    path = os.path.join(root, _REGISTRY_FILE)
-    if not os.path.exists(path):
-        return {"entries": []}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if not isinstance(data, dict):
-            return {"entries": []}
-        entries = data.get("entries")
-        if not isinstance(entries, list):
-            data["entries"] = []
-        return data
-    except Exception:
-        return {"entries": []}
-
-
-def _write_registry(root: str, data: Dict[str, Any]) -> None:
-    path = os.path.join(root, _REGISTRY_FILE)
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-
-def _append_to_registry(root: str, entry_meta: Dict[str, Any]) -> None:
-    data = _read_registry(root)
-    entries = data.setdefault("entries", [])
-    entries.append(entry_meta)
-    data["updated_at"] = time.time()
-    _write_registry(root, data)
-
-
-def _remove_from_registry(root: str, entry_ids: List[int]) -> None:
-    if not entry_ids:
-        return
-    removed = set(int(x) for x in entry_ids)
-    data = _read_registry(root)
-    entries = data.get("entries")
-    if not isinstance(entries, list):
-        return
-    data["entries"] = [
-        entry for entry in entries
-        if int((entry or {}).get("entry_id") or 0) not in removed
-    ]
-    data["updated_at"] = time.time()
-    _write_registry(root, data)
-
-
-def _write_job_meta_once(job_dir: str, job: AITaskJob, cfg: AssistantAIConfig) -> None:
-    path = os.path.join(job_dir, "job_meta.json")
-    if os.path.exists(path):
-        return
-    meta = {
-        "job_id": job.job_id,
-        "title": job.title,
-        "instruction": job.instruction,
-        "ai_config_id": cfg.id,
-        "ai_name": _ai_name_static(cfg),
-        "created_at": job.created_at,
-    }
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(meta, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
-
 def _excerpt(text: str) -> str:
     raw = (text or "").strip().replace("\n", " ")
     if len(raw) > _MAX_EXCERPT_LEN:
@@ -411,9 +296,8 @@ def write_inherit(
     session_id: str,
     summary: str,
 ) -> Optional[ValhallaEntry]:
-    """task.inherit 成功后调用。落 last_words.md + unfinished/artifacts/token_report
-    + ValhallaEntry 索引 + memorial_registry.json 追加。
-    """
+    """task.inherit 成功后调用。把传承遗言正文 + 未完成/产出/Token 统计
+    全部写入 ``ValhallaEntry``。"""
     try:
         with Session(engine) as session:
             cfg = session.exec(
@@ -440,24 +324,17 @@ def write_inherit(
             unfinished = _extract_unfinished(summary)
             created_at = time.time()
 
-            gen_dir = _gen_dir(user_id, ai_config_id, job_id, generation)
-            _write_job_meta_once(_job_dir(user_id, ai_config_id, job_id), job, cfg)
-
-            last_words_md = _render_last_words(
+            content = _render_last_words(
                 job=job, cfg=cfg, generation=generation, summary=summary,
                 token_used=token_used, artifacts=artifacts, unfinished=unfinished,
                 created_at=created_at,
             )
-            _safe_write(os.path.join(gen_dir, "last_words.md"), last_words_md)
-            _safe_write_json(os.path.join(gen_dir, "unfinished.json"), {"items": unfinished})
-            _safe_write_json(os.path.join(gen_dir, "artifacts.json"), {"items": artifacts})
-            _safe_write_json(os.path.join(gen_dir, "token_report.json"), {
+            token_report = {
                 "token_used": token_used,
                 "token_limit": int(cfg.token_limit or 0),
                 "message_count": len(messages),
-            })
+            }
 
-            rel_path = _rel_to_valhalla(user_id, ai_config_id, os.path.join(gen_dir, "last_words.md"))
             entry = ValhallaEntry(
                 user_id=user_id,
                 ai_config_id=ai_config_id,
@@ -467,7 +344,10 @@ def write_inherit(
                 generation=int(generation or 1),
                 kind="inherit",
                 session_id=session_id,
-                file_path=rel_path,
+                content=content,
+                unfinished_json=json.dumps(unfinished, ensure_ascii=False),
+                artifacts_json=json.dumps(artifacts, ensure_ascii=False),
+                token_report_json=json.dumps(token_report, ensure_ascii=False),
                 summary_excerpt=_excerpt(summary),
                 token_used=token_used,
                 token_limit=int(cfg.token_limit or 0),
@@ -478,16 +358,6 @@ def write_inherit(
             session.add(entry)
             session.commit()
             session.refresh(entry)
-
-            _append_to_registry(_valhalla_root(user_id, ai_config_id), {
-                "entry_id": entry.id,
-                "kind": "inherit",
-                "job_id": job_id,
-                "generation": generation,
-                "ai_config_id": ai_config_id,
-                "file_path": rel_path,
-                "created_at": created_at,
-            })
             return entry
     except Exception as exc:
         # best-effort：英灵殿写失败不应阻塞主任务
@@ -529,16 +399,16 @@ def write_complete(
             token_used = _session_token_total(messages)
             created_at = time.time()
 
-            gen_dir = _gen_dir(user_id, ai_config_id, job_id, generation)
-            _write_job_meta_once(_job_dir(user_id, ai_config_id, job_id), job, cfg)
-
-            final_words_md = _render_final_words(
+            content = _render_final_words(
                 job=job, cfg=cfg, generation=generation, summary=summary,
                 token_used=token_used, created_at=created_at,
             )
-            _safe_write(os.path.join(gen_dir, "final_words.md"), final_words_md)
+            token_report = {
+                "token_used": token_used,
+                "token_limit": int(cfg.token_limit or 0),
+                "message_count": len(messages),
+            }
 
-            rel_path = _rel_to_valhalla(user_id, ai_config_id, os.path.join(gen_dir, "final_words.md"))
             entry = ValhallaEntry(
                 user_id=user_id,
                 ai_config_id=ai_config_id,
@@ -548,7 +418,8 @@ def write_complete(
                 generation=int(generation or 1),
                 kind="complete",
                 session_id=session_id,
-                file_path=rel_path,
+                content=content,
+                token_report_json=json.dumps(token_report, ensure_ascii=False),
                 summary_excerpt=_excerpt(summary),
                 token_used=token_used,
                 token_limit=int(cfg.token_limit or 0),
@@ -557,16 +428,6 @@ def write_complete(
             session.add(entry)
             session.commit()
             session.refresh(entry)
-
-            _append_to_registry(_valhalla_root(user_id, ai_config_id), {
-                "entry_id": entry.id,
-                "kind": "complete",
-                "job_id": job_id,
-                "generation": generation,
-                "ai_config_id": ai_config_id,
-                "file_path": rel_path,
-                "created_at": created_at,
-            })
             return entry
     except Exception as exc:
         logger.exception(f"error: {exc}")
@@ -598,33 +459,29 @@ def read_entry_file(
     user_id: int,
     entry_id: int,
 ) -> Dict[str, Any]:
+    """返回单条英灵殿事件的完整正文 + 附属结构（全部来自数据库）。
+
+    ``sidecars`` 沿用旧文件名作为 key，保持前端零改动。
+    """
     with Session(engine) as session:
         row = session.get(ValhallaEntry, entry_id)
         if not row or row.user_id != user_id:
             raise FileNotFoundError("entry not found")
-        root = _valhalla_root(user_id, row.ai_config_id)
-        abs_path = safe_join(root, row.file_path)
-        content = ""
-        if os.path.exists(abs_path):
-            try:
-                with open(abs_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-            except Exception:
-                content = ""
-        # 同代目录下的附加 json
-        gen_dir = os.path.dirname(abs_path)
-        sidecars = {}
-        for name in ("unfinished.json", "artifacts.json", "token_report.json"):
-            p = os.path.join(gen_dir, name)
-            if os.path.exists(p):
-                try:
-                    with open(p, "r", encoding="utf-8") as f:
-                        sidecars[name] = json.load(f)
-                except Exception:
-                    pass
+
+        sidecars: Dict[str, Any] = {}
+        unfinished = _safe_load_json(row.unfinished_json, default=[])
+        if unfinished:
+            sidecars["unfinished.json"] = {"items": unfinished}
+        artifacts = _safe_load_json(row.artifacts_json, default=[])
+        if artifacts:
+            sidecars["artifacts.json"] = {"items": artifacts}
+        token_report = _safe_load_json(row.token_report_json, default={})
+        if token_report:
+            sidecars["token_report.json"] = token_report
+
         return {
             "entry": _entry_to_dict(row),
-            "content": content,
+            "content": row.content or "",
             "sidecars": sidecars,
         }
 
@@ -640,7 +497,6 @@ def delete_entries(
 
     deleted_ids: List[int] = []
     missing: List[int] = []
-    registry_updates: Dict[int, List[int]] = {}
 
     with Session(engine) as session:
         for entry_id in ids:
@@ -648,43 +504,45 @@ def delete_entries(
             if not row or row.user_id != user_id:
                 missing.append(entry_id)
                 continue
-
-            root = _valhalla_root(user_id, row.ai_config_id)
-            abs_path = safe_join(root, row.file_path)
-            gen_dir = os.path.dirname(abs_path)
-            rel_dir = os.path.dirname(row.file_path.replace("/", os.sep))
-            file_path = row.file_path
-            ai_config_id = row.ai_config_id
-
             session.delete(row)
             deleted_ids.append(entry_id)
-            registry_updates.setdefault(ai_config_id, []).append(entry_id)
-
-            try:
-                if os.path.exists(abs_path):
-                    os.remove(abs_path)
-                siblings = session.exec(
-                    select(ValhallaEntry).where(
-                        ValhallaEntry.user_id == user_id,
-                        ValhallaEntry.ai_config_id == ai_config_id,
-                        ValhallaEntry.file_path != file_path,
-                    )
-                ).all()
-                has_same_dir_entry = any(
-                    os.path.dirname(s.file_path.replace("/", os.sep)) == rel_dir
-                    for s in siblings
-                )
-                if not has_same_dir_entry and os.path.isdir(gen_dir):
-                    shutil.rmtree(gen_dir, ignore_errors=True)
-            except Exception as exc:
-                logger.exception(f"file cleanup failed for {entry_id}: {exc}")
-
         session.commit()
 
-    for ai_config_id, removed_ids in registry_updates.items():
-        _remove_from_registry(_valhalla_root(user_id, ai_config_id), removed_ids)
-
     return {"deleted": len(deleted_ids), "missing": missing, "deleted_ids": deleted_ids}
+
+
+def load_previous_unfinished(
+    *,
+    user_id: int,
+    ai_config_id: int,
+    job_id: str,
+    generation: int,
+) -> List[str]:
+    """读取某任务上一代（``generation - 1``）的未完成清单。"""
+    if generation <= 1 or not job_id:
+        return []
+    with Session(engine) as session:
+        row = session.exec(
+            select(ValhallaEntry).where(
+                ValhallaEntry.user_id == user_id,
+                ValhallaEntry.ai_config_id == ai_config_id,
+                ValhallaEntry.job_id == job_id,
+                ValhallaEntry.generation == int(generation - 1),
+                ValhallaEntry.kind == "inherit",
+            ).order_by(ValhallaEntry.created_at.desc())
+        ).first()
+        if not row:
+            return []
+        items = _safe_load_json(row.unfinished_json, default=[])
+    return [str(i).strip() for i in items if str(i).strip()][:20] if isinstance(items, list) else []
+
+
+def _safe_load_json(raw: Optional[str], *, default: Any) -> Any:
+    try:
+        value = json.loads(raw or "")
+    except Exception:
+        return default
+    return value if value is not None else default
 
 
 def _entry_to_dict(row: ValhallaEntry) -> Dict[str, Any]:
@@ -707,23 +565,3 @@ def _entry_to_dict(row: ValhallaEntry) -> Dict[str, Any]:
         "reason": row.reason,
         "created_at": row.created_at,
     }
-
-
-# ---------- 文件写入 ----------
-
-def _safe_write(path: str, text: str) -> None:
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(text)
-    except Exception as exc:
-        logger.info(f"{path}: {exc}")
-
-
-def _safe_write_json(path: str, data: Any) -> None:
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except Exception as exc:
-        logger.info(f"{path}: {exc}")
