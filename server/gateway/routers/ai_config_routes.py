@@ -160,10 +160,26 @@ async def create_ai_config(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
+    _ensure_ai_workspace_dir(user.id, cfg.id)
     _refresh_bot_long_connections_if_needed(
         any(bool(item.get("enabled")) for item in _bot_runtime_snapshot(cfg).values() if isinstance(item, dict))
     )
     return cfg
+
+
+def _ensure_ai_workspace_dir(user_id: int, ai_config_id: int) -> None:
+    """Eagerly create the AI's own working directory on creation.
+
+    Each AI gets a readable ``<id>-<slug>`` folder (admins share ``_admins``);
+    failures are best-effort since the directory is also created lazily on
+    first workspace use.
+    """
+    try:
+        from mcp_runtime.mcp import get_project_root
+
+        get_project_root(user_id, ai_config_id)
+    except Exception:
+        logger.exception(f"failed to create workspace dir for ai_config {ai_config_id}")
 
 
 def _apply_bot_configs_from_payload(
@@ -460,6 +476,7 @@ async def clone_ai_config(
     session.add(new_cfg)
     session.commit()
     session.refresh(new_cfg)
+    _ensure_ai_workspace_dir(user.id, new_cfg.id)
     return new_cfg
 
 

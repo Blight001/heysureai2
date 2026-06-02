@@ -22,24 +22,18 @@ logger = logging.getLogger(__name__)
 
 
 def _load_previous_unfinished_block(user_id: int, ai_config_id: int, job_id: str, generation: int) -> str:
-    """从 Valhalla/<job_id>/g<N-1>/unfinished.json 读取上代未完成事项，
+    """读取上代（``generation - 1``）的未完成清单（来自 ValhallaEntry），
     拼成结构化 prompt 块；无则返回空串。"""
     if generation <= 1 or not job_id:
         return ""
     try:
-        from mcp_runtime.mcp.core import _resolve_ai_workspace, safe_join
-        import os, json
-        ws = _resolve_ai_workspace(user_id, ai_config_id)
-        rel = os.path.join("Valhalla", job_id, f"g{generation - 1}", "unfinished.json")
-        path = safe_join(ws, rel)
-        if not os.path.exists(path):
-            return ""
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        items = data.get("items") if isinstance(data, dict) else None
-        if not items or not isinstance(items, list):
-            return ""
-        items = [str(i).strip() for i in items if str(i).strip()][:20]
+        from api.services import valhalla_service
+        items = valhalla_service.load_previous_unfinished(
+            user_id=user_id,
+            ai_config_id=ai_config_id,
+            job_id=job_id,
+            generation=generation,
+        )
         if not items:
             return ""
         lines = ["[上代未完成清单]"] + [f"{i + 1}. {it}" for i, it in enumerate(items)] + [""]

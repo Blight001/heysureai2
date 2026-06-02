@@ -14,7 +14,7 @@ from api.auth import (
     verify_password,
 )
 from api.core.config import (
-    USER_WORKSPACE_SUBFOLDERS,
+    USER_SHARED_SUBFOLDERS,
     WORKSPACE_DIR,
     user_workspace_dir,
 )
@@ -46,14 +46,18 @@ def _parse_bool_setting(value, default: bool = True) -> bool:
     return default
 
 def ensure_user_workspace(user_id: int) -> None:
-    """Ensure the per-user workspace directory and its standard subfolders exist."""
+    """Ensure the per-user workspace root and the shared knowledge base exist.
+
+    Per-AI working directories are created lazily on first use
+    (``get_project_root``); only the user-level shared folders are seeded here.
+    """
     user_dir = user_workspace_dir(user_id)
     try:
         os.makedirs(WORKSPACE_DIR, exist_ok=True)
         if not os.path.exists(user_dir):
             os.makedirs(user_dir)
             logger.info(f"Created user directory: {user_dir}")
-        for folder in USER_WORKSPACE_SUBFOLDERS:
+        for folder in USER_SHARED_SUBFOLDERS:
             folder_path = os.path.join(user_dir, folder)
             if not os.path.exists(folder_path):
                 os.makedirs(folder_path)
