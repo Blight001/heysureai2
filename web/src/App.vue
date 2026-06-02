@@ -184,6 +184,8 @@ onBeforeUnmount(() => {
           ? 'bg-zinc-950 text-zinc-100'
           : 'bg-gradient-to-br from-zinc-50 via-white to-indigo-50 text-zinc-900'"
       >
+        <div class="startup-orb startup-orb-left pointer-events-none"></div>
+        <div class="startup-orb startup-orb-right pointer-events-none"></div>
         <div class="relative w-full max-w-lg px-6">
           <div
             class="rounded-3xl px-8 py-10 text-center shadow-2xl backdrop-blur-xl"
