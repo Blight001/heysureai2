@@ -24,7 +24,7 @@ from sqlmodel import Session, SQLModel, select
 
 from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.auth import get_password_hash
-from api.core.config import user_workspace_dir
+from api.core.config import DATA_DIR, user_workspace_dir
 from api.core.logging_config import get_recent_logs
 from api.core.settings import settings
 from api.database import get_session
@@ -522,6 +522,216 @@ def delete_user(
         detail=f"删除用户 {target_name}（{target_account}）及其所有数据",
     )
     return {"ok": True, "user_id": user_id}
+
+
+# ---------------------------------------------------------------------------
+# Data folder file manager
+#
+# Lets staff browse / view / edit / create / delete files under the server's
+# ``data`` directory (``server/data``, mounted at ``/app/data``). Every path is
+# resolved with ``realpath`` and checked to live inside ``DATA_ROOT`` so a
+# crafted ``..`` or symlink can never escape the sandbox. Writes/deletes are
+# audited just like the other privileged actions.
+# ---------------------------------------------------------------------------
+
+
+DATA_ROOT = os.path.realpath(DATA_DIR)
+# Cap the size we're willing to load into the in-browser editor. Larger files
+# are listed but not opened for editing (they'd freeze the textarea anyway).
+MAX_EDIT_BYTES = 1024 * 1024  # 1 MiB
+
+
+class FileWritePayload(BaseModel):
+    path: str
+    content: str = ""
+
+
+class FilePathPayload(BaseModel):
+    path: str
+
+
+class FileRenamePayload(BaseModel):
+    path: str
+    new_path: str
+
+
+def _safe_data_path(rel: str) -> str:
+    """Resolve ``rel`` against the data root, rejecting any escape attempt.
+
+    Returns the absolute, symlink-resolved path. The result is guaranteed to
+    be ``DATA_ROOT`` itself or a descendant of it.
+    """
+    rel = (rel or "").strip().replace("\\", "/").lstrip("/")
+    full = os.path.realpath(os.path.join(DATA_ROOT, rel))
+    if full != DATA_ROOT and not full.startswith(DATA_ROOT + os.sep):
+        raise HTTPException(status_code=400, detail="非法的文件路径")
+    return full
+
+
+def _rel_to_root(full: str) -> str:
+    rel = os.path.relpath(full, DATA_ROOT).replace(os.sep, "/")
+    return "" if rel == "." else rel
+
+
+def _entry_info(full: str) -> dict:
+    st = os.stat(full)
+    is_dir = os.path.isdir(full)
+    return {
+        "name": os.path.basename(full),
+        "path": _rel_to_root(full),
+        "is_dir": is_dir,
+        "size": 0 if is_dir else st.st_size,
+        "modified": st.st_mtime,
+    }
+
+
+def _is_probably_text(data: bytes) -> bool:
+    if b"\x00" in data:
+        return False
+    try:
+        data.decode("utf-8")
+        return True
+    except UnicodeDecodeError:
+        return False
+
+
+@router.get("/files")
+def list_files(path: str = "", _admin: User = Depends(require_admin_user)) -> dict:
+    full = _safe_data_path(path)
+    # The data dir may not exist yet on a fresh install — present it as empty.
+    if not os.path.exists(full):
+        if full == DATA_ROOT:
+            return {"path": "", "entries": []}
+        raise HTTPException(status_code=404, detail="路径不存在")
+    if not os.path.isdir(full):
+        raise HTTPException(status_code=400, detail="该路径不是文件夹")
+    entries = []
+    for name in os.listdir(full):
+        try:
+            entries.append(_entry_info(os.path.join(full, name)))
+        except OSError:
+            continue  # vanished mid-listing / unreadable — skip it
+    # Folders first, then files, each alphabetical (case-insensitive).
+    entries.sort(key=lambda e: (not e["is_dir"], e["name"].lower()))
+    return {"path": _rel_to_root(full), "entries": entries}
+
+
+@router.get("/files/read")
+def read_file(path: str, _admin: User = Depends(require_admin_user)) -> dict:
+    full = _safe_data_path(path)
+    if not os.path.isfile(full):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    size = os.path.getsize(full)
+    if size > MAX_EDIT_BYTES:
+        return {"path": _rel_to_root(full), "size": size, "binary": False, "too_large": True, "content": ""}
+    with open(full, "rb") as f:
+        data = f.read()
+    if not _is_probably_text(data):
+        return {"path": _rel_to_root(full), "size": size, "binary": True, "too_large": False, "content": ""}
+    return {
+        "path": _rel_to_root(full),
+        "size": size,
+        "binary": False,
+        "too_large": False,
+        "content": data.decode("utf-8"),
+    }
+
+
+@router.put("/files")
+def write_file(
+    payload: FileWritePayload,
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_admin_user),
+) -> dict:
+    full = _safe_data_path(payload.path)
+    if full == DATA_ROOT:
+        raise HTTPException(status_code=400, detail="非法的文件路径")
+    if os.path.isdir(full):
+        raise HTTPException(status_code=400, detail="目标是文件夹，无法写入")
+    if len(payload.content.encode("utf-8")) > MAX_EDIT_BYTES:
+        raise HTTPException(status_code=400, detail="文件内容过大")
+    existed = os.path.exists(full)
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    with open(full, "w", encoding="utf-8", newline="") as f:
+        f.write(payload.content)
+    rel = _rel_to_root(full)
+    _record_audit(
+        session, actor, "file_write",
+        target_type="file", target_id=rel, target_label=rel,
+        detail=f"{'修改' if existed else '新建'}文件 data/{rel}",
+    )
+    return {"ok": True, "path": rel, "created": not existed}
+
+
+@router.post("/files/mkdir")
+def make_dir(
+    payload: FilePathPayload,
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_admin_user),
+) -> dict:
+    full = _safe_data_path(payload.path)
+    if full == DATA_ROOT:
+        raise HTTPException(status_code=400, detail="非法的文件夹路径")
+    if os.path.exists(full):
+        raise HTTPException(status_code=400, detail="该路径已存在")
+    os.makedirs(full, exist_ok=False)
+    rel = _rel_to_root(full)
+    _record_audit(
+        session, actor, "file_mkdir",
+        target_type="file", target_id=rel, target_label=rel,
+        detail=f"新建文件夹 data/{rel}",
+    )
+    return {"ok": True, "path": rel}
+
+
+@router.post("/files/rename")
+def rename_path(
+    payload: FileRenamePayload,
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_admin_user),
+) -> dict:
+    src = _safe_data_path(payload.path)
+    dst = _safe_data_path(payload.new_path)
+    if src == DATA_ROOT or dst == DATA_ROOT:
+        raise HTTPException(status_code=400, detail="非法的文件路径")
+    if not os.path.exists(src):
+        raise HTTPException(status_code=404, detail="源文件不存在")
+    if os.path.exists(dst):
+        raise HTTPException(status_code=400, detail="目标已存在")
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    os.rename(src, dst)
+    src_rel, dst_rel = _rel_to_root(src), _rel_to_root(dst)
+    _record_audit(
+        session, actor, "file_rename",
+        target_type="file", target_id=dst_rel, target_label=dst_rel,
+        detail=f"重命名 data/{src_rel} → data/{dst_rel}",
+    )
+    return {"ok": True, "path": dst_rel}
+
+
+@router.delete("/files")
+def delete_path(
+    path: str,
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_admin_user),
+) -> dict:
+    full = _safe_data_path(path)
+    if full == DATA_ROOT:
+        raise HTTPException(status_code=400, detail="不能删除数据根目录")
+    if not os.path.exists(full):
+        raise HTTPException(status_code=404, detail="路径不存在")
+    rel = _rel_to_root(full)
+    is_dir = os.path.isdir(full)
+    if is_dir:
+        shutil.rmtree(full, ignore_errors=True)
+    else:
+        os.remove(full)
+    _record_audit(
+        session, actor, "file_delete",
+        target_type="file", target_id=rel, target_label=rel,
+        detail=f"删除{'文件夹' if is_dir else '文件'} data/{rel}",
+    )
+    return {"ok": True, "path": rel}
 
 
 # ---------------------------------------------------------------------------
