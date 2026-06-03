@@ -73,3 +73,6 @@ server/data/
 *.tmp
 *.temp
 *.bak
+
+
+doc/项目升级计划.md
