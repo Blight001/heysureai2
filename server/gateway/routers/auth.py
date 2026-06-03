@@ -251,10 +251,20 @@ async def update_profile(
             
     for key, value in update_data.items():
         setattr(user, key, value)
-        
+
     session.add(user)
     session.commit()
     session.refresh(user)
+    # 文件为真相源：把本次更新涉及的系统提示字段同步写回 KnowledgeBase/system/*.md。
+    try:
+        from api.services import kb_store
+
+        kb_store.ensure_user_kb(user.id)
+        for key, _kind in kb_store.SYSTEM_PROMPT_KEYS:
+            if key in update_data:
+                kb_store.write_system_prompt(user.id, key, getattr(user, key, ""))
+    except Exception:
+        pass
     return user
 
 @router.get("/me", response_model=UserRead)

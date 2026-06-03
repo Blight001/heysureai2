@@ -134,7 +134,12 @@ def _user_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
         with Session(engine) as session:
             user = session.get(User, user_id)
             if user:
-                notice_template = str(getattr(user, "prompt_user_message_notice", "") or "")
+                from api.services import kb_store
+
+                notice_template = kb_store.effective_system_value(
+                    user_id, "prompt_user_message_notice",
+                    getattr(user, "prompt_user_message_notice", ""),
+                )
     except Exception:
         notice_template = ""
     notice = ""

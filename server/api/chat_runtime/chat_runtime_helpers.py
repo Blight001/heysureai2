@@ -57,15 +57,17 @@ def _resolve_ai_runtime(session: Session, user: User, ai_kind: str, ai_config_id
         if not cfg.enabled:
             raise HTTPException(status_code=400, detail="Selected assistant AI is stopped")
         api_key, base_url, model = resolve_model_preset(user, cfg)
-        # Strip auto-injected runtime sections before appending current effective values.
-        system_prompt = _strip_runtime_injected_sections(cfg.prompt or "")
+        # 方案 A：人格 Prompt 直接读 KnowledgeBase/personas/*.md（文件缺失回退 DB）。
+        system_prompt = _strip_runtime_injected_sections(kb_store.effective_ai_prompt(user.id, cfg))
         # Show the effective runtime workspace (absolute path), not only raw config text like ".".
         system_prompt = _append_prompt_section(system_prompt, "AI 工作目录", get_project_root(user.id, cfg.id))
         if cfg.database_uri:
             system_prompt = _append_prompt_section(system_prompt, "AI 数据库连接", cfg.database_uri)
     else:
         api_key, base_url, model = resolve_model_preset(user, None)
-        system_prompt = _strip_runtime_injected_sections(user.admin_prompt or "")
+        system_prompt = _strip_runtime_injected_sections(
+            kb_store.effective_system_value(user.id, "admin_prompt", user.admin_prompt)
+        )
     if not api_key:
         raise HTTPException(status_code=400, detail="Admin API key not configured")
     if not base_url:

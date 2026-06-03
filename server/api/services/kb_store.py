@@ -372,6 +372,56 @@ def sync_personas_to_db(user_id: int, *, session: Optional[Session] = None) -> b
     return changed
 
 
+# ---------- 直接读文件的运行时访问器（方案 A：文件优先、DB 兜底） ----------
+
+def effective_ai_prompt(user_id: int, cfg: Any) -> str:
+    """AI 人格 Prompt：直接读 personas/*.md；文件缺失回退 cfg.prompt。"""
+    if user_id and cfg is not None and getattr(cfg, "id", None) is not None:
+        raw = _read_text(_persona_path(int(user_id), cfg.id, cfg.name))
+        if raw is not None:
+            try:
+                _meta, sections = _parse_persona(raw)
+                if "prompt" in sections:
+                    return sections["prompt"]
+            except Exception:
+                pass
+    return str(getattr(cfg, "prompt", "") or "") if cfg is not None else ""
+
+
+def effective_auto_control_json(user_id: int, cfg: Any) -> str:
+    """system_auto_control JSON：把 persona 文件里的 4 个 Prompt 段覆盖进 cfg 的
+    JSON（保留 enabled / tasks 等其余键）；文件缺失原样返回 cfg 值。"""
+    base = str(getattr(cfg, "system_auto_control", "") or "") if cfg is not None else ""
+    if not (user_id and cfg is not None and getattr(cfg, "id", None) is not None):
+        return base
+    raw = _read_text(_persona_path(int(user_id), cfg.id, cfg.name))
+    if raw is None:
+        return base
+    try:
+        _meta, sections = _parse_persona(raw)
+        try:
+            auto = json.loads(base or "{}")
+            if not isinstance(auto, dict):
+                auto = {}
+        except Exception:
+            auto = {}
+        for key in _PERSONA_AUTO_KEYS:
+            if key in sections:
+                auto[key] = sections[key]
+        return json.dumps(auto, ensure_ascii=False)
+    except Exception:
+        return base
+
+
+def effective_system_value(user_id: int, key: str, fallback: Any) -> str:
+    """系统提示（文本）：直接读 system/<key>.md；文件缺失回退传入的 DB 值。"""
+    if user_id:
+        body = read_system_prompt(int(user_id), key)
+        if body is not None:
+            return body
+    return str(fallback if fallback is not None else "")
+
+
 # ============================================================
 # 3) 固有属性（MCP 介绍 / 参数）—— mcp/<namespace>/<tool>.md
 # ============================================================

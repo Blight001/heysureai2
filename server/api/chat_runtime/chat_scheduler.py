@@ -307,8 +307,11 @@ def process_task_scheduler() -> Dict[str, int]:
                 AssistantAIConfig.enabled == True,
             )
         ).all()
+        from api.services import kb_store
+
         for cfg in cfgs:
-            ctl = normalize_system_auto_control(cfg.system_auto_control)
+            # 方案 A：自动控制（含定时任务配置）直接读 personas 文件（缺失回退 DB）。
+            ctl = normalize_system_auto_control(kb_store.effective_auto_control_json(cfg.user_id, cfg))
             if ctl.get("enabled"):
                 queued += _ensure_scheduled_jobs(session, cfg, ctl, now)
 

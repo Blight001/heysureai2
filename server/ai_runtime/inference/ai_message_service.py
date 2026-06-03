@@ -455,7 +455,12 @@ def _send_inquiry_reply_reminder(*, message_id: str, user_id: int, elapsed_secon
             return {"reminded": False, "reason": "missing_target_session"}
         target_ai_config_id = int(row.to_ai_config_id)
         ai_kind = "assistant" if target_cfg.ai_role == "assistant_admin" else "core"
-        template = str(getattr(user, "prompt_ai_message_inquiry_reminder", "") or "").strip()
+        from api.services import kb_store
+
+        template = kb_store.effective_system_value(
+            getattr(user, "id", 0), "prompt_ai_message_inquiry_reminder",
+            getattr(user, "prompt_ai_message_inquiry_reminder", ""),
+        ).strip()
         content = _safe_format_template(template, {
             "message_id": row.message_id,
             "from_ai_name": from_name,
