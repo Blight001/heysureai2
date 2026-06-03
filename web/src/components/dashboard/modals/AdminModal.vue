@@ -79,6 +79,12 @@ const fileLoading = ref(false)
 const fileSaving = ref(false)
 const fileBinary = ref(false)
 const fileTooLarge = ref(false)
+const fileKind = ref<'text' | 'image' | 'binary'>('text')   // viewer for the open file
+const fileImageUrl = ref('')                                 // object URL for image preview
+const fileDownloading = ref(false)
+// Batch selection (relative paths of ticked rows in the current directory)
+const fileSelected = ref<Set<string>>(new Set())
+const fileBatchBusy = ref(false)
 
 // ---- Database browser ----
 const dbTables = ref<DbTableMeta[]>([])
@@ -388,14 +394,23 @@ const closeFile = () => {
   fileOriginal.value = ''
   fileBinary.value = false
   fileTooLarge.value = false
+  fileKind.value = 'text'
+  if (fileImageUrl.value) {
+    URL.revokeObjectURL(fileImageUrl.value)
+    fileImageUrl.value = ''
+  }
 }
 
 const loadFiles = async (path = filePath.value, silent = false) => {
   if (!silent) filesLoading.value = true
   try {
     const res = await adminApi.listFiles(path)
+    if (res.path !== filePath.value) fileSelected.value = new Set()  // reset on navigation
     filePath.value = res.path
     fileEntries.value = res.entries
+    // Drop ticks for entries that no longer exist (e.g. after a delete).
+    const live = new Set(res.entries.map(e => e.path))
+    fileSelected.value = new Set([...fileSelected.value].filter(p => live.has(p)))
   } catch (err) {
     await alert({ message: (err as Error).message, type: 'error' })
   } finally {
@@ -403,17 +418,23 @@ const loadFiles = async (path = filePath.value, silent = false) => {
   }
 }
 
-const openFile = async (path: string) => {
+const openFile = async (entry: FileEntry) => {
+  closeFile()
   fileLoading.value = true
-  editingFile.value = path
-  fileBinary.value = false
-  fileTooLarge.value = false
+  editingFile.value = entry.path
   try {
-    const res = await adminApi.readFile(path)
+    if (entry.kind === 'image') {
+      fileKind.value = 'image'
+      const blob = await adminApi.fetchFileBlob(entry.path)
+      fileImageUrl.value = URL.createObjectURL(blob)
+      return
+    }
+    const res = await adminApi.readFile(entry.path)
     fileBinary.value = res.binary
     fileTooLarge.value = res.too_large
     fileContent.value = res.content
     fileOriginal.value = res.content
+    fileKind.value = res.binary ? 'binary' : 'text'
   } catch (err) {
     editingFile.value = null
     await alert({ message: (err as Error).message, type: 'error' })
@@ -424,7 +445,73 @@ const openFile = async (path: string) => {
 
 const openEntry = (entry: FileEntry) => {
   if (entry.is_dir) void loadFiles(entry.path)
-  else void openFile(entry.path)
+  else void openFile(entry)
+}
+
+const downloadFile = async (path: string, name: string) => {
+  fileDownloading.value = true
+  try {
+    const blob = await adminApi.fetchFileBlob(path)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    fileDownloading.value = false
+  }
+}
+
+// ---- Batch selection ----
+const fileAllSelected = computed(() =>
+  fileEntries.value.length > 0 && fileSelected.value.size === fileEntries.value.length,
+)
+
+const toggleSelect = (path: string) => {
+  const next = new Set(fileSelected.value)
+  if (next.has(path)) next.delete(path)
+  else next.add(path)
+  fileSelected.value = next
+}
+
+const toggleSelectAll = () => {
+  fileSelected.value = fileAllSelected.value
+    ? new Set()
+    : new Set(fileEntries.value.map(e => e.path))
+}
+
+const batchDelete = async () => {
+  const paths = [...fileSelected.value]
+  if (!paths.length) return
+  const ok = await confirm({
+    message: `确认删除选中的 ${paths.length} 项？文件夹内的所有内容也会一并删除，此操作不可恢复。`,
+    type: 'warning',
+    confirmText: '删除',
+  })
+  if (!ok) return
+  fileBatchBusy.value = true
+  try {
+    const res = await adminApi.batchDeleteFiles(paths)
+    if (editingFile.value !== null && res.deleted.includes(editingFile.value)) closeFile()
+    fileSelected.value = new Set()
+    await loadFiles()
+    if (res.errors.length) {
+      await alert({
+        message: `已删除 ${res.deleted.length} 项，${res.errors.length} 项失败：` +
+          res.errors.map(e => `${e.path}（${e.error}）`).join('；'),
+        type: 'warning',
+      })
+    }
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    fileBatchBusy.value = false
+  }
 }
 
 const saveFile = async () => {
@@ -454,7 +541,8 @@ const newFile = async () => {
   try {
     await adminApi.writeFile(path, '')
     await loadFiles()
-    await openFile(path)
+    const entry = fileEntries.value.find(e => e.path === path)
+    if (entry) await openFile(entry)
   } catch (err) {
     await alert({ message: (err as Error).message, type: 'error' })
   }
@@ -693,6 +781,7 @@ watch(
     closeFile()
     filePath.value = ''
     fileEntries.value = []
+    fileSelected.value = new Set()
     dbEditor.value = null
     dbActiveTable.value = ''
     dbRows.value = []
@@ -703,7 +792,10 @@ watch(
   },
 )
 
-onUnmounted(stopAutoRefresh)
+onUnmounted(() => {
+  stopAutoRefresh()
+  if (fileImageUrl.value) URL.revokeObjectURL(fileImageUrl.value)
+})
 
 const avatarFor = (u: AdminUser) =>
   resolveAvatarUrl(u.avatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(u.name)}`
@@ -977,7 +1069,7 @@ const avatarFor = (u: AdminUser) =>
 
           <!-- ============ Files tab ============ -->
           <div v-show="tab === 'files'" class="flex-1 overflow-y-auto p-5">
-            <!-- File editor (shown when a file is open) -->
+            <!-- File editor / viewer (shown when a file is open) -->
             <div v-if="editingFile !== null">
               <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <div class="flex items-center gap-2 min-w-0">
@@ -988,16 +1080,38 @@ const avatarFor = (u: AdminUser) =>
                   <span class="text-sm font-mono text-zinc-700 dark:text-zinc-300 truncate" :title="editingFile">data/{{ editingFile }}</span>
                   <span v-if="fileDirty" class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">未保存</span>
                 </div>
-                <button
-                  v-if="!fileBinary && !fileTooLarge"
-                  class="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-                  :disabled="fileSaving || !fileDirty"
-                  @click="saveFile"
-                >{{ fileSaving ? '保存中…' : '保存' }}</button>
+                <div class="flex items-center gap-2">
+                  <button
+                    class="text-xs px-3 py-1.5 rounded-lg border border-zinc-200 text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-400 disabled:opacity-50"
+                    :disabled="fileDownloading"
+                    @click="downloadFile(editingFile, editingFile.split('/').pop() || 'file')"
+                  >{{ fileDownloading ? '下载中…' : '↓ 下载' }}</button>
+                  <button
+                    v-if="fileKind === 'text' && !fileTooLarge"
+                    class="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                    :disabled="fileSaving || !fileDirty"
+                    @click="saveFile"
+                  >{{ fileSaving ? '保存中…' : '保存' }}</button>
+                </div>
               </div>
               <div v-if="fileLoading" class="text-center text-zinc-400 py-12 text-sm">加载中…</div>
-              <div v-else-if="fileBinary" class="text-center text-zinc-400 py-12 text-sm">这是二进制文件，无法在线编辑。</div>
-              <div v-else-if="fileTooLarge" class="text-center text-zinc-400 py-12 text-sm">文件过大（&gt; 1&nbsp;MB），无法在线编辑。</div>
+              <!-- Image preview -->
+              <div v-else-if="fileKind === 'image'" class="flex items-center justify-center bg-zinc-100 dark:bg-zinc-950 rounded-xl p-4 h-[58vh] overflow-auto">
+                <img v-if="fileImageUrl" :src="fileImageUrl" :alt="editingFile" class="max-w-full max-h-full object-contain" />
+                <span v-else class="text-zinc-400 text-sm">无法预览此图片</span>
+              </div>
+              <!-- Binary / oversized: download only -->
+              <div v-else-if="fileKind === 'binary' || fileTooLarge" class="text-center text-zinc-400 py-12 text-sm">
+                {{ fileTooLarge ? '文件过大（> 1 MB），无法在线编辑。' : '这是二进制文件，无法在线编辑。' }}
+                <div class="mt-3">
+                  <button
+                    class="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                    :disabled="fileDownloading"
+                    @click="downloadFile(editingFile, editingFile.split('/').pop() || 'file')"
+                  >↓ 下载文件</button>
+                </div>
+              </div>
+              <!-- Text editor -->
               <textarea
                 v-else
                 v-model="fileContent"
@@ -1031,10 +1145,35 @@ const avatarFor = (u: AdminUser) =>
                 </div>
               </div>
 
+              <!-- Batch action bar -->
+              <Transition name="fade">
+                <div v-if="fileSelected.size" class="mb-3 flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/60">
+                  <span class="text-xs text-indigo-700 dark:text-indigo-300">已选中 {{ fileSelected.size }} 项</span>
+                  <div class="flex items-center gap-2">
+                    <button class="text-xs px-2 py-1 rounded-lg text-zinc-500 hover:text-zinc-700 dark:text-zinc-400" @click="fileSelected = new Set()">取消选择</button>
+                    <button
+                      class="text-xs px-3 py-1 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                      :disabled="fileBatchBusy"
+                      @click="batchDelete"
+                    >{{ fileBatchBusy ? '删除中…' : '批量删除' }}</button>
+                  </div>
+                </div>
+              </Transition>
+
               <div class="border border-zinc-200 rounded-xl overflow-hidden dark:border-zinc-800">
                 <table class="w-full text-xs">
                   <thead class="bg-zinc-50 text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
                     <tr>
+                      <th class="w-8 px-3 py-2">
+                        <input
+                          type="checkbox"
+                          class="accent-indigo-500 align-middle"
+                          :checked="fileAllSelected"
+                          :disabled="!fileEntries.length"
+                          title="全选 / 取消全选"
+                          @change="toggleSelectAll"
+                        />
+                      </th>
                       <th class="text-left px-3 py-2 font-medium">名称</th>
                       <th class="text-left px-3 py-2 font-medium hidden sm:table-cell">大小</th>
                       <th class="text-left px-3 py-2 font-medium hidden md:table-cell">修改时间</th>
@@ -1043,22 +1182,36 @@ const avatarFor = (u: AdminUser) =>
                   </thead>
                   <tbody>
                     <tr v-if="!fileEntries.length && !filesLoading">
-                      <td colspan="4" class="px-3 py-8 text-center text-zinc-400">此文件夹为空</td>
+                      <td colspan="5" class="px-3 py-8 text-center text-zinc-400">此文件夹为空</td>
                     </tr>
                     <tr
                       v-for="entry in fileEntries"
                       :key="entry.path"
                       class="border-t border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                      :class="fileSelected.has(entry.path) ? 'bg-indigo-50/40 dark:bg-indigo-900/10' : ''"
                     >
                       <td class="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          class="accent-indigo-500 align-middle"
+                          :checked="fileSelected.has(entry.path)"
+                          @change="toggleSelect(entry.path)"
+                        />
+                      </td>
+                      <td class="px-3 py-2">
                         <button class="flex items-center gap-2 text-left min-w-0" @click="openEntry(entry)">
-                          <span class="shrink-0">{{ entry.is_dir ? '📁' : '📄' }}</span>
+                          <span class="shrink-0">{{ entry.is_dir ? '📁' : entry.kind === 'image' ? '🖼️' : '📄' }}</span>
                           <span class="text-zinc-700 dark:text-zinc-200 truncate hover:text-indigo-600 dark:hover:text-indigo-300" :title="entry.name">{{ entry.name }}</span>
                         </button>
                       </td>
                       <td class="px-3 py-2 text-zinc-400 hidden sm:table-cell">{{ entry.is_dir ? '—' : fmtSize(entry.size) }}</td>
                       <td class="px-3 py-2 text-zinc-400 hidden md:table-cell whitespace-nowrap">{{ fmtTime(entry.modified) }}</td>
                       <td class="px-3 py-2 text-right whitespace-nowrap">
+                        <button
+                          v-if="!entry.is_dir"
+                          class="text-[11px] px-2 py-1 rounded-lg text-zinc-500 hover:text-indigo-600 dark:text-zinc-400"
+                          @click="downloadFile(entry.path, entry.name)"
+                        >下载</button>
                         <button
                           class="text-[11px] px-2 py-1 rounded-lg text-zinc-500 hover:text-indigo-600 dark:text-zinc-400"
                           @click="renameEntry(entry)"
@@ -1072,7 +1225,7 @@ const avatarFor = (u: AdminUser) =>
                   </tbody>
                 </table>
               </div>
-              <p class="mt-3 text-[11px] text-zinc-400">浏览的是服务器 <code class="font-mono">server/data</code> 目录。文本文件可在线查看与编辑（上限 1&nbsp;MB），二进制与超大文件仅可浏览、重命名或删除。</p>
+              <p class="mt-3 text-[11px] text-zinc-400">浏览的是服务器 <code class="font-mono">server/data</code> 目录。文本文件可在线查看与编辑（上限 1&nbsp;MB），图片可直接预览，其它文件可下载；勾选多项可批量删除。</p>
             </div>
           </div>
 
