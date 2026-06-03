@@ -35,8 +35,30 @@ from sqlmodel import Session, select
 from ..core.config import _ai_dir_slug, user_shared_knowledge_dir
 from ..database import engine
 from ..models import AssistantAIConfig, User
+from ..models import defaults as _defaults
 
 logger = logging.getLogger(__name__)
+
+# 系统提示字段的内置默认值（列已物理删除后，新用户的 system/*.md 由此播种，
+# 运行时文件缺失也回退到这里）。键与 SYSTEM_PROMPT_KEYS 对齐。
+_SYSTEM_PROMPT_DEFAULTS: Dict[str, str] = {
+    "admin_prompt": "你是一个全能的管理员，负责管理和协调整个项目。",
+    "mcp_call_method": _defaults.DEFAULT_MCP_CALL_METHOD,
+    "mcp_namespace_hints": _defaults.DEFAULT_MCP_NAMESPACE_HINTS,
+    "mcp_dynamic_rule": _defaults.DEFAULT_MCP_DYNAMIC_RULE,
+    "mcp_format_error_hint": _defaults.DEFAULT_MCP_FORMAT_ERROR_HINT,
+    "default_start_task_prompt": _defaults.DEFAULT_START_TASK_PROMPT,
+    "default_resume_task_prompt": _defaults.DEFAULT_RESUME_TASK_PROMPT,
+    "default_supervision_prompt": _defaults.DEFAULT_SUPERVISION_PROMPT,
+    "default_inheritance_notice": _defaults.DEFAULT_INHERITANCE_NOTICE,
+    "prompt_ai_message_notify": _defaults.DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
+    "prompt_ai_message_inquiry": _defaults.DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
+    "prompt_ai_message_inquiry_reminder": _defaults.DEFAULT_AI_MESSAGE_INQUIRY_REMINDER,
+    "prompt_ai_message_reply": _defaults.DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
+    "prompt_ai_message_chitchat": _defaults.DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE,
+    "prompt_ai_message_reply_success": _defaults.DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
+    "prompt_user_message_notice": _defaults.DEFAULT_USER_MESSAGE_NOTICE,
+}
 
 
 # ---------- 目录布局 ----------
@@ -49,6 +71,9 @@ TOPICS_DIR = "topics"
 
 # system/ 下每个文件对应 User 表的一个字段。``number`` 字段以纯文本存储，
 # 同步回库时再转成 int。键集合与 librarian_service._SYSTEM_PROMPT_SECTIONS 对齐。
+# 仅文本类系统提示文件化（真相源 = system/<key>.md）。数值设置项
+# （default_supervision_idle_seconds / ai_message_inquiry_reminder_seconds /
+# mcp_max_steps 等）是配置而非提示词，仍留在数据库，不在此列。
 SYSTEM_PROMPT_KEYS: Tuple[Tuple[str, str], ...] = (
     ("admin_prompt", "text"),
     ("mcp_call_method", "text"),
@@ -58,11 +83,9 @@ SYSTEM_PROMPT_KEYS: Tuple[Tuple[str, str], ...] = (
     ("default_start_task_prompt", "text"),
     ("default_resume_task_prompt", "text"),
     ("default_supervision_prompt", "text"),
-    ("default_supervision_idle_seconds", "number"),
     ("default_inheritance_notice", "text"),
     ("prompt_ai_message_notify", "text"),
     ("prompt_ai_message_inquiry", "text"),
-    ("ai_message_inquiry_reminder_seconds", "number"),
     ("prompt_ai_message_inquiry_reminder", "text"),
     ("prompt_ai_message_reply", "text"),
     ("prompt_ai_message_chitchat", "text"),
@@ -168,10 +191,19 @@ def write_system_prompt(user_id: int, key: str, value: Any) -> None:
 
 
 def seed_system_prompts(user_id: int, user: User) -> None:
-    """首次迁移：把 User 表里的系统提示导出成文件（已存在的跳过）。"""
-    for key, _kind in SYSTEM_PROMPT_KEYS:
-        if _read_text(_system_path(user_id, key)) is None:
-            write_system_prompt(user_id, key, getattr(user, key, ""))
+    """首次迁移 / 新用户：把系统提示写成文件（已存在的跳过）。
+
+    列存在时用其值；列已物理删除（或为空）时回退到内置默认。"""
+    for key, kind in SYSTEM_PROMPT_KEYS:
+        if _read_text(_system_path(user_id, key)) is not None:
+            continue
+        if kind == "number":
+            value = getattr(user, key, "")
+        else:
+            value = getattr(user, key, None)
+            if value in (None, ""):
+                value = _SYSTEM_PROMPT_DEFAULTS.get(key, "")
+        write_system_prompt(user_id, key, value)
 
 
 def _coerce_number(key: str, raw: str) -> int:
@@ -225,25 +257,28 @@ def _persona_path(user_id: int, cfg_id: int, name: str) -> str:
     return os.path.join(_kb_root(user_id), PERSONAS_DIR, fname)
 
 
-def _render_persona(cfg: AssistantAIConfig) -> str:
-    try:
-        auto = json.loads(cfg.system_auto_control or "{}")
-        if not isinstance(auto, dict):
-            auto = {}
-    except Exception:
-        auto = {}
-    header = _build_frontmatter({
-        "id": cfg.id,
-        "name": cfg.name,
-        "role": cfg.ai_role,
-    })
+def _render_persona_fields(cfg_id: Any, name: str, role: str, prompt: str, auto: Dict[str, Any]) -> str:
+    header = _build_frontmatter({"id": cfg_id, "name": name, "role": role})
     parts: List[str] = [header]
-    values = {"prompt": str(cfg.prompt or "")}
+    values = {"prompt": str(prompt or "")}
+    auto = auto if isinstance(auto, dict) else {}
     for key in _PERSONA_AUTO_KEYS:
         values[key] = str(auto.get(key) or "")
     for key, label in _PERSONA_SECTIONS:
         parts.append(f"## @{key} {label}\n\n{values.get(key, '').strip()}\n")
     return "\n".join(parts).strip() + "\n"
+
+
+def _render_persona(cfg: AssistantAIConfig, prompt: Optional[str] = None) -> str:
+    try:
+        auto = json.loads(getattr(cfg, "system_auto_control", "") or "{}")
+        if not isinstance(auto, dict):
+            auto = {}
+    except Exception:
+        auto = {}
+    if prompt is None:
+        prompt = getattr(cfg, "prompt", None)
+    return _render_persona_fields(cfg.id, cfg.name, getattr(cfg, "ai_role", ""), prompt or "", auto)
 
 
 def _parse_persona(text: str) -> Tuple[Dict[str, str], Dict[str, str]]:
@@ -265,11 +300,60 @@ def _parse_persona(text: str) -> Tuple[Dict[str, str], Dict[str, str]]:
     return meta, sections
 
 
-def write_persona(user_id: int, cfg: AssistantAIConfig) -> None:
+def write_persona(user_id: int, cfg: AssistantAIConfig, prompt: Optional[str] = None) -> None:
+    # cfg.prompt 列已物理删除：写入时优先用显式 prompt，其次保留文件中既有的人格段。
+    if prompt is None and getattr(cfg, "prompt", None) is None:
+        prompt = effective_ai_prompt(user_id, cfg)
     target = _persona_path(user_id, cfg.id, cfg.name)
-    _write_text(target, _render_persona(cfg))
+    _write_text(target, _render_persona(cfg, prompt=prompt))
     # 清理该 AI 改名后遗留的旧文件，避免同一 id 出现多个文件造成同步歧义。
     _prune_stale_personas(user_id, cfg.id, keep=target)
+
+
+def seed_persona_raw(user_id: int, cfg_id: Any, name: str, role: str, prompt: str, auto_control_json: str) -> None:
+    """迁移用：用原始字段值写 persona 文件（已存在则跳过）。"""
+    path = _persona_path(user_id, cfg_id, name)
+    if _read_text(path) is not None:
+        return
+    try:
+        auto = json.loads(auto_control_json or "{}")
+        if not isinstance(auto, dict):
+            auto = {}
+    except Exception:
+        auto = {}
+    _write_text(path, _render_persona_fields(cfg_id, name, role, prompt or "", auto))
+
+
+def hydrate_ai_prompt(cfg: AssistantAIConfig) -> AssistantAIConfig:
+    """把文件里的人格 Prompt 覆盖到 cfg 实例（瞬态属性，不入库），供响应序列化。"""
+    try:
+        setattr(cfg, "prompt", effective_ai_prompt(getattr(cfg, "user_id", 0), cfg))
+    except Exception:
+        pass
+    return cfg
+
+
+def user_prompt_dict(user: User) -> Dict[str, str]:
+    """返回该用户 16 个文本系统提示的有效值（文件优先），用于拼装 API 响应，
+    不依赖在 ORM 实例上设置瞬态属性。"""
+    uid = getattr(user, "id", 0)
+    out: Dict[str, str] = {}
+    for key, _kind in SYSTEM_PROMPT_KEYS:
+        try:
+            out[key] = effective_system_value(uid, key, getattr(user, key, None))
+        except Exception:
+            out[key] = _SYSTEM_PROMPT_DEFAULTS.get(key, "")
+    return out
+
+
+def hydrate_user_prompts(user: User) -> User:
+    """（兼容保留）把文件值写到 user 实例的瞬态属性上。新代码请用 user_prompt_dict。"""
+    try:
+        for key, value in user_prompt_dict(user).items():
+            setattr(user, key, value)
+    except Exception:
+        pass
+    return user
 
 
 def _prune_stale_personas(user_id: int, cfg_id: int, keep: str) -> None:
@@ -413,13 +497,17 @@ def effective_auto_control_json(user_id: int, cfg: Any) -> str:
         return base
 
 
-def effective_system_value(user_id: int, key: str, fallback: Any) -> str:
-    """系统提示（文本）：直接读 system/<key>.md；文件缺失回退传入的 DB 值。"""
+def effective_system_value(user_id: int, key: str, fallback: Any = None) -> str:
+    """系统提示（文本）：直接读 system/<key>.md；文件缺失回退传入的 DB 值；
+    再缺失（列已删）回退内置默认。"""
     if user_id:
         body = read_system_prompt(int(user_id), key)
         if body is not None:
             return body
-    return str(fallback if fallback is not None else "")
+    fb = str(fallback) if fallback not in (None, "") else ""
+    if fb:
+        return fb
+    return _SYSTEM_PROMPT_DEFAULTS.get(key, "")
 
 
 # ============================================================
@@ -588,15 +676,6 @@ def ensure_user_kb(user_id: int, *, session: Optional[Session] = None) -> None:
 
 
 def sync_from_files(user_id: int, *, session: Optional[Session] = None) -> None:
-    """运行时入口：把 system/ 与 personas/ 的文件内容刷回数据库（文件赢）。
-
-    传入 ``session`` 时使用同一会话写入，调用方需自行 ``refresh`` 已加载对象。
-    """
-    try:
-        user_id = int(user_id)
-        if not user_id:
-            return
-        sync_system_prompts_to_db(user_id, session=session)
-        sync_personas_to_db(user_id, session=session)
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.info(f"kb_store sync_from_files user={user_id} failed: {exc}")
+    """已弃用：人格 / 系统提示对应的数据库列已物理删除，运行时直接读文件，
+    不再需要文件→数据库回写。保留空实现仅为兼容历史调用。"""
+    return None

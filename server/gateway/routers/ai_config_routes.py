@@ -100,7 +100,7 @@ async def list_ai_configs(
         .where(AssistantAIConfig.user_id == user.id)
         .order_by(AssistantAIConfig.sort_order.asc(), AssistantAIConfig.created_at.asc())
     ).all()
-    return rows
+    return [_cfg_response(row, user.id) for row in rows]
 
 @router.post("/configs")
 async def create_ai_config(
@@ -128,7 +128,6 @@ async def create_ai_config(
         base_url=model_fields["base_url"],
         model=model_fields["model"],
         model_preset_id=model_fields["model_preset_id"],
-        prompt=body.prompt or "",
         strip_markdown_symbols=bool(body.strip_markdown_symbols),
         ai_role=role,
         digital_member_role=member_role,
@@ -157,25 +156,38 @@ async def create_ai_config(
     session.commit()
     session.refresh(cfg)
     _ensure_ai_workspace_dir(user.id, cfg.id)
-    _write_persona_file(user.id, cfg)
+    _write_persona_file(user.id, cfg, prompt=body.prompt or "")
     _refresh_bot_long_connections_if_needed(
         any(bool(item.get("enabled")) for item in _bot_runtime_snapshot(cfg).values() if isinstance(item, dict))
     )
-    return cfg
+    return _cfg_response(cfg, user.id)
 
 
-def _write_persona_file(user_id: int, cfg: AssistantAIConfig) -> None:
+def _write_persona_file(user_id: int, cfg: AssistantAIConfig, prompt: Optional[str] = None) -> None:
     """文件为真相源：把该 AI 的人格 / 自动控制 Prompt 写入 personas/<id>-<名>.md。
 
-    best-effort——失败不影响配置保存（运行时同步仍以文件为准）。
+    ``prompt`` 为本次请求显式提交的人格文本；不传时由 write_persona 保留文件
+    既有内容。best-effort——失败不影响配置保存。
     """
     try:
         from api.services import kb_store
 
         kb_store.ensure_user_kb(user_id)
-        kb_store.write_persona(user_id, cfg)
+        kb_store.write_persona(user_id, cfg, prompt=prompt)
     except Exception:
         pass
+
+
+def _cfg_response(cfg: AssistantAIConfig, user_id: int):
+    """AI 配置响应：补回人格 Prompt（已迁出数据库，真相源在 personas 文件）。"""
+    try:
+        from api.services import kb_store
+
+        data = cfg.model_dump()
+        data["prompt"] = kb_store.effective_ai_prompt(user_id, cfg)
+        return data
+    except Exception:
+        return cfg
 
 
 def _ensure_ai_workspace_dir(user_id: int, ai_config_id: int) -> None:
@@ -254,6 +266,8 @@ async def update_ai_config(
             updates.get("digital_member_role", cfg.digital_member_role)
         )
     updates.pop("workspace_root", None)
+    # 人格 Prompt 列已删：从 setattr 循环里取出，单独落盘到 personas 文件。
+    prompt_update = updates.pop("prompt", None)
     if next_ai_role == "assistant_admin":
         updates["token_limit"] = 0
     for key, value in updates.items():
@@ -264,7 +278,7 @@ async def update_ai_config(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
-    _write_persona_file(user.id, cfg)
+    _write_persona_file(user.id, cfg, prompt=prompt_update)
     _refresh_bot_long_connections_if_needed(
         bot_snapshot_before != _bot_runtime_snapshot(cfg)
     )
@@ -283,7 +297,7 @@ async def update_ai_config(
     status.updated_at = time.time()
     session.add(status)
     session.commit()
-    return cfg
+    return _cfg_response(cfg, user.id)
 
 @router.post("/configs/{config_id}/toggle-run")
 async def toggle_ai_run(
@@ -311,7 +325,7 @@ async def toggle_ai_run(
     status.updated_at = time.time()
     session.add(status)
     session.commit()
-    return cfg
+    return _cfg_response(cfg, user.id)
 
 def _compute_root_manager(session: Session, user_id: int, cfg: AssistantAIConfig) -> int:
     seen = set()
@@ -383,7 +397,7 @@ async def bind_ai_parent(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
-    return cfg
+    return _cfg_response(cfg, user.id)
 
 
 @router.post("/configs/{config_id}/unbind-parent")
@@ -402,7 +416,7 @@ async def unbind_ai_parent(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
-    return cfg
+    return _cfg_response(cfg, user.id)
 
 
 @router.get("/governance/tree")
@@ -450,6 +464,9 @@ async def clone_ai_config(
     src = session.get(AssistantAIConfig, config_id)
     if not src or src.user_id != user.id:
         raise HTTPException(status_code=404, detail="AI config not found")
+    from api.services import kb_store
+
+    src_prompt = kb_store.effective_ai_prompt(user.id, src)
     new_cfg = AssistantAIConfig(
         user_id=user.id,
         name=f"{src.name} (副本)",
@@ -458,7 +475,6 @@ async def clone_ai_config(
         base_url=src.base_url,
         model=src.model,
         model_preset_id=src.model_preset_id,
-        prompt=src.prompt,
         ai_role=src.ai_role,
         digital_member_role=src.digital_member_role,
         platform=src.platform,
@@ -486,8 +502,8 @@ async def clone_ai_config(
     session.commit()
     session.refresh(new_cfg)
     _ensure_ai_workspace_dir(user.id, new_cfg.id)
-    _write_persona_file(user.id, new_cfg)
-    return new_cfg
+    _write_persona_file(user.id, new_cfg, prompt=src_prompt)
+    return _cfg_response(new_cfg, user.id)
 
 
 @router.post("/configs/{config_id}/toggle-mcp")
@@ -516,4 +532,4 @@ async def toggle_ai_mcp(
     status.updated_at = time.time()
     session.add(status)
     session.commit()
-    return cfg
+    return _cfg_response(cfg, user.id)

@@ -271,16 +271,12 @@ def _prompt_write_ai(user_id: int, args: dict, ai_config_id: Optional[int] = Non
         old_prompt = kb_store.effective_ai_prompt(user_id, cfg)
         old_length = len(str(old_prompt or ""))
         new_prompt, edit_count = _apply_prompt_line_edits(old_prompt, args)
-        cfg.prompt = new_prompt
+        # 人格 Prompt 列已物理删除：只更新时间戳，正文写入 personas 文件。
         cfg.updated_at = time.time()
         session.add(cfg)
         session.commit()
-        session.refresh(cfg)
-        # 文件为真相源：同步写回 personas/*.md，避免被文件同步覆盖。
         try:
-            from api.services import kb_store
-
-            kb_store.write_persona(user_id, cfg)
+            kb_store.write_persona(user_id, cfg, prompt=new_prompt)
         except Exception:
             pass
         return {
@@ -289,8 +285,8 @@ def _prompt_write_ai(user_id: int, args: dict, ai_config_id: Optional[int] = Non
             "name": cfg.name,
             "edit_count": edit_count,
             "old_prompt_length": old_length,
-            "new_prompt_length": len(str(cfg.prompt or "")),
-            "line_count": len(str(cfg.prompt or "").splitlines()),
+            "new_prompt_length": len(str(new_prompt or "")),
+            "line_count": len(str(new_prompt or "").splitlines()),
             "updated_at": cfg.updated_at,
         }
 

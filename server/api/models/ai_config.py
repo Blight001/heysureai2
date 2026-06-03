@@ -36,7 +36,8 @@ class AssistantAIConfig(SQLModel, table=True):
     base_url: str = Field(default="")
     model: str = Field(default="")
     model_preset_id: str = Field(default="", index=True)
-    prompt: str = Field(default="")
+    # 人格 Prompt 已迁出数据库，真相源为 KnowledgeBase/personas/<id>-<名>.md
+    # （见 api.services.kb_store）。Create/Update 仍接收 prompt 字段，落盘到文件。
     strip_markdown_symbols: bool = Field(default=False)
 
     ai_role: str = Field(default="digital_member", index=True)  # assistant_admin / digital_member

@@ -47,12 +47,11 @@ class User(SQLModel, table=True):
     admin_api_key: str = Field(default="sk-cb40bc0b0b894934919907913e337927")
     admin_base_url: str = Field(default="https://api.deepseek.com/chat/completions")
     admin_model: str = Field(default="deepseek-chat")
-    admin_prompt: str = Field(default="你是一个全能的管理员，负责管理和协调整个项目。")
-
-    mcp_call_method: str = Field(default=DEFAULT_MCP_CALL_METHOD)
-    mcp_namespace_hints: str = Field(default=DEFAULT_MCP_NAMESPACE_HINTS)
-    mcp_dynamic_rule: str = Field(default=DEFAULT_MCP_DYNAMIC_RULE)
-    mcp_format_error_hint: str = Field(default=DEFAULT_MCP_FORMAT_ERROR_HINT)
+    # 系统提示词文本（admin_prompt / mcp_call_method / mcp_namespace_hints /
+    # mcp_dynamic_rule / mcp_format_error_hint / default_*_prompt /
+    # default_inheritance_notice / prompt_ai_message_* / prompt_user_message_notice）
+    # 已迁出数据库，真相源为 KnowledgeBase/system/*.md（见 api.services.kb_store）。
+    # 这些数值/配置项不是提示词，保留在库。
     mcp_max_steps: int = Field(default=48)
     # Per-role MCP allow-list configured by the admin. JSON object mapping a role
     # tier (assistant_admin / digital_member_manager / digital_member_member) to a
@@ -61,20 +60,12 @@ class User(SQLModel, table=True):
     tavily_api_key: str = Field(default="")
     model_presets: str = Field(default=DEFAULT_MODEL_PRESETS)
 
-    default_start_task_prompt: str = Field(default=DEFAULT_START_TASK_PROMPT)
-    default_resume_task_prompt: str = Field(default=DEFAULT_RESUME_TASK_PROMPT)
-    default_supervision_prompt: str = Field(default=DEFAULT_SUPERVISION_PROMPT)
+    # 默认任务提示词（start/resume/supervision/inheritance）已迁至
+    # KnowledgeBase/system/*.md；此处仅保留数值设置。
     default_supervision_idle_seconds: int = Field(default=25)
-    default_inheritance_notice: str = Field(default=DEFAULT_INHERITANCE_NOTICE)
 
-    prompt_ai_message_notify: str = Field(default=DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE)
-    prompt_ai_message_inquiry: str = Field(default=DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE)
+    # AI 通信提示词模板已迁至 KnowledgeBase/system/*.md；此处仅保留数值设置。
     ai_message_inquiry_reminder_seconds: int = Field(default=3)
-    prompt_ai_message_inquiry_reminder: str = Field(default=DEFAULT_AI_MESSAGE_INQUIRY_REMINDER)
-    prompt_ai_message_reply: str = Field(default=DEFAULT_AI_MESSAGE_REPLY_TEMPLATE)
-    prompt_ai_message_chitchat: str = Field(default=DEFAULT_AI_MESSAGE_CHITCHAT_TEMPLATE)
-    prompt_ai_message_reply_success: str = Field(default=DEFAULT_AI_MESSAGE_REPLY_SUCCESS)
-    prompt_user_message_notice: str = Field(default=DEFAULT_USER_MESSAGE_NOTICE)
 
     ui_theme_mode: str = Field(default=DEFAULT_UI_THEME_MODE)
     ui_font_size: str = Field(default=DEFAULT_UI_FONT_SIZE)

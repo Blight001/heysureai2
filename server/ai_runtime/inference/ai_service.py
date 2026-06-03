@@ -160,6 +160,7 @@ def _default_ai_specs():
 
 def ensure_default_configs(session: Session, user_id: int) -> list[AssistantAIConfig]:
     created = []
+    _seed_persona_prompts: list = []
     existing = session.exec(
         select(AssistantAIConfig).where(AssistantAIConfig.user_id == user_id)
     ).all()
@@ -170,12 +171,12 @@ def ensure_default_configs(session: Session, user_id: int) -> list[AssistantAICo
     else:
         # Seed defaults only for first-time bootstrap.
         for spec in _default_ai_specs():
+            # 人格 Prompt 列已删除：先记录，建表后写入 personas 文件。
             row = AssistantAIConfig(
                 user_id=user_id,
                 switch_key=spec["switch_key"],
                 name=spec["name"],
                 description=spec["description"],
-                prompt=spec.get("prompt", GENERIC_ASSISTANT_PROMPT),
                 ai_role=spec["ai_role"],
                 digital_member_role=spec.get("digital_member_role", "member"),
                 is_librarian=bool(spec.get("is_librarian", False)),
@@ -191,11 +192,21 @@ def ensure_default_configs(session: Session, user_id: int) -> list[AssistantAICo
             )
             session.add(row)
             created.append(row)
+            _seed_persona_prompts.append((row, spec.get("prompt", GENERIC_ASSISTANT_PROMPT)))
 
     if created:
         session.commit()
         for row in created:
             session.refresh(row)
+        # 人格 Prompt 真相源为文件：写入 personas/*.md。
+        try:
+            from api.services import kb_store
+
+            for row, prompt in _seed_persona_prompts:
+                kb_store.ensure_user_kb(user_id)
+                kb_store.write_persona(user_id, row, prompt=prompt)
+        except Exception:
+            pass
     return session.exec(
         select(AssistantAIConfig).where(AssistantAIConfig.user_id == user_id)
     ).all()
