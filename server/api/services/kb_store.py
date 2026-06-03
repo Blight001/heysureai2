@@ -266,7 +266,29 @@ def _parse_persona(text: str) -> Tuple[Dict[str, str], Dict[str, str]]:
 
 
 def write_persona(user_id: int, cfg: AssistantAIConfig) -> None:
-    _write_text(_persona_path(user_id, cfg.id, cfg.name), _render_persona(cfg))
+    target = _persona_path(user_id, cfg.id, cfg.name)
+    _write_text(target, _render_persona(cfg))
+    # 清理该 AI 改名后遗留的旧文件，避免同一 id 出现多个文件造成同步歧义。
+    _prune_stale_personas(user_id, cfg.id, keep=target)
+
+
+def _prune_stale_personas(user_id: int, cfg_id: int, keep: str) -> None:
+    root = os.path.join(_kb_root(user_id), PERSONAS_DIR)
+    prefix = f"{int(cfg_id)}-"
+    keep_abs = os.path.abspath(keep)
+    try:
+        for fname in os.listdir(root):
+            if not fname.endswith(".md") or not fname.startswith(prefix):
+                continue
+            path = os.path.join(root, fname)
+            if os.path.abspath(path) == keep_abs:
+                continue
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def seed_personas(user_id: int, session: Optional[Session] = None) -> None:
@@ -300,9 +322,11 @@ def sync_personas_to_db(user_id: int, *, session: Optional[Session] = None) -> b
             select(AssistantAIConfig).where(AssistantAIConfig.user_id == int(user_id))
         ).all()
         by_id = {int(c.id): c for c in rows if c.id is not None}
-        for fname in os.listdir(root):
-            if not fname.endswith(".md"):
-                continue
+        # 按 mtime 升序处理：万一存在同一 id 的多个文件（历史遗留），最新的最后
+        # 处理、覆盖较旧的，保证"最新文件赢"。
+        names = [f for f in os.listdir(root) if f.endswith(".md")]
+        names.sort(key=lambda f: os.path.getmtime(os.path.join(root, f)))
+        for fname in names:
             raw = _read_text(os.path.join(root, fname))
             if raw is None:
                 continue
@@ -314,10 +338,11 @@ def sync_personas_to_db(user_id: int, *, session: Optional[Session] = None) -> b
             cfg = by_id.get(cfg_id)
             if not cfg:
                 continue
+            cfg_changed = False
             new_prompt = sections.get("prompt")
             if new_prompt is not None and str(cfg.prompt or "") != new_prompt:
                 cfg.prompt = new_prompt
-                changed = True
+                cfg_changed = True
             # 合并自动控制 Prompt 段。
             try:
                 auto = json.loads(cfg.system_auto_control or "{}")
@@ -332,9 +357,10 @@ def sync_personas_to_db(user_id: int, *, session: Optional[Session] = None) -> b
                     auto_changed = True
             if auto_changed:
                 cfg.system_auto_control = json.dumps(auto, ensure_ascii=False)
-                changed = True
-            if changed:
+                cfg_changed = True
+            if cfg_changed:
                 sess.add(cfg)
+                changed = True
         if changed and own:
             sess.commit()
     except Exception as exc:  # pragma: no cover - defensive
