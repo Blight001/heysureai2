@@ -169,6 +169,65 @@ export const deleteFile = (path: string) =>
     fallbackError: '删除失败',
   })
 
+// ---- Database browser ----
+
+export interface DbColumn {
+  name: string
+  type: string
+  py_type: string
+  nullable: boolean
+  primary_key: boolean
+}
+
+export interface DbTableMeta {
+  name: string
+  row_count: number
+  columns: DbColumn[]
+  primary_key: string[]
+}
+
+export type DbValue = string | number | boolean | null
+
+export interface DbRowsResult {
+  name: string
+  rows: Record<string, DbValue>[]
+  total: number
+  limit: number
+  offset: number
+  columns: DbColumn[]
+  primary_key: string[]
+}
+
+export const listDbTables = () =>
+  get<{ tables: DbTableMeta[] }>('/api/admin/db/tables', { fallbackError: '获取数据表失败' })
+
+export const listDbRows = (name: string, limit = 50, offset = 0, search = '') =>
+  get<DbRowsResult>(`/api/admin/db/tables/${encodeURIComponent(name)}/rows`, {
+    query: { limit, offset, search: search || undefined },
+    fallbackError: '获取表数据失败',
+  })
+
+export const insertDbRow = (name: string, values: Record<string, DbValue>) =>
+  post<{ ok: boolean; primary_key: Record<string, DbValue> }>(
+    `/api/admin/db/tables/${encodeURIComponent(name)}/rows`,
+    { values },
+    { fallbackError: '插入失败' },
+  )
+
+export const updateDbRow = (name: string, pk: Record<string, DbValue>, values: Record<string, DbValue>) =>
+  patch<{ ok: boolean; updated: number }>(
+    `/api/admin/db/tables/${encodeURIComponent(name)}/rows`,
+    { pk, values },
+    { fallbackError: '更新失败' },
+  )
+
+export const deleteDbRow = (name: string, pk: Record<string, DbValue>) =>
+  post<{ ok: boolean; deleted: number }>(
+    `/api/admin/db/tables/${encodeURIComponent(name)}/rows/delete`,
+    { pk },
+    { fallbackError: '删除失败' },
+  )
+
 export const setUserRole = (userId: number, role: UserRole) =>
   patch<{ ok: boolean; user: AdminUser }>(`/api/admin/users/${userId}/role`, { role }, {
     fallbackError: '设置权限失败',
