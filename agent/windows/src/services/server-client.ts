@@ -5,7 +5,7 @@
 import { net } from 'electron'
 import { normalizeServerUrl } from '../server-url'
 import type { AgentSettings } from '../store'
-import { clearStoredAuthSession } from './auth-state'
+import { recoverAuthSession } from './auth-state'
 
 const DEFAULT_TIMEOUT_MS = 10_000
 
@@ -57,7 +57,11 @@ async function readJson(res: Response, fallback: string, wasAuthenticated = fals
       ? '登录已过期，请重新登录'
       : data?.detail || data?.error || `${fallback} (${res.status})`
     if (res.status === 401 && wasAuthenticated) {
-      clearStoredAuthSession()
+      // Our token went stale (commonly after a server update). Try to recover
+      // the session in the background by re-logging in with the saved
+      // credentials; only if that fails does it clear the session and prompt a
+      // manual login. Fire-and-forget — this request still fails as 401.
+      void recoverAuthSession()
     }
     throw new ServerError(
       message,

@@ -6,6 +6,7 @@ import { HeySureAgent, AgentStatus } from '../agent'
 import { store, AgentSettings } from '../store'
 import { getMainWindow } from '../windows/main-window'
 import { sendActivityLog } from './activity-log'
+import { recoverAuthSession } from './auth-state'
 import { updateTray, STATUS_LABELS } from '../windows/tray'
 
 let agent: HeySureAgent | null = null
@@ -22,6 +23,9 @@ function buildAgent(settings: AgentSettings): HeySureAgent {
       )
     },
     onLog: (level, message, data) => sendActivityLog(level, 'info', message, data),
+    onAuthFailure: (reason) => {
+      void recoverAuthSession(`登录已过期（${reason}），请重新登录`)
+    },
     onTaskStart: (taskId, tool, args) => {
       getMainWindow()?.webContents.send('task:start', {
         taskId, tool, args, timestamp: Date.now(),

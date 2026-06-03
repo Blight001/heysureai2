@@ -16,6 +16,10 @@ export interface AgentEvents {
   onTaskStart?: (taskId: string, tool: string, args: any) => void
   onTaskResult?: (taskId: string, tool: string, result: any, success: boolean) => void
   onLog?: (level: 'info' | 'warn' | 'error', message: string, data?: any) => void
+  // Fired when the server rejects registration because our user token is
+  // invalid/expired. The runtime uses this to silently re-login with the saved
+  // credentials and reconnect, so a server update doesn't strand the agent.
+  onAuthFailure?: (reason: string) => void
 }
 
 type CachedOutcome =
@@ -30,6 +34,9 @@ export class HeySureAgent {
   private events: AgentEvents
   private _status: AgentStatus = 'disconnected'
   private _boundAiConfigId: number | null = null
+  // Guards against re-login loops: we only kick off one auto re-auth per
+  // connection attempt. Reset whenever we (re)connect or register successfully.
+  private reauthRequested = false
   workspaceRoot: string
 
   constructor(settings: AgentSettings, events: AgentEvents = {}) {
@@ -54,7 +61,13 @@ export class HeySureAgent {
   }
 
   connect(): void {
-    if (this.socket?.connected) return
+    // A non-null socket means we're already connected or mid-(re)connect
+    // (socket.io drives its own retry loop). Bailing here prevents spawning a
+    // second, orphaned socket when connect() is called twice in quick
+    // succession — e.g. login now reconnects via updateSettings AND the
+    // renderer calls connect() right after. disconnect() nulls the socket, so
+    // a genuine reconnect still works.
+    if (this.socket) return
     // Hard gate: an agent that hasn't logged in cannot talk to the server.
     // Without this guard the socket would open transport-level, the UI would
     // flash "已连接", then the server would reject agent:register a moment
@@ -65,6 +78,7 @@ export class HeySureAgent {
       return
     }
     this.setStatus('connecting')
+    this.reauthRequested = false
     let serverUrl: string
     try {
       serverUrl = normalizeServerUrl(this.settings.serverUrl)
@@ -101,13 +115,23 @@ export class HeySureAgent {
       const raw = data?.aiConfigId
       const n = typeof raw === 'number' ? raw : (raw != null && String(raw).trim() !== '' ? Number(raw) : null)
       this._boundAiConfigId = Number.isFinite(n as number) ? (n as number) : null
+      this.reauthRequested = false
       this.setStatus('registered')
       this.log('info', `注册成功: ${data?.name || this.settings.agentName}${this._boundAiConfigId == null ? '（未分配 AI）' : ''}`)
     })
 
     this.socket.on('agent:register_rejected', (data: any) => {
-      this.setStatus('error', data?.reason || '注册被拒绝')
-      this.log('error', `注册失败: ${data?.reason}`)
+      const reason = data?.reason || '注册被拒绝'
+      this.setStatus('error', reason)
+      this.log('error', `注册失败: ${reason}`)
+      // Only an auth-type rejection (invalid/expired user token) is recoverable
+      // by re-logging in. Other reasons — e.g. AI ownership mismatch — must not
+      // trigger a re-login, or a valid token would loop forever.
+      const isAuthFailure = /token|logged in|登录|未登录|授权|unauthor/i.test(reason)
+      if (isAuthFailure && !this.reauthRequested) {
+        this.reauthRequested = true
+        this.events.onAuthFailure?.(reason)
+      }
     })
 
     this.socket.on('task:dispatch', (task: DispatchedTask) => {
@@ -236,10 +260,14 @@ export class HeySureAgent {
   }
 
   updateSettings(newSettings: AgentSettings): void {
-    const wasConnected = this.socket?.connected
-    if (wasConnected) this.disconnect()
+    this.disconnect()
     this.settings = newSettings
     this.workspaceRoot = newSettings.workspaceRoot || path.join(os.homedir(), 'HeySureWorkspace')
-    if (wasConnected) this.connect()
+    // Put the agent into the connection state the new settings imply, instead
+    // of only reconnecting when it happened to be connected already. connect()
+    // self-gates: with no authToken (logged out) it just stays disconnected.
+    // This fixes "logged in but the server never sees the agent", where a fresh
+    // login from a disconnected state updated the token but never opened a socket.
+    this.connect()
   }
 }

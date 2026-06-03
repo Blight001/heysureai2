@@ -15,6 +15,11 @@ interface AgentSettings {
   aiModel: string
   // Auth
   userAccount: string
+  // Saved so the agent can silently re-login and reconnect after a server
+  // update/restart invalidates the token, instead of stranding the agent
+  // offline until someone logs in by hand.
+  userPassword: string
+  rememberLogin: boolean
   userName: string
   userAvatar: string
   // Cached data URL of the current account's avatar (fetched from the backend),
@@ -54,6 +59,8 @@ const defaults: AgentSettings = {
   aiBaseUrl: process.env.AI_BASE_URL || 'https://api.anthropic.com',
   aiModel: process.env.AI_MODEL || 'claude-sonnet-4-5',
   userAccount: '',
+  userPassword: '',
+  rememberLogin: false,
   userName: '',
   userAvatar: '',
   userAvatarDataUrl: '',
