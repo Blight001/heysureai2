@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   onAuthRefreshed: (cb: () => void) => {
     ipcRenderer.on('auth:refreshed', () => cb())
   },
+  onReconnecting: (cb: (active: boolean, reason: string | null) => void) => {
+    ipcRenderer.on('agent:reconnecting', (_, active, reason) => cb(active, reason))
+  },
   // Theme
   setTheme: (theme: 'dark' | 'light') => ipcRenderer.invoke('theme:set', theme),
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),

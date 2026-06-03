@@ -26,6 +26,11 @@ function buildAgent(settings: AgentSettings): HeySureAgent {
     onAuthFailure: (reason) => {
       void recoverAuthSession(`登录已过期（${reason}），请重新登录`)
     },
+    onReconnecting: (active, reason) => {
+      // Just drive the orange UI prompt; the retry loop fires every couple of
+      // seconds, so logging each attempt here would spam the activity log.
+      getMainWindow()?.webContents.send('agent:reconnecting', active, reason ?? null)
+    },
     onTaskStart: (taskId, tool, args) => {
       getMainWindow()?.webContents.send('task:start', {
         taskId, tool, args, timestamp: Date.now(),

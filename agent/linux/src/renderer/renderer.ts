@@ -25,6 +25,7 @@ interface Window {
     onTaskResult: (cb: (data: any) => void) => void
     onAuthExpired: (cb: (reason: string) => void) => void
     onAuthRefreshed: (cb: () => void) => void
+    onReconnecting: (cb: (active: boolean, reason: string | null) => void) => void
     setTheme: (theme: 'dark' | 'light') => Promise<void>
     minimizeWindow: () => Promise<boolean>
     toggleMaximizeWindow: () => Promise<boolean>
@@ -48,6 +49,10 @@ const windowCloseBtn = $('window-close-btn') as HTMLButtonElement
 // ── State ──────────────────────────────────────────────────────────────────
 let currentTheme: 'dark' | 'light' = 'dark'
 let currentStatus = 'disconnected'
+// True while the agent is auto-reconnecting (socket.io retry or silent
+// re-login after a server update) — drives the orange "reconnecting" prompt.
+let reconnecting = false
+let reconnectingReason = ''
 let boundAiConfigId: number | null = null
 let totalCalls = 0, successCalls = 0, failedCalls = 0, runningCalls = 0
 let toolDefs: ToolDef[] = []
@@ -84,6 +89,16 @@ const STATUS_LABELS: Record<string, string> = {
   disconnected: '未连接', connecting: '连接中...', connected: '已连接', registered: '已连接到服务器', error: '连接错误',
 }
 function renderStatus() {
+  const statusPill = $('status-pill')
+  statusPill.classList.toggle('reconnecting', reconnecting)
+  if (reconnecting) {
+    $('status-dot').className = 'status-dot orange'
+    $('status-label').textContent = '重连中…'
+    statusPill.title = reconnectingReason || '正在自动重连服务器'
+    $('info-status').textContent = reconnectingReason || '正在自动重连…'
+    $('info-ai').textContent = boundAiConfigId == null ? '未分配' : `#${boundAiConfigId}`
+    return
+  }
   const connected = currentStatus === 'registered' || currentStatus === 'connected'
   let color: 'green' | 'yellow' | 'red', label: string
   if (!connected) { color = 'red'; label = '未连接' }
@@ -96,8 +111,16 @@ function renderStatus() {
 }
 function setStatus(status: string, _reason?: string, aiConfigId?: number | null) {
   currentStatus = status
+  // Back online — the reconnect is over (also signalled by onReconnecting, but
+  // clear here too so the orange prompt never lingers).
+  if (status === 'registered' || status === 'connected') reconnecting = false
   if (status !== 'registered' && status !== 'connected') boundAiConfigId = null
   else if (typeof aiConfigId !== 'undefined') boundAiConfigId = aiConfigId
+  renderStatus()
+}
+function setReconnecting(active: boolean, reason?: string | null) {
+  reconnecting = active
+  reconnectingReason = active ? (reason || '正在自动重连服务器') : ''
   renderStatus()
 }
 
@@ -350,16 +373,22 @@ function closeLoginModal() { loginModal.classList.add('hidden') }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeLoginModal(); closeSettings(); closeMembers() } })
 
 window.heysureAPI.onAuthExpired(async reason => {
+  setReconnecting(false)
   const s = await window.heysureAPI.getSettings()
   updateUserChip(s); openLoginModal(); showLoginError(reason || '登录已过期，请重新登录')
 })
 
 // A silent re-login (using the saved credentials) succeeded — refresh the
-// account chip and dismiss the login prompt if it was open.
+// account chip and dismiss the login prompt if it was open. The orange prompt
+// stays up until the socket re-registers (cleared in setStatus/onReconnecting).
 window.heysureAPI.onAuthRefreshed(async () => {
   const s = await window.heysureAPI.getSettings()
   updateUserChip(s); closeLoginModal()
 })
+
+// Orange "reconnecting" prompt, driven by the main process so it reflects the
+// real retry state (and never lingers for an intentional disconnect/logout).
+window.heysureAPI.onReconnecting((active, reason) => setReconnecting(active, reason))
 
 async function doLogin() {
   clearLoginError()
@@ -429,6 +458,7 @@ async function doLogout() {
   await window.heysureAPI.logout()
   const s = await window.heysureAPI.getSettings()
   cfgServer.value = s.serverUrl || ''; loginAccount.value = ''; loginPassword.value = ''
+  setReconnecting(false)
   updateUserChip(s); clearLoginError(); closeLoginModal(); setStatus('disconnected')
 }
 $('header-user-chip').addEventListener('click', openLoginModal)
