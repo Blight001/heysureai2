@@ -287,6 +287,66 @@ def _render_mcp_namespace_lines(cfg: Optional[AssistantAIConfig], namespace_hint
         lines.append(f"- {namespace}：{hint}")
     return "\n".join(lines) if lines else "- （空）"
 
+def _short_tool_desc(text: str, limit: int = 90) -> str:
+    """Compress a tool description to a single short line for the catalog."""
+    raw = " ".join(str(text or "").split())
+    if not raw:
+        return ""
+    # Prefer the first sentence boundary so the catalog line reads cleanly.
+    for sep in ("。", "！", "？", ". ", "! ", "? "):
+        idx = raw.find(sep)
+        if 0 < idx <= limit:
+            keep = idx + (1 if sep in "。！？" else 0)
+            return raw[:keep].strip()
+    if len(raw) <= limit:
+        return raw
+    return raw[:limit].rstrip() + "…"
+
+
+def _render_mcp_tool_catalog(allowed_tools: set[str]) -> str:
+    """Flat one-shot catalog of every allowed tool as ``name: short desc``.
+
+    Mirrors how mature agent runtimes list all tool names up front: the model
+    can locate the right tool directly instead of drilling through
+    ``mcp.list_tools`` namespace by namespace, then load the precise schema in a
+    single ``mcp.describe_tool`` call. ``!`` marks destructive tools.
+    """
+    from api.agent_presence import online_tool_defs
+    from connector_runtime.dispatch.desktop_agent_tools import is_endpoint_agent_tool
+
+    allowed = {str(name).strip() for name in (allowed_tools or set()) if str(name).strip()}
+    if not allowed:
+        return "- （空）"
+
+    desc_by_name: Dict[str, str] = {}
+    destructive_by_name: Dict[str, bool] = {}
+    for item in registry.list_tools():
+        name = str(item.get("name") or "").strip()
+        if name:
+            desc_by_name[name] = str(item.get("description") or "").strip()
+            destructive_by_name[name] = bool(item.get("destructive"))
+    endpoint_defs = online_tool_defs()
+
+    groups: Dict[str, List[str]] = {}
+    for name in sorted(allowed):
+        desc = desc_by_name.get(name, "")
+        destructive = destructive_by_name.get(name, False)
+        if not desc and is_endpoint_agent_tool(name):
+            spec = endpoint_defs.get(name) or {}
+            desc = str(spec.get("description") or "").strip()
+            destructive = True
+        marker = " !" if destructive else ""
+        short = _short_tool_desc(desc)
+        line = f"  - {name}{marker}: {short}" if short else f"  - {name}{marker}"
+        groups.setdefault(_tool_namespace(name), []).append(line)
+
+    lines: List[str] = []
+    for namespace in sorted(groups):
+        lines.append(f"{namespace}/")
+        lines.extend(groups[namespace])
+    return "\n".join(lines) if lines else "- （空）"
+
+
 def _inject_mcp_placeholder(template: str, cfg: Optional[AssistantAIConfig]) -> str:
     return _inject_mcp_placeholder_with_hints(template, cfg, DEFAULT_MCP_NAMESPACE_HINTS)
 
