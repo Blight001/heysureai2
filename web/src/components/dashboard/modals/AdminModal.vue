@@ -69,7 +69,8 @@ const auditEntries = ref<AuditEntry[]>([])
 const auditLoading = ref(false)
 
 // ---- Files (server data folder) ----
-const filePath = ref('')                         // current directory, relative to data/
+const DEFAULT_FILE_PATH = 'workspace'
+const filePath = ref(DEFAULT_FILE_PATH)          // current directory, relative to data/
 const fileEntries = ref<FileEntry[]>([])
 const filesLoading = ref(false)
 const editingFile = ref<string | null>(null)     // open file's relative path, or null
@@ -764,7 +765,7 @@ watch(logLevel, () => { if (props.show) void loadLogs(selectedServiceKey.value, 
 const switchTab = (next: Tab) => {
   tab.value = next
   if (next === 'users' && !users.value.length) void loadUsers()
-  if (next === 'files' && !fileEntries.value.length && editingFile.value === null) void loadFiles()
+  if (next === 'files' && !fileEntries.value.length && editingFile.value === null) void loadFiles(filePath.value || DEFAULT_FILE_PATH)
   if (next === 'database' && !dbTables.value.length) void loadDbTables()
   if (next === 'audit') void loadAudit()
 }
@@ -779,7 +780,7 @@ watch(
     tab.value = 'services'
     newUserOpen.value = false
     closeFile()
-    filePath.value = ''
+    filePath.value = DEFAULT_FILE_PATH
     fileEntries.value = []
     fileSelected.value = new Set()
     dbEditor.value = null
@@ -1068,9 +1069,9 @@ const avatarFor = (u: AdminUser) =>
           </div>
 
           <!-- ============ Files tab ============ -->
-          <div v-show="tab === 'files'" class="flex-1 overflow-y-auto p-5">
+          <div v-show="tab === 'files'" class="flex-1 overflow-hidden p-5 min-h-0">
             <!-- File editor / viewer (shown when a file is open) -->
-            <div v-if="editingFile !== null">
+            <div v-if="editingFile !== null" class="h-full flex flex-col min-h-0">
               <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <div class="flex items-center gap-2 min-w-0">
                   <button
@@ -1096,7 +1097,7 @@ const avatarFor = (u: AdminUser) =>
               </div>
               <div v-if="fileLoading" class="text-center text-zinc-400 py-12 text-sm">加载中…</div>
               <!-- Image preview -->
-              <div v-else-if="fileKind === 'image'" class="flex items-center justify-center bg-zinc-100 dark:bg-zinc-950 rounded-xl p-4 h-[58vh] overflow-auto">
+              <div v-else-if="fileKind === 'image'" class="flex-1 min-h-[360px] flex items-center justify-center bg-zinc-100 dark:bg-zinc-950 rounded-xl p-4 overflow-auto">
                 <img v-if="fileImageUrl" :src="fileImageUrl" :alt="editingFile" class="max-w-full max-h-full object-contain" />
                 <span v-else class="text-zinc-400 text-sm">无法预览此图片</span>
               </div>
@@ -1116,12 +1117,12 @@ const avatarFor = (u: AdminUser) =>
                 v-else
                 v-model="fileContent"
                 spellcheck="false"
-                class="w-full h-[58vh] bg-zinc-950 text-zinc-100 rounded-xl p-3 font-mono text-[12px] leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                class="w-full flex-1 min-h-[360px] bg-zinc-950 text-zinc-100 rounded-xl p-3 font-mono text-[12px] leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
               ></textarea>
             </div>
 
             <!-- File browser -->
-            <div v-else>
+            <div v-else class="h-full flex flex-col min-h-0">
               <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                 <!-- Breadcrumbs -->
                 <div class="flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400 flex-wrap min-w-0">
@@ -1160,9 +1161,9 @@ const avatarFor = (u: AdminUser) =>
                 </div>
               </Transition>
 
-              <div class="border border-zinc-200 rounded-xl overflow-hidden dark:border-zinc-800">
+              <div class="border border-zinc-200 rounded-xl overflow-auto dark:border-zinc-800 flex-1 min-h-[360px]">
                 <table class="w-full text-xs">
-                  <thead class="bg-zinc-50 text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
+                  <thead class="bg-zinc-50 text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400 sticky top-0 z-10">
                     <tr>
                       <th class="w-8 px-3 py-2">
                         <input
@@ -1187,22 +1188,25 @@ const avatarFor = (u: AdminUser) =>
                     <tr
                       v-for="entry in fileEntries"
                       :key="entry.path"
-                      class="border-t border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                      class="border-t border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/40 cursor-default select-none"
                       :class="fileSelected.has(entry.path) ? 'bg-indigo-50/40 dark:bg-indigo-900/10' : ''"
+                      :title="`双击打开 ${entry.name}`"
+                      @dblclick="openEntry(entry)"
                     >
                       <td class="px-3 py-2">
                         <input
                           type="checkbox"
                           class="accent-indigo-500 align-middle"
                           :checked="fileSelected.has(entry.path)"
-                          @change="toggleSelect(entry.path)"
+                          @dblclick.stop
+                          @change.stop="toggleSelect(entry.path)"
                         />
                       </td>
                       <td class="px-3 py-2">
-                        <button class="flex items-center gap-2 text-left min-w-0" @click="openEntry(entry)">
+                        <div class="flex items-center gap-2 text-left min-w-0">
                           <span class="shrink-0">{{ entry.is_dir ? '📁' : entry.kind === 'image' ? '🖼️' : '📄' }}</span>
-                          <span class="text-zinc-700 dark:text-zinc-200 truncate hover:text-indigo-600 dark:hover:text-indigo-300" :title="entry.name">{{ entry.name }}</span>
-                        </button>
+                          <span class="text-zinc-700 dark:text-zinc-200 truncate" :title="entry.name">{{ entry.name }}</span>
+                        </div>
                       </td>
                       <td class="px-3 py-2 text-zinc-400 hidden sm:table-cell">{{ entry.is_dir ? '—' : fmtSize(entry.size) }}</td>
                       <td class="px-3 py-2 text-zinc-400 hidden md:table-cell whitespace-nowrap">{{ fmtTime(entry.modified) }}</td>
@@ -1210,15 +1214,18 @@ const avatarFor = (u: AdminUser) =>
                         <button
                           v-if="!entry.is_dir"
                           class="text-[11px] px-2 py-1 rounded-lg text-zinc-500 hover:text-indigo-600 dark:text-zinc-400"
-                          @click="downloadFile(entry.path, entry.name)"
+                          @dblclick.stop
+                          @click.stop="downloadFile(entry.path, entry.name)"
                         >下载</button>
                         <button
                           class="text-[11px] px-2 py-1 rounded-lg text-zinc-500 hover:text-indigo-600 dark:text-zinc-400"
-                          @click="renameEntry(entry)"
+                          @dblclick.stop
+                          @click.stop="renameEntry(entry)"
                         >重命名</button>
                         <button
                           class="text-[11px] px-2 py-1 rounded-lg text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
-                          @click="deleteEntry(entry)"
+                          @dblclick.stop
+                          @click.stop="deleteEntry(entry)"
                         >删除</button>
                       </td>
                     </tr>
