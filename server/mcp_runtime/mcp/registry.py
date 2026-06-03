@@ -104,14 +104,23 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     ))
     registry.register(MCPTool(
         name="mcp.describe_tool",
-        description="Read the full description and input schema for one allowed MCP tool by exact name.",
+        description=(
+            "Load the full description and input schema for allowed MCP tools, then call them. "
+            "Pass tool for one tool, tools (array) to load several at once, or query to keyword-search "
+            "by name/description. Loaded tools become directly callable."
+        ),
         input_schema={
             "type": "object",
             "properties": {
                 "tool": {"type": "string", "description": "Exact MCP tool name to inspect."},
                 "name": {"type": "string", "description": "Alias of tool."},
+                "tools": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Several exact tool names to load in one call.",
+                },
+                "query": {"type": "string", "description": "Keyword to search across tool names and descriptions."},
             },
-            "required": ["tool"],
         },
         handler=_mcp_describe_tool,
     ))

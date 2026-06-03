@@ -53,6 +53,7 @@ from api.chat_runtime.chat_prompt_utils import (
     _extract_first_mcp_call,
     _extract_mcp_error,
     _render_inheritance_notice,
+    _render_mcp_tool_catalog,
     _sanitize_large_media,
     _safe_json,
     _set_run_live_meta,
@@ -1005,6 +1006,27 @@ def _run_worker_impl(
                 # Remove legacy task-runtime prompt sections; task constraints are enforced server-side.
                 system_prompt = _strip_task_runtime_sections(system_prompt)
 
+            # Up-front MCP tool catalog: list every callable tool (name + short
+            # description) so the model can locate one directly instead of
+            # drilling through mcp.list_tools, then load the precise schema in a
+            # single mcp.describe_tool call. Mirrors mature agent runtimes.
+            mcp_catalog_active = bool(effective_tool_allowlist) and (
+                cfg is None or getattr(cfg, "mcp_enabled", False)
+            )
+            if mcp_catalog_active:
+                catalog_body = (
+                    "以下是你当前可调用的全部 MCP 工具（名称 + 简介，`!` 表示有副作用）。"
+                    "直接从这里定位需要的工具，无需先调用 mcp.list_tools 浏览。\n"
+                    "确定工具后，用一次 mcp.describe_tool 取参数 schema 再调用："
+                    "可在 tools 数组里一次传多个工具名，或用 query 关键词搜索相关工具。\n\n"
+                    + _render_mcp_tool_catalog(effective_tool_allowlist)
+                )
+                system_prompt = _append_prompt_section(
+                    _strip_prompt_section(system_prompt, "可用MCP工具"),
+                    "可用MCP工具",
+                    catalog_body,
+                )
+
             msg_stmt = select(ChatMessage).where(
                 ChatMessage.user_id == user_id,
                 ChatMessage.session_id == session_id,
@@ -1692,9 +1714,20 @@ def _run_worker_impl(
 
                 if (not tool_failed) and tool == "mcp.describe_tool":
                     described_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
-                    described_tool = str((described_payload or {}).get("name") or "").strip()
-                    if described_tool and described_tool in effective_tool_allowlist:
-                        exposed_tool_allowlist.add(described_tool)
+                    described_names: list[str] = []
+                    if isinstance(described_payload, dict):
+                        batch = described_payload.get("tools")
+                        if isinstance(batch, list):
+                            described_names = [
+                                str((item or {}).get("name") or "").strip()
+                                for item in batch
+                                if isinstance(item, dict)
+                            ]
+                        else:
+                            described_names = [str(described_payload.get("name") or "").strip()]
+                    for described_tool in described_names:
+                        if described_tool and described_tool in effective_tool_allowlist:
+                            exposed_tool_allowlist.add(described_tool)
 
                 if (not tool_failed) and tool == "conversation.forget_before_current":
                     current_user_content = _load_current_user_content(
