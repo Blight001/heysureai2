@@ -12,12 +12,14 @@ Mounted at ``/api/admin`` (see ``PREFIX``) and auto-discovered by
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
 import shutil
 import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy import and_, delete as sa_delete, func, insert as sa_insert, or_, text, update as sa_update
 from sqlmodel import Session, SQLModel, select
@@ -589,6 +591,24 @@ def _rel_to_root(full: str) -> str:
     return "" if rel == "." else rel
 
 
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico", ".avif"}
+
+
+def _file_kind(name: str) -> str:
+    """Coarse classification used by the UI to pick a viewer/icon.
+
+    ``image`` files get an inline preview, ``text`` files open in the editor,
+    and everything else (``binary``) is download-only.
+    """
+    ext = os.path.splitext(name)[1].lower()
+    if ext in IMAGE_EXTS:
+        return "image"
+    mime, _ = mimetypes.guess_type(name)
+    if mime and (mime.startswith("text/") or mime in ("application/json", "application/xml", "application/javascript")):
+        return "text"
+    return "text" if not ext else "binary"
+
+
 def _entry_info(full: str) -> dict:
     st = os.stat(full)
     is_dir = os.path.isdir(full)
@@ -598,6 +618,7 @@ def _entry_info(full: str) -> dict:
         "is_dir": is_dir,
         "size": 0 if is_dir else st.st_size,
         "modified": st.st_mtime,
+        "kind": "dir" if is_dir else _file_kind(os.path.basename(full)),
     }
 
 
@@ -650,7 +671,22 @@ def read_file(path: str, _admin: User = Depends(require_admin_user)) -> dict:
         "binary": False,
         "too_large": False,
         "content": data.decode("utf-8"),
+        "kind": _file_kind(os.path.basename(full)),
     }
+
+
+@router.get("/files/raw")
+def raw_file(path: str, _admin: User = Depends(require_admin_user)):
+    """Stream a file's raw bytes — used for image previews and downloads.
+
+    The media type is guessed from the name so browsers render images inline;
+    unknown types fall back to ``application/octet-stream``.
+    """
+    full = _safe_data_path(path)
+    if not os.path.isfile(full):
+        raise HTTPException(status_code=404, detail="文件不存在")
+    media_type, _ = mimetypes.guess_type(full)
+    return FileResponse(full, media_type=media_type or "application/octet-stream")
 
 
 @router.put("/files")
@@ -748,6 +784,47 @@ def delete_path(
         detail=f"删除{'文件夹' if is_dir else '文件'} data/{rel}",
     )
     return {"ok": True, "path": rel}
+
+
+class FileBatchPayload(BaseModel):
+    paths: list[str]
+
+
+@router.post("/files/batch-delete")
+def batch_delete_paths(
+    payload: FileBatchPayload,
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_admin_user),
+) -> dict:
+    """Delete several files/folders in one call.
+
+    Each path is independently sandboxed; failures are collected per-path so a
+    single bad entry doesn't abort the rest of the batch.
+    """
+    deleted: list[str] = []
+    errors: list[dict] = []
+    for raw in payload.paths or []:
+        try:
+            full = _safe_data_path(raw)
+            if full == DATA_ROOT:
+                raise ValueError("不能删除数据根目录")
+            if not os.path.exists(full):
+                raise ValueError("路径不存在")
+            if os.path.isdir(full):
+                shutil.rmtree(full, ignore_errors=True)
+            else:
+                os.remove(full)
+            deleted.append(_rel_to_root(full))
+        except Exception as exc:
+            errors.append({"path": raw, "error": str(exc)})
+    if deleted:
+        _record_audit(
+            session, actor, "file_delete",
+            target_type="file", target_id=";".join(deleted[:20]), target_label=f"{len(deleted)} 项",
+            detail=f"批量删除 {len(deleted)} 项：" + "、".join(f"data/{p}" for p in deleted[:10])
+                   + ("…" if len(deleted) > 10 else ""),
+        )
+    return {"ok": True, "deleted": deleted, "errors": errors}
 
 
 # ---------------------------------------------------------------------------

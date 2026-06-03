@@ -5,7 +5,7 @@
  * hides the entry point for members. Thin wrappers over the shared http
  * client so error parsing / auth header injection stay centralised.
  */
-import { del, get, patch, post, put } from './http'
+import { del, get, getAuthToken, patch, post, put } from './http'
 import type { UserRole } from '@/types'
 
 export type ServiceStatus = 'running' | 'degraded' | 'down' | 'local'
@@ -120,12 +120,15 @@ export const listAudit = (limit = 100) =>
 
 // ---- Data folder file manager ----
 
+export type FileKind = 'dir' | 'image' | 'text' | 'binary'
+
 export interface FileEntry {
   name: string
   path: string
   is_dir: boolean
   size: number
   modified: number
+  kind: FileKind
 }
 
 export interface FileContent {
@@ -134,6 +137,7 @@ export interface FileContent {
   binary: boolean
   too_large: boolean
   content: string
+  kind?: FileKind
 }
 
 export const listFiles = (path = '') =>
@@ -168,6 +172,24 @@ export const deleteFile = (path: string) =>
     query: { path },
     fallbackError: '删除失败',
   })
+
+export const batchDeleteFiles = (paths: string[]) =>
+  post<{ ok: boolean; deleted: string[]; errors: { path: string; error: string }[] }>(
+    '/api/admin/files/batch-delete',
+    { paths },
+    { fallbackError: '批量删除失败' },
+  )
+
+/** Raw bytes of a file — authenticated fetch returning a Blob (for image
+ *  previews and downloads). Can't use a bare <img src> because the endpoint
+ *  needs the Bearer token. */
+export const fetchFileBlob = async (path: string): Promise<Blob> => {
+  const url = `/api/admin/files/raw?path=${encodeURIComponent(path)}`
+  const token = getAuthToken()
+  const res = await fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined)
+  if (!res.ok) throw new Error('加载文件失败')
+  return res.blob()
+}
 
 // ---- Database browser ----
 
