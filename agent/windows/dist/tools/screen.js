@@ -50,19 +50,29 @@ function pngSize(buf) {
 function pngDataUrl(buf) {
     return `data:image/png;base64,${buf.toString('base64')}`;
 }
+function wantsServerSave(args) {
+    return args?.save_to_server === true || args?.upload_to_server === true;
+}
+function wantsLocalSave(args) {
+    return !!args?.path || args?.save_local === true || args?.save_to_file === true;
+}
+function saveLocalPng(args, prefix, buf) {
+    if (!wantsLocalSave(args))
+        return {};
+    const savePath = String(args.path || path.join(os.tmpdir(), `${prefix}_${Date.now()}.png`));
+    fs.writeFileSync(savePath, buf);
+    return { path: savePath, image_url: (0, url_1.pathToFileURL)(savePath).href };
+}
 async function screenCapture(args = {}) {
     const displayIndex = Number(args.display || args.screen || 0);
     const buf = await (0, capture_bridge_1.executeCapture)({ displayIndex });
-    const savePath = String(args.path || path.join(os.tmpdir(), `hs_screen_${Date.now()}.png`));
-    fs.writeFileSync(savePath, buf);
     const { width, height } = pngSize(buf);
     const displayGeometry = (0, capture_bridge_1.getCaptureDisplayGeometry)(displayIndex);
     (0, coordinates_1.rememberCaptureGeometry)({ capture: { width, height }, display: displayGeometry });
-    const image_url = (0, url_1.pathToFileURL)(savePath).href;
     return {
         success: true,
-        path: savePath,
-        image_url,
+        ...saveLocalPng(args, 'hs_screen', buf),
+        save_to_server: wantsServerSave(args),
         dataUrl: pngDataUrl(buf),
         width,
         height,
@@ -80,10 +90,17 @@ async function screenCaptureRegion(args) {
     if (!width || !height)
         throw new Error('width and height are required for region capture');
     const buf = await (0, capture_bridge_1.executeCapture)({ cropRegion: { x: Number(x), y: Number(y), width: Number(width), height: Number(height) } });
-    const savePath = String(args.path || path.join(os.tmpdir(), `hs_region_${Date.now()}.png`));
-    fs.writeFileSync(savePath, buf);
-    const image_url = (0, url_1.pathToFileURL)(savePath).href;
-    return { success: true, path: savePath, image_url, dataUrl: pngDataUrl(buf), x, y, width, height, bytes: buf.length };
+    return {
+        success: true,
+        ...saveLocalPng(args, 'hs_region', buf),
+        save_to_server: wantsServerSave(args),
+        dataUrl: pngDataUrl(buf),
+        x,
+        y,
+        width,
+        height,
+        bytes: buf.length,
+    };
 }
 async function screenInfo(_args = {}) {
     let robot = null;

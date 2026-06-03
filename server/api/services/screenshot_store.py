@@ -26,6 +26,12 @@ def _extract_data_url(result: Any) -> str:
     return ""
 
 
+def should_persist_screenshot_result(result: Any) -> bool:
+    if not isinstance(result, dict):
+        return False
+    return result.get("save_to_server") is True or result.get("upload_to_server") is True
+
+
 def persist_screenshot_result(
     *,
     user_id: int,
@@ -33,6 +39,8 @@ def persist_screenshot_result(
     tool: str,
     result: Any,
 ) -> Optional[Dict[str, Any]]:
+    if not should_persist_screenshot_result(result):
+        return None
     data_url = _extract_data_url(result)
     if not data_url:
         return None
@@ -93,9 +101,6 @@ def attach_persisted_screenshot(
     if not saved or not isinstance(result, dict):
         return result
     next_result = dict(result)
-    for key in ("dataUrl", "data_url", "imageDataUrl", "screenshotDataUrl"):
-        if key in next_result:
-            next_result.pop(key, None)
     next_result["uploaded"] = True
     next_result["server_path"] = saved["server_path"]
     next_result["workspace_path"] = saved["workspace_path"]

@@ -40,10 +40,30 @@ def _visible_content(message: "ChatMessage") -> str:
     return content.strip()
 
 
+def _is_ai_error_notice(message: "ChatMessage") -> bool:
+    return message.role == "system" and "system_notice_ai_error" in str(message.tags or "")
+
+
+def _bot_ai_error_notice(message: "ChatMessage") -> str:
+    text = str(message.content or "")
+    match = re.search(r"\bHTTP\s+(\d{3})\b", text, flags=re.IGNORECASE)
+    if not match:
+        match = re.search(r"\bstatus\s*[:=]?\s*(\d{3})\b", text, flags=re.IGNORECASE)
+    status = match.group(1) if match else "unknown"
+    return "\n".join([
+        "[AI 对话出错]",
+        f"status {status}",
+    ])
+
+
 def _is_visible_assistant_message(message: "ChatMessage") -> bool:
     if message.role != "assistant":
         return False
     return bool(_visible_content(message))
+
+
+def _is_bot_deliverable_message(message: "ChatMessage") -> bool:
+    return _is_visible_assistant_message(message) or _is_ai_error_notice(message)
 
 
 def _user_ui_icons(session: "Session", user_id: int) -> dict[str, str]:
@@ -163,9 +183,9 @@ def notify_saved_assistant_message(session: "Session", message: "ChatMessage") -
     No-op when the message is empty, not from the assistant, or its
     ``session_id`` has no registered bot route.
     """
-    if not _is_visible_assistant_message(message):
+    if not _is_bot_deliverable_message(message):
         return
-    content = _visible_content(message)
+    content = _bot_ai_error_notice(message) if _is_ai_error_notice(message) else _visible_content(message)
 
     bot = None
     route = None
@@ -177,7 +197,7 @@ def notify_saved_assistant_message(session: "Session", message: "ChatMessage") -
     if bot is None or route is None:
         return
 
-    prefix = _assistant_prefix(session, message)
+    prefix = "" if _is_ai_error_notice(message) else _assistant_prefix(session, message)
     content = f"{prefix}{content}" if prefix else content
     content = content.lstrip("\n")
     content = _format_content(session, message, content, bot)

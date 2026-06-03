@@ -225,6 +225,10 @@ function maxDataUrlChars(args: any) {
   return 8_000_000
 }
 
+function wantsServerSave(args: any): boolean {
+  return args?.save_to_server === true || args?.upload_to_server === true
+}
+
 async function ensureScreenshotPayloadSize(
   dataUrl: string,
   args: any,
@@ -432,6 +436,7 @@ async function toolScreenshot(args: any = {}): Promise<any> {
       return {
         success: true,
         dataUrl: optimized.dataUrl,
+        save_to_server: wantsServerSave(args),
         tabId: tab.id,
         url: tab.url,
         method: args.full_page
@@ -468,6 +473,7 @@ async function toolScreenshot(args: any = {}): Promise<any> {
     return {
       success: true,
       dataUrl: optimized.dataUrl,
+      save_to_server: wantsServerSave(args),
       tabId: tab.id,
       url: tab.url,
       method: 'captureVisibleTab',
@@ -488,6 +494,7 @@ async function toolScreenshot(args: any = {}): Promise<any> {
       return {
         success: true,
         dataUrl: optimized.dataUrl,
+        save_to_server: wantsServerSave(args),
         tabId: tab.id,
         url: tab.url,
         method: 'debugger.Page.captureScreenshot',

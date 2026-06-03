@@ -380,7 +380,7 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
             )
         except Exception as exc:
             if isinstance(result, dict):
-                result = {k: v for k, v in result.items() if k not in {"dataUrl", "data_url", "imageDataUrl", "screenshotDataUrl"}}
+                result = dict(result)
                 result["uploaded"] = False
                 result["upload_error"] = str(exc)
 
