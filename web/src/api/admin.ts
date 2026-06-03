@@ -5,7 +5,7 @@
  * hides the entry point for members. Thin wrappers over the shared http
  * client so error parsing / auth header injection stay centralised.
  */
-import { del, get, patch, post } from './http'
+import { del, get, patch, post, put } from './http'
 import type { UserRole } from '@/types'
 
 export type ServiceStatus = 'running' | 'degraded' | 'down' | 'local'
@@ -116,6 +116,57 @@ export const listAudit = (limit = 100) =>
   get<{ entries: AuditEntry[] }>('/api/admin/audit', {
     query: { limit },
     fallbackError: '获取审计日志失败',
+  })
+
+// ---- Data folder file manager ----
+
+export interface FileEntry {
+  name: string
+  path: string
+  is_dir: boolean
+  size: number
+  modified: number
+}
+
+export interface FileContent {
+  path: string
+  size: number
+  binary: boolean
+  too_large: boolean
+  content: string
+}
+
+export const listFiles = (path = '') =>
+  get<{ path: string; entries: FileEntry[] }>('/api/admin/files', {
+    query: { path: path || undefined },
+    fallbackError: '获取文件列表失败',
+  })
+
+export const readFile = (path: string) =>
+  get<FileContent>('/api/admin/files/read', {
+    query: { path },
+    fallbackError: '读取文件失败',
+  })
+
+export const writeFile = (path: string, content: string) =>
+  put<{ ok: boolean; path: string; created: boolean }>('/api/admin/files', { path, content }, {
+    fallbackError: '保存文件失败',
+  })
+
+export const makeDir = (path: string) =>
+  post<{ ok: boolean; path: string }>('/api/admin/files/mkdir', { path }, {
+    fallbackError: '新建文件夹失败',
+  })
+
+export const renameFile = (path: string, newPath: string) =>
+  post<{ ok: boolean; path: string }>('/api/admin/files/rename', { path, new_path: newPath }, {
+    fallbackError: '重命名失败',
+  })
+
+export const deleteFile = (path: string) =>
+  del<{ ok: boolean; path: string }>('/api/admin/files', {
+    query: { path },
+    fallbackError: '删除失败',
   })
 
 export const setUserRole = (userId: number, role: UserRole) =>

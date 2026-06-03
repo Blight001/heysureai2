@@ -2,7 +2,7 @@
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useMessage } from '@/composables/useMessage'
 import * as adminApi from '@/api/admin'
-import type { AdminTask, AdminUser, AuditEntry, LogLine, ServiceInfo } from '@/api/admin'
+import type { AdminTask, AdminUser, AuditEntry, FileEntry, LogLine, ServiceInfo } from '@/api/admin'
 import type { User, UserRole } from '@/types'
 import { resolveAvatarUrl } from '@/utils/avatar'
 
@@ -17,8 +17,14 @@ const emit = defineEmits<{
 
 const { alert, confirm, prompt } = useMessage()
 
-type Tab = 'services' | 'users' | 'audit'
+type Tab = 'services' | 'users' | 'files' | 'audit'
 const tab = ref<Tab>('services')
+const TAB_LABELS: Record<Tab, string> = {
+  services: '服务监控',
+  users: '用户管理',
+  files: '文件管理',
+  audit: '操作审计',
+}
 
 // ---- Services + tasks ----
 const services = ref<ServiceInfo[]>([])
@@ -57,6 +63,18 @@ const newUser = ref<{ name: string; account: string; password: string; role: Use
 // ---- Audit ----
 const auditEntries = ref<AuditEntry[]>([])
 const auditLoading = ref(false)
+
+// ---- Files (server data folder) ----
+const filePath = ref('')                         // current directory, relative to data/
+const fileEntries = ref<FileEntry[]>([])
+const filesLoading = ref(false)
+const editingFile = ref<string | null>(null)     // open file's relative path, or null
+const fileContent = ref('')
+const fileOriginal = ref('')
+const fileLoading = ref(false)
+const fileSaving = ref(false)
+const fileBinary = ref(false)
+const fileTooLarge = ref(false)
 
 const isOwner = computed(() => props.currentUser?.role === 'owner')
 
@@ -310,6 +328,161 @@ const ACTION_LABELS: Record<string, string> = {
   create_user: '创建用户',
   restart_service: '重启服务',
   stop_task: '停止子任务',
+  file_write: '保存文件',
+  file_mkdir: '新建文件夹',
+  file_rename: '重命名',
+  file_delete: '删除文件',
+}
+
+// ---- File manager ----
+const joinPath = (dir: string, name: string) => (dir ? `${dir}/${name}` : name)
+
+const fileBreadcrumbs = computed(() => {
+  const crumbs: { name: string; path: string }[] = [{ name: 'data', path: '' }]
+  let acc = ''
+  for (const part of filePath.value ? filePath.value.split('/') : []) {
+    acc = acc ? `${acc}/${part}` : part
+    crumbs.push({ name: part, path: acc })
+  }
+  return crumbs
+})
+
+const fmtSize = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+const fileDirty = computed(() => fileContent.value !== fileOriginal.value)
+
+const closeFile = () => {
+  editingFile.value = null
+  fileContent.value = ''
+  fileOriginal.value = ''
+  fileBinary.value = false
+  fileTooLarge.value = false
+}
+
+const loadFiles = async (path = filePath.value, silent = false) => {
+  if (!silent) filesLoading.value = true
+  try {
+    const res = await adminApi.listFiles(path)
+    filePath.value = res.path
+    fileEntries.value = res.entries
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    filesLoading.value = false
+  }
+}
+
+const openFile = async (path: string) => {
+  fileLoading.value = true
+  editingFile.value = path
+  fileBinary.value = false
+  fileTooLarge.value = false
+  try {
+    const res = await adminApi.readFile(path)
+    fileBinary.value = res.binary
+    fileTooLarge.value = res.too_large
+    fileContent.value = res.content
+    fileOriginal.value = res.content
+  } catch (err) {
+    editingFile.value = null
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    fileLoading.value = false
+  }
+}
+
+const openEntry = (entry: FileEntry) => {
+  if (entry.is_dir) void loadFiles(entry.path)
+  else void openFile(entry.path)
+}
+
+const saveFile = async () => {
+  if (editingFile.value === null) return
+  fileSaving.value = true
+  try {
+    await adminApi.writeFile(editingFile.value, fileContent.value)
+    fileOriginal.value = fileContent.value
+    await alert({ message: '已保存', type: 'success' })
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    fileSaving.value = false
+  }
+}
+
+const newFile = async () => {
+  const name = await prompt({
+    title: '新建文件',
+    message: `在 ${filePath.value ? 'data/' + filePath.value : 'data'} 下创建文件`,
+    placeholder: '文件名，如 notes.txt',
+  })
+  if (name === null) return
+  const trimmed = name.trim()
+  if (!trimmed) return
+  const path = joinPath(filePath.value, trimmed)
+  try {
+    await adminApi.writeFile(path, '')
+    await loadFiles()
+    await openFile(path)
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  }
+}
+
+const newFolder = async () => {
+  const name = await prompt({
+    title: '新建文件夹',
+    message: `在 ${filePath.value ? 'data/' + filePath.value : 'data'} 下创建文件夹`,
+    placeholder: '文件夹名',
+  })
+  if (name === null) return
+  const trimmed = name.trim()
+  if (!trimmed) return
+  try {
+    await adminApi.makeDir(joinPath(filePath.value, trimmed))
+    await loadFiles()
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  }
+}
+
+const renameEntry = async (entry: FileEntry) => {
+  const name = await prompt({
+    title: '重命名',
+    message: `重命名「${entry.name}」`,
+    placeholder: '新名称',
+    defaultValue: entry.name,
+  })
+  if (name === null) return
+  const trimmed = name.trim()
+  if (!trimmed || trimmed === entry.name) return
+  try {
+    await adminApi.renameFile(entry.path, joinPath(filePath.value, trimmed))
+    if (editingFile.value === entry.path) closeFile()
+    await loadFiles()
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  }
+}
+
+const deleteEntry = async (entry: FileEntry) => {
+  const ok = await confirm({
+    message: `确认删除${entry.is_dir ? '文件夹' : '文件'}「${entry.name}」？${entry.is_dir ? '其中所有内容将一并删除，' : ''}此操作不可恢复。`,
+    type: 'warning',
+    confirmText: '删除',
+  })
+  if (!ok) return
+  try {
+    await adminApi.deleteFile(entry.path)
+    if (editingFile.value === entry.path) closeFile()
+    await loadFiles()
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  }
 }
 
 // ---- Auto refresh: poll the live data on whichever tab is open ----
@@ -343,6 +516,7 @@ watch(logLevel, () => { if (props.show) void loadLogs(selectedServiceKey.value, 
 const switchTab = (next: Tab) => {
   tab.value = next
   if (next === 'users' && !users.value.length) void loadUsers()
+  if (next === 'files' && !fileEntries.value.length && editingFile.value === null) void loadFiles()
   if (next === 'audit') void loadAudit()
 }
 
@@ -355,6 +529,9 @@ watch(
     }
     tab.value = 'services'
     newUserOpen.value = false
+    closeFile()
+    filePath.value = ''
+    fileEntries.value = []
     void refreshServicesTab()
     void loadUsers()
     startAutoRefresh()
@@ -400,14 +577,14 @@ const avatarFor = (u: AdminUser) =>
           <!-- Tabs -->
           <div class="flex gap-1 px-5 pt-3 border-b border-zinc-200 dark:border-zinc-800">
             <button
-              v-for="t in (['services','users','audit'] as Tab[])"
+              v-for="t in (['services','users','files','audit'] as Tab[])"
               :key="t"
               class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors"
               :class="tab === t
                 ? 'bg-indigo-50 text-indigo-700 border-b-2 border-indigo-500 dark:bg-indigo-900/20 dark:text-indigo-300'
                 : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
               @click="switchTab(t)"
-            >{{ t === 'services' ? '服务监控' : t === 'users' ? '用户管理' : '操作审计' }}</button>
+            >{{ TAB_LABELS[t] }}</button>
           </div>
 
           <!-- ============ Services tab ============ -->
@@ -630,6 +807,107 @@ const avatarFor = (u: AdminUser) =>
                 >删除</button>
               </div>
               <div v-if="!users.length && !usersLoading" class="text-center text-zinc-400 py-8 text-sm">暂无用户</div>
+            </div>
+          </div>
+
+          <!-- ============ Files tab ============ -->
+          <div v-show="tab === 'files'" class="flex-1 overflow-y-auto p-5">
+            <!-- File editor (shown when a file is open) -->
+            <div v-if="editingFile !== null">
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <div class="flex items-center gap-2 min-w-0">
+                  <button
+                    class="text-xs px-2 py-1 rounded-lg border border-zinc-200 text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-400"
+                    @click="closeFile"
+                  >← 返回</button>
+                  <span class="text-sm font-mono text-zinc-700 dark:text-zinc-300 truncate" :title="editingFile">data/{{ editingFile }}</span>
+                  <span v-if="fileDirty" class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">未保存</span>
+                </div>
+                <button
+                  v-if="!fileBinary && !fileTooLarge"
+                  class="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                  :disabled="fileSaving || !fileDirty"
+                  @click="saveFile"
+                >{{ fileSaving ? '保存中…' : '保存' }}</button>
+              </div>
+              <div v-if="fileLoading" class="text-center text-zinc-400 py-12 text-sm">加载中…</div>
+              <div v-else-if="fileBinary" class="text-center text-zinc-400 py-12 text-sm">这是二进制文件，无法在线编辑。</div>
+              <div v-else-if="fileTooLarge" class="text-center text-zinc-400 py-12 text-sm">文件过大（&gt; 1&nbsp;MB），无法在线编辑。</div>
+              <textarea
+                v-else
+                v-model="fileContent"
+                spellcheck="false"
+                class="w-full h-[58vh] bg-zinc-950 text-zinc-100 rounded-xl p-3 font-mono text-[12px] leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+              ></textarea>
+            </div>
+
+            <!-- File browser -->
+            <div v-else>
+              <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                <!-- Breadcrumbs -->
+                <div class="flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400 flex-wrap min-w-0">
+                  <template v-for="(crumb, i) in fileBreadcrumbs" :key="crumb.path">
+                    <button
+                      class="hover:text-indigo-600 dark:hover:text-indigo-300"
+                      :class="i === fileBreadcrumbs.length - 1 ? 'font-semibold text-zinc-700 dark:text-zinc-200' : ''"
+                      @click="loadFiles(crumb.path)"
+                    >{{ crumb.name }}</button>
+                    <span v-if="i < fileBreadcrumbs.length - 1" class="text-zinc-300 dark:text-zinc-600">/</span>
+                  </template>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button class="text-xs px-2 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700" @click="newFile">＋ 文件</button>
+                  <button class="text-xs px-2 py-1 rounded-lg border border-indigo-200 text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800/60 dark:text-indigo-300 dark:hover:bg-indigo-900/20" @click="newFolder">＋ 文件夹</button>
+                  <button
+                    class="text-xs px-2 py-1 rounded-lg border border-zinc-200 text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-400"
+                    :disabled="filesLoading"
+                    @click="loadFiles()"
+                  >{{ filesLoading ? '刷新中…' : '↻ 刷新' }}</button>
+                </div>
+              </div>
+
+              <div class="border border-zinc-200 rounded-xl overflow-hidden dark:border-zinc-800">
+                <table class="w-full text-xs">
+                  <thead class="bg-zinc-50 text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400">
+                    <tr>
+                      <th class="text-left px-3 py-2 font-medium">名称</th>
+                      <th class="text-left px-3 py-2 font-medium hidden sm:table-cell">大小</th>
+                      <th class="text-left px-3 py-2 font-medium hidden md:table-cell">修改时间</th>
+                      <th class="text-right px-3 py-2 font-medium">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-if="!fileEntries.length && !filesLoading">
+                      <td colspan="4" class="px-3 py-8 text-center text-zinc-400">此文件夹为空</td>
+                    </tr>
+                    <tr
+                      v-for="entry in fileEntries"
+                      :key="entry.path"
+                      class="border-t border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                    >
+                      <td class="px-3 py-2">
+                        <button class="flex items-center gap-2 text-left min-w-0" @click="openEntry(entry)">
+                          <span class="shrink-0">{{ entry.is_dir ? '📁' : '📄' }}</span>
+                          <span class="text-zinc-700 dark:text-zinc-200 truncate hover:text-indigo-600 dark:hover:text-indigo-300" :title="entry.name">{{ entry.name }}</span>
+                        </button>
+                      </td>
+                      <td class="px-3 py-2 text-zinc-400 hidden sm:table-cell">{{ entry.is_dir ? '—' : fmtSize(entry.size) }}</td>
+                      <td class="px-3 py-2 text-zinc-400 hidden md:table-cell whitespace-nowrap">{{ fmtTime(entry.modified) }}</td>
+                      <td class="px-3 py-2 text-right whitespace-nowrap">
+                        <button
+                          class="text-[11px] px-2 py-1 rounded-lg text-zinc-500 hover:text-indigo-600 dark:text-zinc-400"
+                          @click="renameEntry(entry)"
+                        >重命名</button>
+                        <button
+                          class="text-[11px] px-2 py-1 rounded-lg text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                          @click="deleteEntry(entry)"
+                        >删除</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p class="mt-3 text-[11px] text-zinc-400">浏览的是服务器 <code class="font-mono">server/data</code> 目录。文本文件可在线查看与编辑（上限 1&nbsp;MB），二进制与超大文件仅可浏览、重命名或删除。</p>
             </div>
           </div>
 
