@@ -927,8 +927,10 @@ def _run_worker_impl(
                 max_steps,
                 _coerce_max_steps(getattr(user, "mcp_max_steps", DEFAULT_CHAT_MAX_STEPS), DEFAULT_CHAT_MAX_STEPS),
             )
-            mcp_warning_template = str(getattr(user, "mcp_format_error_hint", "") or "").strip()
             cfg, api_key, base_url, model, system_prompt = _resolve_ai_runtime(bg, user, ai_kind, ai_config_id)
+            # _resolve_ai_runtime 已把 KnowledgeBase 文件刷回库并 refresh(user)，
+            # 此处读取到的系统提示已是文件真相源内容。
+            mcp_warning_template = str(getattr(user, "mcp_format_error_hint", "") or "").strip()
             auto_ctl = normalize_system_auto_control(cfg.system_auto_control if cfg else None)
             inheritance_notice_emitted = False
             task_payload = _load_task_payload_by_session(bg, user_id, ai_config_id, session_id)
@@ -1014,7 +1016,7 @@ def _run_worker_impl(
                     "直接从这里定位需要的工具。\n"
                     "确定工具后，用一次 mcp.describe_tool 取参数 schema 再调用："
                     "可在 tools 数组里一次传多个工具名，或用 query 关键词搜索相关工具。\n\n"
-                    + _render_mcp_tool_catalog(effective_tool_allowlist, endpoint_catalog_tools)
+                    + _render_mcp_tool_catalog(effective_tool_allowlist, endpoint_catalog_tools, user_id)
                 )
                 system_prompt = _append_prompt_section(
                     _strip_prompt_section(system_prompt, "可用MCP工具"),

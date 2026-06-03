@@ -17,9 +17,12 @@ DATA_DIR = os.path.join(SERVER_DIR, "data")
 WORKSPACE_DIR = os.path.join(DATA_DIR, "workspace")
 
 # Folders seeded once at the user-root level and SHARED across all of the
-# user's AIs. Only the knowledge base remains file-backed; the rest of what
-# used to be "sedimentation folders" (Valhalla sessions, EvolutionArena,
-# SystemSetting, BrainCore) now lives in the database, so they are gone.
+# user's AIs. ``KnowledgeBase`` is the file-backed source of truth: besides the
+# original 传承知识 (topics/) and 传承技能 (skills/), it now also holds the AI
+# personas (personas/), system prompts (system/) and MCP tool docs (mcp/) — see
+# ``api.services.kb_store``. The runtime syncs those files back into the
+# database on each chat/task start (files win). Valhalla sessions, EvolutionArena
+# and other "sedimentation folders" still live purely in the database.
 USER_SHARED_SUBFOLDERS = ("KnowledgeBase",)
 
 # Backwards-compatible alias for older imports. It now only seeds the shared
