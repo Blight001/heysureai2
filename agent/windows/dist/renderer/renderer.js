@@ -528,6 +528,13 @@ window.heysureAPI.onAuthExpired(async (reason) => {
     openLoginModal();
     showLoginError(reason || '登录已过期，请重新登录');
 });
+// A silent re-login (using the saved credentials) succeeded — refresh the
+// account chip and dismiss the login prompt if it was open.
+window.heysureAPI.onAuthRefreshed(async () => {
+    const s = await window.heysureAPI.getSettings();
+    updateUserChip(s);
+    closeLoginModal();
+});
 async function doLogin() {
     clearLoginError();
     const saved = await window.heysureAPI.getSettings();

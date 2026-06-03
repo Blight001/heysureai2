@@ -79,6 +79,29 @@ def _to_anthropic_messages(convo: List[Dict]) -> tuple:
     system_parts: List[str] = []
     messages: List[Dict] = []
 
+    def _content_blocks(content: Any) -> List[Dict]:
+        if not isinstance(content, list):
+            return [{"type": "text", "text": str(content)}]
+        blocks: List[Dict] = []
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "text":
+                blocks.append({"type": "text", "text": str(item.get("text") or "")})
+            elif item.get("type") == "image_url":
+                url = ((item.get("image_url") or {}).get("url") or "")
+                m = re.match(r"^data:([^;,]+);base64,(.+)$", str(url), re.DOTALL)
+                if m:
+                    blocks.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": m.group(1) or "image/png",
+                            "data": m.group(2) or "",
+                        },
+                    })
+        return blocks or [{"type": "text", "text": ""}]
+
     for msg in convo:
         role = msg.get("role", "")
         content = msg.get("content") or ""
@@ -90,33 +113,9 @@ def _to_anthropic_messages(convo: List[Dict]) -> tuple:
             continue
 
         if role == "user":
-            if isinstance(content, list):
-                blocks: List[Dict] = []
-                for item in content:
-                    if not isinstance(item, dict):
-                        continue
-                    if item.get("type") == "text":
-                        blocks.append({"type": "text", "text": str(item.get("text") or "")})
-                    elif item.get("type") == "image_url":
-                        url = ((item.get("image_url") or {}).get("url") or "")
-                        m = re.match(r"^data:([^;,]+);base64,(.+)$", str(url))
-                        if m:
-                            blocks.append({
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": m.group(1) or "image/png",
-                                    "data": m.group(2) or "",
-                                },
-                            })
-                messages.append({
-                    "role": "user",
-                    "content": blocks or [{"type": "text", "text": ""}],
-                })
-                continue
             messages.append({
                 "role": "user",
-                "content": [{"type": "text", "text": str(content)}],
+                "content": _content_blocks(content),
             })
 
         elif role == "assistant":
@@ -141,10 +140,11 @@ def _to_anthropic_messages(convo: List[Dict]) -> tuple:
             messages.append({"role": "assistant", "content": content_blocks})
 
         elif role == "tool":
+            tool_content = _content_blocks(content)
             tool_result_block = {
                 "type": "tool_result",
                 "tool_use_id": msg.get("tool_call_id") or "call_0",
-                "content": str(content),
+                "content": tool_content if len(tool_content) > 1 or tool_content[0].get("type") != "text" else tool_content[0].get("text", ""),
             }
             # Merge into the last user message if possible; otherwise new user message.
             if messages and messages[-1]["role"] == "user":

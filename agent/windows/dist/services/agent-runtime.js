@@ -13,6 +13,7 @@ const agent_1 = require("../agent");
 const store_1 = require("../store");
 const main_window_1 = require("../windows/main-window");
 const activity_log_1 = require("./activity-log");
+const auth_state_1 = require("./auth-state");
 const tray_1 = require("../windows/tray");
 let agent = null;
 function buildAgent(settings) {
@@ -23,6 +24,9 @@ function buildAgent(settings) {
             (0, activity_log_1.sendActivityLog)('system', status === 'registered' ? 'success' : status === 'error' ? 'error' : 'info', `状态变更: ${tray_1.STATUS_LABELS[status]}${reason ? ` (${reason})` : ''}`);
         },
         onLog: (level, message, data) => (0, activity_log_1.sendActivityLog)(level, 'info', message, data),
+        onAuthFailure: (reason) => {
+            void (0, auth_state_1.recoverAuthSession)(`登录已过期（${reason}），请重新登录`);
+        },
         onTaskStart: (taskId, tool, args) => {
             (0, main_window_1.getMainWindow)()?.webContents.send('task:start', {
                 taskId, tool, args, timestamp: Date.now(),

@@ -53,6 +53,7 @@ from api.chat_runtime.chat_prompt_utils import (
     _extract_first_mcp_call,
     _extract_mcp_error,
     _render_inheritance_notice,
+    _sanitize_large_media,
     _safe_json,
     _set_run_live_meta,
     _set_run_live_phase,
@@ -653,37 +654,98 @@ def _reset_convo_after_forget(
     convo.append({"role": "user", "content": follow_up})
 
 
+_IMAGE_DATA_URL_KEYS = ("dataUrl", "data_url", "imageDataUrl", "screenshotDataUrl", "screenshot")
+_IMAGE_URL_KEYS = ("image_url", "public_url")
+_IMAGE_PATH_KEYS = ("server_path", "path")
+
+
+def _find_image_payload(value: object, depth: int = 0) -> Dict[str, str]:
+    if depth > 5:
+        return {}
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("data:image/"):
+            return {"data_url": text}
+        return {}
+    if isinstance(value, dict):
+        for key in _IMAGE_DATA_URL_KEYS:
+            item = value.get(key)
+            if isinstance(item, str) and item.strip().startswith("data:image/"):
+                return {"data_url": item.strip()}
+        for key in _IMAGE_URL_KEYS:
+            item = value.get(key)
+            if isinstance(item, str) and item.strip().startswith(("http://", "https://")):
+                return {"url": item.strip()}
+        for key in _IMAGE_PATH_KEYS:
+            item = value.get(key)
+            if isinstance(item, str) and item.strip():
+                return {"path": item.strip()}
+        for key in ("result", "payload", "data", "screenshot_result"):
+            found = _find_image_payload(value.get(key), depth + 1)
+            if found:
+                return found
+        for item in value.values():
+            if isinstance(item, (dict, list)):
+                found = _find_image_payload(item, depth + 1)
+                if found:
+                    return found
+    if isinstance(value, list):
+        for item in value:
+            found = _find_image_payload(item, depth + 1)
+            if found:
+                return found
+    return {}
+
+
+def _image_path_to_data_url(path: str) -> str:
+    server_path = str(path or "").strip()
+    if not server_path or not os.path.isfile(server_path):
+        return ""
+    ext = os.path.splitext(server_path)[1].lower().lstrip(".")
+    media_type = {
+        "jpg": "image/jpeg",
+        "jpeg": "image/jpeg",
+        "png": "image/png",
+        "webp": "image/webp",
+    }.get(ext, "image/png")
+    try:
+        with open(server_path, "rb") as fh:
+            return f"data:{media_type};base64,{base64.b64encode(fh.read()).decode('ascii')}"
+    except Exception:
+        return ""
+
+
+def _omit_image_fields(value: object) -> object:
+    omitted = {*_IMAGE_DATA_URL_KEYS, "server_path", "workspace_path"}
+    if isinstance(value, dict):
+        return {
+            key: _omit_image_fields(item)
+            for key, item in value.items()
+            if key not in omitted
+        }
+    if isinstance(value, list):
+        return [_omit_image_fields(item) for item in value]
+    return value
+
+
 def _browser_screenshot_image_message(tool: str, tool_result: Dict[str, object]) -> Optional[Dict[str, object]]:
-    if tool != "browser_screenshot" or not isinstance(tool_result, dict):
+    if tool not in {"browser_screenshot", "screen.capture", "screen.capture_region"} or not isinstance(tool_result, dict):
         return None
     result_payload = tool_result.get("result", tool_result)
-    if not isinstance(result_payload, dict):
-        return None
-    public_image_url = str(result_payload.get("image_url") or result_payload.get("public_url") or "").strip()
-    data_url = str(result_payload.get("dataUrl") or "").strip()
+    image_payload = _find_image_payload(tool_result)
+    public_image_url = image_payload.get("url", "")
+    data_url = image_payload.get("data_url", "")
     if not data_url.startswith("data:image/"):
-        server_path = str(result_payload.get("server_path") or "").strip()
-        if server_path and os.path.isfile(server_path):
-            ext = os.path.splitext(server_path)[1].lower().lstrip(".")
-            media_type = {
-                "jpg": "image/jpeg",
-                "jpeg": "image/jpeg",
-                "png": "image/png",
-                "webp": "image/webp",
-            }.get(ext, "image/png")
-            try:
-                with open(server_path, "rb") as fh:
-                    data_url = f"data:{media_type};base64,{base64.b64encode(fh.read()).decode('ascii')}"
-            except Exception:
-                data_url = ""
+        data_url = _image_path_to_data_url(image_payload.get("path", ""))
     if not data_url.startswith("data:image/"):
         if not public_image_url.startswith(("http://", "https://")):
             return None
+    meta_payload = result_payload if isinstance(result_payload, dict) else {}
     detail = "\n".join(
         part for part in [
             "浏览器截图已捕获。你已经收到这张图片，请直接查看视觉内容并继续，不要让用户打开本地路径。",
-            f"URL: {result_payload.get('url') or ''}".strip(),
-            f"Method: {result_payload.get('method') or ''}".strip(),
+            f"URL: {meta_payload.get('url') or ''}".strip(),
+            f"Method: {meta_payload.get('method') or ''}".strip(),
         ]
         if part and not part.endswith(":")
     )
@@ -698,20 +760,11 @@ def _browser_screenshot_image_message(tool: str, tool_result: Dict[str, object])
 
 def _model_visible_tool_result(tool: str, tool_result: Dict[str, object]) -> object:
     result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else tool_result
-    if tool != "browser_screenshot" or not isinstance(result_payload, dict):
+    if tool not in {"browser_screenshot", "screen.capture", "screen.capture_region"} or not isinstance(result_payload, dict):
         return result_payload
-    cleaned = {
-        key: value
-        for key, value in result_payload.items()
-        if key not in {
-            "dataUrl",
-            "data_url",
-            "imageDataUrl",
-            "screenshotDataUrl",
-            "server_path",
-            "workspace_path",
-        }
-    }
+    cleaned = _omit_image_fields(_sanitize_large_media(result_payload))
+    if not isinstance(cleaned, dict):
+        cleaned = {}
     cleaned["screenshot_attached_to_model"] = True
     cleaned["instruction"] = "The screenshot image is attached in the next user message. Analyze the image directly; do not ask the user to open a local path."
     return cleaned

@@ -53,7 +53,11 @@ async function readJson(res, fallback, wasAuthenticated = false) {
             ? '登录已过期，请重新登录'
             : data?.detail || data?.error || `${fallback} (${res.status})`;
         if (res.status === 401 && wasAuthenticated) {
-            (0, auth_state_1.clearStoredAuthSession)();
+            // Our token went stale (commonly after a server update). Try to recover
+            // the session in the background by re-logging in with the saved
+            // credentials; only if that fails does it clear the session and prompt a
+            // manual login. Fire-and-forget — this request still fails as 401.
+            void (0, auth_state_1.recoverAuthSession)();
         }
         throw new ServerError(message, res.status, data);
     }

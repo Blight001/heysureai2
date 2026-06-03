@@ -30,6 +30,9 @@ electron_1.contextBridge.exposeInMainWorld('heysureAPI', {
     onAuthExpired: (cb) => {
         electron_1.ipcRenderer.on('auth:expired', (_, reason) => cb(reason));
     },
+    onAuthRefreshed: (cb) => {
+        electron_1.ipcRenderer.on('auth:refreshed', () => cb());
+    },
     // Theme
     setTheme: (theme) => electron_1.ipcRenderer.invoke('theme:set', theme),
     minimizeWindow: () => electron_1.ipcRenderer.invoke('window:minimize'),
