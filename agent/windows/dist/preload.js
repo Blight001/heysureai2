@@ -33,6 +33,9 @@ electron_1.contextBridge.exposeInMainWorld('heysureAPI', {
     onAuthRefreshed: (cb) => {
         electron_1.ipcRenderer.on('auth:refreshed', () => cb());
     },
+    onReconnecting: (cb) => {
+        electron_1.ipcRenderer.on('agent:reconnecting', (_, active, reason) => cb(active, reason));
+    },
     // Theme
     setTheme: (theme) => electron_1.ipcRenderer.invoke('theme:set', theme),
     minimizeWindow: () => electron_1.ipcRenderer.invoke('window:minimize'),

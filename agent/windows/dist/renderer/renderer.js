@@ -14,6 +14,10 @@ const offlineChatBtn = $('offline-chat-btn');
 let currentTheme = 'dark';
 let currentStatus = 'disconnected';
 let offlineModeEnabled = false;
+// True while the agent is auto-reconnecting (socket.io retry or silent
+// re-login after a server update) — drives the orange "reconnecting" prompt.
+let reconnecting = false;
+let reconnectingReason = '';
 let boundAiConfigId = null;
 let totalCalls = 0, successCalls = 0, failedCalls = 0, runningCalls = 0;
 let toolDefs = [];
@@ -200,12 +204,22 @@ const STATUS_LABELS = {
 function renderStatus() {
     const statusPill = $('status-pill');
     statusPill.classList.toggle('offline', offlineModeEnabled);
+    const showReconnecting = reconnecting && !offlineModeEnabled;
+    statusPill.classList.toggle('reconnecting', showReconnecting);
     if (offlineModeEnabled) {
         $('status-dot').className = 'status-dot blue';
         $('status-label').textContent = '离线模式';
         statusPill.title = '离线模式';
         $('info-status').textContent = '离线模式';
         $('info-ai').textContent = '—';
+        return;
+    }
+    if (showReconnecting) {
+        $('status-dot').className = 'status-dot orange';
+        $('status-label').textContent = '重连中…';
+        statusPill.title = reconnectingReason || '正在自动重连服务器';
+        $('info-status').textContent = reconnectingReason || '正在自动重连…';
+        $('info-ai').textContent = boundAiConfigId == null ? '未分配' : `#${boundAiConfigId}`;
         return;
     }
     const connected = currentStatus === 'registered' || currentStatus === 'connected';
@@ -230,10 +244,19 @@ function renderStatus() {
 }
 function setStatus(status, _reason, aiConfigId) {
     currentStatus = status;
+    // Back online — the reconnect is over (also signalled by onReconnecting, but
+    // clear here too so the orange prompt never lingers).
+    if (status === 'registered' || status === 'connected')
+        reconnecting = false;
     if (status !== 'registered' && status !== 'connected')
         boundAiConfigId = null;
     else if (typeof aiConfigId !== 'undefined')
         boundAiConfigId = aiConfigId;
+    renderStatus();
+}
+function setReconnecting(active, reason) {
+    reconnecting = active;
+    reconnectingReason = active ? (reason || '正在自动重连服务器') : '';
     renderStatus();
 }
 // ── Tool-call stats ──────────────────────────────────────────────────────
@@ -523,18 +546,23 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') {
     closeMembers();
 } });
 window.heysureAPI.onAuthExpired(async (reason) => {
+    setReconnecting(false);
     const s = await window.heysureAPI.getSettings();
     updateUserChip(s);
     openLoginModal();
     showLoginError(reason || '登录已过期，请重新登录');
 });
 // A silent re-login (using the saved credentials) succeeded — refresh the
-// account chip and dismiss the login prompt if it was open.
+// account chip and dismiss the login prompt if it was open. The orange prompt
+// stays up until the socket re-registers (cleared in setStatus/onReconnecting).
 window.heysureAPI.onAuthRefreshed(async () => {
     const s = await window.heysureAPI.getSettings();
     updateUserChip(s);
     closeLoginModal();
 });
+// Orange "reconnecting" prompt, driven by the main process so it reflects the
+// real retry state (and never lingers for an intentional disconnect/logout).
+window.heysureAPI.onReconnecting((active, reason) => setReconnecting(active, reason));
 async function doLogin() {
     clearLoginError();
     const saved = await window.heysureAPI.getSettings();
@@ -640,6 +668,7 @@ async function doLogout() {
     loginAccount.value = s.userAccount || '';
     loginPassword.value = s.userPassword || '';
     loginRemember.checked = !!s.rememberLogin;
+    setReconnecting(false);
     updateUserChip(s);
     clearLoginError();
     closeLoginModal();

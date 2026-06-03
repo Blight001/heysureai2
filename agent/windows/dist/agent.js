@@ -76,6 +76,12 @@ class HeySureAgent {
             reconnectionDelay: 2000,
             reconnectionAttempts: Infinity,
         });
+        // Manager-level retry loop: only fires when an established connection was
+        // lost and is being re-established, so it's the right trigger for the
+        // orange "reconnecting" prompt (the very first connect does not emit it).
+        this.socket.io.on('reconnect_attempt', (attempt) => {
+            this.events.onReconnecting?.(true, `正在重连服务器（第 ${attempt} 次）…`);
+        });
         this.socket.on('connect', () => {
             this.setStatus('connected');
             this.log('info', '已连接到服务器');
@@ -94,6 +100,7 @@ class HeySureAgent {
             const n = typeof raw === 'number' ? raw : (raw != null && String(raw).trim() !== '' ? Number(raw) : null);
             this._boundAiConfigId = Number.isFinite(n) ? n : null;
             this.reauthRequested = false;
+            this.events.onReconnecting?.(false);
             this.setStatus('registered');
             this.log('info', `注册成功: ${data?.name || this.settings.agentName}${this._boundAiConfigId == null ? '（未分配 AI）' : ''}`);
         });
@@ -117,6 +124,9 @@ class HeySureAgent {
     disconnect() {
         this.socket?.disconnect();
         this.socket = null;
+        // A deliberate close is not a reconnect — clear the orange prompt so we
+        // don't show "reconnecting" for an intentional disconnect/logout.
+        this.events.onReconnecting?.(false);
         this.setStatus('disconnected');
     }
     register() {

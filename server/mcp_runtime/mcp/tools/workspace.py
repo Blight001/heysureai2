@@ -13,17 +13,14 @@ from api.sio import agents
 from ..core import generate_file_tree, get_project_root, safe_join
 
 
-MAX_COMMAND_LENGTH = 2000
-DEFAULT_COMMAND_TIMEOUT = 30
-MAX_COMMAND_TIMEOUT = 60
-PATH_ESCAPE_RE = re.compile(r'(^|[\s"\'`=])([a-zA-Z]:[\\/]|\\\\|~|\.{2}([\\/]|$))')
-ENV_EXPANSION_RE = re.compile(r'(%[^%\s]+%|\$env:|\$\{|\$[a-zA-Z_][a-zA-Z0-9_]*)', re.IGNORECASE)
+MAX_COMMAND_LENGTH = 8000
+DEFAULT_COMMAND_TIMEOUT = 120
+MAX_COMMAND_TIMEOUT = 600
 BLOCKED_COMMAND_RE = re.compile(
     r'\b('
     r'format|diskpart|mountvol|bcdedit|regedit|'
     r'takeown|icacls|net\s+user|net\s+localgroup|'
     r'shutdown|restart-computer|stop-computer|'
-    r'start-process|invoke-expression|iex|'
     r'ssh|scp|ftp|telnet'
     r')\b',
     re.IGNORECASE,
@@ -42,14 +39,27 @@ def _ensure_inside_workspace(root: str, path: str) -> str:
     return abs_path
 
 
-def _resolve_command_cwd(project_root: str, cwd: Optional[str]) -> str:
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _resolve_command_cwd(project_root: str, cwd: Optional[str], *, strict_workspace: bool = False) -> str:
     if not cwd:
         return project_root
     cwd_text = str(cwd).strip()
     if not cwd_text or cwd_text == ".":
         return project_root
     if os.path.isabs(cwd_text):
-        raise HTTPException(status_code=400, detail="cwd must be relative to workspace")
+        resolved = os.path.abspath(os.path.expanduser(os.path.expandvars(cwd_text)))
+        if strict_workspace:
+            resolved = _ensure_inside_workspace(project_root, resolved)
+        if not os.path.isdir(resolved):
+            raise HTTPException(status_code=400, detail="cwd does not exist or is not a directory")
+        return resolved
 
     resolved = safe_join(project_root, cwd_text)
     if not os.path.isdir(resolved):
@@ -64,15 +74,8 @@ def _validate_command(command: str) -> None:
         raise HTTPException(status_code=400, detail="Command is too long")
     if "\x00" in command:
         raise HTTPException(status_code=400, detail="Command contains invalid characters")
-    if PATH_ESCAPE_RE.search(command):
-        raise HTTPException(
-            status_code=403,
-            detail="Command cannot use absolute paths, network paths, home paths, or '..'",
-        )
-    if ENV_EXPANSION_RE.search(command):
-        raise HTTPException(status_code=403, detail="Command cannot use environment variable expansion")
     if BLOCKED_COMMAND_RE.search(command):
-        raise HTTPException(status_code=403, detail="Command is blocked in the workspace sandbox")
+        raise HTTPException(status_code=403, detail="Command is blocked by the command safety policy")
 
 
 def _sandbox_env(project_root: str) -> Dict[str, str]:
@@ -95,6 +98,14 @@ def _sandbox_env(project_root: str) -> Dict[str, str]:
     return {key: value for key, value in env.items() if value}
 
 
+def _command_env(project_root: str, *, sandbox_env: bool = False) -> Dict[str, str]:
+    if sandbox_env:
+        return _sandbox_env(project_root)
+    env = os.environ.copy()
+    env.setdefault("SANDBOX_ROOT", project_root)
+    return env
+
+
 def _coerce_timeout(value: Any) -> int:
     try:
         seconds = int(value or DEFAULT_COMMAND_TIMEOUT)
@@ -108,14 +119,16 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
     _validate_command(command)
 
     project_root = get_project_root(user_id, ai_config_id)
-    command_cwd = _resolve_command_cwd(project_root, args.get("cwd"))
+    strict_workspace = _truthy(args.get("strict_workspace") or args.get("workspace_only"))
+    sandbox_env = _truthy(args.get("sandbox_env") or args.get("isolated_env"))
+    command_cwd = _resolve_command_cwd(project_root, args.get("cwd"), strict_workspace=strict_workspace)
     timeout = _coerce_timeout(args.get("timeout"))
     try:
         result = subprocess.run(
             command,
             shell=True,
             cwd=command_cwd,
-            env=_sandbox_env(project_root),
+            env=_command_env(project_root, sandbox_env=sandbox_env),
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -132,9 +145,11 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
             "success": False,
             "exit_code": None,
             "output": output,
-            "cwd": os.path.relpath(command_cwd, project_root),
+            "cwd": command_cwd,
             "workspace_root": project_root,
-            "sandboxed": True,
+            "sandboxed": sandbox_env or strict_workspace,
+            "strict_workspace": strict_workspace,
+            "sandbox_env": sandbox_env,
         }
 
     output = result.stdout
@@ -146,9 +161,11 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
         "success": result.returncode == 0,
         "exit_code": result.returncode,
         "output": output,
-        "cwd": os.path.relpath(command_cwd, project_root),
+        "cwd": command_cwd,
         "workspace_root": project_root,
-        "sandboxed": True,
+        "sandboxed": sandbox_env or strict_workspace,
+        "strict_workspace": strict_workspace,
+        "sandbox_env": sandbox_env,
     }
 
 def _parse_int(value: Any) -> Optional[int]:

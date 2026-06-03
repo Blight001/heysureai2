@@ -150,20 +150,37 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="workspace.run_command",
         description=(
-            "Run a sandboxed shell command in the current user's workspace. "
-            "Commands cannot use absolute paths, '..', home paths, or environment-variable expansion."
+            "Run a shell command for development or workspace inspection. Defaults to the current user's "
+            "workspace directory with the normal process environment; absolute paths and environment variables "
+            "are allowed. Set strict_workspace or sandbox_env when an isolated workspace-only run is needed."
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "command": {"type": "string", "description": "Command to run from the workspace sandbox."},
+                "command": {"type": "string", "description": "Command to run."},
                 "cwd": {
                     "type": "string",
-                    "description": "Optional relative working directory inside the workspace.",
+                    "description": "Optional working directory. Relative paths resolve inside the workspace; absolute paths are allowed.",
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": "Optional timeout in seconds, capped at 60.",
+                    "description": "Optional timeout in seconds, capped at 600. Defaults to 120.",
+                },
+                "strict_workspace": {
+                    "type": "boolean",
+                    "description": "When true, reject an absolute cwd outside the workspace. Defaults to false.",
+                },
+                "workspace_only": {
+                    "type": "boolean",
+                    "description": "Alias of strict_workspace.",
+                },
+                "sandbox_env": {
+                    "type": "boolean",
+                    "description": "When true, use isolated HOME/TEMP folders inside the workspace. Defaults to false.",
+                },
+                "isolated_env": {
+                    "type": "boolean",
+                    "description": "Alias of sandbox_env.",
                 },
             },
             "required": ["command"],

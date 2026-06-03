@@ -27,6 +27,11 @@ function buildAgent(settings) {
         onAuthFailure: (reason) => {
             void (0, auth_state_1.recoverAuthSession)(`登录已过期（${reason}），请重新登录`);
         },
+        onReconnecting: (active, reason) => {
+            // Just drive the orange UI prompt; the retry loop fires every couple of
+            // seconds, so logging each attempt here would spam the activity log.
+            (0, main_window_1.getMainWindow)()?.webContents.send('agent:reconnecting', active, reason ?? null);
+        },
         onTaskStart: (taskId, tool, args) => {
             (0, main_window_1.getMainWindow)()?.webContents.send('task:start', {
                 taskId, tool, args, timestamp: Date.now(),
