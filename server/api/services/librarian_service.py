@@ -825,8 +825,10 @@ def _intrinsic_personas_payload(user_id: int) -> Dict[str, Any]:
     for cfg in rows:
         auto_prompts: List[Dict[str, str]] = []
         parsed: Any = None
+        # 人格 / 自动控制 Prompt 真相源在 personas 文件：用 effective_* 读取。
+        effective_auto = kb_store.effective_auto_control_json(cfg.user_id, cfg)
         try:
-            parsed = json.loads(cfg.system_auto_control or "{}")
+            parsed = json.loads(effective_auto or "{}")
             if isinstance(parsed, dict):
                 labels = {
                     "start_task_prompt": "任务启动 Prompt",
@@ -838,7 +840,7 @@ def _intrinsic_personas_payload(user_id: int) -> Dict[str, Any]:
                     value = str(parsed.get(key) or "").strip()
                     auto_prompts.append({"key": key, "label": label, "content": value})
         except Exception:
-            raw = str(cfg.system_auto_control or "").strip()
+            raw = str(effective_auto or "").strip()
             if raw:
                 auto_prompts.append({"key": "system_auto_control", "label": "自动控制 Prompt 原文", "content": raw})
 
@@ -853,8 +855,8 @@ def _intrinsic_personas_payload(user_id: int) -> Dict[str, Any]:
             "model": cfg.model,
             "platform": cfg.platform,
             "generation": cfg.generation,
-            "prompt": str(cfg.prompt or "").strip(),
-            "system_auto_control_raw": str(cfg.system_auto_control or ""),
+            "prompt": str(kb_store.effective_ai_prompt(cfg.user_id, cfg) or "").strip(),
+            "system_auto_control_raw": str(effective_auto or ""),
             "auto_control_enabled": bool(parsed.get("enabled")) if isinstance(parsed, dict) else False,
             "auto_prompts": auto_prompts,
             "updated_at": cfg.updated_at,
@@ -944,7 +946,11 @@ def _system_prompts_payload(user_id: int) -> Dict[str, Any]:
         for section in _SYSTEM_PROMPT_SECTIONS:
             items: List[Dict[str, Any]] = []
             for field, label, value_type in section["items"]:
-                value = getattr(user, field, "")
+                # 文本提示词真相源在 system/*.md；数值设置仍读数据库列。
+                if value_type == "number":
+                    value = getattr(user, field, "")
+                else:
+                    value = kb_store.effective_system_value(user_id, field, getattr(user, field, None))
                 items.append({
                     "key": field,
                     "label": label,
@@ -971,6 +977,8 @@ def save_system_prompts(*, user_id: int, prompts: List[Dict[str, Any]]) -> Dict[
         for section in _SYSTEM_PROMPT_SECTIONS
         for field, _label, value_type in section["items"]
     }
+    # 记录文本字段的最终值，提交后据此写文件（不依赖已删列的 getattr）。
+    applied_text: Dict[str, str] = {}
     with Session(engine) as session:
         user = session.get(User, user_id)
         if not user:
@@ -981,6 +989,7 @@ def save_system_prompts(*, user_id: int, prompts: List[Dict[str, Any]]) -> Dict[
                 continue
             raw = item.get("content")
             if allowed[key] == "number":
+                # 数值设置项仍存数据库列。
                 try:
                     value = int(raw if raw not in {None, ""} else 0)
                 except Exception:
@@ -1003,26 +1012,23 @@ def save_system_prompts(*, user_id: int, prompts: List[Dict[str, Any]]) -> Dict[
                         )
                     except Exception:
                         raise ValueError("mcp_namespace_hints must be a JSON object")
-                setattr(user, key, raw_text)
+                applied_text[key] = raw_text
             elif key == "mcp_call_method":
                 text = "\n".join(
                     line for line in str(raw or "").splitlines()
                     if "Call exactly one tool per <mcp-call> block; never join two tool names into one name." not in line
                 ).strip()
-                setattr(user, key, text)
+                applied_text[key] = text
             else:
-                setattr(user, key, str(raw or ""))
+                applied_text[key] = str(raw or "")
         session.add(user)
         session.commit()
-        # 文件为真相源：把刚保存的字段写入 system/<key>.md（权威）。
-        session.refresh(user)
-        for item in prompts or []:
-            key = str(item.get("key") or "").strip()
-            if key in allowed:
-                try:
-                    kb_store.write_system_prompt(int(user_id), key, getattr(user, key, ""))
-                except Exception as exc:
-                    logger.info(f"write_system_prompt {key} failed: {exc}")
+    # 文件为真相源：文本提示词写入 system/<key>.md（权威）。
+    for key, value in applied_text.items():
+        try:
+            kb_store.write_system_prompt(int(user_id), key, value)
+        except Exception as exc:
+            logger.info(f"write_system_prompt {key} failed: {exc}")
     return _builtin_entry("builtin.system_prompts", user_id=user_id, with_body=True) or {}
 
 

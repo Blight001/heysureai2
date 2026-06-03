@@ -31,6 +31,23 @@ router = APIRouter()
 PREFIX = "/api/auth"
 
 
+def _user_payload(user: User) -> dict:
+    """构造用户响应：数据库列 + 已迁出到 KnowledgeBase/system 的系统提示词文本。
+
+    用 model_dump 合并文件值，避免在 ORM 实例上设置瞬态属性（更稳健）。"""
+    from api.services import kb_store
+
+    try:
+        data = user.model_dump()
+    except Exception:
+        data = {c: getattr(user, c, None) for c in user.__dict__ if not c.startswith("_")}
+    try:
+        data.update(kb_store.user_prompt_dict(user))
+    except Exception:
+        pass
+    return data
+
+
 def _parse_bool_setting(value, default: bool = True) -> bool:
     if value is None:
         return default
@@ -142,7 +159,10 @@ async def register(
     ensure_user_workspace(db_user.id)
     ensure_default_ai_for_user(session, db_user.id)
 
-    return db_user
+    from api.services import kb_store
+
+    kb_store.ensure_user_kb(db_user.id)
+    return _user_payload(db_user)
 
 @router.post("/login", response_model=Token)
 async def login(user_in: UserLogin, session: Session = Depends(get_session)):
@@ -164,7 +184,7 @@ async def login(user_in: UserLogin, session: Session = Depends(get_session)):
         data={"sub": user.account, "user_id": user.id}, expires_delta=access_token_expires
     )
     
-    return {"access_token": access_token, "token_type": "bearer", "user": user}
+    return {"access_token": access_token, "token_type": "bearer", "user": _user_payload(user)}
 
 @router.put("/profile", response_model=UserRead)
 async def update_profile(
@@ -251,14 +271,26 @@ async def update_profile(
             
     for key, value in update_data.items():
         setattr(user, key, value)
-        
+
     session.add(user)
     session.commit()
     session.refresh(user)
-    return user
+    # 文件为真相源：本次更新涉及的系统提示词写回 KnowledgeBase/system/*.md
+    # （从提交值写，不依赖已删列的 getattr），随后把文件值水合回对象供序列化。
+    try:
+        from api.services import kb_store
+
+        kb_store.ensure_user_kb(user.id)
+        file_keys = {k for k, _kind in kb_store.SYSTEM_PROMPT_KEYS}
+        for key in update_data:
+            if key in file_keys:
+                kb_store.write_system_prompt(user.id, key, update_data.get(key) or "")
+    except Exception:
+        pass
+    return _user_payload(user)
 
 @router.get("/me", response_model=UserRead)
 async def read_users_me(authorization: Optional[str] = Header(None), session: Session = Depends(get_session)):
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authentication token")
-    return get_current_user(authorization, session)
+    return _user_payload(get_current_user(authorization, session))

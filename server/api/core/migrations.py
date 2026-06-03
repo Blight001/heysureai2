@@ -37,7 +37,125 @@ def run_data_consolidations(engine) -> None:
     _consolidate_bot_session_routes(engine)
     _consolidate_assistantaiconfig_bot_configs(engine)
     _consolidate_valhalla_files_to_db(engine)
+    _consolidate_prompts_to_files(engine)
     _cleanup_dead_workspace_folders(engine)
+
+
+# 已迁出数据库、真相源改为 KnowledgeBase 文件的文本列。
+_USER_PROMPT_COLS = (
+    "admin_prompt",
+    "mcp_call_method",
+    "mcp_namespace_hints",
+    "mcp_dynamic_rule",
+    "mcp_format_error_hint",
+    "default_start_task_prompt",
+    "default_resume_task_prompt",
+    "default_supervision_prompt",
+    "default_inheritance_notice",
+    "prompt_ai_message_notify",
+    "prompt_ai_message_inquiry",
+    "prompt_ai_message_inquiry_reminder",
+    "prompt_ai_message_reply",
+    "prompt_ai_message_chitchat",
+    "prompt_ai_message_reply_success",
+    "prompt_user_message_notice",
+)
+
+
+def _consolidate_prompts_to_files(engine) -> None:
+    """把人格 / 系统提示从数据库迁到 KnowledgeBase 文件，然后物理删除冗余列。
+
+    顺序严格"先迁库再删"：对每个用户/AI 先把现有列值导出成 ``system/*.md`` /
+    ``personas/*.md``（文件已存在则跳过，绝不覆盖用户已编辑的文件），全部导出
+    完成后才 ``DROP COLUMN``。幂等：列已删后整段跳过；导出失败则不删该用户的列。
+    """
+    from sqlalchemy import inspect, text
+
+    from api.services import kb_store
+
+    insp = inspect(engine)
+    tables = set(insp.get_table_names())
+    if "user" not in tables or "assistantaiconfig" not in tables:
+        return
+
+    user_cols = {c["name"] for c in insp.get_columns("user")}
+    cfg_cols = {c["name"] for c in insp.get_columns("assistantaiconfig")}
+    present_user_prompt_cols = [c for c in _USER_PROMPT_COLS if c in user_cols]
+    cfg_has_prompt = "prompt" in cfg_cols
+
+    # 已经没有任何待迁列 → 迁移早已完成。
+    if not present_user_prompt_cols and not cfg_has_prompt:
+        return
+
+    exported_ok = True
+
+    # 1) 导出用户系统提示 → system/*.md
+    if present_user_prompt_cols:
+        select_cols = ", ".join(["id", *present_user_prompt_cols])
+        try:
+            with engine.begin() as conn:
+                rows = conn.execute(text(f"SELECT {select_cols} FROM \"user\"")).mappings().all()
+            for row in rows:
+                uid = int(row["id"])
+                try:
+                    kb_store._ensure_layout(uid)
+                    for col in present_user_prompt_cols:
+                        value = row.get(col)
+                        if value is None or str(value) == "":
+                            continue
+                        if kb_store.read_system_prompt(uid, col) is None:
+                            kb_store.write_system_prompt(uid, col, value)
+                except Exception as exc:
+                    exported_ok = False
+                    logger.exception(f"export system prompts for user {uid} failed: {exc}")
+        except Exception as exc:
+            exported_ok = False
+            logger.exception(f"read user prompt columns failed: {exc}")
+
+    # 2) 导出 AI 人格 prompt → personas/*.md（system_auto_control 列保留，
+    #    其中的 4 个 prompt 段一并写入 persona 文件）。
+    if cfg_has_prompt:
+        sac = "system_auto_control" if "system_auto_control" in cfg_cols else None
+        sel = ["id", "user_id", "name", "ai_role", "prompt"] + ([sac] if sac else [])
+        try:
+            with engine.begin() as conn:
+                rows = conn.execute(
+                    text(f"SELECT {', '.join(sel)} FROM assistantaiconfig")
+                ).mappings().all()
+            for row in rows:
+                try:
+                    kb_store.seed_persona_raw(
+                        int(row["user_id"]),
+                        row["id"],
+                        str(row.get("name") or ""),
+                        str(row.get("ai_role") or ""),
+                        str(row.get("prompt") or ""),
+                        str(row.get(sac) or "{}") if sac else "{}",
+                    )
+                except Exception as exc:
+                    exported_ok = False
+                    logger.exception(f"export persona for ai {row.get('id')} failed: {exc}")
+        except Exception as exc:
+            exported_ok = False
+            logger.exception(f"read assistantaiconfig.prompt failed: {exc}")
+
+    if not exported_ok:
+        logger.warning("prompt->file export had failures; skipping DROP COLUMN this boot")
+        return
+
+    # 3) 全部导出成功后，物理删除冗余列（best-effort，逐列）。
+    for col in present_user_prompt_cols:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(f'ALTER TABLE "user" DROP COLUMN {col}'))
+        except Exception as exc:
+            logger.exception(f"drop user.{col} failed: {exc}")
+    if cfg_has_prompt:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE assistantaiconfig DROP COLUMN prompt"))
+        except Exception as exc:
+            logger.exception(f"drop assistantaiconfig.prompt failed: {exc}")
 
 
 _LEGACY_FEISHU_COLS = (

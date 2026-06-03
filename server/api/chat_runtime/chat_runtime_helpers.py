@@ -23,19 +23,11 @@ from .chat_prompt_utils import (
 
 
 def _resolve_ai_runtime(session: Session, user: User, ai_kind: str, ai_config_id: Optional[int]):
-    # KnowledgeBase 文件为真相源：建目录 + 首次导出，再把 personas/ 与 system/
-    # 的文件内容刷回库（文件赢）。同步用独立会话提交，随后防御性刷新 user，
-    # cfg 在其后才查询，天然读到最新值。
+    # KnowledgeBase 文件为真相源：建目录 + 首次把现有内容导出成文件（幂等）。
+    # 运行时直接读文件（见下方 effective_* 调用），不再回写数据库。
     from api.services import kb_store
 
     kb_store.ensure_user_kb(user.id)
-    kb_store.sync_from_files(user.id)
-    try:
-        session.refresh(user)
-    except Exception:
-        refreshed = session.get(User, user.id)
-        if refreshed is not None:
-            user = refreshed
     cfg = None
     if ai_kind in ("assistant", "core"):
         if ai_config_id is None:
@@ -57,15 +49,17 @@ def _resolve_ai_runtime(session: Session, user: User, ai_kind: str, ai_config_id
         if not cfg.enabled:
             raise HTTPException(status_code=400, detail="Selected assistant AI is stopped")
         api_key, base_url, model = resolve_model_preset(user, cfg)
-        # Strip auto-injected runtime sections before appending current effective values.
-        system_prompt = _strip_runtime_injected_sections(cfg.prompt or "")
+        # 方案 A：人格 Prompt 直接读 KnowledgeBase/personas/*.md（文件缺失回退 DB）。
+        system_prompt = _strip_runtime_injected_sections(kb_store.effective_ai_prompt(user.id, cfg))
         # Show the effective runtime workspace (absolute path), not only raw config text like ".".
         system_prompt = _append_prompt_section(system_prompt, "AI 工作目录", get_project_root(user.id, cfg.id))
         if cfg.database_uri:
             system_prompt = _append_prompt_section(system_prompt, "AI 数据库连接", cfg.database_uri)
     else:
         api_key, base_url, model = resolve_model_preset(user, None)
-        system_prompt = _strip_runtime_injected_sections(user.admin_prompt or "")
+        system_prompt = _strip_runtime_injected_sections(
+            kb_store.effective_system_value(user.id, "admin_prompt", user.admin_prompt)
+        )
     if not api_key:
         raise HTTPException(status_code=400, detail="Admin API key not configured")
     if not base_url:

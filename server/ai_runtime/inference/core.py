@@ -927,11 +927,16 @@ def _run_worker_impl(
                 max_steps,
                 _coerce_max_steps(getattr(user, "mcp_max_steps", DEFAULT_CHAT_MAX_STEPS), DEFAULT_CHAT_MAX_STEPS),
             )
+            from api.services import kb_store
+
             cfg, api_key, base_url, model, system_prompt = _resolve_ai_runtime(bg, user, ai_kind, ai_config_id)
-            # _resolve_ai_runtime 已把 KnowledgeBase 文件刷回库并 refresh(user)，
-            # 此处读取到的系统提示已是文件真相源内容。
-            mcp_warning_template = str(getattr(user, "mcp_format_error_hint", "") or "").strip()
-            auto_ctl = normalize_system_auto_control(cfg.system_auto_control if cfg else None)
+            # 方案 A：系统提示 / 人格自动控制直接读 KnowledgeBase 文件（缺失回退 DB）。
+            mcp_warning_template = kb_store.effective_system_value(
+                user_id, "mcp_format_error_hint", getattr(user, "mcp_format_error_hint", "")
+            ).strip()
+            auto_ctl = normalize_system_auto_control(
+                kb_store.effective_auto_control_json(user_id, cfg) if cfg else None
+            )
             inheritance_notice_emitted = False
             task_payload = _load_task_payload_by_session(bg, user_id, ai_config_id, session_id)
             task_job = _load_task_job_by_session(bg, user_id, ai_config_id, session_id)

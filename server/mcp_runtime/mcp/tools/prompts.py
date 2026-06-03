@@ -225,17 +225,20 @@ def _prompt_read_ai(user_id: int, args: dict, ai_config_id: Optional[int] = None
     target_id = args.get("target_ai_config_id", args.get("ai_config_id", ai_config_id))
     if not target_id:
         raise HTTPException(status_code=400, detail="target_ai_config_id is required")
+    from api.services import kb_store
+
     with Session(engine) as session:
         cfg = _get_owned_ai_config(session, user_id, int(target_id))
+        effective_prompt = kb_store.effective_ai_prompt(user_id, cfg)
         return {
             "ai_config_id": int(cfg.id or 0),
             "name": cfg.name,
             "ai_role": cfg.ai_role,
             "digital_member_role": cfg.digital_member_role,
-            "prompt_source": "assistantaiconfig.prompt",
+            "prompt_source": "KnowledgeBase/personas/*.md",
             "used_by_current_runtime": True,
-            "prompt": cfg.prompt or "",
-            "prompt_length": len(str(cfg.prompt or "")),
+            "prompt": effective_prompt,
+            "prompt_length": len(str(effective_prompt or "")),
             "runtime_injected_sections": [
                 "AI 工作目录",
                 "AI 数据库连接（当该 AI 配置了 database_uri 时）",
@@ -262,34 +265,42 @@ def _prompt_write_ai(user_id: int, args: dict, ai_config_id: Optional[int] = Non
             denial = assert_can_manage_or_legacy(session, user_id, caller, cfg)
             if denial:
                 raise HTTPException(status_code=403, detail=denial)
-        old_prompt = str(cfg.prompt or "")
-        old_length = len(str(cfg.prompt or ""))
+        # 行编辑基于文件真相源（缺失回退 DB），避免在旧 DB 值上误编辑。
+        from api.services import kb_store
+
+        old_prompt = kb_store.effective_ai_prompt(user_id, cfg)
+        old_length = len(str(old_prompt or ""))
         new_prompt, edit_count = _apply_prompt_line_edits(old_prompt, args)
-        cfg.prompt = new_prompt
+        # 人格 Prompt 列已物理删除：只更新时间戳，正文写入 personas 文件。
         cfg.updated_at = time.time()
         session.add(cfg)
         session.commit()
-        session.refresh(cfg)
+        try:
+            kb_store.write_persona(user_id, cfg, prompt=new_prompt)
+        except Exception:
+            pass
         return {
             "success": True,
             "ai_config_id": int(cfg.id or 0),
             "name": cfg.name,
             "edit_count": edit_count,
             "old_prompt_length": old_length,
-            "new_prompt_length": len(str(cfg.prompt or "")),
-            "line_count": len(str(cfg.prompt or "").splitlines()),
+            "new_prompt_length": len(str(new_prompt or "")),
+            "line_count": len(str(new_prompt or "").splitlines()),
             "updated_at": cfg.updated_at,
         }
 
 
 def _prompt_read_system(user_id: int, args: dict, ai_config_id: Optional[int] = None):
+    from api.services import kb_store
+
     key = str(args.get("key") or "").strip()
     with Session(engine) as session:
         user = _get_user(session, user_id)
         if key:
             if key not in SYSTEM_PROMPT_FIELDS:
                 raise HTTPException(status_code=400, detail=f"Unsupported system prompt key: {key}")
-            value = str(getattr(user, key) or "")
+            value = kb_store.effective_system_value(user_id, key, getattr(user, key, ""))
             return {
                 "key": key,
                 "label": SYSTEM_PROMPT_FIELDS[key],
@@ -305,8 +316,8 @@ def _prompt_read_system(user_id: int, args: dict, ai_config_id: Optional[int] = 
                     "label": label,
                     "usage": SYSTEM_PROMPT_USAGE.get(field, ""),
                     "is_current_ai_base_prompt": False,
-                    "prompt": str(getattr(user, field) or ""),
-                    "prompt_length": len(str(getattr(user, field) or "")),
+                    "prompt": kb_store.effective_system_value(user_id, field, getattr(user, field, "")),
+                    "prompt_length": len(kb_store.effective_system_value(user_id, field, getattr(user, field, ""))),
                 }
                 for field, label in SYSTEM_PROMPT_FIELDS.items()
             ],
@@ -323,12 +334,22 @@ def _prompt_write_system(user_id: int, args: dict, ai_config_id: Optional[int] =
         raise HTTPException(status_code=400, detail=f"Unsupported system prompt key: {key}")
     with Session(engine) as session:
         user = _get_user(session, user_id)
-        old_prompt = str(getattr(user, key) or "")
+        # 行编辑基于文件真相源（缺失回退 DB）。
+        from api.services import kb_store
+
+        old_prompt = kb_store.effective_system_value(user_id, key, getattr(user, key, ""))
         old_length = len(old_prompt)
         new_prompt, edit_count = _apply_prompt_line_edits(old_prompt, args)
         setattr(user, key, new_prompt)
         session.add(user)
         session.commit()
+        # 文件为真相源：同步写回 system/<key>.md，避免被文件同步覆盖。
+        try:
+            from api.services import kb_store
+
+            kb_store.write_system_prompt(user_id, key, new_prompt)
+        except Exception:
+            pass
         return {
             "success": True,
             "key": key,
