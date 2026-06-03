@@ -23,6 +23,10 @@ export function registerAuthIpc(): void {
     store.set('serverUrl', base)
     store.set('authToken', data.access_token)
     store.set('userAccount', account)
+    // Persist the password so the agent can silently re-login and reconnect
+    // after a server update invalidates the token.
+    store.set('userPassword', password)
+    store.set('rememberLogin', true)
     store.set('userName', String(data.user?.name || data.user?.nickname || account))
     store.set('userAvatar', String(data.user?.avatar || ''))
     store.set('userId', data.user?.id ?? null)
@@ -37,6 +41,8 @@ export function registerAuthIpc(): void {
     getAgent()?.disconnect()
     store.set('authToken', '')
     store.set('userAccount', '')
+    store.set('userPassword', '')
+    store.set('rememberLogin', false)
     store.set('userName', '')
     store.set('userAvatar', '')
     store.set('userAvatarDataUrl', '')

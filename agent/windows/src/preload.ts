@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   onAuthExpired: (cb: (reason: string) => void) => {
     ipcRenderer.on('auth:expired', (_, reason) => cb(reason))
   },
+  onAuthRefreshed: (cb: () => void) => {
+    ipcRenderer.on('auth:refreshed', () => cb())
+  },
   // Theme
   setTheme: (theme: 'dark' | 'light') => ipcRenderer.invoke('theme:set', theme),
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
