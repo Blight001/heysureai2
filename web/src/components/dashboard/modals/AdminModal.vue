@@ -2,7 +2,10 @@
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useMessage } from '@/composables/useMessage'
 import * as adminApi from '@/api/admin'
-import type { AdminTask, AdminUser, AuditEntry, FileEntry, LogLine, ServiceInfo } from '@/api/admin'
+import type {
+  AdminTask, AdminUser, AuditEntry, DbColumn, DbTableMeta, DbValue,
+  FileEntry, LogLine, ServiceInfo,
+} from '@/api/admin'
 import type { User, UserRole } from '@/types'
 import { resolveAvatarUrl } from '@/utils/avatar'
 
@@ -17,12 +20,13 @@ const emit = defineEmits<{
 
 const { alert, confirm, prompt } = useMessage()
 
-type Tab = 'services' | 'users' | 'files' | 'audit'
+type Tab = 'services' | 'users' | 'files' | 'database' | 'audit'
 const tab = ref<Tab>('services')
 const TAB_LABELS: Record<Tab, string> = {
   services: '服务监控',
   users: '用户管理',
   files: '文件管理',
+  database: '数据库',
   audit: '操作审计',
 }
 
@@ -75,6 +79,26 @@ const fileLoading = ref(false)
 const fileSaving = ref(false)
 const fileBinary = ref(false)
 const fileTooLarge = ref(false)
+
+// ---- Database browser ----
+const dbTables = ref<DbTableMeta[]>([])
+const dbTablesLoading = ref(false)
+const dbActiveTable = ref<string>('')
+const dbColumns = ref<DbColumn[]>([])
+const dbPrimaryKey = ref<string[]>([])
+const dbRows = ref<Record<string, DbValue>[]>([])
+const dbRowsLoading = ref(false)
+const dbTotal = ref(0)
+const dbOffset = ref(0)
+const dbSearch = ref('')
+const DB_PAGE_SIZE = 50
+// Row editor: null when closed; mode 'insert' | 'update'
+const dbEditor = ref<{
+  mode: 'insert' | 'update'
+  pk: Record<string, DbValue> | null
+  values: Record<string, string>
+} | null>(null)
+const dbSaving = ref(false)
 
 const isOwner = computed(() => props.currentUser?.role === 'owner')
 
@@ -332,6 +356,9 @@ const ACTION_LABELS: Record<string, string> = {
   file_mkdir: '新建文件夹',
   file_rename: '重命名',
   file_delete: '删除文件',
+  db_insert: '插入数据',
+  db_update: '更新数据',
+  db_delete: '删除数据',
 }
 
 // ---- File manager ----
@@ -485,6 +512,139 @@ const deleteEntry = async (entry: FileEntry) => {
   }
 }
 
+// ---- Database browser ----
+const dbValueToStr = (v: DbValue): string => {
+  if (v === null || v === undefined) return ''
+  return String(v)
+}
+
+const dbCellPreview = (v: DbValue): string => {
+  const s = dbValueToStr(v)
+  return s.length > 80 ? s.slice(0, 80) + '…' : s
+}
+
+const dbPageStart = computed(() => (dbTotal.value === 0 ? 0 : dbOffset.value + 1))
+const dbPageEnd = computed(() => Math.min(dbOffset.value + DB_PAGE_SIZE, dbTotal.value))
+
+const loadDbTables = async () => {
+  dbTablesLoading.value = true
+  try {
+    const res = await adminApi.listDbTables()
+    dbTables.value = res.tables
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    dbTablesLoading.value = false
+  }
+}
+
+const loadDbRows = async () => {
+  if (!dbActiveTable.value) return
+  dbRowsLoading.value = true
+  try {
+    const res = await adminApi.listDbRows(dbActiveTable.value, DB_PAGE_SIZE, dbOffset.value, dbSearch.value.trim())
+    dbColumns.value = res.columns
+    dbPrimaryKey.value = res.primary_key
+    dbRows.value = res.rows
+    dbTotal.value = res.total
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    dbRowsLoading.value = false
+  }
+}
+
+const selectDbTable = (name: string) => {
+  if (name === dbActiveTable.value) return
+  dbActiveTable.value = name
+  dbOffset.value = 0
+  dbSearch.value = ''
+  dbEditor.value = null
+  void loadDbRows()
+}
+
+const dbSearchSubmit = () => {
+  dbOffset.value = 0
+  void loadDbRows()
+}
+
+const dbNextPage = () => {
+  if (dbOffset.value + DB_PAGE_SIZE >= dbTotal.value) return
+  dbOffset.value += DB_PAGE_SIZE
+  void loadDbRows()
+}
+
+const dbPrevPage = () => {
+  if (dbOffset.value <= 0) return
+  dbOffset.value = Math.max(0, dbOffset.value - DB_PAGE_SIZE)
+  void loadDbRows()
+}
+
+const rowPk = (row: Record<string, DbValue>): Record<string, DbValue> => {
+  const pk: Record<string, DbValue> = {}
+  for (const k of dbPrimaryKey.value) pk[k] = row[k]
+  return pk
+}
+
+const openDbInsert = () => {
+  const values: Record<string, string> = {}
+  for (const c of dbColumns.value) values[c.name] = ''
+  dbEditor.value = { mode: 'insert', pk: null, values }
+}
+
+const openDbEdit = (row: Record<string, DbValue>) => {
+  const values: Record<string, string> = {}
+  for (const c of dbColumns.value) values[c.name] = dbValueToStr(row[c.name])
+  dbEditor.value = { mode: 'update', pk: rowPk(row), values }
+}
+
+const closeDbEditor = () => { dbEditor.value = null }
+
+const dbColIsPk = (name: string) => dbPrimaryKey.value.includes(name)
+
+const saveDbRow = async () => {
+  if (!dbEditor.value || !dbActiveTable.value) return
+  dbSaving.value = true
+  try {
+    if (dbEditor.value.mode === 'insert') {
+      await adminApi.insertDbRow(dbActiveTable.value, dbEditor.value.values)
+      await alert({ message: '已插入', type: 'success' })
+    } else {
+      const pk = dbEditor.value.pk || {}
+      // Only send non-PK columns as updatable values.
+      const values: Record<string, string> = {}
+      for (const [k, v] of Object.entries(dbEditor.value.values)) {
+        if (!dbColIsPk(k)) values[k] = v
+      }
+      await adminApi.updateDbRow(dbActiveTable.value, pk, values)
+      await alert({ message: '已更新', type: 'success' })
+    }
+    dbEditor.value = null
+    await Promise.all([loadDbRows(), loadDbTables()])
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    dbSaving.value = false
+  }
+}
+
+const deleteDbRow = async (row: Record<string, DbValue>) => {
+  const pk = rowPk(row)
+  const label = Object.entries(pk).map(([k, v]) => `${k}=${v}`).join(', ')
+  const ok = await confirm({
+    message: `确认从表「${dbActiveTable.value}」删除该行（${label}）？此操作不可恢复。`,
+    type: 'warning',
+    confirmText: '删除',
+  })
+  if (!ok) return
+  try {
+    await adminApi.deleteDbRow(dbActiveTable.value, pk)
+    await Promise.all([loadDbRows(), loadDbTables()])
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  }
+}
+
 // ---- Auto refresh: poll the live data on whichever tab is open ----
 const tick = () => {
   if (!props.show) return
@@ -517,6 +677,7 @@ const switchTab = (next: Tab) => {
   tab.value = next
   if (next === 'users' && !users.value.length) void loadUsers()
   if (next === 'files' && !fileEntries.value.length && editingFile.value === null) void loadFiles()
+  if (next === 'database' && !dbTables.value.length) void loadDbTables()
   if (next === 'audit') void loadAudit()
 }
 
@@ -532,6 +693,10 @@ watch(
     closeFile()
     filePath.value = ''
     fileEntries.value = []
+    dbEditor.value = null
+    dbActiveTable.value = ''
+    dbRows.value = []
+    dbTables.value = []
     void refreshServicesTab()
     void loadUsers()
     startAutoRefresh()
@@ -577,7 +742,7 @@ const avatarFor = (u: AdminUser) =>
           <!-- Tabs -->
           <div class="flex gap-1 px-5 pt-3 border-b border-zinc-200 dark:border-zinc-800">
             <button
-              v-for="t in (['services','users','files','audit'] as Tab[])"
+              v-for="t in (['services','users','files','database','audit'] as Tab[])"
               :key="t"
               class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors"
               :class="tab === t
@@ -911,6 +1076,117 @@ const avatarFor = (u: AdminUser) =>
             </div>
           </div>
 
+          <!-- ============ Database tab ============ -->
+          <div v-show="tab === 'database'" class="flex-1 overflow-hidden flex min-h-0">
+            <!-- Table list -->
+            <div class="w-44 shrink-0 border-r border-zinc-200 dark:border-zinc-800 overflow-y-auto p-2">
+              <div class="flex items-center justify-between px-1 py-1.5">
+                <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">数据表</span>
+                <button
+                  class="text-[11px] text-zinc-400 hover:text-indigo-600"
+                  :disabled="dbTablesLoading"
+                  @click="loadDbTables"
+                >↻</button>
+              </div>
+              <button
+                v-for="t in dbTables"
+                :key="t.name"
+                class="w-full text-left px-2 py-1.5 rounded-lg text-xs flex items-center justify-between gap-1 transition-colors"
+                :class="dbActiveTable === t.name
+                  ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300'
+                  : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'"
+                @click="selectDbTable(t.name)"
+              >
+                <span class="truncate font-mono" :title="t.name">{{ t.name }}</span>
+                <span class="text-[10px] text-zinc-400 shrink-0">{{ t.row_count < 0 ? '?' : t.row_count }}</span>
+              </button>
+              <div v-if="!dbTables.length && !dbTablesLoading" class="text-center text-zinc-400 py-6 text-xs">暂无数据表</div>
+            </div>
+
+            <!-- Rows -->
+            <div class="flex-1 min-w-0 flex flex-col">
+              <div v-if="!dbActiveTable" class="flex-1 flex items-center justify-center text-sm text-zinc-400">
+                请选择左侧的数据表
+              </div>
+              <template v-else>
+                <!-- Toolbar -->
+                <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-b border-zinc-200 dark:border-zinc-800">
+                  <div class="flex items-center gap-2 min-w-0">
+                    <span class="text-sm font-semibold font-mono text-zinc-700 dark:text-zinc-200 truncate">{{ dbActiveTable }}</span>
+                    <span class="text-[11px] text-zinc-400">共 {{ dbTotal }} 行</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <input
+                      v-model="dbSearch"
+                      type="text"
+                      placeholder="搜索文本列…"
+                      class="text-xs border border-zinc-200 rounded-lg px-2 py-1 bg-white text-zinc-600 w-32 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300"
+                      @keyup.enter="dbSearchSubmit"
+                    />
+                    <button class="text-xs px-2 py-1 rounded-lg border border-zinc-200 text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-400" @click="dbSearchSubmit">搜索</button>
+                    <button
+                      v-if="isOwner"
+                      class="text-xs px-2 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                      @click="openDbInsert"
+                    >＋ 新增</button>
+                    <button class="text-xs px-2 py-1 rounded-lg border border-zinc-200 text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-400" :disabled="dbRowsLoading" @click="loadDbRows">{{ dbRowsLoading ? '…' : '↻' }}</button>
+                  </div>
+                </div>
+
+                <!-- Row table -->
+                <div class="flex-1 overflow-auto">
+                  <table class="text-xs border-collapse">
+                    <thead class="bg-zinc-50 text-zinc-500 dark:bg-zinc-800/60 dark:text-zinc-400 sticky top-0 z-10">
+                      <tr>
+                        <th class="text-left px-3 py-2 font-medium whitespace-nowrap sticky left-0 bg-zinc-50 dark:bg-zinc-800/60">操作</th>
+                        <th
+                          v-for="c in dbColumns"
+                          :key="c.name"
+                          class="text-left px-3 py-2 font-medium whitespace-nowrap"
+                          :title="c.type"
+                        >
+                          {{ c.name }}
+                          <span v-if="c.primary_key" class="text-amber-500" title="主键">🔑</span>
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-if="!dbRows.length && !dbRowsLoading">
+                        <td :colspan="dbColumns.length + 1" class="px-3 py-8 text-center text-zinc-400">暂无数据</td>
+                      </tr>
+                      <tr
+                        v-for="(row, i) in dbRows"
+                        :key="i"
+                        class="border-t border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                      >
+                        <td class="px-3 py-1.5 whitespace-nowrap sticky left-0 bg-white dark:bg-zinc-900">
+                          <button class="text-[11px] px-1.5 py-1 rounded text-zinc-500 hover:text-indigo-600 dark:text-zinc-400" @click="openDbEdit(row)">{{ isOwner ? '编辑' : '查看' }}</button>
+                          <button v-if="isOwner" class="text-[11px] px-1.5 py-1 rounded text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20" @click="deleteDbRow(row)">删除</button>
+                        </td>
+                        <td
+                          v-for="c in dbColumns"
+                          :key="c.name"
+                          class="px-3 py-1.5 whitespace-nowrap max-w-[260px] truncate"
+                          :class="row[c.name] === null ? 'text-zinc-300 italic dark:text-zinc-600' : 'text-zinc-700 dark:text-zinc-300'"
+                          :title="dbValueToStr(row[c.name])"
+                        >{{ row[c.name] === null ? 'NULL' : dbCellPreview(row[c.name]) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="flex items-center justify-between px-4 py-2 border-t border-zinc-200 dark:border-zinc-800 text-xs text-zinc-500 dark:text-zinc-400">
+                  <span>{{ dbPageStart }}–{{ dbPageEnd }} / {{ dbTotal }}</span>
+                  <div class="flex items-center gap-2">
+                    <button class="px-2 py-1 rounded-lg border border-zinc-200 disabled:opacity-40 hover:border-indigo-200 dark:border-zinc-700" :disabled="dbOffset <= 0" @click="dbPrevPage">上一页</button>
+                    <button class="px-2 py-1 rounded-lg border border-zinc-200 disabled:opacity-40 hover:border-indigo-200 dark:border-zinc-700" :disabled="dbOffset + DB_PAGE_SIZE >= dbTotal" @click="dbNextPage">下一页</button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
           <!-- ============ Audit tab ============ -->
           <div v-show="tab === 'audit'" class="flex-1 overflow-y-auto p-5">
             <div class="flex items-center justify-between mb-3">
@@ -951,6 +1227,73 @@ const avatarFor = (u: AdminUser) =>
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- ============ DB row editor (overlay above the console) ============ -->
+  <Teleport to="body">
+    <Transition name="fade">
+      <div
+        v-if="dbEditor"
+        class="fixed inset-0 z-[80] bg-black/50 flex items-center justify-center backdrop-blur-sm p-4"
+        @click="closeDbEditor"
+      >
+        <div
+          class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col overflow-hidden dark:bg-zinc-900 dark:border dark:border-zinc-800"
+          @click.stop
+        >
+          <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-200 dark:border-zinc-800">
+            <h3 class="text-sm font-bold text-zinc-800 dark:text-zinc-100">
+              {{ dbEditor.mode === 'insert' ? '新增行' : (isOwner ? '编辑行' : '查看行') }} · <span class="font-mono">{{ dbActiveTable }}</span>
+            </h3>
+            <button class="w-7 h-7 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center" @click="closeDbEditor">✕</button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-5 space-y-3">
+            <div v-for="c in dbColumns" :key="c.name">
+              <label class="flex items-center gap-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 mb-1">
+                <span class="font-mono">{{ c.name }}</span>
+                <span v-if="c.primary_key" class="text-amber-500" title="主键">🔑</span>
+                <span class="text-[10px] text-zinc-400 font-normal">{{ c.py_type }}{{ c.nullable ? ' · 可空' : '' }}</span>
+              </label>
+              <textarea
+                v-if="c.py_type === 'str'"
+                v-model="dbEditor.values[c.name]"
+                rows="1"
+                spellcheck="false"
+                :disabled="!isOwner || (dbEditor.mode === 'update' && c.primary_key)"
+                class="w-full text-xs border border-zinc-200 rounded-lg px-2.5 py-1.5 bg-white text-zinc-700 font-mono resize-y focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-zinc-50 disabled:text-zinc-400 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200 dark:disabled:bg-zinc-800/50"
+              ></textarea>
+              <select
+                v-else-if="c.py_type === 'bool'"
+                v-model="dbEditor.values[c.name]"
+                :disabled="!isOwner || (dbEditor.mode === 'update' && c.primary_key)"
+                class="w-full text-xs border border-zinc-200 rounded-lg px-2.5 py-1.5 bg-white text-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-zinc-50 disabled:text-zinc-400 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200"
+              >
+                <option value="">（空）</option>
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+              <input
+                v-else
+                v-model="dbEditor.values[c.name]"
+                type="text"
+                :placeholder="dbEditor.mode === 'insert' && c.primary_key ? '留空自动生成' : ''"
+                :disabled="!isOwner || (dbEditor.mode === 'update' && c.primary_key)"
+                class="w-full text-xs border border-zinc-200 rounded-lg px-2.5 py-1.5 bg-white text-zinc-700 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:bg-zinc-50 disabled:text-zinc-400 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200 dark:disabled:bg-zinc-800/50"
+              />
+            </div>
+          </div>
+          <div class="flex justify-end gap-2 px-5 py-3 border-t border-zinc-200 dark:border-zinc-800">
+            <button class="text-xs px-3 py-1.5 rounded-lg text-zinc-500 hover:text-zinc-700 dark:text-zinc-400" @click="closeDbEditor">{{ isOwner ? '取消' : '关闭' }}</button>
+            <button
+              v-if="isOwner"
+              class="text-xs px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+              :disabled="dbSaving"
+              @click="saveDbRow"
+            >{{ dbSaving ? '保存中…' : '保存' }}</button>
           </div>
         </div>
       </div>
