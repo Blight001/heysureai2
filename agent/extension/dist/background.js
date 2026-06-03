@@ -3967,35 +3967,77 @@
       throw new Error("No active tab found");
     return tab;
   }
+  function sendToContent(tabId, msg) {
+    return new Promise((resolve, reject) => {
+      chrome.tabs.sendMessage(tabId, msg, (response) => {
+        const err = chrome.runtime.lastError;
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve(response);
+      });
+    });
+  }
+  function isNoReceiverError(err) {
+    const m = err?.message || "";
+    return m.includes("Could not establish connection") || m.includes("Receiving end does not exist");
+  }
+  function contentScriptFiles() {
+    try {
+      const manifest = chrome.runtime.getManifest();
+      const files = [];
+      for (const cs of manifest.content_scripts || []) {
+        for (const js of cs.js || [])
+          files.push(js);
+      }
+      if (files.length)
+        return files;
+    } catch {
+    }
+    return ["dist/content.js"];
+  }
+  async function injectContentScript(tabId) {
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: contentScriptFiles()
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function unwrapContentResult(res) {
+    if (res?.error) {
+      const detail = typeof res.error === "object" ? res.error : { message: String(res.error), code: "CONTENT_ACTION_FAILED" };
+      const err = new Error(detail.message || "Content action failed");
+      err.code = detail.code || "CONTENT_ACTION_FAILED";
+      err.suggestion = detail.suggestion;
+      err.trace = res.trace;
+      throw err;
+    }
+    return res;
+  }
   async function contentMsg(tabId, msg) {
     try {
-      const res = await new Promise((resolve, reject) => {
-        chrome.tabs.sendMessage(tabId, msg, (response) => {
-          const err = chrome.runtime.lastError;
-          if (err) {
-            reject(err);
-            return;
-          }
-          resolve(response);
-        });
-      });
-      if (res?.error) {
-        const detail = typeof res.error === "object" ? res.error : { message: String(res.error), code: "CONTENT_ACTION_FAILED" };
-        const err = new Error(detail.message || "Content action failed");
-        err.code = detail.code || "CONTENT_ACTION_FAILED";
-        err.suggestion = detail.suggestion;
-        err.trace = res.trace;
-        throw err;
-      }
-      return res;
+      return unwrapContentResult(await sendToContent(tabId, msg));
     } catch (err) {
-      if (err.message?.includes("Could not establish connection")) {
-        const e = new Error("Content script unavailable on this page (try a normal web page, not chrome://).");
-        e.code = "CONTENT_SCRIPT_UNAVAILABLE";
-        e.suggestion = "Navigate to a normal http/https page and retry.";
-        throw e;
+      if (!isNoReceiverError(err))
+        throw err;
+      const injected = await injectContentScript(tabId);
+      if (injected) {
+        try {
+          return unwrapContentResult(await sendToContent(tabId, msg));
+        } catch (retryErr) {
+          if (!isNoReceiverError(retryErr))
+            throw retryErr;
+        }
       }
-      throw err;
+      const e = new Error("Content script unavailable on this page (try a normal web page, not chrome://).");
+      e.code = "CONTENT_SCRIPT_UNAVAILABLE";
+      e.suggestion = "Navigate to a normal http/https page and retry.";
+      throw e;
     }
   }
   function normalizeToolError(err, name, args) {

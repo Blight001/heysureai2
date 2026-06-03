@@ -14,37 +14,92 @@ async function getActiveTab(): Promise<chrome.tabs.Tab> {
   return tab
 }
 
+function sendToContent(tabId: number, msg: any): Promise<any> {
+  return new Promise<any>((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, msg, (response) => {
+      const err = chrome.runtime.lastError
+      if (err) {
+        reject(err)
+        return
+      }
+      resolve(response)
+    })
+  })
+}
+
+// The content script is normally auto-injected via the manifest, but only on
+// pages that loaded *after* the extension was installed/reloaded (and never on
+// restricted pages). For tabs that were already open — or after the service
+// worker restarts — chrome.tabs.sendMessage fails with "Could not establish
+// connection". When that happens we inject dist/content.js on demand and retry,
+// so browser_get_content / browser_dom_snapshot / browser_page_info keep working
+// on any ordinary http/https page without a manual reload.
+function isNoReceiverError(err: any): boolean {
+  const m = err?.message || ''
+  return m.includes('Could not establish connection') ||
+    m.includes('Receiving end does not exist')
+}
+
+function contentScriptFiles(): string[] {
+  try {
+    const manifest: any = chrome.runtime.getManifest()
+    const files: string[] = []
+    for (const cs of manifest.content_scripts || []) {
+      for (const js of cs.js || []) files.push(js)
+    }
+    if (files.length) return files
+  } catch { /* fall through to default */ }
+  return ['dist/content.js']
+}
+
+async function injectContentScript(tabId: number): Promise<boolean> {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: contentScriptFiles(),
+    })
+    return true
+  } catch {
+    // Restricted pages (chrome://, the web store, PDF viewer, …) reject
+    // programmatic injection — there's nothing we can do, report unavailable.
+    return false
+  }
+}
+
+function unwrapContentResult(res: any): any {
+  if (res?.error) {
+    const detail = typeof res.error === 'object'
+      ? res.error
+      : { message: String(res.error), code: 'CONTENT_ACTION_FAILED' }
+    const err: any = new Error(detail.message || 'Content action failed')
+    err.code = detail.code || 'CONTENT_ACTION_FAILED'
+    err.suggestion = detail.suggestion
+    err.trace = res.trace
+    throw err
+  }
+  return res
+}
+
 async function contentMsg(tabId: number, msg: any): Promise<any> {
   try {
-    const res = await new Promise<any>((resolve, reject) => {
-      chrome.tabs.sendMessage(tabId, msg, (response) => {
-        const err = chrome.runtime.lastError
-        if (err) {
-          reject(err)
-          return
-        }
-        resolve(response)
-      })
-    })
-    if (res?.error) {
-      const detail = typeof res.error === 'object'
-        ? res.error
-        : { message: String(res.error), code: 'CONTENT_ACTION_FAILED' }
-      const err: any = new Error(detail.message || 'Content action failed')
-      err.code = detail.code || 'CONTENT_ACTION_FAILED'
-      err.suggestion = detail.suggestion
-      err.trace = res.trace
-      throw err
-    }
-    return res
+    return unwrapContentResult(await sendToContent(tabId, msg))
   } catch (err: any) {
-    if (err.message?.includes('Could not establish connection')) {
-      const e: any = new Error('Content script unavailable on this page (try a normal web page, not chrome://).')
-      e.code = 'CONTENT_SCRIPT_UNAVAILABLE'
-      e.suggestion = 'Navigate to a normal http/https page and retry.'
-      throw e
+    if (!isNoReceiverError(err)) throw err
+
+    // No content script on this tab yet — try to inject it once, then retry.
+    const injected = await injectContentScript(tabId)
+    if (injected) {
+      try {
+        return unwrapContentResult(await sendToContent(tabId, msg))
+      } catch (retryErr: any) {
+        if (!isNoReceiverError(retryErr)) throw retryErr
+      }
     }
-    throw err
+
+    const e: any = new Error('Content script unavailable on this page (try a normal web page, not chrome://).')
+    e.code = 'CONTENT_SCRIPT_UNAVAILABLE'
+    e.suggestion = 'Navigate to a normal http/https page and retry.'
+    throw e
   }
 }
 
