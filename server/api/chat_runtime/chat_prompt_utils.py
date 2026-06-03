@@ -329,12 +329,21 @@ def _render_mcp_tool_catalog(allowed_tools: set[str]) -> str:
 
     groups: Dict[str, List[str]] = {}
     for name in sorted(allowed):
-        desc = desc_by_name.get(name, "")
-        destructive = destructive_by_name.get(name, False)
-        if not desc and is_endpoint_agent_tool(name):
+        if name in desc_by_name:
+            # Registered builtin tool.
+            desc = desc_by_name.get(name, "")
+            destructive = destructive_by_name.get(name, False)
+        elif is_endpoint_agent_tool(name):
+            # Valid desktop/browser endpoint tool (description only present
+            # while the owning agent is online).
             spec = endpoint_defs.get(name) or {}
             desc = str(spec.get("description") or "").strip()
             destructive = True
+        else:
+            # Stale name persisted in the config allowlist that no longer maps
+            # to any real tool. mcp.list_tools hides these; the catalog must too,
+            # otherwise the model sees (and may try to call) dead tools.
+            continue
         marker = " !" if destructive else ""
         short = _short_tool_desc(desc)
         line = f"  - {name}{marker}: {short}" if short else f"  - {name}{marker}"
