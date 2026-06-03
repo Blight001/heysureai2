@@ -239,7 +239,7 @@ def _prompt_read_ai(user_id: int, args: dict, ai_config_id: Optional[int] = None
             "runtime_injected_sections": [
                 "AI 工作目录",
                 "AI 数据库连接（当该 AI 配置了 database_uri 时）",
-                "MCP native tools schema（初始仅暴露 mcp.list_tools / mcp.describe_tool，按需动态增加目标工具）",
+                "可用MCP工具目录（一次性列出全部可调用工具名称+简介）与 MCP native tools schema（初始仅暴露 mcp.describe_tool，按需动态增加目标工具）",
                 "任务运行时附加提示（仅任务运行场景）",
                 "飞书通知前置模板（仅飞书事件场景）",
             ],

@@ -96,8 +96,7 @@ _INTRINSIC_TOOL_DESCRIPTIONS_ZH = {
     "librarian.list_topics": "列出流程知识标题、触发词和摘要，用于先浏览再按需读取全文。",
     "librarian.propose": "向图书管理员知识库提交新的流程沉淀申请，初始为待审批，用户通过后才可检索。",
     "librarian.read": "根据 memory_id 读取指定流程知识的完整 Markdown 正文。",
-    "mcp.describe_tool": "按精确工具名读取一个已允许 MCP 工具的完整说明和参数 schema。",
-    "mcp.list_tools": "列出当前 AI 可用的 MCP 能力，默认只返回命名空间，也可展开指定栏目或全部工具。",
+    "mcp.describe_tool": "按工具名（支持 tools 批量或 query 关键词搜索）读取已允许 MCP 工具的完整说明和参数 schema。",
     "memory.archive": "归档一条长期记忆，使其不再出现在默认搜索结果中。",
     "memory.list": "列出已保存的长期记忆，可按类型或项目过滤。",
     "memory.search": "按自由文本、类型、项目或标签搜索长期记忆。",
@@ -611,7 +610,7 @@ def _intrinsic_properties_payload(user_id: int = 0) -> Dict[str, Any]:
         for namespace, items in sorted(grouped.items())
     ]
     return {
-        "description": "系统当前固定注册的服务端 MCP 工具定义如下；默认中文展示，编辑后会同步影响 mcp.list_tools 与 mcp.describe_tool 的返回。",
+        "description": "系统当前固定注册的服务端 MCP 工具定义如下；默认中文展示，编辑后会同步影响 [可用MCP工具] 目录与 mcp.describe_tool 的返回。",
         "total": len(tools),
         "categories": categories,
     }

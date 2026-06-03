@@ -42,7 +42,6 @@ DEFAULT_MIN_ROLE = ROLE_MEMBER
 # raised so they can only be granted to the appropriate tiers.
 MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # MCP self-inspection — available to every tier and forced into runtime allow-lists.
-    "mcp.list_tools": ROLE_MEMBER,
     "mcp.describe_tool": ROLE_MEMBER,
     # Web search — external read-only lookup, available to every tier by default.
     "web.search": ROLE_MEMBER,
