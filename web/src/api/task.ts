@@ -18,8 +18,6 @@ export interface TriggerTaskPayload {
   token_limit_override: number
   override_mcp_tools_enabled: boolean
   mcp_tools_override: string[]
-  override_workspace_root_enabled: boolean
-  workspace_root_override: string
 }
 
 export const fetchTaskListAndJobs = async (configId: number, token: string) => {

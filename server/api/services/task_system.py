@@ -40,13 +40,6 @@ def with_workspace_read_by_name_compat(tools: set[str]) -> set[str]:
     }
 
 
-def normalize_workspace_root(value: Optional[str]) -> Optional[str]:
-    if value is None:
-        return None
-    normalized = str(value).strip().replace("\\", "/").strip("/")
-    return normalized or None
-
-
 def normalize_task_item(raw: Any) -> Dict[str, Any]:
     src = raw if isinstance(raw, dict) else {}
     priority = 5
@@ -221,11 +214,6 @@ def extract_task_payload(body: Dict[str, Any]) -> Dict[str, Any]:
             dedup.add(item)
             mcp_tools_override.append(item)
 
-    override_workspace_root_enabled = _parse_bool(body.get("override_workspace_root_enabled"), False)
-    workspace_root_override = normalize_workspace_root(str(body.get("workspace_root_override") or ""))
-    if not workspace_root_override:
-        workspace_root_override = "."
-
     return {
         "schedule": {
             "enabled": schedule_enabled,
@@ -243,7 +231,7 @@ def extract_task_payload(body: Dict[str, Any]) -> Dict[str, Any]:
             "tools": mcp_tools_override,
         },
         "override_workspace_root": {
-            "enabled": override_workspace_root_enabled,
-            "value": workspace_root_override,
+            "enabled": False,
+            "value": "",
         },
     }

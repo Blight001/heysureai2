@@ -137,7 +137,6 @@ def _default_ai_specs():
             "project_id": "p-files",
             "project_name": "文件项目管理系统",
             "prompt": "",
-            "workspace_root": ".",
             "sort_order": 10,
         },
         {
@@ -187,7 +186,7 @@ def ensure_default_configs(session: Session, user_id: int) -> list[AssistantAICo
                 current_behavior=spec["current_behavior"],
                 project_id=spec["project_id"],
                 project_name=spec["project_name"],
-                workspace_root=spec.get("workspace_root"),
+                workspace_root=None,
                 sort_order=spec["sort_order"],
             )
             session.add(row)

@@ -1,6 +1,5 @@
 import os
 import time
-import contextvars
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
@@ -12,63 +11,20 @@ from api.database import engine
 from api.models import AIRuntimeStatus, AssistantAIConfig
 from api.sio import sio
 
-_MCP_RUNTIME_OVERRIDES: contextvars.ContextVar[Optional[Dict[str, Any]]] = contextvars.ContextVar(
-    "mcp_runtime_overrides",
-    default=None,
-)
 MCP_INTROSPECTION_TOOLS = {"mcp.list_tools", "mcp.describe_tool"}
 _IGNORED_WORKSPACE_DIRS = {".git", "__pycache__", "venv", "node_modules", ".aider"}
-def set_mcp_runtime_overrides(overrides: Optional[Dict[str, Any]]):
-    return _MCP_RUNTIME_OVERRIDES.set(overrides or None)
-
-def reset_mcp_runtime_overrides(token) -> None:
-    _MCP_RUNTIME_OVERRIDES.reset(token)
-
-def get_mcp_runtime_overrides() -> Optional[Dict[str, Any]]:
-    return _MCP_RUNTIME_OVERRIDES.get()
 
 def _resolve_ai_workspace(user_id: int, ai_config_id: Optional[int]) -> str:
     """Resolve an AI's own working directory.
 
     Each AI gets its own subdirectory under the user workspace
-    (``<id>-<slug>``); admin AIs share ``_admins``. An explicit
-    ``workspace_root`` on the config still acts as a custom override (kept
-    sandboxed inside the user workspace). Callers that pass no
+    (``<id>-<slug>``); admin AIs share ``_admins``. Callers that pass no
     ``ai_config_id`` get the user-root (shared) directory.
 
     Note: the shared knowledge base is resolved separately
     (``user_shared_knowledge_dir``) so it stays one-per-user across AIs.
     """
     user_root = user_workspace_dir(user_id)
-
-    def bounded_workspace(raw_workspace: str) -> str:
-        raw = str(raw_workspace or "").strip()
-        if not raw or raw == ".":
-            candidate = user_root
-        elif os.path.isabs(raw):
-            candidate = os.path.abspath(raw)
-        else:
-            candidate = os.path.abspath(os.path.join(user_root, raw))
-
-        abs_root = os.path.abspath(user_root)
-        try:
-            common = os.path.commonpath([abs_root, candidate])
-        except ValueError:
-            common = ""
-        if common != abs_root:
-            raise HTTPException(status_code=403, detail="Workspace root outside user workspace is not allowed")
-        return candidate
-
-    runtime_overrides = get_mcp_runtime_overrides() or {}
-    override_uid = runtime_overrides.get("user_id")
-    override_cfg = runtime_overrides.get("ai_config_id")
-    override_ws = str(runtime_overrides.get("workspace_root") or "").strip()
-    if (
-        override_ws
-        and (override_uid is None or int(override_uid) == int(user_id))
-        and (override_cfg is None or int(override_cfg) == int(ai_config_id or 0))
-    ):
-        return bounded_workspace(override_ws)
 
     if not ai_config_id:
         return user_root
@@ -81,12 +37,7 @@ def _resolve_ai_workspace(user_id: int, ai_config_id: Optional[int]) -> str:
         ).first()
     if not cfg:
         return user_root
-    raw = str(cfg.workspace_root or "").strip()
-    if raw and raw != ".":
-        # Explicit custom override (still sandboxed to the user workspace).
-        return bounded_workspace(raw)
-    # Computed per-AI / admin-shared default directory.
-    return bounded_workspace(ai_workspace_dirname(cfg.id, cfg.name, cfg.ai_role))
+    return os.path.abspath(os.path.join(user_root, ai_workspace_dirname(cfg.id, cfg.name, cfg.ai_role)))
 
 def get_project_root(user_id: int, ai_config_id: Optional[int] = None) -> str:
     workspace_dir = _resolve_ai_workspace(user_id, ai_config_id)

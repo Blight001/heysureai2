@@ -201,9 +201,6 @@ const {
   aiConfigForm,
   availableMcpTools,
   configAvailableMcpTools,
-  availableWorkspaceDirs,
-  workspaceDirsLoading,
-  workspaceDirsError,
   getMcpAutoApprove,
   loadMcpTools,
   toggleAiConfigSettingsSection,
@@ -240,9 +237,6 @@ const {
   taskListLoading,
   taskCreatePanelOpen,
   taskCreateSubmitting,
-  taskWorkspaceDirs,
-  taskWorkspaceDirsLoading,
-  taskWorkspaceDirsError,
   taskDetailOpen,
   taskDetailLoading,
   taskDetailJob,
@@ -617,9 +611,6 @@ onUnmounted(() => {
       :task-create-form="taskCreateForm"
       :available-mcp-tools="availableMcpTools"
       :default-mcp-tools="defaultMcpTools"
-      :available-workspace-dirs="taskWorkspaceDirs"
-      :workspace-dirs-loading="taskWorkspaceDirsLoading"
-      :workspace-dirs-error="taskWorkspaceDirsError"
       :task-detail-open="taskDetailOpen"
       :task-detail-loading="taskDetailLoading"
       :task-detail-job="taskDetailJob"
@@ -684,9 +675,6 @@ onUnmounted(() => {
       :settings-section="aiConfigSettingsSection"
       :available-mcp-tools="configAvailableMcpTools"
       :connected-agents="connectedAgents"
-      :available-workspace-dirs="availableWorkspaceDirs"
-      :workspace-dirs-loading="workspaceDirsLoading"
-      :workspace-dirs-error="workspaceDirsError"
       :model-presets="modelPresets"
       :on-close="() => aiConfigModalOpen = false"
       :on-toggle-settings-section="toggleAiConfigSettingsSection"

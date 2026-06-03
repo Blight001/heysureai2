@@ -21,7 +21,6 @@ import type {
   TaskCreateForm,
 } from '@/utils/taskSystem'
 import { getAuthToken } from '@/api/http'
-import { listWorkspaceFiles } from '@/api/workspace'
 import type { Agent } from '@/types'
 
 type MessageType = 'info' | 'success' | 'warning' | 'error'
@@ -53,9 +52,6 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
   const taskListLoading = ref(false)
   const taskCreatePanelOpen = ref(false)
   const taskCreateSubmitting = ref(false)
-  const taskWorkspaceDirs = ref<string[]>(['.'])
-  const taskWorkspaceDirsLoading = ref(false)
-  const taskWorkspaceDirsError = ref('')
   const taskDetailOpen = ref(false)
   const taskDetailLoading = ref(false)
   const taskDetailJob = ref<AITaskJobItem | null>(null)
@@ -119,7 +115,6 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
     selectedTaskJobIds.value = []
     taskListModalOpen.value = true
     await fetchAgentTaskList(agent)
-    void loadTaskWorkspaceDirs()
   }
 
   const closeAgentTaskList = () => {
@@ -157,19 +152,6 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
     return [...(availableMcpTools.value.length ? availableMcpTools.value : defaultMcpTools)]
   }
 
-  const normalizeWorkspaceRoot = (path?: string) => {
-    const normalized = String(path || '')
-      .replace(/\\/g, '/')
-      .replace(/^\/+|\/+$/g, '')
-    return normalized || '.'
-  }
-
-  const sortWorkspaceDirs = (a: string, b: string) => {
-    if (a === '.' && b !== '.') return -1
-    if (b === '.' && a !== '.') return 1
-    return a.localeCompare(b)
-  }
-
   const buildTaskCreateForm = (agent?: Agent | null): TaskCreateForm => ({
     title: '',
     instruction: '',
@@ -184,8 +166,6 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
     token_limit_override: Math.max(1, Number(agent?.tokenLimit) || 10000),
     override_mcp_tools_enabled: false,
     mcp_tools_override: parseAgentMcpTools(agent),
-    override_workspace_root_enabled: false,
-    workspace_root_override: '.',
   })
 
   const formatDateLocal = (unixSeconds?: number) => {
@@ -212,9 +192,6 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
       : {}
     const overrideMcp = payload.override_mcp_tools && typeof payload.override_mcp_tools === 'object'
       ? payload.override_mcp_tools
-      : {}
-    const overrideWorkspace = payload.override_workspace_root && typeof payload.override_workspace_root === 'object'
-      ? payload.override_workspace_root
       : {}
 
     const overrideMcpTools = Array.isArray(overrideMcp.tools)
@@ -246,53 +223,21 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
       token_limit_override: Math.max(1, Number(overrideToken.value) || base.token_limit_override),
       override_mcp_tools_enabled: !!overrideMcp.enabled,
       mcp_tools_override: overrideMcpTools.length > 0 ? overrideMcpTools : base.mcp_tools_override,
-      override_workspace_root_enabled: !!overrideWorkspace.enabled,
-      workspace_root_override: normalizeWorkspaceRoot(String(overrideWorkspace.value || base.workspace_root_override || '.')),
     }
   }
 
   const taskCreateForm = ref<TaskCreateForm>(buildTaskCreateForm())
 
-  const loadTaskWorkspaceDirs = async (selectedPath?: string) => {
-    if (!getAuthToken()) return
-    taskWorkspaceDirsLoading.value = true
-    taskWorkspaceDirsError.value = ''
-    try {
-      const paths = await listWorkspaceFiles()
-      const directories = new Set<string>(['.'])
-      for (const rawPath of Array.isArray(paths) ? paths : []) {
-        const path = String(rawPath || '').replace(/\\/g, '/')
-        if (!path) continue
-        if (path.endsWith('/')) {
-          directories.add(normalizeWorkspaceRoot(path))
-          continue
-        }
-        const idx = path.lastIndexOf('/')
-        if (idx > 0) directories.add(normalizeWorkspaceRoot(path.slice(0, idx)))
-      }
-      directories.add(normalizeWorkspaceRoot(selectedPath || taskCreateForm.value.workspace_root_override || '.'))
-      taskWorkspaceDirs.value = Array.from(directories).sort(sortWorkspaceDirs)
-    } catch (err) {
-      console.error('Failed to load task workspace directories:', err)
-      taskWorkspaceDirsError.value = '工作区目录加载失败'
-      taskWorkspaceDirs.value = ['.']
-    } finally {
-      taskWorkspaceDirsLoading.value = false
-    }
-  }
-
   const openTaskCreatePanel = (agent?: Agent | null) => {
     if (!agent?.aiConfigId) return
     taskCreateForm.value = buildTaskCreateForm(agent)
     taskCreatePanelOpen.value = true
-    void loadTaskWorkspaceDirs(taskCreateForm.value.workspace_root_override)
   }
 
   const openTaskCreatePanelFromJob = (agent?: Agent | null, job?: AITaskJobItem | null) => {
     if (!agent?.aiConfigId || !job?.job_id) return
     taskCreateForm.value = buildTaskCreateFormFromJob(agent, job)
     taskCreatePanelOpen.value = true
-    void loadTaskWorkspaceDirs(taskCreateForm.value.workspace_root_override)
   }
 
   const toggleTaskCreatePanel = (agent?: Agent | null) => {
@@ -335,12 +280,10 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
     if (!token) return
     const defaultTools = parseAgentMcpTools(agent)
     const selectedTools = [...taskCreateForm.value.mcp_tools_override].map(v => String(v || '').trim()).filter(Boolean)
-    const normalizedWorkspaceRootOverride = normalizeWorkspaceRoot(taskCreateForm.value.workspace_root_override)
     const sameToolCount = selectedTools.length === defaultTools.length
     const sameTools = sameToolCount && selectedTools.every(tool => defaultTools.includes(tool))
     const autoEnableMcpOverride = !sameTools
     const autoEnableTokenOverride = Number(taskCreateForm.value.token_limit_override) !== Math.max(1, Number(agent.tokenLimit) || 10000)
-    const autoEnableWorkspaceOverride = normalizedWorkspaceRootOverride !== '.'
     const useScheduleDatetime = !!taskCreateForm.value.schedule_enabled
       && !taskCreateForm.value.schedule_loop_enabled
       && taskCreateForm.value.schedule_time_mode === 'datetime'
@@ -370,8 +313,6 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
         token_limit_override: Math.max(1, Number(taskCreateForm.value.token_limit_override) || 10000),
         override_mcp_tools_enabled: !!taskCreateForm.value.override_mcp_tools_enabled || autoEnableMcpOverride,
         mcp_tools_override: selectedTools,
-        override_workspace_root_enabled: !!taskCreateForm.value.override_workspace_root_enabled || autoEnableWorkspaceOverride,
-        workspace_root_override: normalizedWorkspaceRootOverride,
       }, token)
       void alert({ message: `任务「${data.title || title}」已创建并入队`, type: 'success' })
       closeTaskCreatePanel()
@@ -509,9 +450,6 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
     taskListLoading,
     taskCreatePanelOpen,
     taskCreateSubmitting,
-    taskWorkspaceDirs,
-    taskWorkspaceDirsLoading,
-    taskWorkspaceDirsError,
     taskDetailOpen,
     taskDetailLoading,
     taskDetailJob,

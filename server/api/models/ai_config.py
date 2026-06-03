@@ -101,7 +101,6 @@ class AssistantAIConfigCreate(SQLModel):
     token_limit: Optional[int] = 10000
     lifecycle_status: Optional[str] = "working"
     current_behavior: Optional[str] = "等待指令..."
-    workspace_root: Optional[str] = None
     database_uri: Optional[str] = None
     bot_channel: Optional[str] = "feishu"
     # ``bot_configs`` carries per-channel credentials and addressing.
@@ -137,7 +136,6 @@ class AssistantAIConfigUpdate(SQLModel):
     token_limit: Optional[int] = None
     lifecycle_status: Optional[str] = None
     current_behavior: Optional[str] = None
-    workspace_root: Optional[str] = None
     database_uri: Optional[str] = None
     bot_channel: Optional[str] = None
     bot_configs: Optional[Dict[str, Dict[str, Any]]] = None

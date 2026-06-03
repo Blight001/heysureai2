@@ -48,7 +48,6 @@ export interface AiConfigUpsertPayload {
   digital_member_role: 'manager' | 'member'
   platform: string
   token_limit: number
-  workspace_root: string | null
   model?: string
   model_preset_id?: string
   prompt?: string

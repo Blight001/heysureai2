@@ -19,7 +19,7 @@ import requests
 from sqlmodel import Session, select
 
 from api.database import engine
-from mcp_runtime.mcp import registry, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
+from mcp_runtime.mcp import get_project_root, registry
 from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
 from api.services import valhalla_service
@@ -72,7 +72,6 @@ from api.chat_runtime.chat_runtime_helpers import (
     _load_task_payload_by_session,
     _parse_allowed_tools,
     _resolve_ai_runtime,
-    _resolve_effective_workspace_root,
     _run_set_status,
     _run_should_stop,
     _session_total_tokens,
@@ -956,7 +955,6 @@ def _run_worker_impl(
                 if _bot is not None:
                     effective_tool_allowlist.update(_bot.extra_required_mcp_tools())
             token_threshold_override = None
-            workspace_root_override = None
             if task_payload:
                 override_tools = task_payload.get("override_mcp_tools")
                 if isinstance(override_tools, dict) and bool(override_tools.get("enabled")):
@@ -980,9 +978,6 @@ def _run_worker_impl(
                         token_threshold_override = max(1, int(override_token.get("value") or 1))
                     except Exception:
                         token_threshold_override = None
-                override_workspace = task_payload.get("override_workspace_root")
-                if isinstance(override_workspace, dict) and bool(override_workspace.get("enabled")):
-                    workspace_root_override = str(override_workspace.get("value") or "").strip() or "."
             # Task runtime must always allow task system tools.
             if is_task_runtime:
                 effective_tool_allowlist.update(TASK_RUNTIME_REQUIRED_TOOLS)
@@ -992,16 +987,11 @@ def _run_worker_impl(
             if merged_system_prompt:
                 system_prompt = merged_system_prompt
             if is_task_runtime:
-                effective_workspace_root = _resolve_effective_workspace_root(
-                    user_id=user_id,
-                    ai_config_id=ai_config_id,
-                    workspace_root_override=workspace_root_override,
-                )
                 # Keep only one effective workspace section in task runtime prompt.
                 system_prompt = _append_prompt_section(
                     _strip_prompt_section(system_prompt, "AI 工作目录"),
                     "AI 工作目录",
-                    effective_workspace_root,
+                    get_project_root(user_id, ai_config_id),
                 )
                 # Remove legacy task-runtime prompt sections; task constraints are enforced server-side.
                 system_prompt = _strip_task_runtime_sections(system_prompt)
@@ -1665,13 +1655,6 @@ def _run_worker_impl(
                 _set_run_live_phase(run_id, "waiting_mcp", tool)
                 tool_failed = False
                 tool_error = ""
-                override_token = None
-                if workspace_root_override:
-                    override_token = set_mcp_runtime_overrides({
-                        "user_id": user_id,
-                        "ai_config_id": ai_config_id,
-                        "workspace_root": workspace_root_override,
-                    })
                 try:
                     tool_result = asyncio.run(_call_mcp_or_endpoint_tool(tool, user_id, arguments, ai_config_id))
                     endpoint_failed, endpoint_error = _tool_result_failed(tool_result)
@@ -1683,9 +1666,6 @@ def _run_worker_impl(
                     tool_error = _extract_mcp_error(mcp_exc)
                     tool_result = {"result": {"success": False, "error": tool_error}}
                     result_text = _build_mcp_display_result(tool, tool_result, ok=False, error_message=tool_error)
-                finally:
-                    if override_token is not None:
-                        reset_mcp_runtime_overrides(override_token)
                 saved.tags = _append_mcp_state_to_tags(saved.tags, tool, arguments, result_text)
                 bg.add(saved)
                 bg.commit()

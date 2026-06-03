@@ -1,7 +1,6 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import type { Agent, McpRoleMeta, McpToolDefinition, ModelPreset } from '@/types'
 import { getAuthToken } from '@/api/http'
-import { listWorkspaceFiles } from '@/api/workspace'
 import { listMcpTools } from '@/api/mcp'
 import {
   createAiConfig,
@@ -11,7 +10,7 @@ import {
   type AiConfigUpsertPayload,
 } from '@/api/ai'
 
-type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'bot'
+type SettingsSection = 'mcp' | 'auto' | 'bot'
 
 interface UseAiConfigManagementOptions {
   defaultMcpTools: string[]
@@ -115,9 +114,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
   const aiConfigMode = ref<'create' | 'edit'>('create')
   const aiConfigForm = ref<any>(null)
   const availableMcpTools = ref<string[]>([])
-  const availableWorkspaceDirs = ref<string[]>([])
-  const workspaceDirsLoading = ref(false)
-  const workspaceDirsError = ref('')
 
   const mcpAutoApproveStorageKey = 'mcp_auto_approve_by_config'
 
@@ -191,7 +187,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     digital_member_role: 'member' as 'manager' | 'member',
     platform: role === 'assistant_admin' ? 'Server-Node' : 'Ubuntu-Worker',
     token_limit: role === 'assistant_admin' ? 0 : 10000,
-    workspace_root: role === 'assistant_admin' ? '.' : '',
     model_preset_id: modelPresets.value[0]?.id || '',
     model: modelPresets.value[0]?.model || '',
     prompt: '',
@@ -225,43 +220,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     if (id && modelPresets.value.some(item => item.id === id)) return id
     const modelName = String(model || '').trim()
     return modelPresets.value.find(item => item.model === modelName || item.id === modelName)?.id || id
-  }
-
-  const normalizeWorkspacePath = (path: string) => {
-    return (path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
-  }
-
-  const loadWorkspaceDirs = async () => {
-    if (!getAuthToken()) return
-    workspaceDirsLoading.value = true
-    workspaceDirsError.value = ''
-    try {
-      const paths = await listWorkspaceFiles()
-      const directories = new Set<string>(['.'])
-      for (const rawPath of Array.isArray(paths) ? paths : []) {
-        const path = String(rawPath || '').replace(/\\/g, '/')
-        if (!path) continue
-        if (path.endsWith('/')) {
-          directories.add(normalizeWorkspacePath(path) || '.')
-          continue
-        }
-        const idx = path.lastIndexOf('/')
-        if (idx > 0) directories.add(normalizeWorkspacePath(path.slice(0, idx)) || '.')
-      }
-      const selectedPath = normalizeWorkspacePath(aiConfigForm.value?.workspace_root || '')
-      if (selectedPath) directories.add(selectedPath)
-      availableWorkspaceDirs.value = Array.from(directories).sort((a, b) => a.localeCompare(b))
-      if (!aiConfigForm.value?.workspace_root) {
-        aiConfigForm.value.workspace_root = ''
-      }
-    } catch (err) {
-      console.error('Failed to load workspace directories:', err)
-      workspaceDirsError.value = '工作区目录加载失败'
-      availableWorkspaceDirs.value = ['.']
-      if (!aiConfigForm.value?.workspace_root) aiConfigForm.value.workspace_root = ''
-    } finally {
-      workspaceDirsLoading.value = false
-    }
   }
 
   const loadMcpTools = async () => {
@@ -327,7 +285,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     aiConfigDeleteConfirm.value = false
     aiConfigSettingsSection.value = ''
     aiConfigForm.value = buildAiForm(role)
-    void loadWorkspaceDirs()
     aiConfigModalOpen.value = true
   }
 
@@ -356,7 +313,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       digital_member_role: normalizeDigitalMemberRole(cfg.digital_member_role),
       platform: cfg.platform || aiConfigForm.value.platform,
       token_limit: cfg.token_limit ?? aiConfigForm.value.token_limit,
-      workspace_root: normalizeWorkspacePath(cfg.workspace_root || ''),
       model_preset_id: presetIdForModel(cfg.model_preset_id, cfg.model),
       model: cfg.model ?? aiConfigForm.value.model,
       prompt: cfg.prompt || '',
@@ -370,10 +326,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       system_auto_control: normalizeSystemAutoControl((() => {
         try { return JSON.parse(cfg.system_auto_control || '{}') } catch { return {} }
       })()),
-    }
-    const selectedPath = aiConfigForm.value.workspace_root || ''
-    if (selectedPath && !availableWorkspaceDirs.value.includes(selectedPath)) {
-      availableWorkspaceDirs.value = [...availableWorkspaceDirs.value, selectedPath].sort((a, b) => a.localeCompare(b))
     }
   }
 
@@ -396,7 +348,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       digital_member_role: normalizeDigitalMemberRole(agent.digitalMemberRole || (agent.role === 'admin' ? 'manager' : 'member')),
       platform: agent.platform,
       token_limit: agent.aiRole === 'assistant_admin' ? 0 : agent.tokenLimit,
-      workspace_root: agent.aiRole === 'assistant_admin' ? '.' : '',
       model_preset_id: presetIdForModel('', agent.model),
       model: agent.model || '',
       prompt: '',
@@ -407,7 +358,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       bot_configs: hydrateBotConfigs(null),
       system_auto_control: normalizeSystemAutoControl({}),
     }
-    void loadWorkspaceDirs()
     aiConfigModalOpen.value = true
     void loadAiConfigDetail(agent.aiConfigId)
   }
@@ -425,7 +375,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
   const saveAiConfig = async () => {
     if (!aiConfigForm.value) return false
     if (!getAuthToken()) return false
-    const normalizedWorkspaceRoot = normalizeWorkspacePath(aiConfigForm.value.workspace_root || '')
     const selectedBotChannel = aiConfigForm.value.bot_channel === 'qq' ? 'qq' : 'feishu'
     const selectedPreset = modelPresets.value.find(item => item.id === aiConfigForm.value.model_preset_id)
     if (!selectedPreset) {
@@ -448,7 +397,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       token_limit: aiConfigForm.value.ai_role_group === 'assistant_admin'
         ? 0
         : (Number(aiConfigForm.value.token_limit) || 10000),
-      workspace_root: normalizedWorkspaceRoot || null,
       model: selectedPreset.model,
       model_preset_id: selectedPreset.id,
       prompt: aiConfigForm.value.prompt,
@@ -532,7 +480,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       if (!aiConfigForm.value || !role || role === prevRole) return
       if (role === 'assistant_admin') {
         aiConfigForm.value.token_limit = 0
-        if (!aiConfigForm.value.workspace_root) aiConfigForm.value.workspace_root = '.'
         aiConfigForm.value.mcp_tools = [...configAvailableMcpTools.value]
       } else {
         if (!aiConfigForm.value.digital_member_role) {
@@ -569,9 +516,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     aiConfigForm,
     availableMcpTools,
     configAvailableMcpTools,
-    availableWorkspaceDirs,
-    workspaceDirsLoading,
-    workspaceDirsError,
     getMcpAutoApprove,
     loadMcpTools,
     toggleAiConfigSettingsSection,

@@ -139,9 +139,6 @@ def _start_task_run(
         tools = mcp_override.get("tools")
         if isinstance(tools, list):
             payload_lines.append(f"- MCP范围覆盖: {', '.join(str(t) for t in tools if str(t).strip()) or '（空）'}")
-    workspace_override = payload.get("override_workspace_root") if isinstance(payload, dict) else {}
-    if isinstance(workspace_override, dict) and workspace_override.get("enabled"):
-        payload_lines.append(f"- 文件夹范围限制: {str(workspace_override.get('value') or '.')}")
     payload_block = ""
     if payload_lines:
         payload_block = "[任务附加约束]\n" + "\n".join(payload_lines) + "\n\n"

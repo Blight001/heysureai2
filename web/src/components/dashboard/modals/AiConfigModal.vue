@@ -5,7 +5,7 @@ import type { ModelPreset } from '@/types'
 import type { ConnectedAgent } from '@/composables/dashboard/useDashboardData'
 import AgentMcpScopeEditor from './AgentMcpScopeEditor.vue'
 
-type SettingsSection = 'mcp' | 'workspace' | 'auto' | 'bot'
+type SettingsSection = 'mcp' | 'auto' | 'bot'
 
 interface Props {
   show: boolean
@@ -15,9 +15,6 @@ interface Props {
   settingsSection: SettingsSection | ''
   availableMcpTools: string[]
   connectedAgents?: ConnectedAgent[]
-  availableWorkspaceDirs: string[]
-  workspaceDirsLoading: boolean
-  workspaceDirsError: string
   modelPresets: ModelPreset[]
   onClose: () => void
   onToggleSettingsSection: (section: SettingsSection) => void
@@ -34,7 +31,6 @@ const promptDetailOpen = ref(false)
 const settingsSectionTitle: Record<SettingsSection, string> = {
   mcp: 'MCP 工具权限',
   bot: '机器人配置',
-  workspace: '工作区权限',
   auto: '系统自动控制',
 }
 
@@ -204,16 +200,6 @@ const onModelPresetChange = () => {
               <span class="block text-xs font-medium text-zinc-700 dark:text-zinc-200">机器人配置</span>
               <span class="mt-1 block text-[11px] text-zinc-500 dark:text-zinc-400">
                 {{ selectedBotName }}，{{ selectedBotEnabled ? '已启用' : '未启用' }}
-              </span>
-            </button>
-            <button
-              type="button"
-              class="text-left px-3 py-2.5 rounded-lg border border-zinc-200 bg-zinc-50/70 hover:border-indigo-300 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800/40 dark:hover:border-indigo-500/50 dark:hover:bg-zinc-800"
-              @click="openSettingsSection('workspace')"
-            >
-              <span class="block text-xs font-medium text-zinc-700 dark:text-zinc-200">工作区权限</span>
-              <span class="mt-1 block text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
-                {{ form.workspace_root ? (form.workspace_root === '.' ? '用户工作区根目录' : form.workspace_root) : '仅对话，不绑定工作目录' }}
               </span>
             </button>
             <button
@@ -477,30 +463,6 @@ const onModelPresetChange = () => {
                   QQ 入站现在由服务端的 botpy 长连接托管，不需要单独配置回调地址。如果未连接，请先确认 App ID / Secret 和机器人权限配置正确。
                 </div>
                 </template>
-              </div>
-
-              <div v-else-if="settingsSection === 'workspace'">
-                <label class="block text-xs text-zinc-500 mb-1">允许 AI 读写的工作目录</label>
-                <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-2 bg-zinc-50 dark:bg-zinc-800/60">
-                  <div v-if="workspaceDirsLoading" class="text-xs text-zinc-500 dark:text-zinc-400 px-1 py-2">正在加载用户工作区目录...</div>
-                  <div v-else-if="workspaceDirsError" class="text-xs text-red-600 dark:text-red-300 px-1 py-2">{{ workspaceDirsError }}</div>
-                  <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[48vh] overflow-y-auto pr-1">
-                    <label
-                      class="text-xs text-zinc-600 dark:text-zinc-300 flex items-center gap-2 px-2 py-1.5 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900 cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-500/40"
-                    >
-                      <input type="radio" name="workspace-root-ai-config" value="" v-model="form.workspace_root" />
-                      <span class="font-mono">（仅对话，不绑定工作目录）</span>
-                    </label>
-                    <label
-                      v-for="dir in availableWorkspaceDirs"
-                      :key="`ws-dir-${dir === '.' ? 'root' : dir}`"
-                      class="text-xs text-zinc-600 dark:text-zinc-300 flex items-center gap-2 px-2 py-1.5 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900 cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-500/40"
-                    >
-                      <input type="radio" name="workspace-root-ai-config" :value="dir" v-model="form.workspace_root" />
-                      <span class="font-mono">{{ dir === '.' ? '（用户工作区根目录）' : dir }}</span>
-                    </label>
-                  </div>
-                </div>
               </div>
 
               <div v-else-if="settingsSection === 'auto'" class="space-y-3">

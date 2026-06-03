@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from api.database import engine
-from mcp_runtime.mcp import get_project_root, reset_mcp_runtime_overrides, set_mcp_runtime_overrides
+from mcp_runtime.mcp import get_project_root
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, User
 from api.services.model_presets import resolve_model_preset
 from api.services.task_system import parse_generation_from_session_id, with_workspace_read_by_name_compat
@@ -78,26 +78,6 @@ def _parse_allowed_tools(raw: Optional[str]) -> set[str]:
         return strip_endpoint_tool_config_names(with_workspace_read_by_name_compat(raw_tools))
     except Exception:
         return set()
-
-def _resolve_effective_workspace_root(
-    user_id: int,
-    ai_config_id: Optional[int],
-    workspace_root_override: Optional[str] = None,
-) -> str:
-    override = str(workspace_root_override or "").strip()
-    if not override:
-        return get_project_root(user_id, ai_config_id)
-    token = set_mcp_runtime_overrides(
-        {
-            "user_id": user_id,
-            "ai_config_id": ai_config_id,
-            "workspace_root": override,
-        }
-    )
-    try:
-        return get_project_root(user_id, ai_config_id)
-    finally:
-        reset_mcp_runtime_overrides(token)
 
 def _load_task_payload_by_session(
     session: Session,

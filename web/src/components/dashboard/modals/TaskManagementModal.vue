@@ -32,9 +32,6 @@ interface Props {
   taskCreateForm: TaskCreateForm
   availableMcpTools: string[]
   defaultMcpTools: string[]
-  availableWorkspaceDirs: string[]
-  workspaceDirsLoading: boolean
-  workspaceDirsError: string
   taskDetailOpen: boolean
   taskDetailLoading: boolean
   taskDetailJob: AITaskJobItem | null
@@ -624,46 +621,6 @@ const taskStateFilterButtonClass = (state: JobStateFilter) => {
             </div>
           </div>
 
-          <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-3">
-            <label class="text-xs text-zinc-600 dark:text-zinc-300 flex items-center gap-2 mb-2">
-              <input type="checkbox" v-model="taskCreateForm.override_workspace_root_enabled" />
-              <span>限制默认文件夹范围</span>
-            </label>
-            <div
-              v-if="taskCreateForm.override_workspace_root_enabled"
-              class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-2 bg-white/70 dark:bg-zinc-900/50"
-            >
-              <div v-if="workspaceDirsLoading" class="text-xs text-zinc-500 dark:text-zinc-400 px-1 py-2">正在加载用户工作区目录...</div>
-              <div v-else-if="workspaceDirsError" class="text-xs text-red-600 dark:text-red-300 px-1 py-2">{{ workspaceDirsError }}</div>
-              <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-1">
-                <label
-                  class="text-xs text-zinc-600 dark:text-zinc-300 flex items-center gap-2 px-2 py-1.5 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900 cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-500/40"
-                >
-                  <input
-                    type="radio"
-                    name="workspace-root-task-create"
-                    value="."
-                    v-model="taskCreateForm.workspace_root_override"
-                  />
-                  <span class="font-mono">（用户工作区根目录）</span>
-                </label>
-                <label
-                  v-for="dir in availableWorkspaceDirs.filter(item => item !== '.')"
-                  :key="`task-workspace-dir-${dir}`"
-                  class="text-xs text-zinc-600 dark:text-zinc-300 flex items-center gap-2 px-2 py-1.5 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900 cursor-pointer hover:border-indigo-300 dark:hover:border-indigo-500/40"
-                >
-                  <input
-                    type="radio"
-                    name="workspace-root-task-create"
-                    :value="dir"
-                    v-model="taskCreateForm.workspace_root_override"
-                  />
-                  <span class="font-mono">{{ dir }}</span>
-                </label>
-              </div>
-            </div>
-            <div v-if="taskCreateForm.override_workspace_root_enabled" class="text-[10px] text-zinc-400 mt-1">参考 AI 权限设置：从目录列表中选择，避免手动输入路径。</div>
-          </div>
         </div>
 
         <div class="mt-4 flex items-center justify-end gap-2">

@@ -23,7 +23,6 @@ from api.models import (
 from .auth import get_current_user
 from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.services.model_presets import normalize_model_presets
-from api.services.task_system import normalize_workspace_root
 from .ai_base import (
     _default_system_auto_control_for_user,
     _normalize_ai_role,
@@ -114,9 +113,6 @@ async def create_ai_config(
     role = _normalize_ai_role(body.ai_role)
     member_role = _normalize_digital_member_role(body.digital_member_role)
     token_limit = 0 if role == "assistant_admin" else (body.token_limit or 10000)
-    workspace_root = normalize_workspace_root(body.workspace_root)
-    if role == "assistant_admin" and workspace_root is None:
-        workspace_root = "."
     bot_channel = _normalize_bot_channel(body.bot_channel)
     model_fields = _resolve_config_model_fields(user, body.model_preset_id, body.model)
     raw_mcp_tools = body.mcp_tools or AssistantAIConfig.model_fields["mcp_tools"].default
@@ -141,7 +137,7 @@ async def create_ai_config(
         token_limit=token_limit,
         lifecycle_status=body.lifecycle_status or "working",
         current_behavior=body.current_behavior or "等待指令...",
-        workspace_root=workspace_root,
+        workspace_root=None,
         database_uri=body.database_uri,
         bot_channel=bot_channel,
         project_id=body.project_id,
@@ -242,13 +238,10 @@ async def update_ai_config(
         updates["digital_member_role"] = _normalize_digital_member_role(
             updates.get("digital_member_role", cfg.digital_member_role)
         )
+    updates.pop("workspace_root", None)
     if next_ai_role == "assistant_admin":
         updates["token_limit"] = 0
-        if "workspace_root" not in updates or not updates.get("workspace_root"):
-            updates["workspace_root"] = "."
     for key, value in updates.items():
-        if key == "workspace_root":
-            value = normalize_workspace_root(value)
         setattr(cfg, key, value)
     # Narrow the saved tool set to what this AI's role tier is permitted to use.
     cfg.mcp_tools = clamp_tools_json(user, config_role_tier(cfg), cfg.mcp_tools)
@@ -457,7 +450,7 @@ async def clone_ai_config(
         token_limit=src.token_limit,
         lifecycle_status=src.lifecycle_status,
         current_behavior="等待指令...",
-        workspace_root=src.workspace_root,
+        workspace_root=None,
         database_uri=src.database_uri,
         bot_channel="feishu",
         feishu_enabled=False,

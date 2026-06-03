@@ -73,8 +73,6 @@ export interface TaskCreateForm {
   token_limit_override: number
   override_mcp_tools_enabled: boolean
   mcp_tools_override: string[]
-  override_workspace_root_enabled: boolean
-  workspace_root_override: string
 }
 
 export interface SystemAutoControlDefaults {
@@ -237,7 +235,5 @@ export const getTaskPayloadTags = (payload?: Record<string, any>) => {
   if (token.enabled) out.push(`Token覆盖: ${Number(token.value) || 0}`)
   const mcp = src.override_mcp_tools || {}
   if (mcp.enabled) out.push(`MCP覆盖: ${Array.isArray(mcp.tools) ? mcp.tools.length : 0}项`)
-  const workspace = src.override_workspace_root || {}
-  if (workspace.enabled) out.push(`目录限制: ${String(workspace.value || '.')}`)
   return out
 }
