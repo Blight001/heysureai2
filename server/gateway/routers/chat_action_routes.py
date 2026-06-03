@@ -13,7 +13,7 @@ from sqlmodel import Session, select
 
 from api.database import get_session
 from mcp_runtime.mcp import get_project_root, registry
-from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatMessageUpdate, ChatRun
+from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatMessageUpdate, ChatRun, User
 from .auth import get_current_user
 from ai_runtime.worker import notify_queue
 from api.core.settings import settings
@@ -520,6 +520,19 @@ async def stream_chat(
     ai_kind = req.get("ai_kind", "assistant")
     if not isinstance(messages, list):
         raise HTTPException(status_code=400, detail="messages must be a list")
+
+    # KnowledgeBase 文件为真相源：建目录 + 首次导出，再把 personas/ 与 system/
+    # 刷回库（文件赢），随后防御性刷新 user；cfg 在其后查询，天然读到最新值。
+    from api.services import kb_store
+
+    kb_store.ensure_user_kb(user.id)
+    kb_store.sync_from_files(user.id)
+    try:
+        session.refresh(user)
+    except Exception:
+        refreshed = session.get(User, user.id)
+        if refreshed is not None:
+            user = refreshed
 
     # assistant/core chat both use dedicated AI config
     cfg = None

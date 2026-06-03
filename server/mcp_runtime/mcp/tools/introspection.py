@@ -71,7 +71,7 @@ def _resolve_tool_alias(name: str, allowed: set[str]) -> str:
     return raw
 
 
-def _describe_one_tool(name: str, endpoint_defs: Dict[str, Any]) -> Dict[str, Any]:
+def _describe_one_tool(name: str, endpoint_defs: Dict[str, Any], user_id: int = 0) -> Dict[str, Any]:
     from ..registry import registry
     from connector_runtime.dispatch.desktop_agent_tools import is_endpoint_agent_tool
 
@@ -85,10 +85,21 @@ def _describe_one_tool(name: str, endpoint_defs: Dict[str, Any]) -> Dict[str, An
             "call_format": {"tool": name, "arguments": {}},
         }
     tool = registry.get(name)
+    description = str(tool.description or "").strip()
+    input_schema = tool.input_schema if isinstance(tool.input_schema, dict) else {}
+    # 文件为真相源：KnowledgeBase/mcp/*.md 的描述与参数说明优先于注册表原文。
+    if user_id:
+        try:
+            from api.services.librarian_service import intrinsic_input_schema, intrinsic_tool_description
+
+            description = intrinsic_tool_description(int(user_id), tool.name, description)
+            input_schema = intrinsic_input_schema(int(user_id), tool.name, input_schema)
+        except Exception:
+            pass
     return {
         "name": tool.name,
-        "description": str(tool.description or "").strip(),
-        "inputSchema": tool.input_schema if isinstance(tool.input_schema, dict) else {},
+        "description": description,
+        "inputSchema": input_schema,
         "destructive": tool.destructive,
         "call_format": {"tool": tool.name, "arguments": {}},
     }
@@ -126,7 +137,7 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
         needle = query.lower()
         matches: list[Dict[str, Any]] = []
         for name in sorted(allowed):
-            described = _describe_one_tool(name, endpoint_defs)
+            described = _describe_one_tool(name, endpoint_defs, user_id)
             haystack = f"{name} {described.get('description') or ''}".lower()
             if needle in haystack:
                 matches.append(described)
@@ -144,7 +155,7 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
         if resolved not in allowed:
             errors.append({"requested_name": raw, "error": "Tool is not allowed for this AI"})
             continue
-        described = _describe_one_tool(resolved, endpoint_defs)
+        described = _describe_one_tool(resolved, endpoint_defs, user_id)
         described["requested_name"] = raw
         results.append(described)
 

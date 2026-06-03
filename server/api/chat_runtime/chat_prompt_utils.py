@@ -303,7 +303,7 @@ def _short_tool_desc(text: str, limit: int = 90) -> str:
     return raw[:limit].rstrip() + "…"
 
 
-def _render_mcp_tool_catalog(allowed_tools: set[str], endpoint_tools: Optional[set[str]] = None) -> str:
+def _render_mcp_tool_catalog(allowed_tools: set[str], endpoint_tools: Optional[set[str]] = None, user_id: int = 0) -> str:
     """Flat one-shot catalog of every allowed tool as ``name: short desc``.
 
     Mirrors how mature agent runtimes list all tool names up front: the model
@@ -325,12 +325,27 @@ def _render_mcp_tool_catalog(allowed_tools: set[str], endpoint_tools: Optional[s
         return "- （空）"
     endpoint_allowed = {str(name).strip() for name in (endpoint_tools or set()) if str(name).strip()}
 
+    # 文件为真相源：KnowledgeBase/mcp/*.md 的描述优先于注册表原文。
+    effective_desc = None
+    if user_id:
+        try:
+            from api.services import kb_store
+
+            effective_desc = kb_store.effective_tool_description
+        except Exception:
+            effective_desc = None
     desc_by_name: Dict[str, str] = {}
     destructive_by_name: Dict[str, bool] = {}
     for item in registry.list_tools():
         name = str(item.get("name") or "").strip()
         if name:
-            desc_by_name[name] = str(item.get("description") or "").strip()
+            raw_desc = str(item.get("description") or "").strip()
+            if effective_desc is not None:
+                try:
+                    raw_desc = effective_desc(int(user_id), name, raw_desc)
+                except Exception:
+                    pass
+            desc_by_name[name] = raw_desc
             destructive_by_name[name] = bool(item.get("destructive"))
     endpoint_defs = online_tool_defs()
 

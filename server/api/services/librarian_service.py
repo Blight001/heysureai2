@@ -34,6 +34,7 @@ from ..integrations import clawhub
 from ..models import AssistantAIConfig, KnowledgeEntry, User
 from ..sio import sio
 from ..core.config import user_shared_knowledge_dir
+from . import kb_store
 from mcp_runtime.mcp.core import safe_join
 import logging
 
@@ -556,6 +557,12 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
         "updated_at": _BUILTIN_UPDATED_AT,
     }
     if with_body:
+        # 文件为真相源：查看这些内置类目时，确保 KnowledgeBase 目录与文件已生成。
+        if user_id and memory_id in ("builtin.intrinsic_personas", "builtin.system_prompts", "builtin.intrinsic_properties"):
+            try:
+                kb_store.ensure_user_kb(int(user_id))
+            except Exception as exc:
+                logger.info(f"ensure_user_kb user={user_id} failed: {exc}")
         if memory_id == "builtin.intrinsic_properties":
             intrinsic = _intrinsic_properties_payload(int(user_id or 0))
             out["intrinsic_properties"] = intrinsic
@@ -582,12 +589,26 @@ def _intrinsic_properties_payload(user_id: int = 0) -> Dict[str, Any]:
 
     overrides = _load_intrinsic_properties_overrides(user_id) if user_id else {}
     tools = sorted(registry.list_tools(), key=lambda item: str(item.get("name") or ""))
+    # 文件为真相源：首次把注册表工具导出成 mcp/<ns>/<tool>.md（已存在跳过）。
+    if user_id:
+        try:
+            kb_store.seed_mcp_tools(
+                int(user_id),
+                tools,
+                lambda nm, schema: _mcp_schema_parameter_rows(nm, schema, None),
+            )
+        except Exception as exc:
+            logger.info(f"seed_mcp_tools user={user_id} failed: {exc}")
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for tool in tools:
         name = str(tool.get("name") or "").strip()
         namespace = name.split(".", 1)[0] if "." in name else "other"
         input_schema = tool.get("inputSchema") if isinstance(tool.get("inputSchema"), dict) else {}
         override = overrides.get(name) if isinstance(overrides.get(name), dict) else {}
+        # 参数描述同样文件优先：mcp md 解析出的 params 覆盖旧 override JSON。
+        merged_params = dict(override.get("parameters") or {}) if override else {}
+        if user_id:
+            merged_params.update(kb_store.effective_param_descriptions(int(user_id), name))
         grouped.setdefault(namespace, []).append({
             "name": name,
             "description": intrinsic_tool_description(user_id, name, str(tool.get("description") or "").strip()),
@@ -595,7 +616,7 @@ def _intrinsic_properties_payload(user_id: int = 0) -> Dict[str, Any]:
             "parameters": _mcp_schema_parameter_rows(
                 name,
                 input_schema,
-                override.get("parameters") if override else None,
+                merged_params or None,
             ),
             "destructive": bool(tool.get("destructive")),
             "source": "server",
@@ -645,6 +666,11 @@ def _mcp_schema_parameter_rows(tool_name: str, schema: Dict[str, Any], overrides
 
 
 def intrinsic_tool_description(user_id: int, name: str, raw: str) -> str:
+    # 文件为真相源：mcp/<ns>/<tool>.md 优先；其次旧的 override JSON；最后注册表原文。
+    if user_id:
+        file_desc = kb_store.effective_tool_description(int(user_id), str(name or "").strip(), "")
+        if file_desc:
+            return file_desc
     override = _load_intrinsic_properties_overrides(user_id).get(str(name or "").strip()) if user_id else {}
     if isinstance(override, dict):
         description = str(override.get("description") or "").strip()
@@ -659,7 +685,10 @@ def intrinsic_input_schema(user_id: int, tool_name: str, schema: Dict[str, Any])
     if not isinstance(properties, dict):
         return out
     override = _load_intrinsic_properties_overrides(user_id).get(str(tool_name or "").strip()) if user_id else {}
-    param_overrides = override.get("parameters") if isinstance(override, dict) else None
+    param_overrides = dict(override.get("parameters") or {}) if isinstance(override, dict) else {}
+    # 文件为真相源：mcp md 的参数描述覆盖旧 override JSON。
+    if user_id:
+        param_overrides.update(kb_store.effective_param_descriptions(int(user_id), str(tool_name or "").strip()))
     for name, config in properties.items():
         if not isinstance(config, dict):
             continue
@@ -704,7 +733,17 @@ def _load_intrinsic_properties_overrides(user_id: int) -> Dict[str, Any]:
 
 
 def save_intrinsic_properties_overrides(*, user_id: int, tools: List[Dict[str, Any]]) -> Dict[str, Any]:
+    from mcp_runtime.mcp import registry
+
     current = _load_intrinsic_properties_overrides(user_id)
+    schema_by_name = {
+        str(t.get("name") or "").strip(): (t.get("inputSchema") if isinstance(t.get("inputSchema"), dict) else {})
+        for t in registry.list_tools()
+    }
+    destructive_by_name = {
+        str(t.get("name") or "").strip(): bool(t.get("destructive"))
+        for t in registry.list_tools()
+    }
     for item in tools or []:
         name = str(item.get("name") or "").strip()
         if not name:
@@ -724,10 +763,18 @@ def save_intrinsic_properties_overrides(*, user_id: int, tools: List[Dict[str, A
                 for key, value in parameters_raw.items()
                 if str(key).strip()
             }
+        description = str(item.get("description") or "").strip()
         current[name] = {
-            "description": str(item.get("description") or "").strip(),
+            "description": description,
             "parameters": parameters,
         }
+        # 文件为真相源：把本次编辑写入 mcp/<ns>/<tool>.md（权威）。
+        try:
+            param_rows = _mcp_schema_parameter_rows(name, schema_by_name.get(name) or {}, parameters)
+            kb_store.write_mcp_tool(int(user_id), name, description, param_rows, destructive_by_name.get(name, False))
+        except Exception as exc:
+            logger.info(f"write_mcp_tool {name} failed: {exc}")
+    # 旧 override JSON 继续保留作为兼容镜像。
     with open(_intrinsic_properties_overrides_path(user_id), "w", encoding="utf-8") as f:
         json.dump({"tools": current, "updated_at": time.time()}, f, ensure_ascii=False, indent=2)
     return _builtin_entry("builtin.intrinsic_properties", user_id=user_id, with_body=True) or {}
@@ -967,6 +1014,15 @@ def save_system_prompts(*, user_id: int, prompts: List[Dict[str, Any]]) -> Dict[
                 setattr(user, key, str(raw or ""))
         session.add(user)
         session.commit()
+        # 文件为真相源：把刚保存的字段写入 system/<key>.md（权威）。
+        session.refresh(user)
+        for item in prompts or []:
+            key = str(item.get("key") or "").strip()
+            if key in allowed:
+                try:
+                    kb_store.write_system_prompt(int(user_id), key, getattr(user, key, ""))
+                except Exception as exc:
+                    logger.info(f"write_system_prompt {key} failed: {exc}")
     return _builtin_entry("builtin.system_prompts", user_id=user_id, with_body=True) or {}
 
 

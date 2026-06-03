@@ -157,10 +157,25 @@ async def create_ai_config(
     session.commit()
     session.refresh(cfg)
     _ensure_ai_workspace_dir(user.id, cfg.id)
+    _write_persona_file(user.id, cfg)
     _refresh_bot_long_connections_if_needed(
         any(bool(item.get("enabled")) for item in _bot_runtime_snapshot(cfg).values() if isinstance(item, dict))
     )
     return cfg
+
+
+def _write_persona_file(user_id: int, cfg: AssistantAIConfig) -> None:
+    """文件为真相源：把该 AI 的人格 / 自动控制 Prompt 写入 personas/<id>-<名>.md。
+
+    best-effort——失败不影响配置保存（运行时同步仍以文件为准）。
+    """
+    try:
+        from api.services import kb_store
+
+        kb_store.ensure_user_kb(user_id)
+        kb_store.write_persona(user_id, cfg)
+    except Exception:
+        pass
 
 
 def _ensure_ai_workspace_dir(user_id: int, ai_config_id: int) -> None:
@@ -249,6 +264,7 @@ async def update_ai_config(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
+    _write_persona_file(user.id, cfg)
     _refresh_bot_long_connections_if_needed(
         bot_snapshot_before != _bot_runtime_snapshot(cfg)
     )
@@ -470,6 +486,7 @@ async def clone_ai_config(
     session.commit()
     session.refresh(new_cfg)
     _ensure_ai_workspace_dir(user.id, new_cfg.id)
+    _write_persona_file(user.id, new_cfg)
     return new_cfg
 
 
