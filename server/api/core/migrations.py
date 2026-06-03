@@ -411,6 +411,7 @@ def run_pending_migrations() -> None:
     _migrate_agenttypemcppermission_agent_id()
     _migrate_agenttypemcppermission_nullable_ai_config()
     _migrate_assistantaiconfig_strip_endpoint_mcp_tools()
+    _migrate_assistantaiconfig_prune_unknown_mcp_tools()
     _migrate_valhallaentry_content()
     # Only run for SQLite. Postgres deployments either start fresh or are
     # seeded by the migration script, both of which produce a current schema.
@@ -672,6 +673,95 @@ def _migrate_assistantaiconfig_strip_endpoint_mcp_tools() -> None:
                     changed = True
                     continue
                 if is_endpoint_tool_config_name(tool):
+                    changed = True
+                    continue
+                if tool in seen:
+                    changed = True
+                    continue
+                next_tools.append(tool)
+                seen.add(tool)
+            if not changed:
+                continue
+            conn.execute(
+                text("UPDATE assistantaiconfig SET mcp_tools = :tools WHERE id = :id"),
+                {"tools": json.dumps(next_tools, ensure_ascii=False), "id": row["id"]},
+            )
+
+
+def _live_registered_tool_names() -> set:
+    """Authoritative set of currently-valid MCP tool names.
+
+    Builtin registry tools (plugins included) plus the self-inspection tools.
+    Returns an empty set if the registry cannot be loaded so callers can refuse
+    to prune rather than risk mass-deleting a still-valid config.
+    """
+    try:
+        # Plugins register into the same live registry singleton; make sure
+        # they are loaded before snapshotting so plugin tools are not pruned.
+        from mcp_runtime.mcp.loader import load_plugins_on_startup
+
+        try:
+            load_plugins_on_startup()
+        except Exception:
+            pass
+        from mcp_runtime.mcp.registry import registry as _registry
+        from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
+
+        names = {str(t.get("name") or "").strip() for t in _registry.list_tools() if t.get("name")}
+        names |= set(MCP_INTROSPECTION_TOOLS)
+        return names
+    except Exception:
+        return set()
+
+
+def _migrate_assistantaiconfig_prune_unknown_mcp_tools() -> None:
+    """Drop stale tool names from AI ``mcp_tools`` that no longer map to any
+    registered MCP tool.
+
+    Tools removed in earlier refactors (e.g. ``admin.dispatch_task``,
+    ``feishu.send_message``, ``human.ask``) used to linger in persisted config
+    allow-lists. They can never be called, but they polluted the prompt tool
+    catalog and ``mcp.list_tools``. This prunes them once so they stop being
+    retained. Endpoint-config names stay handled by the dedicated strip above.
+    """
+    from ..database import engine
+    from sqlalchemy import inspect, text
+    from connector_runtime.dispatch.desktop_agent_tools import is_endpoint_tool_config_name
+
+    valid = _live_registered_tool_names()
+    # Safety guard: a degraded / empty registry must never wipe every config.
+    if len(valid) < 10:
+        return
+
+    insp = inspect(engine)
+    if "assistantaiconfig" not in set(insp.get_table_names()):
+        return
+    columns = {col["name"] for col in insp.get_columns("assistantaiconfig")}
+    if "mcp_tools" not in columns:
+        return
+
+    with engine.begin() as conn:
+        rows = conn.execute(text("SELECT id, mcp_tools FROM assistantaiconfig")).mappings().all()
+        for row in rows:
+            try:
+                parsed = json.loads(row.get("mcp_tools") or "[]")
+            except Exception:
+                continue
+            if not isinstance(parsed, list):
+                continue
+            next_tools = []
+            seen = set()
+            changed = False
+            for item in parsed:
+                tool = str(item or "").strip() if isinstance(item, str) else ""
+                if not tool:
+                    changed = True
+                    continue
+                # Endpoint tools are governed by per-agent scope, not stored here.
+                if is_endpoint_tool_config_name(tool):
+                    changed = True
+                    continue
+                if tool not in valid:
                     changed = True
                     continue
                 if tool in seen:
