@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { store } from '../store'
 import { showOfflineChatWindow } from '../windows/offline-chat-window'
-import { runOfflineChat, OfflineChatMessage } from '../services/offline-ai'
+import { isOfflineChatAbortError, runOfflineChat, OfflineChatMessage } from '../services/offline-ai'
 
 const offlineChatControllers = new Map<string, AbortController>()
 
@@ -35,6 +35,16 @@ export function registerOfflineChatIpc(): void {
       return await runOfflineChat(messages, payload?.prompt, allowedTools, progress => {
         event.sender.send('offline-chat:progress', { requestId, ...progress })
       }, controller.signal)
+    } catch (err: any) {
+      if (isOfflineChatAbortError(err, controller.signal)) {
+        return {
+          text: '已停止',
+          toolsUsed: [],
+          toolEvents: [],
+          cancelled: true,
+        }
+      }
+      throw err
     } finally {
       if (requestId) offlineChatControllers.delete(requestId)
     }

@@ -372,7 +372,7 @@ function createAbortError(): Error {
   return err
 }
 
-function isAbortError(err: any, signal?: AbortSignal): boolean {
+export function isOfflineChatAbortError(err: any, signal?: AbortSignal): boolean {
   if (signal?.aborted) return true
   const name = String(err?.name || '')
   const message = String(err?.message || err || '')
@@ -562,7 +562,7 @@ async function callAI(
     resp = { text, toolUses: toolUses.length ? toolUses : undefined, usage: normalizeUsage(data.usage) || estimateUsageFromCall(systemPrompt, messages, tools, { text, toolUses: toolUses.length ? toolUses : undefined }) }
     return resp
   } catch (err: any) {
-    if (isAbortError(err, signal)) throw createAbortError()
+    if (isOfflineChatAbortError(err, signal)) throw createAbortError()
     throw err
   }
 }
@@ -628,6 +628,7 @@ export async function runOfflineChat(
         onProgress?.({ type: 'tool_result', event })
         sendActivityLog('task', r?.success ? 'success' : 'error', `离线工具${r?.success ? '完成' : '失败'}: ${tu.name}`)
       } catch (err: any) {
+        if (isOfflineChatAbortError(err, signal)) throw createAbortError()
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: `Error: ${err?.message || err}`, is_error: true })
         const event = {
           tool: tu.name,
