@@ -422,6 +422,7 @@
     } catch (err) {
       loginFeedback.textContent = `\u767B\u5F55\u5931\u8D25\uFF1A${err?.message || err}`;
       loginFeedback.style.color = "var(--error)";
+      sendToBackground({ type: "agent:connect" });
     } finally {
       loginBtn.disabled = false;
     }

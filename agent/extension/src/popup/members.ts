@@ -65,6 +65,7 @@ export async function doLogin() {
   } catch (err: any) {
     dom.loginFeedback.textContent = `登录失败：${err?.message || err}`
     dom.loginFeedback.style.color = 'var(--error)'
+    sendToBackground({ type: 'agent:connect' })
   } finally {
     dom.loginBtn.disabled = false
   }

@@ -721,3 +721,24 @@ chrome.runtime.onStartup.addListener(async () => {
 })
 
 void restoreAndConnectOnStartup()
+
+// Login happens in the popup, but the actual socket lives in this service
+// worker. Watch auth storage directly so a successful login always attempts
+// to register even if the one-off popup port message is missed.
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') return
+  const authChange = changes._auth_state
+  if (!authChange) return
+
+  const oldToken = String(authChange.oldValue?.token || '')
+  const newToken = String(authChange.newValue?.token || '')
+  if (oldToken === newToken) return
+
+  authRejected = false
+  if (newToken) {
+    if (socket) disconnect()
+    void connect()
+  } else {
+    disconnect()
+  }
+})

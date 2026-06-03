@@ -3,7 +3,7 @@
 // to recreate its runtime port and retry messages without throwing when the
 // old port disappears.
 
-import { BgMsg } from '../lib/types'
+import { BgMsg, PopupMsg } from '../lib/types'
 import { state } from './state'
 
 type PopupMessageHandler = (msg: BgMsg) => void
@@ -11,7 +11,7 @@ type PopupMessageHandler = (msg: BgMsg) => void
 let currentPort: chrome.runtime.Port | null = null
 let messageHandler: PopupMessageHandler | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-const pendingMessages: BgMsg[] = []
+const pendingMessages: PopupMsg[] = []
 
 function clearReconnectTimer() {
   if (reconnectTimer) {
@@ -70,7 +70,7 @@ export function initPopupPort(onMessage: PopupMessageHandler) {
   connectPort()
 }
 
-export function sendToBackground(msg: BgMsg) {
+export function sendToBackground(msg: PopupMsg) {
   if (!currentPort) {
     pendingMessages.push(msg)
     scheduleReconnect()

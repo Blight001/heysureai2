@@ -5864,4 +5864,23 @@ Respond in the same language as the user. For factual questions, search the web 
     await restoreAndConnectOnStartup();
   });
   void restoreAndConnectOnStartup();
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local")
+      return;
+    const authChange = changes._auth_state;
+    if (!authChange)
+      return;
+    const oldToken = String(authChange.oldValue?.token || "");
+    const newToken = String(authChange.newValue?.token || "");
+    if (oldToken === newToken)
+      return;
+    authRejected = false;
+    if (newToken) {
+      if (socket)
+        disconnect();
+      void connect();
+    } else {
+      disconnect();
+    }
+  });
 })();
