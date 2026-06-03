@@ -264,10 +264,7 @@ HeySure AI 2.0 将 Agent 视为拥有生命周期的数字成员：
 
 | 文档 | 内容 |
 | --- | --- |
-| `doc/数字社会核心管理员-管理手册.md` | Archivist、EvolutionArena、KnowledgeBase、Valhalla 的完整设计 |
-| `doc/Claude Code 集成-权限分层设计.md` | Claude Code 集成与权限分层思路 |
-| `doc/沉淀技能卡片-设计方案.md` | 技能卡片的数据模型、录制 / 重放 / 自愈生命周期与跨 AI 共享治理 |
-| `doc/浏览器MCP整理方案.md` | 浏览器 MCP 工具的整理与设计方案 |
+| `doc/项目升级计划.md` | 升级计划总文档，含数字社会核心管理员、沉淀技能卡片、浏览器 MCP 工具整理（第四章）、Claude Code 集成-权限分层设计等各章节方案 |
 | `doc/prompt/` | 核心管理员、辅助管理员、桌面助手、浏览器助手、MCP 工具调用等 Prompt |
 
 ## 📄 许可证
