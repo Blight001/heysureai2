@@ -997,19 +997,24 @@ def _run_worker_impl(
                 system_prompt = _strip_task_runtime_sections(system_prompt)
 
             # Up-front MCP tool catalog: list every callable tool (name + short
-            # description) so the model can locate one directly instead of
-            # drilling through mcp.list_tools, then load the precise schema in a
-            # single mcp.describe_tool call. Mirrors mature agent runtimes.
+            # description) so the model can locate one directly, then load the
+            # precise schema in a single mcp.describe_tool call. Mirrors mature
+            # agent runtimes.
             mcp_catalog_active = bool(effective_tool_allowlist) and (
                 cfg is None or getattr(cfg, "mcp_enabled", False)
             )
             if mcp_catalog_active:
+                # Dynamically-allocated desktop/browser agent tools are resolved
+                # here (online agents narrowed by per-agent scope) and handed to
+                # the catalog explicitly so live agent tools are always listed.
+                endpoint_catalog_tools = endpoint_tools_for_config(ai_config_id, user_id)
+                endpoint_catalog_tools |= endpoint_bridge_tools_for_config(ai_config_id, user_id)
                 catalog_body = (
                     "以下是你当前可调用的全部 MCP 工具（名称 + 简介，`!` 表示有副作用）。"
-                    "直接从这里定位需要的工具，无需先调用 mcp.list_tools 浏览。\n"
+                    "直接从这里定位需要的工具。\n"
                     "确定工具后，用一次 mcp.describe_tool 取参数 schema 再调用："
                     "可在 tools 数组里一次传多个工具名，或用 query 关键词搜索相关工具。\n\n"
-                    + _render_mcp_tool_catalog(effective_tool_allowlist)
+                    + _render_mcp_tool_catalog(effective_tool_allowlist, endpoint_catalog_tools)
                 )
                 system_prompt = _append_prompt_section(
                     _strip_prompt_section(system_prompt, "可用MCP工具"),

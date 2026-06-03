@@ -11,7 +11,7 @@ from api.database import engine
 from api.models import AIRuntimeStatus, AssistantAIConfig
 from api.sio import sio
 
-MCP_INTROSPECTION_TOOLS = {"mcp.list_tools", "mcp.describe_tool"}
+MCP_INTROSPECTION_TOOLS = {"mcp.describe_tool"}
 _IGNORED_WORKSPACE_DIRS = {".git", "__pycache__", "venv", "node_modules", ".aider"}
 
 def _resolve_ai_workspace(user_id: int, ai_config_id: Optional[int]) -> str:

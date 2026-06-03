@@ -283,7 +283,7 @@ def _render_mcp_namespace_lines(cfg: Optional[AssistantAIConfig], namespace_hint
     hints = _parse_namespace_hints(namespace_hints)
     lines = []
     for namespace in namespaces:
-        hint = hints.get(namespace, "该 namespace 下存在可用 MCP 工具；需要展开时调用 mcp.list_tools 并传 namespace。")
+        hint = hints.get(namespace, "该 namespace 下存在可用 MCP 工具；用 mcp.describe_tool（query 关键词搜索）查看其参数 schema。")
         lines.append(f"- {namespace}：{hint}")
     return "\n".join(lines) if lines else "- （空）"
 
@@ -303,13 +303,19 @@ def _short_tool_desc(text: str, limit: int = 90) -> str:
     return raw[:limit].rstrip() + "…"
 
 
-def _render_mcp_tool_catalog(allowed_tools: set[str]) -> str:
+def _render_mcp_tool_catalog(allowed_tools: set[str], endpoint_tools: Optional[set[str]] = None) -> str:
     """Flat one-shot catalog of every allowed tool as ``name: short desc``.
 
     Mirrors how mature agent runtimes list all tool names up front: the model
-    can locate the right tool directly instead of drilling through
-    ``mcp.list_tools`` namespace by namespace, then load the precise schema in a
-    single ``mcp.describe_tool`` call. ``!`` marks destructive tools.
+    can locate the right tool directly, then load the precise schema in a single
+    ``mcp.describe_tool`` call. ``!`` marks destructive tools.
+
+    ``endpoint_tools`` is the set of dynamically-allocated desktop/browser agent
+    tools the caller already resolved as currently available for this AI. They
+    are authoritative and always listed (with the agent's self-reported
+    description), so the catalog never drops a live agent tool just because the
+    presence-derived ``is_endpoint_agent_tool`` snapshot disagrees. Any remaining
+    non-builtin, non-endpoint name is a stale config entry and is omitted.
     """
     from api.agent_presence import online_tool_defs
     from connector_runtime.dispatch.desktop_agent_tools import is_endpoint_agent_tool
@@ -317,6 +323,7 @@ def _render_mcp_tool_catalog(allowed_tools: set[str]) -> str:
     allowed = {str(name).strip() for name in (allowed_tools or set()) if str(name).strip()}
     if not allowed:
         return "- （空）"
+    endpoint_allowed = {str(name).strip() for name in (endpoint_tools or set()) if str(name).strip()}
 
     desc_by_name: Dict[str, str] = {}
     destructive_by_name: Dict[str, bool] = {}
@@ -333,16 +340,15 @@ def _render_mcp_tool_catalog(allowed_tools: set[str]) -> str:
             # Registered builtin tool.
             desc = desc_by_name.get(name, "")
             destructive = destructive_by_name.get(name, False)
-        elif is_endpoint_agent_tool(name):
-            # Valid desktop/browser endpoint tool (description only present
-            # while the owning agent is online).
+        elif name in endpoint_allowed or is_endpoint_agent_tool(name):
+            # Dynamically-allocated desktop/browser agent tool. Prefer the
+            # caller-resolved allow-list; description comes from the agent.
             spec = endpoint_defs.get(name) or {}
             desc = str(spec.get("description") or "").strip()
             destructive = True
         else:
-            # Stale name persisted in the config allowlist that no longer maps
-            # to any real tool. mcp.list_tools hides these; the catalog must too,
-            # otherwise the model sees (and may try to call) dead tools.
+            # Stale name persisted in the config allow-list that no longer maps
+            # to any real tool — omit it so the model never sees a dead tool.
             continue
         marker = " !" if destructive else ""
         short = _short_tool_desc(desc)

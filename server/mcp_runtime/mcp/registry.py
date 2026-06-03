@@ -1,7 +1,6 @@
 from .core import MCPRegistry, MCPTool
 from .tools.introspection import (
     _mcp_describe_tool,
-    _mcp_list_tools,
 )
 from .tools.workspace import (
     _get_overview,
@@ -85,23 +84,6 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     reload without needing to ``importlib.reload`` this module (which would
     invalidate references held by callers).
     """
-    registry.register(MCPTool(
-        name="mcp.list_tools",
-        description="List currently allowed MCP capabilities. Default returns namespaces only; pass namespace for one namespace or mode=all to return all tools.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "namespace": {"type": "string", "description": "Optional namespace filter, e.g. workspace, task, prompt."},
-                "mode": {
-                    "type": "string",
-                    "enum": ["namespaces", "namespace", "all"],
-                    "description": "namespaces=first-level only (default), namespace=expand one namespace, all=expand all namespaces.",
-                },
-                "all": {"type": "boolean", "description": "Alias for mode=all when true."},
-            },
-        },
-        handler=_mcp_list_tools,
-    ))
     registry.register(MCPTool(
         name="mcp.describe_tool",
         description=(

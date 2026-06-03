@@ -4,8 +4,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from api.database import engine
-from api.models import AssistantAIConfig, User
-from api.models.defaults import DEFAULT_MCP_NAMESPACE_HINTS
+from api.models import AssistantAIConfig
 from api.agent_presence import online_tool_defs
 from ..core import MCP_INTROSPECTION_TOOLS
 
@@ -16,21 +15,6 @@ def _tool_namespace(name: str) -> str:
     if "_" in name:
         return name.split("_", 1)[0]
     return "other"
-
-
-def _namespace_hints(user_id: int) -> dict[str, str]:
-    import json
-
-    try:
-        with Session(engine) as session:
-            user = session.get(User, user_id)
-            raw = str(getattr(user, "mcp_namespace_hints", "") or "").strip() if user else ""
-        parsed = json.loads(raw or DEFAULT_MCP_NAMESPACE_HINTS)
-        if not isinstance(parsed, dict):
-            raise ValueError()
-    except Exception:
-        parsed = json.loads(DEFAULT_MCP_NAMESPACE_HINTS)
-    return {str(k).strip(): str(v).strip() for k, v in parsed.items() if str(k).strip() and str(v).strip()}
 
 
 def _allowed_tool_names(user_id: int, ai_config_id: Optional[int]) -> set[str]:
@@ -85,89 +69,6 @@ def _resolve_tool_alias(name: str, allowed: set[str]) -> str:
         if underscored in allowed:
             return underscored
     return raw
-
-
-def _mcp_list_tools(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int] = None):
-    from ..registry import registry
-    from connector_runtime.dispatch.desktop_agent_tools import is_endpoint_agent_tool
-
-    allowed = _allowed_tool_names(user_id, ai_config_id)
-    namespace_filter = str(args.get("namespace") or "").strip()
-    mode = str(args.get("mode") or "").strip().lower()
-    if bool(args.get("all")):
-        mode = "all"
-    if namespace_filter and not mode:
-        mode = "namespace"
-    if mode not in {"", "namespaces", "namespace", "all"}:
-        raise HTTPException(status_code=400, detail="mode must be namespaces, namespace, or all")
-    groups: Dict[str, list[dict]] = {}
-    seen: set[str] = set()
-    endpoint_defs = online_tool_defs()
-    for item in registry.list_tools():
-        name = str(item.get("name") or "").strip()
-        if not name or name not in allowed:
-            continue
-        seen.add(name)
-        namespace = _tool_namespace(name)
-        if namespace_filter and namespace != namespace_filter:
-            continue
-        groups.setdefault(namespace, []).append(
-            {
-                "name": name,
-                "description": str(item.get("description") or "").strip(),
-                "inputSchema": item.get("inputSchema") if isinstance(item.get("inputSchema"), dict) else {},
-                "destructive": bool(item.get("destructive")),
-            }
-        )
-    for name in sorted(allowed - seen):
-        if not is_endpoint_agent_tool(name):
-            continue
-        namespace = _tool_namespace(name)
-        if namespace_filter and namespace != namespace_filter:
-            continue
-        spec = endpoint_defs.get(name) or {}
-        groups.setdefault(namespace, []).append(
-            {
-                "name": name,
-                "description": str(spec.get("description") or "").strip(),
-                "inputSchema": spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {},
-                "destructive": True,
-            }
-        )
-
-    if mode in {"", "namespaces"} and not namespace_filter:
-        hints = _namespace_hints(user_id)
-        namespaces = []
-        for namespace in sorted(groups):
-            tools = sorted(groups[namespace], key=lambda item: item["name"])
-            namespaces.append({
-                "namespace": namespace,
-                "tool_count": len(tools),
-                "description": hints.get(namespace, ""),
-            })
-        return {
-            "tree": "\n".join(
-                f"{item['namespace']}/ ({item['tool_count']})"
-                + (f" - {item['description']}" if item["description"] else "")
-                for item in namespaces
-            ) if namespaces else "（空）",
-            "namespaces": namespaces,
-            "hint": "传 namespace 展开某一层，例如 {\"namespace\":\"task\"}；确定工具名后用 mcp.describe_tool 查看参数 schema。",
-        }
-
-    lines = []
-    for namespace in sorted(groups):
-        tools = sorted(groups[namespace], key=lambda item: item["name"])
-        lines.append(f"{namespace}/ ({len(tools)})")
-        for tool in tools:
-            marker = " !" if tool["destructive"] else ""
-            lines.append(f"  - {tool['name']}{marker}")
-    return {
-        "tree": "\n".join(lines) if lines else "（空）",
-        "mode": "all" if mode == "all" and not namespace_filter else "namespace",
-        "groups": {key: sorted(value, key=lambda item: item["name"]) for key, value in sorted(groups.items())},
-        "hint": "确定工具名后用 mcp.describe_tool 查看参数 schema，再调用目标工具。",
-    }
 
 
 def _describe_one_tool(name: str, endpoint_defs: Dict[str, Any]) -> Dict[str, Any]:
