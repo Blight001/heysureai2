@@ -370,7 +370,7 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
     tool = str(data.get("tool") or ctx.get("tool") or "")
     summary = str(data.get("summary") or "")
     result = data.get("result")
-    if success and tool in {"browser_screenshot", "screen.capture", "screen.capture_region"}:
+    if success and tool in {"browser_screenshot", "screen.capture", "screen.capture_region", "vision.capture", "vision.capture_mouse"}:
         try:
             result = attach_persisted_screenshot(
                 user_id=int(ctx.get("user_id") or 0),

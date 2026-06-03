@@ -657,6 +657,13 @@ def _reset_convo_after_forget(
 _IMAGE_DATA_URL_KEYS = ("dataUrl", "data_url", "imageDataUrl", "screenshotDataUrl", "screenshot")
 _IMAGE_URL_KEYS = ("image_url", "public_url")
 _IMAGE_PATH_KEYS = ("server_path", "path")
+_SCREENSHOT_MODEL_TOOLS = {
+    "browser_screenshot",
+    "screen.capture",
+    "screen.capture_region",
+    "vision.capture",
+    "vision.capture_mouse",
+}
 
 
 def _find_image_payload(value: object, depth: int = 0) -> Dict[str, str]:
@@ -729,7 +736,7 @@ def _omit_image_fields(value: object) -> object:
 
 
 def _browser_screenshot_image_message(tool: str, tool_result: Dict[str, object]) -> Optional[Dict[str, object]]:
-    if tool not in {"browser_screenshot", "screen.capture", "screen.capture_region"} or not isinstance(tool_result, dict):
+    if tool not in _SCREENSHOT_MODEL_TOOLS or not isinstance(tool_result, dict):
         return None
     result_payload = tool_result.get("result", tool_result)
     image_payload = _find_image_payload(tool_result)
@@ -760,7 +767,7 @@ def _browser_screenshot_image_message(tool: str, tool_result: Dict[str, object])
 
 def _model_visible_tool_result(tool: str, tool_result: Dict[str, object]) -> object:
     result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else tool_result
-    if tool not in {"browser_screenshot", "screen.capture", "screen.capture_region"} or not isinstance(result_payload, dict):
+    if tool not in _SCREENSHOT_MODEL_TOOLS or not isinstance(result_payload, dict):
         return result_payload
     cleaned = _omit_image_fields(_sanitize_large_media(result_payload))
     if not isinstance(cleaned, dict):

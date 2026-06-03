@@ -10,6 +10,10 @@ function pngSize(buf: Buffer): { width: number; height: number } {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) }
 }
 
+function pngDataUrl(buf: Buffer): string {
+  return `data:image/png;base64,${buf.toString('base64')}`
+}
+
 export async function screenCapture(args: any = {}) {
   const displayIndex = Number(args.display || args.screen || 0)
   const buf = await executeCapture({ displayIndex })
@@ -23,6 +27,7 @@ export async function screenCapture(args: any = {}) {
     success: true,
     path: savePath,
     image_url,
+    dataUrl: pngDataUrl(buf),
     width,
     height,
     bytes: buf.length,
@@ -42,7 +47,7 @@ export async function screenCaptureRegion(args: any) {
   const savePath = String(args.path || path.join(os.tmpdir(), `hs_region_${Date.now()}.png`))
   fs.writeFileSync(savePath, buf)
   const image_url = pathToFileURL(savePath).href
-  return { success: true, path: savePath, image_url, x, y, width, height, bytes: buf.length }
+  return { success: true, path: savePath, image_url, dataUrl: pngDataUrl(buf), x, y, width, height, bytes: buf.length }
 }
 
 export async function screenInfo(_args: any = {}) {

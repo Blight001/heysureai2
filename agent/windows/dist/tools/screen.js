@@ -47,6 +47,9 @@ function pngSize(buf) {
         return { width: 0, height: 0 };
     return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
+function pngDataUrl(buf) {
+    return `data:image/png;base64,${buf.toString('base64')}`;
+}
 async function screenCapture(args = {}) {
     const displayIndex = Number(args.display || args.screen || 0);
     const buf = await (0, capture_bridge_1.executeCapture)({ displayIndex });
@@ -60,6 +63,7 @@ async function screenCapture(args = {}) {
         success: true,
         path: savePath,
         image_url,
+        dataUrl: pngDataUrl(buf),
         width,
         height,
         bytes: buf.length,
@@ -79,7 +83,7 @@ async function screenCaptureRegion(args) {
     const savePath = String(args.path || path.join(os.tmpdir(), `hs_region_${Date.now()}.png`));
     fs.writeFileSync(savePath, buf);
     const image_url = (0, url_1.pathToFileURL)(savePath).href;
-    return { success: true, path: savePath, image_url, x, y, width, height, bytes: buf.length };
+    return { success: true, path: savePath, image_url, dataUrl: pngDataUrl(buf), x, y, width, height, bytes: buf.length };
 }
 async function screenInfo(_args = {}) {
     let robot = null;
