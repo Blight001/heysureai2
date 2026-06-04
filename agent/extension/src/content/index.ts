@@ -16,6 +16,7 @@ import {
 } from './actions'
 import { doFindPopups, doClosePopup } from './popups'
 import { doPageInfo } from './viewport'
+import { doObserve, clearMarksOverlay } from './observe'
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   handleAction(msg).then(sendResponse).catch(err => sendResponse({
@@ -40,6 +41,8 @@ async function handleAction(msg: any): Promise<any> {
     case 'find_popups':  return doFindPopups(msg)
     case 'close_popup':  return doClosePopup(msg)
     case 'page_info':    return doPageInfo()
+    case 'observe':      return doObserve(msg)
+    case 'clear_marks':  clearMarksOverlay(); return { success: true }
     case 'type':         return doType(msg)
     case 'get_content':  return getContent(msg)
     case 'scroll':       return doScroll(msg)

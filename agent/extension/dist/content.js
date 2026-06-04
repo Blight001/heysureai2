@@ -180,6 +180,19 @@
   }
   var getFxPos = () => ({ x: fxX, y: fxY });
 
+  // src/content/marks.ts
+  var marks = [];
+  function setMarks(els) {
+    marks = els.slice();
+  }
+  function getMarked(ref) {
+    const i = Number(ref);
+    if (!Number.isFinite(i) || i < 1 || i > marks.length)
+      return null;
+    const el = marks[i - 1];
+    return el && el.isConnected ? el : null;
+  }
+
   // src/content/dom.ts
   function isVisible(el) {
     if (!el || !(el instanceof HTMLElement))
@@ -191,6 +204,42 @@
       return false;
     const r = el.getBoundingClientRect();
     return r.width > 0 && r.height > 0 && r.bottom >= 0 && r.right >= 0 && r.top <= window.innerHeight && r.left <= window.innerWidth;
+  }
+  function clampX(x) {
+    return Math.min(Math.max(x, 1), window.innerWidth - 1);
+  }
+  function clampY(y) {
+    return Math.min(Math.max(y, 1), window.innerHeight - 1);
+  }
+  function isTopmostAt(el, x, y) {
+    const hit = document.elementFromPoint(clampX(x), clampY(y));
+    if (!hit)
+      return false;
+    return hit === el || el.contains(hit) || hit.contains(el);
+  }
+  function isHittable(el) {
+    if (!isVisible(el))
+      return false;
+    const html = el;
+    if (getComputedStyle(html).pointerEvents === "none")
+      return false;
+    const r = html.getBoundingClientRect();
+    const pts = [
+      [r.left + r.width / 2, r.top + r.height / 2],
+      [r.left + r.width / 2, r.top + Math.min(r.height * 0.2, 6)],
+      [r.left + r.width * 0.2, r.top + r.height / 2],
+      [r.left + r.width * 0.8, r.top + r.height / 2]
+    ];
+    return pts.some(([px, py]) => isTopmostAt(el, px, py));
+  }
+  function occluderOf(el) {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0)
+      return null;
+    const hit = document.elementFromPoint(clampX(r.left + r.width / 2), clampY(r.top + r.height / 2));
+    if (!hit || hit === el || el.contains(hit) || hit.contains(el))
+      return null;
+    return hit;
   }
   function textOf(el, max = 200) {
     const h = el;
@@ -246,30 +295,25 @@
   }
   function findEl(selector, text) {
     if (selector) {
-      const bySelector = document.querySelector(selector);
-      if (bySelector && isVisible(bySelector))
-        return bySelector;
-      return bySelector;
+      const matches = Array.from(document.querySelectorAll(selector));
+      return matches.find(isHittable) || matches.find(isVisible) || matches[0] || null;
     }
     if (text) {
       const preferred = Array.from(document.querySelectorAll('button,a,[role="button"],input[type="button"],input[type="submit"],[aria-label],[title]'));
-      const exact = preferred.find((el) => isVisible(el) && textMatches(el, text, true));
-      if (exact)
-        return exact;
-      const partial = preferred.find((el) => isVisible(el) && textMatches(el, text, false));
-      if (partial)
-        return partial;
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
-      while (walker.nextNode()) {
-        const el = walker.currentNode;
-        if (isVisible(el) && textMatches(el, text, true))
-          return clickableAncestor(el);
-      }
-      const walker2 = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
-      while (walker2.nextNode()) {
-        const el = walker2.currentNode;
-        if (isVisible(el) && textMatches(el, text, false))
-          return clickableAncestor(el);
+      const byPreferred = (pred, exact) => preferred.find((el) => pred(el) && textMatches(el, text, exact));
+      const byWalk = (pred, exact) => {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+        while (walker.nextNode()) {
+          const el = walker.currentNode;
+          if (pred(el) && textMatches(el, text, exact))
+            return clickableAncestor(el);
+        }
+        return null;
+      };
+      for (const pred of [isHittable, isVisible]) {
+        const hit = byPreferred(pred, true) || byPreferred(pred, false) || byWalk(pred, true) || byWalk(pred, false);
+        if (hit)
+          return hit;
       }
     }
     return null;
@@ -281,17 +325,28 @@
       y: Math.min(Math.max(r.top + r.height / 2, 1), window.innerHeight - 1)
     };
   }
-  function clickLikeUser(el) {
-    const c = elCenter(el);
-    const opts = { bubbles: true, cancelable: true, view: window, clientX: c.x, clientY: c.y };
-    el.dispatchEvent(new PointerEvent("pointerdown", opts));
-    el.dispatchEvent(new MouseEvent("mousedown", opts));
-    el.dispatchEvent(new PointerEvent("pointerup", opts));
-    el.dispatchEvent(new MouseEvent("mouseup", opts));
-    el.dispatchEvent(new MouseEvent("click", opts));
+  function clickLikeUser(el, at) {
+    const c = at || elCenter(el);
+    el.focus?.();
+    const base = { bubbles: true, cancelable: true, view: window, clientX: c.x, clientY: c.y, button: 0 };
+    const pointer = { ...base, pointerId: 1, pointerType: "mouse", isPrimary: true };
+    el.dispatchEvent(new PointerEvent("pointerover", pointer));
+    el.dispatchEvent(new MouseEvent("mouseover", base));
+    el.dispatchEvent(new PointerEvent("pointerdown", { ...pointer, buttons: 1 }));
+    el.dispatchEvent(new MouseEvent("mousedown", { ...base, buttons: 1 }));
+    el.dispatchEvent(new PointerEvent("pointerup", { ...pointer, buttons: 0 }));
+    el.dispatchEvent(new MouseEvent("mouseup", { ...base, buttons: 0 }));
+    el.dispatchEvent(new MouseEvent("click", base));
     el.click?.();
   }
   function resolveTarget(msg) {
+    if (msg.ref !== void 0 && msg.ref !== null && msg.ref !== "") {
+      const el2 = getMarked(msg.ref);
+      if (!el2)
+        return { el: null, x: 0, y: 0 };
+      const c2 = elCenter(el2);
+      return { el: el2, x: c2.x, y: c2.y };
+    }
     if (msg.x !== void 0 && msg.y !== void 0) {
       const el2 = document.elementFromPoint(Number(msg.x), Number(msg.y));
       return { el: el2, x: Number(msg.x), y: Number(msg.y) };
@@ -370,30 +425,49 @@
 
   // src/content/actions.ts
   async function doClick(msg) {
-    const { selector, text, x, y } = msg;
-    let el = null;
-    if (x !== void 0 && y !== void 0) {
-      el = document.elementFromPoint(Number(x), Number(y));
-    } else {
-      el = findEl(selector, text);
+    const viaCoords = msg.x !== void 0 && msg.y !== void 0 && (msg.ref === void 0 || msg.ref === null || msg.ref === "");
+    const { el, x, y } = resolveTarget(msg);
+    if (!el) {
+      if (msg.ref !== void 0 && msg.ref !== null && msg.ref !== "") {
+        throw new Error(`Mark #${msg.ref} is stale or gone \u2014 call browser_observe again to refresh the numbered marks, then retry.`);
+      }
+      throw new Error(`Element not found: selector=${msg.selector || ""} text=${msg.text || ""} ref=${msg.ref ?? ""} coords=${msg.x},${msg.y}`);
     }
-    if (!el)
-      throw new Error(`Element not found: selector=${selector || ""} text=${text || ""} coords=${x},${y}`);
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (!viaCoords) {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      await waitScrollSettle(450);
+      if (!isVisible(el)) {
+        return {
+          success: false,
+          not_visible: true,
+          message: "\u76EE\u6807\u5143\u7D20\u5B58\u5728\u4E8E DOM \u4E2D\uFF0C\u4F46\u5F53\u524D\u4E0D\u53EF\u89C1\uFF08display:none / \u5C3A\u5BF8\u4E3A 0 / \u5728\u89C6\u53E3\u5916\uFF09\u3002\u5B83\u53EF\u80FD\u662F\u80CC\u666F\u6216\u672A\u5C55\u5F00\u7684\u5185\u5BB9\uFF0C\u7528\u6237\u6B64\u523B\u770B\u4E0D\u5230\uFF0C\u56E0\u6B64\u65E0\u6CD5\u70B9\u51FB\u3002",
+          target: { tag: el.tagName, text: textOf(el, 80), selector: cssPath(el) }
+        };
+      }
+      if (msg.force !== true && !isHittable(el)) {
+        const cover = occluderOf(el);
+        return {
+          success: false,
+          occluded: true,
+          message: "\u76EE\u6807\u88AB\u53E6\u4E00\u4E2A\u5143\u7D20\u906E\u6321\uFF08\u5F88\u53EF\u80FD\u662F\u5F39\u7A97/\u906E\u7F69/\u5E7F\u544A\uFF09\u3002\u8BF7\u5148\u5173\u95ED\u906E\u6321\u5C42\uFF0C\u6216\u6539\u7528 browser_observe \u540E\u6309\u7F16\u53F7\u70B9\u51FB\u6700\u9876\u5C42\u5143\u7D20\uFF1B\u786E\u9700\u7A7F\u900F\u70B9\u51FB\u53EF\u4F20 force:true\u3002",
+          target: { tag: el.tagName, text: textOf(el, 80), selector: cssPath(el) },
+          occludedBy: cover ? { tag: cover.tagName, text: textOf(cover, 80), selector: cssPath(cover) } : null
+        };
+      }
+    }
     if (isFxEnabled()) {
-      await fxSleep(220);
+      if (!viaCoords)
+        await fxSleep(220);
       await fxToElement(el);
-      const r = el.getBoundingClientRect();
-      fxClickAt(r.left + r.width / 2, r.top + r.height / 2);
+      fxClickAt(x, y);
       await fxSleep(120);
     }
-    ;
-    el.click();
+    clickLikeUser(el, { x, y });
     const ctx = viewportContext();
     return {
       success: true,
       tag: el.tagName,
-      text: el.innerText?.slice(0, 100),
+      text: el.innerText?.slice(0, 100) || textOf(el, 100),
       position: { scrollY: ctx.scrollY, scrollPercent: ctx.scrollPercent, currentSection: ctx.currentSection }
     };
   }
@@ -591,7 +665,8 @@
     const root = msg.selector ? document.querySelector(String(msg.selector)) : document.body;
     if (!root)
       throw new Error(`Element not found: ${msg.selector}`);
-    const text = root.innerText?.slice(0, 5e4) || "";
+    const maxChars = Math.min(Math.max(Number(msg.max_chars ?? 8e3), 200), 5e4);
+    const text = root.innerText?.slice(0, maxChars) || "";
     const links = Array.from(root.querySelectorAll("a[href]")).slice(0, 50).map((a) => ({
       tag: "A",
       selector: cssPath(a),
@@ -1441,6 +1516,123 @@
     };
   }
 
+  // src/content/observe.ts
+  var INTERACTIVE = [
+    "a[href]",
+    "button",
+    'input:not([type="hidden"])',
+    "select",
+    "textarea",
+    '[role="button"]',
+    '[role="link"]',
+    '[role="checkbox"]',
+    '[role="radio"]',
+    '[role="tab"]',
+    '[role="menuitem"]',
+    '[role="menuitemcheckbox"]',
+    '[role="menuitemradio"]',
+    '[role="switch"]',
+    '[role="option"]',
+    '[contenteditable=""]',
+    '[contenteditable="true"]',
+    "[onclick]",
+    '[tabindex]:not([tabindex="-1"])',
+    "summary",
+    "label[for]"
+  ].join(",");
+  var MARK_LAYER_ID = "__hs_marks_layer";
+  function implicitRole(el) {
+    const tag = el.tagName.toLowerCase();
+    if (tag === "a")
+      return "link";
+    if (tag === "button" || tag === "summary")
+      return "button";
+    if (tag === "select")
+      return "combobox";
+    if (tag === "textarea")
+      return "textbox";
+    if (tag === "input") {
+      const t = el.type;
+      if (t === "checkbox" || t === "radio" || t === "button" || t === "submit")
+        return t;
+      return "textbox";
+    }
+    return "";
+  }
+  function clearMarksOverlay() {
+    document.getElementById(MARK_LAYER_ID)?.remove();
+  }
+  function drawMarksOverlay(els) {
+    clearMarksOverlay();
+    const layer = document.createElement("div");
+    layer.id = MARK_LAYER_ID;
+    layer.style.cssText = "position:fixed;left:0;top:0;width:0;height:0;margin:0;padding:0;border:0;z-index:2147483646;pointer-events:none;";
+    els.forEach((el, i) => {
+      const r = el.getBoundingClientRect();
+      const box = document.createElement("div");
+      box.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${Math.max(0, r.width)}px;height:${Math.max(0, r.height)}px;box-sizing:border-box;border:1px solid rgba(37,99,235,.7);background:rgba(37,99,235,.06);pointer-events:none;`;
+      const badge = document.createElement("div");
+      badge.textContent = String(i + 1);
+      badge.style.cssText = `position:fixed;left:${Math.max(0, r.left)}px;top:${Math.max(0, r.top)}px;background:#2563eb;color:#fff;font:bold 11px/14px ui-monospace,monospace;padding:0 4px;border-radius:0 0 3px 0;pointer-events:none;box-shadow:0 0 0 1px #fff;`;
+      layer.appendChild(box);
+      layer.appendChild(badge);
+    });
+    document.documentElement.appendChild(layer);
+  }
+  function doObserve(msg) {
+    clearMarksOverlay();
+    const all = Array.from(document.querySelectorAll(INTERACTIVE)).slice(0, 800);
+    const hittable = all.filter(isHittable);
+    const set = new Set(hittable);
+    const pruned = hittable.filter((el) => {
+      let p = el.parentElement;
+      while (p) {
+        if (set.has(p))
+          return false;
+        p = p.parentElement;
+      }
+      return true;
+    });
+    const limit = Math.min(Math.max(Number(msg.limit ?? 60), 1), 200);
+    const chosen = pruned.slice(0, limit);
+    setMarks(chosen);
+    const elements = chosen.map((el, i) => {
+      const r = el.getBoundingClientRect();
+      const item = {
+        id: i + 1,
+        tag: el.tagName.toLowerCase(),
+        role: el.getAttribute("role") || implicitRole(el),
+        text: textOf(el, 80),
+        selector: cssPath(el),
+        center: { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) },
+        rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }
+      };
+      const type = el.type;
+      if (type)
+        item.type = type;
+      if (el.value)
+        item.value = String(el.value).slice(0, 60);
+      return item;
+    });
+    const marked = msg.mark !== false;
+    if (marked)
+      drawMarksOverlay(chosen);
+    const ctx = viewportContext();
+    return {
+      success: true,
+      source: "browser_observe",
+      url: location.href,
+      title: document.title,
+      count: elements.length,
+      truncated: pruned.length > chosen.length,
+      marked,
+      scroll: { y: ctx.scrollY, percent: ctx.scrollPercent, atTop: ctx.atTop, atBottom: ctx.atBottom },
+      currentSection: ctx.currentSection,
+      elements,
+      hint: "\u53EA\u5217\u51FA\u7528\u6237\u5F53\u524D\u80FD\u770B\u5230\u3001\u672A\u88AB\u906E\u6321\u7684\u53EF\u4EA4\u4E92\u5143\u7D20\u3002\u7528 browser_click {ref:id} \u6309\u7F16\u53F7\u70B9\u51FB\u6700\u7A33\u3002" + (marked ? " \u9875\u9762\u4E0A\u5DF2\u753B\u51FA\u5BF9\u5E94\u7F16\u53F7\uFF0C\u8C03\u7528 browser_screenshot \u5373\u53EF\u770B\u5230\u3002" : "")
+    };
+  }
+
   // src/content/index.ts
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     handleAction(msg).then(sendResponse).catch((err) => sendResponse({
@@ -1472,6 +1664,11 @@
         return doClosePopup(msg);
       case "page_info":
         return doPageInfo();
+      case "observe":
+        return doObserve(msg);
+      case "clear_marks":
+        clearMarksOverlay();
+        return { success: true };
       case "type":
         return doType(msg);
       case "get_content":

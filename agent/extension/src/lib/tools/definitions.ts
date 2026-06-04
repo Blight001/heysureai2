@@ -11,6 +11,12 @@
 //
 // 状态管理类（tab/cookie/storage/session/profile/history）此前按「资源 × 动作」拆成
 // 一堆同质工具，现在收敛为「单工具 + action 参数」，把 47 个收敛到 34 个。
+//
+// 感知精简：新增 browser_observe 作为「点击前的主感知」——只返回用户当前能看到、未被
+// 遮挡的可交互元素（带编号 id + 中心坐标），配合 browser_screenshot 形成「看图按编号点」
+// 的稳定闭环。同时把若干低频/重叠的观察工具（find_text / performance / network_log /
+// iframe_list / profile）从对 AI 暴露的列表中移除，收窄工具面、减少信息模糊；它们的
+// 实现仍保留在 browser.ts 的 HANDLERS 中，旧的直接/兼容调用不受影响。
 
 import { AIToolDef } from '../types'
 
@@ -75,6 +81,17 @@ export const BROWSER_TOOLS: AIToolDef[] = [
 
   // ───── 页面观察 ───────────────────────────────────────────────────────
   {
+    name: 'browser_observe',
+    description: '感知当前视口里「用户能看到且可点击」的元素：只返回最顶层、未被遮挡的可交互元素（按钮/链接/输入框/下拉/菜单项等），每个带编号 id、角色 role、文本和中心坐标 center，并默认在页面上画出对应编号标记。用途：作为点击/输入前的首选观察手段，配合 browser_screenshot 形成「看图—按编号点击」闭环，避免点到背景或被弹窗遮挡的元素。场景：操作任意元素前先 observe，再用 browser_click {ref:id} 精确点击；页面变化（滚动/弹窗/路由切换）后重新 observe 以刷新编号。',
+    input_schema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: '最多返回的可交互元素数。默认 60，最大 200。' },
+        mark:  { type: 'boolean', description: '是否在页面上绘制编号标记，便于随后截图查看。默认 true；传 false 仅返回列表并清除已有标记。标记仅为视觉叠加，不影响 get_content/截图以外的取数，也不拦截点击。' },
+      },
+    },
+  },
+  {
     name: 'browser_screenshot',
     description: '对当前标签页截图：可截可视区、整页、某个 CSS/文本匹配的元素，或一块矩形区域，默认返回完整 base64 图片 dataUrl 且不保存到服务器（截图被禁用或无权限时返回可读的错误说明）。用途：让 AI「看见」页面。场景：核对页面状态、在无法读取文本时改用视觉理解；需要留存证据时传 save_to_server:true。',
     input_schema: {
@@ -117,6 +134,7 @@ export const BROWSER_TOOLS: AIToolDef[] = [
       properties: {
         selector:     { type: 'string',  description: '只取该 CSS selector 范围内的内容。默认 body。' },
         include_html: { type: 'boolean', description: '同时返回（截断后的）原始 HTML。' },
+        max_chars:    { type: 'number',  description: '返回可见文本的最大字符数。默认 8000，最大 50000。需要长正文时再调大，避免信息过载。' },
       },
     },
   },
@@ -139,18 +157,6 @@ export const BROWSER_TOOLS: AIToolDef[] = [
     input_schema: { type: 'object', properties: {} },
   },
   {
-    name: 'browser_find_text',
-    description: '查找页面上所有包含指定文本的元素。用途：按文字定位元素。场景：找到含某关键字的按钮/链接，再配合点击或截图。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        text:  { type: 'string',  description: '要搜索的文本。' },
-        exact: { type: 'boolean', description: '仅精确匹配。' },
-      },
-      required: ['text'],
-    },
-  },
-  {
     name: 'browser_find_popups',
     description: '检测页面上可见的弹窗、模态框、对话框、抽屉、遮罩以及它们可能的关闭按钮。用途：发现挡住操作的弹层。场景：自动化卡住时先排查弹窗，再决定如何关闭。',
     input_schema: {
@@ -160,38 +166,20 @@ export const BROWSER_TOOLS: AIToolDef[] = [
       },
     },
   },
-  {
-    name: 'browser_performance',
-    description: '读取页面性能指标和慢资源，数据来自 PerformanceNavigationTiming 与 ResourceTiming。用途：评估页面加载表现。场景：排查页面卡顿、统计加载耗时与慢资源。',
-    input_schema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'browser_network_log',
-    description: '以轻量网络日志形式返回被动的资源 timing 条目。注意：这不是主动的请求拦截。用途：粗略了解页面加载了哪些资源。场景：检查接口/资源是否被加载、统计请求清单。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        limit: { type: 'number', description: '最多返回的请求/资源条目数。默认 20。' },
-      },
-    },
-  },
-  {
-    name: 'browser_iframe_list',
-    description: '列出当前页面的 iframe/frame 元素，包含 src/name/title/可访问性信息和视口矩形。用途：发现内嵌框架。场景：目标内容在 iframe 中时，先定位框架再决定如何操作。',
-    input_schema: { type: 'object', properties: {} },
-  },
 
   // ───── 页面交互 ───────────────────────────────────────────────────────
   {
     name: 'browser_click',
-    description: '点击 click 页面元素，可用 CSS selector、可见文本或坐标定位。用途：触发按钮、链接、勾选框等交互。场景：点「登录」「下一步」、展开菜单、打开条目。',
+    description: '点击 click 页面元素，会派发完整的指针+鼠标事件序列（pointerdown/mousedown/…/click），兼容自定义组件。定位优先级：ref（browser_observe 的编号，最稳）> selector > 可见文本 > 坐标。非坐标点击会先做遮挡检测：若目标被弹窗/遮罩/广告盖住，返回 occluded 诊断而不是误点背景元素（需穿透点击可传 force:true）。用途：触发按钮、链接、勾选框等交互。场景：先 browser_observe 再用 ref 点「登录」「下一步」、展开菜单、打开条目。',
     input_schema: {
       type: 'object',
       properties: {
+        ref:      { type: 'number', description: 'browser_observe 返回的元素编号 id。最稳的定位方式，优先使用。' },
         selector: { type: 'string', description: '目标元素的 CSS selector。' },
         text:     { type: 'string', description: '要点击元素的可见文本。' },
-        x:        { type: 'number', description: 'X 坐标（像素）。' },
-        y:        { type: 'number', description: 'Y 坐标（像素）。' },
+        x:        { type: 'number', description: 'X 坐标（像素，视口坐标）。会点击该点最顶层的元素。' },
+        y:        { type: 'number', description: 'Y 坐标（像素，视口坐标）。' },
+        force:    { type: 'boolean', description: '为 true 时即使目标被遮挡也强制点击。默认 false：被遮挡时返回 occluded 诊断，提示先关闭遮挡层。' },
       },
     },
   },
@@ -496,19 +484,6 @@ export const BROWSER_TOOLS: AIToolDef[] = [
       required: ['action'],
     },
   },
-  {
-    name: 'browser_profile',
-    description: '查看或设置扩展的逻辑 profile 标记，用于给会话/状态分组。注意：这不会切换 Chrome 的用户配置文件。用途：区分不同任务的存储分组。场景：确认当前 profile（info）、为当前任务打标（set）。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        action:  { type: 'string', enum: ['info', 'set'], description: '动作：info 查看当前 profile、set 设置 profile。' },
-        name:    { type: 'string', description: 'action=set 时的逻辑 profile 名称。' },
-        profile: { type: 'string', description: 'name 的别名。' },
-      },
-      required: ['action'],
-    },
-  },
 ]
 
 export const BROWSER_CAPABILITIES = BROWSER_TOOLS.map(t => t.name)
@@ -530,9 +505,8 @@ export const BROWSER_TOOL_CATEGORIES: BrowserToolCategory[] = [
   {
     title: '页面观察',
     tools: [
-      'browser_screenshot', 'browser_get_content', 'browser_dom_snapshot',
-      'browser_page_info', 'browser_find_text', 'browser_find_popups',
-      'browser_performance', 'browser_network_log', 'browser_iframe_list',
+      'browser_observe', 'browser_screenshot', 'browser_get_content',
+      'browser_dom_snapshot', 'browser_page_info', 'browser_find_popups',
     ],
   },
   {
@@ -553,7 +527,7 @@ export const BROWSER_TOOL_CATEGORIES: BrowserToolCategory[] = [
   },
   {
     title: '浏览器状态',
-    tools: ['browser_tab', 'browser_cookie', 'browser_storage', 'browser_session', 'browser_profile'],
+    tools: ['browser_tab', 'browser_cookie', 'browser_storage', 'browser_session'],
   },
 ]
 
