@@ -252,11 +252,19 @@ export const deleteDbRow = (name: string, pk: Record<string, DbValue>) =>
 
 // ---- Database cleanup (destructive maintenance) ----
 
+/** Category keys understood by the cleanup endpoint (see admin router). */
+export type DbCleanupCategory =
+  | 'conversations'
+  | 'tasks'
+  | 'ai_messages'
+  | 'knowledge'
+  | 'skills'
+  | 'valhalla'
+
 export interface DbCleanupPayload {
   account: string
   password: string
-  clear_conversations: boolean
-  clear_tasks: boolean
+  categories: DbCleanupCategory[]
   drop_unused_tables: boolean
 }
 

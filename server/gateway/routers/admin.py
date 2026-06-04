@@ -42,11 +42,22 @@ from api.database import engine, get_session
 from api.models import (
     AdminAuditLog,
     AgentDispatchTask,
+    AIMessage,
     AITaskJob,
     ChatMessage,
     ChatRun,
     ChatSession,
+    EvolutionInput,
+    EvolutionProject,
+    KnowledgeEntry,
+    Memory,
+    SkillCard,
+    SkillCardRecording,
+    SkillCardRunStat,
+    SkillCardVersion,
+    TokenUsageSnapshot,
     User,
+    ValhallaEntry,
 )
 from api.runtime.internal_http import InternalClient
 from gateway.routers.auth import ensure_user_workspace, get_current_user
@@ -1123,18 +1134,37 @@ def delete_db_row(
 # ---------------------------------------------------------------------------
 
 
-# Per-user conversation history. Resolved from the models so the table names
-# track the schema even if a model is renamed.
-_CONVERSATION_MODELS = (ChatMessage, ChatSession, ChatRun)
-# Task / job execution records.
-_TASK_MODELS = (AITaskJob, AgentDispatchTask)
+# Cleanable record sets, keyed by category. Tables are resolved from the
+# models so the names track the schema even if a model is renamed. Every table
+# here is per-user data; system tables (user / config / audit / device
+# bindings / presence) are deliberately excluded.
+_CLEANUP_CATEGORIES: dict[str, tuple] = {
+    # 对话记录：消息 / 会话 / 运行记录
+    "conversations": (ChatMessage, ChatSession, ChatRun),
+    # 任务记录：任务作业 / 代理分发
+    "tasks": (AITaskJob, AgentDispatchTask),
+    # AI 互发消息 + Token 用量统计
+    "ai_messages": (AIMessage, TokenUsageSnapshot),
+    # 知识库与记忆：知识条目 / 记忆 / 进化建议
+    "knowledge": (KnowledgeEntry, Memory, EvolutionInput),
+    # 技能卡片与协作项目
+    "skills": (
+        SkillCard,
+        SkillCardVersion,
+        SkillCardRunStat,
+        SkillCardRecording,
+        EvolutionProject,
+    ),
+    # 遗言 / 英灵殿
+    "valhalla": (ValhallaEntry,),
+}
 
 
 class DbCleanupPayload(BaseModel):
     account: str
     password: str
-    clear_conversations: bool = True
-    clear_tasks: bool = True
+    # Category keys from ``_CLEANUP_CATEGORIES`` whose records should be wiped.
+    categories: list[str] = []
     drop_unused_tables: bool = True
 
 
@@ -1159,7 +1189,11 @@ def cleanup_database(
     ):
         raise HTTPException(status_code=403, detail="房主账号或密码不正确")
 
-    if not (payload.clear_conversations or payload.clear_tasks or payload.drop_unused_tables):
+    categories = [c for c in (payload.categories or []) if c in _CLEANUP_CATEGORIES]
+    unknown = [c for c in (payload.categories or []) if c not in _CLEANUP_CATEGORIES]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"未知的清理类别：{', '.join(unknown)}")
+    if not (categories or payload.drop_unused_tables):
         raise HTTPException(status_code=400, detail="请至少选择一项清理内容")
 
     cleared: dict[str, int] = {}
@@ -1168,15 +1202,11 @@ def cleanup_database(
     # 1) Wipe the selected record sets. None of these tables reference each
     #    other (they only point at user.id, which we leave intact), so order
     #    doesn't matter.
-    models_to_clear = []
-    if payload.clear_conversations:
-        models_to_clear.extend(_CONVERSATION_MODELS)
-    if payload.clear_tasks:
-        models_to_clear.extend(_TASK_MODELS)
+    models_to_clear = [m for cat in categories for m in _CLEANUP_CATEGORIES[cat]]
     for model in models_to_clear:
         tbl = model.__table__
         if tbl.name in cleared:
-            continue  # guard against overlap if a model is listed twice
+            continue  # guard against overlap if a model appears in two sets
         try:
             result = session.execute(sa_delete(tbl))
         except Exception as exc:
