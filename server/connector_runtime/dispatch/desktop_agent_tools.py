@@ -67,6 +67,7 @@ ENDPOINT_TOOL_PREFIXES = (
     "keyboard.",
     "mouse.",
     "screen.",
+    "ui.",
     "clipboard.",
     "window.",
     "process.",

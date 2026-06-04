@@ -16,6 +16,7 @@ const window_1 = require("../tools/window");
 const mouth_1 = require("../tools/mouth");
 const vision_1 = require("../tools/vision");
 const hands_1 = require("../tools/hands");
+const uia_1 = require("../tools/uia");
 const ear_1 = require("../tools/ear");
 const card_replay_1 = require("./card-replay");
 const registry_1 = require("./registry");
@@ -125,6 +126,35 @@ const OBJ = (properties, required = []) => ({
             interval_ms: { type: 'number', description: '平滑拖动每步间隔毫秒数；越小越快。默认 3。' },
         }, ['from_x', 'from_y', 'to_x', 'to_y']),
         handler: ({ args }) => (0, mouse_1.mouseDrag)(args),
+    },
+    // UI Automation — read the desktop accessibility tree (类似桌面版 DOM) and act on
+    // real controls instead of guessing pixel coordinates from a screenshot.
+    {
+        id: 'ui.inspect', platform: 'windows',
+        description: '读取当前前台窗口（或按标题匹配的窗口）的 UI Automation 无障碍树，返回每个可交互控件的名称、控件类型、AutomationId、精确包围盒和可执行动作（invoke/toggle/select/expand/value）。用途：在点击前用结构化方式精确定位控件，避免靠截图猜坐标。场景：原生 Win32/WPF/UWP 程序、浏览器、office 等支持无障碍的应用；游戏/自绘 UI/远程桌面读不到时再退回 vision.capture 视觉方案。返回的元素可直接交给 ui.click 点击。',
+        inputSchema: OBJ({
+            title: { type: 'string', description: '可选：按窗口标题子串匹配目标顶层窗口；不传则使用当前前台窗口。' },
+            interactable_only: { type: 'boolean', description: '是否只返回可交互控件（按钮/菜单项/输入框等）。默认 true；传 false 返回更全的元素含静态文本。' },
+            max: { type: 'number', description: '最多返回多少个元素。默认 150。' },
+            max_depth: { type: 'number', description: '遍历树的最大深度，越大越全但越慢。默认 40。' },
+        }),
+        handler: ({ args }) => (0, uia_1.uiInspect)(args),
+    },
+    {
+        id: 'ui.click', platform: 'windows',
+        description: '按 UI Automation 控件定位并点击，优先用 InvokePattern 直接触发控件（不移动真实光标、不受遮挡/坐标误差影响，最稳），不支持 Invoke 时自动回退到在控件中心做真实鼠标点击。用途：精准点击按钮/菜单项/链接/列表项等。场景：先用 ui.inspect 拿到目标控件的 name/control_type/automation_id 再调用本工具；比 mouse.click 猜坐标准确得多。右键或双击会强制走真实鼠标点击。',
+        inputSchema: OBJ({
+            title: { type: 'string', description: '可选：目标顶层窗口标题子串；不传则用当前前台窗口。需与 ui.inspect 一致。' },
+            name: { type: 'string', description: '控件名称（ui.inspect 返回的 name）。优先精确匹配，无精确匹配时按包含匹配。' },
+            automation_id: { type: 'string', description: '控件 AutomationId（ui.inspect 返回的 automation_id），最稳定的定位方式。' },
+            control_type: { type: 'string', description: '控件类型，如 Button、MenuItem、CheckBox、ListItem、Hyperlink（ui.inspect 返回的 control_type）。' },
+            index: { type: 'number', description: '当 name/control_type 匹配到多个时，选择第几个（从 0 开始）。默认 0。' },
+            method: { type: 'string', enum: ['auto', 'invoke', 'mouse'], description: '点击方式：auto（默认，能 Invoke 就 Invoke，否则真实点击）、invoke（强制走无障碍触发）、mouse（强制真实鼠标点击控件中心）。' },
+            button: { type: 'string', description: '鼠标键 left 或 right。right 会强制使用真实鼠标点击。默认 left。' },
+            double: { type: 'boolean', description: '是否双击（强制使用真实鼠标点击）。默认 false。' },
+            max_depth: { type: 'number', description: '遍历树的最大深度。默认 40。' },
+        }),
+        handler: ({ args }) => (0, uia_1.uiClick)(args),
     },
     // Display overlay (windows-only via Electron transparent BrowserWindow)
     {
