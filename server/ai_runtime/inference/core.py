@@ -562,9 +562,18 @@ def _append_missing_tool_responses(convo: List[Dict], error_text: str) -> List[s
     return repaired_ids
 
 
-def _build_mcp_tool_bubble_content(tool: str, arguments: dict, result_text: str, failed: bool = False) -> str:
+_SCREENSHOT_BUBBLE_MARKER = "[截图]"
+
+
+def _build_mcp_tool_bubble_content(
+    tool: str,
+    arguments: dict,
+    result_text: str,
+    failed: bool = False,
+    image_url: str = "",
+) -> str:
     status = "失败" if failed else "成功"
-    return (
+    content = (
         "[MCP工具]\n"
         f"工具: {tool}\n"
         f"状态: {status}\n\n"
@@ -573,6 +582,10 @@ def _build_mcp_tool_bubble_content(tool: str, arguments: dict, result_text: str,
         "[结果]\n"
         f"{result_text}"
     )
+    if image_url:
+        # Trailing marker the web UI parses out to render the screenshot inline.
+        content += f"\n\n{_SCREENSHOT_BUBBLE_MARKER}\n{image_url}"
+    return content
 
 
 def _save_mcp_tool_bubble(
@@ -588,13 +601,14 @@ def _save_mcp_tool_bubble(
     arguments: dict,
     result_text: str,
     failed: bool = False,
+    image_url: str = "",
 ) -> None:
     _save_message(
         bg,
         user_id,
         ChatMessageCreate(
             role="system",
-            content=_build_mcp_tool_bubble_content(tool, arguments, result_text, failed),
+            content=_build_mcp_tool_bubble_content(tool, arguments, result_text, failed, image_url),
             tags="mcp_tool_call",
             ai_config_id=ai_config_id,
             ai_kind=ai_kind,
@@ -763,6 +777,39 @@ def _browser_screenshot_image_message(tool: str, tool_result: Dict[str, object])
             {"type": "image_url", "image_url": {"url": public_image_url or data_url}},
         ],
     }
+
+
+def _screenshot_display_url(tool: str, tool_result: Dict[str, object]) -> str:
+    """Return a compact image URL so screenshots can render in the chat UI.
+
+    Screenshot MCP tools hand back the captured image as a public URL, a
+    base64 data URL, or a server path. The data URL is fine to feed the model
+    but far too large to store verbatim in a chat bubble, so persist it to the
+    temp-image store and keep only the short ``/tmp-images/...`` URL. Existing
+    public URLs are reused as-is; the raw data URL is the last-resort fallback
+    so the image still shows even when no public base URL is configured.
+    """
+    if tool not in _SCREENSHOT_MODEL_TOOLS or not isinstance(tool_result, dict):
+        return ""
+    payload = _find_image_payload(tool_result)
+    url = payload.get("url", "")
+    if url.startswith(("http://", "https://")):
+        return url
+    data_url = payload.get("data_url", "")
+    if not data_url.startswith("data:image/"):
+        data_url = _image_path_to_data_url(payload.get("path", ""))
+    if not data_url.startswith("data:image/"):
+        return ""
+    try:
+        from api.services.temp_image_store import save_temp_image_data_url
+        from api.core.settings import settings as _settings
+
+        filename, _media_type, _size = save_temp_image_data_url(data_url)
+        base = (str(getattr(_settings, "public_base_url", "")) or "").rstrip("/")
+        return f"{base}/tmp-images/{filename}" if base else f"/tmp-images/{filename}"
+    except Exception:
+        logger.debug("screenshot temp-image persist skipped", exc_info=True)
+        return data_url
 
 
 def _model_visible_tool_result(tool: str, tool_result: Dict[str, object]) -> object:
@@ -1539,6 +1586,7 @@ def _run_worker_impl(
                         )
                         bg.add(saved)
                         bg.commit()
+                        item_screenshot_url = "" if item_failed else _screenshot_display_url(split_tool, item_result)
                         _save_mcp_tool_bubble(
                             bg,
                             user_id=user_id,
@@ -1551,6 +1599,7 @@ def _run_worker_impl(
                             arguments=arguments,
                             result_text=item_result_text,
                             failed=item_failed,
+                            image_url=item_screenshot_url,
                         )
                         compound_results.append({
                             "tool": split_tool,
@@ -1681,6 +1730,7 @@ def _run_worker_impl(
                 saved.tags = _append_mcp_state_to_tags(saved.tags, tool, arguments, result_text)
                 bg.add(saved)
                 bg.commit()
+                screenshot_url = "" if tool_failed else _screenshot_display_url(tool, tool_result)
                 _save_mcp_tool_bubble(
                     bg,
                     user_id=user_id,
@@ -1693,6 +1743,7 @@ def _run_worker_impl(
                     arguments=arguments,
                     result_text=result_text,
                     failed=tool_failed,
+                    image_url=screenshot_url,
                 )
 
                 # 录制咽喉点抄录（S4，§4.1）：录制开着时，把流经此处的成功操作类

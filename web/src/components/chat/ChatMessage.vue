@@ -75,9 +75,17 @@ const mcpToolSummary = computed(() => {
   return { tool, status }
 })
 
+// Trailing "[截图] <url>" marker the backend appends to screenshot MCP bubbles.
+const SCREENSHOT_MARKER_RE = /\n*\[截图\]\s*\n\s*(\S+)\s*$/
+
+const mcpImageUrl = computed(() => {
+  const text = String(props.message.display_text || props.message.content || '')
+  return String(text.match(SCREENSHOT_MARKER_RE)?.[1] || '').trim()
+})
+
 const mcpToolDetails = computed(() => {
   const text = String(props.message.display_text || props.message.content || '').trim()
-  return text.replace(/^\[MCP工具\]\s*/i, '').trim()
+  return text.replace(/^\[MCP工具\]\s*/i, '').replace(SCREENSHOT_MARKER_RE, '').trim()
 })
 
 const mcpToolIcon = computed(() => {
@@ -238,6 +246,16 @@ const renderedThinkText = computed(() => {
           v-if="isMcpToolMessage"
           class="text-[13px] leading-snug"
         >
+          <a
+            v-if="mcpImageUrl"
+            :href="mcpImageUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="mcp-screenshot-link"
+            title="点击查看原图"
+          >
+            <img :src="mcpImageUrl" alt="截图" class="mcp-screenshot" loading="lazy" />
+          </a>
           <details class="mcp-details">
             <summary class="flex items-center gap-1.5 whitespace-nowrap cursor-pointer select-none list-none leading-5">
               <span class="text-[12px] font-semibold text-sky-700 dark:text-sky-300">{{ mcpToolIcon ? `${mcpToolIcon} ` : '' }}MCP 工具</span>
@@ -339,6 +357,30 @@ const renderedThinkText = computed(() => {
 
 .mcp-details > summary::-webkit-details-marker {
   display: none;
+}
+
+.mcp-screenshot-link {
+  display: inline-block;
+  margin-bottom: 6px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgb(228 228 231);
+  background: rgb(244 244 245);
+}
+
+.dark .mcp-screenshot-link {
+  border-color: rgb(63 63 70);
+  background: rgb(24 24 27);
+}
+
+.mcp-screenshot {
+  display: block;
+  max-width: min(420px, 100%);
+  max-height: 320px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  cursor: zoom-in;
 }
 
 .front-prompt-detail-button {
