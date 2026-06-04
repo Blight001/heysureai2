@@ -250,6 +250,28 @@ export const deleteDbRow = (name: string, pk: Record<string, DbValue>) =>
     { fallbackError: '删除失败' },
   )
 
+// ---- Database cleanup (destructive maintenance) ----
+
+export interface DbCleanupPayload {
+  account: string
+  password: string
+  clear_conversations: boolean
+  clear_tasks: boolean
+  drop_unused_tables: boolean
+}
+
+export interface DbCleanupResult {
+  ok: boolean
+  cleared: Record<string, number>
+  dropped_tables: string[]
+  total_deleted: number
+}
+
+export const cleanupDatabase = (payload: DbCleanupPayload) =>
+  post<DbCleanupResult>('/api/admin/db/cleanup', payload, {
+    fallbackError: '清理数据库失败',
+  })
+
 export const setUserRole = (userId: number, role: UserRole) =>
   patch<{ ok: boolean; user: AdminUser }>(`/api/admin/users/${userId}/role`, { role }, {
     fallbackError: '设置权限失败',

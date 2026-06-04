@@ -21,16 +21,33 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import and_, delete as sa_delete, func, insert as sa_insert, or_, text, update as sa_update
+from sqlalchemy import (
+    and_,
+    delete as sa_delete,
+    func,
+    insert as sa_insert,
+    inspect as sa_inspect,
+    or_,
+    text,
+    update as sa_update,
+)
 from sqlmodel import Session, SQLModel, select
 
 from ai_runtime.inference.ai_service import ensure_default_ai_for_user
-from api.auth import get_password_hash
+from api.auth import get_password_hash, verify_password
 from api.core.config import DATA_DIR, user_workspace_dir
 from api.core.logging_config import get_recent_logs
 from api.core.settings import settings
-from api.database import get_session
-from api.models import AdminAuditLog, ChatRun, User
+from api.database import engine, get_session
+from api.models import (
+    AdminAuditLog,
+    AgentDispatchTask,
+    AITaskJob,
+    ChatMessage,
+    ChatRun,
+    ChatSession,
+    User,
+)
 from api.runtime.internal_http import InternalClient
 from gateway.routers.auth import ensure_user_workspace, get_current_user
 
@@ -1093,6 +1110,122 @@ def delete_db_row(
         detail=f"删除表 {name} 中的行（{_pk_label(tbl, payload.pk or {})}）",
     )
     return {"ok": True, "deleted": int(result.rowcount)}
+
+
+# ---------------------------------------------------------------------------
+# Dangerous maintenance: database cleanup
+#
+# Wipes every user's conversation + task history and drops orphan tables that
+# no model maps any more (legacy leftovers from removed features). This is
+# destructive and irreversible, so on top of the owner-only gate the caller
+# must re-enter an owner's account + password — a deliberate second factor so
+# an unattended admin session can't trigger it by accident.
+# ---------------------------------------------------------------------------
+
+
+# Per-user conversation history. Resolved from the models so the table names
+# track the schema even if a model is renamed.
+_CONVERSATION_MODELS = (ChatMessage, ChatSession, ChatRun)
+# Task / job execution records.
+_TASK_MODELS = (AITaskJob, AgentDispatchTask)
+
+
+class DbCleanupPayload(BaseModel):
+    account: str
+    password: str
+    clear_conversations: bool = True
+    clear_tasks: bool = True
+    drop_unused_tables: bool = True
+
+
+@router.post("/db/cleanup")
+def cleanup_database(
+    payload: DbCleanupPayload,
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_owner_user),
+) -> dict:
+    account = (payload.account or "").strip()
+    password = payload.password or ""
+    if not account or not password:
+        raise HTTPException(status_code=400, detail="请输入房主账号和密码")
+    # Re-authenticate: the supplied credentials must belong to an owner. We
+    # verify against any owner (not just the caller) so a co-owner can confirm,
+    # but a non-owner account or a wrong password is rejected outright.
+    confirm_user = session.exec(select(User).where(User.account == account)).first()
+    if (
+        not confirm_user
+        or confirm_user.role != "owner"
+        or not verify_password(password, confirm_user.hashed_password)
+    ):
+        raise HTTPException(status_code=403, detail="房主账号或密码不正确")
+
+    if not (payload.clear_conversations or payload.clear_tasks or payload.drop_unused_tables):
+        raise HTTPException(status_code=400, detail="请至少选择一项清理内容")
+
+    cleared: dict[str, int] = {}
+    dropped: list[str] = []
+
+    # 1) Wipe the selected record sets. None of these tables reference each
+    #    other (they only point at user.id, which we leave intact), so order
+    #    doesn't matter.
+    models_to_clear = []
+    if payload.clear_conversations:
+        models_to_clear.extend(_CONVERSATION_MODELS)
+    if payload.clear_tasks:
+        models_to_clear.extend(_TASK_MODELS)
+    for model in models_to_clear:
+        tbl = model.__table__
+        if tbl.name in cleared:
+            continue  # guard against overlap if a model is listed twice
+        try:
+            result = session.execute(sa_delete(tbl))
+        except Exception as exc:
+            session.rollback()
+            raise HTTPException(status_code=400, detail=f"清空 {tbl.name} 失败：{exc}")
+        cleared[tbl.name] = int(result.rowcount or 0)
+    if models_to_clear:
+        session.commit()
+
+    # 2) Drop orphan tables — present in the live database but no longer mapped
+    #    by any SQLModel model. Skip SQLite's internal bookkeeping tables.
+    if payload.drop_unused_tables:
+        known = set(SQLModel.metadata.tables.keys())
+        try:
+            live_tables = set(sa_inspect(engine).get_table_names())
+        except Exception:
+            logger.exception("failed to inspect live database tables")
+            live_tables = set()
+        orphans = sorted(
+            name for name in (live_tables - known) if not name.startswith("sqlite_")
+        )
+        for name in orphans:
+            try:
+                session.execute(text(f'DROP TABLE IF EXISTS "{name}"'))
+                session.commit()
+                dropped.append(name)
+            except Exception:
+                logger.exception(f"failed to drop orphan table {name}")
+                session.rollback()
+
+    total_deleted = sum(cleared.values())
+    detail_parts = []
+    if cleared:
+        detail_parts.append("清空记录 " + "、".join(f"{k}×{v}" for k, v in cleared.items()))
+    if dropped:
+        detail_parts.append("删除无用表 " + "、".join(dropped))
+    detail = "；".join(detail_parts) if detail_parts else "无可清理内容"
+    logger.warning(f"owner {actor.account} ran database cleanup: {detail}")
+    _record_audit(
+        session, actor, "db_cleanup",
+        target_type="database", target_id="cleanup", target_label="数据库清理",
+        detail=detail,
+    )
+    return {
+        "ok": True,
+        "cleared": cleared,
+        "dropped_tables": dropped,
+        "total_deleted": total_deleted,
+    }
 
 
 # ---------------------------------------------------------------------------
