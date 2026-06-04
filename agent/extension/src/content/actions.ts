@@ -3,36 +3,67 @@
 // message from the background worker, and returns the JSON that browser.ts
 // forwards back to the AI / popup.
 
-import { findEl, resolveTarget, elCenter, isVisible, textMatches, textOf, cssPath, clickLikeUser } from './dom'
+import { findEl, resolveTarget, elCenter, isVisible, isHittable, occluderOf, textMatches, textOf, cssPath, clickLikeUser } from './dom'
 import { fxToElement, fxClickAt, fxSleep, fxDragPath, fxScrollDrag, isFxEnabled, getFxPos } from './fx'
 import { viewportContext, waitScrollSettle } from './viewport'
 
 // ── Click ─────────────────────────────────────────────────────────────────
 export async function doClick(msg: any) {
-  const { selector, text, x, y } = msg
-  let el: Element | null = null
+  // viaCoords = an explicit point. document.elementFromPoint already returns the
+  // top-most element painted there, so coordinate clicks target exactly what the
+  // user would hit — no occlusion guard needed (and none possible).
+  const viaCoords = msg.x !== undefined && msg.y !== undefined &&
+    (msg.ref === undefined || msg.ref === null || msg.ref === '')
+  const { el, x, y } = resolveTarget(msg)
 
-  if (x !== undefined && y !== undefined) {
-    el = document.elementFromPoint(Number(x), Number(y))
-  } else {
-    el = findEl(selector, text)
+  if (!el) {
+    if (msg.ref !== undefined && msg.ref !== null && msg.ref !== '') {
+      throw new Error(`Mark #${msg.ref} is stale or gone — call browser_observe again to refresh the numbered marks, then retry.`)
+    }
+    throw new Error(`Element not found: selector=${msg.selector || ''} text=${msg.text || ''} ref=${msg.ref ?? ''} coords=${msg.x},${msg.y}`)
   }
 
-  if (!el) throw new Error(`Element not found: selector=${selector || ''} text=${text || ''} coords=${x},${y}`)
-  el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  if (!viaCoords) {
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    await waitScrollSettle(450)
+
+    if (!isVisible(el)) {
+      return {
+        success: false,
+        not_visible: true,
+        message: '目标元素存在于 DOM 中，但当前不可见（display:none / 尺寸为 0 / 在视口外）。它可能是背景或未展开的内容，用户此刻看不到，因此无法点击。',
+        target: { tag: el.tagName, text: textOf(el, 80), selector: cssPath(el) },
+      }
+    }
+
+    // Occlusion guard: if a popup/overlay/ad is painted over the target, dispatching
+    // to the background element is exactly the "click failed / click conflict" the
+    // user reported. Surface a clear diagnostic instead so the AI closes the cover
+    // first. Pass force:true to click through deliberately.
+    if (msg.force !== true && !isHittable(el)) {
+      const cover = occluderOf(el)
+      return {
+        success: false,
+        occluded: true,
+        message: '目标被另一个元素遮挡（很可能是弹窗/遮罩/广告）。请先关闭遮挡层，或改用 browser_observe 后按编号点击最顶层元素；确需穿透点击可传 force:true。',
+        target: { tag: el.tagName, text: textOf(el, 80), selector: cssPath(el) },
+        occludedBy: cover ? { tag: cover.tagName, text: textOf(cover, 80), selector: cssPath(cover) } : null,
+      }
+    }
+  }
+
   if (isFxEnabled()) {
-    await fxSleep(220)            // let the smooth scroll settle before aiming
-    await fxToElement(el)         // glide the virtual cursor to the element
-    const r = (el as HTMLElement).getBoundingClientRect()
-    fxClickAt(r.left + r.width / 2, r.top + r.height / 2)
-    await fxSleep(120)            // brief press beat before the real click
+    if (!viaCoords) await fxSleep(220)   // let the smooth scroll settle before aiming
+    await fxToElement(el)                // glide the virtual cursor to the element
+    fxClickAt(x, y)
+    await fxSleep(120)                   // brief press beat before the real click
   }
-  ;(el as HTMLElement).click()
+  clickLikeUser(el, { x, y })
   const ctx = viewportContext()
   return {
     success: true,
     tag: el.tagName,
-    text: (el as HTMLElement).innerText?.slice(0, 100),
+    text: (el as HTMLElement).innerText?.slice(0, 100) || textOf(el, 100),
     position: { scrollY: ctx.scrollY, scrollPercent: ctx.scrollPercent, currentSection: ctx.currentSection },
   }
 }
@@ -214,7 +245,8 @@ export function getContent(msg: any) {
   const root = (msg.selector ? document.querySelector(String(msg.selector)) : document.body) as HTMLElement | null
   if (!root) throw new Error(`Element not found: ${msg.selector}`)
 
-  const text = (root as HTMLElement).innerText?.slice(0, 50000) || ''
+  const maxChars = Math.min(Math.max(Number(msg.max_chars ?? 8000), 200), 50000)
+  const text = (root as HTMLElement).innerText?.slice(0, maxChars) || ''
   const links = Array.from(root.querySelectorAll<HTMLAnchorElement>('a[href]'))
     .slice(0, 50)
     .map(a => ({

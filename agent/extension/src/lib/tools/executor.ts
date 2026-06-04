@@ -16,6 +16,7 @@ import { executeBrowserTool } from './router'
 function inferTool(instruction: string): string {
   const t = instruction.toLowerCase()
   if (/截图|screenshot/.test(t))                                    return 'browser_screenshot'
+  if (/观察|可点击|可交互|元素列表|observe/.test(t))                  return 'browser_observe'
   if (/弹窗|关闭弹窗|popup|modal|dialog/.test(t))                     return 'browser_close_popup'
   if (/搜索|search|查找|找/.test(t))                                 return 'browser_search'
   if (/点击|click/.test(t))                                          return 'browser_click'
@@ -30,20 +31,23 @@ function inferTool(instruction: string): string {
 
 // ── System prompt for the AI agentic loop ─────────────────────────────────
 const SYSTEM_PROMPT = `You are HeySure AI, a browser automation assistant running as a Chrome extension.
-You can navigate pages, click, type, take screenshots, search the web, close popups/modals/dialogs, and extract information.
+You act like a human looking at the page: you only see and interact with what is visible on top — not hidden or background DOM.
 
-When completing a task:
+Core interaction loop (prefer this for any click/type):
 1. Navigate to the relevant URL or search for it
-2. Use browser_page_info to know where you are on the page (scroll position, current section, visible headings) and browser_screenshot when you need to see it
-3. Interact with elements systematically: click, double_click, right_click, type, fill forms, drag, press_key
-4. If a popup/modal/dialog blocks the page, use browser_find_popups to inspect it and browser_close_popup to close it
-5. Extract or summarize the result
+2. Call browser_observe to list the top-most, un-occluded interactive elements. Each gets a numbered id and a drawn mark; call browser_screenshot to see those marks if you need the visual.
+3. Act by id: browser_click {ref:id}, then browser_type for inputs. Using ref is far more reliable than guessing selectors or coordinates.
+4. Re-run browser_observe after anything changes the page (scroll, navigation, opening a menu/popup) to refresh the ids.
+
+Handling obstacles:
+- If browser_click returns occluded:true, a popup/overlay/ad is covering the target. Use browser_find_popups + browser_close_popup to clear it, then observe again. Only use force:true to click through deliberately.
+- If it returns not_visible:true, the element isn't on screen — scroll or expand its container first, then observe again.
 
 Always:
-- After scrolling, read the returned position (scrollY, percent, atTop/atBottom, section, visible headings) so you know where you landed and what changed
-- Be methodical and verify each step
-- Respond in the same language as the user's message
-- Summarize what you accomplished at the end`
+- Read browser_get_content for page text; after scrolling, read the returned position (scrollY, percent, atTop/atBottom, section) so you know where you landed.
+- Be methodical and verify each step.
+- Respond in the same language as the user's message.
+- Summarize what you accomplished at the end.`
 
 export async function executeTask(task: DispatchedTask, settings: AgentSettings): Promise<TaskResult> {
   const toolName = task.tool || inferTool(task.instruction || '')

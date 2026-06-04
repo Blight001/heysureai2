@@ -3,6 +3,7 @@
 // computed styles / bounding boxes.
 
 import { FX } from './fx'
+import { getMarked } from './marks'
 
 export function isVisible(el: Element | null): el is HTMLElement {
   if (!el || !(el instanceof HTMLElement)) return false
@@ -11,6 +12,51 @@ export function isVisible(el: Element | null): el is HTMLElement {
   if (s.display === 'none' || s.visibility === 'hidden' || Number(s.opacity) === 0) return false
   const r = el.getBoundingClientRect()
   return r.width > 0 && r.height > 0 && r.bottom >= 0 && r.right >= 0 && r.top <= window.innerHeight && r.left <= window.innerWidth
+}
+
+// ── Occlusion / hit-testing ─────────────────────────────────────────────────
+// isVisible only checks computed style + viewport bounds; it cannot tell whether
+// another element (an ad, popup, sticky overlay, …) is painted *on top* of the
+// target. The helpers below answer "is this the element a real user would hit?"
+// — which is what we want the AI to see and click, instead of leaked background
+// elements that look visible in the DOM but are covered on screen.
+
+function clampX(x: number) { return Math.min(Math.max(x, 1), window.innerWidth - 1) }
+function clampY(y: number) { return Math.min(Math.max(y, 1), window.innerHeight - 1) }
+
+/** True when `el` is (or contains / is contained by) the top-most element at (x,y). */
+export function isTopmostAt(el: Element, x: number, y: number): boolean {
+  const hit = document.elementFromPoint(clampX(x), clampY(y))
+  if (!hit) return false
+  return hit === el || el.contains(hit) || hit.contains(el)
+}
+
+/**
+ * An element a user could actually click: visible, accepting pointer events, and
+ * the top-most paint at one of a few sample points (center + edges, since the
+ * exact center can fall on a gap or a non-interactive child).
+ */
+export function isHittable(el: Element): boolean {
+  if (!isVisible(el)) return false
+  const html = el as HTMLElement
+  if (getComputedStyle(html).pointerEvents === 'none') return false
+  const r = html.getBoundingClientRect()
+  const pts: Array<[number, number]> = [
+    [r.left + r.width / 2, r.top + r.height / 2],
+    [r.left + r.width / 2, r.top + Math.min(r.height * 0.2, 6)],
+    [r.left + r.width * 0.2, r.top + r.height / 2],
+    [r.left + r.width * 0.8, r.top + r.height / 2],
+  ]
+  return pts.some(([px, py]) => isTopmostAt(el, px, py))
+}
+
+/** The element painted over `el`'s center, if any (used for click diagnostics). */
+export function occluderOf(el: Element): Element | null {
+  const r = (el as HTMLElement).getBoundingClientRect()
+  if (r.width <= 0 || r.height <= 0) return null
+  const hit = document.elementFromPoint(clampX(r.left + r.width / 2), clampY(r.top + r.height / 2))
+  if (!hit || hit === el || el.contains(hit) || hit.contains(el)) return null
+  return hit
 }
 
 export function textOf(el: Element, max = 200): string {
@@ -76,26 +122,31 @@ export function textMatches(el: HTMLElement, text: string, exact = false): boole
 
 export function findEl(selector?: string, text?: string): Element | null {
   if (selector) {
-    const bySelector = document.querySelector(selector)
-    if (bySelector && isVisible(bySelector)) return bySelector
-    return bySelector
+    const matches = Array.from(document.querySelectorAll(selector))
+    // Prefer the match a user could actually hit (top-most, not occluded), then
+    // any visible match, then the first raw match (kept for diagnostics — the
+    // click handler reports if it turns out hidden/covered).
+    return matches.find(isHittable) || matches.find(isVisible) || matches[0] || null
   }
   if (text) {
+    // Text targets are matched against the *top-most* layer first so the AI
+    // never lands on a background button hidden behind a popup/overlay. Only if
+    // nothing on the top layer matches do we fall back to merely-visible.
     const preferred = Array.from(document.querySelectorAll('button,a,[role="button"],input[type="button"],input[type="submit"],[aria-label],[title]')) as HTMLElement[]
-    const exact = preferred.find(el => isVisible(el) && textMatches(el, text, true))
-    if (exact) return exact
-    const partial = preferred.find(el => isVisible(el) && textMatches(el, text, false))
-    if (partial) return partial
-
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
-    while (walker.nextNode()) {
-      const el = walker.currentNode as HTMLElement
-      if (isVisible(el) && textMatches(el, text, true)) return clickableAncestor(el)
+    const byPreferred = (pred: (el: HTMLElement) => boolean, exact: boolean) =>
+      preferred.find(el => pred(el) && textMatches(el, text, exact))
+    const byWalk = (pred: (el: Element) => boolean, exact: boolean) => {
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
+      while (walker.nextNode()) {
+        const el = walker.currentNode as HTMLElement
+        if (pred(el) && textMatches(el, text, exact)) return clickableAncestor(el)
+      }
+      return null
     }
-    const walker2 = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
-    while (walker2.nextNode()) {
-      const el = walker2.currentNode as HTMLElement
-      if (isVisible(el) && textMatches(el, text, false)) return clickableAncestor(el)
+    for (const pred of [isHittable, isVisible] as const) {
+      const hit = byPreferred(pred as any, true) || byPreferred(pred as any, false)
+        || byWalk(pred, true) || byWalk(pred, false)
+      if (hit) return hit
     }
   }
   return null
@@ -109,19 +160,37 @@ export function elCenter(el: Element): { x: number; y: number } {
   }
 }
 
-export function clickLikeUser(el: Element) {
-  const c = elCenter(el)
-  const opts = { bubbles: true, cancelable: true, view: window, clientX: c.x, clientY: c.y } as MouseEventInit
-  el.dispatchEvent(new PointerEvent('pointerdown', opts))
-  el.dispatchEvent(new MouseEvent('mousedown', opts))
-  el.dispatchEvent(new PointerEvent('pointerup', opts))
-  el.dispatchEvent(new MouseEvent('mouseup', opts))
-  el.dispatchEvent(new MouseEvent('click', opts))
+// Dispatch the full pointer + mouse sequence a real user gesture produces, then
+// the native .click(). A bare el.click() only fires a synthetic "click" and is
+// ignored by anything listening to pointerdown/mousedown (custom dropdowns,
+// drag-aware widgets, canvas/map controls, many React/Vue handlers) — that was
+// the root cause of "clicked but nothing happened". An optional point lets
+// coordinate clicks land exactly where requested instead of at the box center.
+export function clickLikeUser(el: Element, at?: { x: number; y: number }) {
+  const c = at || elCenter(el)
+  ;(el as HTMLElement).focus?.()
+  const base = { bubbles: true, cancelable: true, view: window, clientX: c.x, clientY: c.y, button: 0 }
+  const pointer = { ...base, pointerId: 1, pointerType: 'mouse', isPrimary: true }
+  el.dispatchEvent(new PointerEvent('pointerover', pointer))
+  el.dispatchEvent(new MouseEvent('mouseover', base))
+  el.dispatchEvent(new PointerEvent('pointerdown', { ...pointer, buttons: 1 }))
+  el.dispatchEvent(new MouseEvent('mousedown', { ...base, buttons: 1 }))
+  el.dispatchEvent(new PointerEvent('pointerup', { ...pointer, buttons: 0 }))
+  el.dispatchEvent(new MouseEvent('mouseup', { ...base, buttons: 0 }))
+  el.dispatchEvent(new MouseEvent('click', base))
   ;(el as HTMLElement).click?.()
 }
 
-// Resolve a target from selector / text / explicit coords.
-export function resolveTarget(msg: { selector?: string; text?: string; x?: number; y?: number }): { el: Element | null; x: number; y: number } {
+// Resolve a target from observe-id (ref) / selector / text / explicit coords.
+// ref is most reliable (captured at observe time); coords return the top-most
+// element painted at the point — i.e. exactly what the user would hit there.
+export function resolveTarget(msg: { ref?: any; selector?: string; text?: string; x?: number; y?: number }): { el: Element | null; x: number; y: number } {
+  if (msg.ref !== undefined && msg.ref !== null && msg.ref !== '') {
+    const el = getMarked(msg.ref)
+    if (!el) return { el: null, x: 0, y: 0 }
+    const c = elCenter(el)
+    return { el, x: c.x, y: c.y }
+  }
   if (msg.x !== undefined && msg.y !== undefined) {
     const el = document.elementFromPoint(Number(msg.x), Number(msg.y))
     return { el, x: Number(msg.x), y: Number(msg.y) }

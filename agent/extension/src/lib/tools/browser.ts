@@ -574,7 +574,17 @@ async function toolClipboardWrite(args: any): Promise<any> {
 // ── Content-script-relayed tools ──────────────────────────────────────────
 async function toolClick(args: any): Promise<any> {
   const tab = await getActiveTab()
-  return contentMsg(tab.id!, { action: 'click', selector: args.selector, text: args.text, x: args.x, y: args.y })
+  return contentMsg(tab.id!, {
+    action: 'click',
+    ref: args.ref ?? args.mark ?? args.id,
+    selector: args.selector, text: args.text, x: args.x, y: args.y,
+    force: !!args.force,
+  })
+}
+
+async function toolObserve(args: any): Promise<any> {
+  const tab = await getActiveTab()
+  return contentMsg(tab.id!, { action: 'observe', limit: args.limit, mark: args.mark })
 }
 
 async function toolType(args: any): Promise<any> {
@@ -584,7 +594,7 @@ async function toolType(args: any): Promise<any> {
 
 async function toolGetContent(args: any): Promise<any> {
   const tab = await getActiveTab()
-  return contentMsg(tab.id!, { action: 'get_content', selector: args.selector, includeHtml: !!args.include_html })
+  return contentMsg(tab.id!, { action: 'get_content', selector: args.selector, includeHtml: !!args.include_html, max_chars: args.max_chars })
 }
 
 async function toolScroll(args: any): Promise<any> {
@@ -1002,6 +1012,7 @@ const HANDLERS: Record<string, ToolHandler> = {
   browser_search:        toolSearch,
   browser_history:       toolHistory,
   // Page observation
+  browser_observe:       toolObserve,
   browser_screenshot:    toolScreenshot,
   browser_get_content:   toolGetContent,
   browser_dom_snapshot:  toolDomSnapshot,
