@@ -2,14 +2,28 @@
 // Lists this extension's own MCP tools; opening one shows description, params,
 // editable local descriptions and a direct local test runner.
 
-import { BROWSER_TOOLS, BROWSER_TOOL_CATEGORIES } from '../lib/tools'
+import {
+  BROWSER_TOOLS, BROWSER_TOOL_CATEGORIES, BROWSER_TOOL_KIND_LABELS,
+  BrowserToolKind, browserToolKind, browserToolCategory, resolveToolEnabledMap,
+} from '../lib/tools'
 import { AIToolDef } from '../lib/types'
-import { getToolDescOverrides, setToolDescOverride } from '../lib/storage'
+import {
+  getToolDescOverrides, setToolDescOverride, setToolEnabled, setManyToolEnabled,
+} from '../lib/storage'
 import * as dom from './dom'
 import { state } from './state'
 import { sendToBackground } from './transport'
 
 let overrides: Record<string, { description?: string; parameters?: Record<string, string> }> = {}
+let enabledMap: Record<string, boolean> = {}
+
+// Persist a tool/category enable change, then re-report toolDefs so the server
+// immediately drops or picks up the affected tools, and refresh the list.
+async function applyEnabledChange(fn: () => Promise<void>) {
+  await fn()
+  sendToBackground({ type: 'agent:connect' })
+  await renderMcpList()
+}
 
 function esc(str: string) {
   return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
@@ -62,6 +76,10 @@ function renderIntroHtml() {
           <div class="mcp-intro-key">test</div>
           <div class="mcp-intro-text">用于在当前浏览器环境中直接测试一个工具，便于验证描述和参数是否正确。</div>
         </div>
+        <div class="mcp-intro-item">
+          <div class="mcp-intro-key">勾选</div>
+          <div class="mcp-intro-text">工具分「基础类」和「特殊类」。勾选即开启，取消勾选后服务器与 AI 都拿不到该工具的数据，无法调用。特殊类（执行脚本、cookie/storage、会话、文件上传下载等）默认关闭，按需开启。</div>
+        </div>
       </div>
     </div>`
 }
@@ -71,27 +89,60 @@ export async function renderMcpList() {
   dom.mcpDetailPane.classList.add('hidden')
   dom.mcpListPane.classList.remove('hidden')
   overrides = await getToolDescOverrides()
-  dom.mcpCount.textContent = `${BROWSER_TOOLS.length} 个`
+  enabledMap = await resolveToolEnabledMap()
+  const enabledTotal = BROWSER_TOOLS.filter(t => enabledMap[t.name]).length
+  dom.mcpCount.textContent = `已启用 ${enabledTotal} / ${BROWSER_TOOLS.length}`
   dom.mcpList.innerHTML = renderIntroHtml()
   const byName = new Map(BROWSER_TOOLS.map(t => [t.name, t]))
-  for (const cat of BROWSER_TOOL_CATEGORIES) {
-    const tools = cat.tools.map(n => byName.get(n)).filter((t): t is AIToolDef => !!t)
-    if (!tools.length) continue
-    const head = document.createElement('div')
-    head.className = 'tool-cat-head'
-    head.innerHTML = `<span>${esc(cat.title)}</span><span class="pane-sub">${tools.length}</span>`
-    dom.mcpList.appendChild(head)
-    for (const t of tools) {
-      const el = document.createElement('div')
-      el.className = 'tool-item'
-      el.innerHTML = `
-        <div class="tool-item-top">
-          <span class="tool-name">${esc(t.name)}</span>
-          ${isEdited(t.name) ? '<span class="tool-edited">已自定义</span>' : ''}
-        </div>
-        <div class="tool-desc">${esc((effDescription(t) || '（无描述）').slice(0, 110))}</div>`
-      el.addEventListener('click', () => void openTool(t.name))
-      dom.mcpList.appendChild(el)
+
+  // Group by kind (基础类 / 特殊类), each with a select-all toggle, then by category.
+  const kinds: BrowserToolKind[] = ['basic', 'special']
+  for (const kind of kinds) {
+    const cats = BROWSER_TOOL_CATEGORIES.filter(c => c.kind === kind)
+    if (!cats.length) continue
+    const kindTools = cats.flatMap(c => c.tools).filter(n => byName.has(n))
+    const kindOn = kindTools.filter(n => enabledMap[n]).length
+    const allOn = kindOn === kindTools.length
+
+    const kh = document.createElement('div')
+    kh.className = 'tool-kind-head'
+    kh.innerHTML = `
+      <div class="tool-kind-title">
+        <span>${esc(BROWSER_TOOL_KIND_LABELS[kind])}</span>
+        <span class="tool-kind-tag ${kind}">${kind === 'special' ? '默认关闭' : '默认开启'}</span>
+        <span class="pane-sub">${kindOn}/${kindTools.length}</span>
+      </div>
+      <button class="tool-kind-toggle">${allOn ? '全部关闭' : '全部开启'}</button>`
+    kh.querySelector('button')!.addEventListener('click', () =>
+      void applyEnabledChange(() => setManyToolEnabled(kindTools, !allOn)))
+    dom.mcpList.appendChild(kh)
+
+    for (const cat of cats) {
+      const tools = cat.tools.map(n => byName.get(n)).filter((t): t is AIToolDef => !!t)
+      if (!tools.length) continue
+      const catOn = tools.filter(t => enabledMap[t.name]).length
+      const head = document.createElement('div')
+      head.className = 'tool-cat-head'
+      head.innerHTML = `<span>${esc(cat.title)}</span><span class="pane-sub">${catOn}/${tools.length}</span>`
+      dom.mcpList.appendChild(head)
+      for (const t of tools) {
+        const on = !!enabledMap[t.name]
+        const el = document.createElement('div')
+        el.className = on ? 'tool-item' : 'tool-item off'
+        el.innerHTML = `
+          <div class="tool-item-top">
+            <input type="checkbox" class="tool-toggle" ${on ? 'checked' : ''} title="${on ? '已启用，取消勾选后服务器拿不到此工具' : '已关闭，勾选后才上报给服务器'}"/>
+            <span class="tool-name">${esc(t.name)}</span>
+            ${isEdited(t.name) ? '<span class="tool-edited">已自定义</span>' : ''}
+          </div>
+          <div class="tool-desc">${esc((effDescription(t) || '（无描述）').slice(0, 110))}</div>`
+        const cb = el.querySelector('.tool-toggle') as HTMLInputElement
+        cb.addEventListener('click', e => e.stopPropagation())
+        cb.addEventListener('change', () =>
+          void applyEnabledChange(() => setToolEnabled(t.name, cb.checked)))
+        el.addEventListener('click', () => void openTool(t.name))
+        dom.mcpList.appendChild(el)
+      }
     }
   }
 }
@@ -108,6 +159,9 @@ async function openTool(name: string) {
 
 async function renderDetail(tool: AIToolDef) {
   overrides = await getToolDescOverrides()
+  enabledMap = await resolveToolEnabledMap()
+  const on = !!enabledMap[tool.name]
+  const kind = browserToolKind(tool.name)
   const params = paramEntries(tool)
   const paramHtml = params.length
     ? params.map(p => `
@@ -127,6 +181,13 @@ async function renderDetail(tool: AIToolDef) {
     <div class="card">
       <div class="card-title">${esc(tool.name)}</div>
       <div class="tool-desc" style="font-size:11px;">${esc(effDescription(tool) || '（无描述）')}</div>
+      <div class="detail-enable">
+        <label class="check-row" style="margin:0;">
+          <input type="checkbox" id="detail-enable" ${on ? 'checked' : ''}/>
+          <span>启用此工具（上报给服务器，AI 可调用）</span>
+        </label>
+        <span class="tool-kind-tag ${kind}">${esc(BROWSER_TOOL_KIND_LABELS[kind])} · ${esc(browserToolCategory(tool.name) || '未分类')}</span>
+      </div>
     </div>
     <div class="card">
       <div class="card-title">参数说明</div>
@@ -150,6 +211,13 @@ async function renderDetail(tool: AIToolDef) {
       <button class="btn btn-primary" id="test-run">测试</button>
       <div class="test-result" id="test-result" style="display:none;"></div>
     </div>`
+
+  dom.mcpDetail.querySelector('#detail-enable')!.addEventListener('change', async (e) => {
+    const checked = (e.target as HTMLInputElement).checked
+    await setToolEnabled(tool.name, checked)
+    sendToBackground({ type: 'agent:connect' })
+    await renderDetail(tool)
+  })
 
   dom.mcpDetail.querySelector('#edit-save')!.addEventListener('click', async () => {
     const description = (dom.mcpDetail.querySelector('#edit-desc') as HTMLTextAreaElement).value

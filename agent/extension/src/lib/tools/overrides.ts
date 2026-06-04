@@ -1,15 +1,34 @@
 // tools/overrides.ts — merge the user's local description edits onto the static
-// BROWSER_TOOLS schemas. The result is what gets reported to the server via
-// agent:register -> toolDefs, so server-side mcp.list_tools / describe_tool
-// reflect the popup's edited descriptions without any server-side storage.
+// BROWSER_TOOLS schemas, and apply the user's enable/disable selection. The
+// result is what gets reported to the server via agent:register -> toolDefs, so
+// server-side mcp.list_tools / describe_tool reflect the popup's edited
+// descriptions without any server-side storage, and disabled tools are withheld
+// entirely (server + AI never see them).
 
-import { BROWSER_TOOLS } from './definitions'
+import { BROWSER_TOOLS, isToolEnabledByDefault } from './definitions'
 import { AIToolDef } from '../types'
-import { getToolDescOverrides } from '../storage'
+import { getToolDescOverrides, getToolEnabledMap } from '../storage'
+
+/** Resolve every browser tool's effective on/off state (explicit choice ?? default). */
+export async function resolveToolEnabledMap(): Promise<Record<string, boolean>> {
+  const explicit = await getToolEnabledMap()
+  const out: Record<string, boolean> = {}
+  for (const tool of BROWSER_TOOLS) {
+    out[tool.name] = tool.name in explicit ? !!explicit[tool.name] : isToolEnabledByDefault(tool.name)
+  }
+  return out
+}
+
+/** Names of the currently enabled tools, preserving BROWSER_TOOLS order. */
+export async function enabledToolNames(): Promise<string[]> {
+  const enabled = await resolveToolEnabledMap()
+  return BROWSER_TOOLS.filter(t => enabled[t.name]).map(t => t.name)
+}
 
 export async function effectiveToolDefs(): Promise<AIToolDef[]> {
   const overrides = await getToolDescOverrides()
-  return BROWSER_TOOLS.map(tool => {
+  const enabled = await resolveToolEnabledMap()
+  return BROWSER_TOOLS.filter(tool => enabled[tool.name]).map(tool => {
     const o = overrides[tool.name]
     if (!o) return tool
     const desc = (o.description || '').trim()

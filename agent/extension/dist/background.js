@@ -3470,6 +3470,12 @@
     const v = r[TOOL_DESC_KEY];
     return v && typeof v === "object" ? v : {};
   }
+  var TOOL_ENABLED_KEY = "_tool_enabled";
+  async function getToolEnabledMap() {
+    const r = await chrome.storage.local.get(TOOL_ENABLED_KEY);
+    const v = r[TOOL_ENABLED_KEY];
+    return v && typeof v === "object" ? v : {};
+  }
 
   // src/lib/tools/definitions.ts
   var SEARCH_ENGINES = {
@@ -3930,6 +3936,70 @@
     }
   ];
   var BROWSER_CAPABILITIES = BROWSER_TOOLS.map((t) => t.name);
+  var BROWSER_TOOL_CATEGORIES = [
+    {
+      title: "\u5BFC\u822A\u4E0E\u641C\u7D22",
+      kind: "basic",
+      tools: ["browser_navigate", "browser_search", "browser_history"]
+    },
+    {
+      title: "\u9875\u9762\u89C2\u5BDF",
+      kind: "basic",
+      tools: [
+        "browser_observe",
+        "browser_screenshot",
+        "browser_get_content",
+        "browser_dom_snapshot",
+        "browser_page_info",
+        "browser_find_popups"
+      ]
+    },
+    {
+      title: "\u9875\u9762\u4EA4\u4E92",
+      kind: "basic",
+      tools: [
+        "browser_click",
+        "browser_double_click",
+        "browser_right_click",
+        "browser_type",
+        "browser_press_key",
+        "browser_hover",
+        "browser_scroll",
+        "browser_wait",
+        "browser_drag",
+        "browser_fill_form",
+        "browser_select",
+        "browser_close_popup"
+      ]
+    },
+    {
+      title: "\u6570\u636E\u4E0E\u811A\u672C",
+      kind: "special",
+      tools: [
+        "browser_evaluate",
+        "browser_extract",
+        "browser_clipboard_write",
+        "browser_file_upload",
+        "browser_download"
+      ]
+    },
+    {
+      title: "\u6D4F\u89C8\u5668\u72B6\u6001",
+      kind: "special",
+      tools: ["browser_tab", "browser_cookie", "browser_storage", "browser_session"]
+    }
+  ];
+  function browserToolKind(name) {
+    const tool = String(name || "").trim();
+    for (const cat of BROWSER_TOOL_CATEGORIES) {
+      if (cat.tools.includes(tool))
+        return cat.kind;
+    }
+    return "basic";
+  }
+  function isToolEnabledByDefault(name) {
+    return browserToolKind(name) === "basic";
+  }
 
   // src/lib/tools/browser.ts
   async function getActiveTab() {
@@ -5219,9 +5289,18 @@ Always:
   }
 
   // src/lib/tools/overrides.ts
+  async function resolveToolEnabledMap() {
+    const explicit = await getToolEnabledMap();
+    const out = {};
+    for (const tool of BROWSER_TOOLS) {
+      out[tool.name] = tool.name in explicit ? !!explicit[tool.name] : isToolEnabledByDefault(tool.name);
+    }
+    return out;
+  }
   async function effectiveToolDefs() {
     const overrides = await getToolDescOverrides();
-    return BROWSER_TOOLS.map((tool) => {
+    const enabled = await resolveToolEnabledMap();
+    return BROWSER_TOOLS.filter((tool) => enabled[tool.name]).map((tool) => {
       const o = overrides[tool.name];
       if (!o)
         return tool;
@@ -5403,6 +5482,7 @@ Always:
       return;
     const id = settings.agentId || await getMachineId();
     currentAgentId = id;
+    const toolDefs = await effectiveToolDefs();
     s.emit("agent:register", {
       id,
       aiConfigId: null,
@@ -5410,12 +5490,12 @@ Always:
       group: settings.agentGroup || "",
       platform: `browser-extension (${navigator?.userAgent?.split(" ").pop() || "chrome"})`,
       os: { platform: "browser", arch: "unknown", release: "1.0", hostname: id },
-      capabilities: BROWSER_CAPABILITIES,
+      capabilities: toolDefs.map((t) => t.name),
       // Full self-described tool schemas (with the user's local description edits
       // merged in). The server stores these and surfaces them in mcp.list_tools /
       // describe_tool instead of hardcoding browser tool schemas, so a tool added
       // here — or a description edited in the popup — needs no server change.
-      toolDefs: await effectiveToolDefs(),
+      toolDefs,
       version: "1.0.0",
       token: auth.token || settings.agentToken || "",
       userId: auth.userId ?? null,
@@ -5709,8 +5789,9 @@ Respond in the same language as the user. For factual questions, search the web 
     const toolEvents = [];
     let iter = 0;
     const MAX = 12;
+    const chatTools = await effectiveToolDefs();
     while (iter < MAX) {
-      const resp = await callAI(settings.aiBaseUrl, settings.aiKey, settings.aiModel, messages, BROWSER_TOOLS, CHAT_SYSTEM);
+      const resp = await callAI(settings.aiBaseUrl, settings.aiKey, settings.aiModel, messages, chatTools, CHAT_SYSTEM);
       if (!resp.toolUses?.length) {
         return { text: resp.text || "\u5B8C\u6210", toolsUsed, toolEvents };
       }

@@ -7,9 +7,12 @@
 //   executor.ts     — executeTask: server-dispatched task runner with AI loop
 //   overrides.ts    — effectiveToolDefs: BROWSER_TOOLS merged with local edits
 
-export { SEARCH_ENGINES, BROWSER_TOOLS, BROWSER_CAPABILITIES, BROWSER_TOOL_CATEGORIES, browserToolCategory } from './definitions'
-export type { BrowserToolCategory } from './definitions'
+export {
+  SEARCH_ENGINES, BROWSER_TOOLS, BROWSER_CAPABILITIES, BROWSER_TOOL_CATEGORIES,
+  BROWSER_TOOL_KIND_LABELS, browserToolCategory, browserToolKind, isToolEnabledByDefault,
+} from './definitions'
+export type { BrowserToolCategory, BrowserToolKind } from './definitions'
 export { executeBrowserOnly } from './browser'
 export { executeBrowserTool } from './router'
 export { executeTask } from './executor'
-export { effectiveToolDefs } from './overrides'
+export { effectiveToolDefs, resolveToolEnabledMap, enabledToolNames } from './overrides'

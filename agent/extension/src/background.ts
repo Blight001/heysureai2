@@ -2,7 +2,7 @@
 // Manages: Socket.IO server connection, task dispatching, popup port communication
 import { io, Socket } from 'socket.io-client'
 import { getSettings, saveSettings, pushActivity, getActivity, getAuth } from './lib/storage'
-import { executeTask, executeBrowserTool, BROWSER_CAPABILITIES, BROWSER_TOOLS, effectiveToolDefs } from './lib/tools'
+import { executeTask, executeBrowserTool, effectiveToolDefs } from './lib/tools'
 import { callAI } from './lib/ai'
 import { screenshotToolContent } from './lib/ai'
 import {
@@ -205,6 +205,10 @@ async function emitRegisterOn(s: Socket): Promise<void> {
   // operator assigns a server-side AI to this device from the web Workshop
   // ("作坊") panel. The server re-applies that binding on every register, so we
   // always send aiConfigId: null.
+  // Only the tools the user has enabled in the popup are reported. Capabilities
+  // are derived from the same enabled toolDefs so the two never drift — disabled
+  // (e.g. unchecked 特殊类) tools are withheld from the server entirely.
+  const toolDefs = await effectiveToolDefs()
   s.emit('agent:register', {
     id,
     aiConfigId: null,
@@ -212,12 +216,12 @@ async function emitRegisterOn(s: Socket): Promise<void> {
     group:           settings.agentGroup || '',
     platform:        `browser-extension (${navigator?.userAgent?.split(' ').pop() || 'chrome'})`,
     os:              { platform: 'browser', arch: 'unknown', release: '1.0', hostname: id },
-    capabilities:    BROWSER_CAPABILITIES,
+    capabilities:    toolDefs.map(t => t.name),
     // Full self-described tool schemas (with the user's local description edits
     // merged in). The server stores these and surfaces them in mcp.list_tools /
     // describe_tool instead of hardcoding browser tool schemas, so a tool added
     // here — or a description edited in the popup — needs no server change.
-    toolDefs:        await effectiveToolDefs(),
+    toolDefs,
     version:         '1.0.0',
     token:           auth.token || settings.agentToken || '',
     userId:          auth.userId ?? null,
@@ -544,9 +548,12 @@ async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUs
   const toolEvents: ChatToolEvent[] = []
   let iter = 0
   const MAX = 12
+  // Offline chat also respects the popup's tool selection: only enabled tools
+  // (with local description edits applied) are offered to the model.
+  const chatTools = await effectiveToolDefs()
 
   while (iter < MAX) {
-    const resp = await callAI(settings.aiBaseUrl, settings.aiKey, settings.aiModel, messages, BROWSER_TOOLS, CHAT_SYSTEM)
+    const resp = await callAI(settings.aiBaseUrl, settings.aiKey, settings.aiModel, messages, chatTools, CHAT_SYSTEM)
 
     if (!resp.toolUses?.length) {
       return { text: resp.text || '完成', toolsUsed, toolEvents }

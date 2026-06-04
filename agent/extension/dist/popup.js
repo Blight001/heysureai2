@@ -171,6 +171,29 @@
     }
     await chrome.storage.local.set({ [TOOL_DESC_KEY]: all });
   }
+  var TOOL_ENABLED_KEY = "_tool_enabled";
+  async function getToolEnabledMap() {
+    const r = await chrome.storage.local.get(TOOL_ENABLED_KEY);
+    const v = r[TOOL_ENABLED_KEY];
+    return v && typeof v === "object" ? v : {};
+  }
+  async function setToolEnabled(tool, enabled) {
+    const all = await getToolEnabledMap();
+    const name = String(tool || "").trim();
+    if (!name)
+      return;
+    all[name] = !!enabled;
+    await chrome.storage.local.set({ [TOOL_ENABLED_KEY]: all });
+  }
+  async function setManyToolEnabled(tools, enabled) {
+    const all = await getToolEnabledMap();
+    for (const t of tools) {
+      const name = String(t || "").trim();
+      if (name)
+        all[name] = !!enabled;
+    }
+    await chrome.storage.local.set({ [TOOL_ENABLED_KEY]: all });
+  }
 
   // src/lib/client.ts
   var trimUrl = (u) => String(u || "").replace(/\/+$/, "");
@@ -1097,13 +1120,19 @@
     }
   ];
   var BROWSER_CAPABILITIES = BROWSER_TOOLS.map((t) => t.name);
+  var BROWSER_TOOL_KIND_LABELS = {
+    basic: "\u57FA\u7840\u7C7B",
+    special: "\u7279\u6B8A\u7C7B"
+  };
   var BROWSER_TOOL_CATEGORIES = [
     {
       title: "\u5BFC\u822A\u4E0E\u641C\u7D22",
+      kind: "basic",
       tools: ["browser_navigate", "browser_search", "browser_history"]
     },
     {
       title: "\u9875\u9762\u89C2\u5BDF",
+      kind: "basic",
       tools: [
         "browser_observe",
         "browser_screenshot",
@@ -1115,6 +1144,7 @@
     },
     {
       title: "\u9875\u9762\u4EA4\u4E92",
+      kind: "basic",
       tools: [
         "browser_click",
         "browser_double_click",
@@ -1132,6 +1162,7 @@
     },
     {
       title: "\u6570\u636E\u4E0E\u811A\u672C",
+      kind: "special",
       tools: [
         "browser_evaluate",
         "browser_extract",
@@ -1142,12 +1173,48 @@
     },
     {
       title: "\u6D4F\u89C8\u5668\u72B6\u6001",
+      kind: "special",
       tools: ["browser_tab", "browser_cookie", "browser_storage", "browser_session"]
     }
   ];
+  function browserToolCategory(name) {
+    const tool = String(name || "").trim();
+    for (const cat of BROWSER_TOOL_CATEGORIES) {
+      if (cat.tools.includes(tool))
+        return cat.title;
+    }
+    return "";
+  }
+  function browserToolKind(name) {
+    const tool = String(name || "").trim();
+    for (const cat of BROWSER_TOOL_CATEGORIES) {
+      if (cat.tools.includes(tool))
+        return cat.kind;
+    }
+    return "basic";
+  }
+  function isToolEnabledByDefault(name) {
+    return browserToolKind(name) === "basic";
+  }
+
+  // src/lib/tools/overrides.ts
+  async function resolveToolEnabledMap() {
+    const explicit = await getToolEnabledMap();
+    const out = {};
+    for (const tool of BROWSER_TOOLS) {
+      out[tool.name] = tool.name in explicit ? !!explicit[tool.name] : isToolEnabledByDefault(tool.name);
+    }
+    return out;
+  }
 
   // src/popup/mcp.ts
   var overrides = {};
+  var enabledMap = {};
+  async function applyEnabledChange(fn) {
+    await fn();
+    sendToBackground({ type: "agent:connect" });
+    await renderMcpList();
+  }
   function esc2(str) {
     return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   }
@@ -1194,6 +1261,10 @@
           <div class="mcp-intro-key">test</div>
           <div class="mcp-intro-text">\u7528\u4E8E\u5728\u5F53\u524D\u6D4F\u89C8\u5668\u73AF\u5883\u4E2D\u76F4\u63A5\u6D4B\u8BD5\u4E00\u4E2A\u5DE5\u5177\uFF0C\u4FBF\u4E8E\u9A8C\u8BC1\u63CF\u8FF0\u548C\u53C2\u6570\u662F\u5426\u6B63\u786E\u3002</div>
         </div>
+        <div class="mcp-intro-item">
+          <div class="mcp-intro-key">\u52FE\u9009</div>
+          <div class="mcp-intro-text">\u5DE5\u5177\u5206\u300C\u57FA\u7840\u7C7B\u300D\u548C\u300C\u7279\u6B8A\u7C7B\u300D\u3002\u52FE\u9009\u5373\u5F00\u542F\uFF0C\u53D6\u6D88\u52FE\u9009\u540E\u670D\u52A1\u5668\u4E0E AI \u90FD\u62FF\u4E0D\u5230\u8BE5\u5DE5\u5177\u7684\u6570\u636E\uFF0C\u65E0\u6CD5\u8C03\u7528\u3002\u7279\u6B8A\u7C7B\uFF08\u6267\u884C\u811A\u672C\u3001cookie/storage\u3001\u4F1A\u8BDD\u3001\u6587\u4EF6\u4E0A\u4F20\u4E0B\u8F7D\u7B49\uFF09\u9ED8\u8BA4\u5173\u95ED\uFF0C\u6309\u9700\u5F00\u542F\u3002</div>
+        </div>
       </div>
     </div>`;
   }
@@ -1202,28 +1273,56 @@
     mcpDetailPane.classList.add("hidden");
     mcpListPane.classList.remove("hidden");
     overrides = await getToolDescOverrides();
-    mcpCount.textContent = `${BROWSER_TOOLS.length} \u4E2A`;
+    enabledMap = await resolveToolEnabledMap();
+    const enabledTotal = BROWSER_TOOLS.filter((t) => enabledMap[t.name]).length;
+    mcpCount.textContent = `\u5DF2\u542F\u7528 ${enabledTotal} / ${BROWSER_TOOLS.length}`;
     mcpList.innerHTML = renderIntroHtml();
     const byName = new Map(BROWSER_TOOLS.map((t) => [t.name, t]));
-    for (const cat of BROWSER_TOOL_CATEGORIES) {
-      const tools = cat.tools.map((n) => byName.get(n)).filter((t) => !!t);
-      if (!tools.length)
+    const kinds = ["basic", "special"];
+    for (const kind of kinds) {
+      const cats = BROWSER_TOOL_CATEGORIES.filter((c) => c.kind === kind);
+      if (!cats.length)
         continue;
-      const head = document.createElement("div");
-      head.className = "tool-cat-head";
-      head.innerHTML = `<span>${esc2(cat.title)}</span><span class="pane-sub">${tools.length}</span>`;
-      mcpList.appendChild(head);
-      for (const t of tools) {
-        const el = document.createElement("div");
-        el.className = "tool-item";
-        el.innerHTML = `
-        <div class="tool-item-top">
-          <span class="tool-name">${esc2(t.name)}</span>
-          ${isEdited(t.name) ? '<span class="tool-edited">\u5DF2\u81EA\u5B9A\u4E49</span>' : ""}
-        </div>
-        <div class="tool-desc">${esc2((effDescription(t) || "\uFF08\u65E0\u63CF\u8FF0\uFF09").slice(0, 110))}</div>`;
-        el.addEventListener("click", () => void openTool(t.name));
-        mcpList.appendChild(el);
+      const kindTools = cats.flatMap((c) => c.tools).filter((n) => byName.has(n));
+      const kindOn = kindTools.filter((n) => enabledMap[n]).length;
+      const allOn = kindOn === kindTools.length;
+      const kh = document.createElement("div");
+      kh.className = "tool-kind-head";
+      kh.innerHTML = `
+      <div class="tool-kind-title">
+        <span>${esc2(BROWSER_TOOL_KIND_LABELS[kind])}</span>
+        <span class="tool-kind-tag ${kind}">${kind === "special" ? "\u9ED8\u8BA4\u5173\u95ED" : "\u9ED8\u8BA4\u5F00\u542F"}</span>
+        <span class="pane-sub">${kindOn}/${kindTools.length}</span>
+      </div>
+      <button class="tool-kind-toggle">${allOn ? "\u5168\u90E8\u5173\u95ED" : "\u5168\u90E8\u5F00\u542F"}</button>`;
+      kh.querySelector("button").addEventListener("click", () => void applyEnabledChange(() => setManyToolEnabled(kindTools, !allOn)));
+      mcpList.appendChild(kh);
+      for (const cat of cats) {
+        const tools = cat.tools.map((n) => byName.get(n)).filter((t) => !!t);
+        if (!tools.length)
+          continue;
+        const catOn = tools.filter((t) => enabledMap[t.name]).length;
+        const head = document.createElement("div");
+        head.className = "tool-cat-head";
+        head.innerHTML = `<span>${esc2(cat.title)}</span><span class="pane-sub">${catOn}/${tools.length}</span>`;
+        mcpList.appendChild(head);
+        for (const t of tools) {
+          const on = !!enabledMap[t.name];
+          const el = document.createElement("div");
+          el.className = on ? "tool-item" : "tool-item off";
+          el.innerHTML = `
+          <div class="tool-item-top">
+            <input type="checkbox" class="tool-toggle" ${on ? "checked" : ""} title="${on ? "\u5DF2\u542F\u7528\uFF0C\u53D6\u6D88\u52FE\u9009\u540E\u670D\u52A1\u5668\u62FF\u4E0D\u5230\u6B64\u5DE5\u5177" : "\u5DF2\u5173\u95ED\uFF0C\u52FE\u9009\u540E\u624D\u4E0A\u62A5\u7ED9\u670D\u52A1\u5668"}"/>
+            <span class="tool-name">${esc2(t.name)}</span>
+            ${isEdited(t.name) ? '<span class="tool-edited">\u5DF2\u81EA\u5B9A\u4E49</span>' : ""}
+          </div>
+          <div class="tool-desc">${esc2((effDescription(t) || "\uFF08\u65E0\u63CF\u8FF0\uFF09").slice(0, 110))}</div>`;
+          const cb = el.querySelector(".tool-toggle");
+          cb.addEventListener("click", (e) => e.stopPropagation());
+          cb.addEventListener("change", () => void applyEnabledChange(() => setToolEnabled(t.name, cb.checked)));
+          el.addEventListener("click", () => void openTool(t.name));
+          mcpList.appendChild(el);
+        }
       }
     }
   }
@@ -1239,6 +1338,9 @@
   }
   async function renderDetail(tool) {
     overrides = await getToolDescOverrides();
+    enabledMap = await resolveToolEnabledMap();
+    const on = !!enabledMap[tool.name];
+    const kind = browserToolKind(tool.name);
     const params = paramEntries(tool);
     const paramHtml = params.length ? params.map((p) => `
         <div class="param-row">
@@ -1255,6 +1357,13 @@
     <div class="card">
       <div class="card-title">${esc2(tool.name)}</div>
       <div class="tool-desc" style="font-size:11px;">${esc2(effDescription(tool) || "\uFF08\u65E0\u63CF\u8FF0\uFF09")}</div>
+      <div class="detail-enable">
+        <label class="check-row" style="margin:0;">
+          <input type="checkbox" id="detail-enable" ${on ? "checked" : ""}/>
+          <span>\u542F\u7528\u6B64\u5DE5\u5177\uFF08\u4E0A\u62A5\u7ED9\u670D\u52A1\u5668\uFF0CAI \u53EF\u8C03\u7528\uFF09</span>
+        </label>
+        <span class="tool-kind-tag ${kind}">${esc2(BROWSER_TOOL_KIND_LABELS[kind])} \xB7 ${esc2(browserToolCategory(tool.name) || "\u672A\u5206\u7C7B")}</span>
+      </div>
     </div>
     <div class="card">
       <div class="card-title">\u53C2\u6570\u8BF4\u660E</div>
@@ -1278,6 +1387,12 @@
       <button class="btn btn-primary" id="test-run">\u6D4B\u8BD5</button>
       <div class="test-result" id="test-result" style="display:none;"></div>
     </div>`;
+    mcpDetail.querySelector("#detail-enable").addEventListener("change", async (e) => {
+      const checked = e.target.checked;
+      await setToolEnabled(tool.name, checked);
+      sendToBackground({ type: "agent:connect" });
+      await renderDetail(tool);
+    });
     mcpDetail.querySelector("#edit-save").addEventListener("click", async () => {
       const description = mcpDetail.querySelector("#edit-desc").value;
       const parameters = {};
