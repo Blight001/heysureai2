@@ -34,7 +34,7 @@ from sqlmodel import Session, select
 
 from ..core.config import _ai_dir_slug, user_shared_knowledge_dir
 from ..database import engine
-from ..models import AssistantAIConfig, EvolutionInput, Memory, SkillCard, User
+from ..models import AssistantAIConfig, EvolutionInput, Memory, SkillCard, User, ValhallaEntry
 from ..models import defaults as _defaults
 
 logger = logging.getLogger(__name__)
@@ -71,6 +71,7 @@ TOPICS_DIR = "topics"
 MEMORIES_DIR = "memories"
 EVOLUTION_DIR = "evolution"
 SKILLCARDS_DIR = "skillcards"
+VALHALLA_DIR = "valhalla"
 
 # system/ 下每个文件对应 User 表的一个字段。``number`` 字段以纯文本存储，
 # 同步回库时再转成 int。键集合与 librarian_service._SYSTEM_PROMPT_SECTIONS 对齐。
@@ -1042,9 +1043,103 @@ def sync_skillcards_from_files(user_id: int, *, session: Optional[Session] = Non
             sess.close()
 
 
+# ============================================================
+# 8) 英灵殿事件 —— valhalla/<job>__g<gen>__<kind>__<id>.md
+#
+# 与前几类不同：ValhallaEntry 是整型主键、按 id 增删的 append-only 事件日志，
+# 且读/删 API 都以 id 为键。若文件回写 DB 会牵涉 id/自增序列，风险大；因此这里
+# 只做 **单向导出（DB→文件）**：写事件时镜像成文件、删事件时删文件，让英灵殿
+# 内容同样以 MD 落在 KnowledgeBase 下，但 DB 仍是 id 化读写的权威源。
+# ============================================================
+
+_VALHALLA_META_KEYS = (
+    "id", "ai_config_id", "ai_name", "job_id", "job_title", "generation",
+    "kind", "session_id", "summary_excerpt", "token_used", "token_limit",
+    "artifacts_count", "unfinished_count", "reason", "created_at",
+    "unfinished", "artifacts", "token_report",
+)
+
+
+def _valhalla_filename(job_id: Any, generation: Any, kind: Any, entry_id: Any) -> str:
+    job = _safe_filename(str(job_id or "job"))
+    return f"{job}__g{int(generation or 1)}__{kind or 'inherit'}__{int(entry_id)}.md"
+
+
+def write_valhalla_file(user_id: int, entry: Dict[str, Any]) -> None:
+    """把一条英灵殿事件镜像成文件（含正文 + 未完成/产出/Token 附属）。best-effort。"""
+    try:
+        entry_id = entry.get("id")
+        if entry_id is None:
+            return
+        meta = {k: entry.get(k) for k in _VALHALLA_META_KEYS}
+        path = os.path.join(
+            _kb_root(user_id), VALHALLA_DIR,
+            _valhalla_filename(entry.get("job_id"), entry.get("generation"), entry.get("kind"), entry_id),
+        )
+        _write_text(path, _row_to_md(meta, str(entry.get("content") or "")))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store write_valhalla_file user={user_id} failed: {exc}")
+
+
+def delete_valhalla_file(user_id: int, entry_id: int) -> None:
+    """删除某条英灵殿事件对应的文件（按文件名后缀 ``__<id>.md`` 定位）。best-effort。"""
+    try:
+        suffix = f"__{int(entry_id)}.md"
+        for path in _list_md(user_id, VALHALLA_DIR):
+            if path.endswith(suffix):
+                try:
+                    os.remove(path)
+                except FileNotFoundError:
+                    pass
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store delete_valhalla_file user={user_id} failed: {exc}")
+
+
+def seed_valhalla(user_id: int, *, session: Optional[Session] = None) -> None:
+    """首次导出：DB 中存在但没有文件的英灵殿事件镜像成文件。幂等。"""
+    own = session is None
+    sess = session or Session(engine)
+    try:
+        existing = {os.path.basename(p) for p in _list_md(user_id, VALHALLA_DIR)}
+        rows = sess.exec(select(ValhallaEntry).where(ValhallaEntry.user_id == int(user_id))).all()
+        for row in rows:
+            fname = _valhalla_filename(row.job_id, row.generation, row.kind, row.id)
+            if fname not in existing:
+                write_valhalla_file(user_id, _row_valhalla_dict(row))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store seed_valhalla user={user_id} failed: {exc}")
+    finally:
+        if own:
+            sess.close()
+
+
+def _row_valhalla_dict(row: ValhallaEntry) -> Dict[str, Any]:
+    return {
+        "id": row.id,
+        "ai_config_id": row.ai_config_id,
+        "ai_name": row.ai_name,
+        "job_id": row.job_id,
+        "job_title": row.job_title,
+        "generation": row.generation,
+        "kind": row.kind,
+        "session_id": row.session_id,
+        "summary_excerpt": row.summary_excerpt,
+        "token_used": row.token_used,
+        "token_limit": row.token_limit,
+        "artifacts_count": row.artifacts_count,
+        "unfinished_count": row.unfinished_count,
+        "reason": row.reason,
+        "created_at": row.created_at,
+        "unfinished": _loads_safe(row.unfinished_json, []),
+        "artifacts": _loads_safe(row.artifacts_json, []),
+        "token_report": _loads_safe(row.token_report_json, {}),
+        "content": row.content or "",
+    }
+
+
 def _ensure_layout(user_id: int) -> None:
     root = _kb_root(user_id)
-    for sub in (PERSONAS_DIR, MCP_DIR, SYSTEM_DIR, SKILLS_DIR, TOPICS_DIR, MEMORIES_DIR, EVOLUTION_DIR, SKILLCARDS_DIR):
+    for sub in (PERSONAS_DIR, MCP_DIR, SYSTEM_DIR, SKILLS_DIR, TOPICS_DIR, MEMORIES_DIR, EVOLUTION_DIR, SKILLCARDS_DIR, VALHALLA_DIR):
         _ensure_dir(os.path.join(root, sub))
     readme = os.path.join(root, "README.md")
     if _read_text(readme) is None:
@@ -1073,6 +1168,7 @@ def ensure_user_kb(user_id: int, *, session: Optional[Session] = None) -> None:
             seed_memories(user_id, session=sess)
             seed_evolution(user_id, session=sess)
             seed_skillcards(user_id, session=sess)
+            seed_valhalla(user_id, session=sess)  # 仅导出，无文件回写
             sync_memories_from_files(user_id, session=sess)
             sync_evolution_from_files(user_id, session=sess)
             sync_skillcards_from_files(user_id, session=sess)

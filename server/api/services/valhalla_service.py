@@ -24,6 +24,7 @@ from ..models import (
     ChatMessage,
     ValhallaEntry,
 )
+from . import kb_store
 
 
 logger = logging.getLogger(__name__)
@@ -358,6 +359,7 @@ def write_inherit(
             session.add(entry)
             session.commit()
             session.refresh(entry)
+            kb_store.write_valhalla_file(user_id, kb_store._row_valhalla_dict(entry))  # 镜像成文件
             return entry
     except Exception as exc:
         # best-effort：英灵殿写失败不应阻塞主任务
@@ -428,6 +430,7 @@ def write_complete(
             session.add(entry)
             session.commit()
             session.refresh(entry)
+            kb_store.write_valhalla_file(user_id, kb_store._row_valhalla_dict(entry))  # 镜像成文件
             return entry
     except Exception as exc:
         logger.exception(f"error: {exc}")
@@ -507,6 +510,9 @@ def delete_entries(
             session.delete(row)
             deleted_ids.append(entry_id)
         session.commit()
+
+    for entry_id in deleted_ids:
+        kb_store.delete_valhalla_file(user_id, entry_id)  # 同步删除镜像文件
 
     return {"deleted": len(deleted_ids), "missing": missing, "deleted_ids": deleted_ids}
 
