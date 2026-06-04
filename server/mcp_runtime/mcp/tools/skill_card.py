@@ -26,6 +26,7 @@ from sqlmodel import Session, select
 
 from api.database import engine
 from api.models import SkillCard, SkillCardRunStat, SkillCardVersion
+from api.services import kb_store
 
 _SURFACES = {"windows", "browser", "shell", "composite"}
 _SCOPES = {"private", "team", "public"}
@@ -250,7 +251,9 @@ def _skill_card_create(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
         _snapshot_version(session, row, ai_config_id, "initial draft")
         session.commit()
         session.refresh(row)
-        return {"created": True, "card": _card_to_dict(row)}
+        card = _card_to_dict(row)
+    kb_store.write_skillcard_file(user_id, card)  # 文件真相源双写（best-effort）
+    return {"created": True, "card": card}
 
 
 def _skill_card_list(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
@@ -399,7 +402,9 @@ def _skill_card_update(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
         session.add(row)
         session.commit()
         session.refresh(row)
-        return {"updated": True, "card": _card_to_dict(row)}
+        card = _card_to_dict(row)
+    kb_store.write_skillcard_file(user_id, card)  # 文件真相源双写（best-effort）
+    return {"updated": True, "card": card}
 
 
 def _fork_card(
@@ -439,7 +444,9 @@ def _fork_card(
     _snapshot_version(session, fork, ai_config_id, change_summary or f"forked from {src.card_id}")
     session.commit()
     session.refresh(fork)
-    return {"forked": True, "forked_from": src.card_id, "card": _card_to_dict(fork)}
+    card = _card_to_dict(fork)
+    kb_store.write_skillcard_file(user_id, card)  # 文件真相源双写（best-effort）
+    return {"forked": True, "forked_from": src.card_id, "card": card}
 
 
 def _apply_card_fields(row: SkillCard, args: Dict[str, Any]) -> None:
@@ -485,7 +492,10 @@ def _skill_card_delete(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
         row.updated_at = time.time()
         session.add(row)
         session.commit()
-        return {"deprecated": True, "card_id": card_id}
+        session.refresh(row)
+        card = _card_to_dict(row)
+    kb_store.write_skillcard_file(user_id, card)  # 文件真相源双写（状态改为 deprecated）
+    return {"deprecated": True, "card_id": card_id}
 
 
 def _stat_to_dict(row: SkillCardRunStat) -> Dict[str, Any]:
