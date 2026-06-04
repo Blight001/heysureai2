@@ -34,7 +34,7 @@ from sqlmodel import Session, select
 
 from ..core.config import _ai_dir_slug, user_shared_knowledge_dir
 from ..database import engine
-from ..models import AssistantAIConfig, User
+from ..models import AssistantAIConfig, EvolutionInput, Memory, SkillCard, User, ValhallaEntry
 from ..models import defaults as _defaults
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,10 @@ MCP_DIR = "mcp"
 SYSTEM_DIR = "system"
 SKILLS_DIR = "skills"
 TOPICS_DIR = "topics"
+MEMORIES_DIR = "memories"
+EVOLUTION_DIR = "evolution"
+SKILLCARDS_DIR = "skillcards"
+VALHALLA_DIR = "valhalla"
 
 # system/ 下每个文件对应 User 表的一个字段。``number`` 字段以纯文本存储，
 # 同步回库时再转成 int。键集合与 librarian_service._SYSTEM_PROMPT_SECTIONS 对齐。
@@ -641,9 +645,501 @@ _README = """# KnowledgeBase
 """
 
 
+# ============================================================
+# 6) 记忆 / 进化建议 —— memories/<id>.md, evolution/<id>.md
+#
+# Memory 与 EvolutionInput 原本是纯数据库表。这里沿用 kb_store 的
+# “文件为真相源 + DB 兜底” 模式：每次增删改时双写文件，``ensure_user_kb``
+# 时先把缺失文件从 DB 导出（seed），再把文件回写 DB（sync，文件赢）。
+# 现有的 MCP 读取链路（memory.py 的 search/list）仍走 DB，无需改动即可
+# 读到文件内容。frontmatter 每个值用 JSON 编码，保证 round-trip 稳定。
+# ============================================================
+
+
+def _row_to_md(meta: Dict[str, Any], body: str) -> str:
+    """frontmatter（值 JSON 编码）+ 正文。"""
+    lines = ["---"]
+    for key, value in meta.items():
+        lines.append(f"{key}: {json.dumps(value, ensure_ascii=False)}")
+    lines.append("---")
+    return "\n".join(lines) + "\n" + (body or "")
+
+
+def _md_to_row(text: str) -> Tuple[Dict[str, Any], str]:
+    """解析 ``_row_to_md`` 写出的文件：frontmatter 值按 JSON 解码。"""
+    meta_raw, body = _split_frontmatter(text)
+    meta: Dict[str, Any] = {}
+    for key, value in meta_raw.items():
+        try:
+            meta[key] = json.loads(value)
+        except Exception:
+            meta[key] = value
+    return meta, body
+
+
+def _memory_path(user_id: int, memory_id: str) -> str:
+    return os.path.join(_kb_root(user_id), MEMORIES_DIR, f"{_safe_filename(memory_id)}.md")
+
+
+def write_memory_file(user_id: int, mem: Dict[str, Any]) -> None:
+    """把一条 Memory（``_memory_to_dict`` 的输出）落成文件。best-effort。"""
+    try:
+        memory_id = str(mem.get("memory_id") or "").strip()
+        if not memory_id:
+            return
+        meta = {
+            "memory_id": memory_id,
+            "ai_config_id": mem.get("ai_config_id"),
+            "project_id": mem.get("project_id"),
+            "job_id": mem.get("job_id"),
+            "generation": mem.get("generation"),
+            "kind": mem.get("kind"),
+            "tags": mem.get("tags") or [],
+            "confidence": mem.get("confidence"),
+            "archived": bool(mem.get("archived")),
+            "source": mem.get("source") or {},
+            "created_at": mem.get("created_at"),
+            "updated_at": mem.get("updated_at"),
+        }
+        _write_text(_memory_path(user_id, memory_id), _row_to_md(meta, str(mem.get("content") or "")))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store write_memory_file user={user_id} failed: {exc}")
+
+
+def _evolution_path(user_id: int, evo_id: str) -> str:
+    return os.path.join(_kb_root(user_id), EVOLUTION_DIR, f"{_safe_filename(evo_id)}.md")
+
+
+def write_evolution_file(user_id: int, evo: Dict[str, Any]) -> None:
+    """把一条 EvolutionInput（``_evolution_to_dict`` 的输出）落成文件。best-effort。"""
+    try:
+        evo_id = str(evo.get("evolution_input_id") or "").strip()
+        if not evo_id:
+            return
+        meta = {
+            "evolution_input_id": evo_id,
+            "source_ai_config_id": evo.get("source_ai_config_id"),
+            "type": evo.get("type"),
+            "target_scope": evo.get("target_scope") or {},
+            "evidence": evo.get("evidence") or [],
+            "risk": evo.get("risk") or "",
+            "review_status": evo.get("review_status"),
+            "applied_to": evo.get("applied_to"),
+            "created_at": evo.get("created_at"),
+            "updated_at": evo.get("updated_at"),
+        }
+        _write_text(_evolution_path(user_id, evo_id), _row_to_md(meta, str(evo.get("proposal") or "")))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store write_evolution_file user={user_id} failed: {exc}")
+
+
+def _list_md(user_id: int, sub: str) -> List[str]:
+    root = os.path.join(_kb_root(user_id), sub)
+    try:
+        return [os.path.join(root, n) for n in os.listdir(root) if n.endswith(".md")]
+    except FileNotFoundError:
+        return []
+    except Exception:
+        return []
+
+
+def seed_memories(user_id: int, *, session: Optional[Session] = None) -> None:
+    """首次导出：DB 中存在但没有文件的 Memory 行写成文件。幂等。"""
+    own = session is None
+    sess = session or Session(engine)
+    try:
+        rows = sess.exec(select(Memory).where(Memory.user_id == int(user_id))).all()
+        for row in rows:
+            if _read_text(_memory_path(user_id, row.memory_id)) is None:
+                write_memory_file(user_id, _row_memory_dict(row))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store seed_memories user={user_id} failed: {exc}")
+    finally:
+        if own:
+            sess.close()
+
+
+def seed_evolution(user_id: int, *, session: Optional[Session] = None) -> None:
+    own = session is None
+    sess = session or Session(engine)
+    try:
+        rows = sess.exec(select(EvolutionInput).where(EvolutionInput.user_id == int(user_id))).all()
+        for row in rows:
+            if _read_text(_evolution_path(user_id, row.evolution_input_id)) is None:
+                write_evolution_file(user_id, _row_evolution_dict(row))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store seed_evolution user={user_id} failed: {exc}")
+    finally:
+        if own:
+            sess.close()
+
+
+def sync_memories_from_files(user_id: int, *, session: Optional[Session] = None) -> None:
+    """文件回写 DB（文件赢）：解析 memories/*.md，按 memory_id upsert Memory。"""
+    own = session is None
+    sess = session or Session(engine)
+    try:
+        changed = False
+        for path in _list_md(user_id, MEMORIES_DIR):
+            raw = _read_text(path)
+            if raw is None:
+                continue
+            meta, body = _md_to_row(raw)
+            memory_id = str(meta.get("memory_id") or "").strip()
+            if not memory_id:
+                continue
+            row = sess.exec(
+                select(Memory).where(Memory.user_id == int(user_id), Memory.memory_id == memory_id)
+            ).first() or Memory(memory_id=memory_id, user_id=int(user_id), content="")
+            row.ai_config_id = meta.get("ai_config_id")
+            row.project_id = meta.get("project_id")
+            row.job_id = meta.get("job_id")
+            row.generation = int(meta.get("generation") or 1)
+            row.kind = str(meta.get("kind") or "fact")
+            tags = meta.get("tags") or []
+            row.tags = ",".join(str(t) for t in tags) if isinstance(tags, list) else str(tags or "")
+            row.content = body
+            row.source = json.dumps(meta.get("source") or {}, ensure_ascii=False)
+            row.confidence = float(meta.get("confidence") or 0.0)
+            row.archived = bool(meta.get("archived"))
+            if meta.get("created_at") is not None:
+                row.created_at = float(meta.get("created_at"))
+            if meta.get("updated_at") is not None:
+                row.updated_at = float(meta.get("updated_at"))
+            sess.add(row)
+            changed = True
+        if changed:
+            sess.commit()
+    except Exception as exc:  # pragma: no cover - defensive
+        sess.rollback()
+        logger.info(f"kb_store sync_memories_from_files user={user_id} failed: {exc}")
+    finally:
+        if own:
+            sess.close()
+
+
+def sync_evolution_from_files(user_id: int, *, session: Optional[Session] = None) -> None:
+    own = session is None
+    sess = session or Session(engine)
+    try:
+        changed = False
+        for path in _list_md(user_id, EVOLUTION_DIR):
+            raw = _read_text(path)
+            if raw is None:
+                continue
+            meta, body = _md_to_row(raw)
+            evo_id = str(meta.get("evolution_input_id") or "").strip()
+            if not evo_id:
+                continue
+            row = sess.exec(
+                select(EvolutionInput).where(
+                    EvolutionInput.user_id == int(user_id),
+                    EvolutionInput.evolution_input_id == evo_id,
+                )
+            ).first() or EvolutionInput(evolution_input_id=evo_id, user_id=int(user_id), proposal="")
+            row.source_ai_config_id = meta.get("source_ai_config_id")
+            row.type = str(meta.get("type") or "lesson")
+            row.target_scope = json.dumps(meta.get("target_scope") or {}, ensure_ascii=False)
+            row.evidence = json.dumps(meta.get("evidence") or [], ensure_ascii=False)
+            row.proposal = body
+            row.risk = str(meta.get("risk") or "")
+            row.review_status = str(meta.get("review_status") or "queued")
+            row.applied_to = meta.get("applied_to")
+            if meta.get("created_at") is not None:
+                row.created_at = float(meta.get("created_at"))
+            if meta.get("updated_at") is not None:
+                row.updated_at = float(meta.get("updated_at"))
+            sess.add(row)
+            changed = True
+        if changed:
+            sess.commit()
+    except Exception as exc:  # pragma: no cover - defensive
+        sess.rollback()
+        logger.info(f"kb_store sync_evolution_from_files user={user_id} failed: {exc}")
+    finally:
+        if own:
+            sess.close()
+
+
+def _row_memory_dict(row: Memory) -> Dict[str, Any]:
+    try:
+        source = json.loads(row.source or "{}")
+    except Exception:
+        source = {}
+    return {
+        "memory_id": row.memory_id,
+        "ai_config_id": row.ai_config_id,
+        "project_id": row.project_id,
+        "job_id": row.job_id,
+        "generation": row.generation,
+        "kind": row.kind,
+        "tags": [t.strip() for t in str(row.tags or "").split(",") if t.strip()],
+        "content": row.content,
+        "source": source,
+        "confidence": row.confidence,
+        "archived": bool(row.archived),
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def _row_evolution_dict(row: EvolutionInput) -> Dict[str, Any]:
+    def _load(raw, fallback):
+        try:
+            return json.loads(raw)
+        except Exception:
+            return fallback
+
+    return {
+        "evolution_input_id": row.evolution_input_id,
+        "source_ai_config_id": row.source_ai_config_id,
+        "type": row.type,
+        "target_scope": _load(row.target_scope, {}),
+        "evidence": _load(row.evidence, []),
+        "proposal": row.proposal,
+        "risk": row.risk,
+        "review_status": row.review_status,
+        "applied_to": row.applied_to,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+# ============================================================
+# 7) 技能卡片定义 —— skillcards/<card_id>.md
+#
+# 仅卡片“定义”文件化（与 memories/evolution 同模式）。运行统计
+# (SkillCardRunStat：并发累加计数器) 与录制状态机 (SkillCardRecording：
+# 跨进程实时状态) 不适合文件，仍留数据库。版本历史 (SkillCardVersion)
+# 也留库做审计。``_card_to_dict(full=True)`` 已含全部定义字段。
+# ============================================================
+
+_SKILLCARD_META_KEYS = (
+    "card_id", "name", "surface", "scope", "status", "version",
+    "domain", "owner_ai_config_id", "environment_signature",
+    "forked_from_card_id", "capability", "app_scope", "params",
+    "preconditions", "steps", "postconditions", "created_at", "updated_at",
+)
+
+
+def _skillcard_path(user_id: int, card_id: str) -> str:
+    return os.path.join(_kb_root(user_id), SKILLCARDS_DIR, f"{_safe_filename(card_id)}.md")
+
+
+def write_skillcard_file(user_id: int, card: Dict[str, Any]) -> None:
+    """把一张技能卡定义（``_card_to_dict(full=True)`` 的输出）落成文件。best-effort。"""
+    try:
+        card_id = str(card.get("card_id") or "").strip()
+        if not card_id:
+            return
+        meta = {k: card.get(k) for k in _SKILLCARD_META_KEYS}
+        _write_text(_skillcard_path(user_id, card_id), _row_to_md(meta, str(card.get("description") or "")))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store write_skillcard_file user={user_id} failed: {exc}")
+
+
+def _row_skillcard_dict(row: SkillCard) -> Dict[str, Any]:
+    return {
+        "card_id": row.card_id,
+        "name": row.name,
+        "description": row.description,
+        "surface": row.surface,
+        "scope": row.scope,
+        "status": row.status,
+        "version": row.version,
+        "domain": _loads_safe(row.domain, []),
+        "owner_ai_config_id": row.owner_ai_config_id,
+        "environment_signature": row.environment_signature,
+        "forked_from_card_id": row.forked_from_card_id,
+        "capability": _loads_safe(row.capability, []),
+        "app_scope": _loads_safe(row.app_scope, None),
+        "params": _loads_safe(row.params, []),
+        "preconditions": _loads_safe(row.preconditions, []),
+        "steps": _loads_safe(row.steps, []),
+        "postconditions": _loads_safe(row.postconditions, []),
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def _loads_safe(raw, fallback):
+    if raw is None or raw == "":
+        return fallback
+    try:
+        return json.loads(raw)
+    except Exception:
+        return fallback
+
+
+def _dumps_or_none(value):
+    return None if value is None else json.dumps(value, ensure_ascii=False)
+
+
+def seed_skillcards(user_id: int, *, session: Optional[Session] = None) -> None:
+    """首次导出：DB 中存在但没有文件的技能卡写成文件。幂等。"""
+    own = session is None
+    sess = session or Session(engine)
+    try:
+        rows = sess.exec(select(SkillCard).where(SkillCard.user_id == int(user_id))).all()
+        for row in rows:
+            if _read_text(_skillcard_path(user_id, row.card_id)) is None:
+                write_skillcard_file(user_id, _row_skillcard_dict(row))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store seed_skillcards user={user_id} failed: {exc}")
+    finally:
+        if own:
+            sess.close()
+
+
+def sync_skillcards_from_files(user_id: int, *, session: Optional[Session] = None) -> None:
+    """文件回写 DB（文件赢）：解析 skillcards/*.md，按 card_id upsert SkillCard。
+
+    仅同步卡片定义；运行统计 / 版本历史 / 录制不受影响（不在文件里）。
+    """
+    own = session is None
+    sess = session or Session(engine)
+    try:
+        changed = False
+        for path in _list_md(user_id, SKILLCARDS_DIR):
+            raw = _read_text(path)
+            if raw is None:
+                continue
+            meta, body = _md_to_row(raw)
+            card_id = str(meta.get("card_id") or "").strip()
+            if not card_id:
+                continue
+            row = sess.exec(
+                select(SkillCard).where(SkillCard.user_id == int(user_id), SkillCard.card_id == card_id)
+            ).first() or SkillCard(card_id=card_id, user_id=int(user_id), name="")
+            row.name = str(meta.get("name") or row.name or "")
+            row.description = body or None
+            row.surface = str(meta.get("surface") or "windows")
+            row.scope = str(meta.get("scope") or "private")
+            row.status = str(meta.get("status") or "draft")
+            row.version = int(meta.get("version") or 1)
+            row.domain = _dumps_or_none(meta.get("domain"))
+            row.owner_ai_config_id = meta.get("owner_ai_config_id")
+            row.environment_signature = meta.get("environment_signature")
+            row.forked_from_card_id = meta.get("forked_from_card_id")
+            row.capability = _dumps_or_none(meta.get("capability"))
+            row.app_scope = _dumps_or_none(meta.get("app_scope")) if meta.get("app_scope") else None
+            row.params = _dumps_or_none(meta.get("params"))
+            row.preconditions = _dumps_or_none(meta.get("preconditions"))
+            row.steps = _dumps_or_none(meta.get("steps"))
+            row.postconditions = _dumps_or_none(meta.get("postconditions"))
+            if meta.get("created_at") is not None:
+                row.created_at = float(meta.get("created_at"))
+            if meta.get("updated_at") is not None:
+                row.updated_at = float(meta.get("updated_at"))
+            sess.add(row)
+            changed = True
+        if changed:
+            sess.commit()
+    except Exception as exc:  # pragma: no cover - defensive
+        sess.rollback()
+        logger.info(f"kb_store sync_skillcards_from_files user={user_id} failed: {exc}")
+    finally:
+        if own:
+            sess.close()
+
+
+# ============================================================
+# 8) 英灵殿事件 —— valhalla/<job>__g<gen>__<kind>__<id>.md
+#
+# 与前几类不同：ValhallaEntry 是整型主键、按 id 增删的 append-only 事件日志，
+# 且读/删 API 都以 id 为键。若文件回写 DB 会牵涉 id/自增序列，风险大；因此这里
+# 只做 **单向导出（DB→文件）**：写事件时镜像成文件、删事件时删文件，让英灵殿
+# 内容同样以 MD 落在 KnowledgeBase 下，但 DB 仍是 id 化读写的权威源。
+# ============================================================
+
+_VALHALLA_META_KEYS = (
+    "id", "ai_config_id", "ai_name", "job_id", "job_title", "generation",
+    "kind", "session_id", "summary_excerpt", "token_used", "token_limit",
+    "artifacts_count", "unfinished_count", "reason", "created_at",
+    "unfinished", "artifacts", "token_report",
+)
+
+
+def _valhalla_filename(job_id: Any, generation: Any, kind: Any, entry_id: Any) -> str:
+    job = _safe_filename(str(job_id or "job"))
+    return f"{job}__g{int(generation or 1)}__{kind or 'inherit'}__{int(entry_id)}.md"
+
+
+def write_valhalla_file(user_id: int, entry: Dict[str, Any]) -> None:
+    """把一条英灵殿事件镜像成文件（含正文 + 未完成/产出/Token 附属）。best-effort。"""
+    try:
+        entry_id = entry.get("id")
+        if entry_id is None:
+            return
+        meta = {k: entry.get(k) for k in _VALHALLA_META_KEYS}
+        path = os.path.join(
+            _kb_root(user_id), VALHALLA_DIR,
+            _valhalla_filename(entry.get("job_id"), entry.get("generation"), entry.get("kind"), entry_id),
+        )
+        _write_text(path, _row_to_md(meta, str(entry.get("content") or "")))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store write_valhalla_file user={user_id} failed: {exc}")
+
+
+def delete_valhalla_file(user_id: int, entry_id: int) -> None:
+    """删除某条英灵殿事件对应的文件（按文件名后缀 ``__<id>.md`` 定位）。best-effort。"""
+    try:
+        suffix = f"__{int(entry_id)}.md"
+        for path in _list_md(user_id, VALHALLA_DIR):
+            if path.endswith(suffix):
+                try:
+                    os.remove(path)
+                except FileNotFoundError:
+                    pass
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store delete_valhalla_file user={user_id} failed: {exc}")
+
+
+def seed_valhalla(user_id: int, *, session: Optional[Session] = None) -> None:
+    """首次导出：DB 中存在但没有文件的英灵殿事件镜像成文件。幂等。"""
+    own = session is None
+    sess = session or Session(engine)
+    try:
+        existing = {os.path.basename(p) for p in _list_md(user_id, VALHALLA_DIR)}
+        rows = sess.exec(select(ValhallaEntry).where(ValhallaEntry.user_id == int(user_id))).all()
+        for row in rows:
+            fname = _valhalla_filename(row.job_id, row.generation, row.kind, row.id)
+            if fname not in existing:
+                write_valhalla_file(user_id, _row_valhalla_dict(row))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store seed_valhalla user={user_id} failed: {exc}")
+    finally:
+        if own:
+            sess.close()
+
+
+def _row_valhalla_dict(row: ValhallaEntry) -> Dict[str, Any]:
+    return {
+        "id": row.id,
+        "ai_config_id": row.ai_config_id,
+        "ai_name": row.ai_name,
+        "job_id": row.job_id,
+        "job_title": row.job_title,
+        "generation": row.generation,
+        "kind": row.kind,
+        "session_id": row.session_id,
+        "summary_excerpt": row.summary_excerpt,
+        "token_used": row.token_used,
+        "token_limit": row.token_limit,
+        "artifacts_count": row.artifacts_count,
+        "unfinished_count": row.unfinished_count,
+        "reason": row.reason,
+        "created_at": row.created_at,
+        "unfinished": _loads_safe(row.unfinished_json, []),
+        "artifacts": _loads_safe(row.artifacts_json, []),
+        "token_report": _loads_safe(row.token_report_json, {}),
+        "content": row.content or "",
+    }
+
+
 def _ensure_layout(user_id: int) -> None:
     root = _kb_root(user_id)
-    for sub in (PERSONAS_DIR, MCP_DIR, SYSTEM_DIR, SKILLS_DIR, TOPICS_DIR):
+    for sub in (PERSONAS_DIR, MCP_DIR, SYSTEM_DIR, SKILLS_DIR, TOPICS_DIR, MEMORIES_DIR, EVOLUTION_DIR, SKILLCARDS_DIR, VALHALLA_DIR):
         _ensure_dir(os.path.join(root, sub))
     readme = os.path.join(root, "README.md")
     if _read_text(readme) is None:
@@ -668,6 +1164,14 @@ def ensure_user_kb(user_id: int, *, session: Optional[Session] = None) -> None:
             if user:
                 seed_system_prompts(user_id, user)
             seed_personas(user_id, session=sess)
+            # Memory / EvolutionInput：先导出缺失文件，再以文件为准回写 DB。
+            seed_memories(user_id, session=sess)
+            seed_evolution(user_id, session=sess)
+            seed_skillcards(user_id, session=sess)
+            seed_valhalla(user_id, session=sess)  # 仅导出，无文件回写
+            sync_memories_from_files(user_id, session=sess)
+            sync_evolution_from_files(user_id, session=sess)
+            sync_skillcards_from_files(user_id, session=sess)
         finally:
             if own:
                 sess.close()

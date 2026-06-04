@@ -3,7 +3,7 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useMessage } from '@/composables/useMessage'
 import * as adminApi from '@/api/admin'
 import type {
-  AdminTask, AdminUser, AuditEntry, DbCleanupResult, DbColumn, DbTableMeta, DbValue,
+  AdminTask, AdminUser, AuditEntry, DbCleanupCategory, DbCleanupResult, DbColumn, DbTableMeta, DbValue,
   FileEntry, LogLine, ServiceInfo,
 } from '@/api/admin'
 import type { User, UserRole } from '@/types'
@@ -108,17 +108,29 @@ const dbEditor = ref<{
 const dbSaving = ref(false)
 
 // ---- Database cleanup (destructive maintenance, owner only) ----
+// Each entry maps to a category key understood by the cleanup endpoint. All
+// listed tables are per-user data; system tables are never touched.
+const CLEANUP_CATEGORIES: { key: DbCleanupCategory; label: string; desc: string }[] = [
+  { key: 'conversations', label: '对话记录', desc: '消息 / 会话 / 运行记录' },
+  { key: 'tasks', label: '任务记录', desc: '任务作业 / 代理分发' },
+  { key: 'ai_messages', label: 'AI 互发消息 + Token 用量', desc: 'aimessage · tokenusagesnapshot' },
+  { key: 'knowledge', label: '知识库与记忆', desc: 'knowledgeentry · memory · evolutioninput' },
+  { key: 'skills', label: '技能卡片与协作项目', desc: 'skillcard* · evolutionproject' },
+  { key: 'valhalla', label: '遗言 / 英灵殿', desc: 'valhallaentry' },
+]
 const dbCleanupOpen = ref(false)
 const dbCleanupBusy = ref(false)
 const dbCleanupResult = ref<DbCleanupResult | null>(null)
 const dbCleanupForm = ref<{
   account: string
   password: string
-  clearConversations: boolean
-  clearTasks: boolean
+  categories: Record<DbCleanupCategory, boolean>
   dropUnusedTables: boolean
 }>({
-  account: '', password: '', clearConversations: true, clearTasks: true, dropUnusedTables: true,
+  account: '',
+  password: '',
+  categories: { conversations: true, tasks: true, ai_messages: false, knowledge: false, skills: false, valhalla: false },
+  dropUnusedTables: true,
 })
 
 const isOwner = computed(() => props.currentUser?.role === 'owner')
@@ -755,8 +767,7 @@ const openDbCleanup = () => {
   dbCleanupForm.value = {
     account: props.currentUser?.account || '',
     password: '',
-    clearConversations: true,
-    clearTasks: true,
+    categories: { conversations: true, tasks: true, ai_messages: false, knowledge: false, skills: false, valhalla: false },
     dropUnusedTables: true,
   }
   dbCleanupOpen.value = true
@@ -767,10 +778,12 @@ const closeDbCleanup = () => {
   dbCleanupOpen.value = false
 }
 
-const dbCleanupHasSelection = computed(() =>
-  dbCleanupForm.value.clearConversations ||
-  dbCleanupForm.value.clearTasks ||
-  dbCleanupForm.value.dropUnusedTables,
+const dbCleanupSelectedCategories = computed(
+  () => CLEANUP_CATEGORIES.filter(c => dbCleanupForm.value.categories[c.key]).map(c => c.key),
+)
+
+const dbCleanupHasSelection = computed(
+  () => dbCleanupSelectedCategories.value.length > 0 || dbCleanupForm.value.dropUnusedTables,
 )
 
 const runDbCleanup = async () => {
@@ -784,7 +797,7 @@ const runDbCleanup = async () => {
     return
   }
   const ok = await confirm({
-    message: '此操作将永久清空所选的对话/任务记录并删除无用数据表，且不可恢复。确认继续？',
+    message: '此操作将永久清空所选类别的记录并删除无用数据表，且不可恢复。确认继续？',
     type: 'warning',
     confirmText: '确认清理',
   })
@@ -794,8 +807,7 @@ const runDbCleanup = async () => {
     const res = await adminApi.cleanupDatabase({
       account: f.account.trim(),
       password: f.password,
-      clear_conversations: f.clearConversations,
-      clear_tasks: f.clearTasks,
+      categories: dbCleanupSelectedCategories.value,
       drop_unused_tables: f.dropUnusedTables,
     })
     dbCleanupResult.value = res
@@ -1566,15 +1578,20 @@ const avatarFor = (u: AdminUser) =>
 
             <!-- Cleanup scope -->
             <div class="space-y-2">
-              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">清理内容</span>
-              <label class="flex items-start gap-2 text-xs text-zinc-700 dark:text-zinc-200 cursor-pointer">
-                <input v-model="dbCleanupForm.clearConversations" type="checkbox" class="mt-0.5 accent-red-600" />
-                <span>清空所有用户的<b>对话记录</b>（消息 / 会话 / 运行记录）</span>
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">清空所有用户的记录</span>
+              <label
+                v-for="cat in CLEANUP_CATEGORIES"
+                :key="cat.key"
+                class="flex items-start gap-2 text-xs text-zinc-700 dark:text-zinc-200 cursor-pointer"
+              >
+                <input v-model="dbCleanupForm.categories[cat.key]" type="checkbox" class="mt-0.5 accent-red-600" />
+                <span><b>{{ cat.label }}</b><span class="text-zinc-400 font-mono"> · {{ cat.desc }}</span></span>
               </label>
-              <label class="flex items-start gap-2 text-xs text-zinc-700 dark:text-zinc-200 cursor-pointer">
-                <input v-model="dbCleanupForm.clearTasks" type="checkbox" class="mt-0.5 accent-red-600" />
-                <span>清空所有用户的<b>任务记录</b>（任务作业 / 代理分发）</span>
-              </label>
+            </div>
+
+            <!-- Unused tables -->
+            <div class="space-y-2 pt-1">
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">数据表维护</span>
               <label class="flex items-start gap-2 text-xs text-zinc-700 dark:text-zinc-200 cursor-pointer">
                 <input v-model="dbCleanupForm.dropUnusedTables" type="checkbox" class="mt-0.5 accent-red-600" />
                 <span>删除<b>无用数据表</b>（不再被任何模型映射的遗留表）</span>
