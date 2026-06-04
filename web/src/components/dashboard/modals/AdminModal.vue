@@ -3,7 +3,7 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useMessage } from '@/composables/useMessage'
 import * as adminApi from '@/api/admin'
 import type {
-  AdminTask, AdminUser, AuditEntry, DbColumn, DbTableMeta, DbValue,
+  AdminTask, AdminUser, AuditEntry, DbCleanupResult, DbColumn, DbTableMeta, DbValue,
   FileEntry, LogLine, ServiceInfo,
 } from '@/api/admin'
 import type { User, UserRole } from '@/types'
@@ -106,6 +106,20 @@ const dbEditor = ref<{
   values: Record<string, string>
 } | null>(null)
 const dbSaving = ref(false)
+
+// ---- Database cleanup (destructive maintenance, owner only) ----
+const dbCleanupOpen = ref(false)
+const dbCleanupBusy = ref(false)
+const dbCleanupResult = ref<DbCleanupResult | null>(null)
+const dbCleanupForm = ref<{
+  account: string
+  password: string
+  clearConversations: boolean
+  clearTasks: boolean
+  dropUnusedTables: boolean
+}>({
+  account: '', password: '', clearConversations: true, clearTasks: true, dropUnusedTables: true,
+})
 
 const isOwner = computed(() => props.currentUser?.role === 'owner')
 
@@ -366,6 +380,7 @@ const ACTION_LABELS: Record<string, string> = {
   db_insert: '插入数据',
   db_update: '更新数据',
   db_delete: '删除数据',
+  db_cleanup: '清理数据库',
 }
 
 // ---- File manager ----
@@ -731,6 +746,65 @@ const deleteDbRow = async (row: Record<string, DbValue>) => {
     await Promise.all([loadDbRows(), loadDbTables()])
   } catch (err) {
     await alert({ message: (err as Error).message, type: 'error' })
+  }
+}
+
+// ---- Database cleanup (destructive) ----
+const openDbCleanup = () => {
+  dbCleanupResult.value = null
+  dbCleanupForm.value = {
+    account: props.currentUser?.account || '',
+    password: '',
+    clearConversations: true,
+    clearTasks: true,
+    dropUnusedTables: true,
+  }
+  dbCleanupOpen.value = true
+}
+
+const closeDbCleanup = () => {
+  if (dbCleanupBusy.value) return
+  dbCleanupOpen.value = false
+}
+
+const dbCleanupHasSelection = computed(() =>
+  dbCleanupForm.value.clearConversations ||
+  dbCleanupForm.value.clearTasks ||
+  dbCleanupForm.value.dropUnusedTables,
+)
+
+const runDbCleanup = async () => {
+  const f = dbCleanupForm.value
+  if (!f.account.trim() || !f.password) {
+    await alert({ message: '请输入房主账号和密码', type: 'warning' })
+    return
+  }
+  if (!dbCleanupHasSelection.value) {
+    await alert({ message: '请至少选择一项清理内容', type: 'warning' })
+    return
+  }
+  const ok = await confirm({
+    message: '此操作将永久清空所选的对话/任务记录并删除无用数据表，且不可恢复。确认继续？',
+    type: 'warning',
+    confirmText: '确认清理',
+  })
+  if (!ok) return
+  dbCleanupBusy.value = true
+  try {
+    const res = await adminApi.cleanupDatabase({
+      account: f.account.trim(),
+      password: f.password,
+      clear_conversations: f.clearConversations,
+      clear_tasks: f.clearTasks,
+      drop_unused_tables: f.dropUnusedTables,
+    })
+    dbCleanupResult.value = res
+    dbCleanupForm.value.password = ''
+    await Promise.all([loadDbTables(), dbActiveTable.value ? loadDbRows() : Promise.resolve()])
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    dbCleanupBusy.value = false
   }
 }
 
@@ -1239,28 +1313,37 @@ const avatarFor = (u: AdminUser) =>
           <!-- ============ Database tab ============ -->
           <div v-show="tab === 'database'" class="flex-1 overflow-hidden flex min-h-0">
             <!-- Table list -->
-            <div class="w-44 shrink-0 border-r border-zinc-200 dark:border-zinc-800 overflow-y-auto p-2">
-              <div class="flex items-center justify-between px-1 py-1.5">
-                <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">数据表</span>
+            <div class="w-44 shrink-0 border-r border-zinc-200 dark:border-zinc-800 flex flex-col min-h-0">
+              <div class="flex-1 overflow-y-auto p-2">
+                <div class="flex items-center justify-between px-1 py-1.5">
+                  <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">数据表</span>
+                  <button
+                    class="text-[11px] text-zinc-400 hover:text-indigo-600"
+                    :disabled="dbTablesLoading"
+                    @click="loadDbTables"
+                  >↻</button>
+                </div>
                 <button
-                  class="text-[11px] text-zinc-400 hover:text-indigo-600"
-                  :disabled="dbTablesLoading"
-                  @click="loadDbTables"
-                >↻</button>
+                  v-for="t in dbTables"
+                  :key="t.name"
+                  class="w-full text-left px-2 py-1.5 rounded-lg text-xs flex items-center justify-between gap-1 transition-colors"
+                  :class="dbActiveTable === t.name
+                    ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300'
+                    : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'"
+                  @click="selectDbTable(t.name)"
+                >
+                  <span class="truncate font-mono" :title="t.name">{{ t.name }}</span>
+                  <span class="text-[10px] text-zinc-400 shrink-0">{{ t.row_count < 0 ? '?' : t.row_count }}</span>
+                </button>
+                <div v-if="!dbTables.length && !dbTablesLoading" class="text-center text-zinc-400 py-6 text-xs">暂无数据表</div>
               </div>
-              <button
-                v-for="t in dbTables"
-                :key="t.name"
-                class="w-full text-left px-2 py-1.5 rounded-lg text-xs flex items-center justify-between gap-1 transition-colors"
-                :class="dbActiveTable === t.name
-                  ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300'
-                  : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'"
-                @click="selectDbTable(t.name)"
-              >
-                <span class="truncate font-mono" :title="t.name">{{ t.name }}</span>
-                <span class="text-[10px] text-zinc-400 shrink-0">{{ t.row_count < 0 ? '?' : t.row_count }}</span>
-              </button>
-              <div v-if="!dbTables.length && !dbTablesLoading" class="text-center text-zinc-400 py-6 text-xs">暂无数据表</div>
+              <!-- Destructive cleanup entry — owner only -->
+              <div v-if="isOwner" class="shrink-0 p-2 border-t border-zinc-200 dark:border-zinc-800">
+                <button
+                  class="w-full text-xs px-2 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-900/20 flex items-center justify-center gap-1"
+                  @click="openDbCleanup"
+                >🧹 清理数据库</button>
+              </div>
             </div>
 
             <!-- Rows -->
@@ -1454,6 +1537,92 @@ const avatarFor = (u: AdminUser) =>
               :disabled="dbSaving"
               @click="saveDbRow"
             >{{ dbSaving ? '保存中…' : '保存' }}</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <!-- ============ Database cleanup confirmation (owner only) ============ -->
+  <Teleport to="body">
+    <Transition name="fade">
+      <div
+        v-if="dbCleanupOpen"
+        class="fixed inset-0 z-[80] bg-black/50 flex items-center justify-center backdrop-blur-sm p-4"
+        @click="closeDbCleanup"
+      >
+        <div
+          class="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[88vh] flex flex-col overflow-hidden dark:bg-zinc-900 dark:border dark:border-zinc-800"
+          @click.stop
+        >
+          <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-200 dark:border-zinc-800">
+            <h3 class="text-sm font-bold text-red-600 dark:text-red-400 flex items-center gap-1.5">🧹 清理数据库</h3>
+            <button class="w-7 h-7 rounded-full text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 flex items-center justify-center" @click="closeDbCleanup">✕</button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-5 space-y-4">
+            <div class="rounded-xl bg-red-50 border border-red-100 px-3 py-2.5 text-xs text-red-700 leading-relaxed dark:bg-red-900/15 dark:border-red-900/40 dark:text-red-300">
+              ⚠️ 高风险操作：将永久清空所选记录并删除数据库中已无任何模型引用的无用数据表，<b>不可恢复</b>。请先确认已做好备份。
+            </div>
+
+            <!-- Cleanup scope -->
+            <div class="space-y-2">
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">清理内容</span>
+              <label class="flex items-start gap-2 text-xs text-zinc-700 dark:text-zinc-200 cursor-pointer">
+                <input v-model="dbCleanupForm.clearConversations" type="checkbox" class="mt-0.5 accent-red-600" />
+                <span>清空所有用户的<b>对话记录</b>（消息 / 会话 / 运行记录）</span>
+              </label>
+              <label class="flex items-start gap-2 text-xs text-zinc-700 dark:text-zinc-200 cursor-pointer">
+                <input v-model="dbCleanupForm.clearTasks" type="checkbox" class="mt-0.5 accent-red-600" />
+                <span>清空所有用户的<b>任务记录</b>（任务作业 / 代理分发）</span>
+              </label>
+              <label class="flex items-start gap-2 text-xs text-zinc-700 dark:text-zinc-200 cursor-pointer">
+                <input v-model="dbCleanupForm.dropUnusedTables" type="checkbox" class="mt-0.5 accent-red-600" />
+                <span>删除<b>无用数据表</b>（不再被任何模型映射的遗留表）</span>
+              </label>
+            </div>
+
+            <!-- Owner re-auth -->
+            <div class="space-y-2 pt-1">
+              <span class="text-[10px] font-semibold uppercase tracking-wide text-zinc-400">房主身份确认</span>
+              <input
+                v-model="dbCleanupForm.account"
+                type="text"
+                autocomplete="off"
+                placeholder="房主账号"
+                class="w-full text-xs border border-zinc-200 rounded-lg px-2.5 py-2 bg-white text-zinc-700 focus:outline-none focus:ring-2 focus:ring-red-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200"
+              />
+              <input
+                v-model="dbCleanupForm.password"
+                type="password"
+                autocomplete="new-password"
+                placeholder="房主密码"
+                class="w-full text-xs border border-zinc-200 rounded-lg px-2.5 py-2 bg-white text-zinc-700 focus:outline-none focus:ring-2 focus:ring-red-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-200"
+                @keyup.enter="runDbCleanup"
+              />
+            </div>
+
+            <!-- Result -->
+            <div
+              v-if="dbCleanupResult"
+              class="rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2.5 text-xs text-emerald-700 leading-relaxed dark:bg-emerald-900/15 dark:border-emerald-900/40 dark:text-emerald-300"
+            >
+              ✅ 清理完成：共删除 {{ dbCleanupResult.total_deleted }} 条记录。
+              <div v-if="Object.keys(dbCleanupResult.cleared).length" class="mt-1 font-mono text-[11px]">
+                <div v-for="(n, name) in dbCleanupResult.cleared" :key="name">{{ name }}：{{ n }} 行</div>
+              </div>
+              <div v-if="dbCleanupResult.dropped_tables.length" class="mt-1">
+                已删除无用表：<span class="font-mono">{{ dbCleanupResult.dropped_tables.join('、') }}</span>
+              </div>
+              <div v-else-if="dbCleanupForm.dropUnusedTables" class="mt-1 text-emerald-600/80">未发现无用数据表。</div>
+            </div>
+          </div>
+          <div class="flex justify-end gap-2 px-5 py-3 border-t border-zinc-200 dark:border-zinc-800">
+            <button class="text-xs px-3 py-1.5 rounded-lg text-zinc-500 hover:text-zinc-700 dark:text-zinc-400" :disabled="dbCleanupBusy" @click="closeDbCleanup">关闭</button>
+            <button
+              class="text-xs px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+              :disabled="dbCleanupBusy || !dbCleanupHasSelection"
+              @click="runDbCleanup"
+            >{{ dbCleanupBusy ? '清理中…' : '确认清理' }}</button>
           </div>
         </div>
       </div>
