@@ -14,7 +14,7 @@ export async function doClick(msg: any) {
   // user would hit — no occlusion guard needed (and none possible).
   const viaCoords = msg.x !== undefined && msg.y !== undefined &&
     (msg.ref === undefined || msg.ref === null || msg.ref === '')
-  const { el, x, y } = resolveTarget(msg)
+  let { el, x, y } = resolveTarget(msg)
 
   if (!el) {
     if (msg.ref !== undefined && msg.ref !== null && msg.ref !== '') {
@@ -24,8 +24,16 @@ export async function doClick(msg: any) {
   }
 
   if (!viaCoords) {
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    // Use an instant (not smooth) scroll: smooth scrolling keeps the element
+    // moving while waitScrollSettle polls, so the occlusion hit-test below can
+    // sample a point the target no longer occupies and report a false "occluded".
+    el.scrollIntoView({ block: 'center', behavior: 'auto' })
     await waitScrollSettle(450)
+    // The center captured by resolveTarget was measured *before* the scroll, so
+    // it now points at the wrong place. Recompute from the post-scroll rect so
+    // the dispatched pointer/mouse events (clientX/clientY) land on the target.
+    const c = elCenter(el)
+    x = c.x; y = c.y
 
     if (!isVisible(el)) {
       return {
