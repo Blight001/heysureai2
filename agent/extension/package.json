@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "HeySure AI browser automation extension (Chrome MV3)",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "scripts": {
     "build": "node build.js",
