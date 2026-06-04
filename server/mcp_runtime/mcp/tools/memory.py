@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 
 from api.database import engine
 from api.models import EvolutionInput, Memory
+from api.services import kb_store
 
 _MEMORY_KINDS = {"fact", "decision", "lesson", "todo", "risk", "template"}
 _EVOLUTION_TYPES = {
@@ -108,7 +109,9 @@ def _memory_write(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int
         session.add(row)
         session.commit()
         session.refresh(row)
-        return {"written": True, "memory": _memory_to_dict(row)}
+        mem = _memory_to_dict(row)
+    kb_store.write_memory_file(user_id, mem)  # 文件真相源双写（best-effort）
+    return {"written": True, "memory": mem}
 
 
 def _memory_search(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
@@ -188,7 +191,9 @@ def _memory_update(user_id: int, args: Dict[str, Any], ai_config_id: Optional[in
         session.add(row)
         session.commit()
         session.refresh(row)
-        return {"updated": True, "memory": _memory_to_dict(row)}
+        mem = _memory_to_dict(row)
+    kb_store.write_memory_file(user_id, mem)  # 文件真相源双写（best-effort）
+    return {"updated": True, "memory": mem}
 
 
 def _memory_archive(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
@@ -201,7 +206,10 @@ def _memory_archive(user_id: int, args: Dict[str, Any], ai_config_id: Optional[i
         row.updated_at = time.time()
         session.add(row)
         session.commit()
-        return {"archived": True, "memory_id": memory_id}
+        session.refresh(row)
+        mem = _memory_to_dict(row)
+    kb_store.write_memory_file(user_id, mem)  # 文件真相源双写（best-effort）
+    return {"archived": True, "memory_id": memory_id}
 
 
 def _evolution_to_dict(row: EvolutionInput) -> Dict[str, Any]:
@@ -250,7 +258,9 @@ def _evolution_input(user_id: int, args: Dict[str, Any], ai_config_id: Optional[
         session.add(row)
         session.commit()
         session.refresh(row)
-        return {"submitted": True, "evolution_input": _evolution_to_dict(row)}
+        evo = _evolution_to_dict(row)
+    kb_store.write_evolution_file(user_id, evo)  # 文件真相源双写（best-effort）
+    return {"submitted": True, "evolution_input": evo}
 
 
 def _evolution_list(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
@@ -296,4 +306,6 @@ def _evolution_review(user_id: int, args: Dict[str, Any], ai_config_id: Optional
         session.add(row)
         session.commit()
         session.refresh(row)
-        return {"reviewed": True, "evolution_input": _evolution_to_dict(row)}
+        evo = _evolution_to_dict(row)
+    kb_store.write_evolution_file(user_id, evo)  # 文件真相源双写（best-effort）
+    return {"reviewed": True, "evolution_input": evo}

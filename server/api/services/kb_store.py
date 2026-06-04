@@ -34,7 +34,7 @@ from sqlmodel import Session, select
 
 from ..core.config import _ai_dir_slug, user_shared_knowledge_dir
 from ..database import engine
-from ..models import AssistantAIConfig, User
+from ..models import AssistantAIConfig, EvolutionInput, Memory, User
 from ..models import defaults as _defaults
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,8 @@ MCP_DIR = "mcp"
 SYSTEM_DIR = "system"
 SKILLS_DIR = "skills"
 TOPICS_DIR = "topics"
+MEMORIES_DIR = "memories"
+EVOLUTION_DIR = "evolution"
 
 # system/ 下每个文件对应 User 表的一个字段。``number`` 字段以纯文本存储，
 # 同步回库时再转成 int。键集合与 librarian_service._SYSTEM_PROMPT_SECTIONS 对齐。
@@ -641,9 +643,269 @@ _README = """# KnowledgeBase
 """
 
 
+# ============================================================
+# 6) 记忆 / 进化建议 —— memories/<id>.md, evolution/<id>.md
+#
+# Memory 与 EvolutionInput 原本是纯数据库表。这里沿用 kb_store 的
+# “文件为真相源 + DB 兜底” 模式：每次增删改时双写文件，``ensure_user_kb``
+# 时先把缺失文件从 DB 导出（seed），再把文件回写 DB（sync，文件赢）。
+# 现有的 MCP 读取链路（memory.py 的 search/list）仍走 DB，无需改动即可
+# 读到文件内容。frontmatter 每个值用 JSON 编码，保证 round-trip 稳定。
+# ============================================================
+
+
+def _row_to_md(meta: Dict[str, Any], body: str) -> str:
+    """frontmatter（值 JSON 编码）+ 正文。"""
+    lines = ["---"]
+    for key, value in meta.items():
+        lines.append(f"{key}: {json.dumps(value, ensure_ascii=False)}")
+    lines.append("---")
+    return "\n".join(lines) + "\n" + (body or "")
+
+
+def _md_to_row(text: str) -> Tuple[Dict[str, Any], str]:
+    """解析 ``_row_to_md`` 写出的文件：frontmatter 值按 JSON 解码。"""
+    meta_raw, body = _split_frontmatter(text)
+    meta: Dict[str, Any] = {}
+    for key, value in meta_raw.items():
+        try:
+            meta[key] = json.loads(value)
+        except Exception:
+            meta[key] = value
+    return meta, body
+
+
+def _memory_path(user_id: int, memory_id: str) -> str:
+    return os.path.join(_kb_root(user_id), MEMORIES_DIR, f"{_safe_filename(memory_id)}.md")
+
+
+def write_memory_file(user_id: int, mem: Dict[str, Any]) -> None:
+    """把一条 Memory（``_memory_to_dict`` 的输出）落成文件。best-effort。"""
+    try:
+        memory_id = str(mem.get("memory_id") or "").strip()
+        if not memory_id:
+            return
+        meta = {
+            "memory_id": memory_id,
+            "ai_config_id": mem.get("ai_config_id"),
+            "project_id": mem.get("project_id"),
+            "job_id": mem.get("job_id"),
+            "generation": mem.get("generation"),
+            "kind": mem.get("kind"),
+            "tags": mem.get("tags") or [],
+            "confidence": mem.get("confidence"),
+            "archived": bool(mem.get("archived")),
+            "source": mem.get("source") or {},
+            "created_at": mem.get("created_at"),
+            "updated_at": mem.get("updated_at"),
+        }
+        _write_text(_memory_path(user_id, memory_id), _row_to_md(meta, str(mem.get("content") or "")))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store write_memory_file user={user_id} failed: {exc}")
+
+
+def _evolution_path(user_id: int, evo_id: str) -> str:
+    return os.path.join(_kb_root(user_id), EVOLUTION_DIR, f"{_safe_filename(evo_id)}.md")
+
+
+def write_evolution_file(user_id: int, evo: Dict[str, Any]) -> None:
+    """把一条 EvolutionInput（``_evolution_to_dict`` 的输出）落成文件。best-effort。"""
+    try:
+        evo_id = str(evo.get("evolution_input_id") or "").strip()
+        if not evo_id:
+            return
+        meta = {
+            "evolution_input_id": evo_id,
+            "source_ai_config_id": evo.get("source_ai_config_id"),
+            "type": evo.get("type"),
+            "target_scope": evo.get("target_scope") or {},
+            "evidence": evo.get("evidence") or [],
+            "risk": evo.get("risk") or "",
+            "review_status": evo.get("review_status"),
+            "applied_to": evo.get("applied_to"),
+            "created_at": evo.get("created_at"),
+            "updated_at": evo.get("updated_at"),
+        }
+        _write_text(_evolution_path(user_id, evo_id), _row_to_md(meta, str(evo.get("proposal") or "")))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store write_evolution_file user={user_id} failed: {exc}")
+
+
+def _list_md(user_id: int, sub: str) -> List[str]:
+    root = os.path.join(_kb_root(user_id), sub)
+    try:
+        return [os.path.join(root, n) for n in os.listdir(root) if n.endswith(".md")]
+    except FileNotFoundError:
+        return []
+    except Exception:
+        return []
+
+
+def seed_memories(user_id: int, *, session: Optional[Session] = None) -> None:
+    """首次导出：DB 中存在但没有文件的 Memory 行写成文件。幂等。"""
+    own = session is None
+    sess = session or Session(engine)
+    try:
+        rows = sess.exec(select(Memory).where(Memory.user_id == int(user_id))).all()
+        for row in rows:
+            if _read_text(_memory_path(user_id, row.memory_id)) is None:
+                write_memory_file(user_id, _row_memory_dict(row))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store seed_memories user={user_id} failed: {exc}")
+    finally:
+        if own:
+            sess.close()
+
+
+def seed_evolution(user_id: int, *, session: Optional[Session] = None) -> None:
+    own = session is None
+    sess = session or Session(engine)
+    try:
+        rows = sess.exec(select(EvolutionInput).where(EvolutionInput.user_id == int(user_id))).all()
+        for row in rows:
+            if _read_text(_evolution_path(user_id, row.evolution_input_id)) is None:
+                write_evolution_file(user_id, _row_evolution_dict(row))
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store seed_evolution user={user_id} failed: {exc}")
+    finally:
+        if own:
+            sess.close()
+
+
+def sync_memories_from_files(user_id: int, *, session: Optional[Session] = None) -> None:
+    """文件回写 DB（文件赢）：解析 memories/*.md，按 memory_id upsert Memory。"""
+    own = session is None
+    sess = session or Session(engine)
+    try:
+        changed = False
+        for path in _list_md(user_id, MEMORIES_DIR):
+            raw = _read_text(path)
+            if raw is None:
+                continue
+            meta, body = _md_to_row(raw)
+            memory_id = str(meta.get("memory_id") or "").strip()
+            if not memory_id:
+                continue
+            row = sess.exec(
+                select(Memory).where(Memory.user_id == int(user_id), Memory.memory_id == memory_id)
+            ).first() or Memory(memory_id=memory_id, user_id=int(user_id), content="")
+            row.ai_config_id = meta.get("ai_config_id")
+            row.project_id = meta.get("project_id")
+            row.job_id = meta.get("job_id")
+            row.generation = int(meta.get("generation") or 1)
+            row.kind = str(meta.get("kind") or "fact")
+            tags = meta.get("tags") or []
+            row.tags = ",".join(str(t) for t in tags) if isinstance(tags, list) else str(tags or "")
+            row.content = body
+            row.source = json.dumps(meta.get("source") or {}, ensure_ascii=False)
+            row.confidence = float(meta.get("confidence") or 0.0)
+            row.archived = bool(meta.get("archived"))
+            if meta.get("created_at") is not None:
+                row.created_at = float(meta.get("created_at"))
+            if meta.get("updated_at") is not None:
+                row.updated_at = float(meta.get("updated_at"))
+            sess.add(row)
+            changed = True
+        if changed:
+            sess.commit()
+    except Exception as exc:  # pragma: no cover - defensive
+        sess.rollback()
+        logger.info(f"kb_store sync_memories_from_files user={user_id} failed: {exc}")
+    finally:
+        if own:
+            sess.close()
+
+
+def sync_evolution_from_files(user_id: int, *, session: Optional[Session] = None) -> None:
+    own = session is None
+    sess = session or Session(engine)
+    try:
+        changed = False
+        for path in _list_md(user_id, EVOLUTION_DIR):
+            raw = _read_text(path)
+            if raw is None:
+                continue
+            meta, body = _md_to_row(raw)
+            evo_id = str(meta.get("evolution_input_id") or "").strip()
+            if not evo_id:
+                continue
+            row = sess.exec(
+                select(EvolutionInput).where(
+                    EvolutionInput.user_id == int(user_id),
+                    EvolutionInput.evolution_input_id == evo_id,
+                )
+            ).first() or EvolutionInput(evolution_input_id=evo_id, user_id=int(user_id), proposal="")
+            row.source_ai_config_id = meta.get("source_ai_config_id")
+            row.type = str(meta.get("type") or "lesson")
+            row.target_scope = json.dumps(meta.get("target_scope") or {}, ensure_ascii=False)
+            row.evidence = json.dumps(meta.get("evidence") or [], ensure_ascii=False)
+            row.proposal = body
+            row.risk = str(meta.get("risk") or "")
+            row.review_status = str(meta.get("review_status") or "queued")
+            row.applied_to = meta.get("applied_to")
+            if meta.get("created_at") is not None:
+                row.created_at = float(meta.get("created_at"))
+            if meta.get("updated_at") is not None:
+                row.updated_at = float(meta.get("updated_at"))
+            sess.add(row)
+            changed = True
+        if changed:
+            sess.commit()
+    except Exception as exc:  # pragma: no cover - defensive
+        sess.rollback()
+        logger.info(f"kb_store sync_evolution_from_files user={user_id} failed: {exc}")
+    finally:
+        if own:
+            sess.close()
+
+
+def _row_memory_dict(row: Memory) -> Dict[str, Any]:
+    try:
+        source = json.loads(row.source or "{}")
+    except Exception:
+        source = {}
+    return {
+        "memory_id": row.memory_id,
+        "ai_config_id": row.ai_config_id,
+        "project_id": row.project_id,
+        "job_id": row.job_id,
+        "generation": row.generation,
+        "kind": row.kind,
+        "tags": [t.strip() for t in str(row.tags or "").split(",") if t.strip()],
+        "content": row.content,
+        "source": source,
+        "confidence": row.confidence,
+        "archived": bool(row.archived),
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def _row_evolution_dict(row: EvolutionInput) -> Dict[str, Any]:
+    def _load(raw, fallback):
+        try:
+            return json.loads(raw)
+        except Exception:
+            return fallback
+
+    return {
+        "evolution_input_id": row.evolution_input_id,
+        "source_ai_config_id": row.source_ai_config_id,
+        "type": row.type,
+        "target_scope": _load(row.target_scope, {}),
+        "evidence": _load(row.evidence, []),
+        "proposal": row.proposal,
+        "risk": row.risk,
+        "review_status": row.review_status,
+        "applied_to": row.applied_to,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
 def _ensure_layout(user_id: int) -> None:
     root = _kb_root(user_id)
-    for sub in (PERSONAS_DIR, MCP_DIR, SYSTEM_DIR, SKILLS_DIR, TOPICS_DIR):
+    for sub in (PERSONAS_DIR, MCP_DIR, SYSTEM_DIR, SKILLS_DIR, TOPICS_DIR, MEMORIES_DIR, EVOLUTION_DIR):
         _ensure_dir(os.path.join(root, sub))
     readme = os.path.join(root, "README.md")
     if _read_text(readme) is None:
@@ -668,6 +930,11 @@ def ensure_user_kb(user_id: int, *, session: Optional[Session] = None) -> None:
             if user:
                 seed_system_prompts(user_id, user)
             seed_personas(user_id, session=sess)
+            # Memory / EvolutionInput：先导出缺失文件，再以文件为准回写 DB。
+            seed_memories(user_id, session=sess)
+            seed_evolution(user_id, session=sess)
+            sync_memories_from_files(user_id, session=sess)
+            sync_evolution_from_files(user_id, session=sess)
         finally:
             if own:
                 sess.close()
