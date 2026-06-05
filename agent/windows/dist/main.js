@@ -8,7 +8,6 @@ const store_1 = require("./store");
 const capture_bridge_1 = require("./capture-bridge");
 const main_window_1 = require("./windows/main-window");
 const tray_1 = require("./windows/tray");
-const offline_chat_window_1 = require("./windows/offline-chat-window");
 const agent_runtime_1 = require("./services/agent-runtime");
 const activity_log_1 = require("./services/activity-log");
 const ipc_1 = require("./ipc");
@@ -66,10 +65,7 @@ async function bootstrap() {
     // Auto-connect as soon as the user is logged in. The AI assignment is now
     // controlled server-side (Workshop panel), so we no longer gate on a locally
     // selected AI member.
-    if (store_1.store.get('offlineMode')) {
-        (0, offline_chat_window_1.showOfflineChatWindow)();
-    }
-    else if (store_1.store.get('authToken')) {
+    if (store_1.store.get('authToken')) {
         (0, agent_runtime_1.getAgent)()?.connect();
     }
 }

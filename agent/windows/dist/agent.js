@@ -45,11 +45,6 @@ class HeySureAgent {
         // a genuine reconnect still works.
         if (this.socket)
             return;
-        if (this.settings.offlineMode) {
-            this.setStatus('disconnected');
-            this.log('info', '离线模式已启用，跳过服务器连接');
-            return;
-        }
         // Hard gate: an agent that hasn't logged in cannot talk to the server.
         // Without this guard the socket would open transport-level, the UI would
         // flash "已连接", then the server would reject agent:register a moment
@@ -246,8 +241,8 @@ class HeySureAgent {
         this.workspaceRoot = newSettings.workspaceRoot || path_1.default.join(os_1.default.homedir(), 'HeySureWorkspace');
         // Put the agent into the connection state the new settings imply, instead
         // of only reconnecting when it happened to be connected already. connect()
-        // self-gates: with no authToken (logged out) or offline mode it just stays
-        // disconnected. This fixes "logged in but the server never sees the agent",
+        // self-gates with no authToken (logged out), so it just stays disconnected.
+        // This fixes "logged in but the server never sees the agent",
         // where a fresh login from a disconnected state updated the token but never
         // opened a socket.
         this.connect();

@@ -38,8 +38,8 @@ interface AgentSettings {
   mouseCoordinateScaleY: number
   mouseCoordinateOffsetX: number
   mouseCoordinateOffsetY: number
-  // Offline mode (use the self-configured model directly), parity with the
-  // browser extension. Persisted here; honoured by the runtime where supported.
+  // Legacy flag from the old offline mode. Kept for config compatibility only;
+  // local chat no longer changes the server connection lifecycle.
   offlineMode: boolean
   offlinePrompt: string
   // Local per-tool description edits, merged onto getToolDefs() before they are
@@ -82,7 +82,7 @@ const defaults: AgentSettings = {
   mouseCoordinateOffsetX: 0,
   mouseCoordinateOffsetY: 0,
   offlineMode: false,
-  offlinePrompt: '你是 HeySure AI，运行在 Windows 桌面端的离线模式中。你可以直接回答用户，也可以调用本机 MCP 工具完成文件、窗口、键鼠、剪贴板、终端等桌面任务。需要操作电脑时优先使用工具，并用和用户相同的语言回复。',
+  offlinePrompt: '你是 HeySure AI，运行在 Windows 桌面端的本地对话窗口中。你可以直接回答用户，也可以调用本机 MCP 工具完成文件、窗口、键鼠、剪贴板、终端等桌面任务。需要操作电脑时优先使用工具，并用和用户相同的语言回复。',
   toolDescOverrides: {},
   toolEnabled: {},
 }

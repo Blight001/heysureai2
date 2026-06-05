@@ -20,7 +20,7 @@ export function createOfflineChatWindow(): BrowserWindow {
     minWidth: 560,
     minHeight: 520,
     icon: iconPath,
-    title: 'HeySure 离线对话',
+    title: 'HeySure 本地对话',
     autoHideMenuBar: true,
     backgroundColor: store.get('theme') === 'light' ? '#f7f7fb' : '#111827',
     webPreferences: {

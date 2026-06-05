@@ -7,7 +7,6 @@ import { store } from './store'
 import { initCapture } from './capture-bridge'
 import { createMainWindow, getMainWindow } from './windows/main-window'
 import { createTray, updateTray } from './windows/tray'
-import { showOfflineChatWindow } from './windows/offline-chat-window'
 import {
   initAgent, getAgent, clearAiSelectionIfLoggedOut, isAgentActive,
 } from './services/agent-runtime'
@@ -68,9 +67,7 @@ async function bootstrap(): Promise<void> {
   // Auto-connect as soon as the user is logged in. The AI assignment is now
   // controlled server-side (Workshop panel), so we no longer gate on a locally
   // selected AI member.
-  if (store.get('offlineMode')) {
-    showOfflineChatWindow()
-  } else if (store.get('authToken')) {
+  if (store.get('authToken')) {
     getAgent()?.connect()
   }
 }

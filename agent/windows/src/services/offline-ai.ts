@@ -82,6 +82,12 @@ function localImagePathFromValue(value: any): string | null {
   }
 }
 
+function dataImageUrlFromValue(value: any): string | null {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  return /^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z0-9+/=\s]+$/i.test(raw) ? raw.replace(/\s+/g, '') : null
+}
+
 function collectLocalImagePaths(value: any, seen = new Set<any>()): string[] {
   if (value == null || seen.has(value)) return []
   if (typeof value === 'object') seen.add(value)
@@ -107,11 +113,48 @@ function collectLocalImagePaths(value: any, seen = new Set<any>()): string[] {
   ]
 }
 
+function collectDataImageUrls(value: any, seen = new Set<any>()): string[] {
+  if (value == null || seen.has(value)) return []
+  if (typeof value === 'object') seen.add(value)
+
+  if (typeof value === 'string') {
+    const url = dataImageUrlFromValue(value)
+    return url ? [url] : []
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap(item => collectDataImageUrls(item, seen))
+  }
+  if (typeof value !== 'object') return []
+
+  const direct = [
+    dataImageUrlFromValue(value.dataUrl),
+    dataImageUrlFromValue(value.image_url),
+    dataImageUrlFromValue(value.url),
+  ].filter((url): url is string => !!url)
+  return [
+    ...direct,
+    ...collectDataImageUrls(value.result, seen),
+    ...collectDataImageUrls(value.content, seen),
+  ]
+}
+
+function imageBlockFromDataUrl(url: string): any | null {
+  const match = url.match(/^(data:image\/(?:png|jpe?g|webp|gif);base64,.+)$/i)
+  if (!match) return null
+  return { type: 'image_url', image_url: { url: match[1] } }
+}
+
 function imageContentBlocksFromToolResults(toolResults: any[]): any[] {
   const seen = new Set<string>()
   const images: any[] = []
   for (const tr of toolResults) {
     if (tr?.is_error) continue
+    for (const dataUrl of collectDataImageUrls(tr?.content)) {
+      if (seen.has(dataUrl)) continue
+      seen.add(dataUrl)
+      const block = imageBlockFromDataUrl(dataUrl)
+      if (block) images.push(block)
+    }
     for (const imagePath of collectLocalImagePaths(tr?.content)) {
       const resolved = path.resolve(imagePath)
       if (seen.has(resolved)) continue
@@ -132,6 +175,20 @@ function imageContentBlocksFromToolResults(toolResults: any[]): any[] {
   return images
 }
 
+function redactInlineImages(value: any, seen = new Set<any>()): any {
+  if (value == null) return value
+  if (typeof value === 'string') {
+    return dataImageUrlFromValue(value) ? '[inline image attached as vision input]' : value
+  }
+  if (typeof value !== 'object') return value
+  if (seen.has(value)) return '[circular]'
+  seen.add(value)
+  if (Array.isArray(value)) return value.map(item => redactInlineImages(item, seen))
+  const out: Record<string, any> = {}
+  for (const [k, v] of Object.entries(value)) out[k] = redactInlineImages(v, seen)
+  return out
+}
+
 function screenshotCoordinateHint(toolResults: any[]): string {
   const screenshots: string[] = []
   for (const tr of toolResults) {
@@ -140,7 +197,7 @@ function screenshotCoordinateHint(toolResults: any[]): string {
     const width = Number(content?.width)
     const height = Number(content?.height)
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) continue
-    if (!collectLocalImagePaths(content).length) continue
+    if (!collectLocalImagePaths(content).length && !collectDataImageUrls(content).length) continue
     screenshots.push(`${Math.round(width)}x${Math.round(height)}`)
   }
   const sizeText = screenshots.length ? `当前截图尺寸：${Array.from(new Set(screenshots)).join('、')}。` : ''
@@ -155,8 +212,11 @@ function screenshotCoordinateHint(toolResults: any[]): string {
 function toolResultContentWithImages(toolResults: any[]): any[] {
   const imageBlocks = imageContentBlocksFromToolResults(toolResults)
   if (!imageBlocks.length) return toolResults
+  const safeToolResults = toolResults.map(tr => tr?.type === 'tool_result'
+    ? { ...tr, content: redactInlineImages(tr.content) }
+    : redactInlineImages(tr))
   return [
-    ...toolResults,
+    ...safeToolResults,
     {
       type: 'text',
       text: screenshotCoordinateHint(toolResults),
@@ -611,7 +671,7 @@ export async function runOfflineChat(
       throwIfAborted(signal)
       toolsUsed.push(tu.name)
       onProgress?.({ type: 'tool_start', tool: tu.name, arguments: tu.input || {} })
-      sendActivityLog('task', 'running', `[离线AI工具] ${tu.name}`, tu.input)
+      sendActivityLog('task', 'running', `[本地AI工具] ${tu.name}`, tu.input)
       try {
         const r = await getAgent()?.runToolLocally(tu.name, tu.input || {})
         throwIfAborted(signal)
@@ -626,7 +686,7 @@ export async function runOfflineChat(
         }
         toolEvents.push(event)
         onProgress?.({ type: 'tool_result', event })
-        sendActivityLog('task', r?.success ? 'success' : 'error', `离线工具${r?.success ? '完成' : '失败'}: ${tu.name}`)
+        sendActivityLog('task', r?.success ? 'success' : 'error', `本地工具${r?.success ? '完成' : '失败'}: ${tu.name}`)
       } catch (err: any) {
         if (isOfflineChatAbortError(err, signal)) throw createAbortError()
         toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: `Error: ${err?.message || err}`, is_error: true })
@@ -639,7 +699,7 @@ export async function runOfflineChat(
         }
         toolEvents.push(event)
         onProgress?.({ type: 'tool_result', event })
-        sendActivityLog('task', 'error', `离线工具异常: ${tu.name} - ${err?.message || err}`)
+        sendActivityLog('task', 'error', `本地工具异常: ${tu.name} - ${err?.message || err}`)
       }
     }
     messages.push({ role: 'user', content: toolResultContentWithImages(toolResults) })

@@ -52,7 +52,6 @@ const offlineChatBtn = $('offline-chat-btn') as HTMLButtonElement
 // ── State ──────────────────────────────────────────────────────────────────
 let currentTheme: 'dark' | 'light' = 'dark'
 let currentStatus = 'disconnected'
-let offlineModeEnabled = false
 // True while the agent is auto-reconnecting (socket.io retry or silent
 // re-login after a server update) — drives the orange "reconnecting" prompt.
 let reconnecting = false
@@ -308,23 +307,14 @@ windowMaxBtn.addEventListener('click', async () => {
 })
 windowCloseBtn.addEventListener('click', () => window.heysureAPI.closeWindow())
 
-// ── Status indicator (green / yellow / red / blue offline) ─────────────────
+// ── Status indicator (green / yellow / red) ─────────────────
 const STATUS_LABELS: Record<string, string> = {
   disconnected: '未连接', connecting: '连接中...', connected: '已连接', registered: '已连接到服务器', error: '连接错误',
 }
 function renderStatus() {
   const statusPill = $('status-pill')
-  statusPill.classList.toggle('offline', offlineModeEnabled)
-  const showReconnecting = reconnecting && !offlineModeEnabled
+  const showReconnecting = reconnecting
   statusPill.classList.toggle('reconnecting', showReconnecting)
-  if (offlineModeEnabled) {
-    $('status-dot').className = 'status-dot blue'
-    $('status-label').textContent = '离线模式'
-    statusPill.title = '离线模式'
-    $('info-status').textContent = '离线模式'
-    $('info-ai').textContent = '—'
-    return
-  }
   if (showReconnecting) {
     $('status-dot').className = 'status-dot orange'
     $('status-label').textContent = '重连中…'
@@ -556,7 +546,6 @@ $('mcp-back').addEventListener('click', showList)
 // ── Settings modal ───────────────────────────────────────────────────────
 const cfgServer    = $('cfg-server') as HTMLInputElement
 const cfgWorkspace = $('cfg-workspace') as HTMLInputElement
-const cfgOffline   = $('cfg-offline-mode') as HTMLInputElement
 const cfgMouseFx   = $('cfg-mouse-fx') as HTMLInputElement
 const cfgMouseScaleX = $('cfg-mouse-scale-x') as HTMLInputElement
 const cfgMouseScaleY = $('cfg-mouse-scale-y') as HTMLInputElement
@@ -568,11 +557,7 @@ function numericInputValue(input: HTMLInputElement, fallback: number): number {
   return Number.isFinite(n) ? n : fallback
 }
 
-function updateOfflineChatButton() {
-  offlineChatBtn.classList.toggle('active', cfgOffline.checked)
-  offlineChatBtn.title = cfgOffline.checked ? '打开离线对话' : '离线模式未启用'
-}
-cfgOffline.addEventListener('change', updateOfflineChatButton)
+offlineChatBtn.title = '打开本地对话'
 offlineChatBtn.addEventListener('click', () => window.heysureAPI.openOfflineChat())
 
 function openSettings()  { $('settings-modal').classList.remove('hidden') }
@@ -587,16 +572,13 @@ $('save-btn').addEventListener('click', async () => {
     await window.heysureAPI.saveSettings({
       serverUrl: cfgServer.value.trim(),
       workspaceRoot: cfgWorkspace.value.trim(),
-      offlineMode: cfgOffline.checked,
       mouseFx: cfgMouseFx.checked,
       mouseCoordinateScaleX: numericInputValue(cfgMouseScaleX, 1),
       mouseCoordinateScaleY: numericInputValue(cfgMouseScaleY, 1),
       mouseCoordinateOffsetX: numericInputValue(cfgMouseOffsetX, 0),
       mouseCoordinateOffsetY: numericInputValue(cfgMouseOffsetY, 0),
     })
-    offlineModeEnabled = cfgOffline.checked
     setStatus(await window.heysureAPI.getStatus())
-    if (cfgOffline.checked) window.heysureAPI.openOfflineChat()
     $('info-server').textContent = cfgServer.value.trim() || '—'
     $('info-workspace').textContent = cfgWorkspace.value.trim() ? (cfgWorkspace.value.trim().split(/[/\\]/).pop() || cfgWorkspace.value.trim()) : '—'
     fb.style.color = 'var(--success)'; fb.textContent = '已保存 ✓'
@@ -752,14 +734,11 @@ async function loadMainSettings() {
   const s = await window.heysureAPI.getSettings()
   cfgServer.value = s.serverUrl || ''
   cfgWorkspace.value = s.workspaceRoot || ''
-  cfgOffline.checked = !!s.offlineMode
   cfgMouseFx.checked = s.mouseFx !== false
   cfgMouseScaleX.value = String(Number.isFinite(Number(s.mouseCoordinateScaleX)) ? Number(s.mouseCoordinateScaleX) : 1)
   cfgMouseScaleY.value = String(Number.isFinite(Number(s.mouseCoordinateScaleY)) ? Number(s.mouseCoordinateScaleY) : 1)
   cfgMouseOffsetX.value = String(Number.isFinite(Number(s.mouseCoordinateOffsetX)) ? Number(s.mouseCoordinateOffsetX) : 0)
   cfgMouseOffsetY.value = String(Number.isFinite(Number(s.mouseCoordinateOffsetY)) ? Number(s.mouseCoordinateOffsetY) : 0)
-  offlineModeEnabled = !!s.offlineMode
-  updateOfflineChatButton()
   renderStatus()
   $('info-server').textContent = s.serverUrl || '—'
   $('info-workspace').textContent = s.workspaceRoot ? (s.workspaceRoot.split(/[/\\]/).pop() || s.workspaceRoot) : '—'
@@ -783,8 +762,7 @@ async function init() {
   await loadMcp()
   const status = await window.heysureAPI.getStatus()
   setStatus(status)
-  if (s.offlineMode) window.heysureAPI.openOfflineChat()
-  else if (s.authToken) window.heysureAPI.connect()
+  if (s.authToken) window.heysureAPI.connect()
   else openLoginModal()
 }
 init().catch(console.error)

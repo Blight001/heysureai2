@@ -59,7 +59,7 @@ contextBridge.exposeInMainWorld('heysureAPI', {
     ipcRenderer.invoke('mcp:save-desc', payload),
   mcpSetEnabled: (payload: { tool: string; enabled: boolean }) => ipcRenderer.invoke('mcp:set-enabled', payload),
   mcpTest: (payload: { tool: string; args: Record<string, any> }) => ipcRenderer.invoke('mcp:test', payload),
-  // Offline chat window
+  // Local chat window (IPC names kept for compatibility with the existing bundle)
   openOfflineChat: () => ipcRenderer.invoke('offline-chat:open'),
   getOfflineChatConfig: () => ipcRenderer.invoke('offline-chat:get-config'),
   saveOfflinePrompt: (prompt: string) => ipcRenderer.invoke('offline-chat:save-prompt', prompt),

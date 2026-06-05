@@ -57,7 +57,7 @@ electron_1.contextBridge.exposeInMainWorld('heysureAPI', {
     mcpSaveDesc: (payload) => electron_1.ipcRenderer.invoke('mcp:save-desc', payload),
     mcpSetEnabled: (payload) => electron_1.ipcRenderer.invoke('mcp:set-enabled', payload),
     mcpTest: (payload) => electron_1.ipcRenderer.invoke('mcp:test', payload),
-    // Offline chat window
+    // Local chat window (IPC names kept for compatibility with the existing bundle)
     openOfflineChat: () => electron_1.ipcRenderer.invoke('offline-chat:open'),
     getOfflineChatConfig: () => electron_1.ipcRenderer.invoke('offline-chat:get-config'),
     saveOfflinePrompt: (prompt) => electron_1.ipcRenderer.invoke('offline-chat:save-prompt', prompt),

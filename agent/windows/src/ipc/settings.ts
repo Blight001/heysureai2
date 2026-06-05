@@ -44,12 +44,23 @@ export function registerSettingsIpc(): void {
   })
 
   ipcMain.handle('settings:save', (_event, newSettings: Partial<AgentSettings>) => {
+    const agentAffectingKeys = new Set<keyof AgentSettings>([
+      'serverUrl',
+      'agentToken',
+      'agentId',
+      'agentName',
+      'agentGroup',
+      'workspaceRoot',
+      'authToken',
+      'userId',
+      'userName',
+    ])
+    const shouldRefreshAgent = Object.keys(newSettings || {}).some(k => agentAffectingKeys.has(k as keyof AgentSettings))
     Object.entries(newSettings).forEach(([k, v]) => store.set(k as any, v as any))
     if (clearAiSelectionIfLoggedOut()) {
       sendActivityLog('system', 'warn', '未登录，已取消 AI 成员自动注册选择')
     }
-    getAgent()?.updateSettings(store.store)
-    if (store.get('offlineMode')) getAgent()?.disconnect()
+    if (shouldRefreshAgent) getAgent()?.updateSettings(store.store)
     return store.store
   })
 

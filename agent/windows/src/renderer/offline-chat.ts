@@ -8,7 +8,7 @@ type Segment =
 const api = (window as any).heysureAPI as {
   getSettings: () => Promise<any>
   saveSettings: (settings: any) => Promise<any>
-  getOfflineChatConfig: () => Promise<{ offlineMode: boolean; prompt: string; aiBaseUrl: string; aiModel: string; hasAiKey: boolean }>
+  getOfflineChatConfig: () => Promise<{ localMode?: boolean; prompt: string; aiBaseUrl: string; aiModel: string; hasAiKey: boolean }>
   saveOfflinePrompt: (prompt: string) => Promise<boolean>
   sendOfflineChat: (payload: { requestId?: string; messages: ChatMessage[]; prompt?: string; allowedTools?: string[] }) => Promise<{
     text: string
@@ -253,11 +253,10 @@ function applyProgress(event: any) {
 }
 
 function renderModelMeta(settings: any) {
-  const offline = !!settings.offlineMode
   const model = String(settings.aiModel || '').trim() || '未配置模型'
   const base = String(settings.aiBaseUrl || '').trim() || '未配置 Base URL'
   const keySuffix = settings.aiKey ? '' : ' · 未配置 AI Key'
-  modelMeta.textContent = offline ? `${model} · ${base}${keySuffix}` : '离线模式未启用'
+  modelMeta.textContent = `${model} · ${base}${keySuffix}`
 }
 
 function isCanceledError(err: any): boolean {

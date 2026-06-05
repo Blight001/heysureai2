@@ -41,13 +41,24 @@ function registerSettingsIpc() {
         return store_1.store.store;
     });
     electron_1.ipcMain.handle('settings:save', (_event, newSettings) => {
+        const agentAffectingKeys = new Set([
+            'serverUrl',
+            'agentToken',
+            'agentId',
+            'agentName',
+            'agentGroup',
+            'workspaceRoot',
+            'authToken',
+            'userId',
+            'userName',
+        ]);
+        const shouldRefreshAgent = Object.keys(newSettings || {}).some(k => agentAffectingKeys.has(k));
         Object.entries(newSettings).forEach(([k, v]) => store_1.store.set(k, v));
         if ((0, agent_runtime_1.clearAiSelectionIfLoggedOut)()) {
             (0, activity_log_1.sendActivityLog)('system', 'warn', '未登录，已取消 AI 成员自动注册选择');
         }
-        (0, agent_runtime_1.getAgent)()?.updateSettings(store_1.store.store);
-        if (store_1.store.get('offlineMode'))
-            (0, agent_runtime_1.getAgent)()?.disconnect();
+        if (shouldRefreshAgent)
+            (0, agent_runtime_1.getAgent)()?.updateSettings(store_1.store.store);
         return store_1.store.store;
     });
     electron_1.ipcMain.handle('theme:set', (_event, theme) => {

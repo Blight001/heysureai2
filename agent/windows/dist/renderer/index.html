@@ -37,9 +37,7 @@
     .user-chip .un { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .status-pill { display:flex; align-items:center; gap:6px; padding:5px 12px; border-radius:20px; background:var(--surface); border:1px solid var(--border); font-size:11px; font-weight:500; cursor:pointer; -webkit-app-region:no-drag; }
     .status-pill:hover { background:var(--surface-h); }
-    .status-pill.offline { color:var(--info); border-color:rgba(56,189,248,.35); background:rgba(56,189,248,.08); }
-    .status-pill.offline:hover { background:rgba(56,189,248,.14); }
-    .offline-chat-btn.active { color:#fff; background:linear-gradient(135deg,var(--success),var(--info)); }
+    .local-chat-btn { color:#fff; background:linear-gradient(135deg,var(--accent),var(--info)); }
     .status-dot { width:9px; height:9px; border-radius:50%; background:#787878; flex-shrink:0; transition:background var(--tr); }
     .status-dot.green { background:var(--success); animation:pulse 3s infinite; }
     .status-dot.yellow { background:var(--warn); }
@@ -197,13 +195,13 @@
       <div class="ua" id="header-user-ava"><img id="header-user-ava-img" alt=""/><span class="ua-text" id="header-user-ava-text">·</span></div>
       <span class="un" id="header-user-name">未登录</span>
     </div>
-    <!-- Status: green=已连接且已分配AI, yellow=已连接未分配AI, red=未连接, blue=离线模式 -->
+    <!-- Status: green=已连接且已分配AI, yellow=已连接未分配AI, red=未连接 -->
     <div class="status-pill" id="status-pill" title="连接状态">
       <div class="status-dot red" id="status-dot"></div>
       <span id="status-label">未连接</span>
     </div>
     <button class="icon-btn" id="settings-btn" title="设置">⚙</button>
-    <button class="icon-btn offline-chat-btn" id="offline-chat-btn" title="离线对话">💬</button>
+    <button class="icon-btn local-chat-btn" id="offline-chat-btn" title="本地对话">💬</button>
     <button class="icon-btn" id="theme-toggle" title="切换主题">🌙</button>
     <div class="window-btns" aria-label="窗口控制">
       <button class="window-btn min" id="window-min-btn" title="最小化" aria-label="最小化"><span class="window-icon"></span></button>
@@ -239,17 +237,7 @@
         <button class="modal-close" id="settings-close">×</button>
       </div>
 
-      <!-- 1. 离线模式 / 自配模型 -->
-      <div class="card">
-        <div class="card-title">🤖 离线模式 / 自配模型</div>
-        <div class="check-row" style="margin-bottom:10px;">
-          <input type="checkbox" id="cfg-offline-mode"/>
-          <label for="cfg-offline-mode" style="margin:0;text-transform:none;font-size:12px;">启用离线模式（用自配模型直连，无需登录服务器）</label>
-        </div>
-        <div class="login-hint">模型服务商、Key、Base URL 和模型名称在离线对话窗口中配置。</div>
-      </div>
-
-      <!-- 2. 模拟鼠标特效 -->
+      <!-- 1. 模拟鼠标特效 -->
       <div class="card">
         <div class="card-title">🖱 模拟鼠标特效</div>
         <div class="check-row">
@@ -258,7 +246,7 @@
         </div>
       </div>
 
-      <!-- 3. 鼠标坐标校准 -->
+      <!-- 2. 鼠标坐标校准 -->
       <div class="card">
         <div class="card-title">🎯 鼠标坐标校准</div>
         <div class="login-hint">系统会根据最近一次全屏截图自动校准截图坐标到真实鼠标坐标。下方缩放/偏移仅用于少量误差微调。</div>
@@ -270,7 +258,7 @@
         </div>
       </div>
 
-      <!-- 4. 服务器连接地址 -->
+      <!-- 3. 服务器连接地址 -->
       <div class="card">
         <div class="card-title">📡 服务器连接地址</div>
         <div class="fg"><label>服务器 URL</label><input type="url" id="cfg-server" placeholder="http://localhost:3000"/></div>
@@ -279,7 +267,7 @@
         <div class="login-hint" style="margin-top:6px;">登录后会固定自动连接服务器，设备将出现在网页端「作坊」栏目中等待分配 AI。</div>
       </div>
 
-      <!-- 5. 工具调用统计 -->
+      <!-- 4. 工具调用统计 -->
       <div class="card">
         <div class="card-title">📊 工具调用统计</div>
         <div class="stat-grid">
