@@ -246,6 +246,26 @@ public class HSUia {
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, IntPtr extra);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint flags, uint uTimeout, out IntPtr lpdwResult);
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr hWndParent, EnumWindowsProc lpEnumFunc, IntPtr lParam);
+  // OBJID_CLIENT = -4. Sending WM_GETOBJECT(OBJID_CLIENT) is what makes lazy
+  // accessibility providers (Chromium/Electron/CEF renderers, some WPF apps)
+  // build their UIA tree — without it FindAll only sees the window chrome.
+  static IntPtr _objidClient = new IntPtr(-4);
+  static bool WakeChild(IntPtr h, IntPtr l) {
+    IntPtr r;
+    SendMessageTimeout(h, 0x003D, IntPtr.Zero, _objidClient, 0x0002, 200, out r);
+    return true;
+  }
+  public static void WakeAccessibility(IntPtr root) {
+    if (root == IntPtr.Zero) return;
+    IntPtr r;
+    SendMessageTimeout(root, 0x003D, IntPtr.Zero, _objidClient, 0x0002, 200, out r);
+    // EnumChildWindows recurses through every descendant HWND (including the
+    // out-of-process Chrome_RenderWidgetHostHWND that hosts the web content).
+    EnumChildWindows(root, new EnumWindowsProc(WakeChild), IntPtr.Zero);
+  }
 }
 "@
 # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4; fall back to legacy on older OS.
@@ -365,6 +385,41 @@ function Walk-Elements($root, $cap, $maxDepth, $nodeCap, $interactiveOnly) {
   }
   return ,$out
 }
+
+function Get-RootHandle($root) {
+  try {
+    $h = [IntPtr]$root.Current.NativeWindowHandle
+    if ($h -ne [IntPtr]::Zero) { return $h }
+  } catch {}
+  return [IntPtr]::Zero
+}
+
+# Nudge lazy accessibility providers (Chromium/Electron/CEF/WPF) to materialize
+# their UIA subtree. Without this, a freshly-queried Chromium window only exposes
+# the DWM caption buttons (Minimize/Restore/Close) and FindAll returns nothing
+# from the content area.
+function Wake-Accessibility($root) {
+  try {
+    $h = Get-RootHandle $root
+    if ($h -ne [IntPtr]::Zero) { [HSUia]::WakeAccessibility($h) }
+  } catch {}
+}
+
+# Walk with accessibility-wake + retry. Chromium builds its tree asynchronously,
+# so the first pass right after waking can still be empty; if we got only the
+# window chrome (a handful of elements), wake again, wait longer, and re-walk.
+function Walk-Elements-Retry($root, $cap, $maxDepth, $nodeCap, $interactiveOnly) {
+  Wake-Accessibility $root
+  Start-Sleep -Milliseconds 500
+  $els = Walk-Elements $root $cap $maxDepth $nodeCap $interactiveOnly
+  if ($els.Count -le 5) {
+    Wake-Accessibility $root
+    Start-Sleep -Milliseconds 900
+    $again = Walk-Elements $root $cap $maxDepth $nodeCap $interactiveOnly
+    if ($again.Count -gt $els.Count) { $els = $again }
+  }
+  return ,$els
+}
 `
 }
 
@@ -385,7 +440,7 @@ if ($null -eq $root) {
 }
 $winTitle = ''
 try { $winTitle = $root.Current.Name } catch {}
-$elements = Walk-Elements $root ${max} ${maxDepth} 6000 ${interactiveOnly}
+$elements = Walk-Elements-Retry $root ${max} ${maxDepth} 6000 ${interactiveOnly}
 $indexed = @()
 for ($i = 0; $i -lt $elements.Count; $i++) {
   $e = $elements[$i]
@@ -444,7 +499,7 @@ $method = '${method}'
 $button = '${button}'
 $double = ${double}
 
-$all = Walk-Elements $root 5000 ${maxDepth} 6000 $true
+$all = Walk-Elements-Retry $root 5000 ${maxDepth} 6000 $true
 $matches = @()
 foreach ($e in $all) {
   if (($null -ne $wantAid) -and ($e.automation_id -ne $wantAid)) { continue }
