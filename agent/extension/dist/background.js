@@ -5066,6 +5066,7 @@ Method: ${result.method || "browser_screenshot"}` }
     if (isAnthropic) {
       headers["x-api-key"] = apiKey;
       headers["anthropic-version"] = "2023-06-01";
+      headers["anthropic-dangerous-direct-browser-access"] = "true";
     } else {
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
@@ -5803,7 +5804,7 @@ Respond in the same language as the user. For factual questions, search the web 
     offlineChatControllers.set(requestId, controller);
     const allowed = new Set((allowedTools || []).map((t) => String(t || "").trim()).filter(Boolean));
     const allTools = await effectiveToolDefs();
-    const chatTools = allowed.size ? allTools.filter((t) => allowed.has(t.name)) : allTools;
+    const chatTools = Array.isArray(allowedTools) ? allTools.filter((t) => allowed.has(t.name)) : allTools;
     const systemPrompt = String(prompt || settings.offlinePrompt || "").trim();
     const toolsUsed = [];
     const toolEvents = [];

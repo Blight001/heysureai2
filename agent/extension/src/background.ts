@@ -636,7 +636,13 @@ async function runOfflineChat(
   offlineChatControllers.set(requestId, controller)
   const allowed = new Set((allowedTools || []).map(t => String(t || '').trim()).filter(Boolean))
   const allTools = await effectiveToolDefs()
-  const chatTools = allowed.size ? allTools.filter(t => allowed.has(t.name)) : allTools
+  // `allowedTools` carries the per-conversation MCP scope chosen in the 本地对话
+  // window. undefined → no scoping (all enabled tools); an array → exactly those,
+  // so deselecting everything genuinely disables MCP instead of silently
+  // re-enabling every tool.
+  const chatTools = Array.isArray(allowedTools)
+    ? allTools.filter(t => allowed.has(t.name))
+    : allTools
   const systemPrompt = String(prompt || settings.offlinePrompt || '').trim()
   const toolsUsed: string[] = []
   const toolEvents: OfflineChatToolEvent[] = []

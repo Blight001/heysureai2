@@ -123,6 +123,11 @@ export async function callAI(
   if (isAnthropic) {
     headers['x-api-key']          = apiKey
     headers['anthropic-version']  = '2023-06-01'
+    // Anthropic rejects any request that carries a browser Origin unless this
+    // opt-in header is present. The extension service worker sends a
+    // chrome-extension:// origin, so without it every direct call (e.g. the
+    // 本地对话 window) fails with a CORS-style error.
+    headers['anthropic-dangerous-direct-browser-access'] = 'true'
   } else {
     headers['Authorization'] = `Bearer ${apiKey}`
   }
