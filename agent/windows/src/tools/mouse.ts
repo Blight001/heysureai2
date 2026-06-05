@@ -34,20 +34,25 @@ export async function mouseClick(args: any) {
     ? { x: Number(args.x), y: Number(args.y) }
     : undefined
   const button = String(args.button || 'left').toLowerCase()
-  const needsConfirmation = args.confirm_click !== false && args.confirmation !== false
-  const confirmed = args.confirmed === true || args.click_confirmed === true || args.confirmed_click === true
-  let confirmation: any
-  let confirmationError: string | undefined
+  const needsConfirmation = args.confirm_click !== false
+  const confirmed = args.confirmed === true
 
+  // 截取目标点周边并画红点标注。pre = 点击前确认，post = 点击后核对，话术不同。
+  const capture = (phase: 'pre' | 'post') => captureClickConfirmation({
+    enabled: true,
+    phase,
+    x: inputPosition?.x,
+    y: inputPosition?.y,
+    display: args.display,
+    radius: args.confirm_radius,
+  })
+
+  // 第一阶段：尚未确认时只返回确认图，不执行点击。
   if (needsConfirmation && !confirmed) {
+    let confirmation: any
+    let confirmationError: string | undefined
     try {
-      confirmation = await captureClickConfirmation({
-        enabled: true,
-        x: inputPosition?.x,
-        y: inputPosition?.y,
-        display: args.display ?? args.screen,
-        radius: args.confirm_radius ?? args.confirmation_radius ?? args.radius,
-      })
+      confirmation = await capture('pre')
     } catch (err: any) {
       confirmationError = err?.message || String(err)
     }
@@ -66,22 +71,23 @@ export async function mouseClick(args: any) {
     }
   }
 
+  // 第二阶段：已确认（或显式跳过确认），执行真正的点击。
   if (args.x !== undefined && args.y !== undefined) {
     await ensurePosition(args); await sleep(30)
   }
   const btn = button === 'right' ? 'right' : button === 'middle' ? 'middle' : 'left'
   getRobot().mouseClick(btn)
   const position = getRobot().getMousePos()
-  try {
-    confirmation = await captureClickConfirmation({
-      enabled: needsConfirmation,
-      x: inputPosition?.x,
-      y: inputPosition?.y,
-      display: args.display ?? args.screen,
-      radius: args.confirm_radius ?? args.confirmation_radius ?? args.radius,
-    })
-  } catch (err: any) {
-    confirmationError = err?.message || String(err)
+
+  // 点击后核对图：仅在启用确认时回传，话术为"已点击、请核对结果"。
+  let verification: any
+  let verificationError: string | undefined
+  if (needsConfirmation) {
+    try {
+      verification = await capture('post')
+    } catch (err: any) {
+      verificationError = err?.message || String(err)
+    }
   }
   return {
     success: true,
@@ -90,8 +96,8 @@ export async function mouseClick(args: any) {
     confirmed,
     input_position: inputPosition,
     position,
-    confirmation,
-    confirmation_error: confirmationError,
+    confirmation: verification,
+    confirmation_error: verificationError,
   }
 }
 
