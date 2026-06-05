@@ -69,7 +69,6 @@ type ToolGroup =
   | 'keyboard'
   | 'speech'
   | 'vision'
-  | 'ear'
   | 'hands'
   | 'display'
   | 'clipboard'
@@ -97,7 +96,6 @@ const GROUP_META: Record<ToolGroup, DisplayMeta> = {
   keyboard: { zh: '键盘', en: 'KEYBOARD', parent: 'sensory' },
   speech: { zh: '语音', en: 'SPEECH', parent: 'sensory' },
   vision: { zh: '视觉', en: 'VISION', parent: 'sensory' },
-  ear: { zh: '听觉', en: 'EAR', parent: 'sensory' },
   hands: { zh: '手势', en: 'HANDS', parent: 'learning' },
   display: { zh: '显示', en: 'DISPLAY', parent: 'tool' },
   clipboard: { zh: '剪贴板', en: 'CLIPBOARD', parent: 'tool' },
@@ -107,7 +105,7 @@ const GROUP_META: Record<ToolGroup, DisplayMeta> = {
 }
 
 const GROUP_ORDER: Record<ParentGroup, ToolGroup[]> = {
-  sensory: ['mouse', 'keyboard', 'speech', 'vision', 'ear'],
+  sensory: ['mouse', 'keyboard', 'speech', 'vision'],
   learning: ['hands'],
   tool: ['display', 'clipboard', 'card', 'shell', 'window'],
   other: [],
@@ -118,7 +116,6 @@ const KNOWN_GROUPS = new Set<ToolGroup>([
   'keyboard',
   'speech',
   'vision',
-  'ear',
   'hands',
   'display',
   'clipboard',
@@ -139,9 +136,6 @@ const TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   'speech.speak': { zh: '语音朗读', en: 'Speak' },
   'vision.capture': { zh: '屏幕采集', en: 'Screen Capture' },
   'vision.capture_mouse': { zh: '鼠标区域采集', en: 'Mouse Area Capture' },
-  'ear.start': { zh: '开始听写', en: 'Start Listening' },
-  'ear.stop': { zh: '停止听写', en: 'Stop Listening' },
-  'ear.latest': { zh: '最新转写', en: 'Latest Transcript' },
   'display.box': { zh: '屏幕高亮', en: 'Highlight Box' },
   'display.clear': { zh: '清除高亮', en: 'Clear Highlights' },
   'clipboard.get': { zh: '读取剪贴板', en: 'Get Clipboard' },

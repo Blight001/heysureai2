@@ -18,7 +18,6 @@ import { mouthSpeak } from '../tools/mouth'
 import { visionCaptureGlobal, visionCaptureMouse } from '../tools/vision'
 import { handsStart, handsStop, handsSnapshot, handsEvents, handsMouse } from '../tools/hands'
 import { uiInspect, uiClick } from '../tools/uia'
-import { earStart, earStop, earLatest } from '../tools/ear'
 import { cardExecute } from './card-replay'
 import { registerTools } from './registry'
 
@@ -227,7 +226,7 @@ registerTools([
     handler: ({ workspaceRoot, args }) => windowClose(workspaceRoot, args),
   },
 
-  // AI voice / vision / hands / ear helpers (windows-only)
+  // AI voice / vision / hands helpers (windows-only)
   {
     id: 'speech.speak', platform: 'windows',
     description: '用桌面的文字转语音 TTS 把文本朗读出来。用途：语音输出。场景：语音播报提醒、与用户进行语音交互。',
@@ -301,25 +300,6 @@ registerTools([
     }),
     handler: ({ args }) => handsMouse(args),
   },
-  {
-    id: 'ear.start', platform: 'windows',
-    description: '开始监听麦克风进行语音识别。用途：开启听觉输入。场景：等待并转写用户的语音指令。',
-    inputSchema: OBJ({}),
-    handler: () => earStart(),
-  },
-  {
-    id: 'ear.stop', platform: 'windows',
-    description: '停止监听麦克风。用途：结束听觉输入。场景：语音交互结束后关闭麦克风。',
-    inputSchema: OBJ({}),
-    handler: () => earStop(),
-  },
-  {
-    id: 'ear.latest', platform: 'windows',
-    description: '返回最近一次识别到的语音转写结果。用途：取最新听到的内容。场景：读取用户刚说的话再做处理。',
-    inputSchema: OBJ({}),
-    handler: () => earLatest(),
-  },
-
   // Skill-card local replay（S2，沉淀技能卡片 §4.2/§4.3）
   {
     id: 'card.execute', platform: 'windows',

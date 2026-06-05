@@ -17,7 +17,6 @@ const mouth_1 = require("../tools/mouth");
 const vision_1 = require("../tools/vision");
 const hands_1 = require("../tools/hands");
 const uia_1 = require("../tools/uia");
-const ear_1 = require("../tools/ear");
 const card_replay_1 = require("./card-replay");
 const registry_1 = require("./registry");
 const OBJ = (properties, required = []) => ({
@@ -217,7 +216,7 @@ const OBJ = (properties, required = []) => ({
         }),
         handler: ({ workspaceRoot, args }) => (0, window_1.windowClose)(workspaceRoot, args),
     },
-    // AI voice / vision / hands / ear helpers (windows-only)
+    // AI voice / vision / hands helpers (windows-only)
     {
         id: 'speech.speak', platform: 'windows',
         description: '用桌面的文字转语音 TTS 把文本朗读出来。用途：语音输出。场景：语音播报提醒、与用户进行语音交互。',
@@ -290,24 +289,6 @@ const OBJ = (properties, required = []) => ({
             action: { type: 'string', description: '动作类型，如 move/down/up/click。' },
         }),
         handler: ({ args }) => (0, hands_1.handsMouse)(args),
-    },
-    {
-        id: 'ear.start', platform: 'windows',
-        description: '开始监听麦克风进行语音识别。用途：开启听觉输入。场景：等待并转写用户的语音指令。',
-        inputSchema: OBJ({}),
-        handler: () => (0, ear_1.earStart)(),
-    },
-    {
-        id: 'ear.stop', platform: 'windows',
-        description: '停止监听麦克风。用途：结束听觉输入。场景：语音交互结束后关闭麦克风。',
-        inputSchema: OBJ({}),
-        handler: () => (0, ear_1.earStop)(),
-    },
-    {
-        id: 'ear.latest', platform: 'windows',
-        description: '返回最近一次识别到的语音转写结果。用途：取最新听到的内容。场景：读取用户刚说的话再做处理。',
-        inputSchema: OBJ({}),
-        handler: () => (0, ear_1.earLatest)(),
     },
     // Skill-card local replay（S2，沉淀技能卡片 §4.2/§4.3）
     {

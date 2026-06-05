@@ -13,7 +13,6 @@ export const WINDOWS_CAPABILITIES = [
   'speech.speak',
   'vision.capture', 'vision.capture_mouse',
   'hands.start', 'hands.stop', 'hands.snapshot', 'hands.events', 'hands.mouse',
-  'ear.start', 'ear.stop', 'ear.latest',
 ]
 
 export const OTHER_CAPABILITIES = [

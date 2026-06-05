@@ -11,7 +11,6 @@ const RULES: Rule[] = [
   { pattern: /窗口列表|list window/,                tool: 'window.list' },
   { pattern: /剪贴板|clipboard/,                    tool: 'clipboard.get' },
   { pattern: /朗读|播报|语音播放|tts|speak/,         tool: 'speech.speak' },
-  { pattern: /听写|识别语音|语音输入|麦克风|listen/, tool: 'ear.latest' },
   { pattern: /手势|输入状态|鼠标状态|键盘状态|hands/, tool: 'hands.snapshot' },
   { pattern: /鼠标附近|鼠标截图|vision mouse|鼠标周围/, tool: 'vision.capture_mouse' },
   { pattern: /运行|执行|run|命令|command/,          tool: 'shell.run' },
