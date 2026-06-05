@@ -8,6 +8,7 @@ exports.mouseScroll = mouseScroll;
 exports.mouseDrag = mouseDrag;
 const robot_1 = require("./shared/robot");
 const coordinates_1 = require("./shared/coordinates");
+const click_confirmation_1 = require("./shared/click-confirmation");
 async function ensurePosition(args) {
     if (args.x !== undefined && args.y !== undefined) {
         const point = (0, coordinates_1.toRobotPoint)(Number(args.x), Number(args.y));
@@ -39,13 +40,66 @@ async function mouseClick(args) {
         ? { x: Number(args.x), y: Number(args.y) }
         : undefined;
     const button = String(args.button || 'left').toLowerCase();
+    const needsConfirmation = args.confirm_click !== false && args.confirmation !== false;
+    const confirmed = args.confirmed === true || args.click_confirmed === true || args.confirmed_click === true;
+    let confirmation;
+    let confirmationError;
+    if (needsConfirmation && !confirmed) {
+        try {
+            confirmation = await (0, click_confirmation_1.captureClickConfirmation)({
+                enabled: true,
+                x: inputPosition?.x,
+                y: inputPosition?.y,
+                display: args.display ?? args.screen,
+                radius: args.confirm_radius ?? args.confirmation_radius ?? args.radius,
+            });
+        }
+        catch (err) {
+            confirmationError = err?.message || String(err);
+        }
+        return {
+            success: !confirmationError,
+            button,
+            clicked: false,
+            pending_confirmation: true,
+            requires_confirmed_click: true,
+            input_position: inputPosition,
+            confirmation,
+            confirmation_error: confirmationError,
+            summary: confirmationError
+                ? `click confirmation failed: ${confirmationError}`
+                : 'Click not executed yet. Inspect confirmation image, then call mouse.click with corrected x/y or confirmed:true.',
+        };
+    }
     if (args.x !== undefined && args.y !== undefined) {
         await ensurePosition(args);
         await (0, robot_1.sleep)(30);
     }
     const btn = button === 'right' ? 'right' : button === 'middle' ? 'middle' : 'left';
     (0, robot_1.getRobot)().mouseClick(btn);
-    return { success: true, button, input_position: inputPosition, position: (0, robot_1.getRobot)().getMousePos() };
+    const position = (0, robot_1.getRobot)().getMousePos();
+    try {
+        confirmation = await (0, click_confirmation_1.captureClickConfirmation)({
+            enabled: needsConfirmation,
+            x: inputPosition?.x,
+            y: inputPosition?.y,
+            display: args.display ?? args.screen,
+            radius: args.confirm_radius ?? args.confirmation_radius ?? args.radius,
+        });
+    }
+    catch (err) {
+        confirmationError = err?.message || String(err);
+    }
+    return {
+        success: true,
+        button,
+        clicked: true,
+        confirmed,
+        input_position: inputPosition,
+        position,
+        confirmation,
+        confirmation_error: confirmationError,
+    };
 }
 async function mouseDoubleClick(args) {
     const inputPosition = args.x !== undefined && args.y !== undefined

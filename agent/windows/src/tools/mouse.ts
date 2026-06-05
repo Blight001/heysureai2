@@ -1,5 +1,6 @@
 import { getRobot, sleep, smoothMoveMouse } from './shared/robot'
 import { toRobotPoint } from './shared/coordinates'
+import { captureClickConfirmation } from './shared/click-confirmation'
 
 async function ensurePosition(args: any) {
   if (args.x !== undefined && args.y !== undefined) {
@@ -33,12 +34,65 @@ export async function mouseClick(args: any) {
     ? { x: Number(args.x), y: Number(args.y) }
     : undefined
   const button = String(args.button || 'left').toLowerCase()
+  const needsConfirmation = args.confirm_click !== false && args.confirmation !== false
+  const confirmed = args.confirmed === true || args.click_confirmed === true || args.confirmed_click === true
+  let confirmation: any
+  let confirmationError: string | undefined
+
+  if (needsConfirmation && !confirmed) {
+    try {
+      confirmation = await captureClickConfirmation({
+        enabled: true,
+        x: inputPosition?.x,
+        y: inputPosition?.y,
+        display: args.display ?? args.screen,
+        radius: args.confirm_radius ?? args.confirmation_radius ?? args.radius,
+      })
+    } catch (err: any) {
+      confirmationError = err?.message || String(err)
+    }
+    return {
+      success: !confirmationError,
+      button,
+      clicked: false,
+      pending_confirmation: true,
+      requires_confirmed_click: true,
+      input_position: inputPosition,
+      confirmation,
+      confirmation_error: confirmationError,
+      summary: confirmationError
+        ? `click confirmation failed: ${confirmationError}`
+        : 'Click not executed yet. Inspect confirmation image, then call mouse.click with corrected x/y or confirmed:true.',
+    }
+  }
+
   if (args.x !== undefined && args.y !== undefined) {
     await ensurePosition(args); await sleep(30)
   }
   const btn = button === 'right' ? 'right' : button === 'middle' ? 'middle' : 'left'
   getRobot().mouseClick(btn)
-  return { success: true, button, input_position: inputPosition, position: getRobot().getMousePos() }
+  const position = getRobot().getMousePos()
+  try {
+    confirmation = await captureClickConfirmation({
+      enabled: needsConfirmation,
+      x: inputPosition?.x,
+      y: inputPosition?.y,
+      display: args.display ?? args.screen,
+      radius: args.confirm_radius ?? args.confirmation_radius ?? args.radius,
+    })
+  } catch (err: any) {
+    confirmationError = err?.message || String(err)
+  }
+  return {
+    success: true,
+    button,
+    clicked: true,
+    confirmed,
+    input_position: inputPosition,
+    position,
+    confirmation,
+    confirmation_error: confirmationError,
+  }
 }
 
 export async function mouseDoubleClick(args: any) {

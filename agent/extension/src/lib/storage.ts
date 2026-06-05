@@ -168,8 +168,8 @@ export async function setToolDescOverride(tool: string, override: ToolDescOverri
 // Each browser tool can be toggled on/off in the popup's MCP page. Only enabled
 // tools are reported to the server (capabilities + toolDefs), so unchecked tools
 // become invisible to the server and the AI. This map stores the user's explicit
-// choices keyed by tool name; tools absent from the map fall back to their
-// category default (basic = on, special = off — see isToolEnabledByDefault).
+// choices keyed by tool name; tools absent from the map fall back to the global
+// default enabled state.
 const TOOL_ENABLED_KEY = '_tool_enabled'
 
 export async function getToolEnabledMap(): Promise<Record<string, boolean>> {

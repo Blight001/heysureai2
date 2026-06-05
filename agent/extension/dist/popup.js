@@ -32,6 +32,7 @@
   var statusPill = $("status-pill");
   var themeToggle = $("theme-toggle");
   var settingsBtn = $("settings-btn");
+  var offlineChatBtn = $("offline-chat-btn");
   var userChip = $("user-chip");
   var userAva = $("user-ava");
   var userName = $("user-name");
@@ -89,6 +90,7 @@
     aiBaseUrl: "https://api.anthropic.com",
     aiModel: "claude-sonnet-4-5",
     offlineMode: false,
+    offlinePrompt: "\u4F60\u662F HeySure AI\uFF0C\u8FD0\u884C\u5728\u6D4F\u89C8\u5668\u63D2\u4EF6\u7684\u672C\u5730\u5BF9\u8BDD\u7A97\u53E3\u4E2D\u3002\u4F60\u53EF\u4EE5\u76F4\u63A5\u56DE\u7B54\u7528\u6237\uFF0C\u4E5F\u53EF\u4EE5\u8C03\u7528\u672C\u673A\u6D4F\u89C8\u5668 MCP \u5DE5\u5177\u5B8C\u6210\u7F51\u9875\u6D4F\u89C8\u3001\u70B9\u51FB\u3001\u8F93\u5165\u3001\u622A\u56FE\u3001\u63D0\u53D6\u6570\u636E\u3001\u7BA1\u7406\u6807\u7B7E\u9875\u7B49\u4EFB\u52A1\u3002\u9700\u8981\u64CD\u4F5C\u6D4F\u89C8\u5668\u65F6\u4F18\u5148\u4F7F\u7528\u5DE5\u5177\uFF0C\u5E76\u7528\u548C\u7528\u6237\u76F8\u540C\u7684\u8BED\u8A00\u56DE\u590D\u3002",
     mouseFx: true,
     theme: "dark",
     selectedAiConfigId: null
@@ -592,6 +594,14 @@
   function wireUi() {
     themeToggle.addEventListener("click", () => applyTheme(state.currentTheme === "dark" ? "light" : "dark"));
     settingsBtn.addEventListener("click", () => openSettingsModal());
+    offlineChatBtn.addEventListener("click", () => {
+      chrome.windows.create({
+        url: chrome.runtime.getURL("offline-chat.html"),
+        type: "popup",
+        width: 920,
+        height: 720
+      });
+    });
     settingsClose.addEventListener("click", () => closeSettingsModal());
     settingsModal.addEventListener("click", (e) => {
       if (e.target === settingsModal)
@@ -1194,8 +1204,8 @@
     }
     return "basic";
   }
-  function isToolEnabledByDefault(name) {
-    return browserToolKind(name) === "basic";
+  function isToolEnabledByDefault(_name) {
+    return true;
   }
 
   // src/lib/tools/overrides.ts
@@ -1211,6 +1221,50 @@
   // src/popup/mcp.ts
   var overrides = {};
   var enabledMap = {};
+  var expandedKinds = /* @__PURE__ */ new Set();
+  var KIND_META = {
+    basic: { zh: "\u57FA\u7840\u7C7B", en: "BASIC" },
+    special: { zh: "\u7279\u6B8A\u7C7B", en: "SPECIAL" }
+  };
+  var CATEGORY_META = {
+    "\u5BFC\u822A\u4E0E\u641C\u7D22": { zh: "\u5BFC\u822A\u4E0E\u641C\u7D22", en: "NAVIGATION" },
+    "\u9875\u9762\u89C2\u5BDF": { zh: "\u9875\u9762\u89C2\u5BDF", en: "OBSERVATION" },
+    "\u9875\u9762\u4EA4\u4E92": { zh: "\u9875\u9762\u4EA4\u4E92", en: "INTERACTION" },
+    "\u6570\u636E\u4E0E\u811A\u672C": { zh: "\u6570\u636E\u4E0E\u811A\u672C", en: "DATA & SCRIPT" },
+    "\u6D4F\u89C8\u5668\u72B6\u6001": { zh: "\u6D4F\u89C8\u5668\u72B6\u6001", en: "BROWSER STATE" }
+  };
+  var TOOL_LABELS = {
+    browser_navigate: { zh: "\u6253\u5F00\u7F51\u5740", en: "Navigate" },
+    browser_search: { zh: "\u6D4F\u89C8\u5668\u641C\u7D22", en: "Search" },
+    browser_history: { zh: "\u5386\u53F2\u524D\u8FDB\u540E\u9000", en: "History" },
+    browser_observe: { zh: "\u9875\u9762\u89C2\u5BDF", en: "Observe" },
+    browser_screenshot: { zh: "\u9875\u9762\u622A\u56FE", en: "Screenshot" },
+    browser_get_content: { zh: "\u8BFB\u53D6\u9875\u9762\u5185\u5BB9", en: "Get Content" },
+    browser_dom_snapshot: { zh: "DOM \u5FEB\u7167", en: "DOM Snapshot" },
+    browser_page_info: { zh: "\u9875\u9762\u4F4D\u7F6E\u4FE1\u606F", en: "Page Info" },
+    browser_find_popups: { zh: "\u67E5\u627E\u5F39\u7A97", en: "Find Popups" },
+    browser_click: { zh: "\u70B9\u51FB\u5143\u7D20", en: "Click" },
+    browser_double_click: { zh: "\u53CC\u51FB\u5143\u7D20", en: "Double Click" },
+    browser_right_click: { zh: "\u53F3\u952E\u70B9\u51FB", en: "Right Click" },
+    browser_type: { zh: "\u8F93\u5165\u6587\u672C", en: "Type Text" },
+    browser_press_key: { zh: "\u952E\u76D8\u6309\u952E", en: "Press Key" },
+    browser_hover: { zh: "\u9F20\u6807\u60AC\u505C", en: "Hover" },
+    browser_scroll: { zh: "\u6EDA\u52A8\u9875\u9762", en: "Scroll" },
+    browser_wait: { zh: "\u7B49\u5F85\u9875\u9762", en: "Wait" },
+    browser_drag: { zh: "\u62D6\u62FD\u5143\u7D20", en: "Drag" },
+    browser_fill_form: { zh: "\u586B\u5199\u8868\u5355", en: "Fill Form" },
+    browser_select: { zh: "\u9009\u62E9\u9009\u9879", en: "Select" },
+    browser_close_popup: { zh: "\u5173\u95ED\u5F39\u7A97", en: "Close Popup" },
+    browser_evaluate: { zh: "\u6267\u884C\u811A\u672C", en: "Evaluate Script" },
+    browser_extract: { zh: "\u63D0\u53D6\u6570\u636E", en: "Extract Data" },
+    browser_clipboard_write: { zh: "\u5199\u5165\u526A\u8D34\u677F", en: "Write Clipboard" },
+    browser_file_upload: { zh: "\u4E0A\u4F20\u6587\u4EF6", en: "File Upload" },
+    browser_download: { zh: "\u4E0B\u8F7D\u6587\u4EF6", en: "Download" },
+    browser_tab: { zh: "\u7BA1\u7406\u6807\u7B7E\u9875", en: "Tab Manager" },
+    browser_cookie: { zh: "\u7BA1\u7406 Cookie", en: "Cookie Manager" },
+    browser_storage: { zh: "\u7BA1\u7406\u5B58\u50A8", en: "Storage Manager" },
+    browser_session: { zh: "\u7BA1\u7406\u4F1A\u8BDD", en: "Session Manager" }
+  };
   async function applyEnabledChange(fn) {
     await fn();
     sendToBackground({ type: "agent:connect" });
@@ -1218,6 +1272,16 @@
   }
   function esc2(str) {
     return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  }
+  function toTitleCase(value) {
+    return String(value).replace(/^browser[_-]?/i, "").replace(/[._-]+/g, " ").split(/\s+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+  }
+  function toolMeta(name) {
+    const fallback = toTitleCase(name);
+    return TOOL_LABELS[name] || { zh: fallback, en: fallback };
+  }
+  function categoryMeta(title) {
+    return CATEGORY_META[title] || { zh: title, en: toTitleCase(title).toUpperCase() };
   }
   function isEdited(name) {
     const o = overrides[name];
@@ -1238,46 +1302,15 @@
       return { name: p, type: String(ty), required: required.has(p), desc: String(cfg.description || "") };
     });
   }
-  function renderIntroHtml() {
-    return `
-    <div class="mcp-intro">
-      <div class="mcp-intro-title">
-        <span>\u57FA\u7840 MCP \u4ECB\u7ECD</span>
-        <span class="pane-sub">\u5148\u770B\u6982\u5FF5\uFF0C\u518D\u770B\u5DE5\u5177</span>
-      </div>
-      <div class="mcp-intro-list">
-        <div class="mcp-intro-item">
-          <div class="mcp-intro-key">MCP</div>
-          <div class="mcp-intro-text">\u6A21\u578B\u4E0A\u4E0B\u6587\u534F\u8BAE\u3002\u8FD9\u91CC\u5C55\u793A\u7684\u662F\u6D4F\u89C8\u5668\u63D2\u4EF6\u5BF9\u5916\u63D0\u4F9B\u7684\u5DE5\u5177\u80FD\u529B\uFF0CAI \u53EF\u4EE5\u6309\u540D\u79F0\u8C03\u7528\u8FD9\u4E9B\u5DE5\u5177\u5B8C\u6210\u6D4F\u89C8\u5668\u64CD\u4F5C\u3002</div>
-        </div>
-        <div class="mcp-intro-item">
-          <div class="mcp-intro-key">list_tools</div>
-          <div class="mcp-intro-text">\u7528\u4E8E\u67E5\u770B\u5F53\u524D\u53EF\u7528\u5DE5\u5177\u5217\u8868\u3002\u5148\u770B\u5217\u8868\uFF0C\u518D\u51B3\u5B9A\u8981\u4E0D\u8981\u5C55\u5F00\u5177\u4F53\u5DE5\u5177\u8BE6\u60C5\u3002</div>
-        </div>
-        <div class="mcp-intro-item">
-          <div class="mcp-intro-key">describe_tool</div>
-          <div class="mcp-intro-text">\u7528\u4E8E\u8BFB\u53D6\u67D0\u4E2A\u5DE5\u5177\u7684\u7528\u9014\u3001\u53C2\u6570\u548C\u8BF4\u660E\u3002\u9700\u8981\u77E5\u9053\u600E\u4E48\u4F20\u53C2\u65F6\uFF0C\u5148\u770B\u8FD9\u91CC\u3002</div>
-        </div>
-        <div class="mcp-intro-item">
-          <div class="mcp-intro-key">test</div>
-          <div class="mcp-intro-text">\u7528\u4E8E\u5728\u5F53\u524D\u6D4F\u89C8\u5668\u73AF\u5883\u4E2D\u76F4\u63A5\u6D4B\u8BD5\u4E00\u4E2A\u5DE5\u5177\uFF0C\u4FBF\u4E8E\u9A8C\u8BC1\u63CF\u8FF0\u548C\u53C2\u6570\u662F\u5426\u6B63\u786E\u3002</div>
-        </div>
-        <div class="mcp-intro-item">
-          <div class="mcp-intro-key">\u52FE\u9009</div>
-          <div class="mcp-intro-text">\u5DE5\u5177\u5206\u300C\u57FA\u7840\u7C7B\u300D\u548C\u300C\u7279\u6B8A\u7C7B\u300D\u3002\u52FE\u9009\u5373\u5F00\u542F\uFF0C\u53D6\u6D88\u52FE\u9009\u540E\u670D\u52A1\u5668\u4E0E AI \u90FD\u62FF\u4E0D\u5230\u8BE5\u5DE5\u5177\u7684\u6570\u636E\uFF0C\u65E0\u6CD5\u8C03\u7528\u3002\u7279\u6B8A\u7C7B\uFF08\u6267\u884C\u811A\u672C\u3001cookie/storage\u3001\u4F1A\u8BDD\u3001\u6587\u4EF6\u4E0A\u4F20\u4E0B\u8F7D\u7B49\uFF09\u9ED8\u8BA4\u5173\u95ED\uFF0C\u6309\u9700\u5F00\u542F\u3002</div>
-        </div>
-      </div>
-    </div>`;
-  }
   async function renderMcpList() {
     state.openToolName = null;
     mcpDetailPane.classList.add("hidden");
     mcpListPane.classList.remove("hidden");
     overrides = await getToolDescOverrides();
     enabledMap = await resolveToolEnabledMap();
-    const enabledTotal = BROWSER_TOOLS.filter((t) => enabledMap[t.name]).length;
-    mcpCount.textContent = `\u5DF2\u542F\u7528 ${enabledTotal} / ${BROWSER_TOOLS.length}`;
-    mcpList.innerHTML = renderIntroHtml();
+    const visibleKindCount = new Set(BROWSER_TOOL_CATEGORIES.map((c) => c.kind)).size;
+    mcpCount.textContent = `${BROWSER_TOOLS.length} \u4E2A \xB7 ${visibleKindCount} \u7C7B`;
+    mcpList.innerHTML = "";
     const byName = new Map(BROWSER_TOOLS.map((t) => [t.name, t]));
     const kinds = ["basic", "special"];
     for (const kind of kinds) {
@@ -1287,44 +1320,78 @@
       const kindTools = cats.flatMap((c) => c.tools).filter((n) => byName.has(n));
       const kindOn = kindTools.filter((n) => enabledMap[n]).length;
       const allOn = kindOn === kindTools.length;
-      const kh = document.createElement("div");
-      kh.className = "tool-kind-head";
-      kh.innerHTML = `
-      <div class="tool-kind-title">
-        <span>${esc2(BROWSER_TOOL_KIND_LABELS[kind])}</span>
-        <span class="tool-kind-tag ${kind}">${kind === "special" ? "\u9ED8\u8BA4\u5173\u95ED" : "\u9ED8\u8BA4\u5F00\u542F"}</span>
-        <span class="pane-sub">${kindOn}/${kindTools.length}</span>
-      </div>
-      <button class="tool-kind-toggle">${allOn ? "\u5168\u90E8\u5173\u95ED" : "\u5168\u90E8\u5F00\u542F"}</button>`;
-      kh.querySelector("button").addEventListener("click", () => void applyEnabledChange(() => setManyToolEnabled(kindTools, !allOn)));
-      mcpList.appendChild(kh);
+      const expanded = expandedKinds.has(kind);
+      const meta = KIND_META[kind];
+      const parent = document.createElement("details");
+      parent.className = "mcp-parent";
+      parent.dataset.kind = kind;
+      parent.open = expanded;
+      parent.innerHTML = `
+      <summary>
+        <span class="mcp-parent-summary-left">
+          <span class="mcp-chevron"></span>
+          <input class="mcp-parent-toggle" type="checkbox" ${allOn ? "checked" : ""} title="\u5207\u6362\u8BE5\u680F\u76EE MCP \u5DE5\u5177"/>
+          <span class="mcp-parent-labels">
+            <span class="mcp-parent-zh">${esc2(meta.zh)}</span>
+            <span class="mcp-parent-en">${esc2(meta.en)}</span>
+          </span>
+        </span>
+        <span class="mcp-parent-count">${kindOn}/${kindTools.length} \u5F00\u653E</span>
+      </summary>
+      <div class="mcp-parent-body"></div>`;
+      parent.addEventListener("toggle", () => {
+        parent.open ? expandedKinds.add(kind) : expandedKinds.delete(kind);
+      });
+      const parentToggle = parent.querySelector(".mcp-parent-toggle");
+      parentToggle.addEventListener("click", (e) => e.stopPropagation());
+      parentToggle.addEventListener("change", () => void applyEnabledChange(() => setManyToolEnabled(kindTools, !allOn)));
+      const body = parent.querySelector(".mcp-parent-body");
       for (const cat of cats) {
         const tools = cat.tools.map((n) => byName.get(n)).filter((t) => !!t);
         if (!tools.length)
           continue;
         const catOn = tools.filter((t) => enabledMap[t.name]).length;
-        const head = document.createElement("div");
-        head.className = "tool-cat-head";
-        head.innerHTML = `<span>${esc2(cat.title)}</span><span class="pane-sub">${catOn}/${tools.length}</span>`;
-        mcpList.appendChild(head);
+        const catAllOn = catOn === tools.length;
+        const cMeta = categoryMeta(cat.title);
+        const group = document.createElement("section");
+        group.className = "mcp-group";
+        group.innerHTML = `
+        <div class="mcp-group-title">
+          <input class="mcp-group-toggle" type="checkbox" ${catAllOn ? "checked" : ""} title="\u5207\u6362\u8BE5\u5206\u7EC4 MCP \u5DE5\u5177"/>
+          <span class="mcp-group-zh">${esc2(cMeta.zh)}</span>
+          <span class="mcp-group-en">${esc2(cMeta.en)}</span>
+          <span class="mcp-group-count">${catOn}/${tools.length} \u5F00\u653E</span>
+        </div>
+        <div class="mcp-group-items"></div>`;
+        const groupToggle = group.querySelector(".mcp-group-toggle");
+        groupToggle.addEventListener("click", (e) => e.stopPropagation());
+        groupToggle.addEventListener("change", () => void applyEnabledChange(() => setManyToolEnabled(tools.map((t) => t.name), groupToggle.checked)));
+        const items = group.querySelector(".mcp-group-items");
         for (const t of tools) {
           const on = !!enabledMap[t.name];
+          const tMeta = toolMeta(t.name);
           const el = document.createElement("div");
-          el.className = on ? "tool-item" : "tool-item off";
+          el.className = on ? "tool-item" : "tool-item disabled";
           el.innerHTML = `
           <div class="tool-item-top">
-            <input type="checkbox" class="tool-toggle" ${on ? "checked" : ""} title="${on ? "\u5DF2\u542F\u7528\uFF0C\u53D6\u6D88\u52FE\u9009\u540E\u670D\u52A1\u5668\u62FF\u4E0D\u5230\u6B64\u5DE5\u5177" : "\u5DF2\u5173\u95ED\uFF0C\u52FE\u9009\u540E\u624D\u4E0A\u62A5\u7ED9\u670D\u52A1\u5668"}"/>
-            <span class="tool-name">${esc2(t.name)}</span>
+            <input type="checkbox" class="tool-enabled" ${on ? "checked" : ""} title="${on ? "\u5DF2\u542F\u7528\uFF0C\u53D6\u6D88\u52FE\u9009\u540E\u670D\u52A1\u5668\u62FF\u4E0D\u5230\u6B64\u5DE5\u5177" : "\u5DF2\u5173\u95ED\uFF0C\u52FE\u9009\u540E\u624D\u4E0A\u62A5\u7ED9\u670D\u52A1\u5668"}"/>
+            <div class="tool-title">
+              <span class="tool-name">${esc2(tMeta.zh)}</span>
+              <span class="tool-name-sub">${esc2(tMeta.en)}</span>
+            </div>
+            ${on ? "" : '<span class="tool-off">\u5DF2\u5173\u95ED</span>'}
             ${isEdited(t.name) ? '<span class="tool-edited">\u5DF2\u81EA\u5B9A\u4E49</span>' : ""}
           </div>
           <div class="tool-desc">${esc2((effDescription(t) || "\uFF08\u65E0\u63CF\u8FF0\uFF09").slice(0, 110))}</div>`;
-          const cb = el.querySelector(".tool-toggle");
+          const cb = el.querySelector(".tool-enabled");
           cb.addEventListener("click", (e) => e.stopPropagation());
           cb.addEventListener("change", () => void applyEnabledChange(() => setToolEnabled(t.name, cb.checked)));
           el.addEventListener("click", () => void openTool(t.name));
-          mcpList.appendChild(el);
+          items.appendChild(el);
         }
+        body.appendChild(group);
       }
+      mcpList.appendChild(parent);
     }
   }
   async function openTool(name) {
@@ -1342,6 +1409,7 @@
     enabledMap = await resolveToolEnabledMap();
     const on = !!enabledMap[tool.name];
     const kind = browserToolKind(tool.name);
+    const meta = toolMeta(tool.name);
     const params = paramEntries(tool);
     const paramHtml = params.length ? params.map((p) => `
         <div class="param-row">
@@ -1356,7 +1424,13 @@
     const argTemplate = JSON.stringify(Object.fromEntries(params.filter((p) => p.required).map((p) => [p.name, ""])), null, 2);
     mcpDetail.innerHTML = `
     <div class="card">
-      <div class="card-title">${esc2(tool.name)}</div>
+      <div class="tool-title-row">
+        <div class="tool-title-stack">
+          <div class="tool-title-main">${esc2(meta.zh)}</div>
+          <div class="tool-title-sub">${esc2(meta.en)}</div>
+        </div>
+        <div class="tool-title-id">${esc2(tool.name)}</div>
+      </div>
       <div class="tool-desc" style="font-size:11px;">${esc2(effDescription(tool) || "\uFF08\u65E0\u63CF\u8FF0\uFF09")}</div>
       <div class="detail-enable">
         <label class="check-row" style="margin:0;">

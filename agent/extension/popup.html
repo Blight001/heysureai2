@@ -75,6 +75,7 @@
       transition:all var(--tr);
     }
     .icon-btn:hover { background:var(--surface-h); color:var(--text); }
+    .local-chat-btn { color:#fff; background:linear-gradient(135deg,var(--accent),var(--info)); }
 
     /* ── User chip (logged-in account) ── */
     .user-chip {
@@ -91,78 +92,57 @@
 
     /* ── Content / MCP main area ── */
     #content { flex:1; overflow:hidden; display:flex; flex-direction:column; }
-    .pane { display:flex; flex-direction:column; flex:1; overflow:hidden; padding:12px 14px 14px; gap:8px; }
+    .pane { display:flex; flex-direction:column; flex:1; overflow:hidden; padding:12px 14px 14px; gap:10px; }
     .hidden { display:none !important; }
 
     .pane-header { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
-    .pane-title  { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); }
+    .pane-title-stack { display:flex; flex-direction:column; gap:1px; min-width:0; }
+    .pane-title-main { font-size:12px; font-weight:700; color:var(--text); line-height:1.2; }
+    .pane-title-sub { font-size:10px; color:var(--muted); line-height:1.2; letter-spacing:.3px; text-transform:uppercase; }
     .pane-sub    { font-size:10px; color:var(--muted); }
 
     /* ── MCP tool list ── */
-    #mcp-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:6px; padding-right:3px; }
+    #mcp-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding-right:3px; }
     #mcp-list::-webkit-scrollbar { width:3px; }
     #mcp-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
-    .mcp-intro {
-      background:linear-gradient(180deg, rgba(99,102,241,.12), rgba(99,102,241,.04));
-      border:1px solid rgba(99,102,241,.24);
-      border-radius:var(--r2);
-      padding:10px;
-    }
-    .mcp-intro-title {
-      display:flex; align-items:center; justify-content:space-between; gap:8px;
-      font-size:11px; font-weight:700; color:var(--text); margin-bottom:8px;
-    }
-    .mcp-intro-list { display:flex; flex-direction:column; gap:6px; }
-    .mcp-intro-item {
-      display:flex; gap:8px; align-items:flex-start;
-      padding:7px 8px; border-radius:var(--r);
-      background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06);
-    }
-    .mcp-intro-key {
-      flex-shrink:0; min-width:76px;
-      font-family:'Cascadia Code',Consolas,monospace; font-size:10px; font-weight:700;
-      color:#c7d2fe;
-    }
-    .mcp-intro-text {
-      font-size:10px; color:var(--muted); line-height:1.45; min-width:0;
-    }
-    /* ── MCP kind group (基础类 / 特殊类) ── */
-    .tool-kind-head {
-      display:flex; align-items:center; justify-content:space-between; gap:8px;
-      margin:14px 2px 4px; padding-bottom:6px; border-bottom:1px solid var(--border);
-    }
-    .tool-kind-head:first-of-type { margin-top:2px; }
-    .tool-kind-title { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700; color:var(--text); }
-    .tool-kind-tag { font-size:9px; font-weight:700; padding:1px 6px; border-radius:10px; }
-    .tool-kind-tag.basic   { background:rgba(34,197,94,.16);  color:#4ade80; }
-    .tool-kind-tag.special { background:rgba(245,158,11,.16); color:#fbbf24; }
-    .tool-kind-toggle {
-      font-size:10px; font-weight:600; color:var(--accent); cursor:pointer;
-      background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:3px 10px;
-      transition:all var(--tr);
-    }
-    .tool-kind-toggle:hover { background:var(--surface-h); }
-    .tool-cat-head {
-      display:flex; align-items:baseline; gap:8px; justify-content:space-between;
-      margin:10px 2px 2px; font-size:11px; font-weight:700; color:var(--text);
-    }
-    .tool-cat-head:first-child { margin-top:0; }
+    .mcp-parent { display:flex; flex-direction:column; gap:8px; }
+    .mcp-parent > summary { list-style:none; display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer; padding:2px 2px 6px; border-bottom:1px solid var(--border); }
+    .mcp-parent > summary::-webkit-details-marker { display:none; }
+    .mcp-parent-summary-left { display:flex; align-items:center; gap:9px; min-width:0; }
+    .mcp-chevron { width:7px; height:7px; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); transform:rotate(-45deg); transition:transform var(--tr), border-color var(--tr); flex-shrink:0; margin-top:1px; }
+    .mcp-parent[open] .mcp-chevron { transform:rotate(45deg); border-color:var(--accent); }
+    .mcp-parent-labels { display:flex; flex-direction:column; gap:1px; min-width:0; }
+    .mcp-parent-zh { font-size:12px; font-weight:700; line-height:1.2; }
+    .mcp-parent-en { font-size:10px; color:var(--muted); line-height:1.2; letter-spacing:.3px; text-transform:uppercase; }
+    .mcp-parent-count { font-size:10px; color:var(--muted); border:1px solid var(--border); border-radius:999px; padding:2px 7px; flex-shrink:0; white-space:nowrap; }
+    .mcp-parent-body { padding-left:12px; margin-left:8px; border-left:1px solid var(--border); display:flex; flex-direction:column; gap:10px; }
+    .mcp-group { display:flex; flex-direction:column; gap:6px; }
+    .mcp-group-title { display:flex; align-items:baseline; gap:7px; min-width:0; }
+    .mcp-group-zh { font-size:11px; font-weight:700; line-height:1.2; }
+    .mcp-group-en { font-size:10px; color:var(--muted); line-height:1.2; letter-spacing:.3px; text-transform:uppercase; }
+    .mcp-group-count { font-size:10px; color:var(--muted); white-space:nowrap; }
+    .mcp-group-items { display:flex; flex-direction:column; gap:6px; }
     .tool-item {
       background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
-      padding:8px 10px; cursor:pointer; transition:all var(--tr);
+      padding:9px 10px; cursor:pointer; transition:all var(--tr);
     }
     .tool-item:hover { background:var(--surface-h); }
-    .tool-item.off { opacity:.5; }
-    .tool-item.off:hover { opacity:.75; }
-    .tool-toggle { accent-color:var(--accent); cursor:pointer; flex-shrink:0; width:14px; height:14px; }
+    .tool-item.disabled { opacity:.58; }
+    .tool-item.disabled:hover { opacity:.75; }
+    .tool-enabled, .mcp-parent-toggle, .mcp-group-toggle { accent-color:var(--accent); flex-shrink:0; cursor:pointer; }
+    .tool-enabled { width:15px; height:15px; margin-top:1px; }
+    .mcp-parent-toggle, .mcp-group-toggle { width:14px; height:14px; }
     .detail-enable {
       display:flex; align-items:center; justify-content:space-between; gap:8px;
       margin-top:9px; padding-top:9px; border-top:1px solid var(--border);
     }
     .detail-enable .check-row { font-size:11px; color:var(--text); cursor:pointer; }
-    .tool-item-top { display:flex; align-items:center; gap:8px; }
-    .tool-name { font-family:'Cascadia Code',Consolas,monospace; font-size:11px; font-weight:600; color:var(--text); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tool-item-top { display:flex; align-items:flex-start; gap:8px; }
+    .tool-title { display:flex; flex-direction:column; gap:1px; flex:1; min-width:0; }
+    .tool-name { font-size:12px; font-weight:700; line-height:1.2; color:var(--text); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .tool-name-sub { font-size:10px; color:var(--muted); line-height:1.2; letter-spacing:.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-transform:uppercase; }
     .tool-edited { font-size:9px; color:var(--accent); flex-shrink:0; }
+    .tool-off { font-size:9px; color:var(--warn); white-space:nowrap; flex-shrink:0; }
     .tool-desc { font-size:10px; color:var(--muted); margin-top:3px; word-break:break-word; }
     .empty-note { font-size:11px; color:var(--muted); text-align:center; padding:24px 0; }
 
@@ -173,6 +153,11 @@
     .detail-back { font-size:11px; color:var(--accent); border:none; background:none; cursor:pointer; padding:0; align-self:flex-start; }
     .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r2); padding:12px; }
     .card + .card { margin-top:0; }
+    .tool-title-row { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .tool-title-stack { display:flex; flex-direction:column; gap:2px; min-width:0; }
+    .tool-title-main { font-size:14px; font-weight:700; line-height:1.2; }
+    .tool-title-sub { font-size:11px; color:var(--muted); line-height:1.2; letter-spacing:.2px; text-transform:uppercase; }
+    .tool-title-id { font-family:'Cascadia Code',Consolas,monospace; font-size:10px; color:var(--muted); text-align:right; flex-shrink:0; white-space:nowrap; padding-top:1px; }
     .card-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.7px; color:var(--muted); margin-bottom:10px; }
     .fg { margin-bottom:8px; }
     .fg:last-child { margin-bottom:0; }
@@ -285,6 +270,7 @@
       <span id="status-label">未连接</span>
     </div>
     <button class="icon-btn" id="settings-btn" title="设置">⚙</button>
+    <button class="icon-btn local-chat-btn" id="offline-chat-btn" title="本地对话">💬</button>
     <button class="icon-btn" id="theme-toggle" title="切换主题">🌙</button>
   </header>
 
@@ -292,7 +278,10 @@
   <div id="content">
     <div class="pane" id="mcp-list-pane">
       <div class="pane-header">
-        <span class="pane-title">浏览器 MCP 工具</span>
+        <span class="pane-title-stack">
+          <span class="pane-title-main">浏览器 MCP 工具</span>
+          <span class="pane-title-sub">Browser MCP Tools</span>
+        </span>
         <span class="pane-sub" id="mcp-count"></span>
       </div>
       <div id="mcp-list">

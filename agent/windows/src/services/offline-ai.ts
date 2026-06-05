@@ -635,7 +635,7 @@ export async function runOfflineChat(
   signal?: AbortSignal,
 ): Promise<OfflineChatResult> {
   const basePrompt = String(prompt || store.get('offlinePrompt') || '').trim()
-  const systemPrompt = `${basePrompt}\n\n坐标规则：当你根据 vision.capture / vision.capture_mouse 的截图调用 mouse.* 工具时，x/y 使用截图左上角为原点的原始截图像素坐标；不要使用 0-1000 归一化坐标。点击目标时选择可点击区域中心，桌面图标优先点图标图案中心，不要点文字标签上缘或边缘。\n\n如果任务需要说明处理思路，可用 <think>...</think> 输出简短、可公开的思考摘要；尽量保持为一个连续栏目，不要刻意空行分段；不要在其中输出敏感信息、密钥或冗长推理。`
+  const systemPrompt = `${basePrompt}\n\n坐标规则：当你根据 vision.capture / vision.capture_mouse 的截图调用 mouse.* 工具时，x/y 使用截图左上角为原点的原始截图像素坐标；不要使用 0-1000 归一化坐标。点击目标时选择可点击区域中心，桌面图标优先点图标图案中心，不要点文字标签上缘或边缘。\n\n点击确认规则：mouse.click 默认是点击前确认，不会立刻点击。第一次调用 mouse.click 会在结果 confirmation 中返回目标点击点周边截图，并用红点/十字标注目标点，且 clicked=false。收到该图片后必须检查红点是否落在目标可点击中心；如果偏离，估算目标中心相对红点的像素偏差 correction_dx/correction_dy，并再次调用 mouse.click，使用 x=confirmation.target.x+correction_dx、y=confirmation.target.y+correction_dy 获取新的确认图。重复二次/三次确认，直到红点位于目标点；确认正确后必须再次调用 mouse.click，并传 confirmed:true 才真正执行点击。高频点击且无需确认时才传 confirm_click:false。\n\n如果任务需要说明处理思路，可用 <think>...</think> 输出简短、可公开的思考摘要；尽量保持为一个连续栏目，不要刻意空行分段；不要在其中输出敏感信息、密钥或冗长推理。`
   const messages: any[] = userMessages.map(m => ({ role: m.role, content: m.content }))
   const toolsUsed: string[] = []
   const toolEvents: OfflineToolEvent[] = []

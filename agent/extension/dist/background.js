@@ -3421,6 +3421,7 @@
     aiBaseUrl: "https://api.anthropic.com",
     aiModel: "claude-sonnet-4-5",
     offlineMode: false,
+    offlinePrompt: "\u4F60\u662F HeySure AI\uFF0C\u8FD0\u884C\u5728\u6D4F\u89C8\u5668\u63D2\u4EF6\u7684\u672C\u5730\u5BF9\u8BDD\u7A97\u53E3\u4E2D\u3002\u4F60\u53EF\u4EE5\u76F4\u63A5\u56DE\u7B54\u7528\u6237\uFF0C\u4E5F\u53EF\u4EE5\u8C03\u7528\u672C\u673A\u6D4F\u89C8\u5668 MCP \u5DE5\u5177\u5B8C\u6210\u7F51\u9875\u6D4F\u89C8\u3001\u70B9\u51FB\u3001\u8F93\u5165\u3001\u622A\u56FE\u3001\u63D0\u53D6\u6570\u636E\u3001\u7BA1\u7406\u6807\u7B7E\u9875\u7B49\u4EFB\u52A1\u3002\u9700\u8981\u64CD\u4F5C\u6D4F\u89C8\u5668\u65F6\u4F18\u5148\u4F7F\u7528\u5DE5\u5177\uFF0C\u5E76\u7528\u548C\u7528\u6237\u76F8\u540C\u7684\u8BED\u8A00\u56DE\u590D\u3002",
     mouseFx: true,
     theme: "dark",
     selectedAiConfigId: null
@@ -3936,69 +3937,8 @@
     }
   ];
   var BROWSER_CAPABILITIES = BROWSER_TOOLS.map((t) => t.name);
-  var BROWSER_TOOL_CATEGORIES = [
-    {
-      title: "\u5BFC\u822A\u4E0E\u641C\u7D22",
-      kind: "basic",
-      tools: ["browser_navigate", "browser_search", "browser_history"]
-    },
-    {
-      title: "\u9875\u9762\u89C2\u5BDF",
-      kind: "basic",
-      tools: [
-        "browser_observe",
-        "browser_screenshot",
-        "browser_get_content",
-        "browser_dom_snapshot",
-        "browser_page_info",
-        "browser_find_popups"
-      ]
-    },
-    {
-      title: "\u9875\u9762\u4EA4\u4E92",
-      kind: "basic",
-      tools: [
-        "browser_click",
-        "browser_double_click",
-        "browser_right_click",
-        "browser_type",
-        "browser_press_key",
-        "browser_hover",
-        "browser_scroll",
-        "browser_wait",
-        "browser_drag",
-        "browser_fill_form",
-        "browser_select",
-        "browser_close_popup"
-      ]
-    },
-    {
-      title: "\u6570\u636E\u4E0E\u811A\u672C",
-      kind: "special",
-      tools: [
-        "browser_evaluate",
-        "browser_extract",
-        "browser_clipboard_write",
-        "browser_file_upload",
-        "browser_download"
-      ]
-    },
-    {
-      title: "\u6D4F\u89C8\u5668\u72B6\u6001",
-      kind: "special",
-      tools: ["browser_tab", "browser_cookie", "browser_storage", "browser_session"]
-    }
-  ];
-  function browserToolKind(name) {
-    const tool = String(name || "").trim();
-    for (const cat of BROWSER_TOOL_CATEGORIES) {
-      if (cat.tools.includes(tool))
-        return cat.kind;
-    }
-    return "basic";
-  }
-  function isToolEnabledByDefault(name) {
-    return browserToolKind(name) === "basic";
+  function isToolEnabledByDefault(_name) {
+    return true;
   }
 
   // src/lib/tools/browser.ts
@@ -5327,6 +5267,7 @@ Always:
   var currentStatus = "disconnected";
   var taskOutcomes = /* @__PURE__ */ new Map();
   var popupPorts = /* @__PURE__ */ new Set();
+  var offlineChatControllers = /* @__PURE__ */ new Map();
   var _machineId = null;
   var currentAgentId = null;
   var connecting = false;
@@ -5829,8 +5770,108 @@ Respond in the same language as the user. For factual questions, search the web 
     }
     return { text: "\u5DF2\u8FBE\u5230\u6700\u5927\u8FED\u4EE3\u6B21\u6570", toolsUsed, toolEvents };
   }
+  function estimateTokensFromMessages(messages, text = "") {
+    const raw = messages.map((m) => typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n") + text;
+    const total = Math.max(1, Math.ceil(raw.length / 4));
+    return { inputTokens: total, outputTokens: Math.max(1, Math.ceil(String(text || "").length / 4)), totalTokens: total, estimated: true };
+  }
+  function summarizeToolResult(result, success) {
+    if (!success)
+      return typeof result === "string" ? result : "\u6267\u884C\u5931\u8D25";
+    if (result?.summary)
+      return String(result.summary);
+    if (result?.success === false && result?.error)
+      return String(result.error);
+    if (typeof result === "string")
+      return result.slice(0, 160);
+    return "\u6267\u884C\u5B8C\u6210";
+  }
+  function resultForModel(tool, result) {
+    if (tool === "browser_screenshot" && result?.dataUrl)
+      return screenshotToolContent(result);
+    return typeof result === "string" ? result : JSON.stringify(result);
+  }
+  async function runOfflineChat(port, requestId, messages, prompt, allowedTools) {
+    const settings = await getSettings();
+    if (!settings.aiKey)
+      throw new Error("\u672A\u914D\u7F6E AI Key");
+    if (!settings.aiBaseUrl)
+      throw new Error("\u672A\u914D\u7F6E Base URL");
+    if (!settings.aiModel)
+      throw new Error("\u672A\u914D\u7F6E\u6A21\u578B");
+    const controller = { canceled: false };
+    offlineChatControllers.set(requestId, controller);
+    const allowed = new Set((allowedTools || []).map((t) => String(t || "").trim()).filter(Boolean));
+    const allTools = await effectiveToolDefs();
+    const chatTools = allowed.size ? allTools.filter((t) => allowed.has(t.name)) : allTools;
+    const systemPrompt = String(prompt || settings.offlinePrompt || "").trim();
+    const toolsUsed = [];
+    const toolEvents = [];
+    const workingMessages = messages.map((m) => ({ ...m }));
+    const MAX = 12;
+    try {
+      for (let iter = 0; iter < MAX; iter++) {
+        if (controller.canceled)
+          throw new DOMException("\u5DF2\u505C\u6B62", "AbortError");
+        const resp = await callAI(settings.aiBaseUrl, settings.aiKey, settings.aiModel, workingMessages, chatTools, systemPrompt);
+        if (controller.canceled)
+          throw new DOMException("\u5DF2\u505C\u6B62", "AbortError");
+        if (!resp.toolUses?.length) {
+          const text = resp.text || "\u5B8C\u6210";
+          return { text, toolsUsed, toolEvents, usage: estimateTokensFromMessages(workingMessages, text) };
+        }
+        workingMessages.push({ role: "assistant", content: resp.toolUses });
+        const toolResults = [];
+        for (const tu of resp.toolUses) {
+          if (controller.canceled)
+            throw new DOMException("\u5DF2\u505C\u6B62", "AbortError");
+          const args = tu.input || {};
+          toolsUsed.push(tu.name);
+          postToPopup(port, { type: "offline-chat:progress", requestId, event: { type: "tool_start", tool: tu.name, arguments: args } });
+          log("task", "running", `[\u672C\u5730\u5BF9\u8BDD\u5DE5\u5177] ${tu.name}`, args);
+          try {
+            const result = await withTaskTimeout(
+              executeBrowserTool(tu.name, args),
+              taskTimeoutMs({ taskId: requestId, tool: tu.name, args }),
+              `offline-chat ${tu.name}`
+            );
+            if (controller.canceled)
+              throw new DOMException("\u5DF2\u505C\u6B62", "AbortError");
+            const event = {
+              tool: tu.name,
+              arguments: args,
+              success: true,
+              result,
+              summary: summarizeToolResult(result, true)
+            };
+            toolEvents.push(event);
+            postToPopup(port, { type: "offline-chat:progress", requestId, event: { type: "tool_result", event } });
+            toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: resultForModel(tu.name, result) });
+            log("task", "success", `\u672C\u5730\u5BF9\u8BDD\u5B8C\u6210: ${tu.name}`);
+          } catch (err) {
+            const message = err?.message || String(err);
+            const event = {
+              tool: tu.name,
+              arguments: args,
+              success: false,
+              result: null,
+              summary: message
+            };
+            toolEvents.push(event);
+            postToPopup(port, { type: "offline-chat:progress", requestId, event: { type: "tool_result", event } });
+            toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: `Error: ${message}`, is_error: true });
+            log("task", "error", `\u672C\u5730\u5BF9\u8BDD\u5931\u8D25: ${tu.name} \u2014 ${message}`);
+          }
+        }
+        workingMessages.push({ role: "user", content: toolResults });
+      }
+      return { text: "\u5DF2\u8FBE\u5230\u6700\u5927\u8FED\u4EE3\u6B21\u6570", toolsUsed, toolEvents, usage: estimateTokensFromMessages(workingMessages, "\u5DF2\u8FBE\u5230\u6700\u5927\u8FED\u4EE3\u6B21\u6570") };
+    } finally {
+      offlineChatControllers.delete(requestId);
+    }
+  }
   chrome.runtime.onConnect.addListener((port) => {
-    if (port.name !== "popup")
+    if (port.name !== "popup" && port.name !== "offline-chat")
       return;
     popupPorts.add(port);
     postToPopup(port, { type: "agent:status", status: currentStatus, aiConfigId: boundAiConfigId });
@@ -5909,6 +5950,40 @@ Respond in the same language as the user. For factual questions, search the web 
             log("task", "error", `\u6D4B\u8BD5\u5931\u8D25: ${msg.tool} \u2014 ${err?.message || err}`);
             postToPopup(port, { type: "mcp:test:result", requestId: msg.requestId, ok: false, error: err?.message || String(err) });
           }
+          break;
+        }
+        case "offline-chat:get-config": {
+          const settings = await getSettings();
+          postToPopup(port, { type: "offline-chat:config", requestId: msg.requestId, settings, hasAiKey: !!settings.aiKey?.trim() });
+          break;
+        }
+        case "offline-chat:save-prompt": {
+          await saveSettings({ offlinePrompt: String(msg.prompt || "").trim() });
+          postToPopup(port, { type: "offline-chat:prompt-saved", requestId: msg.requestId, ok: true });
+          break;
+        }
+        case "offline-chat:list-tools": {
+          const tools = await effectiveToolDefs();
+          postToPopup(port, { type: "offline-chat:tools", requestId: msg.requestId, tools });
+          break;
+        }
+        case "offline-chat:send": {
+          void (async () => {
+            try {
+              const result = await runOfflineChat(port, msg.requestId, msg.messages, msg.prompt, msg.allowedTools);
+              postToPopup(port, { type: "offline-chat:response", requestId: msg.requestId, ...result });
+            } catch (err) {
+              const canceled = err?.name === "AbortError" || /已停止|aborted|canceled|cancelled/i.test(String(err?.message || err));
+              postToPopup(port, { type: "offline-chat:error", requestId: msg.requestId, error: canceled ? "\u5DF2\u505C\u6B62" : err?.message || String(err) });
+            }
+          })();
+          break;
+        }
+        case "offline-chat:cancel": {
+          const controller = offlineChatControllers.get(msg.requestId);
+          if (controller)
+            controller.canceled = true;
+          postToPopup(port, { type: "offline-chat:canceled", requestId: msg.requestId, ok: !!controller });
           break;
         }
       }

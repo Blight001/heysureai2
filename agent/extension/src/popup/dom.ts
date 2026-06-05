@@ -10,6 +10,7 @@ export const statusLabel  = $('status-label')
 export const statusPill   = $('status-pill')
 export const themeToggle  = $('theme-toggle')
 export const settingsBtn  = $('settings-btn')
+export const offlineChatBtn = $('offline-chat-btn') as HTMLButtonElement
 export const userChip     = $('user-chip')
 export const userAva      = $('user-ava')
 export const userName     = $('user-name')

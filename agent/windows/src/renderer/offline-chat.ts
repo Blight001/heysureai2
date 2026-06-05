@@ -96,17 +96,7 @@ function render() {
       messagesEl.appendChild(el)
     } else {
       const status = item.summary === '执行中...' ? '执行中' : (item.success ? '成功' : '失败')
-      const body = [
-        `工具: ${item.tool}`,
-        `状态: ${status}`,
-        '',
-        '参数:',
-        offlineSafeStringify(item.arguments),
-        '',
-        '结果:',
-        offlineSafeStringify(item.result ?? item.summary),
-      ].join('\n')
-      messagesEl.appendChild(detailsSegment(`MCP 工具 · ${item.tool}`, body, false, item.success, status))
+      messagesEl.appendChild(mcpSegment(item, status))
     }
   }
   messagesEl.scrollTop = messagesEl.scrollHeight
@@ -257,6 +247,85 @@ function renderModelMeta(settings: any) {
   const base = String(settings.aiBaseUrl || '').trim() || '未配置 Base URL'
   const keySuffix = settings.aiKey ? '' : ' · 未配置 AI Key'
   modelMeta.textContent = `${model} · ${base}${keySuffix}`
+}
+
+function isImageDataUrl(value: any): boolean {
+  return typeof value === 'string' && /^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(value.trim())
+}
+
+function imageLabel(path: string, tool: string): string {
+  if (path.includes('confirmation')) return '点击确认图'
+  if (/capture|screenshot|dataUrl|image/i.test(path)) return '截图'
+  return tool === 'mouse.click' ? '点击确认图' : '图片'
+}
+
+function collectToolImages(value: any, tool: string, path = 'result', seen = new Set<any>()): Array<{ label: string; url: string }> {
+  if (value == null) return []
+  if (typeof value === 'object') {
+    if (seen.has(value)) return []
+    seen.add(value)
+  }
+  if (isImageDataUrl(value)) return [{ label: imageLabel(path, tool), url: String(value).trim() }]
+  if (Array.isArray(value)) {
+    return value.flatMap((item, index) => collectToolImages(item, tool, `${path}[${index}]`, seen))
+  }
+  if (typeof value !== 'object') return []
+  const out: Array<{ label: string; url: string }> = []
+  for (const [key, item] of Object.entries(value)) {
+    out.push(...collectToolImages(item, tool, `${path}.${key}`, seen))
+  }
+  return out
+}
+
+function redactToolImages(value: any, seen = new Set<any>()): any {
+  if (value == null) return value
+  if (isImageDataUrl(value)) return '[图片已在下方显示]'
+  if (typeof value !== 'object') return value
+  if (seen.has(value)) return '[循环引用]'
+  seen.add(value)
+  if (Array.isArray(value)) return value.map(item => redactToolImages(item, seen))
+  const out: Record<string, any> = {}
+  for (const [key, item] of Object.entries(value)) out[key] = redactToolImages(item, seen)
+  return out
+}
+
+function mcpSegment(item: Extract<Segment, { type: 'mcp' }>, status: string): HTMLElement {
+  const body = [
+    `工具: ${item.tool}`,
+    `状态: ${status}`,
+    '',
+    '参数:',
+    offlineSafeStringify(item.arguments),
+    '',
+    '结果:',
+    offlineSafeStringify(redactToolImages(item.result ?? item.summary)),
+  ].join('\n')
+  const el = detailsSegment(`MCP 工具 · ${item.tool}`, body, false, item.success, status)
+  const images = collectToolImages(item.result, item.tool)
+  if (!images.length) return el
+
+  const bodyEl = el.querySelector('.segment-body')
+  if (!bodyEl) return el
+  const strip = document.createElement('div')
+  strip.className = 'tool-images'
+  const seen = new Set<string>()
+  for (const image of images) {
+    if (seen.has(image.url)) continue
+    seen.add(image.url)
+    const card = document.createElement('figure')
+    card.className = 'tool-image'
+    const img = document.createElement('img')
+    img.src = image.url
+    img.alt = image.label
+    img.loading = 'lazy'
+    const caption = document.createElement('figcaption')
+    caption.textContent = image.label
+    card.appendChild(img)
+    card.appendChild(caption)
+    strip.appendChild(card)
+  }
+  bodyEl.appendChild(strip)
+  return el
 }
 
 function isCanceledError(err: any): boolean {

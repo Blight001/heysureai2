@@ -75,13 +75,17 @@ registerTools([
   },
   {
     id: 'mouse.click', platform: 'windows',
-    description: '点击鼠标，可先移动到指定坐标。用途：在桌面任意位置点击。场景：点桌面图标、应用按钮、任务栏。',
+    description: '点击鼠标，可先移动到指定坐标。默认开启点击前二次确认：第一次调用只截取目标点周边区域并用红点/十字标注目标点返回给 AI，不会执行点击；AI 必须检查红点是否位于目标可点击中心，如偏离则估算 correction_dx/correction_dy 后再次调用 mouse.click 获取新的确认图，直到目标点正确；确认正确后再次调用 mouse.click 并传 confirmed:true 才会真正点击。用途：在桌面任意位置点击。场景：点桌面图标、应用按钮、任务栏。',
     inputSchema: OBJ({
       x: { type: 'number', description: '点击前移动到的 X 坐标（像素）。' },
       y: { type: 'number', description: '点击前移动到的 Y 坐标（像素）。' },
       button: { type: 'string', description: '鼠标键：left、right 或 middle。默认 left。' },
       speed: { type: 'number', description: '移动到点击点的平滑速度；越大越快。默认 100。' },
       interval_ms: { type: 'number', description: '移动到点击点时每步间隔毫秒数。默认 3。' },
+      confirm_click: { type: 'boolean', description: '是否启用点击前红点确认。默认 true；传 false 会跳过确认并立即点击。' },
+      confirmed: { type: 'boolean', description: '确认红点已在目标可点击中心后传 true，工具才会真正执行点击。默认 false。' },
+      confirm_radius: { type: 'number', description: '确认截图半径（像素），实际截图宽高约为半径的 2 倍。默认 160，范围 48-480。' },
+      display: { type: 'number', description: '用于确认截图的显示器序号。默认 0。' },
     }),
     handler: ({ args }) => mouseClick(args),
   },

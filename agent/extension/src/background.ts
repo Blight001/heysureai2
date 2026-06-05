@@ -7,7 +7,7 @@ import { callAI } from './lib/ai'
 import { screenshotToolContent } from './lib/ai'
 import {
   AgentStatus, DispatchedTask, ActivityEntry,
-  PopupMsg, BgMsg, ChatMessage, ChatToolEvent,
+  PopupMsg, BgMsg, ChatMessage, ChatToolEvent, AIToolDef, OfflineChatToolEvent,
 } from './lib/types'
 
 // ── State ─────────────────────────────────────────────────────────────────
@@ -15,6 +15,7 @@ let socket:        Socket | null = null
 let currentStatus: AgentStatus   = 'disconnected'
 const taskOutcomes = new Map<string, any>()
 const popupPorts   = new Set<chrome.runtime.Port>()
+const offlineChatControllers = new Map<string, { canceled: boolean }>()
 let _machineId:    string | null = null
 let currentAgentId: string | null = null
 // Set while connect() is probing candidate URLs so a parallel call (e.g.
@@ -600,9 +601,110 @@ async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUs
   return { text: '已达到最大迭代次数', toolsUsed, toolEvents }
 }
 
+function estimateTokensFromMessages(messages: ChatMessage[], text = '') {
+  const raw = messages.map(m => typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).join('\n') + text
+  const total = Math.max(1, Math.ceil(raw.length / 4))
+  return { inputTokens: total, outputTokens: Math.max(1, Math.ceil(String(text || '').length / 4)), totalTokens: total, estimated: true }
+}
+
+function summarizeToolResult(result: any, success: boolean): string {
+  if (!success) return typeof result === 'string' ? result : '执行失败'
+  if (result?.summary) return String(result.summary)
+  if (result?.success === false && result?.error) return String(result.error)
+  if (typeof result === 'string') return result.slice(0, 160)
+  return '执行完成'
+}
+
+function resultForModel(tool: string, result: any): any {
+  if (tool === 'browser_screenshot' && result?.dataUrl) return screenshotToolContent(result)
+  return typeof result === 'string' ? result : JSON.stringify(result)
+}
+
+async function runOfflineChat(
+  port: chrome.runtime.Port,
+  requestId: string,
+  messages: ChatMessage[],
+  prompt?: string,
+  allowedTools?: string[],
+): Promise<{ text: string; toolsUsed: string[]; toolEvents: OfflineChatToolEvent[]; usage: ReturnType<typeof estimateTokensFromMessages> }> {
+  const settings = await getSettings()
+  if (!settings.aiKey) throw new Error('未配置 AI Key')
+  if (!settings.aiBaseUrl) throw new Error('未配置 Base URL')
+  if (!settings.aiModel) throw new Error('未配置模型')
+
+  const controller = { canceled: false }
+  offlineChatControllers.set(requestId, controller)
+  const allowed = new Set((allowedTools || []).map(t => String(t || '').trim()).filter(Boolean))
+  const allTools = await effectiveToolDefs()
+  const chatTools = allowed.size ? allTools.filter(t => allowed.has(t.name)) : allTools
+  const systemPrompt = String(prompt || settings.offlinePrompt || '').trim()
+  const toolsUsed: string[] = []
+  const toolEvents: OfflineChatToolEvent[] = []
+  const workingMessages = messages.map(m => ({ ...m }))
+  const MAX = 12
+
+  try {
+    for (let iter = 0; iter < MAX; iter++) {
+      if (controller.canceled) throw new DOMException('已停止', 'AbortError')
+      const resp = await callAI(settings.aiBaseUrl, settings.aiKey, settings.aiModel, workingMessages, chatTools, systemPrompt)
+      if (controller.canceled) throw new DOMException('已停止', 'AbortError')
+      if (!resp.toolUses?.length) {
+        const text = resp.text || '完成'
+        return { text, toolsUsed, toolEvents, usage: estimateTokensFromMessages(workingMessages, text) }
+      }
+
+      workingMessages.push({ role: 'assistant', content: resp.toolUses as any[] })
+      const toolResults: any[] = []
+      for (const tu of resp.toolUses) {
+        if (controller.canceled) throw new DOMException('已停止', 'AbortError')
+        const args = tu.input || {}
+        toolsUsed.push(tu.name)
+        postToPopup(port, { type: 'offline-chat:progress', requestId, event: { type: 'tool_start', tool: tu.name, arguments: args } })
+        log('task', 'running', `[本地对话工具] ${tu.name}`, args)
+        try {
+          const result = await withTaskTimeout(
+            executeBrowserTool(tu.name, args),
+            taskTimeoutMs({ taskId: requestId, tool: tu.name, args }),
+            `offline-chat ${tu.name}`,
+          )
+          if (controller.canceled) throw new DOMException('已停止', 'AbortError')
+          const event: OfflineChatToolEvent = {
+            tool: tu.name,
+            arguments: args,
+            success: true,
+            result,
+            summary: summarizeToolResult(result, true),
+          }
+          toolEvents.push(event)
+          postToPopup(port, { type: 'offline-chat:progress', requestId, event: { type: 'tool_result', event } })
+          toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: resultForModel(tu.name, result) })
+          log('task', 'success', `本地对话完成: ${tu.name}`)
+        } catch (err: any) {
+          const message = err?.message || String(err)
+          const event: OfflineChatToolEvent = {
+            tool: tu.name,
+            arguments: args,
+            success: false,
+            result: null,
+            summary: message,
+          }
+          toolEvents.push(event)
+          postToPopup(port, { type: 'offline-chat:progress', requestId, event: { type: 'tool_result', event } })
+          toolResults.push({ type: 'tool_result', tool_use_id: tu.id, content: `Error: ${message}`, is_error: true })
+          log('task', 'error', `本地对话失败: ${tu.name} — ${message}`)
+        }
+      }
+      workingMessages.push({ role: 'user', content: toolResults })
+    }
+    return { text: '已达到最大迭代次数', toolsUsed, toolEvents, usage: estimateTokensFromMessages(workingMessages, '已达到最大迭代次数') }
+  } finally {
+    offlineChatControllers.delete(requestId)
+  }
+}
+
 // ── Popup port management ─────────────────────────────────────────────────
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== 'popup') return
+  if (port.name !== 'popup' && port.name !== 'offline-chat') return
   popupPorts.add(port)
 
   // Send current state immediately
@@ -694,6 +796,44 @@ chrome.runtime.onConnect.addListener((port) => {
           log('task', 'error', `测试失败: ${msg.tool} — ${err?.message || err}`)
           postToPopup(port, { type: 'mcp:test:result', requestId: msg.requestId, ok: false, error: err?.message || String(err) })
         }
+        break
+      }
+
+      case 'offline-chat:get-config': {
+        const settings = await getSettings()
+        postToPopup(port, { type: 'offline-chat:config', requestId: msg.requestId, settings, hasAiKey: !!settings.aiKey?.trim() })
+        break
+      }
+
+      case 'offline-chat:save-prompt': {
+        await saveSettings({ offlinePrompt: String(msg.prompt || '').trim() })
+        postToPopup(port, { type: 'offline-chat:prompt-saved', requestId: msg.requestId, ok: true })
+        break
+      }
+
+      case 'offline-chat:list-tools': {
+        const tools = await effectiveToolDefs()
+        postToPopup(port, { type: 'offline-chat:tools', requestId: msg.requestId, tools })
+        break
+      }
+
+      case 'offline-chat:send': {
+        void (async () => {
+          try {
+            const result = await runOfflineChat(port, msg.requestId, msg.messages, msg.prompt, msg.allowedTools)
+            postToPopup(port, { type: 'offline-chat:response', requestId: msg.requestId, ...result })
+          } catch (err: any) {
+            const canceled = err?.name === 'AbortError' || /已停止|aborted|canceled|cancelled/i.test(String(err?.message || err))
+            postToPopup(port, { type: 'offline-chat:error', requestId: msg.requestId, error: canceled ? '已停止' : (err?.message || String(err)) })
+          }
+        })()
+        break
+      }
+
+      case 'offline-chat:cancel': {
+        const controller = offlineChatControllers.get(msg.requestId)
+        if (controller) controller.canceled = true
+        postToPopup(port, { type: 'offline-chat:canceled', requestId: msg.requestId, ok: !!controller })
         break
       }
 

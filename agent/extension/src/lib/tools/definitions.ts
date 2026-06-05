@@ -491,11 +491,9 @@ export const BROWSER_CAPABILITIES = BROWSER_TOOLS.map(t => t.name)
 // ── Tool categories (single source of truth for grouping) ─────────────────
 // popup / 服务器 / Web 端都应按这里归类，不要再各自维护一份 browser_* 名单。
 //
-// 大类（kind）：每个分类再归到「基础类 basic」或「特殊类 special」两个大组——基础类
-// 是日常浏览/操作的高频工具，默认开启；特殊类是低频/高权限/有副作用的工具（执行任意
-// JS、读写 cookie/storage、会话快照、文件上传/下载等），默认关闭。用户可在浏览器插件
-// 里逐个勾选；未勾选的工具不会随 agent:register 的 capabilities/toolDefs 上报给服务器，
-// 因此服务器拿不到对应 MCP 数据，AI 也无法调用。
+// 大类（kind）：每个分类再归到「基础类 basic」或「特殊类 special」两个大组。所有工具
+// 默认开启，用户可在浏览器插件里逐个取消勾选；未勾选的工具不会随 agent:register 的
+// capabilities/toolDefs 上报给服务器，因此服务器拿不到对应 MCP 数据，AI 也无法调用。
 export type BrowserToolKind = 'basic' | 'special'
 
 export const BROWSER_TOOL_KIND_LABELS: Record<BrowserToolKind, string> = {
@@ -506,7 +504,7 @@ export const BROWSER_TOOL_KIND_LABELS: Record<BrowserToolKind, string> = {
 export interface BrowserToolCategory {
   /** 中文分类名，用于展示。 */
   title: string
-  /** 所属大类：basic 基础类（默认开启）/ special 特殊类（默认关闭）。 */
+  /** 所属大类：basic 基础类 / special 特殊类。 */
   kind: BrowserToolKind
   /** 该分类下的工具名（顺序即展示顺序）。 */
   tools: string[]
@@ -560,7 +558,7 @@ export function browserToolCategory(name: string): string {
   return ''
 }
 
-/** name → 大类。未归类的工具按 basic 处理（保持默认开启，避免新增工具被意外关闭）。 */
+/** name → 大类。未归类的工具按 basic 处理。 */
 export function browserToolKind(name: string): BrowserToolKind {
   const tool = String(name || '').trim()
   for (const cat of BROWSER_TOOL_CATEGORIES) {
@@ -569,7 +567,7 @@ export function browserToolKind(name: string): BrowserToolKind {
   return 'basic'
 }
 
-/** 工具的默认开启状态：基础类默认开、特殊类默认关。 */
-export function isToolEnabledByDefault(name: string): boolean {
-  return browserToolKind(name) === 'basic'
+/** 工具的默认开启状态：全部默认开启。 */
+export function isToolEnabledByDefault(_name: string): boolean {
+  return true
 }

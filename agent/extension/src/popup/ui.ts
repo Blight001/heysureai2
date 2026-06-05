@@ -107,6 +107,14 @@ export function updateOfflineUi() {
 export function wireUi() {
   dom.themeToggle.addEventListener('click', () => applyTheme(state.currentTheme === 'dark' ? 'light' : 'dark'))
   dom.settingsBtn.addEventListener('click', () => openSettingsModal())
+  dom.offlineChatBtn.addEventListener('click', () => {
+    chrome.windows.create({
+      url: chrome.runtime.getURL('offline-chat.html'),
+      type: 'popup',
+      width: 920,
+      height: 720,
+    })
+  })
   dom.settingsClose.addEventListener('click', () => closeSettingsModal())
   dom.settingsModal.addEventListener('click', (e) => { if (e.target === dom.settingsModal) closeSettingsModal() })
   // The status indicator opens the connection / AI assignment modal.
