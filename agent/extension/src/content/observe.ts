@@ -80,7 +80,6 @@ export function doObserve(msg: any) {
 
   const limit = Math.min(Math.max(Number(msg.limit ?? 60), 1), 200)
   const chosen = pruned.slice(0, limit)
-  setMarks(chosen)
 
   const elements = chosen.map((el, i) => {
     const r = el.getBoundingClientRect()
@@ -98,6 +97,15 @@ export function doObserve(msg: any) {
     if ((el as HTMLInputElement).value) item.value = String((el as HTMLInputElement).value).slice(0, 60)
     return item
   })
+
+  // Record each mark with its re-find descriptor so browser_click {ref} can heal
+  // itself if the page re-renders before the click (see marks.ts / resolveTarget).
+  setMarks(chosen.map((el, i) => ({
+    el,
+    selector: elements[i].selector,
+    text: elements[i].text,
+    center: elements[i].center,
+  })))
 
   const marked = msg.mark !== false
   if (marked) drawMarksOverlay(chosen)

@@ -3,7 +3,7 @@
 // computed styles / bounding boxes.
 
 import { FX } from './fx'
-import { getMarked } from './marks'
+import { getMarkTarget } from './marks'
 
 export function isVisible(el: Element | null): el is HTMLElement {
   if (!el || !(el instanceof HTMLElement)) return false
@@ -71,23 +71,74 @@ export function textOf(el: Element, max = 200): string {
   return parts.map(v => String(v || '').replace(/\s+/g, ' ').trim()).find(Boolean)?.slice(0, max) || ''
 }
 
+// True when `selector` resolves to exactly `el` and nothing else — i.e. it will
+// round-trip back to the same node via document.querySelector.
+function selectorResolvesTo(selector: string, el: Element): boolean {
+  try {
+    const hits = document.querySelectorAll(selector)
+    return hits.length === 1 && hits[0] === el
+  } catch {
+    return false
+  }
+}
+
+// Stable single-attribute selectors, tried before any structural path. Hashed
+// class names (Tailwind / CSS-modules / styled-components) churn on every build
+// and don't survive re-renders, but ids and these semantic attributes usually do
+// — so a selector built from them is what makes a click round-trip reliably.
+function stableAttrSelector(el: Element): string {
+  const tag = el.tagName.toLowerCase()
+  const id = (el as HTMLElement).id
+  if (id && selectorResolvesTo(`#${CSS.escape(id)}`, el)) return `#${CSS.escape(id)}`
+  for (const attr of ['data-testid', 'data-test', 'data-test-id', 'data-qa', 'data-cy', 'name', 'aria-label']) {
+    const v = el.getAttribute(attr)
+    if (!v) continue
+    const sel = `${tag}[${attr}="${CSS.escape(v)}"]`
+    if (selectorResolvesTo(sel, el)) return sel
+  }
+  return ''
+}
+
+// Build a selector that uniquely identifies `el`. Strategy, in order:
+//   1. a stable single-attribute selector (id / data-* / name / aria-label),
+//   2. an ancestor-anchored structural path, extended (with :nth-of-type and more
+//      ancestors) until it resolves to exactly one node.
+// The previous version stopped after 5 ancestors and skipped uniqueness checks,
+// so the chain could match the *wrong* element (the first in document order) —
+// the click would then hit something else or "not be found". We now verify the
+// round-trip and keep climbing/anchoring until the selector is unique.
 export function cssPath(el: Element): string {
-  if ((el as HTMLElement).id) return `#${CSS.escape((el as HTMLElement).id)}`
-  const parts: string[] = []
-  let cur: Element | null = el
-  while (cur && cur !== document.body && parts.length < 5) {
-    const tag = cur.tagName.toLowerCase()
-    const cls = String((cur as HTMLElement).className || '')
+  if (!(el instanceof Element)) return ''
+  const attrSel = stableAttrSelector(el)
+  if (attrSel) return attrSel
+
+  const segment = (node: Element): string => {
+    const tag = node.tagName.toLowerCase()
+    const id = (node as HTMLElement).id
+    if (id) return `#${CSS.escape(id)}`
+    const cls = String((node as HTMLElement).className || '')
       .split(/\s+/)
       .filter(Boolean)
       .slice(0, 2)
       .map(c => `.${CSS.escape(c)}`)
       .join('')
-    const parent = cur.parentElement
-    const same = parent ? Array.from(parent.children).filter(c => c.tagName === cur!.tagName) : []
-    const nth = same.length > 1 && parent ? `:nth-of-type(${same.indexOf(cur) + 1})` : ''
-    parts.unshift(`${tag}${cls}${nth}`)
-    cur = parent
+    const parent = node.parentElement
+    const same = parent ? Array.from(parent.children).filter(c => c.tagName === node.tagName) : []
+    const nth = same.length > 1 ? `:nth-of-type(${same.indexOf(node) + 1})` : ''
+    return `${tag}${cls}${nth}`
+  }
+
+  const parts: string[] = []
+  let cur: Element | null = el
+  // Climb up to the document root (not just 5 levels), checking uniqueness after
+  // each ancestor so we stop as soon as the path is unambiguous. Anchoring on an
+  // id ancestor short-circuits and keeps the selector short and resilient.
+  while (cur && cur !== document.documentElement && parts.length < 12) {
+    parts.unshift(segment(cur))
+    const path = parts.join(' > ')
+    if (selectorResolvesTo(path, el)) return path
+    if ((cur as HTMLElement).id) break  // id segment is already as anchored as it gets
+    cur = cur.parentElement
   }
   return parts.length ? parts.join(' > ') : el.tagName.toLowerCase()
 }
@@ -184,19 +235,44 @@ export function clickLikeUser(el: Element, at?: { x: number; y: number }) {
 // Resolve a target from observe-id (ref) / selector / text / explicit coords.
 // ref is most reliable (captured at observe time); coords return the top-most
 // element painted at the point — i.e. exactly what the user would hit there.
+//
+// Self-healing ref: an observe id whose original node was detached by a re-render
+// no longer aborts the click. We re-find it by the selector/text captured at
+// observe time, then by any selector/text the caller passed, and only fall back
+// to the recorded center point as a last resort. This is what lets "observe →
+// click {ref}" survive the SPA re-renders that previously made refs go stale.
 export function resolveTarget(msg: { ref?: any; selector?: string; text?: string; x?: number; y?: number }): { el: Element | null; x: number; y: number } {
-  if (msg.ref !== undefined && msg.ref !== null && msg.ref !== '') {
-    const el = getMarked(msg.ref)
-    if (!el) return { el: null, x: 0, y: 0 }
-    const c = elCenter(el)
-    return { el, x: c.x, y: c.y }
+  const byEl = (el: Element) => { const c = elCenter(el); return { el, x: c.x, y: c.y } }
+  const hasRef = msg.ref !== undefined && msg.ref !== null && msg.ref !== ''
+
+  if (hasRef) {
+    const mark = getMarkTarget(msg.ref)
+    if (mark) {
+      if (mark.el && mark.el.isConnected) return byEl(mark.el)
+      // Original node is gone (re-render) — re-find it from the captured descriptor.
+      const healed = findEl(mark.selector, mark.text)
+      if (healed) return byEl(healed)
+    }
   }
+
+  if (msg.selector || msg.text) {
+    const el = findEl(msg.selector, msg.text)
+    if (el) return byEl(el)
+  }
+
   if (msg.x !== undefined && msg.y !== undefined) {
     const el = document.elementFromPoint(Number(msg.x), Number(msg.y))
     return { el, x: Number(msg.x), y: Number(msg.y) }
   }
-  const el = findEl(msg.selector, msg.text)
-  if (!el) return { el: null, x: 0, y: 0 }
-  const c = elCenter(el)
-  return { el, x: c.x, y: c.y }
+
+  // Last resort for a stale ref: aim at the point it occupied at observe time.
+  if (hasRef) {
+    const mark = getMarkTarget(msg.ref)
+    if (mark && mark.center) {
+      const el = document.elementFromPoint(mark.center.x, mark.center.y)
+      if (el) return { el, x: mark.center.x, y: mark.center.y }
+    }
+  }
+
+  return { el: null, x: 0, y: 0 }
 }

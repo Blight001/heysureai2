@@ -126,6 +126,22 @@
     .mcp-intro-text {
       font-size:10px; color:var(--muted); line-height:1.45; min-width:0;
     }
+    /* ── MCP kind group (基础类 / 特殊类) ── */
+    .tool-kind-head {
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+      margin:14px 2px 4px; padding-bottom:6px; border-bottom:1px solid var(--border);
+    }
+    .tool-kind-head:first-of-type { margin-top:2px; }
+    .tool-kind-title { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700; color:var(--text); }
+    .tool-kind-tag { font-size:9px; font-weight:700; padding:1px 6px; border-radius:10px; }
+    .tool-kind-tag.basic   { background:rgba(34,197,94,.16);  color:#4ade80; }
+    .tool-kind-tag.special { background:rgba(245,158,11,.16); color:#fbbf24; }
+    .tool-kind-toggle {
+      font-size:10px; font-weight:600; color:var(--accent); cursor:pointer;
+      background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:3px 10px;
+      transition:all var(--tr);
+    }
+    .tool-kind-toggle:hover { background:var(--surface-h); }
     .tool-cat-head {
       display:flex; align-items:baseline; gap:8px; justify-content:space-between;
       margin:10px 2px 2px; font-size:11px; font-weight:700; color:var(--text);
@@ -136,6 +152,14 @@
       padding:8px 10px; cursor:pointer; transition:all var(--tr);
     }
     .tool-item:hover { background:var(--surface-h); }
+    .tool-item.off { opacity:.5; }
+    .tool-item.off:hover { opacity:.75; }
+    .tool-toggle { accent-color:var(--accent); cursor:pointer; flex-shrink:0; width:14px; height:14px; }
+    .detail-enable {
+      display:flex; align-items:center; justify-content:space-between; gap:8px;
+      margin-top:9px; padding-top:9px; border-top:1px solid var(--border);
+    }
+    .detail-enable .check-row { font-size:11px; color:var(--text); cursor:pointer; }
     .tool-item-top { display:flex; align-items:center; gap:8px; }
     .tool-name { font-family:'Cascadia Code',Consolas,monospace; font-size:11px; font-weight:600; color:var(--text); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .tool-edited { font-size:9px; color:var(--accent); flex-shrink:0; }

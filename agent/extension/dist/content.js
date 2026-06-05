@@ -182,15 +182,17 @@
 
   // src/content/marks.ts
   var marks = [];
-  function setMarks(els) {
-    marks = els.slice();
+  function setMarks(items) {
+    marks = items.slice();
   }
-  function getMarked(ref) {
+  function markAt(ref) {
     const i = Number(ref);
     if (!Number.isFinite(i) || i < 1 || i > marks.length)
       return null;
-    const el = marks[i - 1];
-    return el && el.isConnected ? el : null;
+    return marks[i - 1] || null;
+  }
+  function getMarkTarget(ref) {
+    return markAt(ref);
   }
 
   // src/content/dom.ts
@@ -252,19 +254,56 @@
     ];
     return parts.map((v) => String(v || "").replace(/\s+/g, " ").trim()).find(Boolean)?.slice(0, max) || "";
   }
+  function selectorResolvesTo(selector, el) {
+    try {
+      const hits = document.querySelectorAll(selector);
+      return hits.length === 1 && hits[0] === el;
+    } catch {
+      return false;
+    }
+  }
+  function stableAttrSelector(el) {
+    const tag = el.tagName.toLowerCase();
+    const id = el.id;
+    if (id && selectorResolvesTo(`#${CSS.escape(id)}`, el))
+      return `#${CSS.escape(id)}`;
+    for (const attr of ["data-testid", "data-test", "data-test-id", "data-qa", "data-cy", "name", "aria-label"]) {
+      const v = el.getAttribute(attr);
+      if (!v)
+        continue;
+      const sel = `${tag}[${attr}="${CSS.escape(v)}"]`;
+      if (selectorResolvesTo(sel, el))
+        return sel;
+    }
+    return "";
+  }
   function cssPath(el) {
-    if (el.id)
-      return `#${CSS.escape(el.id)}`;
+    if (!(el instanceof Element))
+      return "";
+    const attrSel = stableAttrSelector(el);
+    if (attrSel)
+      return attrSel;
+    const segment = (node) => {
+      const tag = node.tagName.toLowerCase();
+      const id = node.id;
+      if (id)
+        return `#${CSS.escape(id)}`;
+      const cls = String(node.className || "").split(/\s+/).filter(Boolean).slice(0, 2).map((c) => `.${CSS.escape(c)}`).join("");
+      const parent = node.parentElement;
+      const same = parent ? Array.from(parent.children).filter((c) => c.tagName === node.tagName) : [];
+      const nth = same.length > 1 ? `:nth-of-type(${same.indexOf(node) + 1})` : "";
+      return `${tag}${cls}${nth}`;
+    };
     const parts = [];
     let cur = el;
-    while (cur && cur !== document.body && parts.length < 5) {
-      const tag = cur.tagName.toLowerCase();
-      const cls = String(cur.className || "").split(/\s+/).filter(Boolean).slice(0, 2).map((c) => `.${CSS.escape(c)}`).join("");
-      const parent = cur.parentElement;
-      const same = parent ? Array.from(parent.children).filter((c) => c.tagName === cur.tagName) : [];
-      const nth = same.length > 1 && parent ? `:nth-of-type(${same.indexOf(cur) + 1})` : "";
-      parts.unshift(`${tag}${cls}${nth}`);
-      cur = parent;
+    while (cur && cur !== document.documentElement && parts.length < 12) {
+      parts.unshift(segment(cur));
+      const path = parts.join(" > ");
+      if (selectorResolvesTo(path, el))
+        return path;
+      if (cur.id)
+        break;
+      cur = cur.parentElement;
     }
     return parts.length ? parts.join(" > ") : el.tagName.toLowerCase();
   }
@@ -340,22 +379,39 @@
     el.click?.();
   }
   function resolveTarget(msg) {
-    if (msg.ref !== void 0 && msg.ref !== null && msg.ref !== "") {
-      const el2 = getMarked(msg.ref);
-      if (!el2)
-        return { el: null, x: 0, y: 0 };
-      const c2 = elCenter(el2);
-      return { el: el2, x: c2.x, y: c2.y };
+    const byEl = (el) => {
+      const c = elCenter(el);
+      return { el, x: c.x, y: c.y };
+    };
+    const hasRef = msg.ref !== void 0 && msg.ref !== null && msg.ref !== "";
+    if (hasRef) {
+      const mark = getMarkTarget(msg.ref);
+      if (mark) {
+        if (mark.el && mark.el.isConnected)
+          return byEl(mark.el);
+        const healed = findEl(mark.selector, mark.text);
+        if (healed)
+          return byEl(healed);
+      }
+    }
+    if (msg.selector || msg.text) {
+      const el = findEl(msg.selector, msg.text);
+      if (el)
+        return byEl(el);
     }
     if (msg.x !== void 0 && msg.y !== void 0) {
-      const el2 = document.elementFromPoint(Number(msg.x), Number(msg.y));
-      return { el: el2, x: Number(msg.x), y: Number(msg.y) };
+      const el = document.elementFromPoint(Number(msg.x), Number(msg.y));
+      return { el, x: Number(msg.x), y: Number(msg.y) };
     }
-    const el = findEl(msg.selector, msg.text);
-    if (!el)
-      return { el: null, x: 0, y: 0 };
-    const c = elCenter(el);
-    return { el, x: c.x, y: c.y };
+    if (hasRef) {
+      const mark = getMarkTarget(msg.ref);
+      if (mark && mark.center) {
+        const el = document.elementFromPoint(mark.center.x, mark.center.y);
+        if (el)
+          return { el, x: mark.center.x, y: mark.center.y };
+      }
+    }
+    return { el: null, x: 0, y: 0 };
   }
 
   // src/content/viewport.ts
@@ -426,7 +482,7 @@
   // src/content/actions.ts
   async function doClick(msg) {
     const viaCoords = msg.x !== void 0 && msg.y !== void 0 && (msg.ref === void 0 || msg.ref === null || msg.ref === "");
-    const { el, x, y } = resolveTarget(msg);
+    let { el, x, y } = resolveTarget(msg);
     if (!el) {
       if (msg.ref !== void 0 && msg.ref !== null && msg.ref !== "") {
         throw new Error(`Mark #${msg.ref} is stale or gone \u2014 call browser_observe again to refresh the numbered marks, then retry.`);
@@ -434,8 +490,11 @@
       throw new Error(`Element not found: selector=${msg.selector || ""} text=${msg.text || ""} ref=${msg.ref ?? ""} coords=${msg.x},${msg.y}`);
     }
     if (!viaCoords) {
-      el.scrollIntoView({ block: "center", behavior: "smooth" });
+      el.scrollIntoView({ block: "center", behavior: "auto" });
       await waitScrollSettle(450);
+      const c = elCenter(el);
+      x = c.x;
+      y = c.y;
       if (!isVisible(el)) {
         return {
           success: false,
@@ -1595,7 +1654,6 @@
     });
     const limit = Math.min(Math.max(Number(msg.limit ?? 60), 1), 200);
     const chosen = pruned.slice(0, limit);
-    setMarks(chosen);
     const elements = chosen.map((el, i) => {
       const r = el.getBoundingClientRect();
       const item = {
@@ -1614,6 +1672,12 @@
         item.value = String(el.value).slice(0, 60);
       return item;
     });
+    setMarks(chosen.map((el, i) => ({
+      el,
+      selector: elements[i].selector,
+      text: elements[i].text,
+      center: elements[i].center
+    })));
     const marked = msg.mark !== false;
     if (marked)
       drawMarksOverlay(chosen);
