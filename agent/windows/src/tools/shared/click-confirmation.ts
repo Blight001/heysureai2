@@ -9,6 +9,8 @@ export interface ClickConfirmationOptions {
   y?: number
   display?: number
   radius?: number
+  /** 'pre' = 点击前确认图（默认）；'post' = 点击后结果核对图。两者话术不同。 */
+  phase?: 'pre' | 'post'
 }
 
 function pngDataUrl(buf: Buffer): string {
@@ -94,20 +96,29 @@ export async function captureClickConfirmation(options: ClickConfirmationOptions
   }
   const marked = markPng(raw, marker.x, marker.y)
 
+  const isPost = options.phase === 'post'
+  const instructions = isPost
+    ? [
+        '点击已经执行，这是点击后的结果核对图，红点为本次实际点击的位置。',
+        '请确认红点处的目标是否产生了预期变化（如菜单展开、按钮高亮、页面跳转、选中状态等）。',
+        '如果没有任何反应或点偏了，请重新定位目标后再次调用 mouse.click 纠正。',
+      ].join(' ')
+    : [
+        '这只是点击前确认图，尚未执行点击。',
+        '请检查红点/十字是否落在本次想点击的目标可点击中心。',
+        '如果偏离目标，请估算目标中心相对红点的像素偏差 correction_dx/correction_dy，并再次调用 mouse.click，x=target.x+correction_dx，y=target.y+correction_dy，继续获取新的确认图。',
+        '如果红点已经正确，请再次调用 mouse.click，并传 confirmed:true 执行点击。',
+      ].join(' ')
+
   return {
     success: true,
-    purpose: 'click_target_confirmation',
+    purpose: isPost ? 'click_result_verification' : 'click_target_confirmation',
     dataUrl: pngDataUrl(marked),
     width,
     height,
     region: { x: left, y: top, width, height },
     target: { x: target.x, y: target.y },
     marker,
-    instructions: [
-      '这只是点击前确认图，尚未执行点击。',
-      '请检查红点/十字是否落在本次想点击的目标可点击中心。',
-      '如果偏离目标，请估算目标中心相对红点的像素偏差 correction_dx/correction_dy，并再次调用 mouse.click，x=target.x+correction_dx，y=target.y+correction_dy，继续获取新的确认图。',
-      '如果红点已经正确，请再次调用 mouse.click，并传 confirmed:true 执行点击。',
-    ].join(' '),
+    instructions,
   }
 }
