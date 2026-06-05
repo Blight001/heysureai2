@@ -55,6 +55,10 @@ function connectPort() {
 
   port.onMessage.addListener(messageHandler)
   port.onDisconnect.addListener(() => {
+    // Chrome exposes a failed runtime.connect() through runtime.lastError on
+    // disconnect. Reading it prevents "Unchecked runtime.lastError" console
+    // noise; the reconnect loop below handles the transient failure.
+    void chrome.runtime.lastError
     if (currentPort !== port) return
     currentPort = null
     scheduleReconnect()

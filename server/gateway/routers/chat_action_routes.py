@@ -8,7 +8,7 @@ import uuid
 from typing import List, Optional
 
 import requests
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Response
 from sqlmodel import Session, select
 
 from api.database import get_session
@@ -18,6 +18,7 @@ from .auth import get_current_user
 from ai_runtime.worker import notify_queue
 from api.core.settings import settings
 from api.services.model_presets import resolve_model_preset
+from api.services.chat_media import delete_message_media, get_message_media
 from .chat_base import _RUN_LIVE_STATE, _RUN_STATE_LOCK, _RUN_THREADS, router
 from api.services.chat_persistence import _append_usage_snapshot, _rebuild_usage_snapshots, _save_message, _upsert_session
 from api.chat_runtime.chat_prompt_utils import (
@@ -318,6 +319,7 @@ async def delete_chat_message(
         raise HTTPException(status_code=404, detail="Message not found")
     target_ai_kind = db_msg.ai_kind
     target_ai_config_id = db_msg.ai_config_id
+    delete_message_media(session, [db_msg])
     session.delete(db_msg)
     session.commit()
     _rebuild_usage_snapshots(session, user.id, target_ai_kind, target_ai_config_id)
@@ -350,6 +352,7 @@ async def recall_chat_messages(
     messages_to_delete = session.exec(statement).all()
     deleted_count = len(messages_to_delete)
     
+    delete_message_media(session, messages_to_delete)
     for msg in messages_to_delete:
         session.delete(msg)
     session.commit()
@@ -372,6 +375,7 @@ async def clear_all_messages(
     if ai_config_id is not None:
         statement = statement.where(ChatMessage.ai_config_id == ai_config_id)
     results = session.exec(statement).all()
+    delete_message_media(session, results)
     for msg in results:
         session.delete(msg)
     session.commit()
@@ -394,6 +398,23 @@ async def update_message_tags(
     session.commit()
     session.refresh(db_msg)
     return db_msg
+
+
+@router.get("/media/{media_id}/{token}")
+async def get_chat_message_media(
+    media_id: int,
+    token: str,
+    session: Session = Depends(get_session),
+):
+    media = get_message_media(session, media_id, token)
+    return Response(
+        content=media.data,
+        media_type=media.media_type,
+        headers={
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "Content-Length": str(media.bytes or len(media.data or b"")),
+        },
+    )
 
 @router.get("/files")
 async def list_files(

@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 
 from api.database import get_session
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, ChatSession
+from api.services.chat_media import delete_message_media
 from .auth import get_current_user
 from api.services.task_system import (
     decode_task_payload,
@@ -461,6 +462,7 @@ async def stop_ai_task_job(
                 ChatMessage.session_id.like(f"{session_prefix}%"),
             )
         ).all()
+        delete_message_media(session, msg_rows)
         for msg in msg_rows:
             session.delete(msg)
 
@@ -608,6 +610,7 @@ async def delete_ai_task_job(
                 ChatMessage.session_id.like(f"{session_prefix}%"),
             )
         ).all()
+        delete_message_media(session, msg_rows)
         for msg in msg_rows:
             session.delete(msg)
 

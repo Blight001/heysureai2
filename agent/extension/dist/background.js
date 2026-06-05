@@ -3539,7 +3539,7 @@
       input_schema: {
         type: "object",
         properties: {
-          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684\u53EF\u4EA4\u4E92\u5143\u7D20\u6570\u3002\u9ED8\u8BA4 60\uFF0C\u6700\u5927 200\u3002" },
+          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684\u53EF\u4EA4\u4E92\u5143\u7D20\u6570\u3002\u9ED8\u8BA4 120\uFF0C\u6700\u5927 200\u3002" },
           mark: { type: "boolean", description: "\u662F\u5426\u5728\u9875\u9762\u4E0A\u7ED8\u5236\u7F16\u53F7\u6807\u8BB0\uFF0C\u4FBF\u4E8E\u968F\u540E\u622A\u56FE\u67E5\u770B\u3002\u9ED8\u8BA4 true\uFF1B\u4F20 false \u4EC5\u8FD4\u56DE\u5217\u8868\u5E76\u6E05\u9664\u5DF2\u6709\u6807\u8BB0\u3002\u6807\u8BB0\u4EC5\u4E3A\u89C6\u89C9\u53E0\u52A0\uFF0C\u4E0D\u5F71\u54CD get_content/\u622A\u56FE\u4EE5\u5916\u7684\u53D6\u6570\uFF0C\u4E5F\u4E0D\u62E6\u622A\u70B9\u51FB\u3002" }
         }
       }
@@ -5382,13 +5382,18 @@ Always:
     chrome.action.setBadgeText({ text: status === "registered" ? "\u25CF" : status === "error" ? "!" : "" });
     chrome.action.setTitle({ title: `HeySure Agent \u2014 ${status}` });
   }
+  function postToPopup(port, msg) {
+    try {
+      port.postMessage(msg);
+      return true;
+    } catch {
+      popupPorts.delete(port);
+      return false;
+    }
+  }
   function broadcast(msg) {
     popupPorts.forEach((port) => {
-      try {
-        port.postMessage(msg);
-      } catch {
-        popupPorts.delete(port);
-      }
+      postToPopup(port, msg);
     });
   }
   async function getMachineId() {
@@ -5828,9 +5833,9 @@ Respond in the same language as the user. For factual questions, search the web 
     if (port.name !== "popup")
       return;
     popupPorts.add(port);
-    port.postMessage({ type: "agent:status", status: currentStatus, aiConfigId: boundAiConfigId });
+    postToPopup(port, { type: "agent:status", status: currentStatus, aiConfigId: boundAiConfigId });
     getActivity().then((entries) => {
-      entries.forEach((e) => port.postMessage({ type: "activity:log", entry: e }));
+      entries.forEach((e) => postToPopup(port, { type: "activity:log", entry: e }));
     });
     port.onDisconnect.addListener(() => popupPorts.delete(port));
     port.onMessage.addListener(async (msg) => {
@@ -5851,7 +5856,7 @@ Respond in the same language as the user. For factual questions, search the web 
         }
         case "settings:get": {
           const settings = await getSettings();
-          port.postMessage({ type: "settings:data", settings });
+          postToPopup(port, { type: "settings:data", settings });
           break;
         }
         case "settings:save": {
@@ -5879,15 +5884,15 @@ Respond in the same language as the user. For factual questions, search the web 
           const requestId = msg.requestId;
           try {
             const result = await runChat(msg.messages);
-            port.postMessage({ type: "chat:response", text: result.text, toolsUsed: result.toolsUsed, toolEvents: result.toolEvents, requestId });
+            postToPopup(port, { type: "chat:response", text: result.text, toolsUsed: result.toolsUsed, toolEvents: result.toolEvents, requestId });
           } catch (err) {
-            port.postMessage({ type: "chat:error", error: err.message, requestId });
+            postToPopup(port, { type: "chat:error", error: err.message, requestId });
           }
           break;
         }
         case "connection:test": {
           const result = await testConnection();
-          port.postMessage({ type: "connection:result", result });
+          postToPopup(port, { type: "connection:result", result });
           break;
         }
         case "mcp:test": {
@@ -5899,10 +5904,10 @@ Respond in the same language as the user. For factual questions, search the web 
               `mcp.test ${msg.tool}`
             );
             log("task", "success", `\u6D4B\u8BD5\u5B8C\u6210: ${msg.tool}`);
-            port.postMessage({ type: "mcp:test:result", requestId: msg.requestId, ok: true, result });
+            postToPopup(port, { type: "mcp:test:result", requestId: msg.requestId, ok: true, result });
           } catch (err) {
             log("task", "error", `\u6D4B\u8BD5\u5931\u8D25: ${msg.tool} \u2014 ${err?.message || err}`);
-            port.postMessage({ type: "mcp:test:result", requestId: msg.requestId, ok: false, error: err?.message || String(err) });
+            postToPopup(port, { type: "mcp:test:result", requestId: msg.requestId, ok: false, error: err?.message || String(err) });
           }
           break;
         }

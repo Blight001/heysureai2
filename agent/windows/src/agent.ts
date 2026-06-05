@@ -198,6 +198,11 @@ export class HeySureAgent {
     })
   }
 
+  refreshRegistration(): void {
+    if (this.socket?.connected) this.register()
+    else this.connect()
+  }
+
   private async handleTask(task: DispatchedTask): Promise<void> {
     const taskId = task.taskId
     if (!taskId) return

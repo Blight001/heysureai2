@@ -86,7 +86,7 @@ export const BROWSER_TOOLS: AIToolDef[] = [
     input_schema: {
       type: 'object',
       properties: {
-        limit: { type: 'number', description: '最多返回的可交互元素数。默认 60，最大 200。' },
+        limit: { type: 'number', description: '最多返回的可交互元素数。默认 120，最大 200。' },
         mark:  { type: 'boolean', description: '是否在页面上绘制编号标记，便于随后截图查看。默认 true；传 false 仅返回列表并清除已有标记。标记仅为视觉叠加，不影响 get_content/截图以外的取数，也不拦截点击。' },
       },
     },

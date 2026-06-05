@@ -17,6 +17,7 @@ import { registerAllIpc } from './ipc'
 app.setName('HeySure Agent')
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.heysure.agent.win')
+  app.commandLine.appendSwitch('force-renderer-accessibility', 'complete')
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
@@ -34,6 +35,10 @@ app.on('second-instance', () => {
 })
 
 async function bootstrap(): Promise<void> {
+  if (process.platform === 'win32') {
+    app.setAccessibilitySupportEnabled(true)
+  }
+
   initCapture()
 
   clearAiSelectionIfLoggedOut()

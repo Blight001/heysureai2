@@ -1,6 +1,7 @@
 import time
 from typing import Optional
 
+from sqlalchemy import Column, ForeignKey, Integer, LargeBinary
 from sqlmodel import Field, SQLModel
 
 
@@ -51,6 +52,24 @@ class ChatMessageCreate(SQLModel):
 
 class ChatMessageUpdate(SQLModel):
     tags: Optional[str] = None
+
+
+class ChatMessageMedia(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    message_id: int = Field(
+        sa_column=Column(
+            Integer,
+            ForeignKey("chatmessage.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
+    )
+    user_id: int = Field(foreign_key="user.id", index=True)
+    media_type: str = Field(default="image/png")
+    token: str = Field(index=True)
+    data: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
+    bytes: int = Field(default=0)
+    created_at: float = Field(default_factory=time.time)
 
 
 class ChatSession(SQLModel, table=True):

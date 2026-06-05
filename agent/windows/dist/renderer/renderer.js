@@ -22,6 +22,7 @@ let boundAiConfigId = null;
 let totalCalls = 0, successCalls = 0, failedCalls = 0, runningCalls = 0;
 let toolDefs = [];
 let overrides = {};
+let toolEnabled = {};
 const PARENT_ORDER = ['sensory', 'learning', 'tool', 'other'];
 const PARENT_META = {
     sensory: { zh: '感官类', en: 'SENSORY' },
@@ -122,13 +123,16 @@ function toolMeta(name) {
 }
 function renderToolItem(tool) {
     const meta = toolMeta(tool.name);
+    const enabled = isToolEnabled(tool.name);
     return `
-    <div class="tool-item" data-tool="${esc(tool.name)}">
+    <div class="tool-item ${enabled ? '' : 'disabled'}" data-tool="${esc(tool.name)}">
       <div class="tool-item-top">
+        <input class="tool-enabled" type="checkbox" data-toggle-tool="${esc(tool.name)}" ${enabled ? 'checked' : ''} title="是否向软件端和离线模型开放该 MCP 工具"/>
         <div class="tool-title">
           <span class="tool-name">${esc(meta.zh)}</span>
           <span class="tool-name-sub">${esc(meta.en)}</span>
         </div>
+        ${enabled ? '' : '<span class="tool-off">已关闭</span>'}
         ${isEdited(tool.name) ? '<span class="tool-edited">已自定义</span>' : ''}
       </div>
       <div class="tool-desc">${esc((effDesc(tool) || '（无描述）').slice(0, 120))}</div>
@@ -138,12 +142,15 @@ function renderGroup(parent, group, tools) {
     if (!tools.length)
         return '';
     const meta = GROUP_META[group] || groupMeta(group);
+    const enabledCount = tools.filter(t => isToolEnabled(t.name)).length;
+    const allChecked = enabledCount === tools.length;
     return `
     <section class="mcp-group" data-group="${esc(group)}">
       <div class="mcp-group-title">
+        <input class="mcp-group-toggle" type="checkbox" data-toggle-tools="${esc(toolDataValue(tools))}" ${allChecked ? 'checked' : ''} title="切换该分组 MCP 工具"/>
         <span class="mcp-group-zh">${esc(meta.zh)}</span>
         <span class="mcp-group-en">${esc(meta.en)}</span>
-        <span class="mcp-group-count">${tools.length} 个</span>
+        <span class="mcp-group-count">${enabledCount}/${tools.length} 开放</span>
       </div>
       <div class="mcp-group-items">
         ${tools.map(renderToolItem).join('')}
@@ -157,24 +164,63 @@ function renderParentSection(parent, childMap, open = false) {
     if (!orderedGroups.length)
         return '';
     const count = orderedGroups.reduce((sum, group) => sum + (childMap.get(group)?.length || 0), 0);
+    const tools = orderedGroups.flatMap(group => childMap.get(group) || []);
+    const enabledCount = tools.filter(t => isToolEnabled(t.name)).length;
+    const allChecked = tools.length > 0 && enabledCount === tools.length;
     const body = orderedGroups.map(group => renderGroup(parent, group, childMap.get(group) || [])).join('');
     return `
     <details class="mcp-parent" data-parent="${parent}"${open ? ' open' : ''}>
       <summary>
         <span class="mcp-parent-summary-left">
           <span class="mcp-chevron"></span>
+          <input class="mcp-parent-toggle" type="checkbox" data-toggle-tools="${esc(toolDataValue(tools))}" ${allChecked ? 'checked' : ''} title="切换该栏目 MCP 工具"/>
           <span class="mcp-parent-labels">
             <span class="mcp-parent-zh">${esc(PARENT_META[parent].zh)}</span>
             <span class="mcp-parent-en">${esc(PARENT_META[parent].en)}</span>
           </span>
         </span>
-        <span class="mcp-parent-count">${count} 个</span>
+        <span class="mcp-parent-count">${enabledCount}/${count} 开放</span>
       </summary>
       <div class="mcp-parent-body">${body}</div>
     </details>`;
 }
 function esc(str) {
     return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function toolDataValue(tools) {
+    return tools.map(t => t.name).join('|');
+}
+function toolsFromData(value) {
+    return String(value || '').split('|').map(t => t.trim()).filter(Boolean);
+}
+function isToolEnabled(name) {
+    return toolEnabled[name] !== false;
+}
+async function setToolEnabled(name, enabled) {
+    if (!name)
+        return;
+    if (enabled)
+        delete toolEnabled[name];
+    else
+        toolEnabled[name] = false;
+    renderMcpList();
+    await window.heysureAPI.mcpSetEnabled({ tool: name, enabled });
+    await loadMcp();
+}
+async function setToolsEnabled(names, enabled) {
+    const unique = Array.from(new Set(names.filter(Boolean)));
+    if (!unique.length)
+        return;
+    for (const name of unique) {
+        if (enabled)
+            delete toolEnabled[name];
+        else
+            toolEnabled[name] = false;
+    }
+    renderMcpList();
+    for (const name of unique)
+        await window.heysureAPI.mcpSetEnabled({ tool: name, enabled });
+    await loadMcp();
 }
 // ── Theme (also recolors the Electron window via setTheme IPC) ───────────────
 function applyTheme(theme, persist = true) {
@@ -284,6 +330,7 @@ async function loadMcp() {
     const data = await window.heysureAPI.mcpList();
     toolDefs = data.tools || [];
     overrides = data.overrides || {};
+    toolEnabled = data.enabled || {};
     renderMcpList(openParents, scrollTop);
 }
 function renderMcpList(openParents = new Set(), scrollTop = 0) {
@@ -320,6 +367,14 @@ function renderMcpList(openParents = new Set(), scrollTop = 0) {
     list.querySelectorAll('.tool-item').forEach(el => {
         el.addEventListener('click', () => openTool(el.dataset.tool || ''));
     });
+    list.querySelectorAll('[data-toggle-tool]').forEach(el => {
+        el.addEventListener('click', e => e.stopPropagation());
+        el.addEventListener('change', () => void setToolEnabled(el.dataset.toggleTool || '', el.checked));
+    });
+    list.querySelectorAll('[data-toggle-tools]').forEach(el => {
+        el.addEventListener('click', e => e.stopPropagation());
+        el.addEventListener('change', () => void setToolsEnabled(toolsFromData(el.dataset.toggleTools || ''), el.checked));
+    });
     list.scrollTop = scrollTop;
 }
 function paramEntries(t) {
@@ -343,6 +398,7 @@ function openTool(name) {
 function renderDetail(tool) {
     const meta = toolMeta(tool.name);
     const params = paramEntries(tool);
+    const enabled = isToolEnabled(tool.name);
     const paramHtml = params.length
         ? params.map(p => `
         <div class="param-row">
@@ -366,6 +422,10 @@ function renderDetail(tool) {
         <div class="tool-title-id">${esc(tool.name)}</div>
       </div>
       <div class="tool-desc" style="font-size:12px;">${esc(effDesc(tool) || '（无描述）')}</div>
+      <label class="check-row tool-enable-row">
+        <input type="checkbox" id="detail-enabled" ${enabled ? 'checked' : ''}/>
+        <span>${enabled ? '已向软件端开放该 MCP 工具' : '该 MCP 工具已关闭，不会上报给服务器或离线模型'}</span>
+      </label>
     </div>
     <div class="card">
       <div class="card-title">参数说明</div>
@@ -386,9 +446,16 @@ function renderDetail(tool) {
       <div class="fg"><label>参数 (JSON)</label>
         <textarea class="ta" id="test-args" style="min-height:72px;font-family:'Cascadia Code',Consolas,monospace;">${esc(argTemplate)}</textarea>
       </div>
-      <button class="btn btn-primary" id="test-run">测试</button>
+      <button class="btn btn-primary" id="test-run" ${enabled ? '' : 'disabled'}>测试</button>
       <div class="test-result" id="test-result" style="display:none;"></div>
     </div>`;
+    $('detail-enabled').addEventListener('change', async (e) => {
+        const checked = e.target.checked;
+        await setToolEnabled(tool.name, checked);
+        const t = toolDefs.find(x => x.name === tool.name);
+        if (t)
+            renderDetail(t);
+    });
     $('edit-save').addEventListener('click', async () => {
         const description = $('edit-desc').value;
         const parameters = {};

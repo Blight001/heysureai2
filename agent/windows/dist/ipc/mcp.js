@@ -13,10 +13,22 @@ const activity_log_1 = require("../services/activity-log");
 function overrides() {
     return store_1.store.get('toolDescOverrides') || {};
 }
-// getToolDefs() with the saved local description edits applied.
-function effectiveDefs() {
+function enabledMap() {
+    return store_1.store.get('toolEnabled') || {};
+}
+function setEnabled(name, enabled) {
+    const all = enabledMap();
+    if (enabled)
+        delete all[name];
+    else
+        all[name] = false;
+    store_1.store.set('toolEnabled', all);
+}
+// Tool defs with the saved local description edits applied.
+function effectiveDefs(includeDisabled = false) {
     const ov = overrides();
-    return (0, executor_1.getToolDefs)().map(def => {
+    const defs = includeDisabled ? (0, executor_1.getAllToolDefs)() : (0, executor_1.getToolDefs)();
+    return defs.map(def => {
         const o = ov[def.name];
         if (!o)
             return def;
@@ -36,9 +48,21 @@ function effectiveDefs() {
 function registerMcpIpc() {
     // List effective tool defs + which tools have local edits.
     electron_1.ipcMain.handle('mcp:list', () => ({
-        tools: effectiveDefs(),
+        tools: effectiveDefs(true),
         overrides: overrides(),
+        enabled: enabledMap(),
     }));
+    electron_1.ipcMain.handle('mcp:set-enabled', (_e, payload) => {
+        const name = String(payload?.tool || '').trim();
+        if (!name)
+            return false;
+        const known = (0, executor_1.getAllToolDefs)().some(def => def.name === name);
+        if (!known)
+            return false;
+        setEnabled(name, payload?.enabled !== false);
+        (0, agent_runtime_1.getAgent)()?.refreshRegistration();
+        return true;
+    });
     // Save (or clear) a tool's local description / parameter edits.
     electron_1.ipcMain.handle('mcp:save-desc', (_e, payload) => {
         const name = String(payload?.tool || '').trim();
@@ -59,7 +83,7 @@ function registerMcpIpc() {
             all[name] = { description: desc, parameters: params };
         store_1.store.set('toolDescOverrides', all);
         // Re-report toolDefs so the server picks up the edit (no reconnect needed).
-        (0, agent_runtime_1.getAgent)()?.connect();
+        (0, agent_runtime_1.getAgent)()?.refreshRegistration();
         return true;
     });
     // Run one tool locally for the tester.
@@ -67,6 +91,8 @@ function registerMcpIpc() {
         const tool = String(payload?.tool || '').trim();
         if (!tool)
             return { success: false, error: '工具名为空' };
+        if (!(0, executor_1.isToolEnabled)(tool))
+            return { success: false, error: '该工具已在本机 MCP 栏目中关闭' };
         const agent = (0, agent_runtime_1.getAgent)();
         if (!agent)
             return { success: false, error: 'agent 未初始化' };

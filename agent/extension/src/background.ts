@@ -85,9 +85,19 @@ function setStatus(status: AgentStatus, reason?: string) {
 }
 
 // ── Popup broadcast ───────────────────────────────────────────────────────
+function postToPopup(port: chrome.runtime.Port, msg: BgMsg): boolean {
+  try {
+    port.postMessage(msg)
+    return true
+  } catch {
+    popupPorts.delete(port)
+    return false
+  }
+}
+
 function broadcast(msg: BgMsg) {
   popupPorts.forEach(port => {
-    try { port.postMessage(msg) } catch { popupPorts.delete(port) }
+    postToPopup(port, msg)
   })
 }
 
@@ -596,9 +606,9 @@ chrome.runtime.onConnect.addListener((port) => {
   popupPorts.add(port)
 
   // Send current state immediately
-  port.postMessage({ type: 'agent:status', status: currentStatus, aiConfigId: boundAiConfigId })
+  postToPopup(port, { type: 'agent:status', status: currentStatus, aiConfigId: boundAiConfigId })
   getActivity().then(entries => {
-    entries.forEach(e => port.postMessage({ type: 'activity:log', entry: e }))
+    entries.forEach(e => postToPopup(port, { type: 'activity:log', entry: e }))
   })
 
   port.onDisconnect.addListener(() => popupPorts.delete(port))
@@ -620,7 +630,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
       case 'settings:get': {
         const settings = await getSettings()
-        port.postMessage({ type: 'settings:data', settings })
+        postToPopup(port, { type: 'settings:data', settings })
         break
       }
       case 'settings:save': {
@@ -656,16 +666,16 @@ chrome.runtime.onConnect.addListener((port) => {
         const requestId = msg.requestId
         try {
           const result = await runChat(msg.messages)
-          port.postMessage({ type: 'chat:response', text: result.text, toolsUsed: result.toolsUsed, toolEvents: result.toolEvents, requestId })
+          postToPopup(port, { type: 'chat:response', text: result.text, toolsUsed: result.toolsUsed, toolEvents: result.toolEvents, requestId })
         } catch (err: any) {
-          port.postMessage({ type: 'chat:error', error: err.message, requestId })
+          postToPopup(port, { type: 'chat:error', error: err.message, requestId })
         }
         break
       }
 
       case 'connection:test': {
         const result = await testConnection()
-        port.postMessage({ type: 'connection:result', result })
+        postToPopup(port, { type: 'connection:result', result })
         break
       }
 
@@ -679,10 +689,10 @@ chrome.runtime.onConnect.addListener((port) => {
             `mcp.test ${msg.tool}`,
           )
           log('task', 'success', `测试完成: ${msg.tool}`)
-          port.postMessage({ type: 'mcp:test:result', requestId: msg.requestId, ok: true, result })
+          postToPopup(port, { type: 'mcp:test:result', requestId: msg.requestId, ok: true, result })
         } catch (err: any) {
           log('task', 'error', `测试失败: ${msg.tool} — ${err?.message || err}`)
-          port.postMessage({ type: 'mcp:test:result', requestId: msg.requestId, ok: false, error: err?.message || String(err) })
+          postToPopup(port, { type: 'mcp:test:result', requestId: msg.requestId, ok: false, error: err?.message || String(err) })
         }
         break
       }

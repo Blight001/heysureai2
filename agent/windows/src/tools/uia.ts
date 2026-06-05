@@ -14,6 +14,197 @@
 // 不受遮挡影响）；不支持 Invoke 的（或显式要求物理点击 / 右键）才移动光标做真实点击。
 
 import { runPowerShellScript } from './shared/powershell'
+import { BrowserWindow, screen } from 'electron'
+
+const DOM_INTERACTIVE_SELECTOR = [
+  'button',
+  'input',
+  'textarea',
+  'select',
+  'a[href]',
+  'summary',
+  '[role="button"]',
+  '[role="link"]',
+  '[role="menuitem"]',
+  '[role="checkbox"]',
+  '[role="radio"]',
+  '[role="tab"]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+function findOwnElectronWindow(title?: unknown): BrowserWindow | null {
+  const titleQuery = title === undefined || title === null ? '' : String(title).trim()
+  if (titleQuery) {
+    return BrowserWindow.getAllWindows().find(win => {
+      try { return !win.isDestroyed() && win.getTitle().includes(titleQuery) } catch { return false }
+    }) || null
+  }
+  const focused = BrowserWindow.getFocusedWindow()
+  return focused && !focused.isDestroyed() ? focused : null
+}
+
+function toPhysicalRect(win: BrowserWindow, rect: any) {
+  const content = win.getContentBounds()
+  const display = screen.getDisplayMatching(content)
+  const scale = display?.scaleFactor || 1
+  const x = Math.round((content.x + Number(rect.x || 0)) * scale)
+  const y = Math.round((content.y + Number(rect.y || 0)) * scale)
+  const width = Math.round(Number(rect.width || 0) * scale)
+  const height = Math.round(Number(rect.height || 0) * scale)
+  return {
+    x, y, width, height,
+    center_x: Math.round(x + width / 2),
+    center_y: Math.round(y + height / 2),
+  }
+}
+
+async function inspectOwnElectronDom(args: any = {}) {
+  const win = findOwnElectronWindow(args.title)
+  if (!win) return null
+  const interactiveOnly = args.interactable_only !== false && args.interactive_only !== false
+  const max = Math.max(1, Math.trunc(Number(args.max ?? args.limit ?? 150)) || 150)
+  const elements = await win.webContents.executeJavaScript(`
+(() => {
+  const selector = ${JSON.stringify(DOM_INTERACTIVE_SELECTOR)};
+  const interactiveOnly = ${interactiveOnly ? 'true' : 'false'};
+  const max = ${max};
+  const seen = new Set();
+  const nodes = Array.from(document.querySelectorAll(interactiveOnly ? selector : 'body *'));
+  const out = [];
+  const visible = (el, rect) => {
+    const style = window.getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+  };
+  const nameOf = (el) => {
+    return (el.getAttribute('aria-label') || el.getAttribute('title') || el.innerText ||
+      el.getAttribute('placeholder') || el.value || el.id || el.name || '').trim();
+  };
+  const typeOf = (el) => {
+    const tag = el.tagName.toLowerCase();
+    const role = (el.getAttribute('role') || '').toLowerCase();
+    if (tag === 'button' || role === 'button') return 'Button';
+    if (tag === 'textarea') return 'Edit';
+    if (tag === 'input') {
+      const t = (el.getAttribute('type') || 'text').toLowerCase();
+      if (t === 'checkbox') return 'CheckBox';
+      if (t === 'radio') return 'RadioButton';
+      if (t === 'button' || t === 'submit') return 'Button';
+      return 'Edit';
+    }
+    if (tag === 'select') return 'ComboBox';
+    if (tag === 'a' || role === 'link') return 'Hyperlink';
+    if (tag === 'summary') return 'Button';
+    if (role === 'menuitem') return 'MenuItem';
+    if (role === 'tab') return 'TabItem';
+    return role ? role.replace(/^./, c => c.toUpperCase()) : 'Custom';
+  };
+  const actionsOf = (el, ct) => {
+    if (ct === 'Edit' || ct === 'ComboBox') return ['value'];
+    if (ct === 'CheckBox' || ct === 'RadioButton') return ['toggle'];
+    return ['invoke'];
+  };
+  for (const el of nodes) {
+    if (out.length >= max) break;
+    if (seen.has(el)) continue;
+    seen.add(el);
+    const rect = el.getBoundingClientRect();
+    if (!visible(el, rect)) continue;
+    const ct = typeOf(el);
+    out.push({
+      name: nameOf(el),
+      control_type: ct,
+      automation_id: el.id || el.getAttribute('name') || '',
+      enabled: !el.disabled,
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      actions: actionsOf(el, ct),
+    });
+  }
+  return out;
+})()
+`, true)
+
+  const indexed = (Array.isArray(elements) ? elements : []).map((element: any, index: number) => ({
+    ...element,
+    index,
+    rect: toPhysicalRect(win, element.rect || {}),
+  }))
+  return { success: true, window: win.getTitle(), count: indexed.length, elements: indexed }
+}
+
+async function clickOwnElectronDom(args: any = {}) {
+  const win = findOwnElectronWindow(args.title)
+  if (!win) return null
+  const name = args.name === undefined || args.name === null ? '' : String(args.name)
+  const automationId = args.automation_id ?? args.automationId
+  const controlType = args.control_type ?? args.controlType
+  const index = Math.max(0, Math.trunc(Number(args.index || 0)) || 0)
+  const button = String(args.button || 'left').toLowerCase() === 'right' ? 'right' : 'left'
+  const double = args.double === true || args.double_click === true
+  if (button !== 'left' || double) return null
+
+  const clicked = await win.webContents.executeJavaScript(`
+(() => {
+  const selector = ${JSON.stringify(DOM_INTERACTIVE_SELECTOR)};
+  const wantName = ${JSON.stringify(name)};
+  const wantAid = ${JSON.stringify(automationId === undefined || automationId === null ? '' : String(automationId))};
+  const wantCt = ${JSON.stringify(controlType === undefined || controlType === null ? '' : String(controlType))};
+  const wantIndex = ${index};
+  const nameOf = (el) => (el.getAttribute('aria-label') || el.getAttribute('title') || el.innerText ||
+    el.getAttribute('placeholder') || el.value || el.id || el.name || '').trim();
+  const typeOf = (el) => {
+    const tag = el.tagName.toLowerCase();
+    const role = (el.getAttribute('role') || '').toLowerCase();
+    if (tag === 'button' || role === 'button') return 'Button';
+    if (tag === 'textarea') return 'Edit';
+    if (tag === 'input') {
+      const t = (el.getAttribute('type') || 'text').toLowerCase();
+      if (t === 'checkbox') return 'CheckBox';
+      if (t === 'radio') return 'RadioButton';
+      if (t === 'button' || t === 'submit') return 'Button';
+      return 'Edit';
+    }
+    if (tag === 'select') return 'ComboBox';
+    if (tag === 'a' || role === 'link') return 'Hyperlink';
+    if (tag === 'summary') return 'Button';
+    if (role === 'menuitem') return 'MenuItem';
+    if (role === 'tab') return 'TabItem';
+    return role ? role.replace(/^./, c => c.toUpperCase()) : 'Custom';
+  };
+  const matches = Array.from(document.querySelectorAll(selector)).filter(el => {
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    const aid = el.id || el.getAttribute('name') || '';
+    const nm = nameOf(el);
+    const ct = typeOf(el);
+    if (wantAid && aid !== wantAid) return false;
+    if (wantCt && ct !== wantCt) return false;
+    if (wantName && nm !== wantName && !nm.includes(wantName)) return false;
+    return true;
+  });
+  const el = matches[wantIndex] || matches[0];
+  if (!el) return null;
+  el.scrollIntoView({ block: 'center', inline: 'center' });
+  el.focus?.();
+  el.click?.();
+  const rect = el.getBoundingClientRect();
+  return {
+    name: nameOf(el),
+    control_type: typeOf(el),
+    automation_id: el.id || el.getAttribute('name') || '',
+    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+  };
+})()
+`, true)
+  if (!clicked) return { success: false, error: 'No matching element' }
+  return {
+    success: true,
+    method: 'dom',
+    button,
+    double,
+    position: toPhysicalRect(win, clicked.rect || {}),
+    element: { ...clicked, rect: toPhysicalRect(win, clicked.rect || {}) },
+  }
+}
 
 function psString(value: string): string {
   return `'${String(value).replace(/'/g, "''")}'`
@@ -113,46 +304,60 @@ function Resolve-Root($titleQuery) {
   return $AE::FromHandle($h)
 }
 
-# Bounded DFS over the control view; returns up to $cap interactive elements.
-# $maxDepth / $nodeCap keep giant trees (e.g. browsers) from blocking forever.
+function Add-ElementSnapshot($out, $node, $interactiveOnly) {
+  try {
+    $ct = Get-CtName $node
+    $rect = Get-Rect $node
+    $offscreen = $false
+    try { $offscreen = $node.Current.IsOffscreen } catch {}
+    if (($null -eq $rect) -or $offscreen) { return }
+
+    $name = ''
+    try { $name = $node.Current.Name } catch {}
+    $aid = ''
+    try { $aid = $node.Current.AutomationId } catch {}
+    $enabled = $true
+    try { $enabled = $node.Current.IsEnabled } catch {}
+    $focusable = $false
+    try { $focusable = $node.Current.IsKeyboardFocusable } catch {}
+    $actions = Get-Actions $node
+    if ((-not $interactiveOnly) -or (Is-Interactive $ct $actions $focusable)) {
+      [void]$out.Add(@{
+        name = $name; control_type = $ct; automation_id = $aid
+        enabled = $enabled; rect = $rect; actions = @($actions)
+      })
+    }
+  } catch {}
+}
+
+# Bounded traversal; returns up to $cap interactive elements.
+# Prefer UIA's native FindAll because Chromium/Electron trees often expose
+# descendants there even when TreeWalker traversal is sparse or brittle.
 function Walk-Elements($root, $cap, $maxDepth, $nodeCap, $interactiveOnly) {
   $out = New-Object System.Collections.ArrayList
+  try {
+    $nodes = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
+    $limit = [Math]::Min($nodes.Count, $nodeCap)
+    for ($i = 0; $i -lt $limit -and $out.Count -lt $cap; $i++) {
+      Add-ElementSnapshot $out $nodes[$i] $interactiveOnly
+    }
+    if ($out.Count -gt 0) { return ,$out }
+  } catch {}
+
   $stack = New-Object System.Collections.Stack
-  $stack.Push(@($root, 0))
+  $stack.Push((New-Object psobject -Property @{ node = $root; depth = 0 }))
   $visited = 0
   while ($stack.Count -gt 0 -and $out.Count -lt $cap -and $visited -lt $nodeCap) {
-    $frame = $stack.Pop(); $node = $frame[0]; $depth = $frame[1]
+    $frame = $stack.Pop(); $node = $frame.node; $depth = $frame.depth
     $visited++
     if ($depth -gt 0) {
-      try {
-        $ct = Get-CtName $node
-        $rect = Get-Rect $node
-        $offscreen = $false
-        try { $offscreen = $node.Current.IsOffscreen } catch {}
-        if (($null -ne $rect) -and (-not $offscreen)) {
-          $name = ''
-          try { $name = $node.Current.Name } catch {}
-          $aid = ''
-          try { $aid = $node.Current.AutomationId } catch {}
-          $enabled = $true
-          try { $enabled = $node.Current.IsEnabled } catch {}
-          $focusable = $false
-          try { $focusable = $node.Current.IsKeyboardFocusable } catch {}
-          $actions = Get-Actions $node
-          if ((-not $interactiveOnly) -or (Is-Interactive $ct $actions $focusable)) {
-            [void]$out.Add(@{
-              name = $name; control_type = $ct; automation_id = $aid
-              enabled = $enabled; rect = $rect; actions = $actions
-            })
-          }
-        }
-      } catch {}
+      Add-ElementSnapshot $out $node $interactiveOnly
     }
     if ($depth -lt $maxDepth) {
       try {
         $child = $WALKER.GetFirstChild($node)
         while ($null -ne $child) {
-          $stack.Push(@($child, $depth + 1))
+          $stack.Push((New-Object psobject -Property @{ node = $child; depth = ($depth + 1) }))
           $child = $WALKER.GetNextSibling($child)
         }
       } catch {}
@@ -164,6 +369,9 @@ function Walk-Elements($root, $cap, $maxDepth, $nodeCap, $interactiveOnly) {
 }
 
 export async function uiInspect(args: any = {}) {
+  const ownDom = await inspectOwnElectronDom(args)
+  if (ownDom && ownDom.count > 0) return ownDom
+
   const title = psNullableString(args.title)
   const interactiveOnly = psBool(args.interactable_only !== false && args.interactive_only !== false)
   const max = psInt(args.max ?? args.limit, 150)
@@ -199,6 +407,19 @@ for ($i = 0; $i -lt $elements.Count; $i++) {
 }
 
 export async function uiClick(args: any = {}) {
+  const hasTarget =
+    (args.name !== undefined && args.name !== null && String(args.name).length > 0) ||
+    (args.automation_id !== undefined && args.automation_id !== null && String(args.automation_id).length > 0) ||
+    (args.automationId !== undefined && args.automationId !== null && String(args.automationId).length > 0) ||
+    (args.control_type !== undefined && args.control_type !== null && String(args.control_type).length > 0) ||
+    (args.controlType !== undefined && args.controlType !== null && String(args.controlType).length > 0)
+  if (!hasTarget) {
+    throw new Error('ui.click requires at least one of: name, automation_id, control_type')
+  }
+
+  const ownDom = await clickOwnElectronDom(args)
+  if (ownDom) return ownDom
+
   const title = psNullableString(args.title)
   const name = psNullableString(args.name)
   const automationId = psNullableString(args.automation_id ?? args.automationId)
@@ -208,10 +429,6 @@ export async function uiClick(args: any = {}) {
   const method = String(args.method || 'auto').toLowerCase() // auto | invoke | mouse
   const button = String(args.button || 'left').toLowerCase() === 'right' ? 'right' : 'left'
   const double = psBool(args.double === true || args.double_click === true)
-
-  if (automationId === '$null' && name === '$null' && controlType === '$null') {
-    throw new Error('ui.click requires at least one of: name, automation_id, control_type')
-  }
 
   const script = `${preludeScript()}
 $root = Resolve-Root ${title}

@@ -12,7 +12,7 @@
 // browser_get_content / browser_dom_snapshot (which read from <body>) and never
 // intercepts clicks or future hit-tests.
 
-import { isHittable, cssPath, textOf } from './dom'
+import { isHittable, isVisible, cssPath, textOf, elementArea } from './dom'
 import { setMarks } from './marks'
 import { viewportContext } from './viewport'
 
@@ -22,6 +22,8 @@ const INTERACTIVE = [
   '[role="tab"]', '[role="menuitem"]', '[role="menuitemcheckbox"]', '[role="menuitemradio"]',
   '[role="switch"]', '[role="option"]', '[contenteditable=""]', '[contenteditable="true"]',
   '[onclick]', '[tabindex]:not([tabindex="-1"])', 'summary', 'label[for]',
+  '[aria-expanded]', '[aria-haspopup]', '[aria-controls]', '[aria-pressed]', '[aria-selected]',
+  '[draggable="true"]',
 ].join(',')
 
 const MARK_LAYER_ID = '__hs_marks_layer'
@@ -38,6 +40,62 @@ function implicitRole(el: Element): string {
     return 'textbox'
   }
   return ''
+}
+
+function isDisabled(el: Element): boolean {
+  const html = el as HTMLElement
+  return html.hasAttribute('disabled') ||
+    html.getAttribute('aria-disabled') === 'true' ||
+    html.closest('[disabled],[aria-disabled="true"]') !== null
+}
+
+function hasInteractiveSemantics(el: Element): boolean {
+  if (!(el instanceof HTMLElement) || isDisabled(el)) return false
+  if (el.matches(INTERACTIVE)) return true
+  const s = getComputedStyle(el)
+  return s.cursor === 'pointer'
+}
+
+function collectCandidates(): HTMLElement[] {
+  const out: HTMLElement[] = []
+  const seen = new Set<Element>()
+  const add = (el: Element | null) => {
+    if (!(el instanceof HTMLElement) || seen.has(el)) return
+    seen.add(el)
+    if (hasInteractiveSemantics(el) && isVisible(el)) out.push(el)
+  }
+
+  document.querySelectorAll(INTERACTIVE).forEach(add)
+
+  // Many React/Vue component libraries bind click handlers in JS without
+  // leaving onclick/role/tabindex attributes. `cursor:pointer` is the most
+  // reliable DOM-observable signal for those controls.
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
+  let scanned = 0
+  while (walker.nextNode() && scanned < 6000) {
+    scanned += 1
+    add(walker.currentNode as Element)
+  }
+
+  return out
+}
+
+function isStrongControl(el: Element): boolean {
+  return el.matches('a[href],button,input:not([type="hidden"]),select,textarea,summary,label[for],[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="tab"],[role="menuitem"],[role="menuitemcheckbox"],[role="menuitemradio"],[role="switch"],[contenteditable=""],[contenteditable="true"]')
+}
+
+function shouldDropNested(child: HTMLElement, parent: HTMLElement): boolean {
+  if (isStrongControl(child)) return false
+  if (isStrongControl(parent)) return true
+
+  const childText = textOf(child, 120)
+  const parentText = textOf(parent, 120)
+  const childArea = elementArea(child)
+  const parentArea = elementArea(parent)
+
+  if (childText && parentText && childText !== parentText) return false
+  if (parentArea > 0 && childArea / parentArea < 0.65) return false
+  return true
 }
 
 export function clearMarksOverlay(): void {
@@ -64,21 +122,22 @@ function drawMarksOverlay(els: Element[]): void {
 
 export function doObserve(msg: any) {
   clearMarksOverlay()  // never include our own previous overlay in the next scan
-  // Cap the candidate scan: isHittable does up to 4 elementFromPoint hit-tests
-  // each, so on pages with thousands of controls we'd rather bound the cost than
-  // hit-test everything. Off-screen controls fail isHittable anyway.
-  const all = (Array.from(document.querySelectorAll(INTERACTIVE)) as HTMLElement[]).slice(0, 800)
+  const all = collectCandidates()
   const hittable = all.filter(isHittable)
   const set = new Set<HTMLElement>(hittable)
-  // Keep the outer-most interactive element of a nest (the <a>/<button>, not its
-  // inner <span>) to avoid duplicate marks pointing at the same control.
+  // Remove only obvious duplicate wrappers. The old rule dropped every nested
+  // interactive child when its parent was also interactive, which hides common
+  // UI like cards that contain their own buttons/menus.
   const pruned = hittable.filter(el => {
     let p = el.parentElement
-    while (p) { if (set.has(p)) return false; p = p.parentElement }
+    while (p) {
+      if (set.has(p) && shouldDropNested(el, p)) return false
+      p = p.parentElement
+    }
     return true
   })
 
-  const limit = Math.min(Math.max(Number(msg.limit ?? 60), 1), 200)
+  const limit = Math.min(Math.max(Number(msg.limit ?? 120), 1), 200)
   const chosen = pruned.slice(0, limit)
 
   const elements = chosen.map((el, i) => {
@@ -117,6 +176,12 @@ export function doObserve(msg: any) {
     url: location.href,
     title: document.title,
     count: elements.length,
+    stats: {
+      candidates: all.length,
+      hittable: hittable.length,
+      afterDedupe: pruned.length,
+      limit,
+    },
     truncated: pruned.length > chosen.length,
     marked,
     scroll: { y: ctx.scrollY, percent: ctx.scrollPercent, atTop: ctx.atTop, atBottom: ctx.atBottom },

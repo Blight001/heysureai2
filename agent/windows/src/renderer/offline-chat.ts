@@ -19,7 +19,7 @@ const api = (window as any).heysureAPI as {
   }>
   cancelOfflineChat: (payload: { requestId?: string }) => Promise<boolean>
   onOfflineChatProgress: (cb: (event: any) => void) => () => void
-  mcpList: () => Promise<{ tools: OfflineToolDef[] }>
+  mcpList: () => Promise<{ tools: OfflineToolDef[]; enabled?: Record<string, boolean> }>
 }
 
 const q = (id: string) => document.getElementById(id)!
@@ -353,7 +353,10 @@ function recall() {
 async function initOfflineChat() {
   const cfg = await api.getOfflineChatConfig()
   const mcp = await api.mcpList()
-  offlineToolDefs = (mcp.tools || []).map(t => ({ name: t.name, description: t.description || '' }))
+  const enabled = mcp.enabled || {}
+  offlineToolDefs = (mcp.tools || [])
+    .filter(t => enabled[t.name] !== false)
+    .map(t => ({ name: t.name, description: t.description || '' }))
   allowedTools = new Set(offlineToolDefs.map(t => t.name))
   promptInput.value = cfg.prompt || ''
   await loadModelSettings()

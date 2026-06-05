@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 
 from api.database import engine
 from api.models import BotSessionRoute, ChatMessage, ChatSession
+from api.services.chat_media import delete_message_media
 from api.services.chat_persistence import _rebuild_usage_snapshots
 from connector_runtime.dispatch.agent_dispatch import get_run_session_context
 
@@ -220,6 +221,7 @@ def _delete_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optio
         if not messages and not sessions:
             raise HTTPException(status_code=404, detail="Session not found")
 
+        delete_message_media(session, messages)
         for row in messages:
             session.delete(row)
         for row in sessions:
@@ -282,6 +284,7 @@ def _forget_before_current(user_id: int, args: Dict[str, Any], ai_config_id: Opt
             delete_stmt = delete_stmt.where(ChatMessage.ai_config_id == scoped_ai_config_id)
 
         rows = session.exec(delete_stmt).all()
+        delete_message_media(session, rows)
         for row in rows:
             session.delete(row)
         session.commit()

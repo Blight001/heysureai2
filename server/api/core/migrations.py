@@ -531,6 +531,7 @@ def run_pending_migrations() -> None:
     _migrate_assistantaiconfig_strip_endpoint_mcp_tools()
     _migrate_assistantaiconfig_prune_unknown_mcp_tools()
     _migrate_valhallaentry_content()
+    _migrate_chatmessagemedia_message_cascade()
     # Only run for SQLite. Postgres deployments either start fresh or are
     # seeded by the migration script, both of which produce a current schema.
     if database_dialect() != "sqlite":
@@ -633,6 +634,30 @@ def _migrate_assistantaiconfig_strip_markdown_symbols() -> None:
         conn.exec_driver_sql(
             "UPDATE assistantaiconfig SET strip_markdown_symbols = FALSE "
             "WHERE strip_markdown_symbols IS NULL"
+        )
+
+
+def _migrate_chatmessagemedia_message_cascade() -> None:
+    """Ensure deleting a chat message also deletes DB-backed screenshot media."""
+    from ..database import engine
+    from sqlalchemy import inspect
+
+    insp = inspect(engine)
+    if "chatmessagemedia" not in set(insp.get_table_names()):
+        return
+
+    if database_dialect() != "postgresql":
+        return
+
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "ALTER TABLE chatmessagemedia "
+            "DROP CONSTRAINT IF EXISTS chatmessagemedia_message_id_fkey"
+        )
+        conn.exec_driver_sql(
+            "ALTER TABLE chatmessagemedia "
+            "ADD CONSTRAINT chatmessagemedia_message_id_fkey "
+            "FOREIGN KEY (message_id) REFERENCES chatmessage(id) ON DELETE CASCADE"
         )
 
 

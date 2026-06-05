@@ -34,6 +34,10 @@ export default defineConfig({
       '/avatars': {
         target: process.env.SERVER_URL || 'http://localhost:3000',
         changeOrigin: true
+      },
+      '/tmp-images': {
+        target: process.env.SERVER_URL || 'http://localhost:3000',
+        changeOrigin: true
       }
     }
   }

@@ -355,6 +355,7 @@
     state.port = port;
     port.onMessage.addListener(messageHandler);
     port.onDisconnect.addListener(() => {
+      void chrome.runtime.lastError;
       if (currentPort !== port)
         return;
       currentPort = null;
@@ -723,7 +724,7 @@
       input_schema: {
         type: "object",
         properties: {
-          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684\u53EF\u4EA4\u4E92\u5143\u7D20\u6570\u3002\u9ED8\u8BA4 60\uFF0C\u6700\u5927 200\u3002" },
+          limit: { type: "number", description: "\u6700\u591A\u8FD4\u56DE\u7684\u53EF\u4EA4\u4E92\u5143\u7D20\u6570\u3002\u9ED8\u8BA4 120\uFF0C\u6700\u5927 200\u3002" },
           mark: { type: "boolean", description: "\u662F\u5426\u5728\u9875\u9762\u4E0A\u7ED8\u5236\u7F16\u53F7\u6807\u8BB0\uFF0C\u4FBF\u4E8E\u968F\u540E\u622A\u56FE\u67E5\u770B\u3002\u9ED8\u8BA4 true\uFF1B\u4F20 false \u4EC5\u8FD4\u56DE\u5217\u8868\u5E76\u6E05\u9664\u5DF2\u6709\u6807\u8BB0\u3002\u6807\u8BB0\u4EC5\u4E3A\u89C6\u89C9\u53E0\u52A0\uFF0C\u4E0D\u5F71\u54CD get_content/\u622A\u56FE\u4EE5\u5916\u7684\u53D6\u6570\uFF0C\u4E5F\u4E0D\u62E6\u622A\u70B9\u51FB\u3002" }
         }
       }

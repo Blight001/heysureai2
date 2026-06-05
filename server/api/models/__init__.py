@@ -26,6 +26,7 @@ from .ai_runtime import AgentDispatchTask, AIRuntimeStatus, AITaskJob, TokenUsag
 from .chat import (
     ChatMessage,
     ChatMessageCreate,
+    ChatMessageMedia,
     ChatMessageUpdate,
     ChatRun,
     ChatSession,
@@ -96,6 +97,7 @@ __all__ = [
     # chat
     "ChatMessage",
     "ChatMessageCreate",
+    "ChatMessageMedia",
     "ChatMessageUpdate",
     "ChatRun",
     "ChatSession",

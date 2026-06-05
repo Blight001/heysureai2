@@ -1597,7 +1597,13 @@
     "[onclick]",
     '[tabindex]:not([tabindex="-1"])',
     "summary",
-    "label[for]"
+    "label[for]",
+    "[aria-expanded]",
+    "[aria-haspopup]",
+    "[aria-controls]",
+    "[aria-pressed]",
+    "[aria-selected]",
+    '[draggable="true"]'
   ].join(",");
   var MARK_LAYER_ID = "__hs_marks_layer";
   function implicitRole(el) {
@@ -1617,6 +1623,55 @@
       return "textbox";
     }
     return "";
+  }
+  function isDisabled(el) {
+    const html = el;
+    return html.hasAttribute("disabled") || html.getAttribute("aria-disabled") === "true" || html.closest('[disabled],[aria-disabled="true"]') !== null;
+  }
+  function hasInteractiveSemantics(el) {
+    if (!(el instanceof HTMLElement) || isDisabled(el))
+      return false;
+    if (el.matches(INTERACTIVE))
+      return true;
+    const s = getComputedStyle(el);
+    return s.cursor === "pointer";
+  }
+  function collectCandidates() {
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    const add = (el) => {
+      if (!(el instanceof HTMLElement) || seen.has(el))
+        return;
+      seen.add(el);
+      if (hasInteractiveSemantics(el) && isVisible(el))
+        out.push(el);
+    };
+    document.querySelectorAll(INTERACTIVE).forEach(add);
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    let scanned = 0;
+    while (walker.nextNode() && scanned < 6e3) {
+      scanned += 1;
+      add(walker.currentNode);
+    }
+    return out;
+  }
+  function isStrongControl(el) {
+    return el.matches('a[href],button,input:not([type="hidden"]),select,textarea,summary,label[for],[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="tab"],[role="menuitem"],[role="menuitemcheckbox"],[role="menuitemradio"],[role="switch"],[contenteditable=""],[contenteditable="true"]');
+  }
+  function shouldDropNested(child, parent) {
+    if (isStrongControl(child))
+      return false;
+    if (isStrongControl(parent))
+      return true;
+    const childText = textOf(child, 120);
+    const parentText = textOf(parent, 120);
+    const childArea = elementArea(child);
+    const parentArea = elementArea(parent);
+    if (childText && parentText && childText !== parentText)
+      return false;
+    if (parentArea > 0 && childArea / parentArea < 0.65)
+      return false;
+    return true;
   }
   function clearMarksOverlay() {
     document.getElementById(MARK_LAYER_ID)?.remove();
@@ -1640,19 +1695,19 @@
   }
   function doObserve(msg) {
     clearMarksOverlay();
-    const all = Array.from(document.querySelectorAll(INTERACTIVE)).slice(0, 800);
+    const all = collectCandidates();
     const hittable = all.filter(isHittable);
     const set = new Set(hittable);
     const pruned = hittable.filter((el) => {
       let p = el.parentElement;
       while (p) {
-        if (set.has(p))
+        if (set.has(p) && shouldDropNested(el, p))
           return false;
         p = p.parentElement;
       }
       return true;
     });
-    const limit = Math.min(Math.max(Number(msg.limit ?? 60), 1), 200);
+    const limit = Math.min(Math.max(Number(msg.limit ?? 120), 1), 200);
     const chosen = pruned.slice(0, limit);
     const elements = chosen.map((el, i) => {
       const r = el.getBoundingClientRect();
@@ -1688,6 +1743,12 @@
       url: location.href,
       title: document.title,
       count: elements.length,
+      stats: {
+        candidates: all.length,
+        hittable: hittable.length,
+        afterDedupe: pruned.length,
+        limit
+      },
       truncated: pruned.length > chosen.length,
       marked,
       scroll: { y: ctx.scrollY, percent: ctx.scrollPercent, atTop: ctx.atTop, atBottom: ctx.atBottom },

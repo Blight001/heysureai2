@@ -11,6 +11,7 @@ from api.models import ChatMessage, ChatSession
 from .auth import get_current_user
 from .chat_base import router
 from api.services.chat_persistence import _rebuild_usage_snapshots
+from api.services.chat_media import delete_message_media
 from api.chat_runtime.chat_runtime_helpers import _live_pending_tokens_for
 
 
@@ -109,6 +110,7 @@ async def delete_session(
     ).all()
     if ai_config_id is not None:
         rows = [row for row in rows if row.ai_config_id == ai_config_id]
+    delete_message_media(session, rows)
     for row in rows:
         session.delete(row)
 

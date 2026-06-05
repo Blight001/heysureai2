@@ -161,6 +161,12 @@ class HeySureAgent {
             userId: hasAuth ? this.settings.userId : null,
         });
     }
+    refreshRegistration() {
+        if (this.socket?.connected)
+            this.register();
+        else
+            this.connect();
+    }
     async handleTask(task) {
         const taskId = task.taskId;
         if (!taskId)

@@ -15,6 +15,7 @@ const ipc_1 = require("./ipc");
 electron_1.app.setName('HeySure Agent');
 if (process.platform === 'win32') {
     electron_1.app.setAppUserModelId('com.heysure.agent.win');
+    electron_1.app.commandLine.appendSwitch('force-renderer-accessibility', 'complete');
 }
 const hasSingleInstanceLock = electron_1.app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
@@ -32,6 +33,9 @@ electron_1.app.on('second-instance', () => {
     w.focus();
 });
 async function bootstrap() {
+    if (process.platform === 'win32') {
+        electron_1.app.setAccessibilitySupportEnabled(true);
+    }
     (0, capture_bridge_1.initCapture)();
     (0, agent_runtime_1.clearAiSelectionIfLoggedOut)();
     (0, agent_runtime_1.initAgent)(store_1.store.store);
