@@ -82,7 +82,13 @@ function resizePngToFit(buf: Buffer, maxWidth = VISION_MAX_WIDTH, maxHeight = VI
 }
 
 function wantsServerSave(args: any): boolean {
-  return args?.save_to_server === true || args?.upload_to_server === true
+  // send_to_user implies the capture must be persisted server-side so the bot
+  // has a path/URL to deliver to the user.
+  return args?.save_to_server === true || args?.upload_to_server === true || wantsSendToUser(args)
+}
+
+function wantsSendToUser(args: any): boolean {
+  return args?.send_to_user === true || args?.bot_send_to_user === true || args?.deliver_to_user === true
 }
 
 function wantsLocalSave(args: any): boolean {
@@ -108,7 +114,8 @@ export async function screenCapture(args: any = {}) {
     success: true,
     ...saveLocalPng(args, 'hs_screen', outBuf),
     save_to_server: wantsServerSave(args),
-    dataUrl: pngDataUrl(outBuf),
+    send_to_user: wantsSendToUser(args),
+    dataUrl: pngDataUrl(buf),
     width,
     height,
     original_width: scaled.originalWidth,
@@ -144,7 +151,8 @@ export async function screenCaptureRegion(args: any) {
     success: true,
     ...saveLocalPng(args, 'hs_region', outBuf),
     save_to_server: wantsServerSave(args),
-    dataUrl: pngDataUrl(outBuf),
+    send_to_user: wantsSendToUser(args),
+    dataUrl: pngDataUrl(buf),
     x,
     y,
     width: scaled.width,
