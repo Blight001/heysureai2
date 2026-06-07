@@ -140,11 +140,11 @@ registerTools([
   // real controls instead of guessing pixel coordinates from a screenshot.
   {
     id: 'ui.inspect', platform: 'windows',
-    description: '读取当前前台窗口（或按标题匹配的窗口）的 UI Automation 无障碍树，返回每个可交互控件的名称、控件类型、AutomationId、精确包围盒和可执行动作（invoke/toggle/select/expand/value）。用途：在点击前用结构化方式精确定位控件，避免靠截图猜坐标。场景：原生 Win32/WPF/UWP 程序、浏览器、office 等支持无障碍的应用；游戏/自绘 UI/远程桌面读不到时再退回 vision.capture 视觉方案。返回的元素可直接交给 ui.click 点击。',
+    description: '读取当前前台窗口（或按标题匹配的窗口）的 UI Automation 无障碍树，全面返回界面信息。顶层返回窗口标题/类名/包围盒；每个元素返回名称、控件类型、AutomationId、ClassName、是否可用、精确包围盒、可执行动作（invoke/toggle/select/expand/value），并附带**实时状态信息**：value（输入框/下拉框/滑块的当前值）、toggle_state（复选框 On/Off/Indeterminate）、selected（列表/单选项是否选中）、expand_state（树/折叠项展开状态）、help_text（控件提示/说明）。即使在 interactable_only 模式下也会一并返回带文本的静态控件（标签/标题/状态栏/列表项），让 AI 能读到屏幕上真实显示的文字与数值。用途：在操作前用结构化方式精确定位控件并读取其当前内容，避免靠截图猜测。场景：原生 Win32/WPF/UWP 程序、浏览器、office 等支持无障碍的应用；游戏/自绘 UI/远程桌面读不到时再退回 vision.capture 视觉方案。返回的元素可直接交给 ui.click 点击。',
     inputSchema: OBJ({
       title: { type: 'string', description: '可选：按窗口标题子串匹配目标顶层窗口；不传则使用当前前台窗口。' },
-      interactable_only: { type: 'boolean', description: '是否只返回可交互控件（按钮/菜单项/输入框等）。默认 true；传 false 返回更全的元素含静态文本。' },
-      max: { type: 'number', description: '最多返回多少个元素。默认 150。' },
+      interactable_only: { type: 'boolean', description: '是否只返回可交互控件 + 带文本的静态控件（标签/标题/状态栏）。默认 true；传 false 返回无障碍树中的全部元素（最全但更慢、更杂）。' },
+      max: { type: 'number', description: '最多返回多少个元素。默认 300。' },
       max_depth: { type: 'number', description: '遍历树的最大深度，越大越全但越慢。默认 40。' },
     }),
     handler: ({ args }) => uiInspect(args),
