@@ -226,7 +226,13 @@ function maxDataUrlChars(args: any) {
 }
 
 function wantsServerSave(args: any): boolean {
-  return args?.save_to_server === true || args?.upload_to_server === true
+  // send_to_user implies the capture must be persisted server-side so the bot
+  // has a path/URL to deliver to the user.
+  return args?.save_to_server === true || args?.upload_to_server === true || wantsSendToUser(args)
+}
+
+function wantsSendToUser(args: any): boolean {
+  return args?.send_to_user === true || args?.bot_send_to_user === true || args?.deliver_to_user === true
 }
 
 async function ensureScreenshotPayloadSize(
@@ -437,6 +443,7 @@ async function toolScreenshot(args: any = {}): Promise<any> {
         success: true,
         dataUrl: optimized.dataUrl,
         save_to_server: wantsServerSave(args),
+        send_to_user: wantsSendToUser(args),
         tabId: tab.id,
         url: tab.url,
         method: args.full_page
@@ -495,6 +502,7 @@ async function toolScreenshot(args: any = {}): Promise<any> {
         success: true,
         dataUrl: optimized.dataUrl,
         save_to_server: wantsServerSave(args),
+        send_to_user: wantsSendToUser(args),
         tabId: tab.id,
         url: tab.url,
         method: 'debugger.Page.captureScreenshot',

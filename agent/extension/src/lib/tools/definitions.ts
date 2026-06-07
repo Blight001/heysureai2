@@ -121,6 +121,7 @@ export const BROWSER_TOOLS: AIToolDef[] = [
         allow_large_data_url: { type: 'boolean', description: '允许返回超过 max_data_url_chars 的截图。默认 false。' },
         save_to_server: { type: 'boolean', description: '是否把截图保存到服务器并返回服务器路径/URL。默认 false，不保存且保留完整 dataUrl。' },
         upload_to_server: { type: 'boolean', description: 'save_to_server 的兼容别名。默认 false。' },
+        send_to_user: { type: 'boolean', description: '机器人发送给用户：为 true 时这张截图会通过当前会话所属机器人直接发给用户，画面内容不会返回给你（你看不到这张图、也不消耗你的视觉上下文）。适合「把屏幕/页面截图发给用户看」这类需求；若你自己需要分析画面，请不要开启此项。默认 false。' },
         task_timeout_ms: { type: 'number', description: '本次截图任务在端点 agent 上的硬超时（毫秒）。默认 35000。' },
         fallback_visible: { type: 'boolean', description: '元素/区域/整页截图时，若精确 CDP 截图失败则回退为可视区截图。默认 false。' },
       },

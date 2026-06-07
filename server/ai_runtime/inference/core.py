@@ -837,13 +837,119 @@ def _screenshot_display_ref(tool: str, tool_result: Dict[str, object]) -> Dict[s
     return {"data_url": data_url}
 
 
-def _model_visible_tool_result(tool: str, tool_result: Dict[str, object]) -> object:
+def _send_to_user_enabled(tool: str, arguments: object, tool_result: Dict[str, object]) -> bool:
+    """True when a screenshot tool was called with ``send_to_user`` set.
+
+    The flag may arrive on the call arguments (authoritative) or be echoed back
+    on the tool result by the agent. When enabled, the captured image is pushed
+    straight to the user via the bot and is intentionally NOT shown to the model.
+    """
+    if tool not in _SCREENSHOT_MODEL_TOOLS:
+        return False
+
+    def _truthy(value: object) -> bool:
+        if value is True:
+            return True
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    keys = ("send_to_user", "bot_send_to_user", "deliver_to_user")
+    if isinstance(arguments, dict):
+        for key in keys:
+            if key in arguments and _truthy(arguments.get(key)):
+                return True
+    if isinstance(tool_result, dict):
+        payload = tool_result.get("result", tool_result)
+        for src in (tool_result, payload):
+            if isinstance(src, dict):
+                for key in keys:
+                    if _truthy(src.get(key)):
+                        return True
+    return False
+
+
+def _screenshot_delivery_image(tool_result: Dict[str, object]) -> Dict[str, str]:
+    """Pull a deliverable image reference (public URL / server path) out of a
+    persisted screenshot result for bot delivery."""
+    candidates = []
+    if isinstance(tool_result, dict):
+        payload = tool_result.get("result", tool_result)
+        if isinstance(payload, dict):
+            candidates.append(payload)
+        candidates.append(tool_result)
+    for src in candidates:
+        url = str(src.get("public_url") or src.get("image_url") or "").strip()
+        path = str(src.get("server_path") or "").strip()
+        if url.startswith(("http://", "https://")) or path:
+            return {
+                "url": url if url.startswith(("http://", "https://")) else "",
+                "path": path,
+                "file_name": str(src.get("file_name") or "").strip(),
+            }
+    return {}
+
+
+def _deliver_screenshot_to_user(
+    bg: Session,
+    *,
+    user_id: int,
+    ai_config_id: Optional[int],
+    ai_kind: str,
+    session_id: str,
+    tool: str,
+    tool_result: Dict[str, object],
+) -> Dict[str, object]:
+    """Push a captured screenshot to the user via the session's bot.
+
+    Returns a delivery report; never raises so screenshot delivery can never
+    break the main MCP execution loop.
+    """
+    image = _screenshot_delivery_image(tool_result)
+    if not image:
+        return {"delivered": False, "reason": "no_persisted_image"}
+    try:
+        from connector_runtime.bots.screenshot_push import deliver_screenshot_to_user
+
+        return deliver_screenshot_to_user(
+            bg,
+            user_id=user_id,
+            ai_config_id=ai_config_id,
+            ai_kind=ai_kind,
+            session_id=session_id,
+            tool=tool,
+            image=image,
+        )
+    except Exception as exc:
+        logger.debug("screenshot bot delivery skipped", exc_info=True)
+        return {"delivered": False, "reason": str(exc)}
+
+
+def _model_visible_tool_result(
+    tool: str,
+    tool_result: Dict[str, object],
+    *,
+    sent_to_user: bool = False,
+    delivery: Optional[Dict[str, object]] = None,
+) -> object:
     result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else tool_result
     if tool not in _SCREENSHOT_MODEL_TOOLS or not isinstance(result_payload, dict):
         return result_payload
     cleaned = _omit_image_fields(_sanitize_large_media(result_payload))
     if not isinstance(cleaned, dict):
         cleaned = {}
+    if sent_to_user:
+        # The image was handed directly to the user — never to the model.
+        cleaned["screenshot_attached_to_model"] = False
+        cleaned["screenshot_sent_to_user"] = True
+        if isinstance(delivery, dict):
+            cleaned["user_delivery"] = {
+                k: delivery.get(k) for k in ("delivered", "channel", "reason", "via") if k in delivery
+            }
+        cleaned["instruction"] = (
+            "本次截图已根据 send_to_user 设置直接发送给用户（通过机器人/当前会话），"
+            "并未返回给你，你看不到画面内容。不要假装看到了截图，也不要请求重新查看；"
+            "如需自己分析画面，请在不带 send_to_user 的情况下重新截图。"
+        )
+        return cleaned
     cleaned["screenshot_attached_to_model"] = True
     if tool == "mouse.click":
         cleaned["instruction"] = (
@@ -1635,11 +1741,32 @@ def _run_worker_impl(
                             image_url=item_screenshot_ref.get("url", ""),
                             image_data_url=item_screenshot_ref.get("data_url", ""),
                         )
+                        # send_to_user：拼接调用里的截图同样直接发给用户，结果不带图回流模型。
+                        item_sent_to_user = (not item_failed) and _send_to_user_enabled(split_tool, arguments, item_result)
+                        item_delivery = None
+                        if item_sent_to_user:
+                            item_delivery = _deliver_screenshot_to_user(
+                                bg,
+                                user_id=user_id,
+                                ai_config_id=ai_config_id,
+                                ai_kind=ai_kind,
+                                session_id=session_id,
+                                tool=split_tool,
+                                tool_result=item_result,
+                            )
+                            item_model_result = _model_visible_tool_result(
+                                split_tool,
+                                item_result,
+                                sent_to_user=True,
+                                delivery=item_delivery,
+                            )
+                        else:
+                            item_model_result = item_result.get("result", item_result)
                         compound_results.append({
                             "tool": split_tool,
                             "failed": item_failed,
                             "error": item_error,
-                            "result": item_result.get("result", item_result),
+                            "result": item_model_result,
                         })
 
                     compound_payload = {
@@ -1780,6 +1907,21 @@ def _run_worker_impl(
                     image_url=screenshot_ref.get("url", ""),
                     image_data_url=screenshot_ref.get("data_url", ""),
                 )
+
+                # send_to_user：把截图直接发给用户（通过会话所属机器人），不回流给模型。
+                # 失败也不影响主链路；chat 气泡已带图，Web 用户始终能看到。
+                screenshot_sent_to_user = (not tool_failed) and _send_to_user_enabled(tool, arguments, tool_result)
+                screenshot_delivery = None
+                if screenshot_sent_to_user:
+                    screenshot_delivery = _deliver_screenshot_to_user(
+                        bg,
+                        user_id=user_id,
+                        ai_config_id=ai_config_id,
+                        ai_kind=ai_kind,
+                        session_id=session_id,
+                        tool=tool,
+                        tool_result=tool_result,
+                    )
 
                 # 录制咽喉点抄录（S4，§4.1）：录制开着时，把流经此处的成功操作类
                 # endpoint 工具调用顺手抄进 buffer。绝不能因录制出错影响主调用链。
@@ -1990,13 +2132,24 @@ def _run_worker_impl(
                     _run_set_status(run_id, "completed", finished=True)
                     return
                 else:
-                    screenshot_message = _browser_screenshot_image_message(tool, tool_result)
+                    # When send_to_user is on, the image went straight to the
+                    # user — never attach it to the model context.
+                    screenshot_message = (
+                        None if screenshot_sent_to_user
+                        else _browser_screenshot_image_message(tool, tool_result)
+                    )
+                    model_visible_result = _model_visible_tool_result(
+                        tool,
+                        tool_result,
+                        sent_to_user=screenshot_sent_to_user,
+                        delivery=screenshot_delivery,
+                    )
                     if _has_native_tc:
                         # Native path: use tool role so model sees structured result.
                         convo.append({
                             "role": "tool",
                             "tool_call_id": _tc_id or "call_0",
-                            "content": _safe_json(_model_visible_tool_result(tool, tool_result)),
+                            "content": _safe_json(model_visible_result),
                         })
                         if screenshot_message:
                             convo.append(screenshot_message)
@@ -2008,7 +2161,7 @@ def _run_worker_impl(
                             "[工具参数]\n"
                             f"{_safe_json(arguments)}\n\n"
                             "[工具执行结果]\n"
-                            f"{_safe_json(_model_visible_tool_result(tool, tool_result))}\n\n"
+                            f"{_safe_json(model_visible_result)}\n\n"
                             "请基于以上结果继续完成任务。"
                         )
                         if screenshot_message:

@@ -3575,6 +3575,7 @@
           allow_large_data_url: { type: "boolean", description: "\u5141\u8BB8\u8FD4\u56DE\u8D85\u8FC7 max_data_url_chars \u7684\u622A\u56FE\u3002\u9ED8\u8BA4 false\u3002" },
           save_to_server: { type: "boolean", description: "\u662F\u5426\u628A\u622A\u56FE\u4FDD\u5B58\u5230\u670D\u52A1\u5668\u5E76\u8FD4\u56DE\u670D\u52A1\u5668\u8DEF\u5F84/URL\u3002\u9ED8\u8BA4 false\uFF0C\u4E0D\u4FDD\u5B58\u4E14\u4FDD\u7559\u5B8C\u6574 dataUrl\u3002" },
           upload_to_server: { type: "boolean", description: "save_to_server \u7684\u517C\u5BB9\u522B\u540D\u3002\u9ED8\u8BA4 false\u3002" },
+          send_to_user: { type: "boolean", description: "机器人发送给用户：为 true 时这张截图会通过当前会话所属机器人直接发给用户，画面内容不会返回给你（你看不到这张图、也不消耗你的视觉上下文）。适合「把屏幕/页面截图发给用户看」这类需求；若你自己需要分析画面，请不要开启此项。默认 false。" },
           task_timeout_ms: { type: "number", description: "\u672C\u6B21\u622A\u56FE\u4EFB\u52A1\u5728\u7AEF\u70B9 agent \u4E0A\u7684\u786C\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09\u3002\u9ED8\u8BA4 35000\u3002" },
           fallback_visible: { type: "boolean", description: "\u5143\u7D20/\u533A\u57DF/\u6574\u9875\u622A\u56FE\u65F6\uFF0C\u82E5\u7CBE\u786E CDP \u622A\u56FE\u5931\u8D25\u5219\u56DE\u9000\u4E3A\u53EF\u89C6\u533A\u622A\u56FE\u3002\u9ED8\u8BA4 false\u3002" }
         }
@@ -4132,7 +4133,10 @@
     return 8e6;
   }
   function wantsServerSave(args) {
-    return args?.save_to_server === true || args?.upload_to_server === true;
+    return args?.save_to_server === true || args?.upload_to_server === true || wantsSendToUser(args);
+  }
+  function wantsSendToUser(args) {
+    return args?.send_to_user === true || args?.bot_send_to_user === true || args?.deliver_to_user === true;
   }
   async function ensureScreenshotPayloadSize(dataUrl, args, retryCompressed) {
     const maxChars = maxDataUrlChars(args);
@@ -4327,6 +4331,7 @@
           success: true,
           dataUrl: optimized.dataUrl,
           save_to_server: wantsServerSave(args),
+          send_to_user: wantsSendToUser(args),
           tabId: tab.id,
           url: tab.url,
           method: args.full_page ? "debugger.Page.captureScreenshot.fullPage" : args.selector || args.text ? "debugger.Page.captureScreenshot.element" : "debugger.Page.captureScreenshot.clip",
@@ -4359,6 +4364,7 @@
         success: true,
         dataUrl: optimized.dataUrl,
         save_to_server: wantsServerSave(args),
+        send_to_user: wantsSendToUser(args),
         tabId: tab.id,
         url: tab.url,
         method: "captureVisibleTab",
@@ -4379,6 +4385,7 @@
           success: true,
           dataUrl: optimized.dataUrl,
           save_to_server: wantsServerSave(args),
+          send_to_user: wantsSendToUser(args),
           tabId: tab.id,
           url: tab.url,
           method: "debugger.Page.captureScreenshot",

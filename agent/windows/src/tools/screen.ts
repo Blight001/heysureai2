@@ -15,7 +15,13 @@ function pngDataUrl(buf: Buffer): string {
 }
 
 function wantsServerSave(args: any): boolean {
-  return args?.save_to_server === true || args?.upload_to_server === true
+  // send_to_user implies the capture must be persisted server-side so the bot
+  // has a path/URL to deliver to the user.
+  return args?.save_to_server === true || args?.upload_to_server === true || wantsSendToUser(args)
+}
+
+function wantsSendToUser(args: any): boolean {
+  return args?.send_to_user === true || args?.bot_send_to_user === true || args?.deliver_to_user === true
 }
 
 function wantsLocalSave(args: any): boolean {
@@ -39,6 +45,7 @@ export async function screenCapture(args: any = {}) {
     success: true,
     ...saveLocalPng(args, 'hs_screen', buf),
     save_to_server: wantsServerSave(args),
+    send_to_user: wantsSendToUser(args),
     dataUrl: pngDataUrl(buf),
     width,
     height,
@@ -60,6 +67,7 @@ export async function screenCaptureRegion(args: any) {
     success: true,
     ...saveLocalPng(args, 'hs_region', buf),
     save_to_server: wantsServerSave(args),
+    send_to_user: wantsSendToUser(args),
     dataUrl: pngDataUrl(buf),
     x,
     y,
