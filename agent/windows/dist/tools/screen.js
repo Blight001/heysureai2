@@ -102,7 +102,18 @@ function resizePngToFit(buf, maxWidth = VISION_MAX_WIDTH, maxHeight = VISION_MAX
     };
 }
 function wantsServerSave(args) {
-    return args?.save_to_server === true || args?.upload_to_server === true;
+    // send_to_user implies the capture must be persisted server-side so the bot
+    // has a path/URL to deliver to the user.
+    return args?.save_to_server === true || args?.upload_to_server === true || wantsSendToUser(args);
+}
+function wantsSendToUser(args) {
+    const values = [args?.send_to_user, args?.bot_send_to_user, args?.deliver_to_user]
+        .filter((value) => value !== undefined);
+    if (values.some((value) => value === true))
+        return true;
+    if (values.some((value) => value === false))
+        return false;
+    return true;
 }
 function wantsLocalSave(args) {
     return !!args?.path || args?.save_local === true || args?.save_to_file === true;
@@ -126,6 +137,7 @@ async function screenCapture(args = {}) {
         success: true,
         ...saveLocalPng(args, 'hs_screen', outBuf),
         save_to_server: wantsServerSave(args),
+        send_to_user: wantsSendToUser(args),
         dataUrl: pngDataUrl(outBuf),
         width,
         height,
@@ -162,6 +174,7 @@ async function screenCaptureRegion(args) {
         success: true,
         ...saveLocalPng(args, 'hs_region', outBuf),
         save_to_server: wantsServerSave(args),
+        send_to_user: wantsSendToUser(args),
         dataUrl: pngDataUrl(outBuf),
         x,
         y,

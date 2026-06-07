@@ -88,7 +88,11 @@ function wantsServerSave(args: any): boolean {
 }
 
 function wantsSendToUser(args: any): boolean {
-  return args?.send_to_user === true || args?.bot_send_to_user === true || args?.deliver_to_user === true
+  const values = [args?.send_to_user, args?.bot_send_to_user, args?.deliver_to_user]
+    .filter((value) => value !== undefined)
+  if (values.some((value) => value === true)) return true
+  if (values.some((value) => value === false)) return false
+  return true
 }
 
 function wantsLocalSave(args: any): boolean {
@@ -115,7 +119,7 @@ export async function screenCapture(args: any = {}) {
     ...saveLocalPng(args, 'hs_screen', outBuf),
     save_to_server: wantsServerSave(args),
     send_to_user: wantsSendToUser(args),
-    dataUrl: pngDataUrl(buf),
+    dataUrl: pngDataUrl(outBuf),
     width,
     height,
     original_width: scaled.originalWidth,
@@ -152,7 +156,7 @@ export async function screenCaptureRegion(args: any) {
     ...saveLocalPng(args, 'hs_region', outBuf),
     save_to_server: wantsServerSave(args),
     send_to_user: wantsSendToUser(args),
-    dataUrl: pngDataUrl(buf),
+    dataUrl: pngDataUrl(outBuf),
     x,
     y,
     width: scaled.width,

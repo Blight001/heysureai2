@@ -258,6 +258,7 @@ async def dispatch_task_to_agent(
         "model": model,
         "instruction": instruction,
         "tool": tool or "",
+        "args": args or {},
         "created_at": time.time(),
         "suppress_session_message": bool(suppress_session_message),
     }
@@ -319,6 +320,7 @@ def _resolve_result_context(data: Dict[str, Any]) -> Dict[str, Any]:
         "model": None,
         "instruction": data.get("instruction") or "",
         "tool": data.get("tool") or "",
+        "args": data.get("args") if isinstance(data.get("args"), dict) else {},
     }
 
 
@@ -343,6 +345,59 @@ def _save_agent_message(ctx: Dict[str, Any], content: str, tags: str) -> None:
                 total_tokens=0,
             ),
         )
+
+
+_SCREENSHOT_TOOLS = {"browser_screenshot", "screen.capture", "screen.capture_region", "vision.capture", "vision.capture_mouse"}
+_IMAGE_DATA_URL_KEYS = {"dataUrl", "data_url", "imageDataUrl", "screenshotDataUrl", "screenshot"}
+
+
+def _explicit_send_disabled(args: Any) -> bool:
+    if not isinstance(args, dict):
+        return False
+    return any(
+        key in args and args.get(key) is False
+        for key in ("send_to_user", "bot_send_to_user", "deliver_to_user")
+    )
+
+
+def _should_send_screenshot_to_user(tool: str, result: Any, args: Any = None) -> bool:
+    if _explicit_send_disabled(args):
+        return False
+    return (
+        (isinstance(result, dict) and (
+            result.get("send_to_user") is True
+            or result.get("bot_send_to_user") is True
+            or result.get("deliver_to_user") is True
+        ))
+        or str(tool or "") in {"vision.capture", "vision.capture_mouse", "screen.capture", "screen.capture_region"}
+    )
+
+
+def _normalize_screenshot_result_for_delivery(tool: str, result: Any, args: Any = None) -> Any:
+    if not isinstance(result, dict):
+        return result
+    if not _should_send_screenshot_to_user(tool, result, args):
+        return result
+    next_result = dict(result)
+    next_result["send_to_user"] = True
+    next_result["save_to_server"] = True
+    return next_result
+
+
+def _omit_screenshot_bytes(value: Any) -> Any:
+    if isinstance(value, dict):
+        out: Dict[str, Any] = {}
+        for key, item in value.items():
+            if key in _IMAGE_DATA_URL_KEYS and isinstance(item, str) and item.startswith("data:image/"):
+                out[key] = f"<image data URL omitted, {len(item)} chars>"
+            elif key in {"server_path", "workspace_path"}:
+                out[key] = item
+            else:
+                out[key] = _omit_screenshot_bytes(item)
+        return out
+    if isinstance(value, list):
+        return [_omit_screenshot_bytes(item) for item in value]
+    return value
 
 
 async def _emit_to_user(ctx: Dict[str, Any], event: str, payload: Dict[str, Any]) -> None:
@@ -370,7 +425,8 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
     tool = str(data.get("tool") or ctx.get("tool") or "")
     summary = str(data.get("summary") or "")
     result = data.get("result")
-    if success and tool in {"browser_screenshot", "screen.capture", "screen.capture_region", "vision.capture", "vision.capture_mouse"}:
+    if success and tool in _SCREENSHOT_TOOLS:
+        result = _normalize_screenshot_result_for_delivery(tool, result, ctx.get("args"))
         try:
             result = attach_persisted_screenshot(
                 user_id=int(ctx.get("user_id") or 0),
@@ -385,7 +441,8 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
                 result["upload_error"] = str(exc)
 
     status = "成功" if success else "失败"
-    result_text = result if isinstance(result, str) else _safe_dump(result)
+    display_result = _omit_screenshot_bytes(result) if tool in _SCREENSHOT_TOOLS else result
+    result_text = result if isinstance(result, str) else _safe_dump(display_result)
     agent_label = _agent_kind_label(agent_id)
     content = (
         f"[{agent_label}执行结果]\n"

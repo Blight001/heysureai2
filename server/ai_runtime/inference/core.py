@@ -603,7 +603,9 @@ def _save_mcp_tool_bubble(
     failed: bool = False,
     image_url: str = "",
     image_data_url: str = "",
+    tool_result: Optional[Dict[str, object]] = None,
 ) -> None:
+    bot_delivery: Dict[str, object] = {}
     saved = _save_message(
         bg,
         user_id,
@@ -635,6 +637,29 @@ def _save_mcp_tool_bubble(
             bg.commit()
         except Exception:
             logger.debug("screenshot chat-media persist skipped", exc_info=True)
+    if (not failed) and tool_result and _screenshot_send_to_user_enabled(tool, tool_result):
+        try:
+            bot_delivery = _deliver_screenshot_to_bot(bg, saved, tool_result=tool_result)
+            if bot_delivery:
+                saved.content = _build_mcp_tool_bubble_content(
+                    tool,
+                    arguments,
+                    f"{result_text}\n\n[机器人发送]\n{_safe_json(bot_delivery)}",
+                    failed,
+                    _extract_screenshot_bubble_url(saved.content) or image_url,
+                )
+                bg.add(saved)
+                bg.commit()
+        except Exception:
+            logger.debug("screenshot bot delivery skipped", exc_info=True)
+
+
+def _extract_screenshot_bubble_url(content: str) -> str:
+    marker = f"\n\n{_SCREENSHOT_BUBBLE_MARKER}\n"
+    text = str(content or "")
+    if marker not in text:
+        return ""
+    return text.rsplit(marker, 1)[-1].strip().splitlines()[0].strip()
 
 
 def _load_current_user_content(
@@ -835,6 +860,115 @@ def _screenshot_display_ref(tool: str, tool_result: Dict[str, object]) -> Dict[s
     if not data_url.startswith("data:image/"):
         return {}
     return {"data_url": data_url}
+
+
+def _find_screenshot_result_payload(value: object, depth: int = 0) -> Dict[str, object]:
+    if depth > 5:
+        return {}
+    if isinstance(value, dict):
+        if any(key in value for key in ("send_to_user", "bot_send_to_user", "deliver_to_user", "save_to_server", "server_path")):
+            return value
+        for key in ("result", "payload", "data", "screenshot_result"):
+            found = _find_screenshot_result_payload(value.get(key), depth + 1)
+            if found:
+                return found
+        for item in value.values():
+            if isinstance(item, (dict, list)):
+                found = _find_screenshot_result_payload(item, depth + 1)
+                if found:
+                    return found
+    if isinstance(value, list):
+        for item in value:
+            found = _find_screenshot_result_payload(item, depth + 1)
+            if found:
+                return found
+    return {}
+
+
+def _screenshot_send_to_user_enabled(tool: str, tool_result: Dict[str, object]) -> bool:
+    if tool not in {"screen.capture", "screen.capture_region", "vision.capture", "vision.capture_mouse"}:
+        return False
+    payload = _find_screenshot_result_payload(tool_result)
+    return (
+        payload.get("send_to_user") is True
+        or payload.get("bot_send_to_user") is True
+        or payload.get("deliver_to_user") is True
+    )
+
+
+def _bot_target_from_route(route: object) -> Dict[str, object]:
+    target: Dict[str, object] = {}
+    if hasattr(route, "receive_id"):
+        target["receive_id"] = str(getattr(route, "receive_id", "") or "")
+        target["receive_id_type"] = str(getattr(route, "receive_id_type", "") or "")
+    if hasattr(route, "target_id"):
+        target["target_id"] = str(getattr(route, "target_id", "") or "")
+        target["target_type"] = str(getattr(route, "target_type", "") or "")
+    if hasattr(route, "source_message_id"):
+        target["msg_id"] = str(getattr(route, "source_message_id", "") or "")
+    if hasattr(route, "source_event_id"):
+        target["event_id"] = str(getattr(route, "source_event_id", "") or "")
+    if hasattr(route, "next_msg_seq"):
+        try:
+            target["msg_seq"] = max(1, int(getattr(route, "next_msg_seq") or 1))
+        except Exception:
+            pass
+    return target
+
+
+def _deliver_screenshot_to_bot(bg: Session, message: ChatMessage, *, tool_result: Dict[str, object]) -> Dict[str, object]:
+    payload = _find_screenshot_result_payload(tool_result)
+    image_payload = _find_image_payload(tool_result)
+    media_path = str(payload.get("server_path") or image_payload.get("path") or "").strip()
+    media_url = str(payload.get("image_url") or payload.get("public_url") or image_payload.get("url") or "").strip()
+    if not media_path and not media_url:
+        return {"delivered": False, "reason": "no media path or url"}
+    media = {
+        "url": media_url,
+        "path": media_path,
+        "type": "image",
+        "file_name": str(payload.get("file_name") or "screenshot.png"),
+    }
+    from connector_runtime.bots.registry import iter_bots
+
+    bots = list(iter_bots())
+    for bot in bots:
+        route = bot.load_session_route(bg, message)
+        if not route:
+            continue
+        target = _bot_target_from_route(route)
+        sent = bot.send_media(
+            user_id=int(message.user_id),
+            ai_config_id=message.ai_config_id,
+            text="",
+            media=media,
+            target=target,
+        )
+        if hasattr(route, "row") and "msg_seq" in target:
+            try:
+                route.row.next_msg_seq = int(target["msg_seq"]) + 1
+                route.row.updated_at = time.time()
+                bg.add(route.row)
+                bg.commit()
+            except Exception:
+                logger.debug("screenshot bot route sequence bump skipped", exc_info=True)
+        return {"delivered": True, "mode": "session_route", "channel": bot.channel, "target": target, "result": sent}
+
+    cfg = bg.get(AssistantAIConfig, int(message.ai_config_id or 0)) if message.ai_config_id else None
+    channel = str(getattr(cfg, "bot_channel", "") or "").strip().lower()
+    active_bot = next((bot for bot in bots if bot.channel == channel), None)
+    if active_bot is None:
+        return {"delivered": False, "reason": "no bot session route and no active bot channel", "channel": channel}
+    if cfg is not None and not active_bot.is_enabled(cfg):
+        return {"delivered": False, "reason": "active bot is disabled", "channel": active_bot.channel}
+    sent = active_bot.send_media(
+        user_id=int(message.user_id),
+        ai_config_id=message.ai_config_id,
+        text="",
+        media=media,
+        target={},
+    )
+    return {"delivered": True, "mode": "default_target", "channel": active_bot.channel, "result": sent}
 
 
 def _model_visible_tool_result(tool: str, tool_result: Dict[str, object]) -> object:
@@ -1634,6 +1768,7 @@ def _run_worker_impl(
                             failed=item_failed,
                             image_url=item_screenshot_ref.get("url", ""),
                             image_data_url=item_screenshot_ref.get("data_url", ""),
+                            tool_result=item_result if isinstance(item_result, dict) else None,
                         )
                         compound_results.append({
                             "tool": split_tool,
@@ -1779,6 +1914,7 @@ def _run_worker_impl(
                     failed=tool_failed,
                     image_url=screenshot_ref.get("url", ""),
                     image_data_url=screenshot_ref.get("data_url", ""),
+                    tool_result=tool_result if isinstance(tool_result, dict) else None,
                 )
 
                 # 录制咽喉点抄录（S4，§4.1）：录制开着时，把流经此处的成功操作类
