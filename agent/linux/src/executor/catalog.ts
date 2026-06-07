@@ -200,6 +200,7 @@ registerTools([
       display: { type: 'number', description: '要截图的显示器序号。默认 0。' },
       screen: { type: 'number', description: 'display 的别名。' },
       upload_to_server: { type: 'boolean', description: '默认 true：存到服务器并返回其工作区路径。' },
+      send_to_user: { type: 'boolean', description: '机器人发送给用户：为 true 时这张屏幕截图会通过当前会话所属机器人直接发给用户，画面内容不会返回给你（你看不到这张图、也不消耗你的视觉上下文）。适合「把屏幕截图发给用户看」这类需求；若你自己需要分析画面，请不要开启此项。默认 false。' },
     }),
     handler: ({ args }) => screenCapture(args),
   },
@@ -212,6 +213,7 @@ registerTools([
       width: { type: 'number', description: '区域宽度（像素）。' },
       height: { type: 'number', description: '区域高度（像素）。' },
       upload_to_server: { type: 'boolean', description: '默认 true：存到服务器并返回其工作区路径。' },
+      send_to_user: { type: 'boolean', description: '机器人发送给用户：为 true 时这张区域截图会通过当前会话所属机器人直接发给用户，画面内容不会返回给你（你看不到这张图、也不消耗你的视觉上下文）。适合「把某块画面发给用户看」这类需求；若你自己需要分析画面，请不要开启此项。默认 false。' },
     }, ['width', 'height']),
     handler: ({ args }) => screenCaptureRegion(args),
   },
@@ -291,7 +293,9 @@ registerTools([
   {
     id: 'vision.capture', platform: 'linux',
     description: '采集整屏画面用于视觉理解。用途：让 AI「看」屏幕做理解。场景：分析当前界面、识别画面内容。',
-    inputSchema: OBJ({}),
+    inputSchema: OBJ({
+      send_to_user: { type: 'boolean', description: '机器人发送给用户：为 true 时这张截图会通过当前会话所属机器人直接发给用户，画面内容不会返回给你（你看不到这张图、也不消耗你的视觉上下文）。适合「把屏幕截图发给用户看」这类需求；若你自己需要分析画面，请不要开启此项。默认 false。' },
+    }),
     handler: ({ args }) => visionCaptureGlobal(args),
   },
   {
@@ -301,6 +305,7 @@ registerTools([
       radius: { type: 'number', description: '采集框的半径（像素）。默认 50。' },
       width: { type: 'number', description: '采集框宽度（像素）。' },
       height: { type: 'number', description: '采集框高度（像素）。' },
+      send_to_user: { type: 'boolean', description: '机器人发送给用户：为 true 时这张截图会通过当前会话所属机器人直接发给用户，画面内容不会返回给你（你看不到这张图、也不消耗你的视觉上下文）。适合「把光标附近画面发给用户看」这类需求；若你自己需要分析画面，请不要开启此项。默认 false。' },
     }),
     handler: ({ args }) => visionCaptureMouse(args),
   },

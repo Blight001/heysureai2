@@ -26,10 +26,30 @@ def _extract_data_url(result: Any) -> str:
     return ""
 
 
+def wants_send_to_user(result: Any) -> bool:
+    """True when the capture should be pushed straight to the user via a bot.
+
+    The ``send_to_user`` flag rides on the tool result (echoed by the agent)
+    just like ``save_to_server``; when set, the screenshot must be persisted so
+    bot delivery has a server path / public URL to send.
+    """
+    if not isinstance(result, dict):
+        return False
+    payload = result.get("result", result)
+    for src in (result, payload):
+        if isinstance(src, dict) and src.get("send_to_user") is True:
+            return True
+    return False
+
+
 def should_persist_screenshot_result(result: Any) -> bool:
     if not isinstance(result, dict):
         return False
-    return result.get("save_to_server") is True or result.get("upload_to_server") is True
+    if result.get("save_to_server") is True or result.get("upload_to_server") is True:
+        return True
+    # A send-to-user capture must be persisted too, so the bot has a path/URL
+    # to deliver even when the model never asked to save it.
+    return wants_send_to_user(result)
 
 
 def persist_screenshot_result(

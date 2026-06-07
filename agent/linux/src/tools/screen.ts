@@ -8,6 +8,10 @@ function pngSize(buf: Buffer): { width: number; height: number } {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) }
 }
 
+function wantsSendToUser(args: any): boolean {
+  return args?.send_to_user === true || args?.bot_send_to_user === true || args?.deliver_to_user === true
+}
+
 export async function screenCapture(args: any = {}) {
   const displayIndex = Number(args.display || args.screen || 0)
   const buf = await executeCapture({ displayIndex })
@@ -17,7 +21,7 @@ export async function screenCapture(args: any = {}) {
   const dataUrl = args.upload_to_server === false || args.return_data_url === false
     ? undefined
     : `data:image/png;base64,${buf.toString('base64')}`
-  return { success: true, path: savePath, dataUrl, width, height, bytes: buf.length, display: displayIndex }
+  return { success: true, path: savePath, dataUrl, send_to_user: wantsSendToUser(args), width, height, bytes: buf.length, display: displayIndex }
 }
 
 export async function screenCaptureRegion(args: any) {
@@ -29,7 +33,7 @@ export async function screenCaptureRegion(args: any) {
   const dataUrl = args.upload_to_server === false || args.return_data_url === false
     ? undefined
     : `data:image/png;base64,${buf.toString('base64')}`
-  return { success: true, path: savePath, dataUrl, x, y, width, height, bytes: buf.length }
+  return { success: true, path: savePath, dataUrl, send_to_user: wantsSendToUser(args), x, y, width, height, bytes: buf.length }
 }
 
 export async function screenInfo(_args: any = {}) {

@@ -51,7 +51,10 @@ function pngDataUrl(buf) {
     return `data:image/png;base64,${buf.toString('base64')}`;
 }
 function wantsServerSave(args) {
-    return args?.save_to_server === true || args?.upload_to_server === true;
+    return args?.save_to_server === true || args?.upload_to_server === true || wantsSendToUser(args);
+}
+function wantsSendToUser(args) {
+    return args?.send_to_user === true || args?.bot_send_to_user === true || args?.deliver_to_user === true;
 }
 function wantsLocalSave(args) {
     return !!args?.path || args?.save_local === true || args?.save_to_file === true;
@@ -73,6 +76,7 @@ async function screenCapture(args = {}) {
         success: true,
         ...saveLocalPng(args, 'hs_screen', buf),
         save_to_server: wantsServerSave(args),
+        send_to_user: wantsSendToUser(args),
         dataUrl: pngDataUrl(buf),
         width,
         height,
@@ -94,6 +98,7 @@ async function screenCaptureRegion(args) {
         success: true,
         ...saveLocalPng(args, 'hs_region', buf),
         save_to_server: wantsServerSave(args),
+        send_to_user: wantsSendToUser(args),
         dataUrl: pngDataUrl(buf),
         x,
         y,
