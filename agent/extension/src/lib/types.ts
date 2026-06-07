@@ -117,6 +117,7 @@ export type PopupMsg =
   | { type: 'agent:selected-ai'; aiConfigId: number | null }
   | { type: 'chat:send'; messages: ChatMessage[]; requestId?: string }
   | { type: 'offline-chat:get-config'; requestId: string }
+  | { type: 'offline-chat:save-model'; requestId: string; payload: Pick<AgentSettings, 'aiKey' | 'aiBaseUrl' | 'aiModel'> }
   | { type: 'offline-chat:save-prompt'; requestId: string; prompt: string }
   | { type: 'offline-chat:list-tools'; requestId: string }
   | { type: 'offline-chat:send'; requestId: string; messages: ChatMessage[]; prompt?: string; allowedTools?: string[] }
@@ -134,6 +135,7 @@ export type BgMsg =
   | { type: 'chat:response';   text: string; toolsUsed?: string[]; toolEvents?: ChatToolEvent[]; requestId?: string }
   | { type: 'chat:error';      error: string; requestId?: string }
   | { type: 'offline-chat:config'; requestId: string; settings: AgentSettings; hasAiKey: boolean }
+  | { type: 'offline-chat:model-saved'; requestId: string; ok: boolean; settings?: AgentSettings; error?: string }
   | { type: 'offline-chat:prompt-saved'; requestId: string; ok: boolean }
   | { type: 'offline-chat:tools'; requestId: string; tools: AIToolDef[] }
   | { type: 'offline-chat:progress'; requestId: string; event: any }

@@ -32,14 +32,23 @@
     .msg.assistant { align-self:flex-start; background:var(--ai); }
     .msg.system { align-self:center; max-width:90%; color:var(--muted); background:transparent; border-style:dashed; font-size:12px; text-align:center; }
     .tools { color:#9ee7ff; margin-top:8px; font-size:11px; }
+    .mcp-block { flex:0 0 auto; width:min(92%, 780px); max-width:92%; align-self:flex-start; display:grid; gap:8px; }
+    .mcp-block details.segment { width:100%; max-width:none; align-self:stretch; }
     details.segment { flex:0 0 auto; width:min(92%, 780px); max-width:92%; align-self:flex-start; border:1px solid var(--border); border-radius:var(--r); background:var(--panel2); overflow:hidden; }
     details.segment summary { min-height:34px; cursor:pointer; list-style:none; padding:8px 10px; display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; font-weight:700; }
     details.segment summary::-webkit-details-marker { display:none; }
     .segment-body { min-height:48px; max-height:320px; overflow:auto; padding:10px; border-top:1px solid var(--border); background:#0b1220; color:#d9e6f7; white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; font:11px/1.5 'Cascadia Code',Consolas,monospace; }
-    .tool-images { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); white-space:normal; }
+    .tool-images { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; white-space:normal; }
     .tool-image { min-width:0; border:1px solid var(--border); border-radius:var(--r); background:#111827; overflow:hidden; }
-    .tool-image img { display:block; width:100%; max-height:260px; object-fit:contain; background:#020617; }
+    .tool-image button { display:block; width:100%; border:0; padding:0; background:#020617; cursor:zoom-in; }
+    .tool-image img { display:block; width:100%; max-height:300px; object-fit:contain; background:#020617; }
     .tool-image figcaption { padding:6px 8px; color:var(--muted); font:11px var(--font); }
+    .image-viewer { position:fixed; inset:0; z-index:50; display:none; grid-template-rows:auto 1fr; background:rgba(2,6,23,.92); }
+    .image-viewer.open { display:grid; }
+    .image-viewer-bar { height:48px; display:flex; align-items:center; gap:10px; padding:0 14px; border-bottom:1px solid var(--border); background:rgba(15,23,42,.96); }
+    .image-viewer-title { min-width:0; flex:1; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
+    .image-viewer-stage { min-height:0; overflow:auto; display:grid; place-items:center; padding:18px; }
+    .image-viewer-stage img { max-width:100%; max-height:100%; object-fit:contain; background:#020617; border:1px solid var(--border); border-radius:var(--r); }
     details.segment.think { border-color:rgba(56,189,248,.20); }
     details.segment.think summary { color:#9ee7ff; }
     details.segment.think .segment-body { background:#08101d; color:#e5f3ff; }
@@ -124,6 +133,15 @@
       <button class="btn primary" id="send-btn" aria-label="发送消息">发送</button>
     </div>
   </footer>
+</div>
+<div class="image-viewer" id="image-viewer" aria-hidden="true">
+  <div class="image-viewer-bar">
+    <div class="image-viewer-title" id="image-viewer-title">图片预览</div>
+    <button class="btn" id="image-viewer-close" aria-label="关闭图片预览">关闭</button>
+  </div>
+  <div class="image-viewer-stage" id="image-viewer-stage">
+    <img id="image-viewer-img" alt="图片预览" />
+  </div>
 </div>
 <script src="offline-chat.js"></script>
 </body>

@@ -14,11 +14,13 @@
   "dependencies": {
     "socket.io-client": "^4.7.5",
     "dotenv": "^16.4.5",
+    "pngjs": "^7.0.0",
     "robotjs": "npm:@jitsi/robotjs@^0.6.22",
     "electron-store": "^8.1.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@types/pngjs": "^6.0.5",
     "electron": "^28.3.3",
     "electron-builder": "^24.9.1",
     "electron-rebuild": "^3.2.9",

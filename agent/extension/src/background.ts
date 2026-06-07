@@ -811,6 +811,22 @@ chrome.runtime.onConnect.addListener((port) => {
         break
       }
 
+      case 'offline-chat:save-model': {
+        try {
+          const payload = {
+            aiKey: String(msg.payload.aiKey || '').trim(),
+            aiBaseUrl: String(msg.payload.aiBaseUrl || '').trim() || 'https://api.anthropic.com',
+            aiModel: String(msg.payload.aiModel || '').trim() || 'claude-sonnet-4-5',
+          }
+          await saveSettings(payload)
+          const settings = await getSettings()
+          postToPopup(port, { type: 'offline-chat:model-saved', requestId: msg.requestId, ok: true, settings })
+        } catch (err: any) {
+          postToPopup(port, { type: 'offline-chat:model-saved', requestId: msg.requestId, ok: false, error: err?.message || String(err) })
+        }
+        break
+      }
+
       case 'offline-chat:save-prompt': {
         await saveSettings({ offlinePrompt: String(msg.prompt || '').trim() })
         postToPopup(port, { type: 'offline-chat:prompt-saved', requestId: msg.requestId, ok: true })

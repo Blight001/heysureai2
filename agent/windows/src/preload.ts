@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   // Settings
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: any) => ipcRenderer.invoke('settings:save', settings),
+  autoCalibrateMouse: () => ipcRenderer.invoke('settings:auto-calibrate-mouse').catch((err: any) => { throw cleanIpcError(err) }),
   // Agent control
   connect: () => ipcRenderer.invoke('agent:connect'),
   disconnect: () => ipcRenderer.invoke('agent:disconnect'),

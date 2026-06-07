@@ -262,17 +262,24 @@
     renderTools();
   }
   async function saveModel() {
-    if (!port)
-      connectPort();
-    port.postMessage({
-      type: "settings:save",
+    const id = requestId("model");
+    const reply = await sendRequest({
+      type: "offline-chat:save-model",
+      requestId: id,
       payload: {
         aiKey: cfgAiKey.value.trim(),
         aiBaseUrl: cfgAiBase.value.trim() || "https://api.anthropic.com",
         aiModel: cfgAiModel.value.trim() || "claude-sonnet-4-5"
       }
-    });
-    renderModelMeta({ aiKey: cfgAiKey.value.trim(), aiBaseUrl: cfgAiBase.value.trim(), aiModel: cfgAiModel.value.trim() });
+    }, (m) => m.type === "offline-chat:model-saved" && m.requestId === id);
+    if (!reply.ok || !reply.settings) {
+      modelFeedback.textContent = reply.error || "\u4FDD\u5B58\u5931\u8D25";
+      return;
+    }
+    cfgAiKey.value = reply.settings.aiKey || "";
+    cfgAiBase.value = reply.settings.aiBaseUrl || "";
+    cfgAiModel.value = reply.settings.aiModel || "";
+    renderModelMeta(reply.settings);
     modelFeedback.textContent = "\u5DF2\u4FDD\u5B58";
     setTimeout(() => {
       modelFeedback.textContent = "";

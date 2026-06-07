@@ -8,7 +8,47 @@
 import { SEARCH_ENGINES } from './definitions'
 
 // ── Helpers ───────────────────────────────────────────────────────────────
+function isBrowserInternalUrl(url?: string): boolean {
+  const raw = String(url || '')
+  return /^(chrome|edge|brave|vivaldi|opera|about|chrome-extension):/i.test(raw) ||
+    /^https:\/\/chromewebstore\.google\.com\//i.test(raw)
+}
+
+function isUsablePageTab(tab?: chrome.tabs.Tab): tab is chrome.tabs.Tab {
+  return !!tab?.id && !isBrowserInternalUrl(tab.url) && !tab.discarded
+}
+
 async function getActiveTab(): Promise<chrome.tabs.Tab> {
+  const [lastFocused] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
+  const lastFocusedUrl = lastFocused?.url || ''
+  if (isUsablePageTab(lastFocused)) return lastFocused
+
+  const windows = await chrome.windows.getAll({ windowTypes: ['normal'], populate: true })
+  const focusedWindow = windows.find(w => w.focused)
+  const focusedTab = focusedWindow?.tabs?.find(t => t.active)
+  const focusedTabUrl = focusedTab?.url || ''
+  if (isUsablePageTab(focusedTab)) return focusedTab
+
+  for (const win of windows) {
+    const tab = win.tabs?.find(t => t.active)
+    if (isUsablePageTab(tab)) return tab
+  }
+
+  const tabs = await chrome.tabs.query({})
+  const fallback = tabs
+    .filter(isUsablePageTab)
+    .sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0]
+  if (fallback) return fallback
+
+  const activeUrl = lastFocusedUrl || focusedTabUrl
+  const detail = activeUrl ? ` Current active URL is ${activeUrl}.` : ''
+  const err: any = new Error(`No ordinary web page tab found.${detail}`)
+  err.code = 'NO_USABLE_PAGE_TAB'
+  err.suggestion = 'Open or switch to a normal http/https page, then retry.'
+  throw err
+}
+
+async function getAnyActiveTab(): Promise<chrome.tabs.Tab> {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
   if (!tab?.id) throw new Error('No active tab found')
   return tab
@@ -153,7 +193,8 @@ async function toolNavigate(args: any): Promise<any> {
     await waitForTabLoad(tab.id!)
     return { success: true, url: url.href, tabId: tab.id, new_tab: true }
   }
-  const tab = await getActiveTab()
+  let tab: chrome.tabs.Tab
+  try { tab = await getActiveTab() } catch { tab = await getAnyActiveTab() }
   await chrome.tabs.update(tab.id!, { url: url.href })
   await waitForTabLoad(tab.id!)
   return { success: true, url: url.href, tabId: tab.id }
@@ -522,7 +563,8 @@ async function toolSearch(args: any): Promise<any> {
   const engine = String(args.engine || 'google').toLowerCase()
   const base   = SEARCH_ENGINES[engine] || SEARCH_ENGINES.google
   const url    = base + encodeURIComponent(query)
-  const tab    = await getActiveTab()
+  let tab: chrome.tabs.Tab
+  try { tab = await getActiveTab() } catch { tab = await getAnyActiveTab() }
   await chrome.tabs.update(tab.id!, { url })
   await waitForTabLoad(tab.id!)
   return { success: true, query, engine, url }
@@ -543,7 +585,7 @@ async function toolTabOpen(args: any): Promise<any> {
 }
 
 async function toolTabClose(args: any): Promise<any> {
-  const tabId = args.tab_id ? Number(args.tab_id) : (await getActiveTab()).id!
+  const tabId = args.tab_id ? Number(args.tab_id) : (await getAnyActiveTab()).id!
   await chrome.tabs.remove(tabId)
   return { success: true, tabId }
 }

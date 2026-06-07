@@ -12,6 +12,7 @@ const keyboard_1 = require("../tools/keyboard");
 const mouse_1 = require("../tools/mouse");
 const display_1 = require("../tools/display");
 const clipboard_1 = require("../tools/clipboard");
+const text_input_1 = require("../tools/text-input");
 const window_1 = require("../tools/window");
 const mouth_1 = require("../tools/mouth");
 const vision_1 = require("../tools/vision");
@@ -57,7 +58,7 @@ const OBJ = (properties, required = []) => ({
     // Mouse (windows-only via robotjs)
     {
         id: 'mouse.move', platform: 'windows',
-        description: '把鼠标光标移动到屏幕坐标。用途：定位光标。场景：移动到某个位置后再点击或悬停。',
+        description: '把鼠标光标移动到屏幕坐标。用途：定位光标。场景：移动到某个位置后再点击或悬停。若坐标来自 vision.capture 的截图，直接传截图标注的坐标；高分辨率截图若被缩放到 1920x1080 以内，本工具会自动换算到真实屏幕坐标。',
         inputSchema: OBJ({
             x: { type: 'number', description: '目标 X 坐标（像素）。' },
             y: { type: 'number', description: '目标 Y 坐标（像素）。' },
@@ -70,23 +71,19 @@ const OBJ = (properties, required = []) => ({
     },
     {
         id: 'mouse.click', platform: 'windows',
-        description: '点击鼠标，可先移动到指定坐标。默认开启点击前二次确认：第一次调用只截取目标点周边区域并用红点/十字标注目标点返回给 AI，不会执行点击；AI 必须检查红点是否位于目标可点击中心，如偏离则估算 correction_dx/correction_dy 后再次调用 mouse.click 获取新的确认图，直到目标点正确；确认正确后再次调用 mouse.click 并传 confirmed:true 才会真正点击。用途：在桌面任意位置点击。场景：点桌面图标、应用按钮、任务栏。',
+        description: '点击鼠标，可先移动到指定坐标并立即执行点击。用途：在桌面任意位置点击。场景：点桌面图标、应用按钮、任务栏。若坐标来自 vision.capture 的截图，直接传截图标注的坐标；高分辨率截图若被缩放到 1920x1080 以内，本工具会自动换算到真实屏幕坐标。',
         inputSchema: OBJ({
             x: { type: 'number', description: '点击前移动到的 X 坐标（像素）。' },
             y: { type: 'number', description: '点击前移动到的 Y 坐标（像素）。' },
             button: { type: 'string', description: '鼠标键：left、right 或 middle。默认 left。' },
             speed: { type: 'number', description: '移动到点击点的平滑速度；越大越快。默认 100。' },
             interval_ms: { type: 'number', description: '移动到点击点时每步间隔毫秒数。默认 3。' },
-            confirm_click: { type: 'boolean', description: '是否启用点击前红点确认。默认 true；传 false 会跳过确认并立即点击。' },
-            confirmed: { type: 'boolean', description: '确认红点已在目标可点击中心后传 true，工具才会真正执行点击。默认 false。' },
-            confirm_radius: { type: 'number', description: '确认截图半径（像素），实际截图宽高约为半径的 2 倍。默认 160，范围 48-480。' },
-            display: { type: 'number', description: '用于确认截图的显示器序号。默认 0。' },
         }),
         handler: ({ args }) => (0, mouse_1.mouseClick)(args),
     },
     {
         id: 'mouse.double_click', platform: 'windows',
-        description: '双击鼠标，可先移动到指定坐标。用途：需要双击才生效的操作。场景：双击打开文件/图标、双击选词。',
+        description: '双击鼠标，可先移动到指定坐标。用途：需要双击才生效的操作。场景：双击打开文件/图标、双击选词。若坐标来自 vision.capture 的截图，直接传截图标注的坐标；高分辨率截图若被缩放到 1920x1080 以内，本工具会自动换算到真实屏幕坐标。',
         inputSchema: OBJ({
             x: { type: 'number', description: '双击前移动到的 X 坐标（像素）。' },
             y: { type: 'number', description: '双击前移动到的 Y 坐标（像素）。' },
@@ -97,7 +94,7 @@ const OBJ = (properties, required = []) => ({
     },
     {
         id: 'mouse.right_click', platform: 'windows',
-        description: '右键单击鼠标，可先移动到指定坐标。用途：打开右键菜单。场景：在桌面或应用中调出上下文菜单。',
+        description: '右键单击鼠标，可先移动到指定坐标。用途：打开右键菜单。场景：在桌面或应用中调出上下文菜单。若坐标来自 vision.capture 的截图，直接传截图标注的坐标；高分辨率截图若被缩放到 1920x1080 以内，本工具会自动换算到真实屏幕坐标。',
         inputSchema: OBJ({
             x: { type: 'number', description: '右键前移动到的 X 坐标（像素）。' },
             y: { type: 'number', description: '右键前移动到的 Y 坐标（像素）。' },
@@ -108,7 +105,7 @@ const OBJ = (properties, required = []) => ({
     },
     {
         id: 'mouse.scroll', platform: 'windows',
-        description: '在当前或指定位置滚动鼠标滚轮。用途：滚动桌面应用内容。场景：在不支持页面滚动工具的原生应用里上下滚动。',
+        description: '在当前或指定位置滚动鼠标滚轮。用途：滚动桌面应用内容。场景：在不支持页面滚动工具的原生应用里上下滚动。若坐标来自 vision.capture 的截图，直接传截图标注的坐标；高分辨率截图若被缩放到 1920x1080 以内，本工具会自动换算到真实屏幕坐标。',
         inputSchema: OBJ({
             x: { type: 'number', description: '滚动前移动到的 X 坐标（像素）。' },
             y: { type: 'number', description: '滚动前移动到的 Y 坐标（像素）。' },
@@ -119,7 +116,7 @@ const OBJ = (properties, required = []) => ({
     },
     {
         id: 'mouse.drag', platform: 'windows',
-        description: '在一点按下、拖到另一点再松开。用途：桌面拖放。场景：拖动文件、拖动窗口、拖动滑块。',
+        description: '在一点按下、拖到另一点再松开。用途：桌面拖放。场景：拖动文件、拖动窗口、拖动滑块。若坐标来自 vision.capture 的截图，直接传截图标注的坐标；高分辨率截图若被缩放到 1920x1080 以内，本工具会自动换算到真实屏幕坐标。',
         inputSchema: OBJ({
             from_x: { type: 'number', description: '起点 X 坐标（像素）。' },
             from_y: { type: 'number', description: '起点 Y 坐标（像素）。' },
@@ -197,6 +194,18 @@ const OBJ = (properties, required = []) => ({
         inputSchema: OBJ({ text: { type: 'string', description: '要放入剪贴板的文本。' } }, ['text']),
         handler: ({ args }) => (0, clipboard_1.clipboardSet)(args),
     },
+    {
+        id: 'text.input', platform: 'windows',
+        description: '向当前焦点输入框一次性输入大段文本：先把 text 写入剪贴板，再触发粘贴，避免 keyboard.type 逐字符模拟键盘导致慢、漏字或不支持长文本。用途：让 AI 直接提交多段说明、文章、JSON、代码、表单内容。场景：先点击或聚焦目标文本框，再调用本工具。默认粘贴后恢复原剪贴板；若只想写入剪贴板不粘贴，传 paste:false 或 set_only:true。',
+        inputSchema: OBJ({
+            text: { type: 'string', description: '要输入/粘贴的大段文本内容，支持多行。' },
+            paste: { type: 'boolean', description: '是否立即粘贴到当前焦点输入框。默认 true；传 false 时只写入剪贴板。' },
+            set_only: { type: 'boolean', description: 'paste:false 的别名；传 true 时只写入剪贴板、不触发粘贴。默认 false。' },
+            restore_clipboard: { type: 'boolean', description: '粘贴完成后是否恢复原剪贴板文本。默认 true。' },
+            wait_ms: { type: 'number', description: '触发粘贴后等待多久再恢复剪贴板（毫秒）。目标应用较慢时可调大。默认 160。' },
+        }, ['text']),
+        handler: ({ args }) => (0, text_input_1.textInput)(args),
+    },
     // Window management (windows-only — uses PowerShell)
     {
         id: 'window.list', platform: 'windows',
@@ -234,7 +243,7 @@ const OBJ = (properties, required = []) => ({
     },
     {
         id: 'vision.capture', platform: 'windows',
-        description: '采集整屏画面用于视觉理解，默认只返回完整 base64 图片 dataUrl，不保存到服务器。用途：让 AI「看」屏幕做理解。场景：分析当前界面、识别画面内容；需要留存证据时传 save_to_server:true。',
+        description: '采集整屏画面用于视觉理解，默认只返回完整 base64 图片 dataUrl，不保存到服务器。截图内容超过 1920x1080 时会按比例缩放到 1920x1080 以内再发送给 AI；后续 mouse.* 坐标直接使用这张返回截图里的坐标，工具会自动换算到真实屏幕坐标。用途：让 AI「看」屏幕做理解。场景：分析当前界面、识别画面内容；需要留存证据时传 save_to_server:true。',
         inputSchema: OBJ({
             display: { type: 'number', description: '要截图的显示器序号。默认 0。' },
             screen: { type: 'number', description: 'display 的别名。默认 0。' },
@@ -247,7 +256,7 @@ const OBJ = (properties, required = []) => ({
     },
     {
         id: 'vision.capture_mouse', platform: 'windows',
-        description: '采集鼠标光标周围的一块区域用于视觉理解，默认只返回完整 base64 图片 dataUrl，不保存到服务器。用途：聚焦看光标附近。场景：识别光标所指的小图标、局部内容；需要留存证据时传 save_to_server:true。',
+        description: '采集鼠标光标周围的一块区域用于视觉理解，默认只返回完整 base64 图片 dataUrl，不保存到服务器。局部截图内容超过 1920x1080 时会按比例缩放到 1920x1080 以内再发送给 AI。用途：聚焦看光标附近。场景：识别光标所指的小图标、局部内容；需要留存证据时传 save_to_server:true。',
         inputSchema: OBJ({
             radius: { type: 'number', description: '采集框的半径（像素）。默认 50。' },
             width: { type: 'number', description: '采集框宽度（像素）。' },

@@ -6,6 +6,7 @@ interface Rule { pattern: RegExp; tool: string }
 
 const RULES: Rule[] = [
   { pattern: /截图|screenshot|screen capture|屏幕/, tool: 'vision.capture' },
+  { pattern: /大段文本|长文本|粘贴输入|输入大段|paste text|large text|text input/, tool: 'text.input' },
   { pattern: /键盘|输入文字|type text|keyboard/,    tool: 'keyboard.type' },
   { pattern: /点击|click|鼠标/,                     tool: 'mouse.click' },
   { pattern: /窗口列表|list window/,                tool: 'window.list' },

@@ -3942,7 +3942,41 @@
   }
 
   // src/lib/tools/browser.ts
+  function isBrowserInternalUrl(url2) {
+    const raw = String(url2 || "");
+    return /^(chrome|edge|brave|vivaldi|opera|about|chrome-extension):/i.test(raw) || /^https:\/\/chromewebstore\.google\.com\//i.test(raw);
+  }
+  function isUsablePageTab(tab) {
+    return !!tab?.id && !isBrowserInternalUrl(tab.url) && !tab.discarded;
+  }
   async function getActiveTab() {
+    const [lastFocused] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    const lastFocusedUrl = lastFocused?.url || "";
+    if (isUsablePageTab(lastFocused))
+      return lastFocused;
+    const windows = await chrome.windows.getAll({ windowTypes: ["normal"], populate: true });
+    const focusedWindow = windows.find((w) => w.focused);
+    const focusedTab = focusedWindow?.tabs?.find((t) => t.active);
+    const focusedTabUrl = focusedTab?.url || "";
+    if (isUsablePageTab(focusedTab))
+      return focusedTab;
+    for (const win of windows) {
+      const tab = win.tabs?.find((t) => t.active);
+      if (isUsablePageTab(tab))
+        return tab;
+    }
+    const tabs = await chrome.tabs.query({});
+    const fallback = tabs.filter(isUsablePageTab).sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0))[0];
+    if (fallback)
+      return fallback;
+    const activeUrl = lastFocusedUrl || focusedTabUrl;
+    const detail = activeUrl ? ` Current active URL is ${activeUrl}.` : "";
+    const err = new Error(`No ordinary web page tab found.${detail}`);
+    err.code = "NO_USABLE_PAGE_TAB";
+    err.suggestion = "Open or switch to a normal http/https page, then retry.";
+    throw err;
+  }
+  async function getAnyActiveTab() {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
     if (!tab?.id)
       throw new Error("No active tab found");
@@ -4074,7 +4108,12 @@
       await waitForTabLoad(tab2.id);
       return { success: true, url: url2.href, tabId: tab2.id, new_tab: true };
     }
-    const tab = await getActiveTab();
+    let tab;
+    try {
+      tab = await getActiveTab();
+    } catch {
+      tab = await getAnyActiveTab();
+    }
     await chrome.tabs.update(tab.id, { url: url2.href });
     await waitForTabLoad(tab.id);
     return { success: true, url: url2.href, tabId: tab.id };
@@ -4405,7 +4444,12 @@
     const engine = String(args.engine || "google").toLowerCase();
     const base = SEARCH_ENGINES[engine] || SEARCH_ENGINES.google;
     const url2 = base + encodeURIComponent(query);
-    const tab = await getActiveTab();
+    let tab;
+    try {
+      tab = await getActiveTab();
+    } catch {
+      tab = await getAnyActiveTab();
+    }
     await chrome.tabs.update(tab.id, { url: url2 });
     await waitForTabLoad(tab.id);
     return { success: true, query, engine, url: url2 };
@@ -4423,7 +4467,7 @@
     return { success: true, tabId: tab.id, url: tab.url };
   }
   async function toolTabClose(args) {
-    const tabId = args.tab_id ? Number(args.tab_id) : (await getActiveTab()).id;
+    const tabId = args.tab_id ? Number(args.tab_id) : (await getAnyActiveTab()).id;
     await chrome.tabs.remove(tabId);
     return { success: true, tabId };
   }
@@ -5956,6 +6000,21 @@ Respond in the same language as the user. For factual questions, search the web 
         case "offline-chat:get-config": {
           const settings = await getSettings();
           postToPopup(port, { type: "offline-chat:config", requestId: msg.requestId, settings, hasAiKey: !!settings.aiKey?.trim() });
+          break;
+        }
+        case "offline-chat:save-model": {
+          try {
+            const payload = {
+              aiKey: String(msg.payload.aiKey || "").trim(),
+              aiBaseUrl: String(msg.payload.aiBaseUrl || "").trim() || "https://api.anthropic.com",
+              aiModel: String(msg.payload.aiModel || "").trim() || "claude-sonnet-4-5"
+            };
+            await saveSettings(payload);
+            const settings = await getSettings();
+            postToPopup(port, { type: "offline-chat:model-saved", requestId: msg.requestId, ok: true, settings });
+          } catch (err) {
+            postToPopup(port, { type: "offline-chat:model-saved", requestId: msg.requestId, ok: false, error: err?.message || String(err) });
+          }
           break;
         }
         case "offline-chat:save-prompt": {

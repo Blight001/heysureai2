@@ -10,6 +10,7 @@ electron_1.contextBridge.exposeInMainWorld('heysureAPI', {
     // Settings
     getSettings: () => electron_1.ipcRenderer.invoke('settings:get'),
     saveSettings: (settings) => electron_1.ipcRenderer.invoke('settings:save', settings),
+    autoCalibrateMouse: () => electron_1.ipcRenderer.invoke('settings:auto-calibrate-mouse').catch((err) => { throw cleanIpcError(err); }),
     // Agent control
     connect: () => electron_1.ipcRenderer.invoke('agent:connect'),
     disconnect: () => electron_1.ipcRenderer.invoke('agent:disconnect'),

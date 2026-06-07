@@ -249,13 +249,13 @@
       <!-- 2. 鼠标坐标校准 -->
       <div class="card">
         <div class="card-title">🎯 鼠标坐标校准</div>
-        <div class="login-hint">系统会根据最近一次全屏截图自动校准截图坐标到真实鼠标坐标。下方缩放/偏移仅用于少量误差微调。</div>
+        <div class="login-hint">系统会根据最近一次全屏截图自动校准截图坐标到真实鼠标坐标。下方缩放仅用于少量误差微调。</div>
         <div class="stat-grid">
           <div class="fg"><label>X 缩放</label><input type="number" id="cfg-mouse-scale-x" step="0.01" placeholder="1"/></div>
           <div class="fg"><label>Y 缩放</label><input type="number" id="cfg-mouse-scale-y" step="0.01" placeholder="1"/></div>
-          <div class="fg"><label>X 偏移（截图像素）</label><input type="number" id="cfg-mouse-offset-x" step="1" placeholder="0"/></div>
-          <div class="fg"><label>Y 偏移（截图像素）</label><input type="number" id="cfg-mouse-offset-y" step="1" placeholder="0"/></div>
         </div>
+        <button class="btn btn-secondary" id="calibrate-mouse-btn">自动校准缩放</button>
+        <div class="save-feedback" id="calibrate-feedback"></div>
       </div>
 
       <!-- 3. 服务器连接地址 -->

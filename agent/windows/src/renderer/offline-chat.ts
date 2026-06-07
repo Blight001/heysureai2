@@ -49,6 +49,11 @@ const toolCount = q('tool-count')
 const tokenStatsEl = q('token-stats')
 const toolsAllBtn = q('tools-all') as HTMLButtonElement
 const toolsNoneBtn = q('tools-none') as HTMLButtonElement
+const imageViewer = q('image-viewer')
+const imageViewerImg = q('image-viewer-img') as HTMLImageElement
+const imageViewerTitle = q('image-viewer-title')
+const imageViewerClose = q('image-viewer-close') as HTMLButtonElement
+const imageViewerStage = q('image-viewer-stage')
 
 let messages: ChatMessage[] = []
 let segments: Segment[] = []
@@ -254,9 +259,8 @@ function isImageDataUrl(value: any): boolean {
 }
 
 function imageLabel(path: string, tool: string): string {
-  if (path.includes('confirmation')) return '点击确认图'
   if (/capture|screenshot|dataUrl|image/i.test(path)) return '截图'
-  return tool === 'mouse.click' ? '点击确认图' : '图片'
+  return tool === 'mouse.click' ? '点击结果图' : '图片'
 }
 
 function collectToolImages(value: any, tool: string, path = 'result', seen = new Set<any>()): Array<{ label: string; url: string }> {
@@ -275,6 +279,48 @@ function collectToolImages(value: any, tool: string, path = 'result', seen = new
     out.push(...collectToolImages(item, tool, `${path}.${key}`, seen))
   }
   return out
+}
+
+function openImageViewer(url: string, label: string) {
+  imageViewerImg.src = url
+  imageViewerImg.alt = label || '图片预览'
+  imageViewerTitle.textContent = label || '图片预览'
+  imageViewer.classList.add('open')
+  imageViewer.setAttribute('aria-hidden', 'false')
+}
+
+function closeImageViewer() {
+  imageViewer.classList.remove('open')
+  imageViewer.setAttribute('aria-hidden', 'true')
+  imageViewerImg.removeAttribute('src')
+}
+
+function toolImageStrip(images: Array<{ label: string; url: string }>): HTMLElement | null {
+  const strip = document.createElement('div')
+  strip.className = 'tool-images'
+  const seen = new Set<string>()
+  for (const image of images) {
+    if (seen.has(image.url)) continue
+    seen.add(image.url)
+    const card = document.createElement('figure')
+    card.className = 'tool-image'
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.title = '放大查看'
+    button.setAttribute('aria-label', `放大查看${image.label}`)
+    const img = document.createElement('img')
+    img.src = image.url
+    img.alt = image.label
+    img.loading = 'lazy'
+    button.appendChild(img)
+    button.addEventListener('click', () => openImageViewer(image.url, image.label))
+    const caption = document.createElement('figcaption')
+    caption.textContent = `${image.label} · 点击放大`
+    card.appendChild(button)
+    card.appendChild(caption)
+    strip.appendChild(card)
+  }
+  return strip.childElementCount ? strip : null
 }
 
 function redactToolImages(value: any, seen = new Set<any>()): any {
@@ -300,32 +346,15 @@ function mcpSegment(item: Extract<Segment, { type: 'mcp' }>, status: string): HT
     '结果:',
     offlineSafeStringify(redactToolImages(item.result ?? item.summary)),
   ].join('\n')
-  const el = detailsSegment(`MCP 工具 · ${item.tool}`, body, false, item.success, status)
+  const details = detailsSegment(`MCP 工具 · ${item.tool}`, body, false, item.success, status)
   const images = collectToolImages(item.result, item.tool)
-  if (!images.length) return el
-
-  const bodyEl = el.querySelector('.segment-body')
-  if (!bodyEl) return el
-  const strip = document.createElement('div')
-  strip.className = 'tool-images'
-  const seen = new Set<string>()
-  for (const image of images) {
-    if (seen.has(image.url)) continue
-    seen.add(image.url)
-    const card = document.createElement('figure')
-    card.className = 'tool-image'
-    const img = document.createElement('img')
-    img.src = image.url
-    img.alt = image.label
-    img.loading = 'lazy'
-    const caption = document.createElement('figcaption')
-    caption.textContent = image.label
-    card.appendChild(img)
-    card.appendChild(caption)
-    strip.appendChild(card)
-  }
-  bodyEl.appendChild(strip)
-  return el
+  if (!images.length) return details
+  const wrap = document.createElement('div')
+  wrap.className = 'mcp-block'
+  wrap.appendChild(details)
+  const strip = toolImageStrip(images)
+  if (strip) wrap.appendChild(strip)
+  return wrap
 }
 
 function isCanceledError(err: any): boolean {
@@ -470,6 +499,13 @@ promptSave.addEventListener('click', async () => {
   setTimeout(() => { promptFeedback.textContent = '' }, 1600)
 })
 toolSearch.addEventListener('input', renderTools)
+imageViewerClose.addEventListener('click', closeImageViewer)
+imageViewer.addEventListener('click', e => {
+  if (e.target === imageViewer || e.target === imageViewerStage) closeImageViewer()
+})
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && imageViewer.classList.contains('open')) closeImageViewer()
+})
 toolsAllBtn.addEventListener('click', () => {
   allowedTools = new Set(offlineToolDefs.map(t => t.name))
   renderTools()

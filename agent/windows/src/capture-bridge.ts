@@ -23,6 +23,29 @@ export interface CaptureDisplayGeometry {
   size: { width: number; height: number }
 }
 
+function robotScreenSize(): { width: number; height: number } | null {
+  try {
+    const robot = require('robotjs')
+    const size = robot.getScreenSize?.()
+    const width = Math.round(Number(size?.width))
+    const height = Math.round(Number(size?.height))
+    if (width > 0 && height > 0) return { width, height }
+  } catch {
+    // robotjs may be unavailable in non-desktop test environments.
+  }
+  return null
+}
+
+function defaultCaptureSize(display: Electron.Display, displayCount: number): { width: number; height: number } {
+  const robotSize = robotScreenSize()
+  if (robotSize && displayCount <= 1) return robotSize
+
+  return {
+    width: Math.round(display.bounds.width),
+    height: Math.round(display.bounds.height),
+  }
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(
@@ -44,9 +67,12 @@ export async function executeCapture(opts: CaptureOpts = {}): Promise<Buffer> {
     : 0
   const display = displays[idx] || screen.getPrimaryDisplay()
 
-  // Default to native pixel resolution so screenshots aren't downscaled.
-  const w = opts.width ?? Math.round(display.size.width * display.scaleFactor)
-  const h = opts.height ?? Math.round(display.size.height * display.scaleFactor)
+  // Keep screenshots in the same coordinate space used by robotjs mouse APIs.
+  // This avoids DPI scaling mismatches where native screenshots are larger than
+  // the coordinates accepted by mouse.click.
+  const defaultSize = defaultCaptureSize(display, displays.length)
+  const w = opts.width ?? defaultSize.width
+  const h = opts.height ?? defaultSize.height
 
   const sources = await withTimeout(
     desktopCapturer.getSources({

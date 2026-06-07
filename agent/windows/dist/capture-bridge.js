@@ -12,6 +12,29 @@ exports.getCaptureDisplayGeometry = getCaptureDisplayGeometry;
 exports.initCapture = initCapture;
 const electron_1 = require("electron");
 const constants_1 = require("./constants");
+function robotScreenSize() {
+    try {
+        const robot = require('robotjs');
+        const size = robot.getScreenSize?.();
+        const width = Math.round(Number(size?.width));
+        const height = Math.round(Number(size?.height));
+        if (width > 0 && height > 0)
+            return { width, height };
+    }
+    catch {
+        // robotjs may be unavailable in non-desktop test environments.
+    }
+    return null;
+}
+function defaultCaptureSize(display, displayCount) {
+    const robotSize = robotScreenSize();
+    if (robotSize && displayCount <= 1)
+        return robotSize;
+    return {
+        width: Math.round(display.bounds.width),
+        height: Math.round(display.bounds.height),
+    };
+}
 function withTimeout(promise, ms, label) {
     return new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
@@ -25,9 +48,12 @@ async function executeCapture(opts = {}) {
         ? Math.min(Math.max(requested, 0), displays.length - 1)
         : 0;
     const display = displays[idx] || electron_1.screen.getPrimaryDisplay();
-    // Default to native pixel resolution so screenshots aren't downscaled.
-    const w = opts.width ?? Math.round(display.size.width * display.scaleFactor);
-    const h = opts.height ?? Math.round(display.size.height * display.scaleFactor);
+    // Keep screenshots in the same coordinate space used by robotjs mouse APIs.
+    // This avoids DPI scaling mismatches where native screenshots are larger than
+    // the coordinates accepted by mouse.click.
+    const defaultSize = defaultCaptureSize(display, displays.length);
+    const w = opts.width ?? defaultSize.width;
+    const h = opts.height ?? defaultSize.height;
     const sources = await withTimeout(electron_1.desktopCapturer.getSources({
         types: ['screen'],
         thumbnailSize: { width: w, height: h },

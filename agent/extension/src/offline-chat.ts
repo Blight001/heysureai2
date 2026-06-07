@@ -267,16 +267,24 @@ async function loadTools() {
 }
 
 async function saveModel() {
-  if (!port) connectPort()
-  port!.postMessage({
-    type: 'settings:save',
+  const id = requestId('model')
+  const reply = await sendRequest({
+    type: 'offline-chat:save-model',
+    requestId: id,
     payload: {
       aiKey: cfgAiKey.value.trim(),
       aiBaseUrl: cfgAiBase.value.trim() || 'https://api.anthropic.com',
       aiModel: cfgAiModel.value.trim() || 'claude-sonnet-4-5',
     },
-  } satisfies PopupMsg)
-  renderModelMeta({ aiKey: cfgAiKey.value.trim(), aiBaseUrl: cfgAiBase.value.trim(), aiModel: cfgAiModel.value.trim() })
+  }, (m): m is Extract<BgMsg, { type: 'offline-chat:model-saved' }> => m.type === 'offline-chat:model-saved' && m.requestId === id)
+  if (!reply.ok || !reply.settings) {
+    modelFeedback.textContent = reply.error || '保存失败'
+    return
+  }
+  cfgAiKey.value = reply.settings.aiKey || ''
+  cfgAiBase.value = reply.settings.aiBaseUrl || ''
+  cfgAiModel.value = reply.settings.aiModel || ''
+  renderModelMeta(reply.settings)
   modelFeedback.textContent = '已保存'
   setTimeout(() => { modelFeedback.textContent = '' }, 1600)
 }

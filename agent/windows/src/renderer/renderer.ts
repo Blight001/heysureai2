@@ -16,6 +16,7 @@ interface Window {
   heysureAPI: {
     getSettings: () => Promise<any>
     saveSettings: (s: any) => Promise<any>
+    autoCalibrateMouse: () => Promise<any>
     connect: () => Promise<void>
     disconnect: () => Promise<void>
     getStatus: () => Promise<string>
@@ -66,6 +67,7 @@ type ParentGroup = 'sensory' | 'learning' | 'tool' | 'other'
 type ToolGroup =
   | 'mouse'
   | 'keyboard'
+  | 'text'
   | 'speech'
   | 'vision'
   | 'hands'
@@ -93,6 +95,7 @@ const PARENT_META: Record<ParentGroup, { zh: string; en: string }> = {
 const GROUP_META: Record<ToolGroup, DisplayMeta> = {
   mouse: { zh: '鼠标', en: 'MOUSE', parent: 'sensory' },
   keyboard: { zh: '键盘', en: 'KEYBOARD', parent: 'sensory' },
+  text: { zh: '文本输入', en: 'TEXT INPUT', parent: 'tool' },
   speech: { zh: '语音', en: 'SPEECH', parent: 'sensory' },
   vision: { zh: '视觉', en: 'VISION', parent: 'sensory' },
   hands: { zh: '手势', en: 'HANDS', parent: 'learning' },
@@ -106,13 +109,14 @@ const GROUP_META: Record<ToolGroup, DisplayMeta> = {
 const GROUP_ORDER: Record<ParentGroup, ToolGroup[]> = {
   sensory: ['mouse', 'keyboard', 'speech', 'vision'],
   learning: ['hands'],
-  tool: ['display', 'clipboard', 'card', 'shell', 'window'],
+  tool: ['text', 'display', 'clipboard', 'card', 'shell', 'window'],
   other: [],
 }
 
 const KNOWN_GROUPS = new Set<ToolGroup>([
   'mouse',
   'keyboard',
+  'text',
   'speech',
   'vision',
   'hands',
@@ -132,6 +136,7 @@ const TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   'mouse.drag': { zh: '鼠标拖拽', en: 'Mouse Drag' },
   'keyboard.type': { zh: '键盘输入', en: 'Type Text' },
   'keyboard.press': { zh: '键盘按键', en: 'Press Keys' },
+  'text.input': { zh: '大段文本输入', en: 'Large Text Input' },
   'speech.speak': { zh: '语音朗读', en: 'Speak' },
   'vision.capture': { zh: '屏幕采集', en: 'Screen Capture' },
   'vision.capture_mouse': { zh: '鼠标区域采集', en: 'Mouse Area Capture' },
@@ -549,8 +554,7 @@ const cfgWorkspace = $('cfg-workspace') as HTMLInputElement
 const cfgMouseFx   = $('cfg-mouse-fx') as HTMLInputElement
 const cfgMouseScaleX = $('cfg-mouse-scale-x') as HTMLInputElement
 const cfgMouseScaleY = $('cfg-mouse-scale-y') as HTMLInputElement
-const cfgMouseOffsetX = $('cfg-mouse-offset-x') as HTMLInputElement
-const cfgMouseOffsetY = $('cfg-mouse-offset-y') as HTMLInputElement
+const calibrateMouseBtn = $('calibrate-mouse-btn') as HTMLButtonElement
 
 function numericInputValue(input: HTMLInputElement, fallback: number): number {
   const n = Number(input.value)
@@ -575,8 +579,6 @@ $('save-btn').addEventListener('click', async () => {
       mouseFx: cfgMouseFx.checked,
       mouseCoordinateScaleX: numericInputValue(cfgMouseScaleX, 1),
       mouseCoordinateScaleY: numericInputValue(cfgMouseScaleY, 1),
-      mouseCoordinateOffsetX: numericInputValue(cfgMouseOffsetX, 0),
-      mouseCoordinateOffsetY: numericInputValue(cfgMouseOffsetY, 0),
     })
     setStatus(await window.heysureAPI.getStatus())
     $('info-server').textContent = cfgServer.value.trim() || '—'
@@ -586,6 +588,29 @@ $('save-btn').addEventListener('click', async () => {
   } catch {
     fb.style.color = 'var(--error)'; fb.textContent = '保存失败'
     setTimeout(() => { fb.textContent = '' }, 3000)
+  }
+})
+
+calibrateMouseBtn.addEventListener('click', async () => {
+  const fb = $('calibrate-feedback')
+  calibrateMouseBtn.disabled = true
+  fb.style.color = 'var(--muted)'
+  fb.textContent = '校准中...'
+  try {
+    const result = await window.heysureAPI.autoCalibrateMouse()
+    const sx = Number(result.mouseCoordinateScaleX)
+    const sy = Number(result.mouseCoordinateScaleY)
+    cfgMouseScaleX.value = String(Number.isFinite(sx) ? sx : 1)
+    cfgMouseScaleY.value = String(Number.isFinite(sy) ? sy : 1)
+    fb.style.color = 'var(--success)'
+    fb.textContent = `已校准：X ${cfgMouseScaleX.value} / Y ${cfgMouseScaleY.value}`
+    setTimeout(() => { fb.textContent = '' }, 3500)
+  } catch (err: any) {
+    fb.style.color = 'var(--error)'
+    fb.textContent = err?.message || '自动校准失败'
+    setTimeout(() => { fb.textContent = '' }, 5000)
+  } finally {
+    calibrateMouseBtn.disabled = false
   }
 })
 
@@ -737,8 +762,6 @@ async function loadMainSettings() {
   cfgMouseFx.checked = s.mouseFx !== false
   cfgMouseScaleX.value = String(Number.isFinite(Number(s.mouseCoordinateScaleX)) ? Number(s.mouseCoordinateScaleX) : 1)
   cfgMouseScaleY.value = String(Number.isFinite(Number(s.mouseCoordinateScaleY)) ? Number(s.mouseCoordinateScaleY) : 1)
-  cfgMouseOffsetX.value = String(Number.isFinite(Number(s.mouseCoordinateOffsetX)) ? Number(s.mouseCoordinateOffsetX) : 0)
-  cfgMouseOffsetY.value = String(Number.isFinite(Number(s.mouseCoordinateOffsetY)) ? Number(s.mouseCoordinateOffsetY) : 0)
   renderStatus()
   $('info-server').textContent = s.serverUrl || '—'
   $('info-workspace').textContent = s.workspaceRoot ? (s.workspaceRoot.split(/[/\\]/).pop() || s.workspaceRoot) : '—'
