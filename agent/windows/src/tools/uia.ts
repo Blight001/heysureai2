@@ -32,6 +32,22 @@ const DOM_INTERACTIVE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
+// Non-interactive but information-bearing elements: headings, labels, list
+// items, table cells and ARIA text roles. Surfaced alongside interactive
+// controls so the inspected snapshot reflects the text the user actually sees.
+const DOM_TEXT_SELECTOR = [
+  'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+  'label',
+  'li',
+  'td',
+  'th',
+  '[role="heading"]',
+  '[role="listitem"]',
+  '[role="cell"]',
+  '[role="status"]',
+  '[role="alert"]',
+].join(',')
+
 function findOwnElectronWindow(title?: unknown): BrowserWindow | null {
   const titleQuery = title === undefined || title === null ? '' : String(title).trim()
   if (titleQuery) {
@@ -62,14 +78,19 @@ async function inspectOwnElectronDom(args: any = {}) {
   const win = findOwnElectronWindow(args.title)
   if (!win) return null
   const interactiveOnly = args.interactable_only !== false && args.interactive_only !== false
-  const max = Math.max(1, Math.trunc(Number(args.max ?? args.limit ?? 150)) || 150)
+  const max = Math.max(1, Math.trunc(Number(args.max ?? args.limit ?? 300)) || 300)
   const elements = await win.webContents.executeJavaScript(`
 (() => {
   const selector = ${JSON.stringify(DOM_INTERACTIVE_SELECTOR)};
+  const textSelector = ${JSON.stringify(DOM_TEXT_SELECTOR)};
   const interactiveOnly = ${interactiveOnly ? 'true' : 'false'};
   const max = ${max};
   const seen = new Set();
-  const nodes = Array.from(document.querySelectorAll(interactiveOnly ? selector : 'body *'));
+  // Interactive controls first, then text-bearing labels/headings so the agent
+  // can read the visible copy too (not just the clickable widgets).
+  const nodes = interactiveOnly
+    ? Array.from(document.querySelectorAll(selector + ',' + textSelector))
+    : Array.from(document.querySelectorAll('body *'));
   const out = [];
   const visible = (el, rect) => {
     const style = window.getComputedStyle(el);
@@ -96,9 +117,14 @@ async function inspectOwnElectronDom(args: any = {}) {
     if (tag === 'summary') return 'Button';
     if (role === 'menuitem') return 'MenuItem';
     if (role === 'tab') return 'TabItem';
-    return role ? role.replace(/^./, c => c.toUpperCase()) : 'Custom';
+    if (/^h[1-6]$/.test(tag) || role === 'heading') return 'Header';
+    if (tag === 'label') return 'Text';
+    return role ? role.replace(/^./, c => c.toUpperCase()) : 'Text';
   };
-  const actionsOf = (el, ct) => {
+  const interactiveTags = new Set(['button','input','textarea','select','a','summary']);
+  const isInteractive = (el) => interactiveTags.has(el.tagName.toLowerCase()) || el.matches(selector);
+  const actionsOf = (el, ct, interactive) => {
+    if (!interactive) return [];
     if (ct === 'Edit' || ct === 'ComboBox') return ['value'];
     if (ct === 'CheckBox' || ct === 'RadioButton') return ['toggle'];
     return ['invoke'];
@@ -110,14 +136,28 @@ async function inspectOwnElectronDom(args: any = {}) {
     const rect = el.getBoundingClientRect();
     if (!visible(el, rect)) continue;
     const ct = typeOf(el);
-    out.push({
-      name: nameOf(el),
+    const interactive = isInteractive(el);
+    const name = nameOf(el);
+    // Skip pure-text nodes whose label is empty or only wraps other controls.
+    if (!interactive && name.length === 0) continue;
+    const item = {
+      name,
       control_type: ct,
       automation_id: el.id || el.getAttribute('name') || '',
       enabled: !el.disabled,
       rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      actions: actionsOf(el, ct),
-    });
+      actions: actionsOf(el, ct, interactive),
+    };
+    const help = el.getAttribute('title') || el.getAttribute('aria-description') || '';
+    if (help) item.help_text = help.trim();
+    if (ct === 'Edit' || ct === 'ComboBox') {
+      const v = (el.value != null ? String(el.value) : '');
+      if (v.length > 0) item.value = v;
+    }
+    if (ct === 'CheckBox' || ct === 'RadioButton') {
+      item.toggle_state = el.checked ? 'On' : 'Off';
+    }
+    out.push(item);
   }
   return out;
 })()
@@ -302,12 +342,60 @@ function Get-Actions($el) {
   return $actions
 }
 
+# Read the element's live *state* so the snapshot carries the actual on-screen
+# information (the current text in an edit box, whether a checkbox is ticked,
+# which item is selected, whether a node is expanded…). Without this the agent
+# only sees that a control exists, not what it currently holds — the main reason
+# the inspected interface used to look "incomplete".
+function Get-State($el) {
+  $state = @{}
+  $p = $null
+  try {
+    if ($el.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$p)) {
+      $v = $p.Current.Value
+      if ($null -ne $v -and ([string]$v).Length -gt 0) { $state['value'] = [string]$v }
+    }
+  } catch {}
+  try {
+    if (-not $state.ContainsKey('value') -and $el.TryGetCurrentPattern([System.Windows.Automation.RangeValuePattern]::Pattern, [ref]$p)) {
+      $state['value'] = [string]$p.Current.Value
+    }
+  } catch {}
+  try {
+    if ($el.TryGetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern, [ref]$p)) {
+      $state['toggle_state'] = $p.Current.ToggleState.ToString()
+    }
+  } catch {}
+  try {
+    if ($el.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$p)) {
+      $state['selected'] = [bool]$p.Current.IsSelected
+    }
+  } catch {}
+  try {
+    if ($el.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern, [ref]$p)) {
+      $state['expand_state'] = $p.Current.ExpandCollapseState.ToString()
+    }
+  } catch {}
+  return $state
+}
+
 $INTERACTIVE_TYPES = @('Button','MenuItem','TabItem','ListItem','CheckBox','RadioButton','Hyperlink','SplitButton','TreeItem','ComboBox','Edit','Slider','Spinner','Document','Custom')
+# Non-interactive controls that nonetheless carry visible information (labels,
+# headings, status text, list/grid cells, alt text on images). We surface these
+# whenever they expose a non-empty Name, even in interactable_only mode, so the
+# agent can actually read what the window is showing.
+$TEXT_TYPES = @('Text','Header','HeaderItem','StatusBar','DataItem','ToolTip','Image','Group')
 
 function Is-Interactive($ct, $actions, $focusable) {
   if ($actions.Count -gt 0) { return $true }
   if ($focusable) { return $true }
   return ($INTERACTIVE_TYPES -contains $ct)
+}
+
+function Is-InformativeText($ct, $name) {
+  if ($null -eq $name) { return $false }
+  if (([string]$name).Trim().Length -eq 0) { return $false }
+  return ($TEXT_TYPES -contains $ct)
 }
 
 function Resolve-Root($titleQuery) {
@@ -340,12 +428,22 @@ function Add-ElementSnapshot($out, $node, $interactiveOnly) {
     try { $enabled = $node.Current.IsEnabled } catch {}
     $focusable = $false
     try { $focusable = $node.Current.IsKeyboardFocusable } catch {}
+    $help = ''
+    try { $help = $node.Current.HelpText } catch {}
+    $cls = ''
+    try { $cls = $node.Current.ClassName } catch {}
     $actions = Get-Actions $node
-    if ((-not $interactiveOnly) -or (Is-Interactive $ct $actions $focusable)) {
-      [void]$out.Add(@{
+    $interactive = Is-Interactive $ct $actions $focusable
+    if ((-not $interactiveOnly) -or $interactive -or (Is-InformativeText $ct $name)) {
+      $snap = @{
         name = $name; control_type = $ct; automation_id = $aid
         enabled = $enabled; rect = $rect; actions = @($actions)
-      })
+      }
+      if ($null -ne $cls -and ([string]$cls).Length -gt 0) { $snap['class_name'] = $cls }
+      if ($null -ne $help -and ([string]$help).Length -gt 0) { $snap['help_text'] = $help }
+      $state = Get-State $node
+      foreach ($k in $state.Keys) { $snap[$k] = $state[$k] }
+      [void]$out.Add($snap)
     }
   } catch {}
 }
@@ -429,7 +527,7 @@ export async function uiInspect(args: any = {}) {
 
   const title = psNullableString(args.title)
   const interactiveOnly = psBool(args.interactable_only !== false && args.interactive_only !== false)
-  const max = psInt(args.max ?? args.limit, 150)
+  const max = psInt(args.max ?? args.limit, 300)
   const maxDepth = psInt(args.max_depth, 40)
 
   const script = `${preludeScript()}
@@ -440,14 +538,17 @@ if ($null -eq $root) {
 }
 $winTitle = ''
 try { $winTitle = $root.Current.Name } catch {}
-$elements = Walk-Elements-Retry $root ${max} ${maxDepth} 6000 ${interactiveOnly}
+$winClass = ''
+try { $winClass = $root.Current.ClassName } catch {}
+$winRect = Get-Rect $root
+$elements = Walk-Elements-Retry $root ${max} ${maxDepth} 8000 ${interactiveOnly}
 $indexed = @()
 for ($i = 0; $i -lt $elements.Count; $i++) {
   $e = $elements[$i]
   $e['index'] = $i
   $indexed += $e
 }
-@{ success = $true; window = $winTitle; count = $indexed.Count; elements = $indexed } | ConvertTo-Json -Depth 6 -Compress
+@{ success = $true; window = $winTitle; window_class = $winClass; window_rect = $winRect; count = $indexed.Count; elements = $indexed } | ConvertTo-Json -Depth 6 -Compress
 `
 
   const { stdout, stderr, exitCode } = await runPowerShellScript(script)
@@ -519,6 +620,10 @@ if ($matches.Count -eq 0) {
   @{ success = $false; error = 'No matching element'; candidates = ($all | Select-Object -First 40) } | ConvertTo-Json -Depth 6 -Compress
   exit 0
 }
+# Prefer actionable controls over plain text labels that happen to share the
+# same name, so clicking "Save" hits the button, not a caption with that text.
+$actionable = @($matches | Where-Object { $_.actions.Count -gt 0 })
+if ($actionable.Count -gt 0) { $matches = $actionable }
 if ($wantIndex -ge $matches.Count) { $wantIndex = 0 }
 $target = $matches[$wantIndex]
 
