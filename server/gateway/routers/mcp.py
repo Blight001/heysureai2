@@ -1,7 +1,7 @@
 import json
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
@@ -45,10 +45,37 @@ class MCPCallRequest(BaseModel):
 
 @router.get("/tools")
 async def list_mcp_tools(
+    ai_config_id: Optional[int] = Query(None),
     session: Session = Depends(get_session),
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
+    cfg = None
+    allowed_tools = None
+    if ai_config_id is not None:
+        cfg = session.exec(
+            select(AssistantAIConfig).where(
+                AssistantAIConfig.id == ai_config_id,
+                AssistantAIConfig.user_id == user.id,
+            )
+        ).first()
+        if not cfg:
+            raise HTTPException(status_code=404, detail="AI config not found")
+        if cfg.mcp_enabled:
+            try:
+                parsed_allowed = json.loads(cfg.mcp_tools or "[]")
+                if not isinstance(parsed_allowed, list):
+                    raise ValueError("mcp_tools must be a JSON array")
+                allowed_tools = {str(item).strip() for item in parsed_allowed if isinstance(item, str) and str(item).strip()}
+                allowed_tools = strip_endpoint_tool_config_names(with_workspace_read_by_name_compat(allowed_tools))
+                allowed_tools.update(MCP_INTROSPECTION_TOOLS)
+                allowed_tools.update(endpoint_bridge_tools_for_config(ai_config_id, user.id))
+                allowed_tools.update(endpoint_tools_for_config(ai_config_id, user.id))
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid AI MCP tool config")
+        else:
+            allowed_tools = set()
+
     tools = registry.list_tools()
     for tool in tools:
         name = str(tool.get("name") or "")
@@ -57,6 +84,46 @@ async def list_mcp_tools(
         tool["inputSchema"] = tool.get("inputSchema") if isinstance(tool.get("inputSchema"), dict) else {}
     tool_names = {str(tool.get("name") or "") for tool in tools}
     endpoint_defs = online_tool_defs()
+    endpoint_tool_defs = [
+        {
+            "name": name,
+            "description": str(spec.get("description") or "").strip(),
+            "inputSchema": spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {},
+            "destructive": True,
+            "mcpSource": "browser" if str(name).startswith(("browser_", "card_")) else "desktop",
+        }
+        for name, spec in sorted(endpoint_defs.items())
+    ]
+    all_prompt_tools = [
+        {
+            **tool,
+            "mcpSource": "server",
+            "allowedForCurrentAi": allowed_tools is None or str(tool.get("name") or "") in allowed_tools,
+        }
+        for tool in tools
+    ] + [
+        {
+            **tool,
+            "allowedForCurrentAi": allowed_tools is None or str(tool.get("name") or "") in allowed_tools,
+        }
+        for tool in endpoint_tool_defs
+    ]
+    if allowed_tools is not None:
+        all_prompt_tools = [
+            tool for tool in all_prompt_tools
+            if str(tool.get("name") or "") in allowed_tools
+        ]
+        known_prompt_names = {str(tool.get("name") or "") for tool in all_prompt_tools}
+        for name in sorted(allowed_tools - known_prompt_names):
+            all_prompt_tools.append({
+                "name": name,
+                "description": "",
+                "inputSchema": {},
+                "destructive": is_endpoint_agent_tool(name),
+                "mcpSource": "browser" if str(name).startswith(("browser_", "card_")) else ("desktop" if is_endpoint_agent_tool(name) else "server"),
+                "allowedForCurrentAi": True,
+            })
+
     return {
         "tools": tools,
         # Endpoint (desktop / browser) tools currently advertised by connected
@@ -64,14 +131,11 @@ async def list_mcp_tools(
         # e.g. a Windows agent extended with new MCP tools — beyond the static
         # built-in lists baked into the web bundle.
         "endpointTools": connected_endpoint_tool_catalog(),
-        "endpointToolDefs": [
-            {
-                "name": name,
-                "description": str(spec.get("description") or "").strip(),
-                "inputSchema": spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {},
-            }
-            for name, spec in sorted(endpoint_defs.items())
-        ],
+        "endpointToolDefs": endpoint_tool_defs,
+        "promptTools": sorted(all_prompt_tools, key=lambda item: str(item.get("name") or "")),
+        "promptToolsScope": "current_ai" if ai_config_id is not None else "all_current",
+        "promptToolsAiConfigId": ai_config_id,
+        "promptToolsMcpEnabled": True if cfg is None else bool(cfg.mcp_enabled),
         "userId": user.id,
         "roleOrder": CONFIGURABLE_ROLES,
         "roleLabels": ROLE_LABELS_ZH,

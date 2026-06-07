@@ -93,7 +93,7 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   },
   {
     name: 'browser_screenshot',
-    description: '对当前标签页截图：可截可视区、整页、某个 CSS/文本匹配的元素，或一块矩形区域，默认返回完整 base64 图片 dataUrl 且不保存到服务器（截图被禁用或无权限时返回可读的错误说明）。用途：让 AI「看见」页面。场景：核对页面状态、在无法读取文本时改用视觉理解；需要留存证据时传 save_to_server:true。',
+    description: '对当前标签页截图：可截可视区、整页、某个 CSS/文本匹配的元素，或一块矩形区域，默认返回完整 base64 图片 dataUrl，并保存到服务器用于发送给用户；传 send_to_user:false 可只给 AI 使用（截图被禁用或无权限时返回可读的错误说明）。用途：让 AI「看见」页面。场景：核对页面状态、在无法读取文本时改用视觉理解。',
     input_schema: {
       type: 'object',
       properties: {
@@ -119,8 +119,11 @@ export const BROWSER_TOOLS: AIToolDef[] = [
         content_timeout_ms: { type: 'number', description: '在页面中测量 selector/text 目标的超时（毫秒）。默认 5000。' },
         max_data_url_chars: { type: 'number', description: '经 Socket.IO 返回的 data URL 最大长度。默认 8000000。' },
         allow_large_data_url: { type: 'boolean', description: '允许返回超过 max_data_url_chars 的截图。默认 false。' },
-        save_to_server: { type: 'boolean', description: '是否把截图保存到服务器并返回服务器路径/URL。默认 false，不保存且保留完整 dataUrl。' },
-        upload_to_server: { type: 'boolean', description: 'save_to_server 的兼容别名。默认 false。' },
+        send_to_user: { type: 'boolean', description: '是否把截图通过当前 AI 的机器人发送给用户。默认 true；传 false 时只返回给 AI，不主动发送。' },
+        bot_send_to_user: { type: 'boolean', description: 'send_to_user 的兼容别名。默认 true。' },
+        deliver_to_user: { type: 'boolean', description: 'send_to_user 的兼容别名。默认 true。' },
+        save_to_server: { type: 'boolean', description: '是否把截图保存到服务器并返回服务器路径/URL。默认跟随 send_to_user；send_to_user:true 时会自动保存。' },
+        upload_to_server: { type: 'boolean', description: 'save_to_server 的兼容别名。默认跟随 send_to_user。' },
         task_timeout_ms: { type: 'number', description: '本次截图任务在端点 agent 上的硬超时（毫秒）。默认 35000。' },
         fallback_visible: { type: 'boolean', description: '元素/区域/整页截图时，若精确 CDP 截图失败则回退为可视区截图。默认 false。' },
       },

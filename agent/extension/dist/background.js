@@ -3547,7 +3547,7 @@
     },
     {
       name: "browser_screenshot",
-      description: "\u5BF9\u5F53\u524D\u6807\u7B7E\u9875\u622A\u56FE\uFF1A\u53EF\u622A\u53EF\u89C6\u533A\u3001\u6574\u9875\u3001\u67D0\u4E2A CSS/\u6587\u672C\u5339\u914D\u7684\u5143\u7D20\uFF0C\u6216\u4E00\u5757\u77E9\u5F62\u533A\u57DF\uFF0C\u9ED8\u8BA4\u8FD4\u56DE\u5B8C\u6574 base64 \u56FE\u7247 dataUrl \u4E14\u4E0D\u4FDD\u5B58\u5230\u670D\u52A1\u5668\uFF08\u622A\u56FE\u88AB\u7981\u7528\u6216\u65E0\u6743\u9650\u65F6\u8FD4\u56DE\u53EF\u8BFB\u7684\u9519\u8BEF\u8BF4\u660E\uFF09\u3002\u7528\u9014\uFF1A\u8BA9 AI\u300C\u770B\u89C1\u300D\u9875\u9762\u3002\u573A\u666F\uFF1A\u6838\u5BF9\u9875\u9762\u72B6\u6001\u3001\u5728\u65E0\u6CD5\u8BFB\u53D6\u6587\u672C\u65F6\u6539\u7528\u89C6\u89C9\u7406\u89E3\uFF1B\u9700\u8981\u7559\u5B58\u8BC1\u636E\u65F6\u4F20 save_to_server:true\u3002",
+      description: "\u5BF9\u5F53\u524D\u6807\u7B7E\u9875\u622A\u56FE\uFF1A\u53EF\u622A\u53EF\u89C6\u533A\u3001\u6574\u9875\u3001\u67D0\u4E2A CSS/\u6587\u672C\u5339\u914D\u7684\u5143\u7D20\uFF0C\u6216\u4E00\u5757\u77E9\u5F62\u533A\u57DF\uFF0C\u9ED8\u8BA4\u8FD4\u56DE\u5B8C\u6574 base64 \u56FE\u7247 dataUrl\uFF0C\u5E76\u4FDD\u5B58\u5230\u670D\u52A1\u5668\u7528\u4E8E\u53D1\u9001\u7ED9\u7528\u6237\uFF1B\u4F20 send_to_user:false \u53EF\u53EA\u7ED9 AI \u4F7F\u7528\uFF08\u622A\u56FE\u88AB\u7981\u7528\u6216\u65E0\u6743\u9650\u65F6\u8FD4\u56DE\u53EF\u8BFB\u7684\u9519\u8BEF\u8BF4\u660E\uFF09\u3002\u7528\u9014\uFF1A\u8BA9 AI\u300C\u770B\u89C1\u300D\u9875\u9762\u3002\u573A\u666F\uFF1A\u6838\u5BF9\u9875\u9762\u72B6\u6001\u3001\u5728\u65E0\u6CD5\u8BFB\u53D6\u6587\u672C\u65F6\u6539\u7528\u89C6\u89C9\u7406\u89E3\u3002",
       input_schema: {
         type: "object",
         properties: {
@@ -3573,8 +3573,11 @@
           content_timeout_ms: { type: "number", description: "\u5728\u9875\u9762\u4E2D\u6D4B\u91CF selector/text \u76EE\u6807\u7684\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09\u3002\u9ED8\u8BA4 5000\u3002" },
           max_data_url_chars: { type: "number", description: "\u7ECF Socket.IO \u8FD4\u56DE\u7684 data URL \u6700\u5927\u957F\u5EA6\u3002\u9ED8\u8BA4 8000000\u3002" },
           allow_large_data_url: { type: "boolean", description: "\u5141\u8BB8\u8FD4\u56DE\u8D85\u8FC7 max_data_url_chars \u7684\u622A\u56FE\u3002\u9ED8\u8BA4 false\u3002" },
-          save_to_server: { type: "boolean", description: "\u662F\u5426\u628A\u622A\u56FE\u4FDD\u5B58\u5230\u670D\u52A1\u5668\u5E76\u8FD4\u56DE\u670D\u52A1\u5668\u8DEF\u5F84/URL\u3002\u9ED8\u8BA4 false\uFF0C\u4E0D\u4FDD\u5B58\u4E14\u4FDD\u7559\u5B8C\u6574 dataUrl\u3002" },
-          upload_to_server: { type: "boolean", description: "save_to_server \u7684\u517C\u5BB9\u522B\u540D\u3002\u9ED8\u8BA4 false\u3002" },
+          send_to_user: { type: "boolean", description: "\u662F\u5426\u628A\u622A\u56FE\u901A\u8FC7\u5F53\u524D AI \u7684\u673A\u5668\u4EBA\u53D1\u9001\u7ED9\u7528\u6237\u3002\u9ED8\u8BA4 true\uFF1B\u4F20 false \u65F6\u53EA\u8FD4\u56DE\u7ED9 AI\uFF0C\u4E0D\u4E3B\u52A8\u53D1\u9001\u3002" },
+          bot_send_to_user: { type: "boolean", description: "send_to_user \u7684\u517C\u5BB9\u522B\u540D\u3002\u9ED8\u8BA4 true\u3002" },
+          deliver_to_user: { type: "boolean", description: "send_to_user \u7684\u517C\u5BB9\u522B\u540D\u3002\u9ED8\u8BA4 true\u3002" },
+          save_to_server: { type: "boolean", description: "\u662F\u5426\u628A\u622A\u56FE\u4FDD\u5B58\u5230\u670D\u52A1\u5668\u5E76\u8FD4\u56DE\u670D\u52A1\u5668\u8DEF\u5F84/URL\u3002\u9ED8\u8BA4\u8DDF\u968F send_to_user\uFF1Bsend_to_user:true \u65F6\u4F1A\u81EA\u52A8\u4FDD\u5B58\u3002" },
+          upload_to_server: { type: "boolean", description: "save_to_server \u7684\u517C\u5BB9\u522B\u540D\u3002\u9ED8\u8BA4\u8DDF\u968F send_to_user\u3002" },
           task_timeout_ms: { type: "number", description: "\u672C\u6B21\u622A\u56FE\u4EFB\u52A1\u5728\u7AEF\u70B9 agent \u4E0A\u7684\u786C\u8D85\u65F6\uFF08\u6BEB\u79D2\uFF09\u3002\u9ED8\u8BA4 35000\u3002" },
           fallback_visible: { type: "boolean", description: "\u5143\u7D20/\u533A\u57DF/\u6574\u9875\u622A\u56FE\u65F6\uFF0C\u82E5\u7CBE\u786E CDP \u622A\u56FE\u5931\u8D25\u5219\u56DE\u9000\u4E3A\u53EF\u89C6\u533A\u622A\u56FE\u3002\u9ED8\u8BA4 false\u3002" }
         }
@@ -4171,7 +4174,15 @@
     return 8e6;
   }
   function wantsServerSave(args) {
-    return args?.save_to_server === true || args?.upload_to_server === true;
+    return args?.save_to_server === true || args?.upload_to_server === true || wantsSendToUser(args);
+  }
+  function wantsSendToUser(args) {
+    const values = [args?.send_to_user, args?.bot_send_to_user, args?.deliver_to_user].filter((value2) => value2 !== void 0);
+    if (values.some((value2) => value2 === true))
+      return true;
+    if (values.some((value2) => value2 === false))
+      return false;
+    return true;
   }
   async function ensureScreenshotPayloadSize(dataUrl, args, retryCompressed) {
     const maxChars = maxDataUrlChars(args);
@@ -4366,6 +4377,7 @@
           success: true,
           dataUrl: optimized.dataUrl,
           save_to_server: wantsServerSave(args),
+          send_to_user: wantsSendToUser(args),
           tabId: tab.id,
           url: tab.url,
           method: args.full_page ? "debugger.Page.captureScreenshot.fullPage" : args.selector || args.text ? "debugger.Page.captureScreenshot.element" : "debugger.Page.captureScreenshot.clip",
@@ -4398,6 +4410,7 @@
         success: true,
         dataUrl: optimized.dataUrl,
         save_to_server: wantsServerSave(args),
+        send_to_user: wantsSendToUser(args),
         tabId: tab.id,
         url: tab.url,
         method: "captureVisibleTab",
@@ -4418,6 +4431,7 @@
           success: true,
           dataUrl: optimized.dataUrl,
           save_to_server: wantsServerSave(args),
+          send_to_user: wantsSendToUser(args),
           tabId: tab.id,
           url: tab.url,
           method: "debugger.Page.captureScreenshot",

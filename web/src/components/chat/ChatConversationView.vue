@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import ChatMessageList from './ChatMessageList.vue'
 import { parseChatResponseInline, type ActionBlock, type InlineContent as InlineContentType } from '@/utils/chatParser'
 import { stripMcpCallBlocks } from '@/utils/mcpFormat'
@@ -37,6 +37,7 @@ const props = withDefaults(defineProps<{
   mcpSuccessIcon?: string
   mcpErrorIcon?: string
   mcpDynamicRule?: string
+  aiConfigId?: number
   liveText?: string
   liveThinking?: string
   isTyping?: boolean
@@ -329,30 +330,68 @@ const effectiveFrontPrompt = computed(() => {
 })
 
 const frontPromptToolSchemas = ref<any[]>([])
+const frontPromptAvailableTools = ref<any[]>([])
+const frontPromptToolScope = ref('')
+const frontPromptToolMcpEnabled = ref<boolean | null>(null)
 const frontPromptToolSchemaError = ref('')
 const initialNativeToolNames = ['mcp.list_tools', 'mcp.describe_tool']
 
+const normalizePromptTool = (tool: any) => ({
+  name: String(tool?.name || '').trim(),
+  description: String(tool?.description || '').trim(),
+  inputSchema: (tool?.inputSchema && typeof tool.inputSchema === 'object') ? tool.inputSchema : {},
+  destructive: !!tool?.destructive,
+  mcpSource: tool?.mcpSource || 'server',
+  allowedForCurrentAi: tool?.allowedForCurrentAi !== false,
+})
+
+const sortPromptTools = (items: any[]) =>
+  [...items]
+    .map(normalizePromptTool)
+    .filter(tool => tool.name)
+    .sort((a, b) => {
+      const sourceRank: Record<string, number> = { server: 0, desktop: 1, browser: 2 }
+      const ar = sourceRank[a.mcpSource] ?? 9
+      const br = sourceRank[b.mcpSource] ?? 9
+      if (ar !== br) return ar - br
+      return a.name.localeCompare(b.name)
+    })
+
 const loadFrontPromptToolSchemas = async () => {
   try {
-    const response = await listMcpTools()
+    const response = await listMcpTools({ aiConfigId: props.aiConfigId })
     const tools = Array.isArray(response.tools) ? response.tools : []
     frontPromptToolSchemas.value = tools
       .filter((tool: any) => initialNativeToolNames.includes(String(tool?.name || '').trim()))
-      .map((tool: any) => ({
-        name: tool.name,
-        description: tool.description || '',
-        inputSchema: tool.inputSchema || {},
-        destructive: !!tool.destructive,
-      }))
+      .map(normalizePromptTool)
       .sort((a: any, b: any) => initialNativeToolNames.indexOf(a.name) - initialNativeToolNames.indexOf(b.name))
+    const promptTools = Array.isArray(response.promptTools) ? response.promptTools : []
+    const endpointToolDefs = Array.isArray(response.endpointToolDefs) ? response.endpointToolDefs : []
+    frontPromptAvailableTools.value = sortPromptTools(promptTools.length > 0
+      ? promptTools
+      : [
+          ...tools.map((tool: any) => ({ ...tool, mcpSource: 'server' })),
+          ...endpointToolDefs,
+        ])
+    frontPromptToolScope.value = String(response.promptToolsScope || (props.aiConfigId ? 'current_ai' : 'all_current'))
+    frontPromptToolMcpEnabled.value = typeof response.promptToolsMcpEnabled === 'boolean'
+      ? response.promptToolsMcpEnabled
+      : null
     frontPromptToolSchemaError.value = ''
   } catch (error: any) {
     frontPromptToolSchemas.value = []
+    frontPromptAvailableTools.value = []
+    frontPromptToolScope.value = ''
+    frontPromptToolMcpEnabled.value = null
     frontPromptToolSchemaError.value = error?.message || 'MCP schema 加载失败'
   }
 }
 
 onMounted(() => {
+  void loadFrontPromptToolSchemas()
+})
+
+watch(() => props.aiConfigId, () => {
   void loadFrontPromptToolSchemas()
 })
 
@@ -365,6 +404,11 @@ const frontPromptDetails = computed(() => {
     initial_native_tools: frontPromptToolSchemas.value.length > 0
       ? frontPromptToolSchemas.value
       : initialNativeToolNames.map(name => ({ name })),
+    current_available_tools_scope: frontPromptToolScope.value || (props.aiConfigId ? 'current_ai' : 'all_current'),
+    current_ai_config_id: props.aiConfigId ?? null,
+    current_mcp_enabled: frontPromptToolMcpEnabled.value,
+    current_available_tools_count: frontPromptAvailableTools.value.length,
+    current_available_tools: frontPromptAvailableTools.value,
     dynamic_rule: String(props.mcpDynamicRule || DEFAULT_MCP_DYNAMIC_RULE),
     schema_error: frontPromptToolSchemaError.value || undefined,
   }

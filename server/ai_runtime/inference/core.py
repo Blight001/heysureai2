@@ -637,7 +637,7 @@ def _save_mcp_tool_bubble(
             bg.commit()
         except Exception:
             logger.debug("screenshot chat-media persist skipped", exc_info=True)
-    if (not failed) and tool_result and _screenshot_send_to_user_enabled(tool, tool_result):
+    if (not failed) and tool_result and _screenshot_send_to_user_enabled(tool, tool_result, arguments):
         try:
             bot_delivery = _deliver_screenshot_to_bot(bg, saved, tool_result=tool_result)
             if bot_delivery:
@@ -885,14 +885,20 @@ def _find_screenshot_result_payload(value: object, depth: int = 0) -> Dict[str, 
     return {}
 
 
-def _screenshot_send_to_user_enabled(tool: str, tool_result: Dict[str, object]) -> bool:
-    if tool not in {"screen.capture", "screen.capture_region", "vision.capture", "vision.capture_mouse"}:
+def _screenshot_send_to_user_enabled(tool: str, tool_result: Dict[str, object], args: Optional[dict] = None) -> bool:
+    if tool not in {"browser_screenshot", "screen.capture", "screen.capture_region", "vision.capture", "vision.capture_mouse"}:
+        return False
+    if isinstance(args, dict) and any(
+        key in args and args.get(key) is False
+        for key in ("send_to_user", "bot_send_to_user", "deliver_to_user")
+    ):
         return False
     payload = _find_screenshot_result_payload(tool_result)
     return (
         payload.get("send_to_user") is True
         or payload.get("bot_send_to_user") is True
         or payload.get("deliver_to_user") is True
+        or tool in {"browser_screenshot", "screen.capture", "screen.capture_region", "vision.capture", "vision.capture_mouse"}
     )
 
 

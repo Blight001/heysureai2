@@ -678,6 +678,7 @@ const taskStateFilterButtonClass = (state: JobStateFilter) => {
                 :baseMessages="selectedGenerationMessages"
                 :sessionActive="true"
                 :frontPromptText="selectedGenerationDetail.system_prompt || ''"
+                :aiConfigId="props.target?.aiConfigId"
                 :liveText="selectedGenerationDetail.live.text || ''"
                 :showFrontPrompt="true"
                 :showFrontPromptPlaceholder="true"

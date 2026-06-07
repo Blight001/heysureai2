@@ -4,7 +4,6 @@ setlocal EnableExtensions
 rem One-click packaging for the Windows desktop agent.
 rem - installs dependencies if needed
 rem - builds the TypeScript/Electron app
-rem - rebuilds native modules for Electron
 rem - packages the installer into release\
 cd /d "%~dp0"
 
@@ -25,10 +24,6 @@ if not exist "node_modules" (
 
 echo [build] Compiling application...
 call npm run build
-if errorlevel 1 goto fail
-
-echo [build] Rebuilding native modules for Electron...
-call npm run rebuild
 if errorlevel 1 goto fail
 
 echo [package] Creating Windows installer...

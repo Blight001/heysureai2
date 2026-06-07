@@ -1220,6 +1220,7 @@ onBeforeUnmount(() => {
         :mcpSuccessIcon="props.mcpSuccessIcon"
         :mcpErrorIcon="props.mcpErrorIcon"
         :mcpDynamicRule="props.mcpDynamicRule"
+        :aiConfigId="props.aiConfigId"
         :liveText="liveAssistantText"
         :liveThinking="liveThinkingText"
         :appliedEdits="appliedEditsArray"
