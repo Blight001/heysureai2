@@ -172,7 +172,7 @@ def _render_ai_message_system_prompt(
         "- chitchat（闲聊）：非任务型闲聊，可自然继续多轮。"
     )
     reply_rule = (
-        "这条消息需要你回复。回复时调用 MCP 工具 `ai.send_message`，"
+        "这条消息需要你回复。回复时调用 MCP 工具 `message.send_to_ai`，"
         f"参数必须包含 `to_ai_config_id={from_ai_config_id}`、`message_type=\"reply\"`、"
         "`require_reply=false`、"
         f"`reply_to_message_id=\"{message_id}\"`、`current_session_id=\"{current_session_id}\"`。"
@@ -194,7 +194,7 @@ def _render_ai_message_system_prompt(
         "[发送类型说明]\n"
         f"{message_type_guide}\n\n"
         "[处理规则]\n"
-        "你以后调用 MCP 工具 `ai.send_message` 时，`message_type` 是必填字段，不能省略。\n"
+        "你以后调用 MCP 工具 `message.send_to_ai` 时，`message_type` 是必填字段，不能省略。\n"
         f"{reply_rule}"
     )
 
@@ -1170,7 +1170,7 @@ def _run_worker_impl(
             if ai_config_id is not None:
                 # System-injected AI-to-AI messages must remain answerable even
                 # when a task or config narrows the general MCP tool allowlist.
-                effective_tool_allowlist.add("ai.send_message")
+                effective_tool_allowlist.add("message.send_to_ai")
             # Per-bot tool requirements (e.g. Feishu adds context-trim) live
             # on the adapter so adding/removing a bot's required tools no
             # longer touches the chat worker.
@@ -1198,7 +1198,7 @@ def _run_worker_impl(
                         effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user_id))
                         effective_tool_allowlist.update(endpoint_tools_for_config(ai_config_id, user_id))
                         if ai_config_id is not None:
-                            effective_tool_allowlist.add("ai.send_message")
+                            effective_tool_allowlist.add("message.send_to_ai")
                 override_token = task_payload.get("override_token_limit")
                 if isinstance(override_token, dict) and bool(override_token.get("enabled")):
                     try:

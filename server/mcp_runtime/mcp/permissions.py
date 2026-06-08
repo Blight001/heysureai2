@@ -67,8 +67,8 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "prompt.write_ai": ROLE_MANAGER,
     "prompt.read_system": ROLE_MANAGER,
     "prompt.write_system": ROLE_ASSISTANT_ADMIN,
-    # User outbound — every tier by default.
-    "user.send_message": ROLE_MEMBER,
+    # Send message — outbound to the human user; every tier by default.
+    "message.send_to_user": ROLE_MEMBER,
     # Conversation maintenance — every tier can manage its own scoped sessions.
     "conversation.forget_before_current": ROLE_MEMBER,
     "conversation.find": ROLE_MEMBER,

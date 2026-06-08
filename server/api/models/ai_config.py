@@ -13,8 +13,8 @@ _DEFAULT_MCP_TOOLS = (
     '"prompt.write_system","memory.write","memory.search","memory.list","memory.update",'
     '"memory.archive","evolution.input","evolution.list","evolution.review",'
     '"librarian.propose","librarian.consult","librarian.list_topics","librarian.read",'
-    '"librarian.archive","user.send_message","conversation.forget_before_current",'
-    '"conversation.find","conversation.create","conversation.delete","ai.send_message"]'
+    '"librarian.archive","message.send_to_user","conversation.forget_before_current",'
+    '"conversation.find","conversation.create","conversation.delete","message.send_to_ai"]'
 )
 
 _DEFAULT_SYSTEM_AUTO_CONTROL = (

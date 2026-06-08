@@ -84,7 +84,7 @@ _BUILTIN_ENTRIES = {
 _INTRINSIC_TOOL_DESCRIPTIONS_ZH = {
     "admin.get_overview": "获取当前工作区概览，包括连接中的 socket Agent、受管 AI 配置和运行状态。",
     "admin.list_agents": "列出当前用户连接中的 socket Agent 和受管 AI 配置。",
-    "ai.send_message": "向同一数字社会中的另一个 AI 发送消息，可用于询问、回复、通知或闲聊，并支持按需等待答复。",
+    "message.send_to_ai": "向同一数字社会中的另一个 AI 发送消息，可用于询问、回复、通知或闲聊，并支持按需等待答复。",
     "conversation.create": "为当前 AI 作用域创建一个新的空聊天会话。",
     "conversation.delete": "删除当前 AI 作用域内指定聊天会话及其中所有消息。",
     "conversation.find": "查找或列出当前 AI 作用域内的聊天会话，可按会话名、会话 ID 或消息内容搜索。",
@@ -118,7 +118,7 @@ _INTRINSIC_TOOL_DESCRIPTIONS_ZH = {
     "task.inherit": "在任务轮换到下一代之前提交传承摘要。",
     "task.list": "列出任务；默认返回排队、运行和暂停任务，也可查看当前任务或历史任务。",
     "task.update": "管理员或管理者接管工具：更新任务标题、说明、优先级、状态或调度信息。",
-    "user.send_message": "通过绑定的飞书或 QQ 机器人向人类用户发送文本或媒体消息。",
+    "message.send_to_user": "通过绑定的飞书或 QQ 机器人向人类用户发送文本或媒体消息。",
     "web.search": "使用 Tavily 搜索公网信息，适合查询外部信息或实时信息。",
     "workspace.run_command": "执行 shell 命令，默认在当前用户工作区运行，支持绝对路径和环境变量；需要隔离时可开启 strict_workspace 或 sandbox_env。",
 }

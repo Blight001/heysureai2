@@ -761,7 +761,7 @@ watch(() => props.show, visible => {
                   </div>
                   <div>
                     <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
-                      AI 调用 user.send_message 后的回执提示（占位符：<code>{channel}</code>）
+                      AI 调用 message.send_to_user 后的回执提示（占位符：<code>{channel}</code>）
                     </div>
                     <textarea v-model="promptUserMessageNoticeValue" rows="4" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"></textarea>
                   </div>
