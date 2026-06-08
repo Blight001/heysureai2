@@ -300,8 +300,14 @@ HeySure AI 2.0 将 Agent 视为拥有生命周期的数字成员：
 
 ## 文档索引
 
+> 想快速上手"哪里改什么"？先看 [`CLAUDE.md`](CLAUDE.md)——它是面向开发者与 Claude Code 的项目导航地图（架构、端口、常用命令、"改 X 去哪里"速查、约定）。各模块还有独立的 `CLAUDE.md`。
+
 | 文档 | 内容 |
 | --- | --- |
+| [`CLAUDE.md`](CLAUDE.md) | **项目导航总入口**：架构 / 端口 / 命令 / "改 X 去哪里" / 约定 |
+| [`server/CLAUDE.md`](server/CLAUDE.md) | 后端导航：共享层 + 4 进程、api/ 分层、改动速查 |
+| [`web/CLAUDE.md`](web/CLAUDE.md) | 前端导航：目录职责、改动速查 |
+| [`agent/CLAUDE.md`](agent/CLAUDE.md) | 端侧导航：三端形态、win/linux 重复代码说明 |
 | `server/README.md` | 后端服务结构、本地启动、环境变量与运行时端口 |
 | `agent/linux/README.md` | Linux 桌面 Agent 说明 |
 | `agent/extension/README.md` | 浏览器扩展说明 |

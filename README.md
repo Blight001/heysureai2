@@ -302,8 +302,14 @@ The `Archivist` core administrator is responsible for observation, guidance, sum
 
 ## Documentation
 
+> New here and wondering "where do I change X"? Start with [`CLAUDE.md`](CLAUDE.md) — the project navigation map for contributors and Claude Code (architecture, ports, common commands, a "where to change X" lookup, and conventions). Each module has its own `CLAUDE.md` too.
+
 | Document | Content |
 | --- | --- |
+| [`CLAUDE.md`](CLAUDE.md) | **Navigation entry point**: architecture / ports / commands / "where to change X" / conventions. |
+| [`server/CLAUDE.md`](server/CLAUDE.md) | Backend map: shared layer + 4 processes, `api/` layering, change lookup. |
+| [`web/CLAUDE.md`](web/CLAUDE.md) | Frontend map: directory responsibilities and change lookup. |
+| [`agent/CLAUDE.md`](agent/CLAUDE.md) | Agent map: the three clients and the win/linux duplication notes. |
 | `server/README.md` | Backend service layout, local startup, environment variables, and runtime ports. |
 | `agent/linux/README.md` | Linux desktop agent notes. |
 | `agent/extension/README.md` | Browser extension notes. |
