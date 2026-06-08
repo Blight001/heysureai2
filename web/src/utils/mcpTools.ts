@@ -46,34 +46,44 @@ const normalizeMcpSchemaType = (rawType: unknown) => {
   return toZh(text || 'any')
 }
 
+// 标签（二级分组）的展示顺序。按所属大类成段组织，便于阅读与维护；
+// 大类（一级分组）的归属与顺序分别见 TAG_PARENT 与 PARENT_ORDER。
 const MCP_TOOL_TAG_ORDER = [
-  'MCP',
-  '工作区',
-  '系统总览',
+  // 服务端 · 系统管理
+  '概览',
   '项目',
   '任务',
-  '文件系统',
-  '终端',
-  'Git',
-  '键鼠输入',
-  '屏幕',
-  '剪贴板',
-  '窗口',
-  '进程',
-  '浏览器导航',
-  '浏览器观察',
-  '浏览器交互',
-  '浏览器数据',
-  '浏览器状态',
-  '浏览器卡片',
+  'Prompt',
+  '工作区',
+  'MCP',
+  '联网搜索',
+  '通用',
+  // 服务端 · 记忆与进化
   '记忆',
   '归档',
-  '总结',
+  '知识总结',
   '进化',
-  'Prompt',
+  // 服务端 · 通信
   '发消息',
-  '协作',
-  '通用',
+  '会话管理',
+  // 桌面端 · 系统操作
+  '终端',
+  '进程',
+  '文件系统',
+  'Git',
+  // 桌面端 · 图形交互
+  '键鼠输入',
+  '屏幕',
+  '窗口',
+  '剪贴板',
+  '桌面能力',
+  // 浏览器
+  '导航',
+  '观察',
+  '交互',
+  '数据',
+  '状态',
+  '卡片',
 ]
 
 const hasMcpPrefix = (name: string, prefix: string) => name.startsWith(`${prefix}.`) || name.startsWith(`${prefix}_`)
@@ -92,15 +102,17 @@ const getEndpointCapabilityTag = (name: string) => {
   // agent/extension/.../definitions.ts；Web 端无法直接 import 扩展代码，故镜像于此）。
   // 兼容旧的按动词拆分的工具名（browser_cookie_get 等），它们已被合并为
   // browser_cookie 等带 action 的工具，但历史 scope 里可能仍存有旧名。
-  if (['browser_navigate', 'browser_search', 'browser_history', 'browser_history_back', 'browser_history_forward'].includes(name)) return '浏览器导航'
-  if (['browser_screenshot', 'browser_get_content', 'browser_dom_snapshot', 'browser_page_info', 'browser_find_text', 'browser_find_popups', 'browser_performance', 'browser_network_log', 'browser_iframe_list'].includes(name)) return '浏览器观察'
-  if (['browser_click', 'browser_double_click', 'browser_right_click', 'browser_type', 'browser_press_key', 'browser_hover', 'browser_scroll', 'browser_wait', 'browser_drag', 'browser_fill_form', 'browser_select', 'browser_close_popup'].includes(name)) return '浏览器交互'
-  if (['browser_evaluate', 'browser_extract', 'browser_clipboard_write', 'browser_file_upload', 'browser_download'].includes(name)) return '浏览器数据'
-  if (['browser_tab', 'browser_cookie', 'browser_storage', 'browser_session', 'browser_profile'].includes(name)) return '浏览器状态'
-  if (hasMcpPrefix(name, 'card')) return '浏览器卡片'
-  // 旧的按动词拆分工具名一律归到「浏览器状态」。
-  if (/^browser_(tab|cookie|storage|session|profile)_/.test(name)) return '浏览器状态'
-  if (hasMcpPrefix(name, 'browser')) return '浏览器观察'
+  // 浏览器端来源本身已是「浏览器 MCP」，故标签去掉冗余的「浏览器」前缀，
+  // 直接作为来源下的二级分组（导航 / 观察 / 交互 / 数据 / 状态 / 卡片）。
+  if (['browser_navigate', 'browser_search', 'browser_history', 'browser_history_back', 'browser_history_forward'].includes(name)) return '导航'
+  if (['browser_screenshot', 'browser_get_content', 'browser_dom_snapshot', 'browser_page_info', 'browser_find_text', 'browser_find_popups', 'browser_performance', 'browser_network_log', 'browser_iframe_list'].includes(name)) return '观察'
+  if (['browser_click', 'browser_double_click', 'browser_right_click', 'browser_type', 'browser_press_key', 'browser_hover', 'browser_scroll', 'browser_wait', 'browser_drag', 'browser_fill_form', 'browser_select', 'browser_close_popup'].includes(name)) return '交互'
+  if (['browser_evaluate', 'browser_extract', 'browser_clipboard_write', 'browser_file_upload', 'browser_download'].includes(name)) return '数据'
+  if (['browser_tab', 'browser_cookie', 'browser_storage', 'browser_session', 'browser_profile'].includes(name)) return '状态'
+  if (hasMcpPrefix(name, 'card')) return '卡片'
+  // 旧的按动词拆分工具名一律归到「状态」。
+  if (/^browser_(tab|cookie|storage|session|profile)_/.test(name)) return '状态'
+  if (hasMcpPrefix(name, 'browser')) return '观察'
 
   return ''
 }
@@ -109,19 +121,20 @@ const getMcpToolFallbackTag = (name: string) => {
   const endpointCapabilityTag = getEndpointCapabilityTag(name)
   if (endpointCapabilityTag) return endpointCapabilityTag
   if (hasMcpPrefix(name, 'workspace')) return '工作区'
-  if (hasMcpPrefix(name, 'admin')) return '系统总览'
+  if (hasMcpPrefix(name, 'admin')) return '概览'
   if (hasMcpPrefix(name, 'desktop')) return '桌面能力'
   if (hasMcpPrefix(name, 'project')) return '项目'
   if (hasMcpPrefix(name, 'task')) return '任务'
   if (hasMcpPrefix(name, 'prompt')) return 'Prompt'
+  if (hasMcpPrefix(name, 'web')) return '联网搜索'
   if (name === 'memory.archive' || name === 'librarian.archive') return '归档'
   if (hasMcpPrefix(name, 'memory')) return '记忆'
-  if (hasMcpPrefix(name, 'librarian')) return '总结'
+  if (hasMcpPrefix(name, 'librarian')) return '知识总结'
   if (hasMcpPrefix(name, 'evolution')) return '进化'
-  // 发消息：发给用户 / 发给其他 AI，单独成栏，不再混入「协作」。
+  // 发消息：发给用户 / 发给其他 AI，单独成栏，不再混入「会话管理」。
   if (hasMcpPrefix(name, 'message')) return '发消息'
-  if (hasMcpPrefix(name, 'feishu')) return '协作'
-  if (hasMcpPrefix(name, 'conversation')) return '协作'
+  if (hasMcpPrefix(name, 'feishu')) return '会话管理'
+  if (hasMcpPrefix(name, 'conversation')) return '会话管理'
   return '通用'
 }
 
@@ -209,11 +222,40 @@ export const groupMcpToolsByZhTag = (tools: string[]): McpToolGroup[] => {
     })
 }
 
-const getMcpToolGroupParent = (tag: string) => {
-  if (tag === '系统总览' || tag === '项目' || tag === '任务' || tag === 'Prompt') return '系统'
-  if (tag === '进化' || tag === '记忆' || tag === '归档' || tag === '总结') return '进化'
-  return ''
+// 大类（一级分组）→ 其下标签（二级分组）的归属表。每个来源（服务端 / 桌面端 /
+// 浏览器）内部据此把标签收拢成大类，形成「来源 → 大类 → 标签 → 工具」的层级。
+// 浏览器标签不在表内（返回 ''），直接作为来源下的二级分组，避免与来源名重复。
+const TAG_PARENT: Record<string, string> = {
+  // 服务端
+  '概览': '系统管理',
+  '项目': '系统管理',
+  '任务': '系统管理',
+  'Prompt': '系统管理',
+  '工作区': '系统管理',
+  'MCP': '系统管理',
+  '联网搜索': '系统管理',
+  '通用': '系统管理',
+  '记忆': '记忆与进化',
+  '归档': '记忆与进化',
+  '知识总结': '记忆与进化',
+  '进化': '记忆与进化',
+  '发消息': '通信',
+  '会话管理': '通信',
+  // 桌面端
+  '终端': '系统操作',
+  '进程': '系统操作',
+  '文件系统': '系统操作',
+  'Git': '系统操作',
+  '键鼠输入': '图形交互',
+  '屏幕': '图形交互',
+  '窗口': '图形交互',
+  '剪贴板': '图形交互',
+  '桌面能力': '图形交互',
 }
+
+const PARENT_ORDER = ['系统管理', '记忆与进化', '通信', '系统操作', '图形交互']
+
+const getMcpToolGroupParent = (tag: string) => TAG_PARENT[tag] || ''
 
 export const groupMcpToolGroupsByParent = (groups: McpToolGroup[]): McpToolParentGroup[] => {
   const parentMap = new Map<string, McpToolGroup[]>()
@@ -236,7 +278,7 @@ export const groupMcpToolGroupsByParent = (groups: McpToolGroup[]): McpToolParen
     tools: childGroups.flatMap(group => group.tools),
   }))
 
-  const parentOrder = ['系统', '进化']
+  const parentOrder = PARENT_ORDER
   return [...parentRows, ...standalone].sort((a, b) => {
     const aRank = parentOrder.includes(a.title) ? parentOrder.indexOf(a.title) : parentOrder.length
     const bRank = parentOrder.includes(b.title) ? parentOrder.indexOf(b.title) : parentOrder.length
