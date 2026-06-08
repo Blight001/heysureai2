@@ -258,7 +258,7 @@ export type DbCleanupCategory =
   | 'tasks'
   | 'ai_messages'
   | 'knowledge'
-  | 'skills'
+  | 'projects'
   | 'valhalla'
 
 export interface DbCleanupPayload {

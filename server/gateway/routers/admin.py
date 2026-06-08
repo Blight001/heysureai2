@@ -51,10 +51,6 @@ from api.models import (
     EvolutionProject,
     KnowledgeEntry,
     Memory,
-    SkillCard,
-    SkillCardRecording,
-    SkillCardRunStat,
-    SkillCardVersion,
     TokenUsageSnapshot,
     User,
     ValhallaEntry,
@@ -1147,14 +1143,8 @@ _CLEANUP_CATEGORIES: dict[str, tuple] = {
     "ai_messages": (AIMessage, TokenUsageSnapshot),
     # 知识库与记忆：知识条目 / 记忆 / 进化建议
     "knowledge": (KnowledgeEntry, Memory, EvolutionInput),
-    # 技能卡片与协作项目
-    "skills": (
-        SkillCard,
-        SkillCardVersion,
-        SkillCardRunStat,
-        SkillCardRecording,
-        EvolutionProject,
-    ),
+    # 协作项目
+    "projects": (EvolutionProject,),
     # 遗言 / 英灵殿
     "valhalla": (ValhallaEntry,),
 }

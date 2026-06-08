@@ -569,7 +569,6 @@ def run_pending_migrations() -> None:
         cursor = conn.cursor()
 
         _migrate_chatmessage(cursor)
-        _migrate_skillcard(cursor)
         _migrate_chatrun(cursor)
         _migrate_user(
             cursor,
@@ -1032,19 +1031,6 @@ def _migrate_chatmessage(cursor: sqlite3.Cursor) -> None:
     _add_column(cursor, "chatmessage", "ai_config_id", "INTEGER", existing)
     _add_column(cursor, "chatmessage", "ai_kind", "TEXT DEFAULT 'assistant'", existing)
     _add_column(cursor, "chatmessage", "cache_read_tokens", "INTEGER", existing)
-
-
-def _migrate_skillcard(cursor: sqlite3.Cursor) -> None:
-    # ``app_scope`` (scope lock, §2.2) was added after the initial S1 schema.
-    # Only patch SQLite files that already materialized the table; fresh
-    # ``create_all`` builds the current columns directly.
-    cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='skillcard'"
-    )
-    if not cursor.fetchone():
-        return
-    existing = _existing_columns(cursor, "skillcard")
-    _add_column(cursor, "skillcard", "app_scope", "TEXT", existing)
 
 
 def _migrate_chatrun(cursor: sqlite3.Cursor) -> None:
