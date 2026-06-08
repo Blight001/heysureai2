@@ -1923,15 +1923,6 @@ def _run_worker_impl(
                     tool_result=tool_result if isinstance(tool_result, dict) else None,
                 )
 
-                # 录制咽喉点抄录（S4，§4.1）：录制开着时，把流经此处的成功操作类
-                # endpoint 工具调用顺手抄进 buffer。绝不能因录制出错影响主调用链。
-                if (not tool_failed) and is_endpoint_agent_tool(tool):
-                    try:
-                        from api.services.skill_recording import record_endpoint_event
-                        record_endpoint_event(user_id, ai_config_id, tool, arguments, tool_result)
-                    except Exception:
-                        logger.debug("skill recording capture skipped", exc_info=True)
-
                 if (not tool_failed) and tool == "mcp.describe_tool":
                     described_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
                     described_names: list[str] = []

@@ -18,7 +18,6 @@ const mouth_1 = require("../tools/mouth");
 const vision_1 = require("../tools/vision");
 const hands_1 = require("../tools/hands");
 const uia_1 = require("../tools/uia");
-const card_replay_1 = require("./card-replay");
 const registry_1 = require("./registry");
 const OBJ = (properties, required = []) => ({
     type: 'object',
@@ -308,17 +307,5 @@ const OBJ = (properties, required = []) => ({
             action: { type: 'string', description: '动作类型，如 move/down/up/click。' },
         }),
         handler: ({ args }) => (0, hands_1.handsMouse)(args),
-    },
-    // Skill-card local replay（S2，沉淀技能卡片 §4.2/§4.3）
-    {
-        id: 'card.execute', platform: 'windows',
-        description: '在本端一口气重放一张已沉淀的技能卡片（确定性回放，不逐步过 LLM）。用途：复用已验证的动作序列。场景：先用 skill_card.prepare_execution 在服务端做权限交集+参数代入拿到 resolved 卡片，再用本工具重放；任一步定位歧义/断言不过会停在该步并回传失败现场（failed_step + 期望/实际 + 截图）供 AI 改卡并从失败步续跑。',
-        inputSchema: OBJ({
-            resolved: { type: 'object', description: 'skill_card.prepare_execution 返回的 resolved：已代入参数的 steps + app_scope + pre/postconditions。' },
-            card: { type: 'object', description: 'resolved 的别名，可直接传卡片主体。' },
-            resume_from: { type: 'number', description: '从该步号续跑（自愈用），小于此步号的步骤跳过。默认 0。' },
-            dry_run: { type: 'boolean', description: '只走流程不真正执行动作，用于 teach 卡「查看学习效果」（§4.0）。默认 false。' },
-        }),
-        handler: ({ workspaceRoot, args }) => (0, card_replay_1.cardExecute)({ workspaceRoot, args }),
     },
 ]);

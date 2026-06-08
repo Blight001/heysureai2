@@ -89,22 +89,6 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "evolution.input": ROLE_MANAGER,
     "evolution.list": ROLE_MANAGER,
     "evolution.review": ROLE_ASSISTANT_ADMIN,
-    # Skill cards — every tier can record/replay and sink its own skills; deprecation
-    # is owner-checked in-handler. Reading/recording is member; create/update is member
-    # too (drafts are low-risk and the run-stat gate controls promotion to trusted).
-    "skill_card.create": ROLE_MEMBER,
-    "skill_card.list": ROLE_MEMBER,
-    "skill_card.get": ROLE_MEMBER,
-    "skill_card.update": ROLE_MEMBER,
-    "skill_card.delete": ROLE_MANAGER,
-    "skill_card.prepare_execution": ROLE_MEMBER,
-    "skill_card.record_run": ROLE_MEMBER,
-    "skill_card.versions": ROLE_MEMBER,
-    # Recording is symmetric to skill_card writes — an AI sinking its own skills.
-    "recorder.start": ROLE_MEMBER,
-    "recorder.status": ROLE_MEMBER,
-    "recorder.annotate": ROLE_MEMBER,
-    "recorder.stop": ROLE_MEMBER,
 }
 
 

@@ -78,7 +78,6 @@ const TOOL_LABELS = {
     'display.clear': { zh: '清除高亮', en: 'Clear Highlights' },
     'clipboard.get': { zh: '读取剪贴板', en: 'Get Clipboard' },
     'clipboard.set': { zh: '写入剪贴板', en: 'Set Clipboard' },
-    'card.execute': { zh: '技能卡重放', en: 'Card Replay' },
     'shell.run': { zh: '命令执行', en: 'Run Command' },
     'window.list': { zh: '窗口列表', en: 'List Windows' },
     'window.focus': { zh: '窗口聚焦', en: 'Focus Window' },

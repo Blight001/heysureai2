@@ -34,7 +34,7 @@ from sqlmodel import Session, select
 
 from ..core.config import _ai_dir_slug, user_shared_knowledge_dir
 from ..database import engine
-from ..models import AssistantAIConfig, EvolutionInput, Memory, SkillCard, User, ValhallaEntry
+from ..models import AssistantAIConfig, EvolutionInput, Memory, User, ValhallaEntry
 from ..models import defaults as _defaults
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,6 @@ SKILLS_DIR = "skills"
 TOPICS_DIR = "topics"
 MEMORIES_DIR = "memories"
 EVOLUTION_DIR = "evolution"
-SKILLCARDS_DIR = "skillcards"
 VALHALLA_DIR = "valhalla"
 
 # system/ 下每个文件对应 User 表的一个字段。``number`` 字段以纯文本存储，
@@ -905,63 +904,6 @@ def _row_evolution_dict(row: EvolutionInput) -> Dict[str, Any]:
     }
 
 
-# ============================================================
-# 7) 技能卡片定义 —— skillcards/<card_id>.md
-#
-# 仅卡片“定义”文件化（与 memories/evolution 同模式）。运行统计
-# (SkillCardRunStat：并发累加计数器) 与录制状态机 (SkillCardRecording：
-# 跨进程实时状态) 不适合文件，仍留数据库。版本历史 (SkillCardVersion)
-# 也留库做审计。``_card_to_dict(full=True)`` 已含全部定义字段。
-# ============================================================
-
-_SKILLCARD_META_KEYS = (
-    "card_id", "name", "surface", "scope", "status", "version",
-    "domain", "owner_ai_config_id", "environment_signature",
-    "forked_from_card_id", "capability", "app_scope", "params",
-    "preconditions", "steps", "postconditions", "created_at", "updated_at",
-)
-
-
-def _skillcard_path(user_id: int, card_id: str) -> str:
-    return os.path.join(_kb_root(user_id), SKILLCARDS_DIR, f"{_safe_filename(card_id)}.md")
-
-
-def write_skillcard_file(user_id: int, card: Dict[str, Any]) -> None:
-    """把一张技能卡定义（``_card_to_dict(full=True)`` 的输出）落成文件。best-effort。"""
-    try:
-        card_id = str(card.get("card_id") or "").strip()
-        if not card_id:
-            return
-        meta = {k: card.get(k) for k in _SKILLCARD_META_KEYS}
-        _write_text(_skillcard_path(user_id, card_id), _row_to_md(meta, str(card.get("description") or "")))
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.info(f"kb_store write_skillcard_file user={user_id} failed: {exc}")
-
-
-def _row_skillcard_dict(row: SkillCard) -> Dict[str, Any]:
-    return {
-        "card_id": row.card_id,
-        "name": row.name,
-        "description": row.description,
-        "surface": row.surface,
-        "scope": row.scope,
-        "status": row.status,
-        "version": row.version,
-        "domain": _loads_safe(row.domain, []),
-        "owner_ai_config_id": row.owner_ai_config_id,
-        "environment_signature": row.environment_signature,
-        "forked_from_card_id": row.forked_from_card_id,
-        "capability": _loads_safe(row.capability, []),
-        "app_scope": _loads_safe(row.app_scope, None),
-        "params": _loads_safe(row.params, []),
-        "preconditions": _loads_safe(row.preconditions, []),
-        "steps": _loads_safe(row.steps, []),
-        "postconditions": _loads_safe(row.postconditions, []),
-        "created_at": row.created_at,
-        "updated_at": row.updated_at,
-    }
-
-
 def _loads_safe(raw, fallback):
     if raw is None or raw == "":
         return fallback
@@ -969,78 +911,6 @@ def _loads_safe(raw, fallback):
         return json.loads(raw)
     except Exception:
         return fallback
-
-
-def _dumps_or_none(value):
-    return None if value is None else json.dumps(value, ensure_ascii=False)
-
-
-def seed_skillcards(user_id: int, *, session: Optional[Session] = None) -> None:
-    """首次导出：DB 中存在但没有文件的技能卡写成文件。幂等。"""
-    own = session is None
-    sess = session or Session(engine)
-    try:
-        rows = sess.exec(select(SkillCard).where(SkillCard.user_id == int(user_id))).all()
-        for row in rows:
-            if _read_text(_skillcard_path(user_id, row.card_id)) is None:
-                write_skillcard_file(user_id, _row_skillcard_dict(row))
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.info(f"kb_store seed_skillcards user={user_id} failed: {exc}")
-    finally:
-        if own:
-            sess.close()
-
-
-def sync_skillcards_from_files(user_id: int, *, session: Optional[Session] = None) -> None:
-    """文件回写 DB（文件赢）：解析 skillcards/*.md，按 card_id upsert SkillCard。
-
-    仅同步卡片定义；运行统计 / 版本历史 / 录制不受影响（不在文件里）。
-    """
-    own = session is None
-    sess = session or Session(engine)
-    try:
-        changed = False
-        for path in _list_md(user_id, SKILLCARDS_DIR):
-            raw = _read_text(path)
-            if raw is None:
-                continue
-            meta, body = _md_to_row(raw)
-            card_id = str(meta.get("card_id") or "").strip()
-            if not card_id:
-                continue
-            row = sess.exec(
-                select(SkillCard).where(SkillCard.user_id == int(user_id), SkillCard.card_id == card_id)
-            ).first() or SkillCard(card_id=card_id, user_id=int(user_id), name="")
-            row.name = str(meta.get("name") or row.name or "")
-            row.description = body or None
-            row.surface = str(meta.get("surface") or "windows")
-            row.scope = str(meta.get("scope") or "private")
-            row.status = str(meta.get("status") or "draft")
-            row.version = int(meta.get("version") or 1)
-            row.domain = _dumps_or_none(meta.get("domain"))
-            row.owner_ai_config_id = meta.get("owner_ai_config_id")
-            row.environment_signature = meta.get("environment_signature")
-            row.forked_from_card_id = meta.get("forked_from_card_id")
-            row.capability = _dumps_or_none(meta.get("capability"))
-            row.app_scope = _dumps_or_none(meta.get("app_scope")) if meta.get("app_scope") else None
-            row.params = _dumps_or_none(meta.get("params"))
-            row.preconditions = _dumps_or_none(meta.get("preconditions"))
-            row.steps = _dumps_or_none(meta.get("steps"))
-            row.postconditions = _dumps_or_none(meta.get("postconditions"))
-            if meta.get("created_at") is not None:
-                row.created_at = float(meta.get("created_at"))
-            if meta.get("updated_at") is not None:
-                row.updated_at = float(meta.get("updated_at"))
-            sess.add(row)
-            changed = True
-        if changed:
-            sess.commit()
-    except Exception as exc:  # pragma: no cover - defensive
-        sess.rollback()
-        logger.info(f"kb_store sync_skillcards_from_files user={user_id} failed: {exc}")
-    finally:
-        if own:
-            sess.close()
 
 
 # ============================================================
@@ -1139,7 +1009,7 @@ def _row_valhalla_dict(row: ValhallaEntry) -> Dict[str, Any]:
 
 def _ensure_layout(user_id: int) -> None:
     root = _kb_root(user_id)
-    for sub in (PERSONAS_DIR, MCP_DIR, SYSTEM_DIR, SKILLS_DIR, TOPICS_DIR, MEMORIES_DIR, EVOLUTION_DIR, SKILLCARDS_DIR, VALHALLA_DIR):
+    for sub in (PERSONAS_DIR, MCP_DIR, SYSTEM_DIR, SKILLS_DIR, TOPICS_DIR, MEMORIES_DIR, EVOLUTION_DIR, VALHALLA_DIR):
         _ensure_dir(os.path.join(root, sub))
     readme = os.path.join(root, "README.md")
     if _read_text(readme) is None:
@@ -1167,11 +1037,9 @@ def ensure_user_kb(user_id: int, *, session: Optional[Session] = None) -> None:
             # Memory / EvolutionInput：先导出缺失文件，再以文件为准回写 DB。
             seed_memories(user_id, session=sess)
             seed_evolution(user_id, session=sess)
-            seed_skillcards(user_id, session=sess)
             seed_valhalla(user_id, session=sess)  # 仅导出，无文件回写
             sync_memories_from_files(user_id, session=sess)
             sync_evolution_from_files(user_id, session=sess)
-            sync_skillcards_from_files(user_id, session=sess)
         finally:
             if own:
                 sess.close()
