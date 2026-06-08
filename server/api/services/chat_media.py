@@ -1,3 +1,6 @@
+"""Chat message image media helpers: decode/validate base64 image data URLs and
+store, fetch, and delete ``ChatMessageMedia`` rows attached to chat messages."""
+
 import base64
 import binascii
 import secrets

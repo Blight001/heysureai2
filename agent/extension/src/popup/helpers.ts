@@ -5,13 +5,6 @@ import { MemberConfig } from '../lib/client'
 import { getAvatarCache, setAvatarCache, clearAvatarCache } from '../lib/storage'
 import { esc } from './markdown'
 
-export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
-export function fmt(ts: number): string { return new Date(ts).toTimeString().slice(0, 8) }
-
-export function roleOf(m: MemberConfig): string {
-  if (m.ai_role === 'assistant_admin') return 'assistant_admin'
-  return m.digital_member_role === 'manager' ? 'manager' : 'member'
-}
 export function normalizeAvatarUrl(avatar?: string): string {
   const raw = String(avatar || '').trim()
   if (!raw) return ''
@@ -33,19 +26,6 @@ export function avatarHtml(src: string, fallback: string): string {
 }
 export function toolCount(m: MemberConfig): number {
   try { const a = JSON.parse(m.mcp_tools || '[]'); return Array.isArray(a) ? a.length : 0 } catch { return 0 }
-}
-export function hasBrowserMcpPermission(m: MemberConfig): boolean {
-  if (m.mcp_enabled === false) return false
-  try {
-    const parsed = JSON.parse(m.mcp_tools || '[]')
-    if (!Array.isArray(parsed)) return false
-    return parsed.some(tool => {
-      const name = String(tool || '').trim()
-      return name.startsWith('browser_')
-    })
-  } catch {
-    return false
-  }
 }
 
 // ── Avatar fetch + cache (current account only) ──────────────────────────────

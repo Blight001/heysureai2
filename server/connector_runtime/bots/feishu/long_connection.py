@@ -76,7 +76,7 @@ def _build_event_handler(lark, config_id: int):
             raw = lark.JSON.marshal(data)
             payload = raw if isinstance(raw, dict) else json.loads(raw)
             handle_feishu_event_payload(config_id, payload, verify_token=False)
-        except Exception as exc:
+        except Exception:
             logger.exception(f"handle event failed config_id={config_id}")
 
     return (
@@ -193,7 +193,7 @@ def start_feishu_long_connection_clients() -> int:
     for future in disconnects:
         try:
             future.result(timeout=5)
-        except Exception as exc:
+        except Exception:
             logger.exception("disconnect wait failed")
 
     started = 0

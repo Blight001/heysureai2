@@ -1,3 +1,7 @@
+"""Shared base for the ``/api/chat`` router family: defines the ``APIRouter`` and
+re-exports run-state primitives (locks, live-state maps, prompt section titles)
+from ``api.chat_runtime.run_state`` for the chat sub-route modules."""
+
 IS_ROUTER_ENTRY = False
 
 from fastapi import APIRouter

@@ -10,8 +10,6 @@ export type AiCardRow = Record<string, any>
 
 export type AiConfigRow = Record<string, any>
 
-export type QqDiagnoseRow = Record<string, any>
-
 // Each bot's per-channel config slice. Keys mirror the server-side
 // ``BotAdapter.default_config`` schema; unknown keys are silently dropped
 // by the adapter so it is safe to send extras.
@@ -78,30 +76,4 @@ export const deleteAiConfig = (configId: number) =>
 export const toggleAiRun = (configId: number) =>
   post<void>(`/api/ai/configs/${configId}/toggle-run`, undefined, {
     fallbackError: 'AI 启停切换失败',
-  })
-
-// Unified bot diagnostics — every registered channel exposes the same shape.
-// Use this for any new code; the channel-specific shims below are kept for
-// existing call sites and will be removed once they migrate.
-export type BotDiagnoseRow = Record<string, any>
-
-export const diagnoseBot = (channel: string, configId: number) =>
-  get<BotDiagnoseRow>(`/api/bots/${channel}/diagnose/${configId}`, {
-    fallbackError: '机器人诊断失败',
-  })
-
-export const listBotChannels = () =>
-  get<{ channels: { channel: string; label: string }[] }>('/api/bots/channels', {
-    fallbackError: '机器人通道列表加载失败',
-  })
-
-// Deprecated — prefer ``diagnoseBot('qq', configId)``.
-export const diagnoseQqBot = (configId: number) =>
-  get<QqDiagnoseRow>(`/api/qq/diagnose/${configId}`, {
-    fallbackError: 'QQ 诊断失败',
-  })
-
-export const sendQqBotTest = (configId: number, payload: Record<string, any> = {}) =>
-  post<QqDiagnoseRow>(`/api/qq/diagnose/${configId}/send-test`, payload, {
-    fallbackError: 'QQ 测试发送失败',
   })

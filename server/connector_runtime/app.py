@@ -69,7 +69,7 @@ async def _lifespan(app: FastAPI):
         expired = expire_orphan_dispatches()
         if expired:
             logger.info(f"expired {expired} orphan dispatch rows")
-    except Exception as exc:
+    except Exception:
         logger.exception("orphan sweep failed")
 
     # Maintain every registered bot's long-connection clients from this
@@ -82,7 +82,7 @@ async def _lifespan(app: FastAPI):
             while not stop_event.is_set():
                 try:
                     bot.start_long_connections()
-                except Exception as exc:
+                except Exception:
                     logger.exception(f"{bot.channel} keepalive failed")
                 try:
                     await asyncio.wait_for(stop_event.wait(), timeout=3.0)
@@ -103,7 +103,7 @@ async def _lifespan(app: FastAPI):
                 expired_now = expire_orphan_dispatches()
                 if expired_now:
                     logger.info(f"expired {expired_now} orphan dispatch rows")
-            except Exception as exc:
+            except Exception:
                 logger.exception("periodic orphan sweep failed")
 
     keepalive_tasks = [

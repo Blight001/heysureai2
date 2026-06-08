@@ -1,3 +1,6 @@
+"""``/api/ai`` miscellaneous routes: clear/delete configs, runtime status and bot
+statuses, token usage snapshots, member cards, and session creation."""
+
 IS_ROUTER_ENTRY = False
 
 import asyncio

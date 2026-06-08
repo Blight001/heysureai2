@@ -17,7 +17,7 @@ import logging
 import os
 import sqlite3
 
-from .config import DATABASE_URL, SQLITE_FILE, database_dialect
+from .config import SQLITE_FILE, database_dialect
 
 
 logger = logging.getLogger(__name__)

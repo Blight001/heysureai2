@@ -1,3 +1,7 @@
+"""``/api/chat`` action routes: start/stop/inspect chat runs (``/run/*``), save,
+delete, recall, tag and clear messages, serve message media and workspace files,
+and stream run output (SSE) by dispatching to the AI runtime worker."""
+
 IS_ROUTER_ENTRY = False
 
 import json
@@ -9,11 +13,12 @@ from typing import List, Optional
 
 import requests
 from fastapi import Depends, Header, HTTPException, Response
+from fastapi.responses import StreamingResponse  # 用于 /stream 端点的 SSE 流式响应
 from sqlmodel import Session, select
 
 from api.database import get_session
 from mcp_runtime.mcp import get_project_root, registry
-from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatMessageUpdate, ChatRun, User
+from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatMessageUpdate, ChatRun
 from .auth import get_current_user
 from ai_runtime.worker import notify_queue
 from api.core.settings import settings
@@ -492,8 +497,7 @@ async def execute_action(
     user = get_current_user(authorization, session)
     
     action = req.get("action")
-    filename = req.get("filename")
-    
+
     if not action:
         raise HTTPException(status_code=400, detail="Missing action field")
         

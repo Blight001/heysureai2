@@ -27,7 +27,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import Future
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from sqlmodel import Session, select
 

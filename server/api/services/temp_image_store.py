@@ -1,3 +1,6 @@
+"""Filesystem-backed temporary image store under ``DATA_DIR/temp_images``: save,
+validate, resolve, and TTL-expire images served at ``/tmp-images/<filename>``."""
+
 import base64
 import binascii
 import os

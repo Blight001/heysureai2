@@ -1,3 +1,6 @@
+"""MCP routes: list permitted tools for a config (``/tools``), execute a tool call
+with permission checks (``/call``), and reload the tool registry (internal)."""
+
 import json
 from typing import Any, Dict, Optional
 

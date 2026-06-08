@@ -1,3 +1,6 @@
+"""Task-completion notifications: build the 任务完成回执 message and start a chat
+run that delivers it back to the task creator AI once its session is idle."""
+
 import threading
 import time
 import uuid

@@ -5,7 +5,6 @@ workers call these helpers to load/save chat state in a single place
 so the I/O shape stays consistent.
 """
 
-import json
 import time
 from datetime import datetime
 from typing import Dict, Optional, Tuple

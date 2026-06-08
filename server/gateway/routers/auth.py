@@ -1,3 +1,6 @@
+"""``/api/auth`` routes: user registration, login (JWT issuance), profile update,
+and ``/me``; also exposes ``get_current_user`` used as auth dependency elsewhere."""
+
 import logging
 import os
 from datetime import timedelta

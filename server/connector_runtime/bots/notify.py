@@ -16,7 +16,7 @@ iteration picks up any new ``BotAdapter`` automatically.
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from sqlmodel import select
 

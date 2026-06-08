@@ -8,14 +8,6 @@ import { AgentStatus } from '../lib/types'
 import { AuthState } from '../lib/storage'
 import { MemberConfig } from '../lib/client'
 
-export const STATUS_LABELS: Record<string, string> = {
-  disconnected: '未连接', connecting: '连接中...', connected: '已连接',
-  registered: '已注册到服务器', error: '连接错误',
-}
-export const ROLE_LABELS: Record<string, string> = {
-  assistant_admin: '辅助管理员', manager: '管理者', member: '普通成员',
-}
-
 export const state = {
   currentTheme: 'dark' as 'dark' | 'light',
   currentStatus: 'disconnected' as AgentStatus,

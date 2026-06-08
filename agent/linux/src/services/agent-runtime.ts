@@ -2,7 +2,7 @@
 // re-wires renderer events on construction, and exposes a small API the IPC
 // layer + tray menu can call.
 
-import { HeySureAgent, AgentStatus } from '../agent'
+import { HeySureAgent } from '../agent'
 import { store, AgentSettings } from '../store'
 import { getMainWindow } from '../windows/main-window'
 import { sendActivityLog } from './activity-log'

@@ -23,7 +23,6 @@ On failure at any step before the swap, the live registry is untouched.
 from __future__ import annotations
 
 import importlib
-import os
 import pkgutil
 import sys
 import traceback

@@ -37,15 +37,6 @@ export function requireAuth(settings: AgentSettings): { base: string; token: str
   return { base: resolveBaseUrl(settings.serverUrl), token: settings.authToken }
 }
 
-// Variant that also requires a selected AI config (most chat/task endpoints).
-export function requireAuthWithAi(settings: AgentSettings): {
-  base: string; token: string; aiConfigId: number
-} {
-  const { base, token } = requireAuth(settings)
-  if (!settings.selectedAiConfigId) throw new Error('未选择 AI 成员')
-  return { base, token, aiConfigId: Number(settings.selectedAiConfigId) }
-}
-
 async function readJson(res: Response, fallback: string, wasAuthenticated = false): Promise<any> {
   const text = await res.text()
   let data: any = {}

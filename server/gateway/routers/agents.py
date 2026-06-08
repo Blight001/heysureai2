@@ -1,3 +1,6 @@
+"""``/api/agents`` routes: list connected endpoint agents, bind an agent to an AI
+config, and get/set an agent's per-device MCP tool scope."""
+
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException

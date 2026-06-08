@@ -1,3 +1,6 @@
+"""Model preset helpers: normalize, serialize, and resolve the per-user list of
+``(model, api_key, base_url)`` presets used to configure AI inference."""
+
 import json
 from typing import Any, Optional
 
