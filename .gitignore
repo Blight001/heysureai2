@@ -56,6 +56,9 @@ agent/linux/dist/
 agent/linux/release/
 agent/linux/tsconfig.tsbuildinfo
 
+# Browser extension build output
+agent/extension/dist/
+
 # Build artifacts
 *.out
 *.exe
