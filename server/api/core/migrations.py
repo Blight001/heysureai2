@@ -1157,6 +1157,10 @@ def _migrate_user(
     )
     _remove_role_permission_tool_item(cursor, "task.get_current")
     _remove_role_permission_tool_item(cursor, "admin.dispatch_flow")
+    # Rename the send-message tools out of the ambiguous user./ai. prefixes into
+    # a dedicated message.* namespace (UI now groups them under 「发消息」).
+    _rename_role_permission_tool_item(cursor, "user.send_message", "message.send_to_user")
+    _rename_role_permission_tool_item(cursor, "ai.send_message", "message.send_to_ai")
 
 
 def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
@@ -1265,6 +1269,15 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
             "conversation.create",
             "conversation.delete",
         ],
+    )
+    # Rename the send-message tools out of the ambiguous user./ai. prefixes into
+    # a dedicated message.* namespace (UI now groups them under 「发消息」). Runs
+    # after the anchor-based appends above so existing scopes migrate cleanly.
+    _collapse_json_array_items(
+        cursor, "assistantaiconfig", "mcp_tools", ["user.send_message"], "message.send_to_user"
+    )
+    _collapse_json_array_items(
+        cursor, "assistantaiconfig", "mcp_tools", ["ai.send_message"], "message.send_to_ai"
     )
     cursor.execute(
         "UPDATE assistantaiconfig SET bot_channel = 'feishu' "
@@ -1531,6 +1544,46 @@ def _remove_role_permission_tool_item(cursor: sqlite3.Cursor, item: str) -> None
             next_tools = [tool for tool in tools if tool != item]
             if next_tools != tools:
                 changed = True
+            next_permissions[role] = next_tools
+        if not changed:
+            continue
+        cursor.execute(
+            "UPDATE user SET role_mcp_permissions = ? WHERE id = ?",
+            (json.dumps(next_permissions, ensure_ascii=False), row_id),
+        )
+
+
+def _rename_role_permission_tool_item(cursor: sqlite3.Cursor, old_item: str, new_item: str) -> None:
+    """Rename a single tool name inside every user's role_mcp_permissions map,
+    preserving its position within each role's list and de-duplicating."""
+    cursor.execute(
+        "SELECT id, role_mcp_permissions FROM user WHERE role_mcp_permissions LIKE ?",
+        (f"%{old_item}%",),
+    )
+    rows = cursor.fetchall()
+    for row_id, raw_value in rows:
+        try:
+            import json
+            parsed = json.loads(raw_value or "{}")
+        except Exception:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        changed = False
+        next_permissions = {}
+        for role, tools in parsed.items():
+            if not isinstance(tools, list):
+                next_permissions[role] = tools
+                continue
+            next_tools: list[str] = []
+            seen: set[str] = set()
+            for tool in tools:
+                mapped = new_item if tool == old_item else tool
+                if mapped != tool:
+                    changed = True
+                if mapped not in seen:
+                    next_tools.append(mapped)
+                    seen.add(mapped)
             next_permissions[role] = next_tools
         if not changed:
             continue

@@ -71,6 +71,7 @@ const MCP_TOOL_TAG_ORDER = [
   '总结',
   '进化',
   'Prompt',
+  '发消息',
   '协作',
   '通用',
 ]
@@ -117,10 +118,10 @@ const getMcpToolFallbackTag = (name: string) => {
   if (hasMcpPrefix(name, 'memory')) return '记忆'
   if (hasMcpPrefix(name, 'librarian')) return '总结'
   if (hasMcpPrefix(name, 'evolution')) return '进化'
+  // 发消息：发给用户 / 发给其他 AI，单独成栏，不再混入「协作」。
+  if (hasMcpPrefix(name, 'message')) return '发消息'
   if (hasMcpPrefix(name, 'feishu')) return '协作'
   if (hasMcpPrefix(name, 'conversation')) return '协作'
-  if (hasMcpPrefix(name, 'user')) return '协作'
-  if (hasMcpPrefix(name, 'ai')) return '协作'
   return '通用'
 }
 

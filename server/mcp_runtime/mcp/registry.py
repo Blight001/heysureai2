@@ -355,7 +355,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
 
     # 与用户通信：把底层机器人投递封装为业务语义上的"给用户发消息"。
     registry.register(MCPTool(
-        name="user.send_message",
+        name="message.send_to_user",
         description=(
             "Send a text message to the human user via the bound bot channel (Feishu or QQ). "
             "Use this for proactive notifications, status updates, or asking the user to take action "
@@ -544,7 +544,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
 
     # ---------- AI 间通信 ----------
     registry.register(MCPTool(
-        name="ai.send_message",
+        name="message.send_to_ai",
         description=(
             "Send a message to another AI in the same digital society. The message is delivered "
             "as a forced system prompt. If the target AI is already running, its current run is "
@@ -574,7 +574,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
                     "description": (
                         "Default false. Controls whether this tool call waits synchronously; it does not "
                         "replace the required message_type. Keep false for normal AI-to-AI collaboration "
-                        "so replies arrive as new ai.send_message calls."
+                        "so replies arrive as new message.send_to_ai calls."
                     ),
                 },
                 "timeout_seconds": {

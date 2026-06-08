@@ -27,7 +27,7 @@ TASK_RUNTIME_REQUIRED_TOOLS = {
     "task.complete",
     "task.inherit",
     "task.list",
-    "ai.send_message",
+    "message.send_to_ai",
 }
 
 

@@ -32,7 +32,7 @@ SYSTEM_PROMPT_USAGE = {
     "mcp_namespace_hints": "JSON 对象，配置 {MCP} 占位符渲染第一层 namespace 时的说明文本。",
     "mcp_format_error_hint": "当模型输出的 MCP 调用格式无效时，作为系统纠错提示模板使用。",
     "prompt_ai_message_notify": "message_type=\"notify\" 时注入。系统会自动签收，模板应明确告知 AI 不要回应。",
-    "prompt_ai_message_inquiry": "message_type=\"inquiry\" 时注入。模板可提示对方用 ai.send_message(message_type=\"reply\") 答复。",
+    "prompt_ai_message_inquiry": "message_type=\"inquiry\" 时注入。模板可提示对方用 message.send_to_ai(message_type=\"reply\") 答复。",
     "prompt_ai_message_inquiry_reminder": "inquiry 的目标 AI 停止运行且仍未回复超过 ai_message_inquiry_reminder_seconds 后注入目标 AI 原会话，用于催促其回复原消息。",
     "prompt_ai_message_reply": "message_type=\"reply\" 时注入。模板用于展示对方回复内容。",
     "prompt_ai_message_chitchat": "message_type=\"chitchat\" 时注入。用于展示闲聊内容。",

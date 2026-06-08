@@ -222,7 +222,7 @@ Rules:
 - 消息内容:
 {content}
 
-如果消息内容要求你回话、确认或补充状态，请调用 MCP 工具 \`ai.send_message\` 回发消息给发送方：
+如果消息内容要求你回话、确认或补充状态，请调用 MCP 工具 \`message.send_to_ai\` 回发消息给发送方：
   arguments: {{"to_ai_config_id": {from_ai_config_id}, "content": "<你的回复>", "require_reply": false}}
 这样发送方会作为新收件方被系统唤醒处理你的回信。`)
   const promptAiMessageInquiry = ref(`[AI 间通信 · 询问]
@@ -234,10 +234,10 @@ Rules:
 - 询问内容:
 {content}
 
-回复方式：调用 MCP 工具 \`ai.send_message\`，参数如下：
+回复方式：调用 MCP 工具 \`message.send_to_ai\`，参数如下：
   {{"to_ai_config_id": {from_ai_config_id}, "content": "<你的答复>", "message_type": "reply", "require_reply": false, "reply_to_message_id": "{message_id}", "current_session_id": "{current_session_id}"}}
 
-回复后如仍需沟通，可以继续使用 \`ai.send_message\`。`)
+回复后如仍需沟通，可以继续使用 \`message.send_to_ai\`。`)
   const aiMessageInquiryReminderSeconds = ref(3)
   const promptAiMessageInquiryReminder = ref(`[系统提示 · AI 间询问待回复]
 你仍有一条来自 {from_ai_name} 的询问尚未回复，系统正在等待这个闭环。
@@ -248,7 +248,7 @@ Rules:
 - 询问内容:
 {content}
 
-请立即先答复这条询问。回复方式：调用 MCP 工具 \`ai.send_message\`，参数必须包含：
+请立即先答复这条询问。回复方式：调用 MCP 工具 \`message.send_to_ai\`，参数必须包含：
 {{"to_ai_config_id": {from_ai_config_id}, "content": "<你的答复>", "message_type": "reply", "require_reply": false, "reply_to_message_id": "{message_id}", "current_session_id": "{current_session_id}"}}`)
   const promptAiMessageReply = ref(`[AI 间通信 · 收到答复]
 你之前的询问已收到对方答复。

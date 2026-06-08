@@ -432,7 +432,7 @@ const onModelPresetChange = () => {
                   </div>
                 </div>
                 <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
-                  仅通知 URL 只能让 AI 主动发通知；飞书用户主动与 AI 对话需要配置自建应用 App ID / Secret，并在飞书开放平台的事件订阅里选择“使用长连接接收事件”。启用后请在 MCP 工具权限中勾选 <span class="font-mono">user.send_message</span>。
+                  仅通知 URL 只能让 AI 主动发通知；飞书用户主动与 AI 对话需要配置自建应用 App ID / Secret，并在飞书开放平台的事件订阅里选择“使用长连接接收事件”。启用后请在 MCP 工具权限中勾选 <span class="font-mono">message.send_to_user</span>。
                 </div>
                 </template>
 
