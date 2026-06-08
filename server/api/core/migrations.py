@@ -1161,6 +1161,21 @@ def _migrate_user(
     # a dedicated message.* namespace (UI now groups them under 「发消息」).
     _rename_role_permission_tool_item(cursor, "user.send_message", "message.send_to_user")
     _rename_role_permission_tool_item(cursor, "ai.send_message", "message.send_to_ai")
+    # web.search 并入 workspace 命名空间；project/memory MCP 工具组已下线。
+    _rename_role_permission_tool_item(cursor, "web.search", "workspace.search")
+    for _tool in (
+        "project.list_projects",
+        "project.create_project",
+        "project.update_project",
+        "project.delete_project",
+        "memory.write",
+        "memory.search",
+        "memory.list",
+        "memory.update",
+        "memory.archive",
+        "debug.ping",
+    ):
+        _remove_role_permission_tool_item(cursor, _tool)
 
 
 def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
@@ -1279,6 +1294,23 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
     _collapse_json_array_items(
         cursor, "assistantaiconfig", "mcp_tools", ["ai.send_message"], "message.send_to_ai"
     )
+    # web.search 并入 workspace 命名空间；project/memory MCP 工具组已下线。
+    _collapse_json_array_items(
+        cursor, "assistantaiconfig", "mcp_tools", ["web.search"], "workspace.search"
+    )
+    for _tool in (
+        "project.list_projects",
+        "project.create_project",
+        "project.update_project",
+        "project.delete_project",
+        "memory.write",
+        "memory.search",
+        "memory.list",
+        "memory.update",
+        "memory.archive",
+        "debug.ping",
+    ):
+        _remove_json_array_item(cursor, "assistantaiconfig", "mcp_tools", _tool)
     cursor.execute(
         "UPDATE assistantaiconfig SET bot_channel = 'feishu' "
         "WHERE bot_channel IS NULL OR bot_channel = '' "

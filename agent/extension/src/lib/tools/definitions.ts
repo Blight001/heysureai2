@@ -53,7 +53,7 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   },
   {
     name: 'browser_search',
-    description: '用主流搜索引擎检索网络。用途：在浏览器内发起一次站点搜索。场景：用 Google/Bing/百度等查资料；注意这会真正打开搜索结果页（与服务器端 web.search 的纯数据检索不同）。',
+    description: '用主流搜索引擎检索网络。用途：在浏览器内发起一次站点搜索。场景：用 Google/Bing/百度等查资料；注意这会真正打开搜索结果页（与服务器端 workspace.search 的纯数据检索不同）。',
     input_schema: {
       type: 'object',
       properties: {

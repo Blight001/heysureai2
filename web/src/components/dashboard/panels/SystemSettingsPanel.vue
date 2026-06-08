@@ -389,7 +389,7 @@ watch(() => props.show, visible => {
                   class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
                   placeholder="tvly-..."
                 />
-                <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">供 <code>web.search</code> 调用 Tavily 搜索；仍需在 MCP 权限中为对应 AI 勾选该工具。</p>
+                <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">供 <code>workspace.search</code> 调用 Tavily 搜索；仍需在 MCP 权限中为对应 AI 勾选该工具。</p>
               </div>
               <div>
               <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">单次运行最多步骤 / MCP 续跑次数</div>

@@ -44,7 +44,7 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # MCP self-inspection — available to every tier and forced into runtime allow-lists.
     "mcp.describe_tool": ROLE_MEMBER,
     # Web search — external read-only lookup, available to every tier by default.
-    "web.search": ROLE_MEMBER,
+    "workspace.search": ROLE_MEMBER,
     # Workspace access is command-only. AI should use shell commands for file operations.
     "workspace.run_command": ROLE_MANAGER,
     # Task — members run their own task; orchestration is manager+.
@@ -54,12 +54,6 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "task.create": ROLE_MANAGER,
     "task.update": ROLE_MANAGER,
     "task.delete": ROLE_MANAGER,
-    # Memory — every tier; archiving (soft-delete) is manager+.
-    "memory.write": ROLE_MEMBER,
-    "memory.search": ROLE_MEMBER,
-    "memory.list": ROLE_MEMBER,
-    "memory.update": ROLE_MEMBER,
-    "memory.archive": ROLE_MANAGER,
     # Prompt — read own prompt is member; editing AI prompts is manager+;
     # global/system prompt templates are assistant_admin+.
     "prompt.list_targets": ROLE_MEMBER,
@@ -80,11 +74,6 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # Admin / governance — assistant_admin only.
     "admin.list_agents": ROLE_ASSISTANT_ADMIN,
     "admin.get_overview": ROLE_ASSISTANT_ADMIN,
-    # Project lifecycle — listing is manager+; mutations are assistant_admin only.
-    "project.list_projects": ROLE_MANAGER,
-    "project.create_project": ROLE_ASSISTANT_ADMIN,
-    "project.update_project": ROLE_ASSISTANT_ADMIN,
-    "project.delete_project": ROLE_ASSISTANT_ADMIN,
     # Evolution — proposing/listing is manager+; reviewing/applying is assistant_admin.
     "evolution.input": ROLE_MANAGER,
     "evolution.list": ROLE_MANAGER,

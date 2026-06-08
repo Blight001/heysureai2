@@ -150,7 +150,7 @@ class Settings(BaseSettings):
     tavily_api_key: str = Field(
         default="",
         alias="TAVILY_API_KEY",
-        description="Tavily web-search API key (used by the web.search MCP tool).",
+        description="Tavily web-search API key (used by the workspace.search MCP tool).",
     )
     clawhub_registry_url: str = Field(
         default="https://clawhub.ai",
