@@ -60,7 +60,7 @@ def _resolve_tool_alias(name: str, allowed: set[str]) -> str:
         return raw
     # Native tool schemas replace characters outside [a-zA-Z0-9_-] with "__".
     # Accept that form here so models can pass the visible native name back to
-    # mcp.describe_tool, e.g. web__search -> web.search.
+    # mcp.describe_tool, e.g. workspace__search -> workspace.search.
     if "__" in raw:
         dotted = raw.replace("__", ".")
         if dotted in allowed:

@@ -7,12 +7,6 @@ from .tools.workspace import (
     _list_agents,
     _run_command,
 )
-from .tools.projects import (
-    _create_project,
-    _delete_project,
-    _list_projects,
-    _update_project,
-)
 from .tools.tasks import (
     _task_complete,
     _task_create,
@@ -28,15 +22,10 @@ from .tools.prompts import (
     _prompt_write_ai,
     _prompt_write_system,
 )
-from .tools.memory import (
+from .tools.evolution import (
     _evolution_input,
     _evolution_list,
     _evolution_review,
-    _memory_archive,
-    _memory_list,
-    _memory_search,
-    _memory_update,
-    _memory_write,
 )
 from .tools.communication import (
     _ai_send_message,
@@ -92,7 +81,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     ))
 
     registry.register(MCPTool(
-        name="web.search",
+        name="workspace.search",
         description="Search the public web using Tavily. Use for current or external information that is not available in the conversation or workspace.",
         input_schema={
             "type": "object",
@@ -165,60 +154,6 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         description="Get admin overview of workspace state plus connected socket agents and managed AI configs.",
         input_schema={"type": "object", "properties": {}},
         handler=_get_overview,
-    ))
-    registry.register(MCPTool(
-        name="project.list_projects",
-        description="List all evolution projects for current user.",
-        input_schema={"type": "object", "properties": {}},
-        handler=_list_projects,
-    ))
-    registry.register(MCPTool(
-        name="project.create_project",
-        description="Create a project with optional status and AI member IDs.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "description": {"type": "string"},
-                "status": {"type": "string", "enum": ["running", "ended"]},
-                "ai_member_ids": {"type": "array", "items": {"type": "integer"}},
-            },
-            "required": ["name"],
-        },
-        handler=_create_project,
-        destructive=True,
-    ))
-    registry.register(MCPTool(
-        name="project.update_project",
-        description="Update project fields by id/project_id.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "id": {"type": "string"},
-                "project_id": {"type": "string"},
-                "name": {"type": "string"},
-                "description": {"type": "string"},
-                "status": {"type": "string", "enum": ["running", "ended"]},
-                "ai_member_ids": {"type": "array", "items": {"type": "integer"}},
-            },
-            "required": [],
-        },
-        handler=_update_project,
-        destructive=True,
-    ))
-    registry.register(MCPTool(
-        name="project.delete_project",
-        description="Delete project by id/project_id and clear linked AI configs.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "id": {"type": "string"},
-                "project_id": {"type": "string"},
-            },
-            "required": [],
-        },
-        handler=_delete_project,
-        destructive=True,
     ))
     registry.register(MCPTool(
         name="task.create",
@@ -599,84 +534,6 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         destructive=True,
     ))
 
-    registry.register(MCPTool(
-        name="memory.write",
-        description="Persist a high-value structured memory (fact/decision/lesson/todo/risk/template) for later retrieval.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "content": {"type": "string", "description": "Memory content."},
-                "kind": {"type": "string", "enum": ["fact", "decision", "lesson", "todo", "risk", "template"]},
-                "tags": {"type": "array", "items": {"type": "string"}},
-                "project_id": {"type": "string"},
-                "job_id": {"type": "string"},
-                "generation": {"type": "integer"},
-                "confidence": {"type": "number", "description": "0.0-1.0 confidence."},
-                "source": {"type": "object", "description": "Provenance, e.g. {chat_message_id, file_path}."},
-            },
-            "required": ["content"],
-        },
-        handler=_memory_write,
-        destructive=True,
-    ))
-    registry.register(MCPTool(
-        name="memory.search",
-        description="Search stored memories by free-text query, kind, project, or tags.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "query": {"type": "string"},
-                "kind": {"type": "string"},
-                "project_id": {"type": "string"},
-                "tags": {"type": "array", "items": {"type": "string"}},
-                "limit": {"type": "integer"},
-                "include_archived": {"type": "boolean"},
-            },
-        },
-        handler=_memory_search,
-    ))
-    registry.register(MCPTool(
-        name="memory.list",
-        description="List stored memories (optionally filtered by kind/project).",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "kind": {"type": "string"},
-                "project_id": {"type": "string"},
-                "limit": {"type": "integer"},
-                "include_archived": {"type": "boolean"},
-            },
-        },
-        handler=_memory_list,
-    ))
-    registry.register(MCPTool(
-        name="memory.update",
-        description="Update an existing memory's content/tags/kind/confidence.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "memory_id": {"type": "string"},
-                "content": {"type": "string"},
-                "tags": {"type": "array", "items": {"type": "string"}},
-                "kind": {"type": "string"},
-                "confidence": {"type": "number"},
-            },
-            "required": ["memory_id"],
-        },
-        handler=_memory_update,
-        destructive=True,
-    ))
-    registry.register(MCPTool(
-        name="memory.archive",
-        description="Archive (soft-delete) a memory so it no longer surfaces in default searches.",
-        input_schema={
-            "type": "object",
-            "properties": {"memory_id": {"type": "string"}},
-            "required": ["memory_id"],
-        },
-        handler=_memory_archive,
-        destructive=True,
-    ))
     registry.register(MCPTool(
         name="evolution.input",
         description="Submit an evolution proposal (improvement to prompts/tools/workflows) for core-manager review.",

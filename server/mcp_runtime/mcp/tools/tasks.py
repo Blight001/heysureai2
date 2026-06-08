@@ -992,7 +992,6 @@ def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[in
             "summary": summary,
             "completion_notification": notification,
             "next_step_hint": (
-                "若本次产生了可复用经验，请用 memory.write 沉淀关键事实/教训；"
                 "若发现可改进系统 prompt/工具/流程的规律，请用 evolution.input 提交进化建议（附证据与风险）。"
             ),
         }

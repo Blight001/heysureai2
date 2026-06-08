@@ -51,15 +51,12 @@ const normalizeMcpSchemaType = (rawType: unknown) => {
 const MCP_TOOL_TAG_ORDER = [
   // 服务端 · 系统管理
   '概览',
-  '项目',
   '任务',
   'Prompt',
   '工作区',
   'MCP',
-  '联网搜索',
   '通用',
-  // 服务端 · 记忆与进化
-  '记忆',
+  // 服务端 · 知识与进化
   '归档',
   '知识总结',
   '进化',
@@ -120,15 +117,13 @@ const getEndpointCapabilityTag = (name: string) => {
 const getMcpToolFallbackTag = (name: string) => {
   const endpointCapabilityTag = getEndpointCapabilityTag(name)
   if (endpointCapabilityTag) return endpointCapabilityTag
+  // workspace.run_command（终端）与 workspace.search（联网搜索）同归「工作区」。
   if (hasMcpPrefix(name, 'workspace')) return '工作区'
   if (hasMcpPrefix(name, 'admin')) return '概览'
   if (hasMcpPrefix(name, 'desktop')) return '桌面能力'
-  if (hasMcpPrefix(name, 'project')) return '项目'
   if (hasMcpPrefix(name, 'task')) return '任务'
   if (hasMcpPrefix(name, 'prompt')) return 'Prompt'
-  if (hasMcpPrefix(name, 'web')) return '联网搜索'
-  if (name === 'memory.archive' || name === 'librarian.archive') return '归档'
-  if (hasMcpPrefix(name, 'memory')) return '记忆'
+  if (name === 'librarian.archive') return '归档'
   if (hasMcpPrefix(name, 'librarian')) return '知识总结'
   if (hasMcpPrefix(name, 'evolution')) return '进化'
   // 发消息：发给用户 / 发给其他 AI，单独成栏，不再混入「会话管理」。
@@ -228,17 +223,14 @@ export const groupMcpToolsByZhTag = (tools: string[]): McpToolGroup[] => {
 const TAG_PARENT: Record<string, string> = {
   // 服务端
   '概览': '系统管理',
-  '项目': '系统管理',
   '任务': '系统管理',
   'Prompt': '系统管理',
   '工作区': '系统管理',
   'MCP': '系统管理',
-  '联网搜索': '系统管理',
   '通用': '系统管理',
-  '记忆': '记忆与进化',
-  '归档': '记忆与进化',
-  '知识总结': '记忆与进化',
-  '进化': '记忆与进化',
+  '归档': '知识与进化',
+  '知识总结': '知识与进化',
+  '进化': '知识与进化',
   '发消息': '通信',
   '会话管理': '通信',
   // 桌面端
@@ -253,7 +245,7 @@ const TAG_PARENT: Record<string, string> = {
   '桌面能力': '图形交互',
 }
 
-const PARENT_ORDER = ['系统管理', '记忆与进化', '通信', '系统操作', '图形交互']
+const PARENT_ORDER = ['系统管理', '知识与进化', '通信', '系统操作', '图形交互']
 
 const getMcpToolGroupParent = (tag: string) => TAG_PARENT[tag] || ''
 
