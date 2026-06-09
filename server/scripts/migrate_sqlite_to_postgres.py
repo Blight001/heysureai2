@@ -10,9 +10,9 @@ Behavior:
    alongside the server package).
 2. Runs the existing SQLite ALTER TABLE migrations against the source so
    the source schema is fully up to date before reading it.
-3. Connects to the destination Postgres URL via SQLModel, runs
-   ``create_all`` against it (producing the current schema), then copies
-   rows table-by-table.
+3. Builds the destination Postgres schema with Alembic
+   (``alembic upgrade head`` — the single source of schema truth), then
+   copies rows table-by-table.
 4. Resets Postgres sequences for tables with a serial primary key so that
    subsequent INSERTs do not collide with imported IDs.
 
@@ -198,8 +198,16 @@ def main() -> int:
     src = sqlite3.connect(src_path)
     src.row_factory = sqlite3.Row
 
+    # Build the destination schema via Alembic (the single source of schema
+    # truth) instead of create_all, so the migrated database starts already
+    # under version control. env.py honors ALEMBIC_DATABASE_URL.
+    from alembic import command
+    from api.db import alembic_config
+
+    os.environ["ALEMBIC_DATABASE_URL"] = dest_url
+    command.upgrade(alembic_config(), "head")
+
     dest = sa_create_engine(dest_url, pool_pre_ping=True)
-    SQLModel.metadata.create_all(dest)
 
     total_rows = 0
     skipped: list[tuple[str, str]] = []

@@ -5,17 +5,45 @@
 
 ## 当前进度
 
-按 §4.3 的分步实施，本仓库当前处于 **Step 1（引入 Alembic 并对齐当前 schema）已完成**：
+按 §4.3 的分步实施，**Step 1–5 已全部落地**：
 
 - [x] **Step 1**：引入 Alembic，生成与现有 22 张表等价的基线迁移（`baseline schema`）。
-- [ ] Step 2：在 `database.py` 移除 `create_all`，退役自研 DDL 补丁（`_migrate_*`）。
-- [ ] Step 3：把 `run_data_consolidations` 的一次性数据整合改写成 Alembic data migration。
-- [ ] Step 4：迁移与应用启动解耦（`alembic upgrade head` 作为独立步骤 / init container）。
-- [ ] Step 5：CI 漂移检测 + 前进/回退测试。
+- [x] **Step 2**：`database.py` 移除 `SQLModel.metadata.create_all`，DDL 改由 Alembic 接管；
+  已实测基线 schema 与旧 `create_all` 输出**结构完全一致**（22 表，0 差异）。
+- [x] **Step 3**：一次性数据整合改为"采纳即一次"——见下方「过渡期：旧库采纳」。
+- [x] **Step 4**：迁移与启动解耦——新增 `python -m api.db migrate` CLI，
+  `HEYSURE_DB_AUTO_MIGRATE=0` 关闭随启动迁移；docker-compose 增加一次性 `db-migrate` 服务，
+  四个进程 `service_completed_successfully` 后再启动。
+- [x] **Step 5**：CI（`.github/workflows/db-migrations.yml`）跑 SQLite/PG 的
+  upgrade→downgrade→upgrade 与 `alembic check` 漂移检测；`scripts/migrate_sqlite_to_postgres.py`
+  目标库建表改用 Alembic。
 
-> ⚠️ **过渡期注意**：Step 1 是**纯附加**的，没有改动应用启动逻辑。`api/database.py` 仍在启动时执行
-> `create_all` + `run_pending_migrations` + `run_data_consolidations`。也就是说，应用现在**不依赖** Alembic
-> 启动。Alembic 目前用于：(a) 新库的规范建表来源，(b) 后续 Step 2 的切换基础。两套机制并存直到 Step 2 切换完成。
+### 启动期 schema 行为（现状）
+
+`api/database.py::create_db_and_tables()`（四个进程启动时调用）现在委托给
+`api.db.ensure_schema()`：
+
+- `HEYSURE_DB_AUTO_MIGRATE`（默认 `true`，向后兼容）：启动时 `alembic upgrade head`。
+- 设为 `0`：启动**不迁移**，只校验 schema 已存在（解耦部署用，迁移交给 `db-migrate` 步骤）。
+
+`ensure_schema()` 自动识别三种库状态，单条命令即可覆盖新装与存量部署：
+
+| 库状态 | 行为 |
+| --- | --- |
+| 空库（无业务表） | `alembic upgrade head` 建出全部表（等价旧 `create_all`） |
+| **旧库**（有业务表、无 `alembic_version`） | 跑一次旧的 `run_pending_migrations` + `run_data_consolidations` 把 schema/数据补齐，再 `stamp head` 交给 Alembic |
+| Alembic 库（有 `alembic_version`） | `alembic upgrade head`（已最新则秒级 no-op） |
+
+### 过渡期：旧库采纳（实现说明）
+
+`api/core/migrations.py`（1722 行的自研迁移）**已退出每次启动的执行路径**，仅在
+`api.db._legacy_adopt` 里对一个**尚未纳管的旧库执行至多一次**：补齐历史列 + 搬运历史数据，
+完成后 `stamp head`，此后该库永不再跑旧代码（**直接消解 D3 启动副作用与 D4 每次全表扫描**）。
+
+> 与 §4.5「`migrations.py` 降到接近 0」的偏差说明：出于**生产安全**，旧代码被保留为"一次性采纳兜底"
+> 而非删除——线上库已逐次启动应用过这些补丁，采纳时再跑一次是幂等的。待所有部署都采纳 Alembic 后，
+> 可在后续版本整体删除 `api/core/migrations.py`（本文件追踪此项）。**新的 schema/数据变更一律写 Alembic
+> revision，禁止再往 `migrations.py` 加东西。**
 
 ## 目录结构
 

@@ -153,11 +153,17 @@ jobs:
 - `defaults.py`（125 行默认值）与 `migrations.py` 里大量 `DEFAULT_*` 引用耦合，整改迁移时一并梳理种子数据（seed）路径。
 
 ### 4.5 验收标准（Definition of Done）
-- [ ] 全新 SQLite 与全新 PG，`alembic upgrade head` 后 schema **完全一致**（用 `alembic check` 验证 0 diff）。
-- [ ] 旧库 `alembic stamp` 后再 `upgrade head` 不丢数据、不重复建表。
-- [ ] 应用进程启动**不再执行任何 DDL/数据搬运**。
-- [ ] `migrations.py` 从 1722 行降到接近 0（逻辑迁入 `versions/`）。
-- [ ] CI 含迁移前进/回退与漂移检测。
+
+> 落地状态见 [`doc/db-migrations.md`](db-migrations.md)。Step 1–5 已实现。
+
+- [x] 全新 SQLite 与全新 PG，`alembic upgrade head` 后 schema **完全一致**（`alembic check` 0 diff；
+  SQLite 已实测，PG 经离线 SQL 渲染 + CI 校验）。
+- [x] 旧库自动采纳：检测到"有业务表但无 `alembic_version`"时跑一次历史补丁 + 数据整合后 `stamp head`，
+  不丢数据、不重复建表。
+- [x] 稳态启动**不再执行旧 DDL/数据搬运**（`HEYSURE_DB_AUTO_MIGRATE=0` 时启动完全不迁移）。
+- [ ] `migrations.py` 降到接近 0 —— **暂缓**：保留为"一次性旧库采纳兜底"，已移出每次启动路径，
+  待所有部署采纳 Alembic 后整体删除（出于生产安全的有意偏差，详见 db-migrations.md）。
+- [x] CI 含迁移前进/回退与漂移检测（`.github/workflows/db-migrations.yml`，SQLite + Postgres）。
 
 ---
 

@@ -63,6 +63,14 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
         description="SQLAlchemy URL; ``sqlite:///...`` or ``postgresql+psycopg://...``.",
     )
+    db_auto_migrate: bool = Field(
+        default=True,
+        alias="HEYSURE_DB_AUTO_MIGRATE",
+        description="Run Alembic ``upgrade head`` on app startup. Set to false to "
+        "decouple migration from startup (run ``python -m api.db migrate`` as a "
+        "separate deploy step / init-container instead); the app then only checks "
+        "that the schema is present.",
+    )
 
     # ---- Service mesh --------------------------------------------------------
 

@@ -1,15 +1,20 @@
-"""Lightweight sqlite ALTER TABLE migrations.
+"""Legacy one-time database adoption shim (pre-Alembic).
 
-Each migration is idempotent: it inspects ``PRAGMA table_info`` first and
-only runs when the target column is missing. This lets the server boot
-against an existing on-disk database that predates new model fields,
-without requiring a real migration framework. Add new entries below; keep
-them short and one-purpose so review is easy.
+⚠️ This module is no longer part of the steady-state boot path. Alembic is the
+single source of schema truth now (see ``api.db`` / ``migrations/`` /
+``doc/db-migrations.md``). It is invoked **at most once per database**, by
+``api.db._legacy_adopt``, to bring a pre-Alembic database fully current the
+exact way the old boot did — adding missing columns and consolidating legacy
+data — after which the database is stamped at Alembic head and this code never
+runs again for it.
 
-These migrations target SQLite only — Postgres deployments either start
-from a clean ``create_all`` (which produces the current schema directly)
-or are seeded from the SQLite -> Postgres migration script (which also
-runs ``create_all`` against Postgres after copying rows).
+It is kept (rather than deleted) so existing deployments adopt Alembic without
+manual intervention. Once every deployment has been adopted, this module can be
+removed (tracked in doc/db-migrations.md). New schema/data changes must be
+authored as Alembic revisions, never added here.
+
+Each migration is idempotent: it inspects ``PRAGMA table_info`` first and only
+runs when the target column is missing.
 """
 
 import json
