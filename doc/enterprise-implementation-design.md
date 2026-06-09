@@ -12,7 +12,7 @@
 | [P0-B](#p0-b质量门禁) | **门禁** | 锁 Python 依赖 + GitHub Actions CI + pre-commit + ruff/mypy | 1–2 天 |
 | [P1-A](#p1-a测试地基) | **测试** | pytest 覆盖 auth/services/关键 router；vitest 覆盖核心组件 | 持续 |
 | [P1-B](#p1-b接口治理) | **接口** | 全局异常处理器 + request-id 中间件 + 导出 OpenAPI | 1 天 |
-| [P1-C](#p1-c横向扩展与并发架构) | **扩展性** | Socket.IO 接 Redis 适配器、网关多副本、推理离开网关、DB 连接池调优 | 3–5 天 |
+| [P1-C](#p1-c无状态化与横向扩展) | **扩展性** | 状态外置（Redis 流式/适配器 + 对象存储）、多副本无状态、推理离队、PgBouncer。目标几万并发 | 1–2 周 |
 | [P2-A](#p2-a可观测性) | **可观测** | Prometheus `/metrics` + `/livez` `/readyz`（复用现有结构化日志） | 2–3 天 |
 | [P2-B](#p2-b数据库迁移) | **迁移** | 自研 `migrations.py` → Alembic（详见 optimization §4） | 专项 |
 | [P3](#p3部署与端侧) | **部署/端侧** | K8s/Helm；agent win/linux 抽公共包 | 专项 |
@@ -315,85 +315,129 @@ app.add_middleware(RequestIDMiddleware)
 
 ---
 
-## P1-C｜横向扩展与并发架构
+## P1-C｜无状态化与横向扩展
 
-### 设计目标
-突破当前"单进程 Socket.IO"的硬天花板，让网关可水平扩展、AI 推理离开网关进程、DB 连接可控。目标：从**不改代码的低单位数千并发**，提升到**几万~10 万级同时在线**（受限于副本数与 LLM 配额，而非代码）。
+> **目标量级：几万并发同时在线（中型 SaaS）。** 刻意不引入 Kafka / DB 分片 / 自研推送层——这些是百万级才需要的重型组件。本节用 **Redis 外置状态 + 对象存储 + 多副本 + PgBouncer** 达成目标。
+
+### 核心认知：这不是"加个 Redis 适配器"，而是状态外置
+
+当前项目是**单节点有状态架构**——单机假设刻在至少四个层次。只接 Socket.IO 的 Redis 适配器，**流式对话在多副本下仍会断**。必须把"跟着一次会话/一个用户跑"的状态全部外置，应用层才能真正无状态、可多副本、可弹性扩缩。
 
 ### 现状瓶颈诊断（实测）
 
+**A 类——多副本下的正确性崩坏（不外置就直接出 bug）**
+
+| # | 瓶颈 | 证据 | 多副本下会怎样 |
+| --- | --- | --- | --- |
+| **S1** | 网关单进程单核 | `server/Dockerfile`：`uvicorn gateway.app:sio_app`，无 `--workers` | 所有 HTTP+Socket.IO 挤在一颗核；服务器再强也只用 ~1 核 |
+| **S2** | Socket.IO 无 Redis 适配器 | `api/sio.py:93` `AsyncServer(...)` 无 `client_manager` | 网关无法多副本——加机器也无效 |
+| **S3** | **流式状态在进程内存** | `chat_runtime/run_state.py`：`_RUN_LIVE_STATE`/`_RUN_THREADS` 是进程内 dict，HTTP+Socket.IO 轮询 | 对话在副本 A 生成、用户连到副本 B → **B 内存没这个 run，流式空白**。Redis 适配器救不了 |
+| **S4** | **agent 注册表在进程内** | `sio.py:102 agents = {}`（虽有 `EndpointAgentPresence` DB 镜像） | 端侧 agent 实时路由靠进程内 dict；连接器多副本需按 `agent_id` 路由 |
+| **S5** | **本地文件系统存储** | `librarian_service`/`screenshot_store`/`user_workspace_dir`/temp_image 写本地盘 | 副本 A 写的文件副本 B 看不到 → 知识库/截图/临时图错乱 |
+
+**B 类——吞吐瓶颈**
+
 | # | 瓶颈 | 证据 | 影响 |
 | --- | --- | --- | --- |
-| **S1** | **网关单进程单核** | `server/Dockerfile`：`uvicorn gateway.app:sio_app --port 3000`，未开 `--workers` | 所有 HTTP+Socket.IO 挤在一个事件循环、一颗 CPU；服务器再强也只用得到 ~1 核 |
-| **S2** | **Socket.IO 无 Redis 适配器** | `api/sio.py:93` `AsyncServer(...)` 无 `client_manager` | **网关无法多副本**——这是最硬的墙，加机器也无效，必须改代码 |
-| **S3** | **默认 `dispatch_mode=local`** | `settings.py:108` | AI 推理跑在网关进程内，进一步堵死唯一的核 |
-| **S4** | **Postgres 连接池未调优** | `database.py:101` 仅 `pool_pre_ping/pool_recycle`，用默认 `pool_size=5` | 高并发下连接耗尽；SQLite 写串行更是硬墙，生产不可用 |
+| **S6** | 默认 `dispatch_mode=local` | `settings.py:108` | AI 推理跑在网关进程内，堵死唯一的核 |
+| **S7** | 队列=DB 轮询+进程内通知 | `chat_scheduler.py` 用 `ChatRun.status='queued'` 轮询；`notify_queue()` 是进程内事件 | 高任务率下 DB-as-queue 是吞吐墙；通知不跨进程 |
+| **S8** | Postgres 池未调优、用 SQLite | `database.py:101` 默认 `pool_size=5`；SQLite 写串行 | 高并发连接耗尽；SQLite 生产不可用 |
 
-### 改动文件
-- `server/api/sio.py` — `AsyncServer` 接 `AsyncRedisManager`
-- `server/api/core/settings.py` — 新增 `redis_url`；`dispatch_mode` 默认改 `remote`
-- `server/api/database.py` — 连接池调优
-- `server/Dockerfile` / 部署清单 — 网关多副本 + 粘性负载均衡 + Redis + PgBouncer
+### 改造方案（按"先正确、后吞吐"分两步落地）
 
-### 代码骨架
+#### 第一步：状态外置，让应用层无状态（解 S1–S5，几万并发的地基）
 
-**1) Socket.IO 横向扩展（解 S2，关键一步）**
+**1) Socket.IO 接 Redis 适配器 + 多副本（解 S1/S2）**
 ```python
 # api/sio.py
 import socketio
 from api.core.settings import settings
 
-mgr = socketio.AsyncRedisManager(settings.redis_url)   # 多副本经 Redis 互转发广播
+mgr = socketio.AsyncRedisManager(settings.redis_url)   # 多副本经 Redis pub/sub 互转发
 sio = socketio.AsyncServer(
-    async_mode='asgi',
-    client_manager=mgr,
+    async_mode='asgi', client_manager=mgr,
     cors_allowed_origins=settings.cors_origin_list,     # 顺带收敛（见 P0-A）
     max_http_buffer_size=20_000_000,
 )
 ```
-> **粘性会话**：engine.io 的 polling 握手要求同一客户端落到同一副本——负载均衡需开 sticky session（按 sid/cookie），或强制 `transports=['websocket']` 跳过 polling 升级。
+> **粘性会话**：engine.io polling 握手要求同一客户端落同一副本——LB 开 sticky session，或前端强制 `transports=['websocket']` 跳过 polling 升级（推荐后者，省去粘性依赖）。
+> **几万级够用**：此规模下 Redis pub/sub 全广播（每节点收每条消息）的 fan-out 开销可接受；百万级才需 room 分片/专用推送层——本期不做。
 
-**2) 推理离开网关（解 S3）**
+**2) 流式状态外置到 Redis（解 S3，最关键的正确性修复）**
+- 把 `_RUN_LIVE_STATE`（流式 token / phase 快照）从进程内 dict 改为 **Redis 存储**：
+  - 推理 worker 把增量 token 写 `Redis Stream` `run:{run_id}`（或 `LIST` + pub/sub）。
+  - 任意网关副本订阅该 run 的 channel，把增量 emit 给本副本上的客户端连接。
+- 用 Redis Streams 顺带把 **S7 的队列通知**一并解决：`XADD jobs * run_id ...` 入队，worker `XREADGROUP` 消费（消费者组=天然的多 worker 负载均衡 + 至少一次投递），取代"DB 轮询 + 进程内 `notify_queue`"。
+```python
+# 入队（取代 notify_queue）
+await redis.xadd("hs:jobs", {"run_id": run_id})
+# worker 侧
+msgs = await redis.xreadgroup("workers", worker_id, {"hs:jobs": ">"}, count=16, block=5000)
+# 流式增量
+await redis.xadd(f"hs:run:{run_id}", {"delta": token})        # worker 产出
+# 网关副本把 run:{id} 的增量转发给本地客户端连接
+```
+> `ChatRun` 表仍作**权威状态/历史**（queued/running/done），Redis 只承载"热"的实时流与队列信号——DB 不再被高频轮询。
+
+**3) agent 路由外置（解 S4）**
+- 端侧 agent 连接经 Socket.IO Redis 适配器后，按 `agent_id` 加入对应 room；派发用 `sio.emit(to=room)`，由适配器跨副本路由，不再依赖进程内 `agents` dict（dict 降级为本副本缓存）。`EndpointAgentPresence` 继续作权威在线快照。
+
+**4) 文件存储换对象存储（解 S5）**
+- 引入 **MinIO（S3 兼容，自托管）或云 S3**。`screenshot_store`、temp_image、librarian 知识库文件、workspace 产物改为读写对象存储，返回带签名 URL。
+- `core/config.py` 的 `user_workspace_dir` 等本地路径抽象成 storage backend 接口（local / s3 双实现，dev 仍可用 local）。
+
+#### 第二步：吞吐扩展（解 S6/S8）
+
+**5) 推理离开网关 + worker 横向扩展（解 S6）**
 ```python
 # settings.py
 ai_dispatch_mode: Literal["local", "remote"] = Field(default="remote", alias="AI_DISPATCH_MODE")
 redis_url: str = Field(default="redis://127.0.0.1:6379/0", alias="REDIS_URL")
 ```
-> `remote` 下聊天经共享队列交给 ai-runtime worker；网关只做 I/O 转发。worker 可多开（`ai_runtime_max_concurrent=16`/进程），AI 吞吐随 worker 数扩展。
+> `remote` 下聊天经 Redis Streams 队列交给 ai-runtime worker，网关只做 I/O 转发；worker 多开（每进程 `ai_runtime_max_concurrent=16`），AI 吞吐随 worker 数扩展，按队列深度自动扩缩。
 
-**3) DB 连接池调优（解 S4）**
+**6) DB 连接收敛（解 S8）**
 ```python
 # database.py（Postgres 分支）
-engine = create_engine(
-    DATABASE_URL, pool_pre_ping=True, pool_recycle=300,
-    pool_size=20, max_overflow=10,        # 按副本数 × 单副本并发估算
-)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=300,
+                       pool_size=20, max_overflow=10)
 ```
-> 多副本下连接数 = 副本 ×(pool_size+overflow)，须 ≤ Postgres `max_connections`；超过则前置 **PgBouncer**（transaction 模式）收敛。生产**弃用 SQLite**。
+> 多副本总连接 = 副本×(pool_size+overflow)，须 ≤ Postgres `max_connections`；超过前置 **PgBouncer**（transaction 模式）。生产**弃用 SQLite**。几万并发下单 Postgres 主库足够（聊天写入 QPS 仍在单库能力内）；若读压力大再加**一个读副本**做读写分离即可，**无需分片**。
 
-**4) 部署拓扑**
+> **背压（轻量版）**：队列深度超阈值时对新对话返回"排队中/稍后重试"，避免雪崩；per-user 简单限流（Redis 计数器）防单用户刷爆。完整多租户配额留待规模更大时再做。
+
+### 目标部署拓扑
+
 ```
-            sticky LB (websocket)
-          ┌────────┬────────┬────────┐
-       gateway×N （各 1 核，经 Redis 广播互通）
-          └────────┴───┬────┴────────┘
-                 共享队列 + Postgres(+PgBouncer)
-                       │
-              ai-runtime worker ×M （每个并发 16）
+                         sticky / websocket-only LB
+              ┌──────────────┬──────────────┬──────────────┐
+          gateway×N （无状态，各 1 核，经 Redis 适配器互通）
+              └──────────────┴──────┬───────┴──────────────┘
+                                    │
+        ┌────────────┬──────────────┼───────────────┬───────────────┐
+     Redis（适配器/   PgBouncer →    对象存储          Redis Streams
+     流式/队列/限流）  Postgres(+读副本)  (MinIO/S3)      (jobs 消费组)
+                                    │
+                          ai-runtime worker ×M（每进程并发 16，按队列深度扩缩）
 ```
 
-### 容量对照
+### 阶段化里程碑（每阶段能稳定支撑的量级）
 
-| 形态 | 同时在线（websocket） | 并发活跃 AI 对话 | 真正瓶颈 |
+| 里程碑 | 内容 | 可支撑同时在线 | 风险 |
 | --- | --- | --- | --- |
-| 现状（单进程，无 Redis） | ~3k–8k 空闲 / ~0.5k–2k 活跃 | worker×16 | 单进程 Socket.IO |
-| P1-C 后（N 副本 + Redis） | 随副本近线性，几万~10 万级 | worker×16×M | **LLM 供应商 RPM/TPM 配额 + 预算** |
+| **M0 现状** | 单进程、进程内状态、本地盘 | ~0.5k–2k 活跃 | — |
+| **M1 状态外置** | 第一步 1–4：Redis 适配器+流式外置+agent 路由+对象存储 | **1 万~3 万**（多副本正确无串流） | 改动面大，需充分压测 |
+| **M2 吞吐扩展** | 第二步 5–6：remote 推理+worker 扩缩+PgBouncer(+读副本) | **几万**，AI 吞吐随 worker 扩 | DB 写入需监控 |
+| （M3 百万级） | broker 换 NATS/Kafka、DB 分片、专用推送层 | — | **本期不做**，留作未来 |
 
-### 验收标准
-- [ ] 多副本下，A 副本的用户发消息，连在 B 副本的用户能正确收到（Redis 广播打通）。
-- [ ] 压测 N 副本：并发连接数随副本近线性增长，无串话/丢消息。
-- [ ] `dispatch_mode=remote`，网关进程 CPU 不再被推理占满；AI 吞吐随 worker 数提升。
-- [ ] 连接数压测下 Postgres 无连接耗尽（PgBouncer 生效）。
+### 验收标准（目标：几万并发）
+- [ ] **流式正确性**：对话在 worker A 生成，用户连到网关副本 B，流式 token 完整无缺失（S3 已外置）。
+- [ ] 多副本下 A 副本用户发的消息，连在 B 副本的用户能收到（Redis 适配器打通 S2）。
+- [ ] 端侧 agent 派发跨副本正确路由（S4）。
+- [ ] 任一副本写的截图/知识库文件，其他副本可读（对象存储，S5）。
+- [ ] `dispatch_mode=remote`，网关 CPU 不被推理占满；worker 按队列深度扩缩（S6/S7）。
+- [ ] 压测 2 万并发连接：无串话/丢流；Postgres 经 PgBouncer 无连接耗尽（S8）。
+- [ ] 队列过载时触发背压（返回排队），不雪崩。
 
 ---
 
