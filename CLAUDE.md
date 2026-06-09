@@ -14,7 +14,7 @@ HeySure AI 2.0 是一个**多端 AI agent 协作平台**：Web 控制台 + Pytho
 | `web/` | Vue 3 + Vite + TS | 前端控制台（聊天 / 仪表盘 / AI 配置 / 知识库） | [`web/CLAUDE.md`](web/CLAUDE.md) |
 | `server/` | Python + FastAPI + Socket.IO | 后端，拆成 4 个进程（见下） | [`server/CLAUDE.md`](server/CLAUDE.md) · [`server/README.md`](server/README.md) |
 | `agent/` | Electron / Chrome MV3 + TS | 端侧执行器：Windows / Linux 桌面 + 浏览器扩展 | [`agent/CLAUDE.md`](agent/CLAUDE.md) |
-| `doc/` | Markdown | 各角色 prompt 与设计文档 | `doc/prompt/` |
+| `doc/` | Markdown | 各角色 prompt 与设计文档 | `doc/prompt/` · 角色分工与知识流转见 [`doc/角色与知识流转.md`](doc/角色与知识流转.md) |
 
 ## 架构与端口（运行时心智模型）
 
