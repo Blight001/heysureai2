@@ -31,24 +31,10 @@ export function setMarks(items: MarkTarget[]): void {
   marks = items.slice()
 }
 
-export function clearMarkRefs(): void {
-  marks = []
-}
-
-export function markCount(): number {
-  return marks.length
-}
-
 function markAt(ref: any): MarkTarget | null {
   const i = Number(ref)
   if (!Number.isFinite(i) || i < 1 || i > marks.length) return null
   return marks[i - 1] || null
-}
-
-/** Resolve an observe id (1-based) to a still-attached element, or null. */
-export function getMarked(ref: any): Element | null {
-  const m = markAt(ref)
-  return m && m.el && m.el.isConnected ? m.el : null
 }
 
 /**

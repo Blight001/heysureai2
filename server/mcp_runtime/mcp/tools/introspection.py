@@ -114,7 +114,6 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
     - ``tools``: a list (or comma-separated string) of exact tool names.
     - ``query``: keyword search across tool names + descriptions.
     """
-    from connector_runtime.dispatch.desktop_agent_tools import is_endpoint_agent_tool
 
     endpoint_defs = online_tool_defs()
     allowed = _allowed_tool_names(user_id, ai_config_id)

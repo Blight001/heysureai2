@@ -1,3 +1,6 @@
+"""Task-system helpers: normalize the per-config ``system_auto_control`` blob and
+its task items, decode task payloads, and resolve task session/generation ids."""
+
 import json
 import re
 from datetime import datetime

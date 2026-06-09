@@ -12,7 +12,6 @@ Provides:
 
 from __future__ import annotations
 
-import os
 from typing import Any, Dict, Optional
 
 from fastapi import Header, HTTPException, Request

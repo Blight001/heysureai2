@@ -1,3 +1,6 @@
+"""Agent execution routes: ``/execute`` emits a flow to a connected agent over
+Socket.IO, and ``/agent/dispatch`` dispatches a tool/instruction task to an agent."""
+
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException

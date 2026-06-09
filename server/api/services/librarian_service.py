@@ -1592,7 +1592,6 @@ def brief(
     if not text_for_match:
         return ""
     lower = text_for_match.lower()
-    q_tokens = _tokenize(text_for_match)
 
     with Session(engine) as session:
         rows = session.exec(

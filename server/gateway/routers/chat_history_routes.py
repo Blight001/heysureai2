@@ -1,3 +1,6 @@
+"""``/api/chat`` history routes: fetch chat message history, list/create/update/
+delete chat sessions, and report per-session total token usage."""
+
 IS_ROUTER_ENTRY = False
 
 import time

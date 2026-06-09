@@ -1,3 +1,7 @@
+"""Temp-image routes: create from a data URL or upload (``/api/temp-images``,
+``/api/temp-images/upload``) and serve stored images (``/tmp-images/{filename}``),
+backed by ``api.services.temp_image_store``."""
+
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Header, Request, UploadFile

@@ -1,3 +1,7 @@
+"""Prompt-assembly utilities for chat runs: strip/inject runtime prompt sections,
+render the MCP tool catalog and namespace hints into system prompts, and maintain
+per-run live text/reasoning/usage state for streaming."""
+
 IS_ROUTER_ENTRY = False
 
 import asyncio

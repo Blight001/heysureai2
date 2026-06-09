@@ -287,7 +287,7 @@ def _schedule_disconnect_locked(config_id: int) -> None:
 
 def start_qq_long_connection_clients() -> int:
     try:
-        import botpy
+        pass
     except Exception as exc:
         logger.error(f"botpy is not installed: {exc}")
         with _LOCK:

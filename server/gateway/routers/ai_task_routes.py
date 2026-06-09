@@ -1,9 +1,11 @@
+"""``/api/ai`` task routes: trigger AI tasks and manage task jobs (list, inspect,
+patch, stop/pause/resume, delete, generations) for a given AI config."""
+
 IS_ROUTER_ENTRY = False
 
 import json
 import time
 import uuid
-from typing import Any
 
 from fastapi import Depends, Header, HTTPException
 from sqlmodel import Session, select
@@ -581,7 +583,6 @@ async def delete_ai_task_job(
         raise HTTPException(status_code=404, detail="Task job not found")
 
     now = time.time()
-    run_row = find_task_active_run(session, user.id, config_id, job)
     related_session_ids = iter_task_session_ids(job.job_id, job.session_id)
 
     for session_prefix in related_session_ids:

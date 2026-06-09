@@ -1,3 +1,7 @@
+"""Shared base for the ``/api/ai`` router family: defines the ``APIRouter`` and
+shared helpers (prompt section stripping, default ``system_auto_control`` blobs,
+role normalization, task-owner resolution) used by the ai_* route modules."""
+
 IS_ROUTER_ENTRY = False
 
 import json

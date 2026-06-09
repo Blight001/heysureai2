@@ -36,10 +36,6 @@ export function createOfflineChatWindow(): BrowserWindow {
   return offlineChatWindow
 }
 
-export function getOfflineChatWindow(): BrowserWindow | null {
-  return offlineChatWindow
-}
-
 export function showOfflineChatWindow(): void {
   createOfflineChatWindow()
 }

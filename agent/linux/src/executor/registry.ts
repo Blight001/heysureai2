@@ -63,7 +63,3 @@ export function listToolDefs(): ToolDef[] {
       input_schema: t.inputSchema || { type: 'object', properties: {}, additionalProperties: true },
     }))
 }
-
-export function clearRegistry(): void {
-  registry.clear()
-}

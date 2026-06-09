@@ -1,3 +1,6 @@
+"""``/api/projects`` routes: CRUD for ``EvolutionProject`` rows and syncing their
+linked AI member configs."""
+
 import json
 import time
 from typing import List, Optional

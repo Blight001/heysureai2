@@ -22,7 +22,7 @@ import logging
 import threading
 import time
 import traceback
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from sqlmodel import Session, select
 

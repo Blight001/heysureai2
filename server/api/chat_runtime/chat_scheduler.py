@@ -1,3 +1,7 @@
+"""Automated task scheduler: start and supervise task-driven chat runs, inherit
+unfinished work across generations, and periodically dispatch due scheduled jobs
+from each config's ``system_auto_control``."""
+
 IS_ROUTER_ENTRY = False
 
 import json

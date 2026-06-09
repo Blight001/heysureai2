@@ -24,22 +24,12 @@ function settingNumber(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback
 }
 
-export function rememberCaptureSize(width: number, height: number): void {
-  if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
-    lastCaptureSize = { width, height }
-  }
-}
-
 export function rememberCaptureGeometry(geometry: CaptureGeometry): void {
   const width = Number(geometry?.capture?.width)
   const height = Number(geometry?.capture?.height)
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return
   lastCaptureSize = { width, height }
   lastCaptureGeometry = geometry
-}
-
-export function getLastCaptureSize(): { width: number; height: number } | null {
-  return lastCaptureSize
 }
 
 export function getCoordinateCalibration() {
@@ -142,25 +132,5 @@ export function toRobotPoint(x: number, y: number): { x: number; y: number } {
   return {
     x: Math.round(Number(frame.x || 0) + adjustedX * scaleX),
     y: Math.round(Number(frame.y || 0) + adjustedY * scaleY),
-  }
-}
-
-export function toCapturePoint(x: number, y: number): { x: number; y: number } {
-  const robotSize = getRobot().getScreenSize()
-  const captureSize = lastCaptureSize
-  if (!captureSize || !robotSize?.width || !robotSize?.height) {
-    return { x: Math.round(x), y: Math.round(y) }
-  }
-
-  const frame = calibratedFrame(robotSize, captureSize)
-  const scaleX = Number(captureSize.width) / Number(frame.width)
-  const scaleY = Number(captureSize.height) / Number(frame.height)
-  if (!Number.isFinite(scaleX) || !Number.isFinite(scaleY) || scaleX <= 0 || scaleY <= 0) {
-    return { x: Math.round(x), y: Math.round(y) }
-  }
-
-  return {
-    x: Math.round((x - Number(frame.x || 0)) * scaleX),
-    y: Math.round((y - Number(frame.y || 0)) * scaleY),
   }
 }

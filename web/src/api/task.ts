@@ -1,4 +1,4 @@
-import { del, get, patch, post } from './http'
+import { del, get, post } from './http'
 import type {
   AITaskGenerationItem,
   AITaskJobItem,
@@ -51,20 +51,6 @@ export const triggerTaskForAgent = (configId: number, payload: TriggerTaskPayloa
     payload,
     { token, fallbackError: '创建任务失败' },
   )
-
-export type UpdateTaskJobPayload = Partial<Pick<
-  TriggerTaskPayload,
-  'title' | 'instruction' | 'priority' | 'schedule_enabled' | 'schedule_loop_enabled' | 'schedule_run_immediately' | 'schedule_duration_minutes' | 'schedule_at'
->> & {
-  status?: 'queued' | 'paused'
-  mode?: 'immediate' | 'scheduled' | 'recurring'
-}
-
-export const updateTaskJobById = (configId: number, jobId: string, payload: UpdateTaskJobPayload, token: string) =>
-  patch(`/api/ai/configs/${configId}/task-jobs/${jobId}`, payload, {
-    token,
-    fallbackError: '编辑任务失败',
-  })
 
 export const pauseTaskJobById = (configId: number, jobId: string, token: string) =>
   post(`/api/ai/configs/${configId}/task-jobs/${jobId}/pause`, undefined, {

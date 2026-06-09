@@ -1,3 +1,7 @@
+"""Persist screenshot tool results: decode base64 data URLs and write the image
+into the user's workspace ``Screenshots`` folder, optionally exposing a public
+temp-image URL."""
+
 import base64
 import os
 import re

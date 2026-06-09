@@ -21,7 +21,7 @@ from sqlmodel import Session, select
 from api.database import engine
 from mcp_runtime.mcp import get_project_root, registry
 from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
-from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, User
+from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, User
 from api.services import valhalla_service
 from ai_runtime.inference import ai_message_service
 from connector_runtime.dispatch.agent_dispatch import (
@@ -48,8 +48,6 @@ from api.chat_runtime.chat_prompt_utils import (
     _append_prompt_section,
     _build_mcp_display_result,
     _build_mcp_stream_warning,
-    _extract_delta_text,
-    _extract_first_complete_mcp_call,
     _extract_first_mcp_call,
     _extract_mcp_error,
     _render_inheritance_notice,
@@ -64,7 +62,7 @@ from api.chat_runtime.chat_prompt_utils import (
     _strip_task_runtime_sections,
 )
 from api.services.chat_persistence import _save_message
-from api.chat_runtime.chat_stream import StreamResult, _detect_provider, stream_turn_anthropic, stream_turn_openai_compat
+from api.chat_runtime.chat_stream import _detect_provider, stream_turn_anthropic, stream_turn_openai_compat
 from api.chat_runtime.chat_runtime_helpers import (
     _create_loop_scheduled_job,
     _is_task_finished_status,

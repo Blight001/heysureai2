@@ -1,9 +1,12 @@
+"""Chat runtime helpers: resolve the effective AI runtime/config for a request,
+load task payloads/jobs by session, manage per-run status and stop flags, and
+compute session token totals."""
+
 IS_ROUTER_ENTRY = False
 
 import json
 import time
 import uuid
-from datetime import datetime
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
@@ -13,7 +16,7 @@ from api.database import engine
 from mcp_runtime.mcp import get_project_root
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, User
 from api.services.model_presets import resolve_model_preset
-from api.services.task_system import parse_generation_from_session_id, with_workspace_read_by_name_compat
+from api.services.task_system import with_workspace_read_by_name_compat
 from .run_state import _RUN_LIVE_STATE, _RUN_STATE_LOCK
 from .chat_prompt_utils import (
     _append_prompt_section,

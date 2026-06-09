@@ -40,16 +40,6 @@ export function runCmd(
   })
 }
 
-// Long-running streaming child (used by hands/ear monitors). Caller wires up
-// stdout/stderr listeners and kill().
-export function spawnCmd(
-  cmd: string,
-  args: string[] = [],
-  options: SpawnOptionsWithoutStdio = {},
-) {
-  return spawn(cmd, args, options)
-}
-
 const _whichCache = new Map<string, string | null>()
 
 // Resolve an executable on PATH. Cached because callers probe the same few

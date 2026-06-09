@@ -1,3 +1,6 @@
+"""``/api/ai`` config routes: CRUD for ``AssistantAIConfig`` members plus run
+toggling, parent binding, governance tree, cloning, and MCP enable/disable."""
+
 IS_ROUTER_ENTRY = False
 
 import logging
@@ -430,7 +433,6 @@ async def get_governance_tree(
         .where(AssistantAIConfig.user_id == user.id)
         .order_by(AssistantAIConfig.sort_order.asc(), AssistantAIConfig.created_at.asc())
     ).all()
-    children_by_parent: dict[int, list] = {}
     nodes = {}
     for cfg in rows:
         nodes[int(cfg.id or 0)] = {
