@@ -12,11 +12,14 @@
 | [P0-B](#p0-b质量门禁) | **门禁** | 锁 Python 依赖 + GitHub Actions CI + pre-commit + ruff/mypy | 1–2 天 |
 | [P1-A](#p1-a测试地基) | **测试** | pytest 覆盖 auth/services/关键 router；vitest 覆盖核心组件 | 持续 |
 | [P1-B](#p1-b接口治理) | **接口** | 全局异常处理器 + request-id 中间件 + 导出 OpenAPI | 1 天 |
+| [P1-C](#p1-c横向扩展与并发架构) | **扩展性** | Socket.IO 接 Redis 适配器、网关多副本、推理离开网关、DB 连接池调优 | 3–5 天 |
 | [P2-A](#p2-a可观测性) | **可观测** | Prometheus `/metrics` + `/livez` `/readyz`（复用现有结构化日志） | 2–3 天 |
 | [P2-B](#p2-b数据库迁移) | **迁移** | 自研 `migrations.py` → Alembic（详见 optimization §4） | 专项 |
 | [P3](#p3部署与端侧) | **部署/端侧** | K8s/Helm；agent win/linux 抽公共包 | 专项 |
 
-> 依赖关系：P0-A 与 P0-B 无前置，先做。P1-B 的 request-id 是 P2-A 链路追踪的基础，建议 P1-B 先于 P2-A。P2-B 单独拉分支。
+> 依赖关系：P0-A 与 P0-B 无前置，先做。P1-B 的 request-id 是 P2-A 链路追踪的基础，建议 P1-B 先于 P2-A。**P1-C 是 P3（K8s 多副本部署）的硬前置**——网关不能横向扩展前，多副本无意义；且 P1-C 上线时最好与 P2-A 同步，以便用指标度量扩容效果。P2-B 单独拉分支。
+>
+> **为何 P1-C 不放最后**：单进程 Socket.IO 无 Redis 适配器是**写死在架构里的硬墙**，越晚改成本越高，且它是部署层一切水平扩展的地基。因此排在 P1（生产就绪核心），仅次于安全与门禁。
 
 ---
 
@@ -312,6 +315,88 @@ app.add_middleware(RequestIDMiddleware)
 
 ---
 
+## P1-C｜横向扩展与并发架构
+
+### 设计目标
+突破当前"单进程 Socket.IO"的硬天花板，让网关可水平扩展、AI 推理离开网关进程、DB 连接可控。目标：从**不改代码的低单位数千并发**，提升到**几万~10 万级同时在线**（受限于副本数与 LLM 配额，而非代码）。
+
+### 现状瓶颈诊断（实测）
+
+| # | 瓶颈 | 证据 | 影响 |
+| --- | --- | --- | --- |
+| **S1** | **网关单进程单核** | `server/Dockerfile`：`uvicorn gateway.app:sio_app --port 3000`，未开 `--workers` | 所有 HTTP+Socket.IO 挤在一个事件循环、一颗 CPU；服务器再强也只用得到 ~1 核 |
+| **S2** | **Socket.IO 无 Redis 适配器** | `api/sio.py:93` `AsyncServer(...)` 无 `client_manager` | **网关无法多副本**——这是最硬的墙，加机器也无效，必须改代码 |
+| **S3** | **默认 `dispatch_mode=local`** | `settings.py:108` | AI 推理跑在网关进程内，进一步堵死唯一的核 |
+| **S4** | **Postgres 连接池未调优** | `database.py:101` 仅 `pool_pre_ping/pool_recycle`，用默认 `pool_size=5` | 高并发下连接耗尽；SQLite 写串行更是硬墙，生产不可用 |
+
+### 改动文件
+- `server/api/sio.py` — `AsyncServer` 接 `AsyncRedisManager`
+- `server/api/core/settings.py` — 新增 `redis_url`；`dispatch_mode` 默认改 `remote`
+- `server/api/database.py` — 连接池调优
+- `server/Dockerfile` / 部署清单 — 网关多副本 + 粘性负载均衡 + Redis + PgBouncer
+
+### 代码骨架
+
+**1) Socket.IO 横向扩展（解 S2，关键一步）**
+```python
+# api/sio.py
+import socketio
+from api.core.settings import settings
+
+mgr = socketio.AsyncRedisManager(settings.redis_url)   # 多副本经 Redis 互转发广播
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    client_manager=mgr,
+    cors_allowed_origins=settings.cors_origin_list,     # 顺带收敛（见 P0-A）
+    max_http_buffer_size=20_000_000,
+)
+```
+> **粘性会话**：engine.io 的 polling 握手要求同一客户端落到同一副本——负载均衡需开 sticky session（按 sid/cookie），或强制 `transports=['websocket']` 跳过 polling 升级。
+
+**2) 推理离开网关（解 S3）**
+```python
+# settings.py
+ai_dispatch_mode: Literal["local", "remote"] = Field(default="remote", alias="AI_DISPATCH_MODE")
+redis_url: str = Field(default="redis://127.0.0.1:6379/0", alias="REDIS_URL")
+```
+> `remote` 下聊天经共享队列交给 ai-runtime worker；网关只做 I/O 转发。worker 可多开（`ai_runtime_max_concurrent=16`/进程），AI 吞吐随 worker 数扩展。
+
+**3) DB 连接池调优（解 S4）**
+```python
+# database.py（Postgres 分支）
+engine = create_engine(
+    DATABASE_URL, pool_pre_ping=True, pool_recycle=300,
+    pool_size=20, max_overflow=10,        # 按副本数 × 单副本并发估算
+)
+```
+> 多副本下连接数 = 副本 ×(pool_size+overflow)，须 ≤ Postgres `max_connections`；超过则前置 **PgBouncer**（transaction 模式）收敛。生产**弃用 SQLite**。
+
+**4) 部署拓扑**
+```
+            sticky LB (websocket)
+          ┌────────┬────────┬────────┐
+       gateway×N （各 1 核，经 Redis 广播互通）
+          └────────┴───┬────┴────────┘
+                 共享队列 + Postgres(+PgBouncer)
+                       │
+              ai-runtime worker ×M （每个并发 16）
+```
+
+### 容量对照
+
+| 形态 | 同时在线（websocket） | 并发活跃 AI 对话 | 真正瓶颈 |
+| --- | --- | --- | --- |
+| 现状（单进程，无 Redis） | ~3k–8k 空闲 / ~0.5k–2k 活跃 | worker×16 | 单进程 Socket.IO |
+| P1-C 后（N 副本 + Redis） | 随副本近线性，几万~10 万级 | worker×16×M | **LLM 供应商 RPM/TPM 配额 + 预算** |
+
+### 验收标准
+- [ ] 多副本下，A 副本的用户发消息，连在 B 副本的用户能正确收到（Redis 广播打通）。
+- [ ] 压测 N 副本：并发连接数随副本近线性增长，无串话/丢消息。
+- [ ] `dispatch_mode=remote`，网关进程 CPU 不再被推理占满；AI 吞吐随 worker 数提升。
+- [ ] 连接数压测下 Postgres 无连接耗尽（PgBouncer 生效）。
+
+---
+
 ## P2-A｜可观测性
 
 ### 设计目标
@@ -379,8 +464,9 @@ def readyz():
 
 1. **P0-A + P0-B 一起开**（安全 + 门禁）：不碰业务、风险最低，给后续所有改动提供安全网。
 2. **P1-B 先于 P2-A**：request-id 是链路追踪基础。
-3. **P1-A 持续推进**：与业务迭代并行，先核心后周边。
-4. **P2-B（数据库）单独拉分支、单独 review**：按 optimization §4 小步可回滚。
-5. **P3 在前述稳定后启动**。
+3. **P1-C 与 P2-A 配对推进**：先用可观测性建立指标基线，再做横向扩展，才能量化扩容效果；P1-C 又是 P3 多副本部署的硬前置。
+4. **P1-A 持续推进**：与业务迭代并行，先核心后周边。
+5. **P2-B（数据库）单独拉分支、单独 review**：按 optimization §4 小步可回滚。
+6. **P3 在 P1-C 落地后启动**：网关可横向扩展是 K8s 多副本的前提。
 
 > 每个优先级块都自带验收标准，可作为 PR 的 Definition of Done 直接引用。
