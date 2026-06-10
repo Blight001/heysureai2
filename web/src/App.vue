@@ -214,13 +214,13 @@ onBeforeUnmount(() => {
                   : 'border border-zinc-200/80 bg-white/90 text-zinc-500'"
               >
                 <span class="h-1.5 w-1.5 rounded-full bg-indigo-500"></span>
-                专为现代团队而生
+                AI Agent · 数字社会操作系统
               </div>
               <h1 class="text-3xl font-bold tracking-tight sm:text-4xl" :class="isDarkStartup ? 'text-zinc-50' : 'text-zinc-900'">
                 HeySure
               </h1>
               <p class="text-sm leading-relaxed sm:text-base" :class="isDarkStartup ? 'text-zinc-400' : 'text-zinc-500'">
-                协作更高效，管理更清晰
+                让 AI 成为可治理、可协作的数字成员
               </p>
             </div>
 

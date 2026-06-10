@@ -259,3 +259,13 @@ select:focus {
 .glass {
   @apply bg-white/70 backdrop-blur-md border border-white/20 dark:bg-zinc-900/70 dark:border-white/10;
 }
+
+/* Hero 区科技感网格：向页面底部渐隐，避免喧宾夺主 */
+.hero-grid {
+  background-image:
+    linear-gradient(rgba(99, 102, 241, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.07) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 78%);
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 78%);
+}
