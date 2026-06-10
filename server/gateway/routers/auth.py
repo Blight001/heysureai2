@@ -25,7 +25,9 @@ from api.database import get_session
 from api.models import Token, User, UserCreate, UserLogin, UserRead, UserUpdate
 from api.models.defaults import DEFAULT_MCP_NAMESPACE_HINTS
 from ai_runtime.inference.ai_service import ensure_default_ai_for_user
+from api.services import auth_settings, email_service
 from api.services.model_presets import model_presets_json
+from pydantic import BaseModel
 
 
 logger = logging.getLogger(__name__)
@@ -132,16 +134,81 @@ def get_current_user(token: Optional[str], session: Session = Depends(get_sessio
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+class SendCodePayload(BaseModel):
+    email: str
+    purpose: str  # register | login
+
+
+class EmailLoginPayload(BaseModel):
+    email: str
+    code: str
+
+
+@router.get("/config")
+async def auth_config(session: Session = Depends(get_session)) -> dict:
+    """Public auth capabilities used by the login modal before sign-in."""
+    email_enabled = auth_settings.smtp_configured(session)
+    return {
+        "registration_mode": auth_settings.get_registration_mode(session),
+        "email_enabled": email_enabled,
+    }
+
+
+@router.post("/send-code")
+def send_code(payload: SendCodePayload, session: Session = Depends(get_session)) -> dict:
+    """发送邮箱验证码（注册 / 登录）。同步 def：smtplib 阻塞 I/O 走线程池。"""
+    purpose = (payload.purpose or "").strip().lower()
+    if purpose not in email_service.PURPOSES:
+        raise HTTPException(status_code=400, detail="无效的验证码用途")
+    email = auth_settings.normalize_email(payload.email)
+    if not auth_settings.is_valid_email(email):
+        raise HTTPException(status_code=400, detail="邮箱格式不正确")
+    if not auth_settings.smtp_configured(session):
+        raise HTTPException(status_code=503, detail="邮件服务未配置，请联系管理员")
+
+    existing = session.exec(select(User).where(User.email == email)).first()
+    if purpose == "register":
+        if auth_settings.get_registration_mode(session) == "closed":
+            raise HTTPException(status_code=403, detail="当前服务器已关闭注册")
+        if existing:
+            raise HTTPException(status_code=400, detail="该邮箱已被注册")
+    else:  # login
+        # 不暴露邮箱是否注册：未注册也返回成功但不发信，防止枚举。
+        if not existing:
+            logger.info(f"login code requested for unknown email {email}; skipped")
+            return {"ok": True}
+
+    try:
+        email_service.issue_code(session, email, purpose)
+    except email_service.EmailSendError as exc:
+        raise HTTPException(status_code=429 if "频繁" in str(exc) else 502, detail=str(exc))
+    return {"ok": True}
+
+
 @router.post("/register", response_model=UserRead)
 async def register(
     user_create: UserCreate,
     session: Session = Depends(get_session)
 ):
+    registration_mode = auth_settings.get_registration_mode(session)
+    if registration_mode == "closed":
+        raise HTTPException(status_code=403, detail="当前服务器已关闭注册，请联系管理员")
+
     statement = select(User).where(User.account == user_create.account)
     existing_user = session.exec(statement).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Account already registered")
-    
+
+    email: Optional[str] = None
+    if registration_mode == "email":
+        email = auth_settings.normalize_email(user_create.email or "")
+        if not auth_settings.is_valid_email(email):
+            raise HTTPException(status_code=400, detail="请填写有效的邮箱")
+        if session.exec(select(User).where(User.email == email)).first():
+            raise HTTPException(status_code=400, detail="该邮箱已被注册")
+        if not email_service.verify_code(session, email, user_create.email_code or "", "register"):
+            raise HTTPException(status_code=400, detail="验证码错误或已过期")
+
     hashed_password = get_password_hash(user_create.password)
     # The very first account on a fresh install becomes the 房主 (owner) so
     # there is always someone who can reach the admin panel; everyone after
@@ -152,6 +219,7 @@ async def register(
         account=user_create.account,
         hashed_password=hashed_password,
         avatar=user_create.avatar,
+        email=email,
         role="owner" if not owner_exists else "member",
     )
     session.add(db_user)
@@ -188,6 +256,30 @@ async def login(user_in: UserLogin, session: Session = Depends(get_session)):
     )
     
     return {"access_token": access_token, "token_type": "bearer", "user": _user_payload(user)}
+
+
+@router.post("/login-email", response_model=Token)
+async def login_with_email(payload: EmailLoginPayload, session: Session = Depends(get_session)):
+    """邮箱验证码登录：验证一次性验证码后为绑定该邮箱的用户签发 JWT。"""
+    email = auth_settings.normalize_email(payload.email)
+    if not auth_settings.is_valid_email(email):
+        raise HTTPException(status_code=400, detail="邮箱格式不正确")
+
+    user = session.exec(select(User).where(User.email == email)).first()
+    # 先核销验证码再判断用户，保证两种失败对外不可区分。
+    code_ok = email_service.verify_code(session, email, payload.code, "login")
+    if not code_ok or user is None:
+        raise HTTPException(status_code=401, detail="验证码错误或已过期")
+
+    ensure_user_workspace(user.id)
+    ensure_default_ai_for_user(session, user.id)
+
+    access_token = create_access_token(
+        data={"sub": user.account, "user_id": user.id},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    return {"access_token": access_token, "token_type": "bearer", "user": _user_payload(user)}
+
 
 @router.put("/profile", response_model=UserRead)
 async def update_profile(

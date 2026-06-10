@@ -50,6 +50,7 @@ export interface AdminUser {
   name: string
   account: string
   avatar: string | null
+  email: string | null
   role: UserRole
   role_label: string
   created_at: number | null
@@ -278,6 +279,48 @@ export interface DbCleanupResult {
 export const cleanupDatabase = (payload: DbCleanupPayload) =>
   post<DbCleanupResult>('/api/admin/db/cleanup', payload, {
     fallbackError: '清理数据库失败',
+  })
+
+// ---- Auth settings (registration mode + SMTP mailer) ----
+
+export type RegistrationMode = 'open' | 'email' | 'closed'
+export type SmtpEncryption = 'ssl' | 'starttls' | 'none'
+
+export interface AuthSettings {
+  registration_mode: RegistrationMode
+  smtp: {
+    host: string
+    port: number
+    username: string
+    from_addr: string
+    encryption: SmtpEncryption
+    /** 密码永不回传，仅指示是否已配置 */
+    password_set: boolean
+  }
+  email_enabled: boolean
+  note?: string
+}
+
+export interface AuthSettingsPayload {
+  registration_mode: RegistrationMode
+  smtp_host: string
+  smtp_port: number
+  smtp_username: string
+  /** null = 保留已存密码 */
+  smtp_password: string | null
+  smtp_from: string
+  smtp_encryption: SmtpEncryption
+}
+
+export const getAuthSettings = () =>
+  get<AuthSettings>('/api/admin/auth-settings', { fallbackError: '获取注册与邮箱设置失败' })
+
+export const updateAuthSettings = (payload: AuthSettingsPayload) =>
+  put<AuthSettings>('/api/admin/auth-settings', payload, { fallbackError: '保存设置失败' })
+
+export const sendTestEmail = (to: string) =>
+  post<{ ok: boolean }>('/api/admin/auth-settings/test-email', { to }, {
+    fallbackError: '发送测试邮件失败',
   })
 
 export const setUserRole = (userId: number, role: UserRole) =>

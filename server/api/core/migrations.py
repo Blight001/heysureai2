@@ -524,6 +524,7 @@ def _consolidate_bot_session_routes(engine) -> None:
 def run_pending_migrations() -> None:
     _migrate_assistantaiconfig_strip_markdown_symbols()
     _migrate_user_ui_plain_text_output_enabled()
+    _migrate_user_email()
     _migrate_user_role()
     _migrate_endpointagentpresence_tool_defs()
     _migrate_agenttypemcppermission_agent_id()
@@ -686,6 +687,22 @@ def _migrate_user_ui_plain_text_output_enabled() -> None:
             'UPDATE "user" SET ui_plain_text_output_enabled = FALSE '
             "WHERE ui_plain_text_output_enabled IS NULL"
         )
+
+
+def _migrate_user_email() -> None:
+    """Add the optional ``email`` column used by email-code register/login."""
+    from ..database import engine
+
+    if database_dialect() == "sqlite":
+        with engine.begin() as conn:
+            result = conn.exec_driver_sql("PRAGMA table_info(user)")
+            existing = {row[1] for row in result.fetchall()}
+            if "email" not in existing:
+                conn.exec_driver_sql("ALTER TABLE user ADD COLUMN email VARCHAR")
+        return
+
+    with engine.begin() as conn:
+        conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS email VARCHAR')
 
 
 def _migrate_endpointagentpresence_tool_defs() -> None:

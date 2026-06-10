@@ -21,6 +21,9 @@ class User(SQLModel, table=True):
     account: str = Field(unique=True, index=True)
     hashed_password: str
     avatar: Optional[str] = None
+    # 邮箱（经验证码验证后绑定）。注册模式为 email 时必填且唯一；
+    # 唯一性在应用层校验（SQLite ALTER TABLE 无法补加 UNIQUE 约束）。
+    email: Optional[str] = Field(default=None, index=True)
     # Platform-level access tier surfaced by the admin panel:
     # ``owner`` (房主) > ``admin`` (管理员) > ``member`` (成员). The first
     # registered user is bootstrapped to ``owner``; everyone else defaults
@@ -70,6 +73,9 @@ class UserCreate(SQLModel):
     account: str
     password: str
     avatar: Optional[str] = None
+    # 注册模式为 email 时必填：邮箱 + 已发送到该邮箱的验证码
+    email: Optional[str] = None
+    email_code: Optional[str] = None
 
 
 class UserLogin(SQLModel):
@@ -82,6 +88,7 @@ class UserRead(SQLModel):
     name: str
     account: str
     avatar: Optional[str] = None
+    email: Optional[str] = None
     role: str = "member"
     admin_api_key: str
     admin_base_url: str

@@ -58,6 +58,7 @@ from .agent_presence import EndpointAgentPresence
 from .bot_session_route import BotSessionRoute, BotUserCursor
 from .knowledge import EvolutionInput, KnowledgeEntry, Memory, ValhallaEntry
 from .project import EvolutionProject, EvolutionProjectCreate, EvolutionProjectUpdate
+from .system import EmailVerificationCode, SystemSetting
 from .user import Token, User, UserCreate, UserLogin, UserRead, UserUpdate
 
 __all__ = [
@@ -88,6 +89,9 @@ __all__ = [
     "UserUpdate",
     # admin
     "AdminAuditLog",
+    # system-wide settings + email verification
+    "SystemSetting",
+    "EmailVerificationCode",
     # agent device bindings
     "AgentAiBinding",
     "AgentTypeMcpPermission",

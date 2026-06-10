@@ -373,6 +373,7 @@ def _serialize_user(u: User) -> dict:
         "name": u.name,
         "account": u.account,
         "avatar": u.avatar,
+        "email": u.email,
         "role": u.role,
         "role_label": ROLE_LABELS.get(u.role, u.role),
         "created_at": u.created_at,
@@ -1278,3 +1279,125 @@ def list_audit(
         for r in rows
     ]
     return {"entries": entries}
+
+
+# ---------------------------------------------------------------------------
+# Auth settings (registration mode + SMTP mailer)
+# ---------------------------------------------------------------------------
+
+
+class AuthSettingsPayload(BaseModel):
+    registration_mode: str
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_username: str = ""
+    # None = 保留已存密码；空串 = 清空
+    smtp_password: Optional[str] = None
+    smtp_from: str = ""
+    smtp_encryption: str = "ssl"
+
+
+class TestEmailPayload(BaseModel):
+    to: str
+
+
+def _auth_settings_response(session: Session) -> dict:
+    from api.services import auth_settings
+
+    smtp = auth_settings.get_smtp_config(session)
+    return {
+        "registration_mode": auth_settings.get_registration_mode(session),
+        "smtp": {
+            "host": smtp["host"],
+            "port": smtp["port"],
+            "username": smtp["username"],
+            "from_addr": smtp["from_addr"],
+            "encryption": smtp["encryption"],
+            # 密码永不回传，只回传是否已配置。
+            "password_set": bool(smtp["password"]),
+        },
+        "email_enabled": auth_settings.smtp_configured(session),
+    }
+
+
+@router.get("/auth-settings")
+def get_auth_settings(
+    session: Session = Depends(get_session),
+    _admin: User = Depends(require_admin_user),
+) -> dict:
+    return _auth_settings_response(session)
+
+
+@router.put("/auth-settings")
+def update_auth_settings(
+    payload: AuthSettingsPayload,
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_owner_user),
+) -> dict:
+    from api.services import auth_settings
+
+    mode = (payload.registration_mode or "").strip().lower()
+    if mode not in auth_settings.REGISTRATION_MODES:
+        raise HTTPException(status_code=400, detail="无效的注册模式")
+    encryption = (payload.smtp_encryption or "ssl").strip().lower()
+    if encryption not in auth_settings.SMTP_ENCRYPTIONS:
+        raise HTTPException(status_code=400, detail="无效的加密方式")
+
+    auth_settings.set_registration_mode(session, mode)
+    auth_settings.save_smtp_config(
+        session,
+        host=payload.smtp_host or "",
+        port=payload.smtp_port or 465,
+        username=payload.smtp_username or "",
+        password=payload.smtp_password,
+        from_addr=payload.smtp_from or "",
+        encryption=encryption,
+    )
+    session.commit()
+
+    if mode == "email" and not auth_settings.smtp_configured(session):
+        # 不阻断保存，但明确提醒：邮箱注册模式 + 未配置 SMTP 会导致没人能注册。
+        note = "注意：当前未配置 SMTP，邮箱验证注册将不可用"
+    else:
+        note = ""
+
+    _record_audit(
+        session, actor, "update_auth_settings",
+        target_type="settings", target_id="auth", target_label="注册与邮箱设置",
+        detail=f"注册模式「{mode}」，SMTP {payload.smtp_host or '(未设置)'}:{payload.smtp_port}",
+    )
+    result = _auth_settings_response(session)
+    if note:
+        result["note"] = note
+    return result
+
+
+@router.post("/auth-settings/test-email")
+def send_test_email(
+    payload: TestEmailPayload,
+    session: Session = Depends(get_session),
+    actor: User = Depends(require_owner_user),
+) -> dict:
+    from api.services import auth_settings, email_service
+
+    to = auth_settings.normalize_email(payload.to)
+    if not auth_settings.is_valid_email(to):
+        raise HTTPException(status_code=400, detail="邮箱格式不正确")
+    try:
+        email_service.send_email(
+            session,
+            to,
+            "HeySure 邮件服务测试",
+            "这是一封来自 HeySure 管理控制台的测试邮件。\n\n"
+            "收到本邮件说明 SMTP 配置正确，邮箱验证码注册 / 登录可以正常工作。\n\n"
+            "—— HeySure · 数字社会操作系统",
+        )
+    except email_service.EmailSendError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    _record_audit(
+        session, actor, "send_test_email",
+        target_type="settings", target_id="auth", target_label=to,
+        detail=f"发送测试邮件至 {to}",
+    )
+    return {"ok": True}
