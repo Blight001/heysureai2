@@ -129,7 +129,7 @@ const dbCleanupForm = ref<{
 }>({
   account: '',
   password: '',
-  categories: { conversations: true, tasks: true, ai_messages: false, knowledge: false, skills: false, valhalla: false },
+  categories: { conversations: true, tasks: true, ai_messages: false, knowledge: false, projects: false, valhalla: false },
   dropUnusedTables: true,
 })
 
