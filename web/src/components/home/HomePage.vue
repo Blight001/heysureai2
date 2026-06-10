@@ -21,7 +21,6 @@ const MARQUEE_ITEMS = [
   'AI 成员治理',
 ]
 
-const heroCanvas = ref<HTMLCanvasElement | null>(null)
 const mockupEl = ref<HTMLElement | null>(null)
 const statAgents = ref(0)
 const statTasks = ref(0)
@@ -106,91 +105,11 @@ const setupTilt = (reduceMotion: boolean) => {
   })
 }
 
-/** Hero 背景的"数字社会"粒子星座：节点漂移并按距离连线 */
-const setupConstellation = (reduceMotion: boolean) => {
-  const canvas = heroCanvas.value
-  const ctx = canvas?.getContext('2d')
-  if (reduceMotion || !canvas || !ctx) return
-
-  type Node = { x: number; y: number; vx: number; vy: number; r: number }
-  let nodes: Node[] = []
-  let width = 0
-  let height = 0
-  let raf = 0
-  const dpr = Math.min(window.devicePixelRatio || 1, 2)
-  const LINK_DIST = 120
-
-  const resize = () => {
-    width = canvas.clientWidth
-    height = canvas.clientHeight
-    canvas.width = width * dpr
-    canvas.height = height * dpr
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    const count = Math.min(70, Math.max(28, Math.floor(width / 22)))
-    nodes = Array.from({ length: count }, () => ({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 0.35,
-      vy: (Math.random() - 0.5) * 0.35,
-      r: 1 + Math.random() * 1.5,
-    }))
-  }
-
-  const step = () => {
-    ctx.clearRect(0, 0, width, height)
-    for (const n of nodes) {
-      n.x += n.vx
-      n.y += n.vy
-      if (n.x < -10) n.x = width + 10
-      if (n.x > width + 10) n.x = -10
-      if (n.y < -10) n.y = height + 10
-      if (n.y > height + 10) n.y = -10
-    }
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        const dx = nodes[i].x - nodes[j].x
-        const dy = nodes[i].y - nodes[j].y
-        const dist = Math.hypot(dx, dy)
-        if (dist >= LINK_DIST) continue
-        ctx.strokeStyle = `rgba(129, 140, 248, ${((1 - dist / LINK_DIST) * 0.16).toFixed(3)})`
-        ctx.lineWidth = 1
-        ctx.beginPath()
-        ctx.moveTo(nodes[i].x, nodes[i].y)
-        ctx.lineTo(nodes[j].x, nodes[j].y)
-        ctx.stroke()
-      }
-    }
-    ctx.fillStyle = 'rgba(165, 180, 252, 0.55)'
-    for (const n of nodes) {
-      ctx.beginPath()
-      ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2)
-      ctx.fill()
-    }
-    raf = requestAnimationFrame(step)
-  }
-
-  const onVisibility = () => {
-    cancelAnimationFrame(raf)
-    if (!document.hidden) raf = requestAnimationFrame(step)
-  }
-
-  resize()
-  raf = requestAnimationFrame(step)
-  window.addEventListener('resize', resize)
-  document.addEventListener('visibilitychange', onVisibility)
-  cleanups.push(() => {
-    cancelAnimationFrame(raf)
-    window.removeEventListener('resize', resize)
-    document.removeEventListener('visibilitychange', onVisibility)
-  })
-}
-
 onMounted(() => {
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   setupScrollReveal(reduceMotion)
   setupCountUp(reduceMotion)
   setupTilt(reduceMotion)
-  setupConstellation(reduceMotion)
 })
 
 onBeforeUnmount(() => {
@@ -262,10 +181,9 @@ onBeforeUnmount(() => {
 
     <!-- Hero -->
     <section class="relative pt-40 pb-24 px-6">
-      <!-- 背景：网格 + 粒子星座 + 光晕 -->
+      <!-- 背景：网格 + 光晕（粒子星座由全局 AmbientBackground 提供） -->
       <div class="pointer-events-none absolute inset-0 overflow-hidden">
         <div class="hero-grid absolute inset-x-0 top-0 h-[640px]"></div>
-        <canvas ref="heroCanvas" class="absolute inset-x-0 top-0 h-[720px] w-full opacity-70"></canvas>
         <div class="absolute -top-24 left-1/2 -translate-x-1/2 w-[900px] h-[600px] bg-indigo-600/10 rounded-full blur-3xl"></div>
         <div class="absolute top-60 left-1/4 w-[400px] h-[300px] bg-violet-800/10 rounded-full blur-3xl drift-organic"></div>
       </div>

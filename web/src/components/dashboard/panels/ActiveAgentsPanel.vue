@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import AppIcon from '@/components/common/AppIcon.vue'
+import type { AppIconName } from '@/components/common/AppIcon.vue'
 
 interface Agent {
   id: string
@@ -24,10 +26,10 @@ interface Props {
 const props = defineProps<Props>()
 
 const groupedAgents = computed(() => {
-  const groups: Record<string, { label: string; icon: string; agents: Agent[] }> = {
-    working: { label: '执行中', icon: '⚡', agents: [] },
-    learning: { label: '学习中', icon: '📖', agents: [] },
-    reproducing: { label: '归档中', icon: '🧬', agents: [] }
+  const groups: Record<string, { label: string; icon: AppIconName; agents: Agent[] }> = {
+    working: { label: '执行中', icon: 'bolt', agents: [] },
+    learning: { label: '学习中', icon: 'book', agents: [] },
+    reproducing: { label: '归档中', icon: 'dna', agents: [] }
   }
 
   props.activeAgents.forEach(agent => {
@@ -48,7 +50,7 @@ const groupedAgents = computed(() => {
 
     <div v-for="[status, group] in groupedAgents" :key="status" class="space-y-3">
       <div class="flex items-center gap-2 px-1">
-        <span class="text-sm">{{ group.icon }}</span>
+        <AppIcon :name="group.icon" class="w-4 h-4" />
         <h3 class="text-xs font-bold text-zinc-500 uppercase tracking-wider dark:text-zinc-400">
           {{ group.label }} ({{ group.agents.length }})
         </h3>
@@ -64,7 +66,7 @@ const groupedAgents = computed(() => {
                 <h4 class="text-sm font-bold text-zinc-700 dark:text-zinc-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                   {{ agent.name }}
                 </h4>
-                <span class="opacity-0 group-hover:opacity-100 transition-opacity duration-300 text-[10px]">🔍</span>
+                <span class="opacity-0 group-hover:opacity-100 transition-opacity duration-300"><AppIcon name="search" class="w-3 h-3" /></span>
               </div>
               <p class="text-[10px] text-zinc-400 dark:text-zinc-500">
                 Gen {{ agent.generation }} · {{ agent.platform }}

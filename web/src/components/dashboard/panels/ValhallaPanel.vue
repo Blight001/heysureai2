@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import AppIcon from '@/components/common/AppIcon.vue'
 import ActiveAgentsPanel from './ActiveAgentsPanel.vue'
 import KnowledgeBasePanel from './KnowledgeBasePanel.vue'
 import { deleteValhallaEntries, readValhallaEntry, type ValhallaEntry, type ValhallaEntryDetail } from '@/api/valhalla'
@@ -296,7 +297,7 @@ onUnmounted(() => {
             ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-400'
             : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
         >
-          <span>📚</span> 传承知识库
+          <AppIcon name="book" class="w-4 h-4" /> 传承知识库
         </button>
         <button
           @click="activeTab = 'active'"
@@ -305,7 +306,7 @@ onUnmounted(() => {
             ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-400'
             : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
         >
-          <span>🌱</span> 存活 AI
+          <AppIcon name="seed" class="w-4 h-4" /> 存活 AI
         </button>
         <button
           @click="activeTab = 'valhalla'"
@@ -314,7 +315,7 @@ onUnmounted(() => {
             ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-400'
             : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
         >
-          <span>📜</span> 英灵殿
+          <AppIcon name="scroll" class="w-4 h-4" /> 英灵殿
         </button>
       </div>
     </div>

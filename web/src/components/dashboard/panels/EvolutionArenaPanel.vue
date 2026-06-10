@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import AppIcon from '@/components/common/AppIcon.vue'
 import AgentCard from '../cards/AgentCard.vue'
 
 interface Agent {
@@ -169,7 +170,7 @@ const onMemberCheckboxChange = (memberId: number, event: Event) => {
 <template>
   <section class="flex-1 bg-zinc-100/50 rounded-2xl border-2 border-dashed border-zinc-200 flex flex-col overflow-hidden relative dark:bg-zinc-900/40 dark:border-zinc-700 transition-colors duration-500">
     <div class="absolute top-0 left-0 bg-zinc-100 text-zinc-500 text-xs px-3 py-1 rounded-br-lg font-medium z-10 border-b border-r border-zinc-200 dark:bg-zinc-900 dark:text-zinc-400 dark:border-zinc-700 shadow-sm">
-      🌍 Agent 进化与实战区域
+      <span class="flex items-center gap-1.5"><AppIcon name="globe" class="w-3.5 h-3.5" /> Agent 进化与实战区域</span>
     </div>
     <div class="absolute top-2 right-3 z-10 flex items-center gap-2">
       <button class="px-2 py-1 rounded border border-zinc-200 bg-white text-xs text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 transition-colors dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300 shadow-sm hover:shadow" @click.stop="openCreateProject">

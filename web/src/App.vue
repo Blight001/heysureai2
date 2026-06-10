@@ -5,6 +5,8 @@ import type { User } from '@/types'
 import heySureLogo from '@/assets/logo/HeySure.png'
 import { getInitialUiPreferences } from '@/utils/uiPreferences'
 
+import AmbientBackground from '@/components/common/AmbientBackground.vue'
+
 const GodDashboard = defineAsyncComponent(() => import('@/components/dashboard/GodDashboard.vue'))
 const HomePage = defineAsyncComponent(() => import('@/components/home/HomePage.vue'))
 const LoginModal = defineAsyncComponent(() => import('@/components/common/LoginModal.vue'))
@@ -139,6 +141,7 @@ onBeforeUnmount(() => {
       <div class="app-background-orb app-background-orb-left"></div>
       <div class="app-background-orb app-background-orb-right"></div>
     </div>
+    <AmbientBackground />
 
     <div
       class="relative z-[1] min-h-screen transition-[opacity,transform,filter] duration-700 ease-out"

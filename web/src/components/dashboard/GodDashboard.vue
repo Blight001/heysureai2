@@ -18,6 +18,7 @@ import { DEFAULT_MCP_TOOLS } from '@/constants/mcp'
 import type { Agent, McpRoleMeta, McpToolDefinition, User } from '@/types'
 
 import logoUrl from '@/assets/logo/HeySure.png'
+import AppIcon from '@/components/common/AppIcon.vue'
 import { resolveAvatarUrl } from '@/utils/avatar'
 
 const SystemSettingsPanel = defineAsyncComponent(() => import('./panels/SystemSettingsPanel.vue'))
@@ -455,10 +456,10 @@ onUnmounted(() => {
           title="管理员控制台"
           @click.stop="adminModalOpen = true; closeContextMenu()"
         >
-          <span class="block text-xs md:text-base">🛡️</span>
+          <AppIcon name="shield" class="w-4 h-4 md:w-[18px] md:h-[18px]" />
         </button>
         <button class="ml-2 w-8 h-8 md:w-9 md:h-9 rounded-full border border-zinc-200 bg-white text-zinc-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition-colors dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300 shadow-sm hover:shadow-md flex items-center justify-center" @click.stop="settingsOpen = true; closeContextMenu()">
-          <span class="block hover:rotate-90 transition-transform duration-300 text-xs md:text-base">⚙️</span>
+          <span class="block hover:rotate-90 transition-transform duration-500 ease-spring"><AppIcon name="gear" class="w-4 h-4 md:w-[18px] md:h-[18px]" /></span>
         </button>
 
         <!-- User Profile -->
@@ -480,11 +481,11 @@ onUnmounted(() => {
             <Transition name="fade">
               <div v-if="userMenuOpen" class="absolute right-0 top-12 w-48 bg-white border border-zinc-200 rounded-xl shadow-lg py-1 z-50 dark:bg-zinc-900 dark:border-zinc-700" @click.stop>
                 <button @click="$emit('updateProfile'); userMenuOpen = false" class="w-full text-left px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50 flex items-center gap-2 dark:text-zinc-300 dark:hover:bg-zinc-800">
-                  <span class="text-zinc-400">✏️</span> 修改资料
+                  <AppIcon name="pen" class="w-4 h-4" /> 修改资料
                 </button>
                 <div class="h-px bg-zinc-100 my-1 dark:bg-zinc-800"></div>
                 <button @click="$emit('logout'); userMenuOpen = false" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 dark:text-red-400 dark:hover:bg-red-900/20">
-                  <span class="text-red-400">🚪</span> 退出登录
+                  <AppIcon name="exit" class="w-4 h-4" /> 退出登录
                 </button>
               </div>
             </Transition>
