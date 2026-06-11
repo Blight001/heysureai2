@@ -105,6 +105,7 @@ export const SHEETS: SheetDef[] = [
   // ---- 灵魂 / 特效 / UI ----
   strip('soul.png', '灵魂（飞向英灵殿）', 'effect', 24, 24, 4, 5),
   strip('envelope.png', '信封（AI 互发消息的信使）', 'effect', 24, 18, 1),
+  strip('cloud.png', '云朵（开场加载层，2 形态）', 'effect', 128, 64, 2),
   {
     file: 'emotes.png',
     label: '表情气泡（沙漏/灯泡/对勾/感叹/放大镜/Zzz/卷轴/骷髅）',

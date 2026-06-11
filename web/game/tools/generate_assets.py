@@ -780,6 +780,47 @@ def gen_envelope():
     save_strip([c], "envelope.png")
 
 
+def gen_clouds():
+    """云朵（开场加载层）：两个形态变体，柔边半透明，无描边。"""
+    frames = []
+    for f in range(2):
+        c = C(64, 32)
+        rng = random.Random(800 + f)
+        body = (236, 242, 250, 235)
+        lite = (250, 252, 255, 245)
+        shade = (198, 212, 232, 210)
+        # 叠 5~6 个椭圆团块拼出云形
+        blobs = [(18, 20, 11), (32, 16, 13), (46, 20, 10), (26, 22, 9), (40, 23, 8)]
+        if f == 1:
+            blobs = [(14, 21, 9), (27, 17, 12), (42, 18, 11), (52, 22, 7), (33, 23, 10)]
+        for cx, cy, r in blobs:
+            for yy in range(int(cy - r * 0.6), int(cy + r * 0.6) + 1):
+                for xx in range(cx - r, cx + r + 1):
+                    if ((xx - cx) / r) ** 2 + ((yy - cy) / (r * 0.6)) ** 2 <= 1.0:
+                        c.px(xx, yy, body)
+        # 顶部高光 / 底部阴影
+        for cx, cy, r in blobs:
+            for xx in range(cx - r + 2, cx + r - 1):
+                c.px(xx, cy - int(r * 0.6) + 1, lite)
+        for xx in range(8, 58):
+            for yy in range(24, 28):
+                if c.img.getpixel((xx, yy))[3] != 0:
+                    c.px(xx, yy, shade)
+        # 边缘随机抠几个像素做柔边
+        for _ in range(20):
+            x, y = rng.randrange(64), rng.randrange(32)
+            px = c.img.getpixel((x, y))
+            if px[3] != 0:
+                neighbors = sum(
+                    1 for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                    if 0 <= x + dx < 64 and 0 <= y + dy < 32 and c.img.getpixel((x + dx, y + dy))[3] != 0
+                )
+                if neighbors < 4:
+                    c.px(x, y, (0, 0, 0, 0))
+        frames.append(c)
+    save_strip(frames, "cloud.png")
+
+
 def gen_effects():
     # 烟雾 4 帧：扩散 + 淡出
     frames = []
@@ -829,6 +870,7 @@ def main():
     gen_soul()
     gen_emotes()
     gen_envelope()
+    gen_clouds()
     gen_effects()
     print("完成。")
 

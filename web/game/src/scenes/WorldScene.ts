@@ -79,6 +79,10 @@ export class WorldScene extends Phaser.Scene {
   private prevPending = 0
   private muted = false
   private nightOverlay: Phaser.GameObjects.Rectangle | null = null
+  /** 开场云层（数据就绪后镜头拉近 + 云朵飘散） */
+  private clouds: Phaser.GameObjects.Image[] = []
+  private introDone = false
+  private sceneReadyAt = 0
 
   constructor() {
     super('world')
@@ -110,12 +114,91 @@ export class WorldScene extends Phaser.Scene {
     this.createDrawer()
     this.createDayNight()
     this.createAudio()
+    this.createCloudCurtain()
     this.wireHover()
     this.wireClickAndDrag()
     this.store.subscribe(snap => this.applySnapshot(snap))
     this.store.onEvent(ev => this.handleWorldEvent(ev))
     this.store.start()
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.store.stop())
+  }
+
+  // ---------------------------------------------------------------- 开场云层
+  /**
+   * 加载等待演出：远景 + 云层覆盖（屏幕空间，缓慢漂浮）；
+   * 首个有效快照到达后 revealWorld()——镜头由远拉近，云朵向两侧飘散渐隐。
+   */
+  private createCloudCurtain() {
+    const w = this.scale.width
+    const h = this.scale.height
+    // 远景起点 = 恰好铺满视口的最小缩放（不露世界外黑边），揭幕时再拉近
+    const fillZoom = Math.max(w / WORLD_W, h / WORLD_H)
+    this.cameras.main.setZoom(fillZoom)
+    this.cameras.main.centerOn(WORLD_W / 2, WORLD_H / 2)
+    this.sceneReadyAt = this.time.now
+    const rnd = mulberry32(42)
+    // 网格 + 抖动铺满整个视口（含边缘溢出），保证云层完全遮盖
+    const step = 190
+    let i = 0
+    for (let gy = -60; gy < h + 120; gy += step) {
+      for (let gx = -80; gx < w + 160; gx += step) {
+        const cloud = this.add.image(
+          gx + (rnd() - 0.5) * step * 0.8,
+          gy + (rnd() - 0.5) * step * 0.8,
+          'cloud.png',
+          i++ % 2,
+        )
+        cloud.setScrollFactor(0)
+        cloud.setDepth(400000 + i)
+        cloud.setScale(3 + rnd() * 2.4)
+        cloud.setAlpha(0.94 + rnd() * 0.06)
+        if (rnd() > 0.5) cloud.setFlipX(true)
+        // 等待期：缓慢左右漂浮
+        this.tweens.add({
+          targets: cloud,
+          x: cloud.x + 18 + rnd() * 30,
+          duration: 2600 + rnd() * 2400,
+          yoyo: true,
+          repeat: -1,
+          ease: 'Sine.easeInOut',
+        })
+        this.clouds.push(cloud)
+      }
+    }
+    // 兜底：数据迟迟不来（网络挂起）也要在 10s 后揭幕
+    this.time.delayedCall(10000, () => this.revealWorld())
+  }
+
+  /** 镜头由远拉近 + 云朵向两侧飘散渐隐 */
+  private revealWorld() {
+    if (this.introDone) return
+    this.introDone = true
+    // 保证云层至少展示一小段，避免数据秒回时动画一闪而过
+    const elapsed = this.time.now - this.sceneReadyAt
+    this.time.delayedCall(Math.max(0, 900 - elapsed), () => {
+      const cam = this.cameras.main
+      const endZoom = Phaser.Math.Clamp(Math.max(0.9, cam.zoom * 1.3), 0.5, 2)
+      cam.pan(960, 620, 2200, 'Sine.easeInOut')
+      cam.zoomTo(endZoom, 2200, 'Sine.easeInOut')
+      const cx = this.scale.width / 2
+      const rnd = mulberry32(7)
+      for (const cloud of this.clouds) {
+        this.tweens.killTweensOf(cloud)
+        const dir = cloud.x >= cx ? 1 : -1
+        this.tweens.add({
+          targets: cloud,
+          x: cloud.x + dir * (this.scale.width * 0.45 + rnd() * 300),
+          y: cloud.y - 30 - rnd() * 60,
+          alpha: 0,
+          scale: cloud.scale * 1.25,
+          delay: rnd() * 350,
+          duration: 1500 + rnd() * 900,
+          ease: 'Sine.easeIn',
+          onComplete: () => cloud.destroy(),
+        })
+      }
+      this.clouds = []
+    })
   }
 
   // ---------------------------------------------------------------- P2 氛围
@@ -556,6 +639,8 @@ export class WorldScene extends Phaser.Scene {
   private applySnapshot(snap: WorldSnapshot) {
     this.snap = snap
     this.updateHud(snap)
+    // 首个有效快照（成功或明确失败）→ 揭幕：镜头拉近 + 云层散开
+    if (snap.authOk || snap.lastError) this.revealWorld()
     if (!snap.authOk) return
     this.reconcileWorkshops(snap)
     this.reconcileMembers(snap)
