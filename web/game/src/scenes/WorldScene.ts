@@ -83,6 +83,12 @@ export class WorldScene extends Phaser.Scene {
   private clouds: Phaser.GameObjects.Image[] = []
   private introDone = false
   private sceneReadyAt = 0
+  /** 装饰与氛围动画 */
+  private groundLayer: Phaser.Tilemaps.TilemapLayer | null = null
+  private waterTiles: { x: number; y: number }[] = []
+  private waterFlip = false
+  private lamps: Phaser.GameObjects.Image[] = []
+  private butterflies: { sprite: Phaser.GameObjects.Sprite; tx: number; ty: number; phase: number }[] = []
 
   constructor() {
     super('world')
@@ -109,6 +115,7 @@ export class WorldScene extends Phaser.Scene {
   create() {
     this.createAnims()
     this.createGround()
+    this.createDecor()
     this.createBuildings()
     this.createCamera()
     this.createDrawer()
@@ -238,6 +245,9 @@ export class WorldScene extends Phaser.Scene {
       else if (h < 7.5) alpha = MAX * (1 - (h - 5.5) / 2) // 黎明
       else if (h >= 17.5) alpha = MAX * ((h - 17.5) / 3) // 黄昏
       this.nightOverlay?.setFillStyle(0x141c3c, Math.min(MAX, Math.max(0, alpha)))
+      // 天黑点灯
+      const lit = alpha > 0.12
+      for (const lamp of this.lamps) lamp.setFrame(lit ? 1 : 0)
     }
     apply()
     this.time.addEvent({ delay: 60000, loop: true, callback: apply })
@@ -412,23 +422,34 @@ export class WorldScene extends Phaser.Scene {
       for (let x = 0; x < MAP_W; x++) {
         const r = rnd()
         let t: number = TILES.grassA
-        if (r > 0.92) t = TILES.flowerYellow
-        else if (r > 0.86) t = TILES.flowerRed
-        else if (r > 0.78) t = TILES.tallGrass
+        if (r > 0.93) t = TILES.flowerYellow
+        else if (r > 0.88) t = TILES.flowerRed
+        else if (r > 0.8) t = TILES.tallGrass
         else if (r > 0.55) t = TILES.grassB
         else if (r > 0.35) t = TILES.grassC
-        else if (r > 0.32) t = TILES.bush
-        else if (r > 0.30) t = TILES.stone
+        else if (r > 0.33) t = TILES.bush
+        else if (r > 0.31) t = TILES.stone
         row.push(t)
       }
       grid.push(row)
     }
-    // 西北角池塘
-    for (let y = 5; y <= 9; y++) {
-      for (let x = 4; x <= 10; x++) {
-        const edge = y === 5 || y === 9 || x === 4 || x === 10
-        if (edge && rnd() > 0.6) continue
+    // 西北角池塘（不规则岸线，记录水面格子用于波动动画）
+    for (let y = 4; y <= 10; y++) {
+      for (let x = 3; x <= 11; x++) {
+        const edge = y === 4 || y === 10 || x === 3 || x === 11
+        if (edge && rnd() > 0.45) continue
         grid[y][x] = rnd() > 0.5 ? TILES.waterA : TILES.waterB
+        this.waterTiles.push({ x, y })
+      }
+    }
+    // 英灵殿山丘：暗草丘体 + 零星碎石，体现"高地"
+    for (let y = 3; y <= 11; y++) {
+      for (let x = 43; x <= 54; x++) {
+        const dx = (x - 48.5) / 6
+        const dy = (y - 7) / 4.5
+        if (dx * dx + dy * dy <= 1) {
+          grid[y][x] = rnd() > 0.85 ? TILES.stone : TILES.grassDark
+        }
       }
     }
     const path = (x0: number, y0: number, x1: number, y1: number) => {
@@ -438,40 +459,134 @@ export class WorldScene extends Phaser.Scene {
         }
       }
     }
-    path(5, 21, 52, 22) // 主路（东西）
-    path(8, 19, 10, 21) // 出生地支路
-    path(26, 16, 28, 21) // 图书馆支路
-    path(36, 17, 38, 21) // 议事厅支路
-    path(47, 10, 49, 21) // 英灵殿山道
-    path(6, 32, 52, 33) // 作坊街
-    path(29, 22, 31, 32) // 主路 → 作坊街
+    // 道路统一 2 格宽，更贴近小镇尺度
+    path(4, 21, 53, 22) // 主路（东西）
+    path(8, 19, 9, 21) // 出生地支路
+    path(26, 17, 27, 21) // 图书馆支路
+    path(36, 17, 37, 21) // 议事厅支路
+    path(47, 10, 48, 21) // 英灵殿山道
+    path(5, 32, 53, 33) // 作坊街
+    path(29, 22, 30, 32) // 主路 → 作坊街
+    // 图书馆-议事厅之间的石板广场（核心管理员踱步区）
+    for (let y = 15; y <= 19; y++) {
+      for (let x = 29; x <= 36; x++) {
+        grid[y][x] = rnd() > 0.5 ? TILES.plazaA : TILES.plazaB
+      }
+    }
+    // 作坊街地块：前 8 个插槽脚下铺土场
+    for (let i = 0; i < WORKSHOP_SLOTS; i++) {
+      const pos = workshopSlotPos(i)
+      const tx = Math.floor(pos.x / TILE)
+      const ty = Math.floor(pos.y / TILE)
+      path(tx - 1, ty - 1, tx + 1, ty)
+    }
+    // 出生地花圃：泉水周围一圈花
+    for (let y = 17; y <= 23; y++) {
+      for (let x = 5; x <= 13; x++) {
+        const d = Math.hypot(x - 9, (y - 20) * 1.3)
+        if (d > 2.2 && d < 3.6 && grid[y][x] !== TILES.path) {
+          grid[y][x] = rnd() > 0.5 ? TILES.flowerRed : TILES.flowerYellow
+        }
+      }
+    }
 
     const map = this.make.tilemap({ data: grid, tileWidth: TILE, tileHeight: TILE })
     const tiles = map.addTilesetImage('tileset.png', 'tileset.png', TILE, TILE)
-    if (tiles) map.createLayer(0, tiles, 0, 0)
+    // Phaser 4 可能返回 GPU layer；二者 putTileAt/getTileAt 同接口
+    if (tiles) this.groundLayer = (map.createLayer(0, tiles, 0, 0) ?? null) as Phaser.Tilemaps.TilemapLayer | null
 
     // 沿边与空地点树（避开建筑、道路带）
     const treeRnd = mulberry32(7)
     const blocked: Rect[] = [
       { x: 100, y: 480, w: 400, h: 320 }, // 出生地一带
       { x: 700, y: 250, w: 650, h: 420 }, // 图书馆 + 议事厅
-      { x: 1380, y: 60, w: 380, h: 320 }, // 英灵殿
+      { x: 1330, y: 40, w: 460, h: 360 }, // 英灵殿山丘
       { x: 100, y: 920, w: 1750, h: 250 }, // 作坊街
-      { x: 80, y: 120, w: 320, h: 250 }, // 池塘
+      { x: 60, y: 90, w: 360, h: 300 }, // 池塘
     ]
     const inBlocked = (px: number, py: number) =>
       blocked.some(b => px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h)
-    for (let i = 0; i < 70; i++) {
+    for (let i = 0; i < 80; i++) {
       const px = 40 + treeRnd() * (WORLD_W - 80)
       const py = 60 + treeRnd() * (WORLD_H - 120)
       const ty = Math.floor(py / TILE)
       const tx = Math.floor(px / TILE)
       if (inBlocked(px, py)) continue
-      if (grid[ty]?.[tx] === TILES.path || grid[ty]?.[tx] === TILES.waterA || grid[ty]?.[tx] === TILES.waterB) continue
+      const t = grid[ty]?.[tx]
+      if (t === TILES.path || t === TILES.waterA || t === TILES.waterB || t === TILES.plazaA || t === TILES.plazaB) continue
       const tree = this.add.image(px, py, 'tree.png', 0)
       tree.setOrigin(0.5, 0.92)
       tree.setDepth(py)
     }
+    // 池塘波动：水面格子周期性换帧
+    this.time.addEvent({
+      delay: 750,
+      loop: true,
+      callback: () => {
+        this.waterFlip = !this.waterFlip
+        for (const { x, y } of this.waterTiles) {
+          const current = this.groundLayer?.getTileAt(x, y)
+          if (!current) continue
+          const isA = current.index === TILES.waterA
+          this.groundLayer?.putTileAt(this.waterFlip === isA ? TILES.waterB : TILES.waterA, x, y)
+        }
+      },
+    })
+  }
+
+  /** 装饰层：灯柱（夜晚点亮）/ 栅栏 / 长椅 / 路牌 / 蝴蝶 / 烟囱炊烟 */
+  private createDecor() {
+    const deco = (key: string, x: number, y: number, frame = 0) => {
+      const img = this.add.image(x, y, key, frame)
+      img.setOrigin(0.5, 0.9)
+      img.setDepth(y)
+      return img
+    }
+    // 主路灯柱（夜晚 updateDayNight 统一点亮）
+    for (const tx of [12, 22, 32, 42, 50]) {
+      this.lamps.push(deco('lamp.png', tx * TILE + 16, 21 * TILE - 2))
+    }
+    this.lamps.push(deco('lamp.png', 30 * TILE + 16, 31 * TILE)) // 作坊街路口
+    // 出生地栅栏（北侧半围）+ 路牌
+    for (let x = 160; x <= 416; x += 32) {
+      deco('fence.png', x, 548, x === 160 || x === 416 ? 1 : 0)
+    }
+    deco('signpost.png', 332, 668)
+    // 广场与出生地长椅
+    deco('bench.png', 944, 504)
+    deco('bench.png', 1130, 504)
+    deco('bench.png', 230, 700)
+    // 蝴蝶：花丛间飞舞
+    const tints = [0xffffff, 0xff9ed2, 0x9ed2ff, 0xfff09e]
+    const rnd = mulberry32(99)
+    for (let i = 0; i < 6; i++) {
+      const sprite = this.add.sprite(200 + rnd() * 1500, 200 + rnd() * 900, 'butterfly.png', 0)
+      sprite.play('butterfly.png:loop')
+      sprite.setTint(tints[i % tints.length])
+      sprite.setDepth(95000)
+      this.butterflies.push({ sprite, tx: sprite.x, ty: sprite.y, phase: rnd() * Math.PI * 2 })
+    }
+    // 图书馆烟囱常烟；作坊执行任务时（reconcile 标记 active）也冒烟
+    this.time.addEvent({
+      delay: 850,
+      loop: true,
+      callback: () => {
+        this.spawnSmoke(906, 376)
+        for (const view of this.workshops.values()) {
+          if (view.offlineSince === null && view.sprite.anims.isPlaying && view.data.type === 'desktop') {
+            this.spawnSmoke(view.sprite.x - 12, view.sprite.y - 32)
+          }
+        }
+      },
+    })
+  }
+
+  private spawnSmoke(x: number, y: number) {
+    if (!this.introDone) return
+    const s = this.add.sprite(x, y, 'effect_smoke.png', 0)
+    s.setDepth(98000)
+    s.play('effect_smoke.png:loop')
+    this.tweens.add({ targets: s, y: y - 18, duration: 800, onComplete: () => s.destroy() })
   }
 
   private createBuildings() {
@@ -905,5 +1020,20 @@ export class WorldScene extends Phaser.Scene {
   // ---------------------------------------------------------------- 主循环
   update(time: number, delta: number) {
     for (const actor of this.actors.values()) actor.tick(time, delta)
+    // 蝴蝶：飘向目标 + 正弦浮动，到达后另选花丛
+    for (const b of this.butterflies) {
+      const dx = b.tx - b.sprite.x
+      const dy = b.ty - b.sprite.y
+      const dist = Math.hypot(dx, dy)
+      if (dist < 6) {
+        b.tx = 120 + Math.random() * (WORLD_W - 240)
+        b.ty = 120 + Math.random() * (WORLD_H - 240)
+      } else {
+        const step = (26 * delta) / 1000
+        b.sprite.x += (dx / dist) * step
+        b.sprite.y += (dy / dist) * step + Math.sin(time / 260 + b.phase) * 0.45
+        b.sprite.setFlipX(dx < 0)
+      }
+    }
   }
 }
