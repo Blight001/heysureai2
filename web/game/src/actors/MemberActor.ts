@@ -23,8 +23,10 @@ export class MemberActor extends Phaser.GameObjects.Container {
   private skin: string
   private zone: Rect
   private target: Point | null = null
+  private via: Point | null = null
   private idleUntil = 0
   private dying = false
+  private dragging = false
 
   constructor(scene: Phaser.Scene, member: WorldMember, skin: string, zone: Rect) {
     const start = randomPointIn(zone)
@@ -50,6 +52,35 @@ export class MemberActor extends Phaser.GameObjects.Container {
 
   get isDying(): boolean {
     return this.dying
+  }
+
+  /** 让成员途经某点（演出用：领任务先去议事厅再回锚区） */
+  walkVia(p: Point) {
+    if (this.dying || this.dragging) return
+    this.via = clampToWorld(p)
+    this.target = this.via
+    this.idleUntil = 0
+  }
+
+  beginDrag() {
+    if (this.dying) return
+    this.dragging = true
+    this.target = null
+    this.via = null
+    this.sprite.stop()
+    this.sprite.setFrame(0)
+    this.setAlpha(0.85)
+  }
+
+  endDrag() {
+    this.dragging = false
+    this.setAlpha(this.member.enabled ? 1 : 0.75)
+    // 回到锚区（从拖放点走回去，调度可见）
+    this.target = clampToWorld(randomPointIn(this.zone))
+  }
+
+  get isDragging(): boolean {
+    return this.dragging
   }
 
   setMember(member: WorldMember, skin: string) {
@@ -96,7 +127,10 @@ export class MemberActor extends Phaser.GameObjects.Container {
 
   /** 每帧推进；返回 false 表示已销毁 */
   tick(time: number, deltaMs: number): boolean {
-    if (this.dying) return true
+    if (this.dying || this.dragging) {
+      this.setDepth(this.y)
+      return true
+    }
     if (!this.member.enabled) return true
 
     if (this.target) {
@@ -104,8 +138,15 @@ export class MemberActor extends Phaser.GameObjects.Container {
       const dy = this.target.y - this.y
       const dist = Math.hypot(dx, dy)
       if (dist <= ARRIVE_EPS) {
-        this.target = null
-        this.idleUntil = time + 1800 + Math.random() * 5200
+        if (this.via && this.target.x === this.via.x && this.target.y === this.via.y) {
+          // 到达途经点：短暂停留后回锚区
+          this.via = null
+          this.target = null
+          this.idleUntil = time + 1500
+        } else {
+          this.target = null
+          this.idleUntil = time + 1800 + Math.random() * 5200
+        }
         this.sprite.stop()
         this.sprite.setFrame(0)
       } else {

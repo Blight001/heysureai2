@@ -13,8 +13,9 @@ import { getAuthToken } from '@/api/http'
 import { me } from '@/api/auth'
 import { listAiCards } from '@/api/ai'
 import { listConnectedAgents } from '@/api/agents'
-import { listValhallaEntries } from '@/api/valhalla'
-import { listEntries, listProposals } from '@/api/librarian'
+import { listValhallaEntries, type ValhallaEntry } from '@/api/valhalla'
+import { listEntries, listProposals, type KnowledgeEntryItem } from '@/api/librarian'
+import { listWorldActorMeta } from '@/api/world'
 
 export type MemberRole = 'core_admin' | 'assistant_admin' | 'librarian' | 'member'
 
@@ -39,6 +40,8 @@ export interface WorldMember {
   platform: string
   /** 绑定的端侧 agent id（来自 agent:list 的 aiConfigId 反查） */
   boundAgentIds: string[]
+  /** 用户在世界里指定的皮肤（WorldActorMeta），空 = 默认哈希皮肤 */
+  skin: string
 }
 
 export interface WorldWorkshop {
@@ -60,8 +63,10 @@ export interface WorldSnapshot {
   members: WorldMember[]
   workshops: WorldWorkshop[]
   valhallaCount: number
+  valhallaItems: ValhallaEntry[]
   knowledgeActive: number
   knowledgePending: number
+  proposals: KnowledgeEntryItem[]
   lastError: string
 }
 
@@ -118,6 +123,7 @@ export class WorldStore {
   private pollTimer: number | null = null
   private rawAgents: Record<string, any>[] = []
   private runtimeOverride = new Map<number, { state: WorldMember['runtimeStatus']; tool: string }>()
+  private skinByConfig = new Map<number, string>()
 
   snapshot: WorldSnapshot = {
     authOk: false,
@@ -126,8 +132,10 @@ export class WorldStore {
     members: [],
     workshops: [],
     valhallaCount: 0,
+    valhallaItems: [],
     knowledgeActive: 0,
     knowledgePending: 0,
+    proposals: [],
     lastError: '',
   }
 
@@ -235,10 +243,16 @@ export class WorldStore {
         listProposals(token),
       ])
       this.snapshot.knowledgeActive = entries.items?.length ?? 0
-      this.snapshot.knowledgePending = proposals.items?.length ?? 0
+      this.snapshot.proposals = proposals.items ?? []
+      this.snapshot.knowledgePending = this.snapshot.proposals.length
     } catch {
       // best-effort：知识计数失败不阻塞世界
     }
+  }
+
+  /** 操作（启停/绑定/审批/派任务）完成后立即重拉，不等下个轮询周期 */
+  refreshNow(): Promise<void> {
+    return this.refresh()
   }
 
   private async refresh() {
@@ -256,6 +270,15 @@ export class WorldStore {
       }
       const [cards, connected] = await Promise.all([listAiCards(), listConnectedAgents()])
       this.rawAgents = Array.isArray(connected?.agents) ? connected.agents : this.rawAgents
+      try {
+        const meta = await listWorldActorMeta()
+        this.skinByConfig.clear()
+        for (const item of meta.items || []) {
+          if (item.skin) this.skinByConfig.set(num(item.ai_config_id), item.skin)
+        }
+      } catch {
+        // best-effort：旧后端没有该接口时退回默认皮肤
+      }
       this.snapshot.members = (Array.isArray(cards) ? cards : []).map((row): WorldMember => {
         const id = num(row.id)
         const override = this.runtimeOverride.get(id)
@@ -281,12 +304,14 @@ export class WorldStore {
           projectName: String(row.project_name || ''),
           platform: String(row.platform || 'Server-Core'),
           boundAgentIds: [],
+          skin: this.skinByConfig.get(id) || '',
         }
       })
       this.rebuildWorkshops()
       try {
         const valhalla = await listValhallaEntries(token, { limit: 200 })
-        this.snapshot.valhallaCount = valhalla.items?.length ?? 0
+        this.snapshot.valhallaItems = valhalla.items ?? []
+        this.snapshot.valhallaCount = this.snapshot.valhallaItems.length
       } catch {
         // best-effort
       }
