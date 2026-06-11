@@ -118,19 +118,19 @@ export const SHEETS: SheetDef[] = [
   strip('effect_sparkle.png', '火花', 'effect', 16, 16, 4, 8),
 ]
 
-/** 普通成员可选皮肤（角色锚区规则之外的随机/可配外观） */
+/** 普通成员可选皮肤（值 = spritesheet 注册 key，即文件名） */
 export const MEMBER_SKINS = [
-  'char_member_blue',
-  'char_member_red',
-  'char_member_amber',
-  'char_member_slate',
+  'char_member_blue.png',
+  'char_member_red.png',
+  'char_member_amber.png',
+  'char_member_slate.png',
 ] as const
 
 /** 角色 → 专属皮肤映射（与 useDashboardData 的角色判定字段对应） */
 export const ROLE_SKINS = {
-  coreAdmin: 'char_admin', // digital_member_role === 'manager' || switch_key === 'assistant_default'
-  assistantAdmin: 'char_assistant', // ai_role === 'assistant_admin'
-  librarian: 'char_librarian', // is_librarian === true
+  coreAdmin: 'char_admin.png', // digital_member_role === 'manager' || switch_key === 'assistant_default'
+  assistantAdmin: 'char_assistant.png', // ai_role === 'assistant_admin'
+  librarian: 'char_librarian.png', // is_librarian === true
 } as const
 
 /** tileset 瓦片索引 */

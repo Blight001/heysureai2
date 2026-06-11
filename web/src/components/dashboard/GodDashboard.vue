@@ -33,6 +33,7 @@ const TaskManagementModal = defineAsyncComponent(() => import('./modals/TaskMana
 const AiConfigModal = defineAsyncComponent(() => import('./modals/AiConfigModal.vue'))
 const AdminModal = defineAsyncComponent(() => import('./modals/AdminModal.vue'))
 const ProposalReviewModal = defineAsyncComponent(() => import('@/components/librarian/ProposalReviewModal.vue'))
+const WorldMapOverlay = defineAsyncComponent(() => import('./panels/WorldMapOverlay.vue'))
 
 const { alert, confirm } = useMessage()
 
@@ -53,6 +54,7 @@ const chatModalOpen = ref(false)
 const chatTarget = ref<Agent | null>(null)
 const proposalReviewOpen = ref(false)
 const adminModalOpen = ref(false)
+const worldMapOpen = ref(false)
 const isAdminUser = computed(() => ['owner', 'admin'].includes(props.currentUser?.role || ''))
 let dashboardRefreshTimer: number | null = null
 let dashboardRefreshLoopActive = false
@@ -454,6 +456,13 @@ onUnmounted(() => {
            <span class="text-lg font-bold text-emerald-600 leading-none">Gen {{ globalGeneration }}</span>
         </div>
         <button
+          class="ml-2 w-8 h-8 md:w-9 md:h-9 rounded-full border border-emerald-200 bg-white text-emerald-600 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 transition-colors dark:bg-zinc-800 dark:border-emerald-700/60 dark:text-emerald-300 dark:hover:text-emerald-200 shadow-sm hover:shadow-md flex items-center justify-center"
+          title="Agent 进化与实战区域"
+          @click.stop="worldMapOpen = true; closeContextMenu()"
+        >
+          <AppIcon name="globe" class="w-4 h-4 md:w-[18px] md:h-[18px]" />
+        </button>
+        <button
           v-if="isAdminUser"
           class="ml-2 w-8 h-8 md:w-9 md:h-9 rounded-full border border-amber-200 bg-white text-amber-600 hover:text-amber-700 hover:border-amber-300 hover:bg-amber-50 transition-colors dark:bg-zinc-800 dark:border-amber-700/60 dark:text-amber-300 dark:hover:text-amber-200 shadow-sm hover:shadow-md flex items-center justify-center"
           title="管理员控制台"
@@ -772,6 +781,9 @@ onUnmounted(() => {
       :show="proposalReviewOpen"
       @close="proposalReviewOpen = false"
     />
+
+    <!-- Agent 进化与实战区域（游戏世界 iframe） -->
+    <WorldMapOverlay v-if="worldMapOpen" @close="worldMapOpen = false" />
 
     </div>
   </div>

@@ -518,6 +518,7 @@ async def list_ai_cards(
                 "strip_markdown_symbols": cfg.strip_markdown_symbols,
                 "ai_role": cfg.ai_role,
                 "digital_member_role": cfg.digital_member_role,
+                "is_librarian": cfg.is_librarian,
                 "platform": cfg.platform,
                 "generation": cfg.generation,
                 "token_limit": cfg.token_limit,
