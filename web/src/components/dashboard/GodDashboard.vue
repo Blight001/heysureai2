@@ -19,6 +19,7 @@ import type { Agent, McpRoleMeta, McpToolDefinition, User } from '@/types'
 
 import logoUrl from '@/assets/logo/HeySure.png'
 import AppIcon from '@/components/common/AppIcon.vue'
+import AmbientBackground from '@/components/common/AmbientBackground.vue'
 import { resolveAvatarUrl } from '@/utils/avatar'
 
 const SystemSettingsPanel = defineAsyncComponent(() => import('./panels/SystemSettingsPanel.vue'))
@@ -429,6 +430,8 @@ onUnmounted(() => {
       <div class="app-background-orb app-background-orb-left"></div>
       <div class="app-background-orb app-background-orb-right"></div>
     </div>
+    <!-- 粒子星座 + 鼠标光晕：必须在本页不透明背景之上、内容之下 -->
+    <AmbientBackground />
 
     <div class="relative z-[1] flex h-full flex-col">
     <!-- 顶部导航栏 -->

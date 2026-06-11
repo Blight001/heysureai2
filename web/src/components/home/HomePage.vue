@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import heySureLogo from '@/assets/logo/HeySure.png'
+import AmbientBackground from '@/components/common/AmbientBackground.vue'
 
 const emit = defineEmits<{
   (e: 'login'): void
@@ -125,6 +126,8 @@ onBeforeUnmount(() => {
       <div class="app-background-orb app-background-orb-left drift-organic"></div>
       <div class="app-background-orb app-background-orb-right drift-organic" style="animation-delay: -4.5s"></div>
     </div>
+    <!-- 粒子星座 + 鼠标光晕：必须在本页不透明背景之上、内容之下 -->
+    <AmbientBackground />
 
     <!-- 渐变图标共享 defs -->
     <svg class="absolute h-0 w-0" aria-hidden="true">

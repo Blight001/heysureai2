@@ -62,8 +62,8 @@ const step = () => {
   ctx.clearRect(0, 0, width, height)
 
   const dark = isDark()
-  const dotAlpha = dark ? 0.5 : 0.4
-  const lineBase = dark ? 0.14 : 0.1
+  const dotAlpha = dark ? 0.65 : 0.5
+  const lineBase = dark ? 0.22 : 0.15
   const dotColor = dark ? '165, 180, 252' : '99, 102, 241'
   const lineColor = dark ? '129, 140, 248' : '99, 102, 241'
 
