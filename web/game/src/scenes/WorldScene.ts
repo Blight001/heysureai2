@@ -27,7 +27,7 @@ import {
   type Rect,
 } from '../world/layout'
 import { skinFor } from '../world/skins'
-import { WorldStore, type WorldMember, type WorldSnapshot, type WorldWorkshop } from '../world/store'
+import { WorldStore, type WorldEvent, type WorldMember, type WorldSnapshot, type WorldWorkshop } from '../world/store'
 import { Drawer } from '../ui/drawer'
 import type { Overlay, TooltipData } from '../ui/overlay'
 
@@ -36,6 +36,12 @@ const HALL_DOOR: Point = { x: 1190, y: 510 }
 const LIBRARY_DOOR: Point = { x: 880, y: 490 }
 
 const assetUrls = import.meta.glob('../../assets/*.png', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>
+
+const sfxUrls = import.meta.glob('../../assets/sfx/*.wav', {
   eager: true,
   query: '?url',
   import: 'default',
@@ -71,6 +77,8 @@ export class WorldScene extends Phaser.Scene {
   private prevTaskStatus = new Map<number, string>()
   private prevGeneration = new Map<number, number>()
   private prevPending = 0
+  private muted = false
+  private nightOverlay: Phaser.GameObjects.Rectangle | null = null
 
   constructor() {
     super('world')
@@ -88,6 +96,10 @@ export class WorldScene extends Phaser.Scene {
         frameHeight: sheet.frameHeight,
       })
     }
+    for (const [path, url] of Object.entries(sfxUrls)) {
+      const key = path.split('/').pop()!.replace('.wav', '')
+      this.load.audio(key, url as string)
+    }
   }
 
   create() {
@@ -96,11 +108,83 @@ export class WorldScene extends Phaser.Scene {
     this.createBuildings()
     this.createCamera()
     this.createDrawer()
+    this.createDayNight()
+    this.createAudio()
     this.wireHover()
     this.wireClickAndDrag()
     this.store.subscribe(snap => this.applySnapshot(snap))
+    this.store.onEvent(ev => this.handleWorldEvent(ev))
     this.store.start()
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.store.stop())
+  }
+
+  // ---------------------------------------------------------------- P2 氛围
+  private createAudio() {
+    this.muted = localStorage.getItem('gw-muted') === '1'
+    this.overlay.initMuteButton(document.body, this.muted, muted => {
+      this.muted = muted
+      try {
+        localStorage.setItem('gw-muted', muted ? '1' : '0')
+      } catch {
+        // ignore
+      }
+    })
+  }
+
+  private playSfx(key: string, volume = 0.5) {
+    if (this.muted) return
+    try {
+      this.sound.play(key, { volume })
+    } catch {
+      // 浏览器自动播放策略：首次手势前播放失败属预期
+    }
+  }
+
+  /** 昼夜色调：按本地时间给世界盖一层夜色；?hour=22 可调试 */
+  private createDayNight() {
+    this.nightOverlay = this.add.rectangle(0, 0, WORLD_W, WORLD_H, 0x141c3c, 0)
+    this.nightOverlay.setOrigin(0, 0)
+    this.nightOverlay.setDepth(150000)
+    const apply = () => {
+      const debugHour = Number(new URLSearchParams(window.location.search).get('hour'))
+      const now = new Date()
+      const h = Number.isFinite(debugHour) ? debugHour : now.getHours() + now.getMinutes() / 60
+      const MAX = 0.38
+      let alpha = 0
+      if (h < 5.5 || h >= 20.5) alpha = MAX
+      else if (h < 7.5) alpha = MAX * (1 - (h - 5.5) / 2) // 黎明
+      else if (h >= 17.5) alpha = MAX * ((h - 17.5) / 3) // 黄昏
+      this.nightOverlay?.setFillStyle(0x141c3c, Math.min(MAX, Math.max(0, alpha)))
+    }
+    apply()
+    this.time.addEvent({ delay: 60000, loop: true, callback: apply })
+  }
+
+  /** 服务端直推事件 → 即时演出（权威状态随后由去抖 refresh 拉取） */
+  private handleWorldEvent(ev: WorldEvent) {
+    const id = Number(ev.payload?.ai_config_id)
+    const actor = Number.isFinite(id) ? this.actors.get(id) : undefined
+    switch (ev.type) {
+      case 'task_started':
+        actor?.walkVia(HALL_DOOR)
+        this.playSfx('scroll')
+        break
+      case 'task_finished':
+        if (actor) this.burstSparkle(actor.x, actor.y - 24)
+        this.playSfx('success')
+        break
+      case 'member_inherited':
+        // 传承入殿：立即走死亡演出，下一代由 refresh 带回
+        if (actor && !actor.isDying) actor.die(() => this.actors.delete(id))
+        this.playSfx('bell', 0.45)
+        break
+      case 'member_completed': {
+        const valhalla = this.buildings.get('valhalla')
+        if (valhalla) this.burstSparkle(valhalla.x, valhalla.y + 30)
+        this.playSfx('bell', 0.35)
+        break
+      }
+    }
   }
 
   private createDrawer() {
@@ -342,6 +426,7 @@ export class WorldScene extends Phaser.Scene {
         if (this.draggingActor) return
         const dist = Phaser.Math.Distance.Between(pointer.downX, pointer.downY, pointer.upX, pointer.upY)
         if (dist >= 8 || !this.snap) return
+        this.playSfx('ui_click', 0.4)
         if (obj instanceof MemberActor) {
           const m = this.snap.members.find(x => x.id === obj.memberId)
           if (m) this.drawer.openMember(m, this.snap)

@@ -23,6 +23,8 @@ const boot = async () => {
 
   const store = new WorldStore()
   const overlay = new Overlay(document.body)
+  // 调试/测试句柄：控制台可注入世界事件（store.dispatchEvent({...})）
+  ;(window as unknown as Record<string, unknown>).__worldStore = store
 
   const game = new Phaser.Game({
     type: Phaser.AUTO,

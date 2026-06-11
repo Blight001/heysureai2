@@ -55,6 +55,13 @@ export class Overlay {
       .gw-hud .h-dim { color: #8a90a0; }
       .gw-hud .h-err { color: #e08484; }
       .gw-hud .h-ok { color: #84d99a; }
+      .gw-mute {
+        position: fixed; left: 12px; bottom: 12px; z-index: 30; cursor: pointer;
+        background: rgba(28, 30, 38, 0.88); border: 2px solid #4a4f5e; border-radius: 4px;
+        color: #d6dae2; font: 12px ui-monospace, "Cascadia Mono", Consolas, monospace;
+        padding: 5px 10px;
+      }
+      .gw-mute:hover { border-color: #5a6175; }
     `
     document.head.appendChild(style)
 
@@ -102,5 +109,23 @@ export class Overlay {
 
   setHud(html: string) {
     this.hud.innerHTML = html
+  }
+
+  /** 左下角静音开关（P2 音效） */
+  initMuteButton(parent: HTMLElement, initialMuted: boolean, onChange: (muted: boolean) => void) {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'gw-mute'
+    let muted = initialMuted
+    const render = () => {
+      btn.textContent = muted ? '🔇 音效关' : '🔊 音效开'
+    }
+    render()
+    btn.onclick = () => {
+      muted = !muted
+      render()
+      onChange(muted)
+    }
+    parent.appendChild(btn)
   }
 }

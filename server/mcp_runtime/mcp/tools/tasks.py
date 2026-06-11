@@ -980,6 +980,15 @@ def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[in
         row.updated_at = row.finished_at
         session.add(row)
         session.commit()
+        try:
+            from api.services.world_events import emit_world_event
+            emit_world_event(user_id, "task_finished", {
+                "ai_config_id": ai_config_id,
+                "job_id": str(row.job_id or ""),
+                "title": str(row.title or ""),
+            })
+        except Exception:
+            pass  # best-effort：演出通知失败不影响任务完成
         notification = notify_task_completion(
             user_id=user_id,
             job_id=str(row.job_id or ""),
