@@ -12,7 +12,8 @@
 - [x] 数据绑定层 `src/world/store.ts`：复用 `web/src/api/*` + Socket.IO（`ui:join` / `agent:list` / `mcp:status` / `librarian:*`）
 - [x] hover tooltip（成员 token 进度条 / 任务 / 模型；建筑统计）+ HUD + 状态气泡（⏳/Zzz/卷轴/⚠）
 - [x] 死亡演出：倒地 → 灵魂飞向英灵殿 → 移除；建筑状态动效（图书馆待审批亮灯 / 议事厅翻页 / 作坊开工）
-- [x] Dashboard 顶栏入口（地球按钮 → 全屏 iframe 覆盖层，`WorldMapOverlay.vue`）
+- [x] Dashboard 集成：游戏世界**直接内嵌主控制台中间实战区域**（`WorldArenaPanel.vue`，
+      原进化场"项目安排 + 运行中 AI 卡片"按需求移除，顶栏独立打开按钮一并移除，2026-06-11）
 - [x] P1 点击操作抽屉（`ui/drawer.ts`）：成员（启停 / 派任务 / 绑定作坊 / 换肤 / 打开对话）、
       作坊（分配成员）、图书馆（沉淀申请审批）、英灵殿（名册）、议事厅（任务一览）、出生地（待分配名单）
 - [x] P1 拖拽：拖成员到作坊 = 绑定（确认后走 `assignAgentAi`），拖到出生地 = 解绑

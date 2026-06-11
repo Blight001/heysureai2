@@ -56,7 +56,7 @@ web/
 ```
 
 - `vite.config.ts` 的 `build.rollupOptions.input` 已加 `game/index.html` 成多页应用；dev 下 `http://localhost:58150/game/` 直接调试，prod 下随 `web/dist` 一起被 gateway 静态托管，**后端零部署改动**。
-- Dashboard 侧新增 `WorldPanel.vue`（或顶栏入口），内嵌 `<iframe src="/game/">` + "新窗口全屏打开"按钮。
+- Dashboard 集成（2026-06-11 定稿）：游戏世界经 `WorldArenaPanel.vue` **常驻内嵌在主控制台中间实战区域**（替代原进化场的项目安排/运行中 AI 卡片，相关功能已删除）；`/game/` 仍可直接访问。
 - **UI 双层结构**：Phaser 只管地图/精灵/动效；悬浮提示、设置抽屉、右键菜单用 **Vue 覆盖层**（absolute 定位在 canvas 上），这样可以直接复用现有组件和 `src/api/*`，避免用游戏引擎画表单。
 
 ---
