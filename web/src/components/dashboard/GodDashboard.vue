@@ -319,6 +319,14 @@ const openAgentChat = (agent: Agent) => {
   chatModalOpen.value = true
 }
 
+// 游戏世界（iframe）请求打开某成员对话：关掉世界覆盖层，复用现有聊天弹窗
+const onWorldOpenChat = (aiConfigId: number) => {
+  const agent = agents.value.find(a => Number(a.aiConfigId) === aiConfigId)
+  if (!agent) return
+  worldMapOpen.value = false
+  openAgentChat(agent)
+}
+
 const closeAgentChat = () => {
   chatModalOpen.value = false
 }
@@ -783,7 +791,7 @@ onUnmounted(() => {
     />
 
     <!-- Agent 进化与实战区域（游戏世界 iframe） -->
-    <WorldMapOverlay v-if="worldMapOpen" @close="worldMapOpen = false" />
+    <WorldMapOverlay v-if="worldMapOpen" @close="worldMapOpen = false" @open-chat="onWorldOpenChat" />
 
     </div>
   </div>

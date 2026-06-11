@@ -60,6 +60,7 @@ from .knowledge import EvolutionInput, KnowledgeEntry, Memory, ValhallaEntry
 from .project import EvolutionProject, EvolutionProjectCreate, EvolutionProjectUpdate
 from .system import EmailVerificationCode, SystemSetting
 from .user import Token, User, UserCreate, UserLogin, UserRead, UserUpdate
+from .world_meta import WorldActorMeta
 
 __all__ = [
     # defaults
@@ -121,6 +122,7 @@ __all__ = [
     "KnowledgeEntry",
     "Memory",
     "ValhallaEntry",
+    "WorldActorMeta",
     # communication
     "AIMessage",
     # bots (unified session route, channel-keyed)

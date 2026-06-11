@@ -3,6 +3,12 @@
  * + 成员按锚区规则站位/游荡 + hover tooltip + 状态气泡。只读。
  */
 import Phaser from 'phaser'
+import { getAuthToken } from '@/api/http'
+import { toggleAiRun } from '@/api/ai'
+import { assignAgentAi } from '@/api/agents'
+import { triggerTaskForAgent } from '@/api/task'
+import { approveProposal, rejectProposal } from '@/api/librarian'
+import { setWorldActorSkin } from '@/api/world'
 import { SHEETS, TILES } from '../assetManifest'
 import { MemberActor } from '../actors/MemberActor'
 import {
@@ -17,11 +23,17 @@ import {
   mulberry32,
   workshopSlotPos,
   workshopZone,
+  type Point,
   type Rect,
 } from '../world/layout'
 import { skinFor } from '../world/skins'
 import { WorldStore, type WorldMember, type WorldSnapshot, type WorldWorkshop } from '../world/store'
+import { Drawer } from '../ui/drawer'
 import type { Overlay, TooltipData } from '../ui/overlay'
+
+/** 议事厅门口（领任务动线的途经点） */
+const HALL_DOOR: Point = { x: 1190, y: 510 }
+const LIBRARY_DOOR: Point = { x: 880, y: 490 }
 
 const assetUrls = import.meta.glob('../../assets/*.png', {
   eager: true,
@@ -47,12 +59,18 @@ const OFFLINE_KEEP_MS = 60000
 export class WorldScene extends Phaser.Scene {
   private store!: WorldStore
   private overlay!: Overlay
+  private drawer!: Drawer
   private actors = new Map<number, MemberActor>()
   private workshops = new Map<string, WorkshopView>()
   private slotOwner: (string | null)[] = new Array(WORKSHOP_SLOTS).fill(null)
   private buildings = new Map<string, Phaser.GameObjects.Sprite>()
   private snap: WorldSnapshot | null = null
   private hallFlipTimer: Phaser.Time.TimerEvent | null = null
+  private draggingActor: MemberActor | null = null
+  /** 演出触发用：上一轮快照的任务状态 / 代数 / 待审批数 */
+  private prevTaskStatus = new Map<number, string>()
+  private prevGeneration = new Map<number, number>()
+  private prevPending = 0
 
   constructor() {
     super('world')
@@ -77,10 +95,84 @@ export class WorldScene extends Phaser.Scene {
     this.createGround()
     this.createBuildings()
     this.createCamera()
+    this.createDrawer()
     this.wireHover()
+    this.wireClickAndDrag()
     this.store.subscribe(snap => this.applySnapshot(snap))
     this.store.start()
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.store.stop())
+  }
+
+  private createDrawer() {
+    const refresh = () => this.store.refreshNow()
+    this.drawer = new Drawer(document.body, {
+      toggleRun: async id => {
+        await toggleAiRun(id)
+        await refresh()
+        this.reopenMember(id)
+      },
+      assignAgent: async (agentId, aiConfigId) => {
+        await assignAgentAi(agentId, aiConfigId)
+        await refresh()
+      },
+      setSkin: async (id, skin) => {
+        await setWorldActorSkin(id, skin)
+        await refresh()
+        this.reopenMember(id)
+      },
+      createTask: async (id, title, instruction) => {
+        await triggerTaskForAgent(
+          id,
+          {
+            title,
+            instruction,
+            priority: 5,
+            schedule_enabled: false,
+            schedule_loop_enabled: false,
+            schedule_run_immediately: false,
+            schedule_duration_minutes: 30,
+            schedule_at: null,
+            override_token_limit_enabled: false,
+            token_limit_override: 10000,
+            override_mcp_tools_enabled: false,
+            mcp_tools_override: [],
+          },
+          getAuthToken(),
+        )
+        await refresh()
+      },
+      approveProposal: async memoryId => {
+        await approveProposal(getAuthToken(), memoryId)
+        await refresh()
+        this.drawer.openLibrary(this.snap!)
+      },
+      rejectProposal: async memoryId => {
+        await rejectProposal(getAuthToken(), memoryId)
+        await refresh()
+        this.drawer.openLibrary(this.snap!)
+      },
+      openChat: id => {
+        if (window.parent !== window) {
+          window.parent.postMessage({ type: 'world:open-chat', aiConfigId: id }, window.location.origin)
+        } else {
+          window.open('/', '_blank', 'noopener')
+        }
+      },
+      focusMember: id => this.focusMember(id),
+    })
+  }
+
+  /** 操作后抽屉数据已过期：用新快照重开成员面板 */
+  private reopenMember(id: number) {
+    const m = this.snap?.members.find(x => x.id === id)
+    if (m && this.drawer.isOpen) this.drawer.openMember(m, this.snap!)
+  }
+
+  private focusMember(id: number) {
+    const actor = this.actors.get(id)
+    const m = this.snap?.members.find(x => x.id === id)
+    if (actor) this.cameras.main.pan(actor.x, actor.y, 400, 'Sine.easeInOut')
+    if (m && this.snap) this.drawer.openMember(m, this.snap)
   }
 
   // ---------------------------------------------------------------- 初始化
@@ -175,6 +267,7 @@ export class WorldScene extends Phaser.Scene {
       sprite.setDepth(def.pos.y + sprite.height * 0.4)
       sprite.setInteractive()
       sprite.setData('tooltip', () => this.buildingTooltip(def.key, def.label))
+      sprite.setData('buildingKey', def.key)
       this.buildings.set(def.key, sprite)
     }
     this.buildings.get('spawn')?.play('building_spawn.png:loop')
@@ -200,7 +293,7 @@ export class WorldScene extends Phaser.Scene {
       dragging = false
     })
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (!dragging || !p.isDown) return
+      if (!dragging || !p.isDown || this.draggingActor) return
       cam.scrollX -= (p.x - lastX) / cam.zoom
       cam.scrollY -= (p.y - lastY) / cam.zoom
       lastX = p.x
@@ -239,6 +332,88 @@ export class WorldScene extends Phaser.Scene {
     this.input.on('gameobjectout', () => this.overlay.hideTooltip())
   }
 
+  private wireClickAndDrag() {
+    this.input.dragDistanceThreshold = 8
+
+    // 点击（按下与抬起距离 < 8px）→ 打开对应抽屉
+    this.input.on(
+      'gameobjectup',
+      (pointer: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
+        if (this.draggingActor) return
+        const dist = Phaser.Math.Distance.Between(pointer.downX, pointer.downY, pointer.upX, pointer.upY)
+        if (dist >= 8 || !this.snap) return
+        if (obj instanceof MemberActor) {
+          const m = this.snap.members.find(x => x.id === obj.memberId)
+          if (m) this.drawer.openMember(m, this.snap)
+          return
+        }
+        const agentId = obj.getData?.('agentId') as string | undefined
+        if (agentId) {
+          this.drawer.openWorkshop(agentId, this.snap)
+          return
+        }
+        const key = obj.getData?.('buildingKey') as string | undefined
+        if (key === 'library') this.drawer.openLibrary(this.snap)
+        else if (key === 'valhalla') this.drawer.openValhalla(this.snap)
+        else if (key === 'hall') this.drawer.openHall(this.snap)
+        else if (key === 'spawn') this.drawer.openSpawn(this.snap)
+      },
+    )
+
+    // 拖拽成员 → 放到作坊上绑定 / 放到出生地解绑
+    this.input.on('dragstart', (_p: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
+      if (obj instanceof MemberActor && !obj.isDying) {
+        this.draggingActor = obj
+        obj.beginDrag()
+        this.overlay.hideTooltip()
+      }
+    })
+    this.input.on(
+      'drag',
+      (_p: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject, dragX: number, dragY: number) => {
+        if (obj instanceof MemberActor && obj === this.draggingActor) {
+          obj.x = dragX
+          obj.y = dragY
+        }
+      },
+    )
+    this.input.on('dragend', (_p: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
+      if (!(obj instanceof MemberActor) || obj !== this.draggingActor) return
+      this.draggingActor = null
+      const drop = this.resolveDropTarget(obj.x, obj.y)
+      obj.endDrag()
+      if (!drop || !this.snap) return
+      const m = this.snap.members.find(x => x.id === obj.memberId)
+      if (!m) return
+      if (drop.kind === 'workshop') {
+        const w = this.snap.workshops.find(x => x.agentId === drop.agentId)
+        if (!w) return
+        if (window.confirm(`把成员「${m.name}」绑定到 ${w.name}？`)) {
+          void assignAgentAi(w.agentId, m.id).then(() => this.store.refreshNow()).catch(() => undefined)
+        }
+      } else if (drop.kind === 'spawn' && m.boundAgentIds.length) {
+        if (window.confirm(`把成员「${m.name}」从端侧 agent 上解绑？`)) {
+          void Promise.all(m.boundAgentIds.map(id => assignAgentAi(id, null)))
+            .then(() => this.store.refreshNow())
+            .catch(() => undefined)
+        }
+      }
+    })
+  }
+
+  /** 拖放落点 → 作坊 / 出生地 */
+  private resolveDropTarget(x: number, y: number): { kind: 'workshop'; agentId: string } | { kind: 'spawn' } | null {
+    for (const [agentId, view] of this.workshops) {
+      if (view.offlineSince !== null) continue
+      if (Phaser.Math.Distance.Between(x, y, view.sprite.x, view.sprite.y) < 70) {
+        return { kind: 'workshop', agentId }
+      }
+    }
+    const spawn = this.buildings.get('spawn')
+    if (spawn && Phaser.Math.Distance.Between(x, y, spawn.x, spawn.y) < 90) return { kind: 'spawn' }
+    return null
+  }
+
   private tooltipFor(obj: Phaser.GameObjects.GameObject): TooltipData | null {
     if (obj instanceof MemberActor) return this.memberTooltip(obj.member)
     const fn = obj.getData?.('tooltip') as (() => TooltipData) | undefined
@@ -253,6 +428,13 @@ export class WorldScene extends Phaser.Scene {
     this.reconcileWorkshops(snap)
     this.reconcileMembers(snap)
     this.updateBuildingStates(snap)
+    // 知识沉淀演出：新申请到达 → 图书管理员去馆门口"收卷轴"
+    if (snap.knowledgePending > this.prevPending) {
+      const lib = snap.members.find(m => m.role === 'librarian' && m.lifecycle !== 'dead')
+      const actor = lib ? this.actors.get(lib.id) : undefined
+      actor?.walkVia(LIBRARY_DOOR)
+    }
+    this.prevPending = snap.knowledgePending
   }
 
   private reconcileMembers(snap: WorldSnapshot) {
@@ -265,20 +447,51 @@ export class WorldScene extends Phaser.Scene {
         if (existing && !existing.isDying) existing.die(() => this.actors.delete(m.id))
         continue
       }
-      const skin = skinFor(m.role, m.id)
+      const skin = skinFor(m.role, m.id, m.skin)
       const zone = this.anchorFor(m)
-      if (existing) {
-        existing.setMember(m, skin)
-        existing.setAnchor(zone)
-      } else {
-        const actor = new MemberActor(this, m, skin, zone)
+      let actor = existing
+      if (actor) {
         actor.setMember(m, skin)
+        actor.setAnchor(zone)
+      } else {
+        actor = new MemberActor(this, m, skin, zone)
+        actor.setMember(m, skin)
+        this.input.setDraggable(actor)
         this.actors.set(m.id, actor)
       }
+      this.playTransitions(m, actor)
     }
     // 配置被删除的成员：同走灵魂演出
     for (const [id, actor] of this.actors) {
       if (!seen.has(id) && !actor.isDying) actor.die(() => this.actors.delete(id))
+    }
+  }
+
+  /** 轮询触发版事件演出：领任务动线 / 传承重生光效 */
+  private playTransitions(m: WorldMember, actor: MemberActor) {
+    const prevStatus = this.prevTaskStatus.get(m.id)
+    if (prevStatus !== undefined && prevStatus !== 'running' && m.taskStatus === 'running') {
+      // 领任务：先去议事厅门口"领卷轴"，再回锚区
+      actor.walkVia(HALL_DOOR)
+    }
+    this.prevTaskStatus.set(m.id, m.taskStatus)
+
+    const prevGen = this.prevGeneration.get(m.id)
+    if (prevGen !== undefined && m.generation > prevGen) {
+      // 传承重生：出生地与成员脚下各放一圈火花
+      const spawn = this.buildings.get('spawn')
+      if (spawn) this.burstSparkle(spawn.x, spawn.y - 20)
+      this.burstSparkle(actor.x, actor.y - 24)
+    }
+    this.prevGeneration.set(m.id, m.generation)
+  }
+
+  private burstSparkle(x: number, y: number) {
+    for (let i = 0; i < 5; i++) {
+      const s = this.add.sprite(x + (Math.random() - 0.5) * 40, y + (Math.random() - 0.5) * 30, 'effect_sparkle.png', 0)
+      s.setDepth(99000)
+      s.play('effect_sparkle.png:loop')
+      this.time.delayedCall(600 + i * 150, () => s.destroy())
     }
   }
 
@@ -313,6 +526,7 @@ export class WorldScene extends Phaser.Scene {
         view = { sprite, slot, data: w, offlineSince: null }
         const captured = view
         sprite.setData('tooltip', () => this.workshopTooltip(captured))
+        sprite.setData('agentId', w.agentId)
         this.workshops.set(w.agentId, view)
       }
       view.data = w
