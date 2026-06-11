@@ -31,7 +31,7 @@
 ## 访问
 
 ```bash
-cd web && npm run dev
+cd web && npm install && npm run dev   # 拉取后先 npm install（游戏世界依赖 phaser，lock 文件不入库）
 # 主控制台  http://localhost:58150/
 # 游戏世界  http://localhost:58150/game/        （需先在主控制台登录）
 # 资产预览  http://localhost:58150/game/?preview=1
