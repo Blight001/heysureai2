@@ -1,12 +1,9 @@
 """SQLModel engine + session dependency.
 
-Schema bootstrap is split in two phases:
-- ``SQLModel.metadata.create_all`` creates tables that do not yet exist.
-- ``run_pending_migrations`` adds missing columns on legacy SQLite
-  installations (see ``api.core.migrations``). Postgres deployments either
-  start from scratch (``create_all`` builds everything) or come from
-  ``scripts/migrate_sqlite_to_postgres.py``, so they do not need the legacy
-  ALTER TABLE patches.
+Schema is owned by Alembic (see ``api.db`` / ``migrations/`` /
+``doc/db-migrations.md``). This module only builds the engine and exposes the
+session dependency; bringing the schema up to date is delegated to
+``api.db.ensure_schema`` via :func:`create_db_and_tables`.
 """
 
 import contextlib
@@ -14,10 +11,9 @@ import logging
 import os
 import time
 
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, create_engine
 
 from .core.config import DATABASE_URL, SERVER_DIR, database_dialect
-from .core.migrations import run_data_consolidations, run_pending_migrations
 
 # Importing the models package side-effect populates ``SQLModel.metadata``.
 from . import models  # noqa: F401
@@ -102,10 +98,27 @@ else:
 
 
 def create_db_and_tables() -> None:
-    with _bootstrap_lock():
-        SQLModel.metadata.create_all(engine)
-        run_pending_migrations()
-        run_data_consolidations(engine)
+    """Ensure the database schema is current. Called by each runtime at startup.
+
+    Backwards-compatible entry point. By default it runs Alembic
+    ``upgrade head`` (adopting pre-Alembic databases on first boot). Set
+    ``HEYSURE_DB_AUTO_MIGRATE=0`` to decouple migration from startup — run
+    ``python -m api.db migrate`` as a separate deploy step instead, and the
+    app will only verify the schema is present.
+    """
+    from .core.settings import settings
+    from . import db as _db
+
+    if settings.db_auto_migrate:
+        _db.ensure_schema()
+        return
+
+    has_version, has_core = _db._db_state(engine)
+    if not (has_version or has_core):
+        raise RuntimeError(
+            "database schema is not initialized and HEYSURE_DB_AUTO_MIGRATE is off; "
+            "run `python -m api.db migrate` before starting the app"
+        )
 
 
 def get_session():

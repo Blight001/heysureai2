@@ -14,6 +14,19 @@ services:
       retries: 20
     restart: unless-stopped
 
+  # One-shot schema migration, decoupled from the app processes (see
+  # doc/db-migrations.md §Step 4). Runs `alembic upgrade head` once, then exits;
+  # the four runtimes wait for it to finish and start with auto-migrate off.
+  db-migrate:
+    build: ./server
+    environment:
+      - DATABASE_URL=postgresql+psycopg://heysure:heysure@db:5432/heysure
+    command: ["python", "-m", "api.db", "migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   api-gateway:
     build: ./server
     ports:
@@ -29,10 +42,13 @@ services:
       - CONNECTOR_RUNTIME_URL=http://connector-runtime:3002
       - AI_RUNTIME_URL=http://ai-runtime:3003
       - AI_DISPATCH_MODE=remote
+      - HEYSURE_DB_AUTO_MIGRATE=0
     command: ["uvicorn", "gateway.app:sio_app", "--host", "0.0.0.0", "--port", "3000"]
     depends_on:
       db:
         condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   ai-runtime:
@@ -52,10 +68,13 @@ services:
       - MCP_RUNTIME_URL=http://mcp-runtime:3001
       - CONNECTOR_RUNTIME_URL=http://connector-runtime:3002
       - HEYSURE_AI_RUNTIME_PORT=3003
+      - HEYSURE_DB_AUTO_MIGRATE=0
     command: ["python", "-m", "ai_runtime.main"]
     depends_on:
       db:
         condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
       api-gateway:
         condition: service_started
       mcp-runtime:
@@ -76,10 +95,13 @@ services:
       - DATABASE_URL=postgresql+psycopg://heysure:heysure@db:5432/heysure
       - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
       - HEYSURE_API_GATEWAY_URL=http://api-gateway:3000
+      - HEYSURE_DB_AUTO_MIGRATE=0
     command: ["python", "-m", "mcp_runtime.main"]
     depends_on:
       db:
         condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   connector-runtime:
@@ -97,10 +119,13 @@ services:
       - DATABASE_URL=postgresql+psycopg://heysure:heysure@db:5432/heysure
       - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
       - HEYSURE_API_GATEWAY_URL=http://api-gateway:3000
+      - HEYSURE_DB_AUTO_MIGRATE=0
     command: ["python", "-m", "connector_runtime.main"]
     depends_on:
       db:
         condition: service_healthy
+      db-migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   web:
