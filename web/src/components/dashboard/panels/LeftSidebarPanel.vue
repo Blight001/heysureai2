@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import AppIcon from '@/components/common/AppIcon.vue'
 import BrainCorePanel from './BrainCorePanel.vue'
 import WorkshopPanel from './WorkshopPanel.vue'
 import type { ConnectedAgent } from '@/composables/dashboard/useDashboardData'
@@ -68,7 +69,7 @@ const activeTab = ref<'brain' | 'knowledge'>('brain')
             ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-400' 
             : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
         >
-          <span>🧠</span> 智囊团核心
+          <AppIcon name="brain" class="w-4 h-4" /> 智囊团核心
         </button>
         <button 
           @click="activeTab = 'knowledge'"
@@ -77,7 +78,7 @@ const activeTab = ref<'brain' | 'knowledge'>('brain')
             ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-400' 
             : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
         >
-          <span>🏭</span> 作坊
+          <AppIcon name="workshop" class="w-4 h-4" /> 作坊
         </button>
       </div>
     </div>

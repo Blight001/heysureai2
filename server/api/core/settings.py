@@ -153,6 +153,21 @@ class Settings(BaseSettings):
         description="Static bearer agents present when registering on the Socket.IO ``/agent`` namespace.",
     )
 
+    # ---- Email (SMTP) ----------------------------------------------------------
+    # Env-level defaults for the mailer used by email-code register/login.
+    # Values saved from the admin console (SystemSetting table) take
+    # precedence; these only seed fresh installs / headless deploys.
+
+    smtp_host: str = Field(default="", description="SMTP server host; empty disables email features.")
+    smtp_port: int = Field(default=465, description="SMTP server port (465 for SSL, 587 for STARTTLS).")
+    smtp_username: str = Field(default="", description="SMTP auth username (usually the mailbox).")
+    smtp_password: str = Field(default="", description="SMTP auth password / app-specific token.")
+    smtp_from: str = Field(default="", description="From address; empty falls back to smtp_username.")
+    smtp_encryption: Literal["ssl", "starttls", "none"] = Field(
+        default="ssl",
+        description="Transport security used when talking to the SMTP server.",
+    )
+
     # ---- Third-party ---------------------------------------------------------
 
     tavily_api_key: str = Field(
@@ -205,6 +220,10 @@ class Settings(BaseSettings):
         "connector_runtime_url",
         "ai_runtime_url",
         "agent_token",
+        "smtp_host",
+        "smtp_username",
+        "smtp_password",
+        "smtp_from",
         "tavily_api_key",
         "clawhub_registry_url",
         "clawhub_api_token",

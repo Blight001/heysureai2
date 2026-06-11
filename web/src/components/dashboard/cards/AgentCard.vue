@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import AppIcon from '@/components/common/AppIcon.vue'
+import type { AppIconName } from '@/components/common/AppIcon.vue'
 
 interface AgentTaskSnapshot {
   jobId: string
@@ -222,21 +224,21 @@ const roleBadge = computed(() => {
   if (props.agent.aiRole === 'assistant_admin') {
     return {
       text: '辅助管理员',
-      icon: '◆',
+      icon: 'sparkles' as AppIconName,
       class: 'bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-500/20 dark:text-violet-300 dark:border-violet-500/40',
     }
   }
   if (props.agent.aiRole === 'digital_member' && props.agent.digitalMemberRole === 'manager') {
     return {
       text: '数字社会管理员',
-      icon: '👑',
+      icon: 'crown' as AppIconName,
       class: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/40',
     }
   }
   if (props.agent.aiRole === 'digital_member') {
     return {
       text: '数字成员',
-      icon: '●',
+      icon: 'robot' as AppIconName,
       class: 'bg-sky-100 text-sky-700 border-sky-200 dark:bg-sky-500/20 dark:text-sky-300 dark:border-sky-500/40',
     }
   }
@@ -536,7 +538,7 @@ const onCardPointerUp = (event: PointerEvent) => {
       class="absolute top-2 right-12 text-xs px-2 py-1 rounded-full border shadow-sm flex items-center gap-1 z-20"
       :class="roleBadge.class"
     >
-      <span>{{ roleBadge.icon }}</span> {{ roleBadge.text }}
+      <AppIcon :name="roleBadge.icon" class="w-3 h-3" /> {{ roleBadge.text }}
     </div>
 
     <!-- 头部信息 -->
@@ -591,7 +593,7 @@ const onCardPointerUp = (event: PointerEvent) => {
         title="AI 设置"
         @click.stop="emit('settings', agent)"
       >
-        ⚙
+        <AppIcon name="gear" class="w-3.5 h-3.5 mx-auto" />
       </button>
     </div>
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, useAttrs } from 'vue'
+import AppIcon from '@/components/common/AppIcon.vue'
 import {
   deleteInstalledClawHubSkill,
   installClawHubSkill,
@@ -571,7 +572,7 @@ const closeDetail = () => {
   ]">
     <div class="flex justify-between items-center border-b border-zinc-100 pb-2 mb-2 dark:border-zinc-800">
       <h2 v-if="!noGlass" class="font-bold text-zinc-800 flex items-center gap-2 dark:text-zinc-100">
-        <span>📚</span> 传承知识库
+        <AppIcon name="book" class="w-[18px] h-[18px]" /> 传承知识库
       </h2>
       <div v-else class="flex items-center gap-2">
         <span class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">传承知识库</span>

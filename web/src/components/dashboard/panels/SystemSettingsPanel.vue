@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { getMcpToolZhLabel, groupMcpToolsBySource } from '@/utils/mcpTools'
+import AppIcon from '@/components/common/AppIcon.vue'
+import { useUiEffects } from '@/composables/useUiEffects'
 import type { McpRoleMeta, ModelPreset } from '@/types'
 
 interface Props {
@@ -39,6 +41,8 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+const { effects, setParticles, setMouseGlow } = useUiEffects()
 const emit = defineEmits<{
   (e: 'update:show', value: boolean): void
   (e: 'update:globalMcpCallMethod', value: string): void
@@ -345,7 +349,7 @@ watch(() => props.show, visible => {
       <div class="bg-white rounded-2xl shadow-xl w-[560px] max-h-[90vh] overflow-y-auto p-6 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800" @click.stop>
         <div class="flex items-center justify-between mb-6">
           <h3 class="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-            <span>⚙️</span> 系统全能设置
+            <AppIcon name="gear" class="w-5 h-5" /> 系统全能设置
           </h3>
           <button @click="emit('update:show', false)" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -356,13 +360,13 @@ watch(() => props.show, visible => {
 
         <div class="space-y-6">
           <div class="p-4 bg-zinc-50 rounded-xl dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
-            <h4 class="text-sm font-semibold text-zinc-800 mb-3 dark:text-zinc-100 flex items-center gap-2">🎨 界面偏好</h4>
+            <h4 class="text-sm font-semibold text-zinc-800 mb-3 dark:text-zinc-100 flex items-center gap-2"><AppIcon name="palette" class="w-4 h-4" /> 界面偏好</h4>
             <div class="grid grid-cols-2 gap-6">
               <div>
                 <div class="text-xs text-zinc-500 mb-2 dark:text-zinc-400">主题模式</div>
                 <div class="flex gap-2">
                   <button v-for="mode in (['light', 'dark'] as const)" :key="mode" @click="themeModeValue = mode" class="flex-1 px-3 py-1.5 rounded-lg border text-xs transition-all" :class="themeModeValue === mode ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' : 'border-zinc-200 text-zinc-500 hover:border-zinc-300 dark:border-zinc-700 dark:text-zinc-400'">
-                    {{ mode === 'light' ? '✨ 亮色' : '🌙 暗色' }}
+                    <span class="inline-flex items-center justify-center gap-1.5"><AppIcon :name="mode === 'light' ? 'sun' : 'moon'" class="w-3.5 h-3.5" />{{ mode === 'light' ? '亮色' : '暗色' }}</span>
                   </button>
                 </div>
               </div>
@@ -374,6 +378,28 @@ watch(() => props.show, visible => {
                   </button>
                 </div>
               </div>
+            </div>
+            <div class="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-700">
+              <div class="text-xs text-zinc-500 mb-2 dark:text-zinc-400">动态效果</div>
+              <div class="grid grid-cols-2 gap-2">
+                <button
+                  @click="setParticles(!effects.particles)"
+                  class="px-3 py-2 rounded-lg border text-xs transition-all flex items-center justify-between gap-2"
+                  :class="effects.particles ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' : 'border-zinc-200 text-zinc-500 hover:border-zinc-300 dark:border-zinc-700 dark:text-zinc-400'"
+                >
+                  <span class="inline-flex items-center gap-1.5"><AppIcon name="sparkles" class="w-3.5 h-3.5" />背景粒子</span>
+                  <span class="text-[10px] font-semibold">{{ effects.particles ? '开' : '关' }}</span>
+                </button>
+                <button
+                  @click="setMouseGlow(!effects.mouseGlow)"
+                  class="px-3 py-2 rounded-lg border text-xs transition-all flex items-center justify-between gap-2"
+                  :class="effects.mouseGlow ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' : 'border-zinc-200 text-zinc-500 hover:border-zinc-300 dark:border-zinc-700 dark:text-zinc-400'"
+                >
+                  <span class="inline-flex items-center gap-1.5"><AppIcon name="compass" class="w-3.5 h-3.5" />鼠标互动</span>
+                  <span class="text-[10px] font-semibold">{{ effects.mouseGlow ? '开' : '关' }}</span>
+                </button>
+              </div>
+              <p class="mt-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">背景粒子星座与鼠标跟随光晕 / 粒子联动，全站即时生效。</p>
             </div>
           </div>
 
@@ -478,7 +504,7 @@ watch(() => props.show, visible => {
               @click="openSettingsDialog('roles')"
             >
               <span>
-                <span class="settings-entry-title">🛡️ MCP 角色权限</span>
+                <span class="settings-entry-title inline-flex items-center gap-1.5"><AppIcon name="shield" class="w-3.5 h-3.5" />MCP 角色权限</span>
                 <span class="settings-entry-desc">工作区栏目中的 MCP 工具授权，包含联网搜索</span>
               </span>
               <span class="settings-entry-arrow">›</span>
@@ -488,7 +514,7 @@ watch(() => props.show, visible => {
               @click="openSettingsDialog('prompts')"
             >
               <span>
-                <span class="settings-entry-title">🧭 提示词配置</span>
+                <span class="settings-entry-title inline-flex items-center gap-1.5"><AppIcon name="compass" class="w-3.5 h-3.5" />提示词配置</span>
                 <span class="settings-entry-desc">编辑 MCP 调用规范、任务提示、AI 通信与用户消息回执提示</span>
               </span>
               <span class="settings-entry-arrow">›</span>
