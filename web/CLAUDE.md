@@ -2,6 +2,8 @@
 
 Vue 3 + Vite + TypeScript + Tailwind 的单页控制台。端口 **58150**，dev 时通过 vite proxy 把 `/api` `/socket.io` `/uploads` `/avatars` `/tmp-images` 转发到后端 `:3000`。
 
+**两个 Vite 入口**：`index.html`（主控制台）+ `game/index.html`（Agent 进化与实战区域 / 游戏世界，dev 访问 `/game/`）。游戏世界的资产生成、帧布局约定见 [`game/README.md`](game/README.md)，设计方案见 [`../doc/Agent进化与实战区域设计方案.md`](../doc/Agent进化与实战区域设计方案.md)。
+
 ## 目录
 
 ```

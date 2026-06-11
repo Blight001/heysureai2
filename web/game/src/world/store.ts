@@ -1,0 +1,303 @@
+/**
+ * 数据绑定层：把现有 REST（listAiCards / listConnectedAgents / valhalla / librarian）
+ * 和 Socket.IO（ui:join → agent:list / mcp:status / librarian:*）归一成一个世界快照，
+ * 供 Phaser 场景消费。框架无关（不依赖 Vue），只读不写。
+ *
+ * 角色判定与 useDashboardData.ts 对齐：
+ *   core_admin  = digital_member_role==='manager' || switch_key==='assistant_default'
+ *   assistant   = ai_role==='assistant_admin'
+ *   librarian   = is_librarian===true（/api/ai/cards 已透出该字段）
+ */
+import { io, type Socket } from 'socket.io-client'
+import { getAuthToken } from '@/api/http'
+import { me } from '@/api/auth'
+import { listAiCards } from '@/api/ai'
+import { listConnectedAgents } from '@/api/agents'
+import { listValhallaEntries } from '@/api/valhalla'
+import { listEntries, listProposals } from '@/api/librarian'
+
+export type MemberRole = 'core_admin' | 'assistant_admin' | 'librarian' | 'member'
+
+export interface WorldMember {
+  id: number
+  name: string
+  role: MemberRole
+  generation: number
+  tokensUsed: number
+  tokenLimit: number
+  lifecycle: 'learning' | 'working' | 'reproducing' | 'dead'
+  enabled: boolean
+  runtimeStatus: 'running' | 'idle' | 'error'
+  runtimeTool: string
+  currentBehavior: string
+  taskTitle: string
+  taskStatus: string
+  hasActiveTask: boolean
+  model: string
+  projectId: string
+  projectName: string
+  platform: string
+  /** 绑定的端侧 agent id（来自 agent:list 的 aiConfigId 反查） */
+  boundAgentIds: string[]
+}
+
+export interface WorldWorkshop {
+  agentId: string
+  name: string
+  type: 'desktop' | 'browser'
+  lifecycle: string
+  aiConfigId: number | null
+  lastError: string | null
+  platform: string
+  capabilities: number
+}
+
+export interface WorldSnapshot {
+  /** token 是否存在且 /api 可用 */
+  authOk: boolean
+  socketConnected: boolean
+  userId: number | null
+  members: WorldMember[]
+  workshops: WorldWorkshop[]
+  valhallaCount: number
+  knowledgeActive: number
+  knowledgePending: number
+  lastError: string
+}
+
+type Listener = (snap: WorldSnapshot) => void
+
+const POLL_MS = 8000
+
+const num = (v: unknown, fallback = 0): number => {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
+const normalizeLifecycle = (v: unknown): WorldMember['lifecycle'] => {
+  if (v === 'learning' || v === 'working' || v === 'reproducing' || v === 'dead') return v
+  return 'working'
+}
+
+const normalizeRuntime = (v: unknown): WorldMember['runtimeStatus'] => {
+  if (v === 'running' || v === 'error') return v
+  return 'idle'
+}
+
+const roleOf = (row: Record<string, any>): MemberRole => {
+  if (row.is_librarian) return 'librarian'
+  if (row.ai_role === 'assistant_admin') return 'assistant_admin'
+  if (row.digital_member_role === 'manager' || row.switch_key === 'assistant_default') return 'core_admin'
+  return 'member'
+}
+
+const workshopTypeOf = (raw: Record<string, any>): 'desktop' | 'browser' | null => {
+  const platform = String(raw.platform || '').toLowerCase()
+  const id = String(raw.id || '')
+  if (raw.isWindowsDesktop || id.startsWith('win-desktop-') || platform.includes('desktop') || platform.includes('windows')) {
+    return 'desktop'
+  }
+  if (raw.isBrowserExtension || platform.includes('browser')) return 'browser'
+  return null
+}
+
+const workshopAiConfigId = (raw: Record<string, any>): number | null => {
+  const direct = num(raw.aiConfigId ?? raw.ai_config_id, NaN)
+  if (Number.isFinite(direct) && direct > 0) return direct
+  const m = String(raw.id || '').match(/^win-desktop-(\d+)$/)
+  if (m) {
+    const parsed = Number(m[1])
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return null
+}
+
+export class WorldStore {
+  private listeners: Listener[] = []
+  private socket: Socket | null = null
+  private pollTimer: number | null = null
+  private rawAgents: Record<string, any>[] = []
+  private runtimeOverride = new Map<number, { state: WorldMember['runtimeStatus']; tool: string }>()
+
+  snapshot: WorldSnapshot = {
+    authOk: false,
+    socketConnected: false,
+    userId: null,
+    members: [],
+    workshops: [],
+    valhallaCount: 0,
+    knowledgeActive: 0,
+    knowledgePending: 0,
+    lastError: '',
+  }
+
+  subscribe(fn: Listener): () => void {
+    this.listeners.push(fn)
+    fn(this.snapshot)
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== fn)
+    }
+  }
+
+  private emit() {
+    for (const fn of this.listeners) fn(this.snapshot)
+  }
+
+  start() {
+    void this.refresh()
+    this.pollTimer = window.setInterval(() => void this.refresh(), POLL_MS)
+  }
+
+  stop() {
+    if (this.pollTimer !== null) window.clearInterval(this.pollTimer)
+    this.pollTimer = null
+    this.socket?.disconnect()
+    this.socket = null
+  }
+
+  private async ensureSocket() {
+    if (this.socket || this.snapshot.userId === null) return
+    const userId = this.snapshot.userId
+    const socket = io('/', { transports: ['websocket', 'polling'] })
+    this.socket = socket
+    socket.on('connect', () => {
+      this.snapshot.socketConnected = true
+      socket.emit('ui:join', { userId })
+      this.emit()
+    })
+    socket.on('disconnect', () => {
+      this.snapshot.socketConnected = false
+      this.emit()
+    })
+    socket.on('agent:list', (rows: unknown) => {
+      this.rawAgents = Array.isArray(rows) ? rows : []
+      this.rebuildWorkshops()
+      this.emit()
+    })
+    socket.on('mcp:status', (payload: Record<string, any>) => {
+      if (num(payload?.userId, NaN) !== userId) return
+      const configId = num(payload?.aiConfigId, NaN)
+      if (!Number.isFinite(configId)) return
+      this.runtimeOverride.set(configId, {
+        state: normalizeRuntime(String(payload?.state || '').toLowerCase()),
+        tool: String(payload?.tool || ''),
+      })
+      const target = this.snapshot.members.find(m => m.id === configId)
+      if (target) {
+        const o = this.runtimeOverride.get(configId)!
+        target.runtimeStatus = o.state
+        if (o.tool) target.runtimeTool = o.tool
+        this.emit()
+      }
+    })
+    const refreshKnowledge = () => void this.refreshKnowledge().then(() => this.emit())
+    socket.on('librarian:proposal_new', refreshKnowledge)
+    socket.on('librarian:proposal_resolved', refreshKnowledge)
+  }
+
+  private rebuildWorkshops() {
+    const workshops: WorldWorkshop[] = []
+    for (const raw of this.rawAgents) {
+      const type = workshopTypeOf(raw)
+      if (!type) continue
+      workshops.push({
+        agentId: String(raw.id || raw.socketId || ''),
+        name: String(raw.name || raw.id || 'agent'),
+        type,
+        lifecycle: String(raw.lifecycle || 'connected'),
+        aiConfigId: workshopAiConfigId(raw),
+        lastError: raw.lastError ? String(raw.lastError) : null,
+        platform: String(raw.platform || ''),
+        capabilities: Array.isArray(raw.capabilities) ? raw.capabilities.length : 0,
+      })
+    }
+    workshops.sort((a, b) => a.agentId.localeCompare(b.agentId))
+    this.snapshot.workshops = workshops
+    // 成员 ←→ 作坊绑定反查
+    const byConfig = new Map<number, string[]>()
+    for (const w of workshops) {
+      if (w.aiConfigId === null) continue
+      const list = byConfig.get(w.aiConfigId) || []
+      list.push(w.agentId)
+      byConfig.set(w.aiConfigId, list)
+    }
+    for (const m of this.snapshot.members) {
+      m.boundAgentIds = byConfig.get(m.id) || []
+    }
+  }
+
+  private async refreshKnowledge() {
+    const token = getAuthToken()
+    if (!token) return
+    try {
+      const [entries, proposals] = await Promise.all([
+        listEntries(token, { status: 'active' }),
+        listProposals(token),
+      ])
+      this.snapshot.knowledgeActive = entries.items?.length ?? 0
+      this.snapshot.knowledgePending = proposals.items?.length ?? 0
+    } catch {
+      // best-effort：知识计数失败不阻塞世界
+    }
+  }
+
+  private async refresh() {
+    const token = getAuthToken()
+    if (!token) {
+      this.snapshot.authOk = false
+      this.snapshot.lastError = '未登录：请先在主控制台登录，再刷新本页'
+      this.emit()
+      return
+    }
+    try {
+      if (this.snapshot.userId === null) {
+        const user = await me(token)
+        this.snapshot.userId = num((user as Record<string, any>).id, NaN) || null
+      }
+      const [cards, connected] = await Promise.all([listAiCards(), listConnectedAgents()])
+      this.rawAgents = Array.isArray(connected?.agents) ? connected.agents : this.rawAgents
+      this.snapshot.members = (Array.isArray(cards) ? cards : []).map((row): WorldMember => {
+        const id = num(row.id)
+        const override = this.runtimeOverride.get(id)
+        const taskTitle = String(row.current_task_title || row.task_current?.title || '')
+        const taskStatus = String(row.current_task_status || 'idle')
+        return {
+          id,
+          name: String(row.name || `AI-${id}`),
+          role: roleOf(row),
+          generation: Math.max(1, num(row.generation, 1)),
+          tokensUsed: num(row.token_used),
+          tokenLimit: num(row.token_limit),
+          lifecycle: normalizeLifecycle(row.lifecycle_status),
+          enabled: !!row.enabled,
+          runtimeStatus: override?.state ?? normalizeRuntime(row.runtime_status),
+          runtimeTool: override?.tool || String(row.latest_mcp_tool || row.runtime_tool || ''),
+          currentBehavior: String(row.current_behavior || ''),
+          taskTitle,
+          taskStatus,
+          hasActiveTask: taskStatus === 'running' || taskStatus === 'queued' || !!row.task_current,
+          model: String(row.model || ''),
+          projectId: String(row.project_id || ''),
+          projectName: String(row.project_name || ''),
+          platform: String(row.platform || 'Server-Core'),
+          boundAgentIds: [],
+        }
+      })
+      this.rebuildWorkshops()
+      try {
+        const valhalla = await listValhallaEntries(token, { limit: 200 })
+        this.snapshot.valhallaCount = valhalla.items?.length ?? 0
+      } catch {
+        // best-effort
+      }
+      await this.refreshKnowledge()
+      this.snapshot.authOk = true
+      this.snapshot.lastError = ''
+      await this.ensureSocket()
+    } catch (err) {
+      this.snapshot.authOk = false
+      this.snapshot.lastError = err instanceof Error ? err.message : '数据加载失败'
+    }
+    this.emit()
+  }
+}

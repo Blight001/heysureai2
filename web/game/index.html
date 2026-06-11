@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HeySure · Agent 进化与实战区域</title>
+    <style>
+      :root { color-scheme: dark; }
+      html, body { margin: 0; min-height: 100%; }
+      body {
+        background: #23262e;
+        color: #d6dae2;
+        font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      }
+      /* —— 世界模式：全屏 canvas —— */
+      body.world-mode { overflow: hidden; }
+      body.world-mode #app { position: fixed; inset: 0; }
+      body.world-mode #app canvas { image-rendering: pixelated; }
+      /* —— 预览模式（?preview=1）—— */
+      body.preview-mode { padding: 16px 20px 60px; }
+      body.preview-mode h2 {
+        font-size: 13px;
+        color: #9fc6ff;
+        border-bottom: 1px solid #3a3f4c;
+        padding-bottom: 4px;
+        margin: 26px 0 10px;
+      }
+      .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+      .card {
+        background: #2c303a;
+        border: 1px solid #3a3f4c;
+        border-radius: 6px;
+        padding: 6px 8px 8px;
+        text-align: center;
+      }
+      .card-title { font-size: 10px; color: #8a90a0; margin-bottom: 4px; }
+      body.preview-mode canvas {
+        image-rendering: pixelated;
+        background:
+          repeating-conic-gradient(#262a33 0% 25%, #2c303a 0% 50%) 0 0 / 16px 16px;
+        border-radius: 3px;
+      }
+      #loading {
+        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+        color: #8a90a0; font-size: 13px; pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading">世界加载中…</div>
+    <div id="app"></div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>

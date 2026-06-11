@@ -26,7 +26,7 @@
 | 方案 | 优点 | 缺点 |
 | --- | --- | --- |
 | A. 直接做成 Dashboard 内的一个 Vue 组件 | 无通信成本，复用 store | 游戏引擎（Phaser）bundle 大、requestAnimationFrame 常驻，会拖累主控制台性能；崩溃互相影响；无法独立全屏/独立演进 |
-| B. **同源 iframe：同仓库第二个 Vite 入口（推荐）** | 渲染循环/内存隔离，崩了不连累控制台；可独立全屏、独立路由直达（`/world.html`）；**同源** → 直接复用 `localStorage` 里的 auth token 和 `/api`、`/socket.io`，零鉴权改造；同仓库 → 可以 import 复用 `web/src/api/*`、类型、甚至现有弹窗组件 | 跨 iframe 调主控制台功能需要一层 postMessage 桥（协议见 §7.3） |
+| B. **同源 iframe：同仓库第二个 Vite 入口（推荐）** | 渲染循环/内存隔离，崩了不连累控制台；可独立全屏、独立路由直达（`/game/`）；**同源** → 直接复用 `localStorage` 里的 auth token 和 `/api`、`/socket.io`，零鉴权改造；同仓库 → 可以 import 复用 `web/src/api/*`、类型、甚至现有弹窗组件 | 跨 iframe 调主控制台功能需要一层 postMessage 桥（协议见 §7.3） |
 | C. 完全独立部署的站点 | 彻底解耦 | 鉴权、CORS、版本同步全要重做，现阶段纯增负担 |
 
 选 B 的关键理由：**iframe 的所有代价（通信、鉴权）在"同源 + 同仓库"前提下几乎归零**，而隔离收益（性能、崩溃、独立全屏）全部保留。等未来真要独立演进，再平滑升级到 C。
@@ -44,20 +44,19 @@
 ```
 web/
   index.html          ← 现有控制台入口
-  world.html          ← 新增：游戏世界入口（第二个 Vite 入口）
-  src/
-    world/            ← 新增：游戏世界代码
-      main.ts         ← Phaser 启动 + Vue 覆盖层（UI 面板用 Vue 写，挂在 canvas 之上）
-      scenes/         ← Phaser 场景（BootScene / WorldScene / UiScene）
-      actors/         ← 成员精灵：状态机、移动、动画
-      buildings/      ← 建筑精灵：类型、动效、占用状态
-      data/           ← 数据绑定层：复用 src/api/*，订阅 socket，输出响应式世界状态
-      bridge/         ← postMessage 协议（与父页面通信）
-      assets/         ← 像素资产（tileset / spritesheet / 地图 JSON）
+  game/               ← 游戏世界（第二个 Vite 入口，已落地）
+    index.html        ← 入口页
+    src/
+      main.ts         ← 启动脚本（P0 为资产预览；引入 Phaser 后改为场景启动 + Vue 覆盖层）
+      assetManifest.ts← 资产清单：帧布局/动画定义的唯一事实（预览页与 Phaser 共用）
+      scenes/ actors/ buildings/ data/ bridge/  ← 后续：场景 / 成员状态机 / 建筑 / 数据绑定 / postMessage 协议
+    assets/           ← 像素资产（生成器输出，属源码入库；来源登记 CREDITS.md）
+    tools/
+      generate_assets.py ← 像素资产生成器（Pillow，确定性输出）
 ```
 
-- `vite.config.ts` 的 `build.rollupOptions.input` 加 `world.html` 即成多页应用；dev 下 `http://localhost:58150/world.html` 直接调试，prod 下随 `web/dist` 一起被 gateway 静态托管，**后端零部署改动**。
-- Dashboard 侧新增 `WorldPanel.vue`（或顶栏入口），内嵌 `<iframe src="/world.html">` + "新窗口全屏打开"按钮。
+- `vite.config.ts` 的 `build.rollupOptions.input` 已加 `game/index.html` 成多页应用；dev 下 `http://localhost:58150/game/` 直接调试，prod 下随 `web/dist` 一起被 gateway 静态托管，**后端零部署改动**。
+- Dashboard 侧新增 `WorldPanel.vue`（或顶栏入口），内嵌 `<iframe src="/game/">` + "新窗口全屏打开"按钮。
 - **UI 双层结构**：Phaser 只管地图/精灵/动效；悬浮提示、设置抽屉、右键菜单用 **Vue 覆盖层**（absolute 定位在 canvas 上），这样可以直接复用现有组件和 `src/api/*`，避免用游戏引擎画表单。
 
 ---
@@ -102,7 +101,7 @@ web/
 | **英灵殿** | 地图东北山丘（带台阶，体现"飞升"） | ValhallaEntry | 殿内长明火；新条目入殿时金色粒子 | 逝者名册：姓名/代数/遗言摘要/传承链（第 N 代 → N+1 代连线） |
 | **议事厅**（任务大厅） | 图书馆旁 | task system：排程任务、运行中任务总览 | 有任务在排程/运行时门口告示牌翻页动画 | 任务总览（复用 `useTaskManagement` 的数据）+ 快速派任务入口 |
 
-> 用户原话列了"传承知识库、英灵殿、出生地"3 座但要求"4 个建筑"。**第 4 座本方案定为"议事厅"**：它给 task system 一个空间实体（派任务=成员走进议事厅领任务再去作坊，动线完整），同时是核心管理员的"工位"，紧邻图书馆——正好满足"数字社会管理员安排到图书馆附近"。此解释需求方确认，不影响其余设计。
+> 用户原话列了"传承知识库、英灵殿、出生地"3 座但要求"4 个建筑"。**第 4 座定为"议事厅"（已确认）**：它给 task system 一个空间实体（派任务=成员走进议事厅领任务再去作坊，动线完整），同时是核心管理员的"工位"，紧邻图书馆——正好满足"数字社会管理员安排到图书馆附近"。
 
 ### 3.3 作坊（动态建筑 ×n）
 
@@ -217,7 +216,7 @@ web/
 
 ## 7. 技术方案细节
 
-### 7.1 数据绑定层（`src/world/data/`）
+### 7.1 数据绑定层（`game/src/data/`）
 
 - 复用 `web/src/api/*`（同仓库直接 import）+ 自己的 Socket.IO 连接（同源，`io('/')` + `ui:join`，与 `useDashboardData.ts` 同款握手）。
 - 输出一个 `worldStore`（响应式快照）：`members[]`、`workshops[]`、`valhalla[]`、`knowledge{entries,pending}`、`tasks[]`。Phaser 场景 watch 这个 store 做 diff → 驱动各 Actor/建筑状态机。
@@ -258,7 +257,7 @@ web/
 
 - 32×32 瓦片 / 成员精灵 32×48（含 4 方向 × 4 帧行走 + idle/坐/倒地/灵魂态）；建筑 2–4 帧循环动效帧。
 - 统一调色板（建议 32 色内），保证组合皮肤不花。
-- 初版用 CC0 资产打底（Kenney / itch.io CC0 像素包）+ 少量定制（英灵殿、灵魂、四角色配件）；所有资产来源与许可证记录在 `src/world/assets/CREDITS.md`。**产物目录不进 git 的约定不变，但源资产（png/json）属于源码要进仓库。**
+- 初版用 CC0 资产打底（Kenney / itch.io CC0 像素包）+ 少量定制（英灵殿、灵魂、四角色配件）；所有资产来源与许可证记录在 `game/assets/CREDITS.md`。**产物目录不进 git 的约定不变，但源资产（png/json）属于源码要进仓库。**
 
 ---
 
@@ -266,16 +265,16 @@ web/
 
 | 期 | 内容 | 验收标准 |
 | --- | --- | --- |
-| **P0 观察者**（MVP） | world.html 入口 + tilemap 草原 + 4 固定建筑 + 作坊随 `agent:list` 增减 + 成员按 §4.3 锚区站位/游荡 + hover tooltip + token 预警气泡。只读。 | 打开 `/world.html` 能实时反映当前数字社会全貌；dashboard 加 iframe 入口 |
+| **P0 观察者**（MVP） | game 入口 + tilemap 草原 + 4 固定建筑 + 作坊随 `agent:list` 增减 + 成员按 §4.3 锚区站位/游荡 + hover tooltip + token 预警气泡。只读。 | 打开 `/game/` 能实时反映当前数字社会全貌；dashboard 加 iframe 入口 |
 | **P1 操作台** | 点击设置抽屉（成员/建筑面板全套）+ 拖拽绑定 + 皮肤系统（`WorldActorMeta` + 选择器）+ 死亡/传承/派任务/知识沉淀四大演出（轮询触发版） | §6 表格里 5 条业务流全部可在地图内闭环完成 |
 | **P2 实时化与氛围** | `world:event` 服务端直推（演出零延迟）+ `/api/world/snapshot` 聚合 + 昼夜色调 + 音效 + 性能达标（100 成员 60fps） | 拔掉轮询提频也不漏演出 |
-| **P3 进化与实战**（长远） | ① **项目分区**：每个 project 一片围栏领地，成员住进各自项目区，跨项目协作 = 小人串门（`message.send_to_ai` 可视化为信使奔跑）② **进化竞技场实体化**：地图加"竞技场"建筑，`evolution.input/list/review` 的评审流可视化为成员对决/展示 ③ 多人观战（同 user 多端已天然同步；跨 user 只读分享链接）④ **时间轴回放**：基于 `world:event` 落库重放一天的社会活动 ⑤ 桌面 agent 侧小窗（Electron 里嵌同一 world.html 的精简视口） | 按需立项，每项独立成 PR |
+| **P3 进化与实战**（长远） | ① **项目分区**：每个 project 一片围栏领地，成员住进各自项目区，跨项目协作 = 小人串门（`message.send_to_ai` 可视化为信使奔跑）② **进化竞技场实体化**：地图加"竞技场"建筑，`evolution.input/list/review` 的评审流可视化为成员对决/展示 ③ 多人观战（同 user 多端已天然同步；跨 user 只读分享链接）④ **时间轴回放**：基于 `world:event` 落库重放一天的社会活动 ⑤ 桌面 agent 侧小窗（Electron 里嵌同一 game 入口的精简视口） | 按需立项，每项独立成 PR |
 
 ---
 
 ## 9. 风险与开放问题
 
-1. **第 4 座建筑**：本方案取"议事厅"，需求方确认（备选：把"进化竞技场"提前到 P0 当第 4 座，但其玩法在 P3 才有内容，会先空置）。
+1. **第 4 座建筑**：~~待确认~~ 已确认采用"议事厅"（2026-06-11）。
 2. **位置无服务器同步**：确定性种子保证多端"基本一致"而非帧级一致；若未来要严格一致（观战/回放），P3 引入服务端 tick 或事件回放即可，不影响现有设计。
 3. **资产工作量**是 P1 最大不确定项；用"组合皮肤"压资产量，先 CC0 打底。
 4. **lifecycle_status 的 `dead` 触发时机**依赖现有后端逻辑；若实践中发现死亡主要表现为 ValhallaEntry 新增而非状态翻转，演出触发器以 ValhallaEntry 为准（P0 用轮询比对，成本相同）。
@@ -287,8 +286,8 @@ web/
 
 | 改什么 | 位置 |
 | --- | --- |
-| 游戏入口/场景/精灵 | `web/world.html` + `web/src/world/**`（新增） |
-| 多页构建 | `web/vite.config.ts`（rollupOptions.input 加 world.html） |
+| 游戏入口/场景/精灵 | `web/game/**`（已建：index.html / src / assets / tools） |
+| 多页构建 | `web/vite.config.ts`（rollupOptions.input 已加 game/index.html） |
 | Dashboard 嵌入口 | `web/src/components/dashboard/`（新增 WorldPanel.vue / 顶栏按钮） |
 | 皮肤元数据表 | `server/api/models/`（新增 world_meta）+ `api/core/migrations.py` |
 | world REST | `server/gateway/routers/world.py`（新增） |
