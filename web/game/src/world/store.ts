@@ -9,13 +9,20 @@
  *   librarian   = is_librarian===true（/api/ai/cards 已透出该字段）
  */
 import { io, type Socket } from 'socket.io-client'
-import { getAuthToken } from '@/api/http'
+import { get, getAuthToken } from '@/api/http'
 import { me } from '@/api/auth'
 import { listAiCards } from '@/api/ai'
 import { listConnectedAgents } from '@/api/agents'
 import { listValhallaEntries, type ValhallaEntry } from '@/api/valhalla'
 import { listEntries, listProposals, type KnowledgeEntryItem } from '@/api/librarian'
 import { listWorldActorMeta } from '@/api/world'
+
+/** 服务端直推的世界事件（P2）：演出零延迟触发，权威状态仍以 refresh 为准 */
+export interface WorldEvent {
+  type: 'task_started' | 'task_finished' | 'member_inherited' | 'member_completed' | string
+  payload: Record<string, any>
+  timestamp: number
+}
 
 export type MemberRole = 'core_admin' | 'assistant_admin' | 'librarian' | 'member'
 
@@ -147,6 +154,28 @@ export class WorldStore {
     }
   }
 
+  private eventListeners: Array<(ev: WorldEvent) => void> = []
+
+  /** 订阅服务端直推的世界事件（task_started / member_inherited / …） */
+  onEvent(fn: (ev: WorldEvent) => void): () => void {
+    this.eventListeners.push(fn)
+    return () => {
+      this.eventListeners = this.eventListeners.filter(l => l !== fn)
+    }
+  }
+
+  /** 分发一条世界事件并安排一次去抖刷新（也供调试/测试注入） */
+  dispatchEvent(ev: WorldEvent) {
+    for (const fn of this.eventListeners) fn(ev)
+    if (this.eventRefreshTimer !== null) window.clearTimeout(this.eventRefreshTimer)
+    this.eventRefreshTimer = window.setTimeout(() => {
+      this.eventRefreshTimer = null
+      void this.refresh()
+    }, 800)
+  }
+
+  private eventRefreshTimer: number | null = null
+
   private emit() {
     for (const fn of this.listeners) fn(this.snapshot)
   }
@@ -201,6 +230,14 @@ export class WorldStore {
     const refreshKnowledge = () => void this.refreshKnowledge().then(() => this.emit())
     socket.on('librarian:proposal_new', refreshKnowledge)
     socket.on('librarian:proposal_resolved', refreshKnowledge)
+    socket.on('world:event', (data: Record<string, any>) => {
+      if (num(data?.userId, NaN) !== userId) return
+      this.dispatchEvent({
+        type: String(data?.type || ''),
+        payload: (data?.payload && typeof data.payload === 'object' ? data.payload : {}) as Record<string, any>,
+        timestamp: num(data?.timestamp, Date.now() / 1000),
+      })
+    })
   }
 
   private rebuildWorkshops() {
@@ -255,6 +292,86 @@ export class WorldStore {
     return this.refresh()
   }
 
+  private applyMeta(items: Array<{ ai_config_id: number; skin: string }>) {
+    this.skinByConfig.clear()
+    for (const item of items || []) {
+      if (item.skin) this.skinByConfig.set(num(item.ai_config_id), item.skin)
+    }
+  }
+
+  private applyCards(cards: Record<string, any>[]) {
+    this.snapshot.members = (Array.isArray(cards) ? cards : []).map((row): WorldMember => {
+      const id = num(row.id)
+      const override = this.runtimeOverride.get(id)
+      const taskTitle = String(row.current_task_title || row.task_current?.title || '')
+      const taskStatus = String(row.current_task_status || 'idle')
+      return {
+        id,
+        name: String(row.name || `AI-${id}`),
+        role: roleOf(row),
+        generation: Math.max(1, num(row.generation, 1)),
+        tokensUsed: num(row.token_used),
+        tokenLimit: num(row.token_limit),
+        lifecycle: normalizeLifecycle(row.lifecycle_status),
+        enabled: !!row.enabled,
+        runtimeStatus: override?.state ?? normalizeRuntime(row.runtime_status),
+        runtimeTool: override?.tool || String(row.latest_mcp_tool || row.runtime_tool || ''),
+        currentBehavior: String(row.current_behavior || ''),
+        taskTitle,
+        taskStatus,
+        hasActiveTask: taskStatus === 'running' || taskStatus === 'queued' || !!row.task_current,
+        model: String(row.model || ''),
+        projectId: String(row.project_id || ''),
+        projectName: String(row.project_name || ''),
+        platform: String(row.platform || 'Server-Core'),
+        boundAgentIds: [],
+        skin: this.skinByConfig.get(id) || '',
+      }
+    })
+  }
+
+  /** P2 聚合：一次 /api/world/snapshot 拿全量；旧后端无该接口时返回 false 走分域回退 */
+  private async refreshViaSnapshot(): Promise<boolean> {
+    let data: Record<string, any>
+    try {
+      data = await get<Record<string, any>>('/api/world/snapshot', { fallbackError: 'snapshot 加载失败' })
+    } catch {
+      return false
+    }
+    this.applyMeta(Array.isArray(data.actor_meta) ? data.actor_meta : [])
+    this.applyCards(Array.isArray(data.cards) ? data.cards : [])
+    this.rawAgents = Array.isArray(data.agents) ? data.agents : this.rawAgents
+    this.rebuildWorkshops()
+    this.snapshot.valhallaItems = Array.isArray(data.valhalla_items) ? data.valhalla_items : []
+    this.snapshot.valhallaCount = this.snapshot.valhallaItems.length
+    this.snapshot.knowledgeActive = num(data.knowledge_active)
+    this.snapshot.proposals = Array.isArray(data.proposals) ? data.proposals : []
+    this.snapshot.knowledgePending = this.snapshot.proposals.length
+    return true
+  }
+
+  /** 分域回退（兼容未部署 /api/world/snapshot 的后端） */
+  private async refreshViaDomains(token: string) {
+    const [cards, connected] = await Promise.all([listAiCards(), listConnectedAgents()])
+    this.rawAgents = Array.isArray(connected?.agents) ? connected.agents : this.rawAgents
+    try {
+      const meta = await listWorldActorMeta()
+      this.applyMeta(meta.items || [])
+    } catch {
+      // best-effort：旧后端没有该接口时退回默认皮肤
+    }
+    this.applyCards(cards as Record<string, any>[])
+    this.rebuildWorkshops()
+    try {
+      const valhalla = await listValhallaEntries(token, { limit: 200 })
+      this.snapshot.valhallaItems = valhalla.items ?? []
+      this.snapshot.valhallaCount = this.snapshot.valhallaItems.length
+    } catch {
+      // best-effort
+    }
+    await this.refreshKnowledge()
+  }
+
   private async refresh() {
     const token = getAuthToken()
     if (!token) {
@@ -268,54 +385,9 @@ export class WorldStore {
         const user = await me(token)
         this.snapshot.userId = num((user as Record<string, any>).id, NaN) || null
       }
-      const [cards, connected] = await Promise.all([listAiCards(), listConnectedAgents()])
-      this.rawAgents = Array.isArray(connected?.agents) ? connected.agents : this.rawAgents
-      try {
-        const meta = await listWorldActorMeta()
-        this.skinByConfig.clear()
-        for (const item of meta.items || []) {
-          if (item.skin) this.skinByConfig.set(num(item.ai_config_id), item.skin)
-        }
-      } catch {
-        // best-effort：旧后端没有该接口时退回默认皮肤
+      if (!(await this.refreshViaSnapshot())) {
+        await this.refreshViaDomains(token)
       }
-      this.snapshot.members = (Array.isArray(cards) ? cards : []).map((row): WorldMember => {
-        const id = num(row.id)
-        const override = this.runtimeOverride.get(id)
-        const taskTitle = String(row.current_task_title || row.task_current?.title || '')
-        const taskStatus = String(row.current_task_status || 'idle')
-        return {
-          id,
-          name: String(row.name || `AI-${id}`),
-          role: roleOf(row),
-          generation: Math.max(1, num(row.generation, 1)),
-          tokensUsed: num(row.token_used),
-          tokenLimit: num(row.token_limit),
-          lifecycle: normalizeLifecycle(row.lifecycle_status),
-          enabled: !!row.enabled,
-          runtimeStatus: override?.state ?? normalizeRuntime(row.runtime_status),
-          runtimeTool: override?.tool || String(row.latest_mcp_tool || row.runtime_tool || ''),
-          currentBehavior: String(row.current_behavior || ''),
-          taskTitle,
-          taskStatus,
-          hasActiveTask: taskStatus === 'running' || taskStatus === 'queued' || !!row.task_current,
-          model: String(row.model || ''),
-          projectId: String(row.project_id || ''),
-          projectName: String(row.project_name || ''),
-          platform: String(row.platform || 'Server-Core'),
-          boundAgentIds: [],
-          skin: this.skinByConfig.get(id) || '',
-        }
-      })
-      this.rebuildWorkshops()
-      try {
-        const valhalla = await listValhallaEntries(token, { limit: 200 })
-        this.snapshot.valhallaItems = valhalla.items ?? []
-        this.snapshot.valhallaCount = this.snapshot.valhallaItems.length
-      } catch {
-        // best-effort
-      }
-      await this.refreshKnowledge()
       this.snapshot.authOk = true
       this.snapshot.lastError = ''
       await this.ensureSocket()

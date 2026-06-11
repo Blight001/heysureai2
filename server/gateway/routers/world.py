@@ -24,6 +24,64 @@ class ActorMetaUpdate(BaseModel):
     skin: str = ""
 
 
+@router.get("/snapshot")
+async def world_snapshot(
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    """世界页首屏聚合：一次请求替代 6 个并行请求。
+
+    复用各域现有 handler / service（不复制投影逻辑）；任何子项失败都
+    降级为空值，不让单个域拖垮整个世界页。
+    """
+    user = get_current_user(authorization, session)
+
+    from api.services import librarian_service, valhalla_service
+    from .ai_misc_routes import list_ai_cards
+    from .agents import list_connected_agents
+
+    try:
+        cards = await list_ai_cards(session=session, authorization=authorization)
+    except Exception:
+        cards = []
+    try:
+        connected = await list_connected_agents(session=session, authorization=authorization)
+        agents = connected.get("agents", [])
+    except Exception:
+        agents = []
+    try:
+        valhalla_items = valhalla_service.list_entries(user_id=user.id, limit=200)
+    except Exception:
+        valhalla_items = []
+    try:
+        knowledge_active = len(librarian_service.list_topics(user_id=user.id, status="active"))
+    except Exception:
+        knowledge_active = 0
+    try:
+        proposals = librarian_service.list_pending_for_review(user_id=user.id)
+    except Exception:
+        proposals = []
+    meta_rows = session.exec(
+        select(WorldActorMeta).where(WorldActorMeta.user_id == user.id)
+    ).all()
+    actor_meta = []
+    for row in meta_rows:
+        try:
+            skin = str(json.loads(row.skin_json or "{}").get("skin") or "")
+        except (ValueError, TypeError):
+            skin = ""
+        actor_meta.append({"ai_config_id": row.ai_config_id, "skin": skin})
+
+    return {
+        "cards": cards,
+        "agents": agents,
+        "valhalla_items": valhalla_items,
+        "knowledge_active": knowledge_active,
+        "proposals": proposals,
+        "actor_meta": actor_meta,
+    }
+
+
 @router.get("/actors/meta")
 async def list_actor_meta(
     session: Session = Depends(get_session),

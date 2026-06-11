@@ -221,6 +221,15 @@ def _start_task_run(
     job.updated_at = time.time()
     session.add(job)
     session.commit()
+    try:
+        from api.services.world_events import emit_world_event
+        emit_world_event(cfg.user_id, "task_started", {
+            "ai_config_id": cfg.id,
+            "job_id": job.job_id,
+            "title": str(job.title or ""),
+        })
+    except Exception:
+        logger.exception("emit task_started world event failed")
     from api.core.settings import settings
     from ai_runtime.worker import notify_queue
 

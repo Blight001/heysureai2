@@ -3,7 +3,7 @@
 > 设计方案见 [`doc/Agent进化与实战区域设计方案.md`](../../doc/Agent进化与实战区域设计方案.md)。
 > 这是 `web/` 的**第二个 Vite 入口**：同源 iframe 方案，与主控制台共享鉴权、API 封装与 Socket.IO。
 
-## 当前进度（P0 观察者 + P1 操作台已完成）
+## 当前进度（P0 观察者 + P1 操作台 + P2 实时化已完成）
 
 - [x] 第二入口接入（`game/index.html`，构建配置见 `web/vite.config.ts` 的 `rollupOptions.input`）
 - [x] 像素资产生成器 + 全套基础资产（地形 / 4 固定建筑 / 2 类作坊 / 7 套角色 / 灵魂 / 表情 / 特效）
@@ -19,15 +19,23 @@
 - [x] P1 皮肤持久化：`WorldActorMeta` 表（Alembic 迁移）+ `/api/world/actors/*/meta` + 抽屉换肤
 - [x] P1 演出（轮询触发版）：领任务途经议事厅 / 知识沉淀图书管理员迎卷轴 / 传承重生火花
 - [x] postMessage 桥：抽屉"打开对话" → 父页面关闭覆盖层并打开该成员聊天弹窗
-- [ ] P2：world:event 服务端直推 / snapshot 聚合接口 / 昼夜与音效 / 性能压测
+- [x] P2 `world:event` 服务端直推：valhalla 入殿（传承/功成）、任务启动/完成四类事件
+      经 socket 直达世界页，演出零延迟（钩子在 `valhalla_service` / `chat_scheduler` / `tasks.py`，
+      共享发射器 `api/services/world_events.py`，全部 best-effort）
+- [x] P2 `/api/world/snapshot` 聚合接口：首屏 1 个请求替代 6 个；旧后端自动分域回退
+- [x] P2 昼夜色调（按本地时间，`?hour=N` 可调试）+ 8-bit 音效（`tools/generate_sfx.py`
+      生成 5 个 WAV；左下角静音开关，localStorage 持久化）
+- [x] P2 性能：离屏成员不跑动画、depth 仅在位移时更新；100 成员冒烟通过
+- [ ] P3：项目分区领地 / 信使奔跑（message.send_to_ai 可视化）/ 进化竞技场 / 时间轴回放
 
 ## 访问
 
 ```bash
-cd web && npm run dev
+cd web && npm install && npm run dev   # 拉取后先 npm install（游戏世界依赖 phaser，lock 文件不入库）
 # 主控制台  http://localhost:58150/
 # 游戏世界  http://localhost:58150/game/        （需先在主控制台登录）
 # 资产预览  http://localhost:58150/game/?preview=1
+# 调试夜晚  http://localhost:58150/game/?hour=22
 ```
 
 数据来自现有 REST 轮询（8s）+ Socket.IO 实时事件；**所有写操作 1:1 走现有接口**
@@ -57,6 +65,7 @@ game/
     CREDITS.md      ← 资产来源说明
   tools/
     generate_assets.py ← 像素资产生成器（Pillow）
+    generate_sfx.py    ← 8-bit 音效生成器（标准库 wave，输出 assets/sfx/*.wav）
 ```
 
 ## 重新生成资产

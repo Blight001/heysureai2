@@ -83,6 +83,14 @@ export class MemberActor extends Phaser.GameObjects.Container {
     return this.dragging
   }
 
+  private isOnScreen(): boolean {
+    const view = this.scene.cameras.main.worldView
+    return (
+      this.x > view.x - 64 && this.x < view.right + 64 &&
+      this.y > view.y - 64 && this.y < view.bottom + 64
+    )
+  }
+
   setMember(member: WorldMember, skin: string) {
     this.member = member
     if (skin !== this.skin) {
@@ -125,10 +133,20 @@ export class MemberActor extends Phaser.GameObjects.Container {
     }
   }
 
+  private lastDepthY = -1
+
+  /** y 变化超过 1px 才更新 depth，避免每帧触发显示列表重排序 */
+  private syncDepth() {
+    if (Math.abs(this.y - this.lastDepthY) > 1) {
+      this.lastDepthY = this.y
+      this.setDepth(this.y)
+    }
+  }
+
   /** 每帧推进；返回 false 表示已销毁 */
   tick(time: number, deltaMs: number): boolean {
     if (this.dying || this.dragging) {
-      this.setDepth(this.y)
+      this.syncDepth()
       return true
     }
     if (!this.member.enabled) return true
@@ -153,17 +171,23 @@ export class MemberActor extends Phaser.GameObjects.Container {
         const step = (WALK_SPEED * deltaMs) / 1000
         this.x += (dx / dist) * Math.min(step, dist)
         this.y += (dy / dist) * Math.min(step, dist)
-        const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
-        const animKey = `${this.skin}:walk_${dir}`
-        if (this.sprite.anims.currentAnim?.key !== animKey || !this.sprite.anims.isPlaying) {
-          this.sprite.play(animKey)
+        // 离屏裁剪：视口外只移动坐标不跑动画（100+ 成员时省 CPU）
+        if (this.isOnScreen()) {
+          const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up'
+          const animKey = `${this.skin}:walk_${dir}`
+          if (this.sprite.anims.currentAnim?.key !== animKey || !this.sprite.anims.isPlaying) {
+            this.sprite.play(animKey)
+          }
+        } else if (this.sprite.anims.isPlaying) {
+          this.sprite.stop()
+          this.sprite.setFrame(0)
         }
       }
     } else if (time >= this.idleUntil) {
       // 区内游荡：挑下一个点
       this.target = clampToWorld(randomPointIn(this.zone))
     }
-    this.setDepth(this.y)
+    this.syncDepth()
     return true
   }
 

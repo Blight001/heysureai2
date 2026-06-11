@@ -360,6 +360,7 @@ def write_inherit(
             session.commit()
             session.refresh(entry)
             kb_store.write_valhalla_file(user_id, kb_store._row_valhalla_dict(entry))  # 镜像成文件
+            _emit_valhalla_event("member_inherited", entry)
             return entry
     except Exception as exc:
         # best-effort：英灵殿写失败不应阻塞主任务
@@ -431,10 +432,27 @@ def write_complete(
             session.commit()
             session.refresh(entry)
             kb_store.write_valhalla_file(user_id, kb_store._row_valhalla_dict(entry))  # 镜像成文件
+            _emit_valhalla_event("member_completed", entry)
             return entry
     except Exception as exc:
         logger.exception(f"error: {exc}")
         return None
+
+
+def _emit_valhalla_event(event_type: str, entry: ValhallaEntry) -> None:
+    """入殿事件直推（世界页演出用）。best-effort，失败不影响归档。"""
+    try:
+        from .world_events import emit_world_event
+
+        emit_world_event(entry.user_id, event_type, {
+            "ai_config_id": entry.ai_config_id,
+            "ai_name": entry.ai_name,
+            "generation": entry.generation,
+            "job_title": entry.job_title,
+            "kind": entry.kind,
+        })
+    except Exception:
+        logger.exception("emit valhalla world event failed")
 
 
 # ---------- 读取接口 ----------
