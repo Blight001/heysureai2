@@ -695,19 +695,36 @@ def _migrate_user_ui_plain_text_output_enabled() -> None:
 
 
 def _migrate_user_email() -> None:
-    """Add the optional ``email`` column used by email-code register/login."""
+    """Add the optional ``email`` column used by email-code register/login.
+
+    先用 inspector 探测列是否存在再 ALTER，不依赖 ``IF NOT EXISTS``：
+    部分 Postgres 兼容数据库（openGauss / Kingbase 等）对该语法支持不全，
+    且列已存在时重复 ALTER 会让所有进程启动失败。
+    """
+    from sqlalchemy import inspect as sa_inspect
+
     from ..database import engine
 
-    if database_dialect() == "sqlite":
-        with engine.begin() as conn:
-            result = conn.exec_driver_sql("PRAGMA table_info(user)")
-            existing = {row[1] for row in result.fetchall()}
-            if "email" not in existing:
-                conn.exec_driver_sql("ALTER TABLE user ADD COLUMN email VARCHAR")
+    insp = sa_inspect(engine)
+    if "user" not in insp.get_table_names():
+        return
+    if any(col["name"] == "email" for col in insp.get_columns("user")):
         return
 
-    with engine.begin() as conn:
-        conn.exec_driver_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS email VARCHAR')
+    statement = (
+        "ALTER TABLE user ADD COLUMN email VARCHAR"
+        if database_dialect() == "sqlite"
+        else 'ALTER TABLE "user" ADD COLUMN email VARCHAR'
+    )
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql(statement)
+    except Exception:
+        # 并发启动等场景下列可能刚被其它进程加上：复查后列已存在则放行。
+        insp = sa_inspect(engine)
+        if not any(col["name"] == "email" for col in insp.get_columns("user")):
+            raise
+        logger.info("user.email already present; skipping duplicate ALTER")
 
 
 def _migrate_endpointagentpresence_tool_defs() -> None:
