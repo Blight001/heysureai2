@@ -762,6 +762,24 @@ def gen_emotes():
     save_strip(icons, "emotes.png", scale=1)
 
 
+def gen_envelope():
+    """信封（AI 互发消息的信使精灵）。"""
+    c = C(12, 9)
+    c.rect(1, 1, 10, 7, PAPER)
+    c.outline(1, 1, 10, 7, OUT)
+    # 封口折线
+    for i in range(5):
+        c.px(1 + i, 1 + i * 0.8, (200, 188, 160, 255))
+        c.px(10 - i, 1 + i * 0.8, (200, 188, 160, 255))
+    c.px(5, 4, (200, 188, 160, 255))
+    c.px(6, 4, (200, 188, 160, 255))
+    # 红色火漆点
+    c.px(5, 5, (200, 80, 80, 255))
+    c.px(6, 5, (200, 80, 80, 255))
+    c.add_silhouette_outline()
+    save_strip([c], "envelope.png")
+
+
 def gen_effects():
     # 烟雾 4 帧：扩散 + 淡出
     frames = []
@@ -810,6 +828,7 @@ def main():
     gen_characters()
     gen_soul()
     gen_emotes()
+    gen_envelope()
     gen_effects()
     print("完成。")
 

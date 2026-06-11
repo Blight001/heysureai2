@@ -184,7 +184,54 @@ export class WorldScene extends Phaser.Scene {
         this.playSfx('bell', 0.35)
         break
       }
+      case 'ai_message': {
+        const fromId = Number(ev.payload?.from_ai_config_id)
+        const toId = Number(ev.payload?.to_ai_config_id)
+        this.playMessenger(
+          Number.isFinite(fromId) ? this.actors.get(fromId) : undefined,
+          Number.isFinite(toId) ? this.actors.get(toId) : undefined,
+          String(ev.payload?.kind || 'message'),
+        )
+        break
+      }
     }
+  }
+
+  /** AI 互发消息：信封从发信人飞向收信人（弧线），双方头顶表情 + 音效 */
+  private playMessenger(from: MemberActor | undefined, to: MemberActor | undefined, kind: string) {
+    if (!from || !to || from === to) return
+    from.flashEmote('scroll', 1500)
+    const envelope = this.add.image(from.x, from.y - 36, 'envelope.png', 0)
+    envelope.setDepth(99500)
+    this.playSfx('ui_click', 0.3)
+    const sx = from.x
+    const sy = from.y - 36
+    const dist = Phaser.Math.Distance.Between(sx, sy, to.x, to.y - 36)
+    const duration = Phaser.Math.Clamp(dist * 1.8, 700, 2600)
+    const arc = Phaser.Math.Clamp(dist * 0.25, 40, 160)
+    this.tweens.addCounter({
+      from: 0,
+      to: 1,
+      duration,
+      ease: 'Sine.easeInOut',
+      onUpdate: tween => {
+        // 收信人可能在走动：每帧重取终点，信会"追着人飞"
+        const t = tween.getValue() ?? 0
+        const ex = to.x
+        const ey = to.y - 36
+        envelope.x = sx + (ex - sx) * t
+        envelope.y = sy + (ey - sy) * t - Math.sin(Math.PI * t) * arc
+        envelope.setFlipX(ex < sx)
+      },
+      onComplete: () => {
+        envelope.destroy()
+        if (to.scene) {
+          to.flashEmote(kind === 'reply' ? 'check' : 'alert', 2200)
+          this.burstSparkle(to.x, to.y - 40)
+        }
+        this.playSfx('chime', 0.35)
+      },
+    })
   }
 
   private createDrawer() {

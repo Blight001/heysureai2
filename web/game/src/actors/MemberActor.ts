@@ -119,6 +119,7 @@ export class MemberActor extends Phaser.GameObjects.Container {
   }
 
   private refreshEmote() {
+    if (Date.now() < this.emoteOverrideUntil) return
     const m = this.member
     let kind: EmoteKind = null
     if (!m.enabled) kind = 'zzz'
@@ -131,6 +132,19 @@ export class MemberActor extends Phaser.GameObjects.Container {
       this.emote.setFrame(EMOTES[kind])
       this.emote.setVisible(true)
     }
+  }
+
+  private emoteOverrideUntil = 0
+
+  /** 临时盖一个表情（信使送达/收信等演出），到期恢复状态表情 */
+  flashEmote(kind: keyof typeof EMOTES, durationMs = 2200) {
+    if (this.dying) return
+    this.emoteOverrideUntil = Date.now() + durationMs
+    this.emote.setFrame(EMOTES[kind])
+    this.emote.setVisible(true)
+    this.scene.time.delayedCall(durationMs + 30, () => {
+      if (this.scene) this.refreshEmote()
+    })
   }
 
   private lastDepthY = -1
