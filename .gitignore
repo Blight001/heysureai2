@@ -45,6 +45,9 @@ web/dist/
 web/.vite/
 web/tsconfig.tsbuildinfo
 web/tsconfig.node.tsbuildinfo
+# vue-tsc -b 对 tsconfig.node.json(composite) 的输出
+web/vite.config.js
+web/vite.config.d.ts
 
 # Win agent (Electron) build output
 agent/windows/dist/

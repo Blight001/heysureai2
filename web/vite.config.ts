@@ -14,6 +14,16 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  build: {
+    rollupOptions: {
+      input: {
+        // 主控制台
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        // Agent 进化与实战区域（游戏世界，独立入口，经 iframe 嵌入或直开 /game/）
+        game: fileURLToPath(new URL('./game/index.html', import.meta.url)),
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     port: 58150,
