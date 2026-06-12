@@ -15,7 +15,7 @@ import { listAiCards } from '@/api/ai'
 import { listConnectedAgents } from '@/api/agents'
 import { listValhallaEntries, type ValhallaEntry } from '@/api/valhalla'
 import { listEntries, listProposals, type KnowledgeEntryItem } from '@/api/librarian'
-import { listWorldActorMeta } from '@/api/world'
+import { listWorldActorMeta, type WorldActorAppearance } from '@/api/world'
 
 /** 服务端直推的世界事件（P2）：演出零延迟触发，权威状态仍以 refresh 为准 */
 export interface WorldEvent {
@@ -49,6 +49,12 @@ export interface WorldMember {
   boundAgentIds: string[]
   /** 用户在世界里指定的皮肤（WorldActorMeta），空 = 默认哈希皮肤 */
   skin: string
+  /** 外观调色 #RRGGBB（WorldActorMeta），空 = 不调色 */
+  tint: string
+  /** 体型缩放（WorldActorMeta），1 = 默认 */
+  scale: number
+  /** 光环颜色 #RRGGBB（WorldActorMeta），空 = 无光环 */
+  aura: string
 }
 
 export interface WorldWorkshop {
@@ -130,7 +136,7 @@ export class WorldStore {
   private pollTimer: number | null = null
   private rawAgents: Record<string, any>[] = []
   private runtimeOverride = new Map<number, { state: WorldMember['runtimeStatus']; tool: string }>()
-  private skinByConfig = new Map<number, string>()
+  private metaByConfig = new Map<number, WorldActorAppearance>()
 
   snapshot: WorldSnapshot = {
     authOk: false,
@@ -292,10 +298,22 @@ export class WorldStore {
     return this.refresh()
   }
 
-  private applyMeta(items: Array<{ ai_config_id: number; skin: string }>) {
-    this.skinByConfig.clear()
+  private applyMeta(items: Array<Record<string, any>>) {
+    this.metaByConfig.clear()
+    const hex = /^#[0-9a-fA-F]{6}$/
     for (const item of items || []) {
-      if (item.skin) this.skinByConfig.set(num(item.ai_config_id), item.skin)
+      const tint = String(item.tint || '')
+      const aura = String(item.aura || '')
+      const scale = num(item.scale, 1)
+      const meta: WorldActorAppearance = {
+        skin: String(item.skin || ''),
+        tint: hex.test(tint) ? tint : '',
+        scale: scale >= 0.7 && scale <= 1.4 ? scale : 1,
+        aura: hex.test(aura) ? aura : '',
+      }
+      if (meta.skin || meta.tint || meta.aura || meta.scale !== 1) {
+        this.metaByConfig.set(num(item.ai_config_id), meta)
+      }
     }
   }
 
@@ -305,6 +323,7 @@ export class WorldStore {
       const override = this.runtimeOverride.get(id)
       const taskTitle = String(row.current_task_title || row.task_current?.title || '')
       const taskStatus = String(row.current_task_status || 'idle')
+      const meta = this.metaByConfig.get(id)
       return {
         id,
         name: String(row.name || `AI-${id}`),
@@ -325,7 +344,10 @@ export class WorldStore {
         projectName: String(row.project_name || ''),
         platform: String(row.platform || 'Server-Core'),
         boundAgentIds: [],
-        skin: this.skinByConfig.get(id) || '',
+        skin: meta?.skin || '',
+        tint: meta?.tint || '',
+        scale: meta?.scale ?? 1,
+        aura: meta?.aura || '',
       }
     })
   }

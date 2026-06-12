@@ -19,10 +19,25 @@ const SKIN_LABELS: Record<string, string> = {
   'char_member_slate.png': '灰',
 }
 
+/** 调色预设（乘法 tint，浅色像素变化最明显） */
+const TINT_PRESETS = ['#ff9aa2', '#ffd166', '#9be564', '#6ec5ff', '#c69aff', '#ff7b54', '#9aa5b5']
+/** 光环颜色预设（ADD 混合发光） */
+const AURA_PRESETS = ['#ffd700', '#7fd8ff', '#c69aff', '#9bff8a', '#ff8ad8']
+
+/** 外观草稿：与 WorldActorMeta 字段一一对应 */
+export interface AppearanceDraft {
+  skin: string
+  tint: string
+  scale: number
+  aura: string
+}
+
 export interface DrawerActions {
   toggleRun(aiConfigId: number): Promise<void>
   assignAgent(agentId: string, aiConfigId: number | null): Promise<void>
-  setSkin(aiConfigId: number, skin: string): Promise<void>
+  setAppearance(aiConfigId: number, meta: AppearanceDraft): Promise<void>
+  /** 调参时所见即所得（仅本地，不落库；下次快照刷新自动回到已保存值） */
+  previewAppearance(aiConfigId: number, meta: AppearanceDraft): void
   createTask(aiConfigId: number, title: string, instruction: string): Promise<void>
   approveProposal(memoryId: string): Promise<void>
   rejectProposal(memoryId: string): Promise<void>
@@ -86,6 +101,22 @@ export class Drawer {
       .gw-drawer .d-item.click { cursor: pointer; }
       .gw-drawer .d-item.click:hover { border-color: #5a6175; }
       .gw-drawer .d-dim { color: #8a90a0; }
+      .gw-drawer .d-sub { color: #8a90a0; margin: 6px 0 2px; }
+      .gw-drawer .d-swatches { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+      .gw-drawer button.d-swatch {
+        cursor: pointer; width: 22px; height: 22px; padding: 0;
+        border: 2px solid #4a4f5e; border-radius: 4px;
+      }
+      .gw-drawer button.d-swatch.sel { border-color: #f0c060; }
+      .gw-drawer button.d-swatch.none {
+        background: #23262e; color: #8a90a0; font: 10px/1 inherit; width: auto; padding: 0 6px; height: 22px;
+      }
+      .gw-drawer input.d-color {
+        width: 28px; height: 22px; padding: 0; border: 2px solid #4a4f5e; border-radius: 4px;
+        background: #23262e; cursor: pointer;
+      }
+      .gw-drawer input.d-color.sel { border-color: #f0c060; }
+      .gw-drawer input.d-range { width: 100%; accent-color: #f0c060; }
     `
     document.head.appendChild(style)
 
@@ -287,27 +318,183 @@ export class Drawer {
     task.appendChild(instrTa)
     task.appendChild(sendBtn)
 
-    // 皮肤（仅普通成员可换）
+    // 外观自定义：皮肤（仅普通成员）+ 调色 / 体型 / 光环（所有角色）
+    this.appearanceSection(m)
+  }
+
+  /** 外观自定义面板：改动即在地图上实时预览，点"保存外观"才落库 */
+  private appearanceSection(m: WorldMember) {
+    const sec = this.section('外观自定义')
+    const fb = this.feedback(sec)
+    const draft: AppearanceDraft = {
+      skin: m.skin,
+      tint: m.tint,
+      scale: m.scale > 0 ? m.scale : 1,
+      aura: m.aura,
+    }
+    const preview = () => this.actions.previewAppearance(m.id, { ...draft })
+
+    const subtitle = (text: string) => {
+      const t = document.createElement('div')
+      t.className = 'd-sub'
+      t.textContent = text
+      sec.appendChild(t)
+    }
+
+    // ---- 皮肤（特殊角色皮肤固定，保证地图可读性） ----
+    let refreshSkinSel: () => void = () => undefined
     if (m.role === 'member') {
-      const skin = this.section('皮肤')
-      const skinFb = this.feedback(skin)
-      for (const key of MEMBER_SKINS) {
+      subtitle('皮肤')
+      const skinBtns: Array<[HTMLButtonElement, string]> = []
+      const row = document.createElement('div')
+      row.className = 'd-swatches'
+      for (const key of ['', ...MEMBER_SKINS]) {
         const b = document.createElement('button')
         b.type = 'button'
         b.className = 'd-btn'
-        b.textContent = SKIN_LABELS[key] || key
-        if (m.skin === key) b.style.borderColor = '#f0c060'
-        b.onclick = () => void this.runAction(b, skinFb, () => this.actions.setSkin(m.id, key), '皮肤已更新')
-        skin.appendChild(b)
+        b.style.margin = '0'
+        b.textContent = key === '' ? '默认' : SKIN_LABELS[key] || key
+        b.onclick = () => {
+          draft.skin = key
+          refreshSkinSel()
+          preview()
+        }
+        skinBtns.push([b, key])
+        row.appendChild(b)
       }
-      const reset = document.createElement('button')
-      reset.type = 'button'
-      reset.className = 'd-btn'
-      reset.textContent = '默认'
-      if (!m.skin) reset.style.borderColor = '#f0c060'
-      reset.onclick = () => void this.runAction(reset, skinFb, () => this.actions.setSkin(m.id, ''), '已恢复默认')
-      skin.appendChild(reset)
+      refreshSkinSel = () => {
+        for (const [b, key] of skinBtns) b.style.borderColor = draft.skin === key ? '#f0c060' : ''
+      }
+      refreshSkinSel()
+      sec.appendChild(row)
     }
+
+    // ---- 调色 / 光环：共用色板控件 ----
+    const colorRow = (
+      label: string,
+      presets: string[],
+      getValue: () => string,
+      setValue: (v: string) => void,
+    ): (() => void) => {
+      subtitle(label)
+      const row = document.createElement('div')
+      row.className = 'd-swatches'
+      const swatches: Array<[HTMLButtonElement, string]> = []
+      const none = document.createElement('button')
+      none.type = 'button'
+      none.className = 'd-swatch none'
+      none.textContent = '无'
+      none.onclick = () => {
+        setValue('')
+        refreshSel()
+        preview()
+      }
+      row.appendChild(none)
+      swatches.push([none, ''])
+      for (const color of presets) {
+        const b = document.createElement('button')
+        b.type = 'button'
+        b.className = 'd-swatch'
+        b.style.background = color
+        b.title = color
+        b.onclick = () => {
+          setValue(color)
+          refreshSel()
+          preview()
+        }
+        row.appendChild(b)
+        swatches.push([b, color])
+      }
+      // 自定义取色器：选中任意颜色
+      const custom = document.createElement('input')
+      custom.type = 'color'
+      custom.className = 'd-color'
+      custom.title = '自定义颜色'
+      custom.value = /^#[0-9a-fA-F]{6}$/.test(getValue()) ? getValue() : '#ffffff'
+      custom.oninput = () => {
+        setValue(custom.value)
+        refreshSel()
+        preview()
+      }
+      row.appendChild(custom)
+      const refreshSel = () => {
+        const v = getValue()
+        let hit = false
+        for (const [b, color] of swatches) {
+          const sel = v === color
+          b.classList.toggle('sel', sel)
+          hit = hit || sel
+        }
+        custom.classList.toggle('sel', !hit && !!v)
+        if (/^#[0-9a-fA-F]{6}$/.test(v)) custom.value = v
+      }
+      refreshSel()
+      sec.appendChild(row)
+      return refreshSel
+    }
+
+    const refreshTintSel = colorRow('调色（整体色调）', TINT_PRESETS, () => draft.tint, v => (draft.tint = v))
+    const refreshAuraSel = colorRow('光环（脚下发光）', AURA_PRESETS, () => draft.aura, v => (draft.aura = v))
+
+    // ---- 体型 ----
+    subtitle('体型')
+    const scaleWrap = document.createElement('div')
+    scaleWrap.className = 'd-swatches'
+    const slider = document.createElement('input')
+    slider.type = 'range'
+    slider.className = 'd-range'
+    slider.min = '0.7'
+    slider.max = '1.4'
+    slider.step = '0.05'
+    slider.value = String(draft.scale)
+    slider.style.flex = '1'
+    const scaleVal = document.createElement('span')
+    scaleVal.className = 'd-dim'
+    scaleVal.style.minWidth = '40px'
+    const refreshScale = () => (scaleVal.textContent = `${draft.scale.toFixed(2)}x`)
+    refreshScale()
+    slider.oninput = () => {
+      draft.scale = Number(slider.value) || 1
+      refreshScale()
+      preview()
+    }
+    scaleWrap.appendChild(slider)
+    scaleWrap.appendChild(scaleVal)
+    sec.appendChild(scaleWrap)
+
+    // ---- 保存 / 恢复默认 ----
+    const btnRow = document.createElement('div')
+    btnRow.style.marginTop = '8px'
+    const save = document.createElement('button')
+    save.type = 'button'
+    save.className = 'd-btn ok'
+    save.textContent = '保存外观'
+    save.onclick = () =>
+      void this.runAction(save, fb, () => this.actions.setAppearance(m.id, { ...draft }), '外观已保存')
+    const reset = document.createElement('button')
+    reset.type = 'button'
+    reset.className = 'd-btn'
+    reset.textContent = '恢复默认'
+    reset.onclick = () => {
+      draft.skin = ''
+      draft.tint = ''
+      draft.scale = 1
+      draft.aura = ''
+      refreshSkinSel()
+      refreshTintSel()
+      refreshAuraSel()
+      slider.value = '1'
+      refreshScale()
+      preview()
+      void this.runAction(reset, fb, () => this.actions.setAppearance(m.id, { ...draft }), '已恢复默认')
+    }
+    btnRow.appendChild(save)
+    btnRow.appendChild(reset)
+    sec.appendChild(btnRow)
+    const hint = document.createElement('div')
+    hint.className = 'd-dim'
+    hint.textContent = '改动会立即在地图上预览，保存后永久生效'
+    sec.appendChild(hint)
   }
 
   // ---------------------------------------------------------------- 作坊
