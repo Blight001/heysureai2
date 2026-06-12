@@ -219,13 +219,26 @@ def register_agent_socket_events():
                     tool_defs=agent_endpoint_tool_defs(agents[sid]),
                 )
                 if owner_user_id is not None:
-                    reconcile_scope_with_capabilities(
+                    reconciled = reconcile_scope_with_capabilities(
                         owner_user_id,
                         agent_id,
                         capabilities,
                         ai_config_id=claimed_ai,
                         agent_type=atype,
                     )
+                    # 知识工坊：工具范围默认放开（绑定才是访问门槛，且其
+                    # capabilities 被服务端限制在 librarian./evolution. 域内）；
+                    # 桌面/浏览器 agent 保持默认关闭，由操作员显式开权限。
+                    if atype == "workshop" and reconciled is None:
+                        from api.agent_mcp_permissions import set_scope
+
+                        set_scope(
+                            owner_user_id,
+                            agent_id,
+                            capabilities,
+                            ai_config_id=None,
+                            agent_type=atype,
+                        )
         except Exception:
             logger.exception('Failed to record endpoint agent presence: %s', agent_id)
         # Include the server-side bound AI so the device can show whether an AI

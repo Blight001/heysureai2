@@ -168,7 +168,8 @@ def online_agents_for_config(user_id, ai_config_id) -> List[Tuple[str, str, Set[
 
 def online_tool_names() -> Tuple[Set[str], Set[str]]:
     """``(desktop_tools, browser_tools)`` advertised by all online agents — used
-    for context-free tool classification."""
+    for context-free tool classification. 工坊（workshop）agent 的工具单独走
+    :func:`online_workshop_agents_for_user`，不混入桌面桶。"""
     desktop: Set[str] = set()
     browser: Set[str] = set()
     with Session(engine) as session:
@@ -184,11 +185,39 @@ def online_tool_names() -> Tuple[Set[str], Set[str]]:
                 continue
             seen_agents.add(agent_id)
             caps = _decode(row)
-            if str(row.agent_type or "").strip() == "browser":
+            agent_type = str(row.agent_type or "").strip()
+            if agent_type == "workshop":
+                continue
+            if agent_type == "browser":
                 browser |= caps
             else:
                 desktop |= caps
     return desktop, browser
+
+
+def online_workshop_agents_for_user(user_id) -> List[Tuple[str, Set[str]]]:
+    """``(agent_id, capabilities)`` for every online workshop agent of a user.
+    绑定关系（哪些 AI 可用）由 ``api.workshop_bindings`` 决定，这里只回答
+    "谁在线、各自上报了什么工具"。"""
+    uid = _int(user_id)
+    out: List[Tuple[str, Set[str]]] = []
+    with Session(engine) as session:
+        rows = session.exec(
+            select(EndpointAgentPresence).where(
+                EndpointAgentPresence.agent_type == "workshop",
+                EndpointAgentPresence.online == True,  # noqa: E712
+            ).order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
+        ).all()
+        seen_agents: Set[str] = set()
+        for row in rows:
+            agent_id = str(row.agent_id or "").strip()
+            if not agent_id or agent_id in seen_agents:
+                continue
+            seen_agents.add(agent_id)
+            if uid and row.user_id and row.user_id != uid:
+                continue
+            out.append((agent_id, _decode(row)))
+    return out
 
 
 def online_tool_defs() -> Dict[str, dict]:

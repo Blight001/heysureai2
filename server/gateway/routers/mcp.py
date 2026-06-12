@@ -93,7 +93,11 @@ async def list_mcp_tools(
             "description": str(spec.get("description") or "").strip(),
             "inputSchema": spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {},
             "destructive": True,
-            "mcpSource": "browser" if str(name).startswith(("browser_", "card_")) else "desktop",
+            "mcpSource": (
+                "workshop" if str(name).startswith(("librarian.", "evolution."))
+                else "browser" if str(name).startswith(("browser_", "card_"))
+                else "desktop"
+            ),
         }
         for name, spec in sorted(endpoint_defs.items())
     ]
@@ -123,7 +127,11 @@ async def list_mcp_tools(
                 "description": "",
                 "inputSchema": {},
                 "destructive": is_endpoint_agent_tool(name),
-                "mcpSource": "browser" if str(name).startswith(("browser_", "card_")) else ("desktop" if is_endpoint_agent_tool(name) else "server"),
+                "mcpSource": (
+                    "workshop" if str(name).startswith(("librarian.", "evolution."))
+                    else "browser" if str(name).startswith(("browser_", "card_"))
+                    else ("desktop" if is_endpoint_agent_tool(name) else "server")
+                ),
                 "allowedForCurrentAi": True,
             })
 

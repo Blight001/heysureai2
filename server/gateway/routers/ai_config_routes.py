@@ -113,9 +113,13 @@ async def create_ai_config(
 ):
     user = get_current_user(authorization, session)
     switch_key = body.switch_key or f"assistant_{int(time.time() * 1000)}"
-    role = _normalize_ai_role(body.ai_role)
+    # 角色扁平化：不再支持新建辅助管理员——注册时系统已默认创建一个
+    # （ensure_default_configs），其余 AI 一律按数字成员对待。请求里传
+    # assistant_admin 会被静默归一为 digital_member；已存在的辅助管理员
+    # 不受影响（更新路径仍保留其角色）。
+    role = "digital_member"
     member_role = _normalize_digital_member_role(body.digital_member_role)
-    token_limit = 0 if role == "assistant_admin" else (body.token_limit or 10000)
+    token_limit = body.token_limit or 10000
     bot_channel = _normalize_bot_channel(body.bot_channel)
     model_fields = _resolve_config_model_fields(user, body.model_preset_id, body.model)
     raw_mcp_tools = body.mcp_tools or AssistantAIConfig.model_fields["mcp_tools"].default
@@ -263,6 +267,10 @@ async def update_ai_config(
         )
     if "ai_role" in updates:
         updates["ai_role"] = _normalize_ai_role(updates.get("ai_role"))
+        # 角色扁平化：不允许把普通数字成员提升为辅助管理员（系统默认创建的
+        # 那一个保持原角色不受影响）。
+        if updates["ai_role"] == "assistant_admin" and str(cfg.ai_role or "") != "assistant_admin":
+            updates["ai_role"] = "digital_member"
     next_ai_role = updates.get("ai_role", cfg.ai_role)
     if "digital_member_role" in updates or next_ai_role == "digital_member":
         updates["digital_member_role"] = _normalize_digital_member_role(

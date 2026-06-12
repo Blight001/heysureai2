@@ -56,6 +56,7 @@ from .agent_binding import AgentAiBinding
 from .agent_mcp_permission import AgentTypeMcpPermission
 from .agent_presence import EndpointAgentPresence
 from .bot_session_route import BotSessionRoute, BotUserCursor
+from .workshop_binding import WorkshopAiBinding
 from .knowledge import EvolutionInput, KnowledgeEntry, Memory, ValhallaEntry
 from .project import EvolutionProject, EvolutionProjectCreate, EvolutionProjectUpdate
 from .system import EmailVerificationCode, SystemSetting
@@ -97,6 +98,7 @@ __all__ = [
     "AgentAiBinding",
     "AgentTypeMcpPermission",
     "EndpointAgentPresence",
+    "WorkshopAiBinding",
     # chat
     "ChatMessage",
     "ChatMessageCreate",

@@ -179,7 +179,8 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     return [...allowed].sort((a, b) => a.localeCompare(b))
   })
 
-  const buildAiForm = (role: 'assistant_admin' | 'worker' = 'assistant_admin') => ({
+  // 角色扁平化：新建 AI 一律是数字生命成员；辅助管理员由系统默认创建。
+  const buildAiForm = (role: 'assistant_admin' | 'worker' = 'worker') => ({
     id: undefined as number | undefined,
     name: role === 'assistant_admin' ? '新辅助管理员' : '新执行AI',
     description: '',
@@ -280,11 +281,12 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     aiConfigSettingsSection.value = aiConfigSettingsSection.value === section ? '' : section
   }
 
-  const openCreateAiConfig = (role: 'assistant_admin' | 'worker' = 'assistant_admin') => {
+  const openCreateAiConfig = (role: 'assistant_admin' | 'worker' = 'worker') => {
     aiConfigMode.value = 'create'
     aiConfigDeleteConfirm.value = false
     aiConfigSettingsSection.value = ''
-    aiConfigForm.value = buildAiForm(role)
+    // 角色扁平化：创建入口统一按数字成员处理（辅助管理员不可新建）。
+    aiConfigForm.value = buildAiForm(role === 'assistant_admin' ? 'worker' : role)
     aiConfigModalOpen.value = true
   }
 

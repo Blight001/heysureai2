@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { getMcpToolZhLabel, groupMcpToolsBySource } from '@/utils/mcpTools'
+import { fetchWorkshopBindings, setWorkshopBinding, type WorkshopAgentItem } from '@/api/workshop'
 import type { ModelPreset } from '@/types'
 import type { ConnectedAgent } from '@/composables/dashboard/useDashboardData'
 import AgentMcpScopeEditor from './AgentMcpScopeEditor.vue'
@@ -92,6 +93,58 @@ const onModelPresetChange = () => {
   const preset = selectedModelPreset.value
   props.form.model = preset?.model || ''
 }
+
+// ---------- 知识与进化工坊绑定 ----------
+// 工坊 agent（agent/workshop/）服务多个 AI；在这里为当前 AI 单独绑定/解绑。
+// 绑定是该 AI 调用 librarian.* / evolution.* 工具的唯一门槛。
+const workshopAgents = ref<WorkshopAgentItem[]>([])
+const workshopLoading = ref(false)
+const workshopError = ref('')
+
+const editingConfigId = computed(() => {
+  const cfgId = Number(props.form?.id)
+  return Number.isFinite(cfgId) && cfgId > 0 ? cfgId : 0
+})
+
+const loadWorkshopAgents = async () => {
+  const cfgId = editingConfigId.value
+  if (!cfgId) {
+    workshopAgents.value = []
+    return
+  }
+  workshopLoading.value = true
+  workshopError.value = ''
+  try {
+    const data = await fetchWorkshopBindings(cfgId)
+    workshopAgents.value = Array.isArray(data.agents) ? data.agents : []
+  } catch (err: any) {
+    workshopError.value = err?.message || '知识工坊列表加载失败'
+  } finally {
+    workshopLoading.value = false
+  }
+}
+
+watch(
+  () => [props.show, editingConfigId.value],
+  ([show, cfgId]) => {
+    if (show && cfgId) void loadWorkshopAgents()
+  },
+  { immediate: true },
+)
+
+const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => {
+  const target = event.target as HTMLInputElement | null
+  const next = !!target?.checked
+  const cfgId = editingConfigId.value
+  if (!cfgId) return
+  try {
+    await setWorkshopBinding(cfgId, agent.agent_id, next)
+    agent.bound = next
+  } catch (err: any) {
+    workshopError.value = err?.message || '更新知识工坊绑定失败'
+    if (target) target.checked = agent.bound
+  }
+}
 </script>
 
 <template>
@@ -112,8 +165,19 @@ const onModelPresetChange = () => {
           </div>
           <div>
             <label class="block text-xs text-zinc-500 mb-1">AI 类型</label>
-            <select v-model="form.ai_role_group" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100">
-              <option value="assistant_admin">辅助管理员</option>
+            <!-- 角色扁平化：辅助管理员由系统默认创建（每用户一个），不再支持
+                 新建或切换；除它之外所有 AI 都按数字生命成员对待。 -->
+            <div
+              v-if="form.ai_role_group === 'assistant_admin'"
+              class="w-full px-3 py-2 rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-500 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400"
+            >
+              辅助管理员（系统默认，不可新增）
+            </div>
+            <select
+              v-else
+              v-model="form.ai_role_group"
+              class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100"
+            >
               <option value="digital_member">数字生命成员</option>
             </select>
           </div>
@@ -283,6 +347,43 @@ const onModelPresetChange = () => {
                     :agent-id="agent.id"
                     :refresh-key="`${agent.aiConfigId ?? ''}-${settingsSection}`"
                   />
+                </div>
+
+                <!-- 知识与进化工坊（agent/workshop/）：AI 侧绑定。绑定后该 AI
+                     才能看到并调用 librarian.* / evolution.* 工具。 -->
+                <div v-if="editingConfigId" class="mb-3 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3 dark:border-indigo-500/30 dark:bg-indigo-500/5">
+                  <div class="flex items-center justify-between">
+                    <div class="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">知识与进化工坊</div>
+                    <button
+                      class="text-[10px] px-1.5 py-0.5 rounded border border-indigo-200 text-indigo-600 dark:border-indigo-500/40 dark:text-indigo-300"
+                      @click="loadWorkshopAgents"
+                    >刷新</button>
+                  </div>
+                  <p class="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+                    绑定后本 AI 才能调用知识库（librarian.*）与进化（evolution.*）工具；一个工坊可同时服务多个 AI。
+                  </p>
+                  <div v-if="workshopLoading" class="mt-2 text-[11px] text-zinc-400">加载中…</div>
+                  <div v-else-if="workshopError" class="mt-2 text-[11px] text-rose-500">{{ workshopError }}</div>
+                  <div v-else-if="workshopAgents.length === 0" class="mt-2 text-[11px] text-zinc-400">
+                    暂无工坊 agent 在线。启动方法见 agent/workshop/README.md。
+                  </div>
+                  <label
+                    v-for="agent in workshopAgents"
+                    :key="`workshop-${agent.agent_id}`"
+                    class="mt-2 flex items-center justify-between gap-2 rounded border border-zinc-200 bg-white/70 px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900/50"
+                  >
+                    <span class="flex items-center gap-2 min-w-0">
+                      <span
+                        class="h-1.5 w-1.5 shrink-0 rounded-full"
+                        :class="agent.online ? 'bg-emerald-500' : 'bg-zinc-400'"
+                      ></span>
+                      <span class="truncate text-zinc-700 dark:text-zinc-200">{{ agent.name }}</span>
+                      <span class="shrink-0 text-[10px] text-zinc-400">
+                        {{ agent.online ? `${agent.tools.length} 个工具` : '离线' }} · 已服务 {{ agent.bound_ai_count }} 个 AI
+                      </span>
+                    </span>
+                    <input type="checkbox" :checked="agent.bound" @change="toggleWorkshopBinding(agent, $event)" />
+                  </label>
                 </div>
 
                 <div class="space-y-3 max-h-[46vh] overflow-y-auto pr-1">

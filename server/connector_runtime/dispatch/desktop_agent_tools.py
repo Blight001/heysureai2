@@ -74,6 +74,11 @@ ENDPOINT_TOOL_PREFIXES = (
     "display.",
     "ear.",
     "hands.",
+    # 知识与进化工坊（agent/workshop/）：这两个域已从内置 MCP 迁出，运行时
+    # 可用性只由"AI ↔ 工坊绑定 + per-agent scope"决定，持久化配置里的残留
+    # 条目一律剥离，避免绕过绑定门槛。
+    "librarian.",
+    "evolution.",
 )
 
 
@@ -98,11 +103,24 @@ def strip_endpoint_tool_config_names(names: Set[str]) -> Set[str]:
     return {name for name in names if not is_endpoint_tool_config_name(name)}
 
 
+# 知识与进化工坊（agent/workshop/）注册的工具统一走这两个命名空间。前缀是
+# 稳定契约：分类不依赖在线状态，离线时这些名字也不会被误判为桌面工具。
+WORKSHOP_TOOL_PREFIXES = ("librarian.", "evolution.")
+
+
+def is_workshop_tool(name: str) -> bool:
+    tool = str(name or "").strip()
+    return bool(tool) and tool.startswith(WORKSHOP_TOOL_PREFIXES)
+
+
 def agent_type_of(agent: Optional[Dict[str, Any]]) -> Optional[str]:
-    """Classify a connected-agent record as ``"desktop"`` / ``"browser"``."""
+    """Classify a connected-agent record as ``"desktop"`` / ``"browser"`` /
+    ``"workshop"`` (知识与进化工坊)."""
     if not isinstance(agent, dict):
         return None
     platform = str(agent.get("platform") or "").lower()
+    if bool(agent.get("isWorkshop")) or "workshop" in platform:
+        return "workshop"
     if bool(agent.get("isBrowserExtension")) or "browser-extension" in platform:
         return "browser"
     if bool(agent.get("isWindowsDesktop")) or "desktop" in platform or "windows" in platform:
@@ -112,17 +130,21 @@ def agent_type_of(agent: Optional[Dict[str, Any]]) -> Optional[str]:
 
 def _agent_capabilities(agent: Dict[str, Any], agent_type: str) -> Set[str]:
     """Tool names of the given type that ``agent`` reports. Browser-namespaced
-    names only ever count as browser tools, the rest as desktop tools."""
+    names only ever count as browser tools；workshop agent 只允许上报工坊命名
+    空间的工具（防止借工坊通道注册桌面执行类工具）；the rest as desktop tools."""
     names: Set[str] = set()
     for cap in agent.get("capabilities") or []:
         name = str(cap or "").strip()
         if not name:
             continue
-        if agent_type == "browser":
+        if agent_type == "workshop":
+            if is_workshop_tool(name):
+                names.add(name)
+        elif agent_type == "browser":
             if _is_browser_namespaced(name):
                 names.add(name)
         else:
-            if not _is_browser_namespaced(name):
+            if not _is_browser_namespaced(name) and not is_workshop_tool(name):
                 names.add(name)
     return names
 
@@ -186,6 +208,8 @@ def browser_tool_names() -> Set[str]:
 
 def is_desktop_tool(name: str) -> bool:
     tool = str(name or "").strip()
+    if is_workshop_tool(tool):
+        return False
     if tool in desktop_tool_names():
         return True
     return tool in _presence_tool_names()[0]
@@ -201,7 +225,7 @@ def is_browser_tool(name: str) -> bool:
 
 
 def is_endpoint_agent_tool(name: str) -> bool:
-    return is_desktop_tool(name) or is_browser_tool(name)
+    return is_workshop_tool(name) or is_desktop_tool(name) or is_browser_tool(name)
 
 
 def connected_endpoint_tool_catalog() -> List[Dict[str, str]]:
@@ -323,6 +347,59 @@ def endpoint_bridge_tools_for_config(ai_config_id: Optional[int], user_id: Optio
     return set()
 
 
+def get_connected_workshop_agent(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    """First live workshop agent this AI is bound to (AI 侧多对一绑定)。
+
+    与桌面/浏览器不同：工坊绑定存在 ``WorkshopAiBinding``（一个工坊服务多个
+    AI），而非设备 1:1 的 ``AgentAiBinding``。"""
+    config_id = _parse_int(ai_config_id)
+    if not config_id:
+        return None
+    from api.workshop_bindings import workshop_agent_ids_for_config
+
+    bound_ids = set(workshop_agent_ids_for_config(user_id, config_id))
+    if not bound_ids:
+        return None
+    for agent in list(agents.values()):
+        if not isinstance(agent, dict):
+            continue
+        if agent_type_of(agent) != "workshop":
+            continue
+        if str(agent.get("id") or "").strip() not in bound_ids:
+            continue
+        agent_user_id = _parse_int(agent.get("userId") or agent.get("user_id"))
+        expected_user_id = _parse_int(user_id)
+        if expected_user_id and agent_user_id and agent_user_id != expected_user_id:
+            continue
+        return agent
+    return None
+
+
+def workshop_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
+    """Workshop MCP tools available to an AI right now: the union of what its
+    bound online workshop agents advertise, each narrowed by that agent's
+    per-agent permission scope. 未绑定 → 空集（绑定是知识/进化工具的唯一门槛）。"""
+    config_id = _parse_int(ai_config_id)
+    if not config_id:
+        return set()
+    from api.agent_mcp_permissions import get_scope
+    from api.agent_presence import online_workshop_agents_for_user
+    from api.workshop_bindings import workshop_agent_ids_for_config
+
+    bound_ids = set(workshop_agent_ids_for_config(user_id, config_id))
+    if not bound_ids:
+        return set()
+    tools: Set[str] = set()
+    for agent_id, caps in online_workshop_agents_for_user(user_id):
+        if agent_id not in bound_ids:
+            continue
+        scope = get_scope(user_id, agent_id) if agent_id else None
+        if scope is None:
+            continue
+        tools |= {name for name in (caps & scope) if is_workshop_tool(name)}
+    return tools
+
+
 def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
     """Endpoint MCP tools available to an AI right now: the union of what its
     online endpoint agents (Linux / desktop / browser) advertise, each narrowed
@@ -348,4 +425,6 @@ def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int
         if scope is None:
             continue
         tools |= caps & scope
+    # 知识与进化工坊走 AI 侧绑定（WorkshopAiBinding），与设备 1:1 绑定并集。
+    tools |= workshop_tools_for_config(config_id, user_id)
     return tools
