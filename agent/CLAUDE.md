@@ -1,15 +1,13 @@
 # CLAUDE.md — agent/ 端侧执行器
 
-四个端侧客户端，连接后端、注册为 endpoint，对外暴露 AI 可调用的工具。
+三个端侧客户端，连接后端、注册为 endpoint，对外暴露 AI 可调用的工具。
+（知识与进化工坊不在本目录：它是服务端内置的虚拟端侧，见 `server/workshop/`。）
 
 | 子目录 | 形态 | 作用 |
 | --- | --- | --- |
 | `windows/` | Electron 桌面应用 | Windows 本机自动化（窗口/屏幕/鼠标/键盘/剪贴板/shell/文件系统） |
 | `linux/` | Electron 桌面应用 | Linux 等价能力（robotjs/X11、wmctrl/xdotool、espeak 等） |
 | `extension/` | Chrome MV3 扩展 | 浏览器自动化与轻量客户端 |
-| `workshop/` | Python 无界面进程 | **知识与进化工坊**：注册 `librarian.*`/`evolution.*` MCP 工具；AI 须绑定才能调用；改该目录（`direction.md`/`policy.py`/`tools.py`）即可控制知识与进化方向，详见 [`workshop/README.md`](workshop/README.md) |
-
-工坊与桌面/浏览器 agent 的关键差异：绑定是 **AI 侧多对一**（`WorkshopAiBinding`，一个工坊服务多个 AI，前端在 AI 配置弹窗勾选），而非设备 1:1；执行时工坊回调 gateway `/api/workshop/execute`，数据真相源始终在服务端。
 
 桌面 agent 内部结构（win/linux 一致）：`src/main.ts` 管 Electron 生命周期，`services/agent-runtime` 接 socket，`tools/` 是各工具实现，`executor/` 工具调度，`ipc/` 主进程↔渲染进程通信，`renderer/` UI，`windows/` 窗口与托盘。
 

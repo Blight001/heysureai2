@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """工坊策略钩子 —— 控制"知识与进化方向"的唯一改动点。
 
-每次工具调用都会经过这两个钩子：
+每次工具调用都会经过这两个钩子（见 server/workshop/engine.py）：
 
-    before_execute(tool, args)          → 改写/补全入参后再回调服务端
+    before_execute(tool, args)          → 改写/补全入参后再执行
     after_execute(tool, args, result)   → 改写/增强结果后再返回给 AI
 
 默认行为：
@@ -12,7 +12,8 @@
 - consult 检索结果同样附带方向指引，引导后续行动。
 
 你可以在这里做任何事：给 propose 强制补 triggers、按方向过滤检索结果、
-拒绝偏离方向的进化建议……改完重启工坊进程即可生效，服务端无需改动。
+拒绝偏离方向的进化建议……direction.md 保存即生效；改本文件需重启服务
+进程。
 """
 
 from pathlib import Path

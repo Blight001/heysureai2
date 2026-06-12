@@ -22,11 +22,20 @@ PREFIX = "/api/agents"
 def _find_connected_agent(agent_id: str, user_id: int) -> Optional[dict]:
     """The live agent record for this (agent_id, user), or None when the device
     is not currently connected. Scope is only visible while connected — a
-    disconnected agent is simply not shown."""
+    disconnected agent is simply not shown.
+
+    内置知识工坊不走 socket，按需合成一条常在线虚拟记录。"""
     aid = str(agent_id or "").strip()
     for agent in agents.values():
         if str(agent.get("id") or "") == aid and agent.get("userId") == user_id:
             return agent
+    try:
+        from workshop import engine as workshop_engine
+
+        if aid == workshop_engine.agent_id_for_user(user_id):
+            return workshop_engine.connected_entry_for_user(user_id)
+    except Exception:
+        pass
     return None
 
 
@@ -111,10 +120,20 @@ async def list_connected_agents(
     authorization: str = Header(None),
 ):
     # Auth-gate the view; the agent registry itself is process-global.
-    get_current_user(authorization, session)
+    user = get_current_user(authorization, session)
+    rows = list(agents.values())
+    # 知识与进化工坊是服务端内置的虚拟端侧：为当前用户附加一条常在线条目，
+    # 作坊面板与社会显示（游戏世界）据此渲染，无需用户运行独立程序。
+    try:
+        from workshop import engine as workshop_engine
+
+        workshop_engine.ensure_presence_for_user(user.id)
+        rows.append(workshop_engine.connected_entry_for_user(user.id))
+    except Exception:
+        pass
     return {
-        "agents": list(agents.values()),
-        "count": len(agents),
+        "agents": rows,
+        "count": len(rows),
         "token_required": agent_token_required(),
     }
 
@@ -141,6 +160,19 @@ async def bind_agent_ai(
     agent_id = (payload.agentId or "").strip()
     if not agent_id:
         raise HTTPException(status_code=400, detail="agentId required")
+    # 知识工坊是 AI 侧多对一绑定（/api/workshop/bindings），不走设备 1:1 分配。
+    try:
+        from workshop import engine as workshop_engine
+
+        if workshop_engine.is_builtin_workshop_agent_id(agent_id):
+            raise HTTPException(
+                status_code=400,
+                detail="知识工坊请通过 /api/workshop/bindings 按 AI 绑定（一坊可服务多个 AI）",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass
 
     cfg_id = payload.aiConfigId
     previous_same_type_agent_id = None

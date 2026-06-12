@@ -6,6 +6,7 @@ import Phaser from 'phaser'
 import { getAuthToken } from '@/api/http'
 import { toggleAiRun } from '@/api/ai'
 import { assignAgentAi, getAgentMcpScope, setAgentMcpScope } from '@/api/agents'
+import { setWorkshopBinding } from '@/api/workshop'
 import { triggerTaskForAgent } from '@/api/task'
 import { approveProposal, rejectProposal } from '@/api/librarian'
 import { setWorldActorMeta } from '@/api/world'
@@ -875,7 +876,12 @@ export class WorldScene extends Phaser.Scene {
       if (drop.kind === 'workshop') {
         const w = this.snap.workshops.find(x => x.agentId === drop.agentId)
         if (!w) return
-        if (window.confirm(`把成员「${m.name}」绑定到 ${w.name}？`)) {
+        if (w.type === 'workshop') {
+          // 知识与进化工坊：AI 侧多对一绑定（一坊服务多个 AI）
+          if (window.confirm(`把成员「${m.name}」绑定到 ${w.name}？绑定后可调用知识与进化工具。`)) {
+            void setWorkshopBinding(m.id, w.agentId, true).then(() => this.store.refreshNow()).catch(() => undefined)
+          }
+        } else if (window.confirm(`把成员「${m.name}」绑定到 ${w.name}？`)) {
           void assignAgentAi(w.agentId, m.id).then(() => this.store.refreshNow()).catch(() => undefined)
         }
       } else if (drop.kind === 'spawn' && m.boundAgentIds.length) {
@@ -1007,7 +1013,9 @@ export class WorldScene extends Phaser.Scene {
       if (!view) {
         const slot = this.claimSlot(w.agentId)
         const pos = workshopSlotPos(slot)
-        const sheet = w.type === 'desktop' ? 'building_workshop_desktop.png' : 'building_workshop_browser.png'
+        const sheet = w.type === 'workshop'
+          ? 'building_library.png'
+          : w.type === 'desktop' ? 'building_workshop_desktop.png' : 'building_workshop_browser.png'
         const sprite = this.add.sprite(pos.x, pos.y, sheet, 0)
         sprite.setOrigin(0.5, 0.6)
         sprite.setDepth(pos.y)
@@ -1119,6 +1127,18 @@ export class WorldScene extends Phaser.Scene {
   private workshopTooltip(view: WorkshopView): TooltipData {
     const w = view.data
     const bound = this.snap?.members.find(m => m.id === w.aiConfigId)
+    if (w.type === 'workshop') {
+      return {
+        title: '知识工坊（知识与进化）',
+        badge: view.offlineSince !== null ? '离线' : '在线',
+        rows: [
+          { label: '形态', value: '服务端内置 · 自动上线' },
+          { label: '绑定', value: '拖成员到此绑定；一坊可服务多个 AI' },
+          { label: '工具', value: `${w.capabilities} 个知识/进化工具` },
+          { label: '错误', value: w.lastError || '' },
+        ],
+      }
+    }
     return {
       title: w.type === 'desktop' ? '机械坊（桌面 Agent）' : '瞭望塔（浏览器 Agent）',
       badge: view.offlineSince !== null ? '离线' : w.lifecycle === 'dispatching' ? '执行中' : '在线',

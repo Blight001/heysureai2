@@ -235,6 +235,12 @@ def ensure_default_ai_for_user(session: Session, user_id: int) -> None:
             changed = True
     if changed:
         session.commit()
+    # 知识与进化工坊（server/workshop/）按账号自动上线：每个用户登录/拉取
+    # AI 列表时确保其内置工坊出现在在线快照中（作坊面板与社会显示随之展示），
+    # 无需用户运行任何独立程序。best-effort，失败不影响主流程。
+    from workshop import engine as workshop_engine
+
+    workshop_engine.ensure_presence_for_user(user_id)
 
 
 def align_token_snapshots_with_history() -> dict:

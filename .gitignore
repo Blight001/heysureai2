@@ -82,6 +82,3 @@ server/data/
 
 
 doc/项目升级计划.md
-# workshop agent 运行时产物
-agent/workshop/.agent_id
-agent/workshop/.env
