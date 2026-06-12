@@ -17,6 +17,8 @@ const HITBOX_H = 70
 const HITBOX_TOP = -68
 const TOKEN_BAR_W = 34
 const TOKEN_BAR_H = 5
+const SPEECH_MAX_CHARS = 86
+const SPEECH_W = 150
 
 export type EmoteKind = keyof typeof EMOTES | null
 
@@ -32,12 +34,25 @@ const hexToColor = (hex: string): number | null => {
   return parseInt(hex.slice(1), 16)
 }
 
+const speechPreview = (raw: string): string => {
+  const cleaned = String(raw || '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/__HS_MCP_STATE__=.*$/s, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!cleaned) return ''
+  return cleaned.length > SPEECH_MAX_CHARS ? `${cleaned.slice(0, SPEECH_MAX_CHARS)}...` : cleaned
+}
+
 export class MemberActor extends Phaser.GameObjects.Container {
   readonly memberId: number
   member: WorldMember
   private sprite: Phaser.GameObjects.Sprite
   private tokenBar: Phaser.GameObjects.Graphics
   private emote: Phaser.GameObjects.Image
+  private speechBubble: Phaser.GameObjects.Graphics
+  private speechText: Phaser.GameObjects.Text
   private aura: Phaser.GameObjects.Image
   private auraOn = false
   private auraPhase = Math.random() * Math.PI * 2
@@ -74,6 +89,20 @@ export class MemberActor extends Phaser.GameObjects.Container {
     this.emote = scene.add.image(0, -84, 'emotes.png', 0)
     this.emote.setVisible(false)
     this.add(this.emote)
+
+    this.speechBubble = scene.add.graphics()
+    this.speechBubble.setVisible(false)
+    this.add(this.speechBubble)
+
+    this.speechText = scene.add.text(0, 0, '', {
+      fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
+      fontSize: '11px',
+      color: '#20242c',
+      lineSpacing: 2,
+      wordWrap: { width: SPEECH_W - 16, useAdvancedWrap: true },
+    })
+    this.speechText.setVisible(false)
+    this.add(this.speechText)
 
     this.setSize(HITBOX_W, HITBOX_H)
     // Container 命中测试会把本地坐标加 displayOrigin，hitArea 需使用校正后的坐标。
@@ -135,6 +164,7 @@ export class MemberActor extends Phaser.GameObjects.Container {
     this.applyAppearance(member)
     this.refreshEmote()
     this.refreshTokenBar()
+    this.refreshSpeechBubble()
     // 停用：原地坐下打瞌睡
     if (!member.enabled && !this.dying) {
       this.target = null
@@ -220,6 +250,29 @@ export class MemberActor extends Phaser.GameObjects.Container {
     g.fillRect(x, y, TOKEN_BAR_W, TOKEN_BAR_H)
     g.fillStyle(color, 0.98)
     g.fillRect(x, y, Math.max(1, TOKEN_BAR_W * remainingRatio), TOKEN_BAR_H)
+  }
+
+  private refreshSpeechBubble() {
+    const text = speechPreview(this.member.latestSpeech)
+    const visible = !!text && this.member.enabled && !this.dying
+    this.speechBubble.setVisible(visible)
+    this.speechText.setVisible(visible)
+    if (!visible) return
+
+    const x = 24
+    const y = -88
+    this.speechText.setText(text)
+    this.speechText.setPosition(x + 9, y + 7)
+
+    const h = Math.max(28, this.speechText.height + 14)
+    const g = this.speechBubble
+    g.clear()
+    g.fillStyle(0xffffff, 0.92)
+    g.fillRoundedRect(x, y, SPEECH_W, h, 7)
+    g.lineStyle(1, 0x2f3640, 0.18)
+    g.strokeRoundedRect(x, y, SPEECH_W, h, 7)
+    g.fillStyle(0xffffff, 0.92)
+    g.fillTriangle(x + 1, y + h - 17, x - 9, y + h - 9, x + 1, y + h - 4)
   }
 
   private emoteOverrideUntil = 0

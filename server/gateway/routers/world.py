@@ -97,8 +97,19 @@ async def world_snapshot(
     except Exception:
         valhalla_items = []
     try:
-        knowledge_active = len(librarian_service.list_topics(user_id=user.id, status="active"))
+        knowledge_topics = librarian_service.list_topics(user_id=user.id, status="active")
+        knowledge_items = []
+        for item in knowledge_topics:
+            memory_id = str(item.get("memory_id") or "")
+            if not memory_id:
+                continue
+            try:
+                knowledge_items.append(librarian_service.read(user_id=user.id, memory_id=memory_id))
+            except Exception:
+                knowledge_items.append(item)
+        knowledge_active = len(knowledge_items)
     except Exception:
+        knowledge_items = []
         knowledge_active = 0
     try:
         proposals = librarian_service.list_pending_for_review(user_id=user.id)
@@ -114,6 +125,7 @@ async def world_snapshot(
         "agents": agents,
         "valhalla_items": valhalla_items,
         "knowledge_active": knowledge_active,
+        "knowledge_items": knowledge_items,
         "proposals": proposals,
         "actor_meta": actor_meta,
     }

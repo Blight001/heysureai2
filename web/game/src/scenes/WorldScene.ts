@@ -5,7 +5,7 @@
 import Phaser from 'phaser'
 import { getAuthToken } from '@/api/http'
 import { toggleAiRun } from '@/api/ai'
-import { assignAgentAi } from '@/api/agents'
+import { assignAgentAi, getAgentMcpScope, setAgentMcpScope } from '@/api/agents'
 import { triggerTaskForAgent } from '@/api/task'
 import { approveProposal, rejectProposal } from '@/api/librarian'
 import { setWorldActorMeta } from '@/api/world'
@@ -382,6 +382,10 @@ export class WorldScene extends Phaser.Scene {
       assignAgent: async (agentId, aiConfigId) => {
         await assignAgentAi(agentId, aiConfigId)
         await refresh()
+      },
+      loadAgentMcpScope: agentId => getAgentMcpScope(agentId),
+      saveAgentMcpScope: async (agentId, tools) => {
+        await setAgentMcpScope(agentId, tools)
       },
       setAppearance: async (id, meta) => {
         await setWorldActorMeta(id, meta)

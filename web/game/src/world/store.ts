@@ -14,7 +14,7 @@ import { me } from '@/api/auth'
 import { listAiCards } from '@/api/ai'
 import { listConnectedAgents } from '@/api/agents'
 import { listValhallaEntries, type ValhallaEntry } from '@/api/valhalla'
-import { listEntries, listProposals, type KnowledgeEntryItem } from '@/api/librarian'
+import { listEntries, listProposals, readEntry, type KnowledgeEntryItem } from '@/api/librarian'
 import { listWorldActorMeta, type WorldActorAppearance } from '@/api/world'
 
 /** 服务端直推的世界事件（P2）：演出零延迟触发，权威状态仍以 refresh 为准 */
@@ -38,6 +38,7 @@ export interface WorldMember {
   runtimeStatus: 'running' | 'idle' | 'error'
   runtimeTool: string
   currentBehavior: string
+  latestSpeech: string
   taskTitle: string
   taskStatus: string
   hasActiveTask: boolean
@@ -78,6 +79,7 @@ export interface WorldSnapshot {
   valhallaCount: number
   valhallaItems: ValhallaEntry[]
   knowledgeActive: number
+  knowledgeItems: KnowledgeEntryItem[]
   knowledgePending: number
   proposals: KnowledgeEntryItem[]
   lastError: string
@@ -147,6 +149,7 @@ export class WorldStore {
     valhallaCount: 0,
     valhallaItems: [],
     knowledgeActive: 0,
+    knowledgeItems: [],
     knowledgePending: 0,
     proposals: [],
     lastError: '',
@@ -285,7 +288,17 @@ export class WorldStore {
         listEntries(token, { status: 'active' }),
         listProposals(token),
       ])
-      this.snapshot.knowledgeActive = entries.items?.length ?? 0
+      const baseItems = entries.items ?? []
+      this.snapshot.knowledgeItems = await Promise.all(
+        baseItems.map(async item => {
+          try {
+            return await readEntry(token, item.memory_id)
+          } catch {
+            return item
+          }
+        }),
+      )
+      this.snapshot.knowledgeActive = this.snapshot.knowledgeItems.length
       this.snapshot.proposals = proposals.items ?? []
       this.snapshot.knowledgePending = this.snapshot.proposals.length
     } catch {
@@ -336,6 +349,7 @@ export class WorldStore {
         runtimeStatus: override?.state ?? normalizeRuntime(row.runtime_status),
         runtimeTool: override?.tool || String(row.latest_mcp_tool || row.runtime_tool || ''),
         currentBehavior: String(row.current_behavior || ''),
+        latestSpeech: String(row.latest_thinking || ''),
         taskTitle,
         taskStatus,
         hasActiveTask: taskStatus === 'running' || taskStatus === 'queued' || !!row.task_current,
@@ -366,7 +380,8 @@ export class WorldStore {
     this.rebuildWorkshops()
     this.snapshot.valhallaItems = Array.isArray(data.valhalla_items) ? data.valhalla_items : []
     this.snapshot.valhallaCount = this.snapshot.valhallaItems.length
-    this.snapshot.knowledgeActive = num(data.knowledge_active)
+    this.snapshot.knowledgeItems = Array.isArray(data.knowledge_items) ? data.knowledge_items : []
+    this.snapshot.knowledgeActive = this.snapshot.knowledgeItems.length || num(data.knowledge_active)
     this.snapshot.proposals = Array.isArray(data.proposals) ? data.proposals : []
     this.snapshot.knowledgePending = this.snapshot.proposals.length
     return true

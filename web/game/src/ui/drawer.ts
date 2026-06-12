@@ -9,6 +9,12 @@
 import { MEMBER_SKINS } from '../assetManifest'
 import type { WorldMember, WorldSnapshot } from '../world/store'
 
+interface AgentMcpScopeView {
+  capabilities: string[]
+  allowed: string[]
+  hasRecord: boolean
+}
+
 const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
@@ -35,6 +41,8 @@ export interface AppearanceDraft {
 export interface DrawerActions {
   toggleRun(aiConfigId: number): Promise<void>
   assignAgent(agentId: string, aiConfigId: number | null): Promise<void>
+  loadAgentMcpScope(agentId: string): Promise<AgentMcpScopeView>
+  saveAgentMcpScope(agentId: string, tools: string[]): Promise<void>
   setAppearance(aiConfigId: number, meta: AppearanceDraft): Promise<void>
   /** 调参时所见即所得（仅本地，不落库；下次快照刷新自动回到已保存值） */
   previewAppearance(aiConfigId: number, meta: AppearanceDraft): void
@@ -101,6 +109,17 @@ export class Drawer {
       .gw-drawer .d-item.click { cursor: pointer; }
       .gw-drawer .d-item.click:hover { border-color: #5a6175; }
       .gw-drawer .d-dim { color: #8a90a0; }
+      .gw-drawer .d-pre {
+        white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow: auto;
+        background: #20232b; border: 1px solid #343949; border-radius: 4px;
+        padding: 6px 8px; margin-top: 4px; color: #cdd3dd;
+      }
+      .gw-drawer label.d-check {
+        display: flex; align-items: flex-start; gap: 6px; cursor: pointer;
+        border: 1px solid #343949; border-radius: 4px; padding: 4px 6px; margin: 4px 0;
+      }
+      .gw-drawer label.d-check:hover { border-color: #5a6175; }
+      .gw-drawer label.d-check input { margin-top: 3px; accent-color: #f0c060; }
       .gw-drawer .d-sub { color: #8a90a0; margin: 6px 0 2px; }
       .gw-drawer .d-swatches { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
       .gw-drawer button.d-swatch {
@@ -538,6 +557,76 @@ export class Drawer {
       hint.textContent = `当前成员：${bound.name}（点击地图上的成员可查看详情）`
       assign.appendChild(hint)
     }
+
+    this.mcpScopeSection(w.agentId)
+  }
+
+  private mcpScopeSection(agentId: string) {
+    const sec = this.section('Agent MCP 权限')
+    const fb = this.feedback(sec)
+    fb.className = 'd-dim'
+    fb.textContent = '加载中…'
+    void this.actions.loadAgentMcpScope(agentId).then(scope => {
+      sec.innerHTML = '<div class="d-sec-title">Agent MCP 权限</div>'
+      const info = document.createElement('div')
+      info.className = 'd-dim'
+      info.textContent = scope.hasRecord ? '已保存自定义权限范围' : '默认允许当前 Agent 宣告的全部 MCP 工具'
+      sec.appendChild(info)
+      const saveFb = this.feedback(sec)
+      if (!scope.capabilities.length) {
+        saveFb.className = 'd-dim'
+        saveFb.textContent = '该 Agent 当前没有上报 MCP 工具'
+        return
+      }
+      const selected = new Set(scope.hasRecord ? scope.allowed : scope.capabilities)
+      const boxes: HTMLInputElement[] = []
+      for (const tool of scope.capabilities) {
+        const label = document.createElement('label')
+        label.className = 'd-check'
+        const box = document.createElement('input')
+        box.type = 'checkbox'
+        box.checked = selected.has(tool)
+        box.onchange = () => {
+          if (box.checked) selected.add(tool)
+          else selected.delete(tool)
+        }
+        boxes.push(box)
+        const span = document.createElement('span')
+        span.textContent = tool
+        label.appendChild(box)
+        label.appendChild(span)
+        sec.appendChild(label)
+      }
+      const all = document.createElement('button')
+      all.type = 'button'
+      all.className = 'd-btn'
+      all.textContent = '全选'
+      all.onclick = () => {
+        selected.clear()
+        for (const tool of scope.capabilities) selected.add(tool)
+        boxes.forEach(b => (b.checked = true))
+      }
+      const none = document.createElement('button')
+      none.type = 'button'
+      none.className = 'd-btn'
+      none.textContent = '清空'
+      none.onclick = () => {
+        selected.clear()
+        boxes.forEach(b => (b.checked = false))
+      }
+      const save = document.createElement('button')
+      save.type = 'button'
+      save.className = 'd-btn ok'
+      save.textContent = '保存 MCP 权限'
+      save.onclick = () =>
+        void this.runAction(save, saveFb, () => this.actions.saveAgentMcpScope(agentId, Array.from(selected)), 'MCP 权限已保存')
+      sec.appendChild(all)
+      sec.appendChild(none)
+      sec.appendChild(save)
+    }).catch(err => {
+      fb.className = 'd-err'
+      fb.textContent = err instanceof Error ? err.message : 'MCP 权限加载失败'
+    })
   }
 
   // ---------------------------------------------------------------- 固定建筑
@@ -548,6 +637,27 @@ export class Drawer {
       ['知识', `${snap.knowledgeActive} 条生效`],
       ['待审批', `${snap.knowledgePending} 条`],
     ])
+
+    const active = this.section('已生效知识')
+    if (!snap.knowledgeItems.length) {
+      active.innerHTML += `<div class="d-dim">暂无已生效知识</div>`
+    } else {
+      for (const k of snap.knowledgeItems) {
+        const item = document.createElement('div')
+        item.className = 'd-item'
+        const scope = k.scope === 'global' ? '全局' : `${k.scope}${k.scope_target ? `:${k.scope_target}` : ''}`
+        const triggers = Array.isArray(k.triggers) && k.triggers.length ? `触发词：${k.triggers.join('、')}` : ''
+        const body = String(k.body || k.summary || '')
+        item.innerHTML =
+          `<div>${esc(k.title || k.memory_id)}</div>` +
+          `<div class="d-dim">${esc(scope)} · 置信度 ${Number(k.confidence || 0).toFixed(2)} · 使用 ${Number(k.use_count || 0)} 次</div>` +
+          (triggers ? `<div class="d-dim">${esc(triggers)}</div>` : '') +
+          (k.summary ? `<div class="d-dim">${esc(k.summary)}</div>` : '') +
+          (body ? `<div class="d-pre">${esc(body)}</div>` : '<div class="d-dim">无正文</div>')
+        active.appendChild(item)
+      }
+    }
+
     const list = this.section('待审批沉淀申请')
     if (!snap.proposals.length) {
       list.innerHTML += `<div class="d-dim">暂无待审批申请</div>`
