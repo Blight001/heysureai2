@@ -179,7 +179,6 @@ def _write_persona_file(user_id: int, cfg: AssistantAIConfig, prompt: Optional[s
     try:
         from api.services import kb_store
 
-        kb_store.ensure_user_kb(user_id)
         kb_store.write_persona(user_id, cfg, prompt=prompt)
     except Exception:
         pass

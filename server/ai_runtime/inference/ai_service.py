@@ -203,7 +203,6 @@ def ensure_default_configs(session: Session, user_id: int) -> list[AssistantAICo
             from api.services import kb_store
 
             for row, prompt in _seed_persona_prompts:
-                kb_store.ensure_user_kb(user_id)
                 kb_store.write_persona(user_id, row, prompt=prompt)
         except Exception:
             pass

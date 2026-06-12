@@ -16,17 +16,12 @@ from .settings import SERVER_DIR, SQLITE_FILE, SQLITE_URL, settings  # noqa: F40
 DATA_DIR = os.path.join(SERVER_DIR, "data")
 WORKSPACE_DIR = os.path.join(DATA_DIR, "workspace")
 
-# Folders seeded once at the user-root level and SHARED across all of the
-# user's AIs. ``KnowledgeBase`` is the file-backed source of truth: besides the
-# original 传承知识 (topics/) and 传承技能 (skills/), it now also holds the AI
-# personas (personas/), system prompts (system/) and MCP tool docs (mcp/) — see
-# ``api.services.kb_store``. The runtime syncs those files back into the
-# database on each chat/task start (files win). Valhalla sessions, EvolutionArena
-# and other "sedimentation folders" still live purely in the database.
-USER_SHARED_SUBFOLDERS = ("KnowledgeBase",)
+# User-shared workspace subfolders are created lazily by the services that
+# actually write files into them. ``KnowledgeBase`` remains the file-backed
+# source of truth, but empty category folders are no longer seeded at login.
+USER_SHARED_SUBFOLDERS = ()
 
-# Backwards-compatible alias for older imports. It now only seeds the shared
-# knowledge base.
+# Backwards-compatible alias for older imports.
 USER_WORKSPACE_SUBFOLDERS = USER_SHARED_SUBFOLDERS
 
 # Admin AIs (``ai_role == "assistant_admin"``) share a single working

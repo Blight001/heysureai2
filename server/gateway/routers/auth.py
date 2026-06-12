@@ -17,7 +17,6 @@ from api.auth import (
     verify_password,
 )
 from api.core.config import (
-    USER_SHARED_SUBFOLDERS,
     WORKSPACE_DIR,
     user_workspace_dir,
 )
@@ -86,10 +85,10 @@ def _agent_socket_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 def ensure_user_workspace(user_id: int) -> None:
-    """Ensure the per-user workspace root and the shared knowledge base exist.
+    """Ensure the per-user workspace root exists.
 
-    Per-AI working directories are created lazily on first use
-    (``get_project_root``); only the user-level shared folders are seeded here.
+    Per-AI working directories and KnowledgeBase subfolders are created lazily
+    when something actually writes files into them.
     """
     user_dir = user_workspace_dir(user_id)
     try:
@@ -97,11 +96,6 @@ def ensure_user_workspace(user_id: int) -> None:
         if not os.path.exists(user_dir):
             os.makedirs(user_dir)
             logger.info(f"Created user directory: {user_dir}")
-        for folder in USER_SHARED_SUBFOLDERS:
-            folder_path = os.path.join(user_dir, folder)
-            if not os.path.exists(folder_path):
-                os.makedirs(folder_path)
-                logger.info(f"Created subfolder: {folder_path}")
     except Exception as exc:
         logger.exception(f"Error ensuring user directories for user {user_id}: {exc}")
 
@@ -244,13 +238,9 @@ async def register(
     session.commit()
     session.refresh(db_user)
 
-    # 自动在 workspace 目录中创建对应用户的数据库 ID 目录名及其子目录
+    # 自动在 workspace 目录中创建对应用户的数据库 ID 目录名。
     ensure_user_workspace(db_user.id)
     ensure_default_ai_for_user(session, db_user.id)
-
-    from api.services import kb_store
-
-    kb_store.ensure_user_kb(db_user.id)
     return _user_payload(db_user)
 
 @router.post("/login", response_model=Token)
@@ -415,7 +405,6 @@ async def update_profile(
     try:
         from api.services import kb_store
 
-        kb_store.ensure_user_kb(user.id)
         file_keys = {k for k, _kind in kb_store.SYSTEM_PROMPT_KEYS}
         for key in update_data:
             if key in file_keys:

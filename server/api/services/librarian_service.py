@@ -223,8 +223,6 @@ def _kb_root(user_id: int) -> str:
     所有 AI 可见。"""
     root = user_shared_knowledge_dir(user_id)
     os.makedirs(root, exist_ok=True)
-    os.makedirs(os.path.join(root, _TOPICS_DIR), exist_ok=True)
-    os.makedirs(os.path.join(root, _ARCHIVE_DIR), exist_ok=True)
     return root
 
 

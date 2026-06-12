@@ -626,7 +626,7 @@ def write_mcp_tool(user_id: int, name: str, description: str, parameters: List[D
 
 
 # ============================================================
-# 4) 目录占位 / README
+# 4) README
 # ============================================================
 
 _README = """# KnowledgeBase
@@ -1009,8 +1009,6 @@ def _row_valhalla_dict(row: ValhallaEntry) -> Dict[str, Any]:
 
 def _ensure_layout(user_id: int) -> None:
     root = _kb_root(user_id)
-    for sub in (PERSONAS_DIR, MCP_DIR, SYSTEM_DIR, SKILLS_DIR, TOPICS_DIR, MEMORIES_DIR, EVOLUTION_DIR, VALHALLA_DIR):
-        _ensure_dir(os.path.join(root, sub))
     readme = os.path.join(root, "README.md")
     if _read_text(readme) is None:
         _write_text(readme, _README)
@@ -1021,7 +1019,10 @@ def _ensure_layout(user_id: int) -> None:
 # ============================================================
 
 def ensure_user_kb(user_id: int, *, session: Optional[Session] = None) -> None:
-    """建目录 + 首次把 DB/注册表内容导出成文件（已存在的跳过）。幂等。"""
+    """Ensure the KB root exists and export DB-backed content on demand.
+
+    Category directories are created only when a file is actually written.
+    """
     try:
         user_id = int(user_id)
         if not user_id:
