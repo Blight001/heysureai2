@@ -7,8 +7,8 @@
 import { BgMsg } from '../lib/types'
 import { state } from './state'
 import * as dom from './dom'
-import { getAuth, saveAuth, getSettings } from '../lib/storage'
-import { getMe, isAuthError } from '../lib/client'
+import { getAuth, saveAuth, getSettings, saveSettings } from '../lib/storage'
+import { getAgentEndpoint, getMe, isAuthError } from '../lib/client'
 import { refreshAvatarCache } from './helpers'
 import { initPopupPort, sendToBackground } from './transport'
 import {
@@ -66,9 +66,11 @@ async function init() {
     void (async () => {
       try {
         const me = await getMe(state.serverUrl, state.auth.token)
+        const agentSocketUrl = await getAgentEndpoint(state.serverUrl, state.auth.token)
         state.auth.userName = me?.name || state.auth.userName
         state.auth.avatar = me?.avatar || ''
         await saveAuth({ userName: state.auth.userName, avatar: state.auth.avatar })
+        await saveSettings({ agentSocketUrl })
         await refreshAvatarCache()
         updateUserChip()
       } catch (err: any) {

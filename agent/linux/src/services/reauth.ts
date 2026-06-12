@@ -7,7 +7,7 @@
 // fetch a fresh token and bring the connection back without any interaction.
 
 import { store } from '../store'
-import { resolveBaseUrl, serverFetch } from './server-client'
+import { resolveAgentSocketUrl, resolveBaseUrl, serverFetch } from './server-client'
 import { cacheUserAvatar } from './avatar-cache'
 
 // De-dupe concurrent callers: a burst of 401s (or a register rejection racing
@@ -49,8 +49,11 @@ export async function reauthenticate(): Promise<boolean> {
         timeoutMs: 15_000,
       })
       if (!data?.access_token) return false
+      const agentSocketUrl = resolveAgentSocketUrl(String(data.agent_socket_url || ''))
+      if (!agentSocketUrl) return false
 
       store.set('serverUrl', base)
+      store.set('agentSocketUrl', agentSocketUrl)
       store.set('authToken', data.access_token)
       store.set('userName', String(data.user?.name || data.user?.nickname || account))
       store.set('userAvatar', String(data.user?.avatar || ''))

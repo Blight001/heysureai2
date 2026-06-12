@@ -9,6 +9,7 @@ export function clearStoredAuthSession(reason = '登录已过期，请重新登�
 
   getAgent()?.disconnect()
   store.set('authToken', '')
+  store.set('agentSocketUrl', '')
   store.set('userAccount', '')
   store.set('userName', '')
   store.set('userAvatar', '')

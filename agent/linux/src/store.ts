@@ -2,6 +2,7 @@ import Store from 'electron-store'
 
 interface AgentSettings {
   serverUrl: string
+  agentSocketUrl: string
   agentToken: string
   agentId: string
   agentName: string
@@ -47,6 +48,7 @@ interface AgentSettings {
 
 const defaults: AgentSettings = {
   serverUrl: process.env.SERVER_URL || 'http://127.0.0.1:3000',
+  agentSocketUrl: '',
   agentToken: process.env.AGENT_TOKEN || '',
   agentId: process.env.AGENT_ID || '',
   agentName: process.env.AGENT_NAME || 'Linux Agent',

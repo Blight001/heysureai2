@@ -31,6 +31,10 @@ export function resolveBaseUrl(rawUrl: string): string {
   return normalizeServerUrl(rawUrl)
 }
 
+export function resolveAgentSocketUrl(rawUrl: string): string {
+  return normalizeServerUrl(rawUrl)
+}
+
 // Variant that requires an authenticated session (throws if missing).
 export function requireAuth(settings: AgentSettings): { base: string; token: string } {
   if (!settings.serverUrl || !settings.authToken) throw new Error('未登录')
@@ -81,6 +85,16 @@ export async function serverFetch<T = any>(
   })
 
   return readJson(res, opts.failureMessage || `请求失败`, !!opts.token)
+}
+
+export async function fetchAgentEndpoint(base: string, token: string): Promise<string> {
+  const data = await serverFetch<{ agent_socket_url?: string }>(base, '/api/auth/agent-endpoint', {
+    token,
+    failureMessage: '获取 Agent 连接地址失败',
+  })
+  const url = resolveAgentSocketUrl(String(data.agent_socket_url || ''))
+  if (!url) throw new Error('服务器未返回 Agent 连接地址')
+  return url
 }
 
 // Health-probe used by the "test connection" button. Falls back to the root

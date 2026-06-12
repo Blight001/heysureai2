@@ -85,10 +85,15 @@ export class HeySureAgent {
     this.reauthRequested = false
     let serverUrl: string
     try {
-      serverUrl = normalizeServerUrl(this.settings.serverUrl)
+      serverUrl = normalizeServerUrl(this.settings.agentSocketUrl)
     } catch {
-      this.setStatus('error', '服务器 URL 格式无效')
-      this.log('error', '连接错误: 服务器 URL 格式无效')
+      this.setStatus('error', 'Agent 连接地址格式无效')
+      this.log('error', '连接错误: Agent 连接地址格式无效')
+      return
+    }
+    if (!serverUrl) {
+      this.setStatus('error', '缺少 Agent 连接地址，请重新登录')
+      this.log('error', '连接错误: 缺少 Agent 连接地址，请重新登录')
       return
     }
     this.log('info', `正在连接 ${serverUrl}…`)

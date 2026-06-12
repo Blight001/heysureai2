@@ -36,7 +36,7 @@ export async function doLogin() {
   dom.loginFeedback.textContent = '登录中…'
   dom.loginFeedback.style.color = 'var(--muted)'
   try {
-    const { token, user } = await apiLogin(state.serverUrl, account, password)
+    const { token, user, agentSocketUrl } = await apiLogin(state.serverUrl, account, password)
     const rememberLogin = dom.loginRemember.checked
     state.auth = {
       token,
@@ -47,6 +47,7 @@ export async function doLogin() {
       userName: user?.name || account,
       avatar: user?.avatar || '',
     }
+    await saveSettings({ agentSocketUrl })
     await saveAuth(state.auth)
     if (!rememberLogin) {
       dom.loginAccount.value = ''

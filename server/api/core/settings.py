@@ -132,6 +132,11 @@ class Settings(BaseSettings):
         description="Public HTTP(S) base URL used when generating externally fetchable "
         "links, for example https://api.example.com. Empty = derive from request host.",
     )
+    agent_socket_url: str = Field(
+        default="",
+        description="Public Socket.IO base URL endpoint agents should connect to. "
+        "Empty = derive from the login/API request URL.",
+    )
     temp_image_ttl_seconds: int = Field(
         default=60 * 60 * 24,
         description="How long temporary images remain available before cleanup.",
@@ -228,6 +233,7 @@ class Settings(BaseSettings):
         "clawhub_registry_url",
         "clawhub_api_token",
         "public_base_url",
+        "agent_socket_url",
         mode="before",
     )
     @classmethod

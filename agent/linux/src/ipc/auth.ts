@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { store } from '../store'
-import { resolveBaseUrl, serverFetch } from '../services/server-client'
+import { resolveAgentSocketUrl, resolveBaseUrl, serverFetch } from '../services/server-client'
 import { cacheUserAvatar } from '../services/avatar-cache'
 import {
   getAgent, rebuildAgent, clearSelectedAiConfig,
@@ -20,7 +20,10 @@ export function registerAuthIpc(): void {
       failureMessage: '登录失败',
     })
 
+    const agentSocketUrl = resolveAgentSocketUrl(String(data.agent_socket_url || ''))
+    if (!agentSocketUrl) throw new Error('登录响应缺少 Agent 连接地址')
     store.set('serverUrl', base)
+    store.set('agentSocketUrl', agentSocketUrl)
     store.set('authToken', data.access_token)
     store.set('userAccount', account)
     // Persist the password so the agent can silently re-login and reconnect
@@ -40,6 +43,7 @@ export function registerAuthIpc(): void {
     // Disconnect any live socket first so the server sees us leaving.
     getAgent()?.disconnect()
     store.set('authToken', '')
+    store.set('agentSocketUrl', '')
     store.set('userAccount', '')
     store.set('userPassword', '')
     store.set('rememberLogin', false)

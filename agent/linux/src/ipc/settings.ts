@@ -9,7 +9,7 @@ import {
   closeMainWindow,
   isMainWindowMaximized,
 } from '../windows/main-window'
-import { resolveBaseUrl, serverFetch, ServerError } from '../services/server-client'
+import { fetchAgentEndpoint, resolveBaseUrl, serverFetch, ServerError } from '../services/server-client'
 import { cacheUserAvatar } from '../services/avatar-cache'
 
 export function registerSettingsIpc(): void {
@@ -33,6 +33,11 @@ export function registerSettingsIpc(): void {
         } else if (s.userAvatar && !s.userAvatarDataUrl) {
           await cacheUserAvatar(base, s.userAvatar)
         }
+        const agentSocketUrl = await fetchAgentEndpoint(base, s.authToken)
+        if (agentSocketUrl !== s.agentSocketUrl) {
+          store.set('agentSocketUrl', agentSocketUrl)
+          getAgent()?.updateSettings(store.store)
+        }
       } catch (err) {
         if (!(err instanceof ServerError && err.status === 401)) {
           // Network/server errors should not log the user out. They are handled
@@ -44,6 +49,9 @@ export function registerSettingsIpc(): void {
   })
 
   ipcMain.handle('settings:save', (_event, newSettings: Partial<AgentSettings>) => {
+    if (newSettings.serverUrl !== undefined && newSettings.serverUrl !== store.get('serverUrl') && newSettings.agentSocketUrl === undefined) {
+      newSettings.agentSocketUrl = ''
+    }
     Object.entries(newSettings).forEach(([k, v]) => store.set(k as any, v as any))
     if (clearAiSelectionIfLoggedOut()) {
       sendActivityLog('system', 'warn', '未登录，已取消 AI 成员自动注册选择')

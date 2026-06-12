@@ -77,17 +77,30 @@ async function requestJson<T>(url: string, init: RequestInit, fallback: string):
 }
 
 // ── Auth ────────────────────────────────────────────────────────────────────
-export async function login(serverUrl: string, account: string, password: string): Promise<{ token: string; user: LoginUser }> {
+export async function login(serverUrl: string, account: string, password: string): Promise<{ token: string; user: LoginUser; agentSocketUrl: string }> {
   const base = trimUrl(serverUrl)
-  const data = await requestJson<{ access_token: string; user: LoginUser }>(
+  const data = await requestJson<{ access_token: string; user: LoginUser; agent_socket_url?: string }>(
     `${base}/api/auth/login`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ account, password }) },
     '登录失败',
   )
   if (!data.access_token) throw new Error('登录响应缺少令牌')
-  return { token: data.access_token, user: data.user }
+  const agentSocketUrl = trimUrl(data.agent_socket_url || '')
+  if (!agentSocketUrl) throw new Error('登录响应缺少 Agent 连接地址')
+  return { token: data.access_token, user: data.user, agentSocketUrl }
 }
 
 export async function getMe(serverUrl: string, token: string): Promise<LoginUser> {
   return requestJson<LoginUser>(`${trimUrl(serverUrl)}/api/auth/me`, { headers: authHeaders(token) }, '获取用户信息失败')
+}
+
+export async function getAgentEndpoint(serverUrl: string, token: string): Promise<string> {
+  const data = await requestJson<{ agent_socket_url?: string }>(
+    `${trimUrl(serverUrl)}/api/auth/agent-endpoint`,
+    { headers: authHeaders(token) },
+    '获取 Agent 连接地址失败',
+  )
+  const agentSocketUrl = trimUrl(data.agent_socket_url || '')
+  if (!agentSocketUrl) throw new Error('服务器未返回 Agent 连接地址')
+  return agentSocketUrl
 }

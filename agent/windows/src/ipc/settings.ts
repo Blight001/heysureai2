@@ -12,7 +12,7 @@ import {
   closeMainWindow,
   isMainWindowMaximized,
 } from '../windows/main-window'
-import { resolveBaseUrl, serverFetch, ServerError } from '../services/server-client'
+import { fetchAgentEndpoint, resolveBaseUrl, serverFetch, ServerError } from '../services/server-client'
 import { cacheUserAvatar } from '../services/avatar-cache'
 
 function pngSize(buf: Buffer): { width: number; height: number } {
@@ -45,6 +45,11 @@ export function registerSettingsIpc(): void {
         } else if (s.userAvatar && !s.userAvatarDataUrl) {
           await cacheUserAvatar(base, s.userAvatar)
         }
+        const agentSocketUrl = await fetchAgentEndpoint(base, s.authToken)
+        if (agentSocketUrl !== s.agentSocketUrl) {
+          store.set('agentSocketUrl', agentSocketUrl)
+          getAgent()?.updateSettings(store.store)
+        }
       } catch (err) {
         if (!(err instanceof ServerError && err.status === 401)) {
           // Network/server errors should not log the user out. They are handled
@@ -56,8 +61,13 @@ export function registerSettingsIpc(): void {
   })
 
   ipcMain.handle('settings:save', (_event, newSettings: Partial<AgentSettings>) => {
+    const serverUrlChanged = newSettings.serverUrl !== undefined && newSettings.serverUrl !== store.get('serverUrl')
+    if (serverUrlChanged && newSettings.agentSocketUrl === undefined) {
+      newSettings.agentSocketUrl = ''
+    }
     const agentAffectingKeys = new Set<keyof AgentSettings>([
       'serverUrl',
+      'agentSocketUrl',
       'agentToken',
       'agentId',
       'agentName',

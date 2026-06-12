@@ -174,3 +174,4 @@ class Token(SQLModel):
     access_token: str
     token_type: str
     user: UserRead
+    agent_socket_url: str = ""

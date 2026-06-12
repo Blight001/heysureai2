@@ -2,6 +2,7 @@
 // Manages: Socket.IO server connection, task dispatching, popup port communication
 import { io, Socket } from 'socket.io-client'
 import { getSettings, saveSettings, pushActivity, getActivity, getAuth } from './lib/storage'
+import { getAgentEndpoint } from './lib/client'
 import { executeTask, executeBrowserTool, effectiveToolDefs } from './lib/tools'
 import { callAI } from './lib/ai'
 import { screenshotToolContent } from './lib/ai'
@@ -18,12 +19,9 @@ const popupPorts   = new Set<chrome.runtime.Port>()
 const offlineChatControllers = new Map<string, { canceled: boolean }>()
 let _machineId:    string | null = null
 let currentAgentId: string | null = null
-// Set while connect() is probing candidate URLs so a parallel call (e.g.
-// from the keepalive alarm or popup) doesn't kick off a second probe.
+// Set while connect() is resolving/opening the server-provided endpoint so a
+// parallel call (e.g. from the keepalive alarm or popup) doesn't duplicate it.
 let connecting = false
-// URL the current `socket` was opened against — used to detect when the
-// configured serverUrl changes and we need to drop the cached endpoint.
-let activeSocketUrl: string | null = null
 // Set when the server rejected registration for a non-transient reason
 // (expired/invalid token or AI-ownership mismatch). Retrying with the same
 // token just loops forever, so we stop auto-reconnect and the keepalive
@@ -113,97 +111,9 @@ async function getMachineId(): Promise<string> {
   return id
 }
 
-// ── Candidate URL discovery ───────────────────────────────────────────────
-// The agent Socket.IO endpoint isn't always the same as the HTTP login
-// URL. In split deployments (api-gateway on 3000 + connector-runtime on
-// 3002) registering against the gateway succeeds at the transport layer
-// but never receives `agent:registered` because only user-side handlers
-// are bound there. We therefore probe a small set of likely endpoints
-// derived from the configured serverUrl and remember the winner.
-function buildAgentCandidates(serverUrl: string, override: string, cached: string): string[] {
-  const list: string[] = []
-  const push = (raw: string) => {
-    const trimmed = String(raw || '').trim()
-    if (!trimmed) return
-    try {
-      const u = new URL(trimmed)
-      const href = u.href.replace(/\/+$/, '')
-      if (!list.includes(href)) list.push(href)
-    } catch { /* ignore malformed */ }
-  }
-
-  // Manual override always wins and short-circuits everything else.
-  if (override.trim()) {
-    push(override)
-    return list
-  }
-
-  push(cached)
-  push(serverUrl)
-
-  // Heuristic siblings of the login URL — the standard split deployment
-  // exposes connector-runtime on 3002 (agents) next to api-gateway on
-  // 3000 (HTTP). Also probe 3001 in case a custom layout swaps them.
-  try {
-    const base = new URL(serverUrl)
-    for (const port of ['3002', '3001']) {
-      const alt = new URL(base.href)
-      alt.port = port
-      push(alt.href)
-    }
-  } catch { /* serverUrl already validated by caller */ }
-
-  return list
-}
-
-interface ProbeOutcome {
-  kind:    'registered' | 'rejected' | 'failed'
-  socket?: Socket
-  reason?: string
-  aiConfigId?: number | null
-}
-
 function parseAiConfigId(raw: any): number | null {
   const n = typeof raw === 'number' ? raw : (raw != null && String(raw).trim() !== '' ? Number(raw) : null)
   return Number.isFinite(n as number) ? (n as number) : null
-}
-
-// Try to register against a single URL. Resolves once the server replies
-// with agent:registered (success), agent:register_rejected (auth/AI
-// problem — not a routing issue, bail without trying more candidates), a
-// connect_error, or the timeout. On non-success the probe socket is
-// torn down before resolving so we never leak partial connections.
-function probeRegister(url: string, timeoutMs: number): Promise<ProbeOutcome> {
-  return new Promise(resolve => {
-    const probe = io(url, {
-      transports:           ['websocket'],
-      reconnection:         false,
-      timeout:              timeoutMs,
-      forceNew:             true,
-      autoConnect:          true,
-    })
-
-    let settled = false
-    const settle = (outcome: ProbeOutcome) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      if (outcome.kind === 'registered') {
-        resolve(outcome)
-      } else {
-        try { probe.removeAllListeners(); probe.disconnect() } catch { /* noop */ }
-        resolve(outcome)
-      }
-    }
-
-    const timer = setTimeout(() => settle({ kind: 'failed', reason: '注册超时（无响应）' }), timeoutMs)
-
-    probe.on('connect', () => { void emitRegisterOn(probe) })
-    probe.on('connect_error', (err: Error) => settle({ kind: 'failed', reason: err?.message || 'connect_error' }))
-    probe.on('disconnect',    (reason: string) => settle({ kind: 'failed', reason: `disconnected: ${reason}` }))
-    probe.on('agent:registered',        (data: any)  => settle({ kind: 'registered', socket: probe, aiConfigId: parseAiConfigId(data?.aiConfigId) }))
-    probe.on('agent:register_rejected', (data: any)  => settle({ kind: 'rejected',   reason: data?.reason || '注册被服务器拒绝' }))
-  })
 }
 
 async function emitRegisterOn(s: Socket): Promise<void> {
@@ -262,8 +172,20 @@ async function connect() {
     return
   }
 
-  try { new URL(settings.serverUrl) } catch {
-    log('system', 'error', '服务器 URL 格式无效')
+  let agentSocketUrl = String(settings.agentSocketUrl || '').trim()
+  if (!agentSocketUrl) {
+    try {
+      agentSocketUrl = await getAgentEndpoint(settings.serverUrl, auth.token)
+      await saveSettings({ agentSocketUrl })
+    } catch (err: any) {
+      setStatus('error', '无法获取 Agent 连接地址')
+      log('system', 'error', `无法获取 Agent 连接地址: ${err?.message || err}`)
+      return
+    }
+  }
+
+  try { agentSocketUrl = new URL(agentSocketUrl).href.replace(/\/$/, '') } catch {
+    log('system', 'error', 'Agent 连接地址格式无效')
     return
   }
 
@@ -271,76 +193,19 @@ async function connect() {
     socket.removeAllListeners()
     socket.disconnect()
     socket = null
-    activeSocketUrl = null
   }
 
-  const candidates = buildAgentCandidates(
-    settings.serverUrl,
-    settings.agentServerUrl || '',
-    settings.lastWorkingAgentUrl || '',
-  )
-  if (!candidates.length) {
-    log('system', 'error', '没有可用的 Agent 服务器地址')
-    return
-  }
-
-  // A fresh, user-initiated connect clears any prior rejection latch.
   authRejected = false
   connecting = true
   setStatus('connecting')
 
   try {
-    let winner: Socket | null = null
-    let winnerUrl = ''
-    let winnerAiConfigId: number | null = null
-    let rejected: string | null = null
-    const failures: Array<{ url: string; reason: string }> = []
-
-    for (const candidate of candidates) {
-      log('system', 'info', `探测 Agent 服务器: ${candidate}`)
-      const outcome = await probeRegister(candidate, 6000)
-      if (outcome.kind === 'registered' && outcome.socket) {
-        winner = outcome.socket
-        winnerUrl = candidate
-        winnerAiConfigId = outcome.aiConfigId ?? null
-        break
-      }
-      if (outcome.kind === 'rejected') {
-        rejected = outcome.reason || '注册被服务器拒绝'
-        break  // auth/AI problem — trying another URL won't help
-      }
-      failures.push({ url: candidate, reason: outcome.reason || '未知失败' })
-    }
-
-    if (rejected) {
-      setStatus('error', rejected)
-      log('system', 'error', `注册被拒绝: ${rejected}`)
-      return
-    }
-
-    if (!winner) {
-      setStatus('error', '无法连接到 Agent 服务器')
-      log('system', 'error',
-        `无法连接到 Agent 服务器，尝试过：\n${failures.map(f => `· ${f.url} — ${f.reason}`).join('\n')}\n` +
-        '请检查服务器是否启动；如服务端拆分部署，请在设置中填写 Agent 服务器 URL（如 http://your-host:3002）。',
-        failures,
-      )
-      return
-    }
-
-    // Promote the probe socket to the active long-lived socket. We strip
-    // the probe listeners and re-attach the full operational set so future
-    // events (task dispatch, disconnect, registered after reconnect) flow
-    // through the normal handlers.
-    winner.removeAllListeners()
-    socket = winner
-    activeSocketUrl = winnerUrl
-    boundAiConfigId = winnerAiConfigId
-    setStatus('registered')
-    log('system', 'success', `已连接并注册到 ${winnerUrl}`)
-    if (settings.lastWorkingAgentUrl !== winnerUrl) {
-      await saveSettings({ lastWorkingAgentUrl: winnerUrl })
-    }
+    log('system', 'info', `正在连接 Agent 服务器: ${agentSocketUrl}`)
+    socket = io(agentSocketUrl, {
+      transports: ['websocket', 'polling'],
+      reconnectionDelay: 2000,
+      reconnectionAttempts: Infinity,
+    })
     attachOperationalListeners(socket, settings.agentName || 'Browser Agent')
   } finally {
     connecting = false
@@ -348,15 +213,6 @@ async function connect() {
 }
 
 function attachOperationalListeners(s: Socket, agentName: string) {
-  // Probe sockets were created with reconnection:false to keep failed
-  // probes from looping. Now that we're promoting one to the long-lived
-  // socket, flip those Manager-level toggles back on. opts.reconnection
-  // alone is read-only at runtime — the Manager actually checks
-  // ``_reconnection`` set via the setter methods below.
-  s.io.reconnection(true)
-  s.io.reconnectionDelay(2000)
-  s.io.reconnectionAttempts(Infinity)
-
   s.on('connect', async () => {
     setStatus('connected')
     log('system', 'info', '已连接到服务器')
@@ -427,7 +283,6 @@ async function register() {
 function disconnect() {
   socket?.disconnect()
   socket = null
-  activeSocketUrl = null
   setStatus('disconnected')
 }
 
@@ -501,37 +356,24 @@ async function testConnection(): Promise<any> {
     httpResult = { success: false, error: err.message }
   }
 
-  // Probe the candidate agent URLs so the user can see which (if any)
-  // accepts agent registration. We don't fail the whole test if no
-  // candidate registers — the HTTP login may still be reachable while
-  // the agent socket is being moved/restarted.
-  const candidates = buildAgentCandidates(
-    settings.serverUrl,
-    settings.agentServerUrl || '',
-    settings.lastWorkingAgentUrl || '',
-  )
   const auth = await getAuth()
-  const agentProbes: Array<{ url: string; ok: boolean; reason?: string }> = []
-  let agentOkUrl = ''
+  let agentSocketUrl = settings.agentSocketUrl || ''
+  let endpointResult: any = null
   if (auth.token) {
-    for (const candidate of candidates) {
-      const outcome = await probeRegister(candidate, 5000)
-      if (outcome.kind === 'registered') {
-        agentProbes.push({ url: candidate, ok: true })
-        agentOkUrl = candidate
-        try { outcome.socket?.removeAllListeners(); outcome.socket?.disconnect() } catch { /* noop */ }
-        break
-      }
-      agentProbes.push({ url: candidate, ok: false, reason: outcome.reason })
-      if (outcome.kind === 'rejected') break  // not a routing issue
+    try {
+      agentSocketUrl = await getAgentEndpoint(settings.serverUrl, auth.token)
+      await saveSettings({ agentSocketUrl })
+      endpointResult = { success: true, agentSocketUrl }
+    } catch (err: any) {
+      endpointResult = { success: false, error: err?.message || String(err) }
     }
   }
 
   return {
     success: httpResult.success,
     http: httpResult,
-    agentProbes,
-    agentOkUrl,
+    agentSocketUrl,
+    endpoint: endpointResult,
     needsLogin: !auth.token,
   }
 }
@@ -727,12 +569,10 @@ chrome.runtime.onConnect.addListener((port) => {
       case 'agent:disconnect': { disconnect();    break }
       case 'auth:logout': {
         // Drop the socket entirely so the server sees us leaving and we
-        // don't keep re-registering with an empty/stale token. Also
-        // clear the cached agent URL so the next login re-probes the
-        // (possibly different) backend.
+        // don't keep re-registering with an empty/stale token.
         authRejected = false
         disconnect()
-        await saveSettings({ selectedAiConfigId: null, lastWorkingAgentUrl: '' })
+        await saveSettings({ selectedAiConfigId: null, agentSocketUrl: '' })
         break
       }
 
@@ -744,27 +584,18 @@ chrome.runtime.onConnect.addListener((port) => {
       case 'settings:save': {
         const prev = await getSettings()
         const payload = { ...msg.payload }
-        // If the user edited either the login URL or the manual agent
-        // override, drop the cached working URL so the next connect()
-        // re-probes against the new topology instead of reconnecting to
-        // a stale endpoint.
         const serverUrlChanged = payload.serverUrl !== undefined && payload.serverUrl !== prev.serverUrl
-        const agentUrlChanged  = payload.agentServerUrl !== undefined && payload.agentServerUrl !== prev.agentServerUrl
-        if ((serverUrlChanged || agentUrlChanged) && payload.lastWorkingAgentUrl === undefined) {
-          payload.lastWorkingAgentUrl = ''
+        if (serverUrlChanged && payload.agentSocketUrl === undefined) {
+          payload.agentSocketUrl = ''
         }
         await saveSettings(payload)
         if (payload.offlineMode === true && socket?.connected) {
           disconnect()
         }
-        if ((serverUrlChanged || agentUrlChanged) && socket) {
-          // Topology may have moved — drop the current socket so future
-          // connect() calls re-probe instead of clinging to the old one.
+        if ((serverUrlChanged || payload.agentSocketUrl !== undefined) && socket) {
           const wasConnected = !!socket
           disconnect()
           if (wasConnected && !payload.offlineMode) {
-            // Reconnect against the new URL so the user doesn't have to
-            // re-click "connect" after editing the address.
             void connect()
           }
         }

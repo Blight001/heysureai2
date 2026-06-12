@@ -6,7 +6,7 @@ import os
 from datetime import timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header, Request
 from sqlmodel import Session, select
 
 from api.auth import (
@@ -27,6 +27,7 @@ from api.models.defaults import DEFAULT_MCP_NAMESPACE_HINTS
 from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.services import auth_settings, email_service
 from api.services.model_presets import model_presets_json
+from api.core.settings import settings
 from pydantic import BaseModel
 
 
@@ -66,6 +67,23 @@ def _parse_bool_setting(value, default: bool = True) -> bool:
     if text in {"1", "true", "on", "yes"}:
         return True
     return default
+
+
+def _normalize_public_url(raw: str) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    return value.rstrip("/")
+
+
+def _agent_socket_url(request: Request) -> str:
+    configured = _normalize_public_url(settings.agent_socket_url)
+    if configured:
+        return configured
+    public_base = _normalize_public_url(settings.public_base_url)
+    if public_base:
+        return public_base
+    return str(request.base_url).rstrip("/")
 
 def ensure_user_workspace(user_id: int) -> None:
     """Ensure the per-user workspace root and the shared knowledge base exist.
@@ -236,7 +254,7 @@ async def register(
     return _user_payload(db_user)
 
 @router.post("/login", response_model=Token)
-async def login(user_in: UserLogin, session: Session = Depends(get_session)):
+async def login(user_in: UserLogin, request: Request, session: Session = Depends(get_session)):
     statement = select(User).where(User.account == user_in.account)
     user = session.exec(statement).first()
     if not user or not verify_password(user_in.password, user.hashed_password):
@@ -255,11 +273,16 @@ async def login(user_in: UserLogin, session: Session = Depends(get_session)):
         data={"sub": user.account, "user_id": user.id}, expires_delta=access_token_expires
     )
     
-    return {"access_token": access_token, "token_type": "bearer", "user": _user_payload(user)}
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": _user_payload(user),
+        "agent_socket_url": _agent_socket_url(request),
+    }
 
 
 @router.post("/login-email", response_model=Token)
-async def login_with_email(payload: EmailLoginPayload, session: Session = Depends(get_session)):
+async def login_with_email(payload: EmailLoginPayload, request: Request, session: Session = Depends(get_session)):
     """邮箱验证码登录：验证一次性验证码后为绑定该邮箱的用户签发 JWT。"""
     email = auth_settings.normalize_email(payload.email)
     if not auth_settings.is_valid_email(email):
@@ -278,7 +301,24 @@ async def login_with_email(payload: EmailLoginPayload, session: Session = Depend
         data={"sub": user.account, "user_id": user.id},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     )
-    return {"access_token": access_token, "token_type": "bearer", "user": _user_payload(user)}
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": _user_payload(user),
+        "agent_socket_url": _agent_socket_url(request),
+    }
+
+
+@router.get("/agent-endpoint")
+async def agent_endpoint(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    session: Session = Depends(get_session),
+):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authentication token")
+    get_current_user(authorization, session)
+    return {"agent_socket_url": _agent_socket_url(request)}
 
 
 @router.put("/profile", response_model=UserRead)
