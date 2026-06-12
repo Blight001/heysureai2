@@ -50,6 +50,9 @@ WATER_D = (56, 98, 152, 255)
 STONE = (148, 148, 156, 255)
 STONE_D = (112, 112, 122, 255)
 STONE_L = (180, 180, 188, 255)
+SLATE = (104, 118, 142, 255)       # 青石板瓦（图书馆陡顶）
+SLATE_D = (78, 90, 112, 255)
+SLATE_L = (132, 146, 168, 255)
 WOOD = (122, 86, 54, 255)
 WOOD_D = (94, 64, 40, 255)
 WALL = (216, 192, 150, 255)
@@ -297,47 +300,77 @@ def gen_spawn():
 
 
 def gen_library():
-    """图书馆：帧0 平时 / 帧1 屋顶亮灯 + 窗户点亮（有待审批知识时用）。"""
+    """图书馆：古典欧风石造馆——青石板陡顶 + 金饰尖、石砌墙、玫瑰窗、罗马拱窗拱门。
+    帧0 平时 / 帧1 玫瑰窗与拱窗点亮（有待审批知识时用）。"""
+    glass = (96, 116, 156, 255)
+    glass_lit = (250, 214, 120, 255)
+    halo = (255, 230, 150, 160)
     frames = []
     for f in range(2):
+        lit = f == 1
+        g = glass_lit if lit else glass
         c = C(48, 48)
-        # 烟囱
-        c.rect(34, 2, 6, 10, STONE_D)
-        c.rect(33, 2, 8, 2, STONE)
-        # 山形屋顶
+        # 顶部金饰尖
+        c.vline(24, 2, 4, GOLD_D)
+        c.px(24, 1, GOLD)
+        # 青石板山形陡顶（横向石板层理 + 檐口压暗）
         for i, y in enumerate(range(6, 21)):
             half = 2 + i * 1.45
-            col = ROOF_D if y >= 19 else ROOF
+            col = SLATE_D if y >= 19 else (SLATE_L if i % 3 == 0 else SLATE)
             c.hline(24 - half, y, half * 2, col)
-        c.hline(23, 5, 3, ROOF_D)
-        # 墙体
-        c.rect(4, 20, 40, 26, WALL)
-        c.rect(40, 20, 4, 26, WALL_SH)
-        c.outline(4, 20, 40, 26, WOOD_D)
-        c.vline(15, 20, 26, WOOD)
-        c.vline(32, 20, 26, WOOD)
-        # 门
-        c.rect(20, 31, 8, 15, WOOD)
-        c.rect(21, 32, 6, 14, WOOD_D)
-        c.px(26, 39, GOLD)
-        # 门上书本招牌
-        c.rect(20, 26, 8, 4, PAPER)
-        c.outline(20, 26, 8, 4, WOOD_D)
-        c.vline(24, 27, 2, ROOF)
-        # 窗户 x2
+        c.hline(23, 5, 3, SLATE_D)
+        # 石砌墙体（错缝砖纹 + 右侧背光面压暗）
+        c.rect(4, 20, 40, 26, STONE_L)
+        for by in range(24, 46, 4):
+            c.hline(5, by, 38, STONE)
+        for k, by in enumerate(range(24, 42, 4)):
+            for bx in range(8 if k % 2 else 6, 43, 8):
+                c.vline(bx, by + 1, 3, STONE)
+        c.rect(40, 20, 4, 26, STONE)
+        c.outline(4, 20, 40, 26, STONE_D)
+        # 角部壁柱
+        c.rect(4, 20, 3, 26, STONE)
+        c.vline(6, 20, 26, STONE_D)
+        c.rect(41, 20, 3, 26, STONE)
+        c.vline(41, 20, 26, STONE_D)
+        # 檐下金饰带
+        c.hline(5, 20, 38, GOLD_D)
+        # 玫瑰窗（门拱正上方）：金辐条 + 金环
+        c.disc(24, 25, 3, g)
+        c.vline(24, 22, 7, GOLD_D)
+        c.hline(21, 25, 7, GOLD_D)
+        c.ring(24, 25, 3, GOLD_D)
+        c.px(24, 25, GOLD)
+        if lit:
+            for gx, gy in ((20, 21), (28, 21), (24, 20)):
+                c.px(gx, gy, halo)
+        # 罗马拱窗 x2（石拱边 + 中梃 + 窗台）
         for wx in (8, 34):
-            lit = f == 1
-            c.rect(wx, 24, 7, 6, (250, 214, 120, 255) if lit else (96, 116, 156, 255))
-            c.outline(wx, 24, 7, 6, WOOD_D)
-            c.vline(wx + 3, 24, 6, WOOD_D)
+            c.hline(wx + 1, 27, 5, g)
+            c.rect(wx, 28, 7, 8, g)
+            c.hline(wx + 1, 26, 5, STONE_D)
+            c.px(wx, 27, STONE_D)
+            c.px(wx + 6, 27, STONE_D)
+            c.vline(wx - 1, 28, 9, STONE_D)
+            c.vline(wx + 7, 28, 9, STONE_D)
+            c.vline(wx + 3, 27, 9, STONE_D)
+            c.hline(wx - 1, 36, 9, STONE)
             if lit:
-                c.px(wx + 1, 25, FLAME_W)
-        if f == 1:
-            # 屋顶亮灯 + 光晕
-            c.rect(23, 8, 3, 3, GOLD)
-            c.px(24, 7, FLAME_W)
-            c.px(21, 9, (255, 230, 150, 160))
-            c.px(27, 9, (255, 230, 150, 160))
+                c.px(wx + 1, 29, FLAME_W)
+                c.px(wx + 5, 33, FLAME_W)
+        # 罗马拱门：石门套 + 拱缘 + 拱心石 + 木双开门
+        c.disc(24, 35, 6, STONE)
+        c.rect(18, 35, 12, 11, STONE)
+        for a in range(180, 361, 6):
+            c.px(24 + 6 * math.cos(math.radians(a)), 35 + 6 * math.sin(math.radians(a)), STONE_D)
+        c.rect(23, 28, 2, 2, STONE_L)  # 拱心石
+        c.disc(24, 35, 4, WOOD)
+        c.rect(20, 35, 8, 11, WOOD)
+        c.disc(24, 36, 3, WOOD_D)
+        c.rect(21, 36, 6, 10, WOOD_D)
+        c.vline(24, 33, 13, WOOD)  # 双开门中缝
+        c.px(22, 41, GOLD)
+        c.px(26, 41, GOLD)
         c.add_silhouette_outline()
         frames.append(c)
     save_strip(frames, "building_library.png")
