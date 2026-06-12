@@ -638,12 +638,11 @@ export class WorldScene extends Phaser.Scene {
       sprite.setDepth(95000)
       this.butterflies.push({ sprite, tx: sprite.x, ty: sprite.y, phase: rnd() * Math.PI * 2 })
     }
-    // 图书馆烟囱常烟；作坊执行任务时（reconcile 标记 active）也冒烟
+    // 作坊执行任务时（reconcile 标记 active）烟囱冒烟
     this.time.addEvent({
       delay: 850,
       loop: true,
       callback: () => {
-        this.spawnSmoke(906, 392)
         for (const view of this.workshops.values()) {
           if (view.offlineSince === null && view.sprite.anims.isPlaying && view.data.type === 'desktop') {
             this.spawnSmoke(view.sprite.x - 12, view.sprite.y - 32)
