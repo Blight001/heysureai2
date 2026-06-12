@@ -200,12 +200,17 @@ const memberStatusBadgeClass = (device: ConnectedAgent) => hasLinkedMember(devic
         </span>
       </div>
 
-      <!-- 知识工坊：AI 侧多对一绑定，不走设备 1:1 分配 -->
+      <!-- 知识工坊：1:1 绑定（只能绑定一个 AI 数字成员），不走本面板的分配下拉 -->
       <div
         v-if="isWorkshopDevice(device)"
         class="mt-2 rounded-lg border border-indigo-200 bg-indigo-50/60 p-2 text-[10px] text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
       >
-        知识与进化工坊：一个工坊可同时服务多个 AI。请在各 AI 的配置弹窗 → MCP 工具权限 → "知识与进化工坊" 中勾选绑定。
+        <div>
+          知识与进化工坊：只能绑定一个 AI 数字成员（绑定新成员会替换旧绑定）。请在 AI 配置弹窗 → MCP 工具权限 → "知识与进化工坊" 中勾选，或在社会显示中把成员拖到工坊建筑上。
+        </div>
+        <div class="mt-1 font-semibold">
+          当前绑定：{{ hasLinkedMember(device) ? `${linkedMember(device)?.name}（ID ${device.aiConfigId}）` : '未绑定' }}
+        </div>
       </div>
 
       <div v-else class="mt-2 rounded-lg border p-2" :class="memberPanelClass(device)">

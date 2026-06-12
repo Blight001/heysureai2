@@ -1,10 +1,10 @@
 """Persistent AI → workshop-agent binding (知识与进化工坊).
 
-The knowledge & evolution workshop is an endpoint agent (``agent/workshop/``)
-that serves *many* AIs at once — unlike desktop/browser devices which are
-bound 1:1 from the device side (``AgentAiBinding``), workshop binding is
-declared from the AI side: each row says "this AI may use that workshop
-agent's tools". An AI with no row cannot see or call any workshop tool.
+The knowledge & evolution workshop (server-builtin, see ``server/workshop/``)
+binds **1:1**：一个工坊同一时间只服务一个 AI 数字成员（绑定新成员替换旧
+绑定，由 ``api.workshop_bindings.set_workshop_binding`` 强制）。与设备绑定
+（``AgentAiBinding``）的差异仅在绑定方向：工坊绑定从 AI 侧声明。An AI
+with no row cannot see or call any workshop tool.
 """
 
 import time
