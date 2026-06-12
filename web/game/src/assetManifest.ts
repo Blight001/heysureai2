@@ -113,6 +113,7 @@ export const SHEETS: SheetDef[] = [
   strip('bench.png', '长椅', 'tileset', 40, 24, 1),
   strip('signpost.png', '路牌', 'tileset', 32, 40, 1),
   strip('butterfly.png', '蝴蝶（扇翅，运行时 tint 变色）', 'effect', 16, 16, 2, 8),
+  strip('glow.png', '径向光晕（夜间灯光/萤火虫，ADD 混合）', 'effect', 32, 32, 1),
   {
     file: 'emotes.png',
     label: '表情气泡（沙漏/灯泡/对勾/感叹/放大镜/Zzz/卷轴/骷髅）',

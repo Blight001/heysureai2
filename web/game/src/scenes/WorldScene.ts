@@ -89,6 +89,10 @@ export class WorldScene extends Phaser.Scene {
   private waterFlip = false
   private lamps: Phaser.GameObjects.Image[] = []
   private butterflies: { sprite: Phaser.GameObjects.Sprite; tx: number; ty: number; phase: number }[] = []
+  /** 夜深度 0..1（昼夜系统每分钟更新，光晕/萤火虫/蝴蝶联动） */
+  private nightness = 0
+  private nightGlows: { img: Phaser.GameObjects.Image; base: number; phase: number }[] = []
+  private fireflies: { img: Phaser.GameObjects.Image; vx: number; vy: number; phase: number }[] = []
 
   constructor() {
     super('world')
@@ -230,23 +234,37 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  /** 昼夜色调：按本地时间给世界盖一层夜色；?hour=22 可调试 */
+  /**
+   * 昼夜系统：乘法混合调色层（白天无色 → 黄昏暖橙 → 深夜蓝黑），
+   * 配合夜间光晕（createDecor 注册的灯光点）与萤火虫/蝴蝶昼夜交替。
+   * `?hour=N` 可调试任意时段。
+   */
   private createDayNight() {
-    this.nightOverlay = this.add.rectangle(0, 0, WORLD_W, WORLD_H, 0x141c3c, 0)
+    this.nightOverlay = this.add.rectangle(0, 0, WORLD_W, WORLD_H, 0xffffff, 1)
     this.nightOverlay.setOrigin(0, 0)
     this.nightOverlay.setDepth(150000)
+    this.nightOverlay.setBlendMode(Phaser.BlendModes.MULTIPLY)
+    const WHITE = Phaser.Display.Color.ValueToColor(0xffffff)
+    const DUSK = Phaser.Display.Color.ValueToColor(0xe09a64) // 黄昏暖橙
+    const NIGHT = Phaser.Display.Color.ValueToColor(0x3d4a86) // 深夜蓝
     const apply = () => {
       const debugHour = Number(new URLSearchParams(window.location.search).get('hour'))
       const now = new Date()
       const h = Number.isFinite(debugHour) ? debugHour : now.getHours() + now.getMinutes() / 60
-      const MAX = 0.38
-      let alpha = 0
-      if (h < 5.5 || h >= 20.5) alpha = MAX
-      else if (h < 7.5) alpha = MAX * (1 - (h - 5.5) / 2) // 黎明
-      else if (h >= 17.5) alpha = MAX * ((h - 17.5) / 3) // 黄昏
-      this.nightOverlay?.setFillStyle(0x141c3c, Math.min(MAX, Math.max(0, alpha)))
+      // 夜深度 t：0=正午白天，1=深夜
+      let t = 0
+      if (h < 5 || h >= 21) t = 1
+      else if (h < 7.5) t = 1 - (h - 5) / 2.5 // 黎明
+      else if (h >= 17.5) t = (h - 17.5) / 3.5 // 黄昏
+      this.nightness = Phaser.Math.Clamp(t, 0, 1)
+      // 调色：前半段 白→暖橙（日落），后半段 暖橙→深夜蓝
+      const mix = this.nightness < 0.5
+        ? Phaser.Display.Color.Interpolate.ColorWithColor(WHITE, DUSK, 100, this.nightness * 200)
+        : Phaser.Display.Color.Interpolate.ColorWithColor(DUSK, NIGHT, 100, (this.nightness - 0.5) * 200)
+      this.nightOverlay?.setFillStyle(Phaser.Display.Color.GetColor(mix.r, mix.g, mix.b), 1)
+      this.nightOverlay?.setVisible(this.nightness > 0.01)
       // 天黑点灯
-      const lit = alpha > 0.12
+      const lit = this.nightness > 0.3
       for (const lamp of this.lamps) lamp.setFrame(lit ? 1 : 0)
     }
     apply()
@@ -542,11 +560,31 @@ export class WorldScene extends Phaser.Scene {
       img.setDepth(y)
       return img
     }
-    // 主路灯柱（夜晚 updateDayNight 统一点亮）
+    // 主路灯柱（夜晚自动点亮 + 暖光光晕）
     for (const tx of [12, 22, 32, 42, 50]) {
-      this.lamps.push(deco('lamp.png', tx * TILE + 16, 21 * TILE - 2))
+      const lamp = deco('lamp.png', tx * TILE + 16, 21 * TILE - 2)
+      this.lamps.push(lamp)
+      this.addNightGlow(lamp.x, lamp.y - 44, 0xffcc66, 3.4, 0.5)
     }
-    this.lamps.push(deco('lamp.png', 30 * TILE + 16, 31 * TILE)) // 作坊街路口
+    const streetLamp = deco('lamp.png', 30 * TILE + 16, 31 * TILE) // 作坊街路口
+    this.lamps.push(streetLamp)
+    this.addNightGlow(streetLamp.x, streetLamp.y - 44, 0xffcc66, 3.4, 0.5)
+    // 建筑灯火与泉水的夜光
+    this.addNightGlow(880, 430, 0xffb866, 4.5, 0.35) // 图书馆窗火
+    this.addNightGlow(1190, 460, 0xaab4ff, 3.6, 0.3) // 议事厅
+    this.addNightGlow(1540, 250, 0xffa040, 4.2, 0.45) // 英灵殿长明火
+    this.addNightGlow(290, 640, 0x7fd8ff, 3.2, 0.4) // 出生地泉水
+    // 萤火虫：夜间出没（白天 alpha=0），缓慢游移 + 呼吸闪烁
+    const frnd = mulberry32(123)
+    for (let i = 0; i < 14; i++) {
+      const img = this.add.image(150 + frnd() * (WORLD_W - 300), 150 + frnd() * (WORLD_H - 300), 'glow.png', 0)
+      img.setBlendMode(Phaser.BlendModes.ADD)
+      img.setTint(0xc8ff7a)
+      img.setScale(0.45)
+      img.setDepth(160000) // 在夜色层之上发光
+      img.setAlpha(0)
+      this.fireflies.push({ img, vx: (frnd() - 0.5) * 18, vy: (frnd() - 0.5) * 14, phase: frnd() * Math.PI * 2 })
+    }
     // 出生地栅栏（北侧半围）+ 路牌
     for (let x = 160; x <= 416; x += 32) {
       deco('fence.png', x, 548, x === 160 || x === 416 ? 1 : 0)
@@ -579,6 +617,17 @@ export class WorldScene extends Phaser.Scene {
         }
       },
     })
+  }
+
+  /** 注册一个夜间发光点（ADD 混合，盖在夜色层之上，白天不可见） */
+  private addNightGlow(x: number, y: number, color: number, scale: number, base: number) {
+    const img = this.add.image(x, y, 'glow.png', 0)
+    img.setBlendMode(Phaser.BlendModes.ADD)
+    img.setTint(color)
+    img.setScale(scale)
+    img.setDepth(155000)
+    img.setAlpha(0)
+    this.nightGlows.push({ img, base, phase: Math.random() * Math.PI * 2 })
   }
 
   private spawnSmoke(x: number, y: number) {
@@ -1020,8 +1069,11 @@ export class WorldScene extends Phaser.Scene {
   // ---------------------------------------------------------------- 主循环
   update(time: number, delta: number) {
     for (const actor of this.actors.values()) actor.tick(time, delta)
-    // 蝴蝶：飘向目标 + 正弦浮动，到达后另选花丛
+    // 蝴蝶：白天飘向目标 + 正弦浮动（夜间隐去休息）
+    const day = 1 - this.nightness
     for (const b of this.butterflies) {
+      b.sprite.setAlpha(day)
+      if (day < 0.05) continue
       const dx = b.tx - b.sprite.x
       const dy = b.ty - b.sprite.y
       const dist = Math.hypot(dx, dy)
@@ -1034,6 +1086,23 @@ export class WorldScene extends Phaser.Scene {
         b.sprite.y += (dy / dist) * step + Math.sin(time / 260 + b.phase) * 0.45
         b.sprite.setFlipX(dx < 0)
       }
+    }
+    // 夜间灯光光晕：呼吸式微闪
+    for (const g of this.nightGlows) {
+      g.img.setAlpha(this.nightness * (g.base + 0.12 * Math.sin(time / 480 + g.phase)))
+    }
+    // 萤火虫：夜间游移 + 呼吸闪烁，碰到边界反弹
+    if (this.nightness > 0.05) {
+      for (const f of this.fireflies) {
+        f.img.x += (f.vx * delta) / 1000
+        f.img.y += (f.vy * delta) / 1000 + Math.sin(time / 300 + f.phase) * 0.3
+        if (f.img.x < 100 || f.img.x > WORLD_W - 100) f.vx *= -1
+        if (f.img.y < 100 || f.img.y > WORLD_H - 100) f.vy *= -1
+        const blink = 0.35 + 0.65 * Math.max(0, Math.sin(time / 700 + f.phase * 3))
+        f.img.setAlpha(this.nightness * blink * 0.9)
+      }
+    } else {
+      for (const f of this.fireflies) f.img.setAlpha(0)
     }
   }
 }

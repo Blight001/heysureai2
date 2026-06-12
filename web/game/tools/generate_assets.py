@@ -891,6 +891,18 @@ def gen_butterfly():
     save_strip(frames, "butterfly.png")
 
 
+def gen_glow():
+    """径向光晕（夜间灯光/萤火虫，ADD 混合用）。"""
+    c = C(32, 32)
+    for yy in range(32):
+        for xx in range(32):
+            r = math.hypot(xx - 15.5, yy - 15.5) / 14.0
+            if r < 1.0:
+                a = int(255 * (1 - r) ** 2)
+                c.px(xx, yy, (255, 255, 255, a))
+    save_strip([c], "glow.png", scale=1)
+
+
 def gen_clouds():
     """云朵（开场加载层）：两个形态变体，柔边半透明，无描边。"""
     frames = []
@@ -986,6 +998,7 @@ def main():
     gen_bench()
     gen_signpost()
     gen_butterfly()
+    gen_glow()
     gen_clouds()
     gen_effects()
     print("完成。")
