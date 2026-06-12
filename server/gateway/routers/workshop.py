@@ -1,17 +1,14 @@
-"""``/api/workshop`` — 知识与进化工坊（agent/workshop/）的服务端配套接口。
+"""``/api/workshop`` — 知识与进化工坊（server/workshop/，服务端内置）的绑定接口。
 
-两组端点：
-- ``POST /api/workshop/execute``   工坊 agent 收到 task:dispatch 后回调执行。
-  知识/进化的数据真相源（DB / KnowledgeBase 文件）始终留在服务端，工坊
-  agent 只是"门面"：负责注册工具、注入方向策略，然后回调这里落库。
-- ``GET/POST /api/workshop/bindings``  前端为某个 AI 绑定/解绑工坊 agent。
-  绑定是 AI 调用 librarian.* / evolution.* 的唯一门槛。
+工坊按账号自动上线（无需用户运行独立程序），本路由只管"哪些 AI 绑定了
+工坊"：绑定是 AI 调用 ``librarian.*`` / ``evolution.*`` 的唯一门槛，
+一个工坊可同时服务多个 AI（AI 侧多对一，存 ``WorkshopAiBinding``）。
 
-安全边界：工坊 agent 持用户 token 连接，但服务端不信任其声明——这里会
-重新校验 ai_config 归属、工具白名单、角色最低权限与绑定关系。
+工具执行不走 REST：调度层（agent_dispatch 的 workshop 分支）直接进程内
+调用 ``workshop.engine.execute_tool``，其中完成白名单/归属/绑定/角色复核。
 """
 
-from typing import Any, Dict, Optional
+from typing import Dict
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
@@ -29,25 +26,6 @@ from .auth import get_current_user
 # 自动挂载默认前缀 /api → 实际路径 /api/workshop/*
 router = APIRouter(prefix="/workshop", tags=["workshop"])
 
-# 工坊可执行的工具白名单：与 agent/workshop/tools.py 的注册清单对应。
-# handler 实现仍在 mcp_runtime（服务端真相源），此处只做受控转发。
-_WORKSHOP_TOOL_HANDLERS = {
-    "librarian.propose": ("mcp_runtime.mcp.tools.librarian", "_librarian_propose"),
-    "librarian.consult": ("mcp_runtime.mcp.tools.librarian", "_librarian_consult"),
-    "librarian.list_topics": ("mcp_runtime.mcp.tools.librarian", "_librarian_list_topics"),
-    "librarian.read": ("mcp_runtime.mcp.tools.librarian", "_librarian_read"),
-    "librarian.archive": ("mcp_runtime.mcp.tools.librarian", "_librarian_archive"),
-    "evolution.input": ("mcp_runtime.mcp.tools.evolution", "_evolution_input"),
-    "evolution.list": ("mcp_runtime.mcp.tools.evolution", "_evolution_list"),
-    "evolution.review": ("mcp_runtime.mcp.tools.evolution", "_evolution_review"),
-}
-
-
-class WorkshopExecuteRequest(BaseModel):
-    tool: str
-    args: Dict[str, Any] = {}
-    ai_config_id: Optional[int] = None
-
 
 class WorkshopBindRequest(BaseModel):
     ai_config_id: int
@@ -55,7 +33,7 @@ class WorkshopBindRequest(BaseModel):
     bound: bool = True
 
 
-def _load_owned_config(session: Session, user_id: int, ai_config_id: Optional[int]) -> AssistantAIConfig:
+def _load_owned_config(session: Session, user_id: int, ai_config_id) -> AssistantAIConfig:
     if not ai_config_id:
         raise HTTPException(status_code=400, detail="ai_config_id is required")
     cfg = session.exec(
@@ -69,64 +47,28 @@ def _load_owned_config(session: Session, user_id: int, ai_config_id: Optional[in
     return cfg
 
 
-@router.post("/execute")
-async def workshop_execute(
-    payload: WorkshopExecuteRequest,
-    session: Session = Depends(get_session),
-    authorization: str = Header(None),
-):
-    user = get_current_user(authorization, session)
-    tool = str(payload.tool or "").strip()
-    spec = _WORKSHOP_TOOL_HANDLERS.get(tool)
-    if spec is None:
-        raise HTTPException(status_code=400, detail=f"'{tool}' is not a workshop tool")
-
-    cfg = _load_owned_config(session, user.id, payload.ai_config_id)
-
-    # 绑定是工坊工具的唯一门槛：未绑定任何工坊 agent 的 AI 一律拒绝，
-    # 即使请求方持有合法用户 token（防止绕过工坊通道直接调用）。
-    if not workshop_agent_ids_for_config(user.id, cfg.id):
-        raise HTTPException(
-            status_code=403,
-            detail=f"AI config {cfg.id} 未绑定知识工坊 agent，无法调用 {tool}",
-        )
-
-    # 角色最低权限复核（服务端为准，不信任 agent 侧声明）。
-    from mcp_runtime.mcp.permissions import ROLE_RANK, config_role_tier, tool_min_role
-
-    tier = config_role_tier(cfg)
-    if ROLE_RANK.get(tier, 0) < ROLE_RANK.get(tool_min_role(tool), 0):
-        raise HTTPException(status_code=403, detail=f"角色 {tier} 无权调用 {tool}")
-
-    import importlib
-
-    module_name, func_name = spec
-    handler = getattr(importlib.import_module(module_name), func_name)
-    result = handler(user.id, dict(payload.args or {}), int(cfg.id))
-    return {"tool": tool, "result": result}
-
-
 @router.get("/bindings")
 async def list_workshop_bindings(
     ai_config_id: int,
     session: Session = Depends(get_session),
     authorization: str = Header(None),
 ):
-    """列出该用户的工坊 agent（在线状态 + 是否已绑定到指定 AI）。"""
+    """列出该用户的工坊（在线状态 + 是否已绑定到指定 AI）。
+
+    内置工坊自动上线，所以列表至少包含一条常在线条目。"""
     user = get_current_user(authorization, session)
     cfg = _load_owned_config(session, user.id, ai_config_id)
 
     from api.agent_presence import online_workshop_agents_for_user
-    from api.sio import agents as live_agents
+    from workshop import engine as workshop_engine
 
+    workshop_engine.ensure_presence_for_user(user.id)
     bound_ids = set(workshop_agent_ids_for_config(user.id, cfg.id))
     online = {agent_id: caps for agent_id, caps in online_workshop_agents_for_user(user.id)}
 
-    # 名称只在持有 socket 的进程内存里有；拿不到时回退 agent_id。
-    names: Dict[str, str] = {}
-    for agent in live_agents.values():
-        if isinstance(agent, dict) and str(agent.get("platform") or "").lower().find("workshop") >= 0:
-            names[str(agent.get("id") or "")] = str(agent.get("name") or "")
+    names: Dict[str, str] = {
+        workshop_engine.agent_id_for_user(user.id): workshop_engine.WORKSHOP_DISPLAY_NAME,
+    }
 
     items = []
     for agent_id in sorted(set(online) | bound_ids):

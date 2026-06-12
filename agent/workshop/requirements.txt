@@ -1,2 +1,0 @@
-python-socketio>=5.11
-aiohttp>=3.9

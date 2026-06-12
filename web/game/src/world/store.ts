@@ -61,7 +61,7 @@ export interface WorldMember {
 export interface WorldWorkshop {
   agentId: string
   name: string
-  type: 'desktop' | 'browser'
+  type: 'desktop' | 'browser' | 'workshop'
   lifecycle: string
   aiConfigId: number | null
   lastError: string | null
@@ -111,9 +111,11 @@ const roleOf = (row: Record<string, any>): MemberRole => {
   return 'member'
 }
 
-const workshopTypeOf = (raw: Record<string, any>): 'desktop' | 'browser' | null => {
+const workshopTypeOf = (raw: Record<string, any>): 'desktop' | 'browser' | 'workshop' | null => {
   const platform = String(raw.platform || '').toLowerCase()
   const id = String(raw.id || '')
+  // 知识与进化工坊：服务端内置，常在线（/api/agents/connected 注入虚拟条目）
+  if (raw.isWorkshop || platform.includes('workshop')) return 'workshop'
   if (raw.isWindowsDesktop || id.startsWith('win-desktop-') || platform.includes('desktop') || platform.includes('windows')) {
     return 'desktop'
   }

@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
-"""知识与进化工坊的工具注册表（工坊端真相源）。
+"""知识与进化工坊的工具注册表（工坊真相源）。
 
-这里声明的工具名 / 描述 / 入参 schema 会在 agent 连接时通过
-``agent:register`` 上报给服务器，并原样展示给绑定了本工坊的 AI。
+服务端内置工坊（server/workshop/）按用户自动上线，这里声明的工具名 /
+描述 / 入参 schema 会作为该工坊的 capabilities 写入在线快照，并原样展示
+给绑定了工坊的 AI。
 
 ▶ 想调整"AI 怎么用知识与进化"，直接改这里的 description（支持中文），
-  AI 看到的工具说明立刻随之变化，无需改服务端。
-▶ 想增删工具：服务端只接受 ``librarian.`` / ``evolution.`` 两个命名空间，
-  且执行最终回调 gateway ``/api/workshop/execute`` 的白名单，新增工具名
-  需要服务端同步支持。
+  AI 看到的工具说明随下一次工坊上线刷新（重启任一服务进程即可）。
+▶ 想增删工具：工坊只接受 ``librarian.`` / ``evolution.`` 两个命名空间，
+  且执行经 ``server/workshop/engine.py`` 的白名单，新增工具名需要在
+  engine 的 handler 映射中同步支持。
 """
 
 TOOL_DEFS = [

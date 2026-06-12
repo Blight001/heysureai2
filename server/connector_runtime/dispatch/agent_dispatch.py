@@ -29,7 +29,6 @@ from api.database import engine
 from connector_runtime.dispatch.desktop_agent_tools import (
     get_connected_browser_agent,
     get_connected_desktop_agent,
-    get_connected_workshop_agent,
     is_browser_tool,
     is_desktop_tool,
     is_endpoint_agent_tool,
@@ -544,6 +543,32 @@ def _safe_dump(value: Any) -> str:
         return str(value)
 
 
+async def _execute_workshop_inline(
+    *,
+    user_id: int,
+    ai_config_id: Optional[int],
+    tool: str,
+    args: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """知识与进化工坊是服务端内置的，无 socket 往返：直接进程内执行
+    （policy 钩子 + 服务端复核见 ``workshop.engine.execute_tool``）。"""
+    from fastapi import HTTPException
+
+    from workshop import engine as workshop_engine
+
+    agent_id = workshop_engine.agent_id_for_user(user_id)
+    try:
+        result = await asyncio.to_thread(
+            workshop_engine.execute_tool, user_id, ai_config_id, tool, dict(args or {})
+        )
+        return {"success": True, "agentId": agent_id, "tool": tool, "summary": "", "result": result}
+    except HTTPException as exc:
+        return {"success": False, "agentId": agent_id, "tool": tool, "error": str(exc.detail)}
+    except Exception as exc:
+        logger.exception("workshop tool failed tool=%s user=%s", tool, user_id)
+        return {"success": False, "agentId": agent_id, "tool": tool, "error": str(exc)}
+
+
 async def dispatch_endpoint_tool(
     *,
     user_id: int,
@@ -557,14 +582,44 @@ async def dispatch_endpoint_tool(
     immediately. The dispatch row is persisted before the emit so the
     caller can poll ``AgentDispatchTask`` by ``task_id`` and survive a
     connector-runtime restart. Returns ``None`` when no agent is bound.
+
+    工坊工具没有异步往返：内联执行后落一条已完成的 dispatch 行，
+    轮询方拿到的直接是终态。
     """
     tool_name = str(tool or "").strip()
     if not is_endpoint_agent_tool(tool_name) or not ai_config_id:
         return None
 
     if is_workshop_tool(tool_name):
-        agent = get_connected_workshop_agent(ai_config_id, user_id)
-    elif is_browser_tool(tool_name):
+        from workshop import engine as workshop_engine
+
+        task_id = f"atask_{uuid.uuid4().hex[:12]}"
+        run_ctx = get_run_session_context() or {}
+        _persist_dispatch(
+            task_id=task_id,
+            user_id=user_id,
+            ai_config_id=ai_config_id,
+            ai_kind=str(run_ctx.get("ai_kind") or "assistant"),
+            session_id=str(run_ctx.get("session_id") or ""),
+            session_name=run_ctx.get("session_name"),
+            agent_id=workshop_engine.agent_id_for_user(user_id),
+            tool=tool_name,
+            instruction=f"Run workshop MCP tool {tool_name}",
+        )
+        outcome = await _execute_workshop_inline(
+            user_id=user_id, ai_config_id=ai_config_id, tool=tool_name, args=args
+        )
+        _finalize_dispatch_row(
+            task_id,
+            status="completed" if outcome.get("success") else "error",
+            success=bool(outcome.get("success")),
+            summary="",
+            result=outcome.get("result"),
+            error=outcome.get("error"),
+        )
+        return task_id
+
+    if is_browser_tool(tool_name):
         agent = get_connected_browser_agent(ai_config_id, user_id)
     elif is_desktop_tool(tool_name):
         agent = get_connected_desktop_agent(ai_config_id, user_id)
@@ -609,20 +664,19 @@ async def dispatch_endpoint_tool_and_wait(
     if not ai_config_id:
         return {"success": False, "error": "ai_config_id is required for endpoint MCP tools"}
 
-    agent = None
+    # 知识与进化工坊：服务端内置，进程内直接执行（无 socket 往返）。
     if is_workshop_tool(tool_name):
-        agent = get_connected_workshop_agent(ai_config_id, user_id)
-    elif is_browser_tool(tool_name):
+        return await _execute_workshop_inline(
+            user_id=user_id, ai_config_id=ai_config_id, tool=tool_name, args=args
+        )
+
+    agent = None
+    if is_browser_tool(tool_name):
         agent = get_connected_browser_agent(ai_config_id, user_id)
     elif is_desktop_tool(tool_name):
         agent = get_connected_desktop_agent(ai_config_id, user_id)
     if not agent:
-        if is_workshop_tool(tool_name):
-            kind = "workshop"
-        elif is_browser_tool(tool_name):
-            kind = "browser"
-        else:
-            kind = "desktop"
+        kind = "browser" if is_browser_tool(tool_name) else "desktop"
         return {"success": False, "error": f"No connected {kind} agent bound to ai_config_id={ai_config_id}"}
 
     agent_id = str(agent.get("id") or "").strip()

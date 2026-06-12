@@ -347,34 +347,6 @@ def endpoint_bridge_tools_for_config(ai_config_id: Optional[int], user_id: Optio
     return set()
 
 
-def get_connected_workshop_agent(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
-    """First live workshop agent this AI is bound to (AI 侧多对一绑定)。
-
-    与桌面/浏览器不同：工坊绑定存在 ``WorkshopAiBinding``（一个工坊服务多个
-    AI），而非设备 1:1 的 ``AgentAiBinding``。"""
-    config_id = _parse_int(ai_config_id)
-    if not config_id:
-        return None
-    from api.workshop_bindings import workshop_agent_ids_for_config
-
-    bound_ids = set(workshop_agent_ids_for_config(user_id, config_id))
-    if not bound_ids:
-        return None
-    for agent in list(agents.values()):
-        if not isinstance(agent, dict):
-            continue
-        if agent_type_of(agent) != "workshop":
-            continue
-        if str(agent.get("id") or "").strip() not in bound_ids:
-            continue
-        agent_user_id = _parse_int(agent.get("userId") or agent.get("user_id"))
-        expected_user_id = _parse_int(user_id)
-        if expected_user_id and agent_user_id and agent_user_id != expected_user_id:
-            continue
-        return agent
-    return None
-
-
 def workshop_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
     """Workshop MCP tools available to an AI right now: the union of what its
     bound online workshop agents advertise, each narrowed by that agent's

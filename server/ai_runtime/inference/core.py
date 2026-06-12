@@ -35,6 +35,7 @@ from connector_runtime.dispatch.desktop_agent_tools import (
     endpoint_bridge_tools_for_config,
     endpoint_tools_for_config,
     is_endpoint_agent_tool,
+    is_workshop_tool,
 )
 from api.services.task_system import (
     DEFAULT_SYSTEM_AUTO_CONTROL,
@@ -463,6 +464,19 @@ async def _call_mcp_or_endpoint_tool(
     arguments: dict,
     ai_config_id: Optional[int],
 ) -> Dict[str, object]:
+    if is_workshop_tool(tool):
+        # 知识与进化工坊是服务端内置的：任何进程都能直接执行，无需绕道
+        # gateway 的 socket 调度（拆分部署时也省一次 HTTP 往返）。
+        return {
+            "tool": tool,
+            "destructive": True,
+            "result": await dispatch_endpoint_tool_and_wait(
+                user_id=user_id,
+                ai_config_id=ai_config_id,
+                tool=tool,
+                args=arguments,
+            ),
+        }
     if is_endpoint_agent_tool(tool):
         # Desktop / browser agents register their socket on the api-gateway, so
         # endpoint-tool dispatch is served there (gateway.routers.

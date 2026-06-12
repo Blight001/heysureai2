@@ -360,12 +360,12 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                     >刷新</button>
                   </div>
                   <p class="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-                    绑定后本 AI 才能调用知识库（librarian.*）与进化（evolution.*）工具；一个工坊可同时服务多个 AI。
+                    工坊由服务端内置、每个账号自动上线（无需运行任何程序）。绑定后本 AI 才能调用知识库（librarian.*）与进化（evolution.*）工具；一个工坊可同时服务多个 AI。
                   </p>
                   <div v-if="workshopLoading" class="mt-2 text-[11px] text-zinc-400">加载中…</div>
                   <div v-else-if="workshopError" class="mt-2 text-[11px] text-rose-500">{{ workshopError }}</div>
                   <div v-else-if="workshopAgents.length === 0" class="mt-2 text-[11px] text-zinc-400">
-                    暂无工坊 agent 在线。启动方法见 agent/workshop/README.md。
+                    工坊暂不可用，请刷新重试（正常情况下内置工坊会自动上线）。
                   </div>
                   <label
                     v-for="agent in workshopAgents"
