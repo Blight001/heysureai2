@@ -32,8 +32,8 @@ import { Drawer } from '../ui/drawer'
 import type { Overlay, TooltipData } from '../ui/overlay'
 
 /** 议事厅门口（领任务动线的途经点） */
-const HALL_DOOR: Point = { x: 1190, y: 510 }
-const LIBRARY_DOOR: Point = { x: 880, y: 490 }
+const HALL_DOOR: Point = { x: 1180, y: 525 }
+const LIBRARY_DOOR: Point = { x: 880, y: 510 }
 
 const assetUrls = import.meta.glob('../../assets/*.png', {
   eager: true,
@@ -91,6 +91,7 @@ export class WorldScene extends Phaser.Scene {
   private butterflies: { sprite: Phaser.GameObjects.Sprite; tx: number; ty: number; phase: number }[] = []
   /** 夜深度 0..1（昼夜系统每分钟更新，光晕/萤火虫/蝴蝶联动） */
   private nightness = 0
+  private worldHour = 12
   private nightGlows: { img: Phaser.GameObjects.Image; base: number; phase: number }[] = []
   private fireflies: { img: Phaser.GameObjects.Image; vx: number; vy: number; phase: number }[] = []
 
@@ -188,7 +189,7 @@ export class WorldScene extends Phaser.Scene {
     const elapsed = this.time.now - this.sceneReadyAt
     this.time.delayedCall(Math.max(0, 900 - elapsed), () => {
       const cam = this.cameras.main
-      const endZoom = Phaser.Math.Clamp(Math.max(0.9, cam.zoom * 1.3), 0.5, 2)
+      const endZoom = Phaser.Math.Clamp(Math.max(0.9, cam.zoom * 1.3), this.minZoom(), 2)
       cam.pan(960, 620, 2200, 'Sine.easeInOut')
       cam.zoomTo(endZoom, 2200, 'Sine.easeInOut')
       const cx = this.scale.width / 2
@@ -237,7 +238,7 @@ export class WorldScene extends Phaser.Scene {
   /**
    * 昼夜系统：乘法混合调色层（白天无色 → 黄昏暖橙 → 深夜蓝黑），
    * 配合夜间光晕（createDecor 注册的灯光点）与萤火虫/蝴蝶昼夜交替。
-   * `?hour=N` 可调试任意时段。
+   * 时间标准为**北京时间（UTC+8）**，不随浏览器时区漂移；`?hour=N` 可调试任意时段。
    */
   private createDayNight() {
     this.nightOverlay = this.add.rectangle(0, 0, WORLD_W, WORLD_H, 0xffffff, 1)
@@ -248,9 +249,11 @@ export class WorldScene extends Phaser.Scene {
     const DUSK = Phaser.Display.Color.ValueToColor(0xe09a64) // 黄昏暖橙
     const NIGHT = Phaser.Display.Color.ValueToColor(0x3d4a86) // 深夜蓝
     const apply = () => {
-      const debugHour = Number(new URLSearchParams(window.location.search).get('hour'))
-      const now = new Date()
-      const h = Number.isFinite(debugHour) ? debugHour : now.getHours() + now.getMinutes() / 60
+      const rawHour = new URLSearchParams(window.location.search).get('hour')
+      const debugHour = rawHour === null ? NaN : Number(rawHour)
+      const bj = this.beijingNow()
+      const h = Number.isFinite(debugHour) ? debugHour : bj.getHours() + bj.getMinutes() / 60
+      this.worldHour = h
       // 夜深度 t：0=正午白天，1=深夜
       let t = 0
       if (h < 5 || h >= 21) t = 1
@@ -266,9 +269,32 @@ export class WorldScene extends Phaser.Scene {
       // 天黑点灯
       const lit = this.nightness > 0.3
       for (const lamp of this.lamps) lamp.setFrame(lit ? 1 : 0)
+      // HUD 时钟随分钟推进刷新
+      if (this.snap) this.updateHud(this.snap)
     }
     apply()
     this.time.addEvent({ delay: 60000, loop: true, callback: apply })
+  }
+
+  /** 北京时间（UTC+8）：世界时间的统一标准 */
+  private beijingNow(): Date {
+    const now = new Date()
+    return new Date(now.getTime() + (now.getTimezoneOffset() + 480) * 60000)
+  }
+
+  /** HUD 时钟文案：北京时间 HH:MM + 时段 */
+  private clockLabel(): string {
+    const rawHour = new URLSearchParams(window.location.search).get('hour')
+    const debugHour = rawHour === null ? NaN : Number(rawHour)
+    const h = this.worldHour
+    const phase = h < 5 || h >= 21 ? '🌙 夜晚' : h < 7.5 ? '🌄 黎明' : h >= 17.5 ? '🌆 黄昏' : '☀️ 白天'
+    if (Number.isFinite(debugHour)) {
+      return `${String(Math.floor(h)).padStart(2, '0')}:00（调试） ${phase}`
+    }
+    const bj = this.beijingNow()
+    const hh = String(bj.getHours()).padStart(2, '0')
+    const mm = String(bj.getMinutes()).padStart(2, '0')
+    return `北京时间 ${hh}:${mm} ${phase}`
   }
 
   /** 服务端直推事件 → 即时演出（权威状态随后由去抖 refresh 拉取） */
@@ -485,9 +511,9 @@ export class WorldScene extends Phaser.Scene {
     path(47, 10, 48, 21) // 英灵殿山道
     path(5, 32, 53, 33) // 作坊街
     path(29, 22, 30, 32) // 主路 → 作坊街
-    // 图书馆-议事厅之间的石板广场（核心管理员踱步区）
+    // 市政广场：正好托住图书馆与议事厅两座建筑（x 25..38 = 800..1248）
     for (let y = 15; y <= 19; y++) {
-      for (let x = 29; x <= 36; x++) {
+      for (let x = 25; x <= 38; x++) {
         grid[y][x] = rnd() > 0.5 ? TILES.plazaA : TILES.plazaB
       }
     }
@@ -570,8 +596,8 @@ export class WorldScene extends Phaser.Scene {
     this.lamps.push(streetLamp)
     this.addNightGlow(streetLamp.x, streetLamp.y - 44, 0xffcc66, 3.4, 0.5)
     // 建筑灯火与泉水的夜光
-    this.addNightGlow(880, 430, 0xffb866, 4.5, 0.35) // 图书馆窗火
-    this.addNightGlow(1190, 460, 0xaab4ff, 3.6, 0.3) // 议事厅
+    this.addNightGlow(880, 446, 0xffb866, 4.5, 0.35) // 图书馆窗火
+    this.addNightGlow(1180, 470, 0xaab4ff, 3.6, 0.3) // 议事厅
     this.addNightGlow(1540, 250, 0xffa040, 4.2, 0.45) // 英灵殿长明火
     this.addNightGlow(290, 640, 0x7fd8ff, 3.2, 0.4) // 出生地泉水
     // 萤火虫：夜间出没（白天 alpha=0），缓慢游移 + 呼吸闪烁
@@ -590,9 +616,9 @@ export class WorldScene extends Phaser.Scene {
       deco('fence.png', x, 548, x === 160 || x === 416 ? 1 : 0)
     }
     deco('signpost.png', 332, 668)
-    // 广场与出生地长椅
-    deco('bench.png', 944, 504)
-    deco('bench.png', 1130, 504)
+    // 广场长椅：两座建筑之间对称摆放（完全落在石板上）
+    deco('bench.png', 985, 522)
+    deco('bench.png', 1085, 522)
     deco('bench.png', 230, 700)
     // 蝴蝶：花丛间飞舞
     const tints = [0xffffff, 0xff9ed2, 0x9ed2ff, 0xfff09e]
@@ -609,7 +635,7 @@ export class WorldScene extends Phaser.Scene {
       delay: 850,
       loop: true,
       callback: () => {
-        this.spawnSmoke(906, 376)
+        this.spawnSmoke(906, 392)
         for (const view of this.workshops.values()) {
           if (view.offlineSince === null && view.sprite.anims.isPlaying && view.data.type === 'desktop') {
             this.spawnSmoke(view.sprite.x - 12, view.sprite.y - 32)
@@ -680,10 +706,19 @@ export class WorldScene extends Phaser.Scene {
     this.input.on(
       'wheel',
       (_p: Phaser.Input.Pointer, _objs: unknown, _dx: number, dy: number) => {
-        const next = Phaser.Math.Clamp(cam.zoom * (dy > 0 ? 0.9 : 1.1), 0.5, 2)
+        const next = Phaser.Math.Clamp(cam.zoom * (dy > 0 ? 0.9 : 1.1), this.minZoom(), 2)
         cam.setZoom(next)
       },
     )
+    // 容器尺寸变化（如侧栏折叠）后，若当前缩放已会露出图外则立即校正
+    this.scale.on('resize', () => {
+      if (cam.zoom < this.minZoom()) cam.setZoom(this.minZoom())
+    })
+  }
+
+  /** 缩放下限 = 恰好铺满视口的缩放值，保证视野永远不超出地图 */
+  private minZoom(): number {
+    return Math.max(this.scale.width / WORLD_W, this.scale.height / WORLD_H)
   }
 
   private wireHover() {
@@ -1062,6 +1097,7 @@ export class WorldScene extends Phaser.Scene {
       `<div>英灵殿 <b>${snap.valhallaCount}</b> · 知识 <b>${snap.knowledgeActive}</b>` +
       (snap.knowledgePending > 0 ? ` · <span class="h-err">待审批 ${snap.knowledgePending}</span>` : '') +
       `</div>` +
+      `<div class="h-dim">🕐 ${this.clockLabel()}</div>` +
       `<div class="h-dim">${snap.socketConnected ? '<span class="h-ok">● 实时连接</span>' : '○ 轮询模式'} · 拖拽平移 / 滚轮缩放 / 悬浮看属性</div>`,
     )
   }
