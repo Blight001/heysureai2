@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from api.database import get_session
-from api.models import AssistantAIConfig, WorldActorMeta
+from api.models import AssistantAIConfig, EndpointAgentPresence, WorldActorMeta
 from .auth import get_current_user
 
 
@@ -92,6 +92,36 @@ async def world_snapshot(
         agents = connected.get("agents", [])
     except Exception:
         agents = []
+    # 世界需要保留已绑定但离线的作坊，才能把成员自动安置到出生地。
+    # 普通“已连接设备”列表仍只展示在线设备，不受这里的世界投影影响。
+    try:
+        online_ids = {str(row.get("id") or row.get("agentId") or "") for row in agents}
+        offline_rows = session.exec(
+            select(EndpointAgentPresence).where(
+                EndpointAgentPresence.user_id == user.id,
+                EndpointAgentPresence.online == False,  # noqa: E712
+                EndpointAgentPresence.ai_config_id.is_not(None),
+            )
+        ).all()
+        for row in offline_rows:
+            agent_id = str(row.agent_id or "").strip()
+            if not agent_id or agent_id in online_ids:
+                continue
+            agent_type = str(row.agent_type or "").strip()
+            agents.append({
+                "id": agent_id,
+                "name": agent_id,
+                "platform": agent_type,
+                "isWindowsDesktop": agent_type == "desktop",
+                "isBrowserExtension": agent_type == "browser",
+                "aiConfigId": row.ai_config_id,
+                "capabilities": [],
+                "lifecycle": "offline",
+                "online": False,
+                "lastError": None,
+            })
+    except Exception:
+        pass
     try:
         valhalla_items = valhalla_service.list_entries(user_id=user.id, limit=200)
     except Exception:

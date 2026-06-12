@@ -22,7 +22,7 @@ export interface Point {
 }
 
 export interface FixedBuildingDef {
-  key: 'spawn' | 'library' | 'valhalla' | 'hall'
+  key: 'spawn' | 'library' | 'valhalla'
   sheet: string
   label: string
   /** 建筑中心（世界像素） */
@@ -32,7 +32,6 @@ export interface FixedBuildingDef {
 export const FIXED_BUILDINGS: FixedBuildingDef[] = [
   { key: 'spawn', sheet: 'building_spawn.png', label: '出生地', pos: { x: 290, y: 640 } },
   { key: 'library', sheet: 'building_library.png', label: '传承知识库（图书馆）', pos: { x: 880, y: 446 } },
-  { key: 'hall', sheet: 'building_hall.png', label: '议事厅', pos: { x: 1180, y: 470 } },
   { key: 'valhalla', sheet: 'building_valhalla.png', label: '英灵殿', pos: { x: 1540, y: 220 } },
 ]
 
@@ -43,9 +42,8 @@ export const VALHALLA_DOOR: Point = { x: 1540, y: 280 }
 export const ZONES: Record<string, Rect> = {
   spawn: { x: 150, y: 560, w: 300, h: 230 },
   library: { x: 790, y: 500, w: 210, h: 130 },
-  // 图书馆与议事厅之间的石板广场：核心管理员踱步区（与铺装区域一致）
-  plaza: { x: 830, y: 505, w: 390, h: 120 },
-  hall: { x: 1090, y: 510, w: 220, h: 115 },
+  // 图书馆前石板广场：核心管理员踱步区。
+  plaza: { x: 790, y: 505, w: 430, h: 150 },
   // 辅助管理员全图漫步（留出边缘与作坊街）
   wanderAll: { x: 120, y: 140, w: WORLD_W - 280, h: WORLD_H - 380 },
 }

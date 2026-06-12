@@ -9,7 +9,6 @@
   building_spawn.png          32x32@1x -> 64x64   x4 帧（出生地泉水）
   building_library.png        48x48@1x -> 96x96   x2 帧（传承知识库/图书馆）
   building_valhalla.png       48x56@1x -> 96x112  x4 帧（英灵殿）
-  building_hall.png           40x40@1x -> 80x80   x2 帧（议事厅）
   building_workshop_desktop.png 32x32@1x -> 64x64 x4 帧（桌面 agent 作坊·机械坊）
   building_workshop_browser.png 32x40@1x -> 64x80 x4 帧（浏览器 agent 作坊·瞭望塔）
   char_*.png                  16x24@1x -> 32x48，4 列 x 5 行：
@@ -420,54 +419,6 @@ def gen_valhalla():
         c.add_silhouette_outline()
         frames.append(c)
     save_strip(frames, "building_valhalla.png")
-
-
-def gen_hall():
-    """议事厅：靛蓝屋顶 + 告示牌翻页 + 旗帜摆动，2 帧。"""
-    frames = []
-    for f in range(2):
-        c = C(40, 40)
-        # 旗杆 + 旗
-        c.vline(35, 0, 16, WOOD_D)
-        if f == 0:
-            c.rect(29, 1, 6, 4, INDIGO)
-            c.px(29, 4, INDIGO_D)
-        else:
-            c.rect(30, 1, 5, 3, INDIGO)
-            c.rect(29, 2, 2, 2, INDIGO)
-        c.px(34, 1, GOLD)
-        # 屋顶
-        for i, y in enumerate(range(4, 17)):
-            half = 2 + i * 1.45
-            col = INDIGO_D if y >= 15 else INDIGO
-            c.hline(20 - half, y, half * 2, col)
-        c.hline(19, 3, 3, INDIGO_D)
-        # 墙体
-        c.rect(4, 16, 32, 20, WALL)
-        c.rect(32, 16, 4, 20, WALL_SH)
-        c.outline(4, 16, 32, 20, WOOD_D)
-        # 双开门
-        c.rect(16, 24, 8, 12, WOOD)
-        c.vline(20, 24, 12, WOOD_D)
-        c.px(19, 30, GOLD)
-        c.px(21, 30, GOLD)
-        # 窗
-        c.rect(27, 21, 6, 5, (96, 116, 156, 255))
-        c.outline(27, 21, 6, 5, WOOD_D)
-        # 告示牌（翻页两态）
-        c.vline(9, 27, 9, WOOD_D)
-        c.rect(5, 22, 10, 7, PAPER)
-        c.outline(5, 22, 10, 7, WOOD_D)
-        if f == 0:
-            c.hline(7, 24, 6, (150, 150, 160, 255))
-            c.hline(7, 26, 4, (150, 150, 160, 255))
-        else:
-            c.hline(7, 23, 5, (150, 150, 160, 255))
-            c.hline(7, 25, 6, (150, 150, 160, 255))
-            c.hline(7, 27, 3, (150, 150, 160, 255))
-        c.add_silhouette_outline()
-        frames.append(c)
-    save_strip(frames, "building_hall.png")
 
 
 def gen_workshop_desktop():
@@ -1019,7 +970,6 @@ def main():
     gen_spawn()
     gen_library()
     gen_valhalla()
-    gen_hall()
     gen_workshop_desktop()
     gen_workshop_browser()
     gen_characters()

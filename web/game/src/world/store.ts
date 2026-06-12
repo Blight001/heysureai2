@@ -67,6 +67,7 @@ export interface WorldWorkshop {
   lastError: string | null
   platform: string
   capabilities: number
+  online: boolean
 }
 
 export interface WorldSnapshot {
@@ -139,6 +140,7 @@ export class WorldStore {
   private socket: Socket | null = null
   private pollTimer: number | null = null
   private rawAgents: Record<string, any>[] = []
+  private rawOfflineAgents: Record<string, any>[] = []
   private runtimeOverride = new Map<number, { state: WorldMember['runtimeStatus']; tool: string }>()
   private metaByConfig = new Map<number, WorldActorAppearance>()
 
@@ -253,7 +255,12 @@ export class WorldStore {
 
   private rebuildWorkshops() {
     const workshops: WorldWorkshop[] = []
-    for (const raw of this.rawAgents) {
+    const onlineIds = new Set(this.rawAgents.map(raw => String(raw.id || raw.socketId || '')))
+    const rows = [
+      ...this.rawAgents,
+      ...this.rawOfflineAgents.filter(raw => !onlineIds.has(String(raw.id || raw.socketId || ''))),
+    ]
+    for (const raw of rows) {
       const type = workshopTypeOf(raw)
       if (!type) continue
       workshops.push({
@@ -265,6 +272,7 @@ export class WorldStore {
         lastError: raw.lastError ? String(raw.lastError) : null,
         platform: String(raw.platform || ''),
         capabilities: Array.isArray(raw.capabilities) ? raw.capabilities.length : 0,
+        online: raw.online !== false && String(raw.lifecycle || '').toLowerCase() !== 'offline',
       })
     }
     workshops.sort((a, b) => a.agentId.localeCompare(b.agentId))
@@ -368,6 +376,11 @@ export class WorldStore {
     })
   }
 
+  private applyAgentRows(rows: Record<string, any>[]) {
+    this.rawAgents = rows.filter(raw => raw.online !== false && String(raw.lifecycle || '').toLowerCase() !== 'offline')
+    this.rawOfflineAgents = rows.filter(raw => raw.online === false || String(raw.lifecycle || '').toLowerCase() === 'offline')
+  }
+
   /** P2 聚合：一次 /api/world/snapshot 拿全量；旧后端无该接口时返回 false 走分域回退 */
   private async refreshViaSnapshot(): Promise<boolean> {
     let data: Record<string, any>
@@ -378,7 +391,7 @@ export class WorldStore {
     }
     this.applyMeta(Array.isArray(data.actor_meta) ? data.actor_meta : [])
     this.applyCards(Array.isArray(data.cards) ? data.cards : [])
-    this.rawAgents = Array.isArray(data.agents) ? data.agents : this.rawAgents
+    if (Array.isArray(data.agents)) this.applyAgentRows(data.agents)
     this.rebuildWorkshops()
     this.snapshot.valhallaItems = Array.isArray(data.valhalla_items) ? data.valhalla_items : []
     this.snapshot.valhallaCount = this.snapshot.valhallaItems.length
@@ -392,7 +405,7 @@ export class WorldStore {
   /** 分域回退（兼容未部署 /api/world/snapshot 的后端） */
   private async refreshViaDomains(token: string) {
     const [cards, connected] = await Promise.all([listAiCards(), listConnectedAgents()])
-    this.rawAgents = Array.isArray(connected?.agents) ? connected.agents : this.rawAgents
+    if (Array.isArray(connected?.agents)) this.applyAgentRows(connected.agents)
     try {
       const meta = await listWorldActorMeta()
       this.applyMeta(meta.items || [])

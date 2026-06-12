@@ -707,25 +707,6 @@ export class Drawer {
     }
   }
 
-  openHall(snap: WorldSnapshot) {
-    this.open('议事厅')
-    const busy = snap.members.filter(m => m.taskTitle && m.lifecycle !== 'dead')
-    const stat = this.section('概览')
-    this.rows(stat, [['任务', `${busy.filter(m => m.taskStatus === 'running').length} 个运行中 / ${busy.length} 个在册`]])
-    const list = this.section('任务一览（点击查看成员）')
-    if (!busy.length) {
-      list.innerHTML += `<div class="d-dim">暂无任务——点击成员可直接派任务</div>`
-      return
-    }
-    for (const m of busy) {
-      const item = document.createElement('div')
-      item.className = 'd-item click'
-      item.innerHTML = `<div>${esc(m.taskTitle)}（${esc(m.taskStatus)}）</div><div class="d-dim">${esc(m.name)}</div>`
-      item.onclick = () => this.actions.focusMember(m.id)
-      list.appendChild(item)
-    }
-  }
-
   openSpawn(snap: WorldSnapshot) {
     this.open('出生地')
     const idle = snap.members.filter(

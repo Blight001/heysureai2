@@ -2,6 +2,7 @@
 import { computed, reactive } from 'vue'
 import type { ConnectedAgent } from '@/composables/dashboard/useDashboardData'
 import { assignAgentAi } from '@/api/agents'
+import { setWorkshopBinding } from '@/api/workshop'
 import AgentMcpScopeEditor from '../modals/AgentMcpScopeEditor.vue'
 
 interface Agent {
@@ -47,13 +48,20 @@ const assignableMembers = computed(() =>
 const selection = reactive<Record<string, string>>({})
 const busy = reactive<Record<string, boolean>>({})
 const errors = reactive<Record<string, string>>({})
+const bindingOverride = reactive<Record<string, number | null>>({})
+
+const linkedConfigId = (device: ConnectedAgent): number | null => {
+  if (device.id in bindingOverride) return bindingOverride[device.id]
+  const id = Number(device.aiConfigId)
+  return Number.isFinite(id) && id > 0 ? id : null
+}
 
 // Current dropdown value: an explicit pick if the operator changed it, else the
 // device's existing binding.
 const selectionFor = (device: ConnectedAgent): string => {
   if (device.id in selection) return selection[device.id]
-  const id = Number(device.aiConfigId)
-  return Number.isFinite(id) && id > 0 ? String(id) : ''
+  const id = linkedConfigId(device)
+  return id ? String(id) : ''
 }
 
 const onSelect = (device: ConnectedAgent, event: Event) => {
@@ -66,8 +74,18 @@ const assign = async (device: ConnectedAgent) => {
   busy[device.id] = true
   errors[device.id] = ''
   try {
-    // The server broadcasts an updated agent:list, so the card refreshes itself.
-    await assignAgentAi(device.id, cfgId)
+    if (isWorkshopDevice(device)) {
+      const currentId = linkedConfigId(device)
+      if (cfgId) {
+        await setWorkshopBinding(cfgId, device.id, true)
+      } else if (currentId) {
+        await setWorkshopBinding(currentId, device.id, false)
+      }
+      bindingOverride[device.id] = cfgId
+    } else {
+      // The server broadcasts an updated agent:list, so the card refreshes itself.
+      await assignAgentAi(device.id, cfgId)
+    }
   } catch (err: any) {
     errors[device.id] = err?.message || '分配失败'
   } finally {
@@ -80,7 +98,13 @@ const unassign = async (device: ConnectedAgent) => {
   busy[device.id] = true
   errors[device.id] = ''
   try {
-    await assignAgentAi(device.id, null)
+    const currentId = linkedConfigId(device)
+    if (isWorkshopDevice(device)) {
+      if (currentId) await setWorkshopBinding(currentId, device.id, false)
+      bindingOverride[device.id] = null
+    } else {
+      await assignAgentAi(device.id, null)
+    }
   } catch (err: any) {
     errors[device.id] = err?.message || '解绑失败'
   } finally {
@@ -96,8 +120,7 @@ const deviceTypeLabel = (device: ConnectedAgent) => {
   return '设备端'
 }
 
-// 知识与进化工坊：绑定是 AI 侧多对一（在 AI 配置弹窗里勾选），
-// 不走本面板的设备 1:1 "分配成员"。
+// 知识与进化工坊使用专用绑定接口，但在本面板保持与其它设备一致的交互。
 const isWorkshopDevice = (device: ConnectedAgent) => {
   const platform = String(device.platform || '').toLowerCase()
   return platform.includes('workshop')
@@ -147,8 +170,8 @@ const lifecycleClass = (lifecycle?: string) => {
 }
 
 const linkedMember = (device: ConnectedAgent) => {
-  const id = Number(device.aiConfigId)
-  if (!Number.isFinite(id) || id <= 0) return undefined
+  const id = linkedConfigId(device)
+  if (!id) return undefined
   return memberByConfigId.value.get(id)
 }
 
@@ -200,20 +223,7 @@ const memberStatusBadgeClass = (device: ConnectedAgent) => hasLinkedMember(devic
         </span>
       </div>
 
-      <!-- 知识工坊：1:1 绑定（只能绑定一个 AI 数字成员），不走本面板的分配下拉 -->
-      <div
-        v-if="isWorkshopDevice(device)"
-        class="mt-2 rounded-lg border border-indigo-200 bg-indigo-50/60 p-2 text-[10px] text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
-      >
-        <div>
-          知识与进化工坊：只能绑定一个 AI 数字成员（绑定新成员会替换旧绑定）。请在 AI 配置弹窗 → MCP 工具权限 → "知识与进化工坊" 中勾选，或在社会显示中把成员拖到工坊建筑上。
-        </div>
-        <div class="mt-1 font-semibold">
-          当前绑定：{{ hasLinkedMember(device) ? `${linkedMember(device)?.name}（ID ${device.aiConfigId}）` : '未绑定' }}
-        </div>
-      </div>
-
-      <div v-else class="mt-2 rounded-lg border p-2" :class="memberPanelClass(device)">
+      <div class="mt-2 rounded-lg border p-2" :class="memberPanelClass(device)">
         <div class="mb-1 flex items-center justify-between gap-2">
           <div class="text-[10px]" :class="memberLabelClass(device)">分配成员</div>
           <span class="shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-medium" :class="memberStatusBadgeClass(device)">
@@ -233,7 +243,7 @@ const memberStatusBadgeClass = (device: ConnectedAgent) => hasLinkedMember(devic
             v-if="hasLinkedMember(device)"
             class="shrink-0 whitespace-nowrap text-emerald-700/80 dark:text-emerald-200/80"
           >
-            ID: {{ device.aiConfigId }}<span v-if="linkedMember(device)?.projectName"> · {{ linkedMember(device)?.projectName }}</span>
+            ID: {{ linkedConfigId(device) }}<span v-if="linkedMember(device)?.projectName"> · {{ linkedMember(device)?.projectName }}</span>
           </span>
         </div>
         <div

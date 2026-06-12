@@ -112,11 +112,16 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
   const hasAssignedWork = (agent: Agent) => {
     const taskStatus = String(agent.currentTaskStatus || '').toLowerCase()
     const runStatus = String(agent.activeRunStatus || '').toLowerCase()
+    const runSessionId = String(agent.activeRunSessionId || '')
     const snapshotStatus = String(agent.taskCurrentOrRecent?.effectiveStatus || agent.taskCurrentOrRecent?.status || '').toLowerCase()
     const inactive = new Set(['', 'idle', 'completed', 'done', 'cancelled', 'canceled', 'stopped', 'error'])
+    // 普通用户对话也会创建 active run，但它不应改变成员卡片所在栏目。
+    // 只有任务调度生成的 session_task_* run 才属于“已分配工作”。
+    const hasActiveTaskRun = runSessionId.startsWith('session_task_')
+      && ['queued', 'running'].includes(runStatus)
     return (
       !inactive.has(taskStatus)
-      || ['queued', 'running'].includes(runStatus)
+      || hasActiveTaskRun
       || (!!agent.taskCurrentOrRecent?.title && !inactive.has(snapshotStatus))
     )
   }

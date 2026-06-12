@@ -1,5 +1,5 @@
 /**
- * P0 世界场景：草原 tilemap + 4 固定建筑 + 作坊街（随 agent:list 增减）
+ * 世界场景：草原 tilemap + 3 固定建筑 + 作坊街（随 agent:list 增减）
  * + 成员按锚区规则站位/游荡 + hover tooltip + 状态气泡。只读。
  */
 import Phaser from 'phaser'
@@ -32,8 +32,6 @@ import { WorldStore, type WorldEvent, type WorldMember, type WorldSnapshot, type
 import { Drawer } from '../ui/drawer'
 import type { Overlay, TooltipData } from '../ui/overlay'
 
-/** 议事厅门口（领任务动线的途经点） */
-const HALL_DOOR: Point = { x: 1180, y: 525 }
 const LIBRARY_DOOR: Point = { x: 880, y: 510 }
 
 const assetUrls = import.meta.glob('../../assets/*.png', {
@@ -86,7 +84,6 @@ export class WorldScene extends Phaser.Scene {
   private slotOwner: (string | null)[] = new Array(WORKSHOP_SLOTS).fill(null)
   private buildings = new Map<string, Phaser.GameObjects.Sprite>()
   private snap: WorldSnapshot | null = null
-  private hallFlipTimer: Phaser.Time.TimerEvent | null = null
   private draggingActor: MemberActor | null = null
   /** 演出触发用：上一轮快照的任务状态 / 代数 / 待审批数 */
   private prevTaskStatus = new Map<number, string>()
@@ -366,7 +363,7 @@ export class WorldScene extends Phaser.Scene {
     const actor = Number.isFinite(id) ? this.actors.get(id) : undefined
     switch (ev.type) {
       case 'task_started':
-        actor?.walkVia(HALL_DOOR)
+        actor?.flashEmote('scroll', 2200)
         this.playSfx('scroll')
         break
       case 'task_finished':
@@ -495,11 +492,7 @@ export class WorldScene extends Phaser.Scene {
         this.drawer.openLibrary(this.snap!)
       },
       openChat: id => {
-        if (window.parent !== window) {
-          window.parent.postMessage({ type: 'world:open-chat', aiConfigId: id }, window.location.origin)
-        } else {
-          window.open('/', '_blank', 'noopener')
-        }
+        this.openMemberChat(id)
       },
       focusMember: id => this.focusMember(id),
     })
@@ -582,11 +575,10 @@ export class WorldScene extends Phaser.Scene {
     path(4, 21, 53, 22) // 主路（东西）
     path(8, 19, 9, 21) // 出生地支路
     path(26, 17, 27, 21) // 图书馆支路
-    path(36, 17, 37, 21) // 议事厅支路
     path(47, 10, 48, 21) // 英灵殿山道
     path(5, 32, 53, 33) // 作坊街
     path(29, 22, 30, 32) // 主路 → 作坊街
-    // 市政广场：正好托住图书馆与议事厅两座建筑（x 25..38 = 800..1248）
+    // 图书馆前广场，也是核心管理员的活动区域。
     for (let y = 15; y <= 19; y++) {
       for (let x = 25; x <= 38; x++) {
         grid[y][x] = rnd() > 0.5 ? TILES.plazaA : TILES.plazaB
@@ -618,7 +610,7 @@ export class WorldScene extends Phaser.Scene {
     const treeRnd = mulberry32(7)
     const blocked: Rect[] = [
       { x: 100, y: 480, w: 400, h: 320 }, // 出生地一带
-      { x: 700, y: 250, w: 650, h: 420 }, // 图书馆 + 议事厅
+      { x: 700, y: 250, w: 650, h: 420 }, // 图书馆与广场
       { x: 1330, y: 40, w: 460, h: 360 }, // 英灵殿山丘
       { x: 100, y: 920, w: 1750, h: 250 }, // 作坊街
       { x: 60, y: 90, w: 360, h: 300 }, // 池塘
@@ -672,7 +664,6 @@ export class WorldScene extends Phaser.Scene {
     this.addNightGlow(streetLamp.x, streetLamp.y - 44, 0xffcc66, 3.4, 0.5)
     // 建筑灯火与泉水的夜光
     this.addNightGlow(880, 446, 0xffb866, 4.5, 0.35) // 图书馆窗火
-    this.addNightGlow(1180, 470, 0xaab4ff, 3.6, 0.3) // 议事厅
     this.addNightGlow(1540, 250, 0xffa040, 4.2, 0.45) // 英灵殿长明火
     this.addNightGlow(290, 640, 0x7fd8ff, 3.2, 0.4) // 出生地泉水
     // 萤火虫：夜间出没（白天 alpha=0），缓慢游移 + 呼吸闪烁
@@ -822,7 +813,7 @@ export class WorldScene extends Phaser.Scene {
   private wireClickAndDrag() {
     this.input.dragDistanceThreshold = 8
 
-    // 点击（按下与抬起距离 < 8px）→ 打开对应抽屉
+    // 成员单击直接隔空对话；建筑和作坊仍打开对应操作抽屉。
     this.input.on(
       'gameobjectup',
       (pointer: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
@@ -832,7 +823,7 @@ export class WorldScene extends Phaser.Scene {
         this.playSfx('ui_click', 0.4)
         if (obj instanceof MemberActor) {
           const m = this.snap.members.find(x => x.id === obj.memberId)
-          if (m) this.drawer.openMember(m, this.snap)
+          if (m) this.openMemberChat(m.id)
           return
         }
         const agentId = obj.getData?.('agentId') as string | undefined
@@ -843,7 +834,6 @@ export class WorldScene extends Phaser.Scene {
         const key = obj.getData?.('buildingKey') as string | undefined
         if (key === 'library') this.drawer.openLibrary(this.snap)
         else if (key === 'valhalla') this.drawer.openValhalla(this.snap)
-        else if (key === 'hall') this.drawer.openHall(this.snap)
         else if (key === 'spawn') this.drawer.openSpawn(this.snap)
       },
     )
@@ -974,8 +964,7 @@ export class WorldScene extends Phaser.Scene {
   private playTransitions(m: WorldMember, actor: MemberActor) {
     const prevStatus = this.prevTaskStatus.get(m.id)
     if (prevStatus !== undefined && prevStatus !== 'running' && m.taskStatus === 'running') {
-      // 领任务：先去议事厅门口"领卷轴"，再回锚区
-      actor.walkVia(HALL_DOOR)
+      actor.flashEmote('scroll', 2200)
     }
     this.prevTaskStatus.set(m.id, m.taskStatus)
 
@@ -1008,9 +997,12 @@ export class WorldScene extends Phaser.Scene {
       const view = this.workshops.get(boundAgent)
       if (view) return workshopZone(view.slot)
     }
-    if (m.hasActiveTask) return ZONES.hall
+    // 已绑定作坊但全部离线时，成员回到出生地等待重连。
+    const hasOfflineBinding = m.boundAgentIds.length > 0
+      || [...this.workshops.values()].some(view => view.offlineSince !== null && view.data.aiConfigId === m.id)
+    if (hasOfflineBinding) return ZONES.spawn
     if (!m.projectId || m.lifecycle === 'learning') return ZONES.spawn
-    return ZONES.hall
+    return ZONES.wanderAll
   }
 
   private reconcileWorkshops(snap: WorldSnapshot) {
@@ -1028,20 +1020,26 @@ export class WorldScene extends Phaser.Scene {
         sprite.setOrigin(0.5, 0.6)
         sprite.setDepth(pos.y)
         sprite.setInteractive()
-        view = { sprite, slot, data: w, offlineSince: null }
+        view = { sprite, slot, data: w, offlineSince: w.online ? null : Date.now() }
         const captured = view
         sprite.setData('tooltip', () => this.workshopTooltip(captured))
         sprite.setData('agentId', w.agentId)
         this.workshops.set(w.agentId, view)
+        if (!w.online) sprite.setTint(0x8a8a8a)
       }
       view.data = w
-      if (view.offlineSince !== null) {
+      if (w.online && view.offlineSince !== null) {
         view.offlineSince = null
         view.sprite.clearTint()
+      } else if (!w.online && view.offlineSince === null) {
+        view.offlineSince = Date.now()
+        view.sprite.stop()
+        view.sprite.setFrame(0)
+        view.sprite.setTint(0x8a8a8a)
       }
       // 动效：绑定成员在干活 or agent 正在执行任务
       const boundMember = snap.members.find(m => m.id === w.aiConfigId)
-      const active = w.lifecycle === 'dispatching' || boundMember?.runtimeStatus === 'running'
+      const active = w.online && (w.lifecycle === 'dispatching' || boundMember?.runtimeStatus === 'running')
       const animKey = `${view.sprite.texture.key}:loop`
       if (active) {
         if (view.sprite.anims.currentAnim?.key !== animKey || !view.sprite.anims.isPlaying) {
@@ -1088,21 +1086,13 @@ export class WorldScene extends Phaser.Scene {
   private updateBuildingStates(snap: WorldSnapshot) {
     // 图书馆：有待审批 → 亮灯帧
     this.buildings.get('library')?.setFrame(snap.knowledgePending > 0 ? 1 : 0)
-    // 议事厅：有任务在跑 → 告示牌翻页（两帧交替）
-    const hallActive = snap.members.some(m => m.taskStatus === 'running')
-    const hall = this.buildings.get('hall')
-    if (hall) {
-      if (hallActive && !this.hallFlipTimer) {
-        this.hallFlipTimer = this.time.addEvent({
-          delay: 700,
-          loop: true,
-          callback: () => hall.setFrame(hall.frame.name === '0' ? 1 : 0),
-        })
-      } else if (!hallActive && this.hallFlipTimer) {
-        this.hallFlipTimer.remove()
-        this.hallFlipTimer = null
-        hall.setFrame(0)
-      }
+  }
+
+  private openMemberChat(id: number) {
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'world:open-chat', aiConfigId: id }, window.location.origin)
+    } else {
+      window.open('/', '_blank', 'noopener')
     }
   }
 
@@ -1169,9 +1159,6 @@ export class WorldScene extends Phaser.Scene {
         rows.push({ label: '待审批', value: snap.knowledgePending > 0 ? `${snap.knowledgePending} 条沉淀申请` : '无' })
       } else if (key === 'valhalla') {
         rows.push({ label: '名册', value: `${snap.valhallaCount} 位逝者` })
-      } else if (key === 'hall') {
-        const running = snap.members.filter(m => m.taskStatus === 'running').length
-        rows.push({ label: '任务', value: `${running} 个运行中` })
       } else if (key === 'spawn') {
         const idle = snap.members.filter(
           m => m.lifecycle !== 'dead' && (!m.projectId || m.lifecycle === 'learning'),

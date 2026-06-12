@@ -117,7 +117,7 @@ export class MemberActor extends Phaser.GameObjects.Container {
     return this.dying
   }
 
-  /** 让成员途经某点（演出用：领任务先去议事厅再回锚区） */
+  /** 让成员途经某点后回到锚区（世界事件演出用）。 */
   walkVia(p: Point) {
     if (this.dying || this.dragging) return
     this.via = clampToWorld(p)
