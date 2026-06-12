@@ -32,8 +32,8 @@ import { Drawer } from '../ui/drawer'
 import type { Overlay, TooltipData } from '../ui/overlay'
 
 /** 议事厅门口（领任务动线的途经点） */
-const HALL_DOOR: Point = { x: 1190, y: 510 }
-const LIBRARY_DOOR: Point = { x: 880, y: 490 }
+const HALL_DOOR: Point = { x: 1180, y: 525 }
+const LIBRARY_DOOR: Point = { x: 880, y: 510 }
 
 const assetUrls = import.meta.glob('../../assets/*.png', {
   eager: true,
@@ -511,9 +511,9 @@ export class WorldScene extends Phaser.Scene {
     path(47, 10, 48, 21) // 英灵殿山道
     path(5, 32, 53, 33) // 作坊街
     path(29, 22, 30, 32) // 主路 → 作坊街
-    // 图书馆-议事厅之间的石板广场（核心管理员踱步区）
+    // 市政广场：正好托住图书馆与议事厅两座建筑（x 25..38 = 800..1248）
     for (let y = 15; y <= 19; y++) {
-      for (let x = 29; x <= 36; x++) {
+      for (let x = 25; x <= 38; x++) {
         grid[y][x] = rnd() > 0.5 ? TILES.plazaA : TILES.plazaB
       }
     }
@@ -596,8 +596,8 @@ export class WorldScene extends Phaser.Scene {
     this.lamps.push(streetLamp)
     this.addNightGlow(streetLamp.x, streetLamp.y - 44, 0xffcc66, 3.4, 0.5)
     // 建筑灯火与泉水的夜光
-    this.addNightGlow(880, 430, 0xffb866, 4.5, 0.35) // 图书馆窗火
-    this.addNightGlow(1190, 460, 0xaab4ff, 3.6, 0.3) // 议事厅
+    this.addNightGlow(880, 446, 0xffb866, 4.5, 0.35) // 图书馆窗火
+    this.addNightGlow(1180, 470, 0xaab4ff, 3.6, 0.3) // 议事厅
     this.addNightGlow(1540, 250, 0xffa040, 4.2, 0.45) // 英灵殿长明火
     this.addNightGlow(290, 640, 0x7fd8ff, 3.2, 0.4) // 出生地泉水
     // 萤火虫：夜间出没（白天 alpha=0），缓慢游移 + 呼吸闪烁
@@ -616,9 +616,9 @@ export class WorldScene extends Phaser.Scene {
       deco('fence.png', x, 548, x === 160 || x === 416 ? 1 : 0)
     }
     deco('signpost.png', 332, 668)
-    // 广场与出生地长椅
-    deco('bench.png', 944, 504)
-    deco('bench.png', 1130, 504)
+    // 广场长椅：两座建筑之间对称摆放（完全落在石板上）
+    deco('bench.png', 985, 522)
+    deco('bench.png', 1085, 522)
     deco('bench.png', 230, 700)
     // 蝴蝶：花丛间飞舞
     const tints = [0xffffff, 0xff9ed2, 0x9ed2ff, 0xfff09e]
@@ -635,7 +635,7 @@ export class WorldScene extends Phaser.Scene {
       delay: 850,
       loop: true,
       callback: () => {
-        this.spawnSmoke(906, 376)
+        this.spawnSmoke(906, 392)
         for (const view of this.workshops.values()) {
           if (view.offlineSince === null && view.sprite.anims.isPlaying && view.data.type === 'desktop') {
             this.spawnSmoke(view.sprite.x - 12, view.sprite.y - 32)
