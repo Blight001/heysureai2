@@ -60,34 +60,10 @@ async def trigger_ai_task(
             "instruction": instruction,
             "priority": max(1, min(10, int(payload_body.get("priority") or 5))),
         }
+    # schedule 的解析与 schedule_at 补全已统一在 extract_task_payload 内完成
     task_payload = extract_task_payload(payload_body)
     schedule_cfg = task_payload.get("schedule")
-    schedule_enabled = False
-    if isinstance(schedule_cfg, dict):
-        schedule_enabled = bool(schedule_cfg.get("enabled"))
-        loop_enabled = bool(schedule_cfg.get("loop_enabled"))
-        run_immediately = loop_enabled and bool(schedule_cfg.get("run_immediately"))
-        if schedule_enabled:
-            try:
-                schedule_at = float(schedule_cfg.get("schedule_at") or 0)
-            except Exception:
-                schedule_at = 0.0
-            try:
-                duration_minutes = max(1, int(schedule_cfg.get("duration_minutes") or 30))
-            except Exception:
-                duration_minutes = 30
-            if run_immediately:
-                schedule_at = float(time.time())
-            elif schedule_at <= 0:
-                schedule_cfg["schedule_at"] = float(time.time() + duration_minutes * 60)
-            schedule_cfg["schedule_at"] = float(schedule_at or (time.time() + duration_minutes * 60))
-            schedule_cfg["loop_enabled"] = bool(loop_enabled)
-            schedule_cfg["run_immediately"] = bool(run_immediately)
-            schedule_cfg["enabled"] = True
-            schedule_cfg["duration_minutes"] = duration_minutes
-        else:
-            schedule_cfg["loop_enabled"] = False
-            schedule_cfg["run_immediately"] = False
+    schedule_enabled = bool(isinstance(schedule_cfg, dict) and schedule_cfg.get("enabled"))
     task_title = _append_task_title_suffix(str(chosen.get("title") or ""))
 
     row = AITaskJob(
@@ -352,6 +328,11 @@ async def update_ai_task_job(
         "schedule_run_immediately",
         "schedule_duration_minutes",
         "schedule_at",
+        "schedule_loop_mode",
+        "schedule_daily_time",
+        "schedule_weekly_days",
+        "schedule_max_runs",
+        "schedule_end_at",
         "mode",
     }
     existing_payload = decode_task_payload(job.task_payload)
@@ -371,24 +352,9 @@ async def update_ai_task_job(
             schedule_source["schedule_loop_enabled"] = True
         elif mode:
             raise HTTPException(status_code=400, detail="mode must be immediate, scheduled, or recurring")
+        # 解析 + schedule_at 补全统一由 extract_task_payload 完成
         patch_payload = extract_task_payload(schedule_source)
         existing_payload["schedule"] = patch_payload.get("schedule", {})
-        schedule = existing_payload.get("schedule") if isinstance(existing_payload, dict) else {}
-        if isinstance(schedule, dict) and schedule.get("enabled"):
-            try:
-                duration_minutes = max(1, int(schedule.get("duration_minutes") or 30))
-            except Exception:
-                duration_minutes = 30
-            try:
-                schedule_at = float(schedule.get("schedule_at") or 0)
-            except Exception:
-                schedule_at = 0.0
-            if bool(schedule.get("loop_enabled")) and bool(schedule.get("run_immediately")):
-                schedule_at = float(time.time())
-            elif schedule_at <= 0:
-                schedule_at = float(time.time() + duration_minutes * 60)
-            schedule["duration_minutes"] = duration_minutes
-            schedule["schedule_at"] = schedule_at
     job.task_payload = json.dumps(existing_payload, ensure_ascii=False)
     schedule = existing_payload.get("schedule") if isinstance(existing_payload, dict) else {}
     job.trigger_type = "schedule" if isinstance(schedule, dict) and bool(schedule.get("enabled")) else "manual"

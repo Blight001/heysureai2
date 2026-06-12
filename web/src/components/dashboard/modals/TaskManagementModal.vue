@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import ChatConversationView from '@/components/chat/ChatConversationView.vue'
 import {
+  WEEKDAY_OPTIONS,
   canPauseTaskJob,
   canResumeTaskJob,
   getTaskJobRuntimeState,
@@ -170,6 +171,21 @@ const onScheduleTimeModeChange = (event: Event) => {
   if (mode === 'duration') {
     props.taskCreateForm.schedule_at = ''
   }
+}
+
+const onScheduleLoopModeChange = (event: Event) => {
+  const target = event.target as HTMLInputElement | null
+  const mode = target?.value
+  props.taskCreateForm.schedule_loop_mode =
+    mode === 'daily' || mode === 'weekly' ? mode : 'interval'
+}
+
+const onWeeklyDayChange = (day: number, event: Event) => {
+  const target = event.target as HTMLInputElement | null
+  const next = new Set(props.taskCreateForm.schedule_weekly_days)
+  if (target?.checked) next.add(day)
+  else next.delete(day)
+  props.taskCreateForm.schedule_weekly_days = Array.from(next).sort((a, b) => a - b)
 }
 
 const toggleJobStateFilter = (state: JobStateFilter) => {
@@ -465,7 +481,105 @@ const taskStateFilterButtonClass = (state: JobStateFilter) => {
               <input type="checkbox" v-model="taskCreateForm.schedule_run_immediately" />
               <span>首次立即执行</span>
             </label>
-            <div class="space-y-3">
+
+            <!-- 循环：方式选择 + 对应参数 -->
+            <div v-if="taskCreateForm.schedule_loop_enabled" class="space-y-3">
+              <div>
+                <label class="block text-[11px] text-zinc-500 mb-1">循环方式</label>
+                <div class="flex flex-wrap items-center gap-3">
+                  <label class="text-xs text-zinc-600 dark:text-zinc-300 flex items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name="task-schedule-loop-mode"
+                      value="interval"
+                      :checked="taskCreateForm.schedule_loop_mode === 'interval'"
+                      @change="onScheduleLoopModeChange"
+                    />
+                    <span>按间隔</span>
+                  </label>
+                  <label class="text-xs text-zinc-600 dark:text-zinc-300 flex items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name="task-schedule-loop-mode"
+                      value="daily"
+                      :checked="taskCreateForm.schedule_loop_mode === 'daily'"
+                      @change="onScheduleLoopModeChange"
+                    />
+                    <span>每天定时</span>
+                  </label>
+                  <label class="text-xs text-zinc-600 dark:text-zinc-300 flex items-center gap-1.5">
+                    <input
+                      type="radio"
+                      name="task-schedule-loop-mode"
+                      value="weekly"
+                      :checked="taskCreateForm.schedule_loop_mode === 'weekly'"
+                      @change="onScheduleLoopModeChange"
+                    />
+                    <span>每周定时</span>
+                  </label>
+                </div>
+              </div>
+
+              <div v-if="taskCreateForm.schedule_loop_mode === 'interval'">
+                <label class="block text-[11px] text-zinc-500 mb-1">循环间隔（分钟，每轮完成后计时）</label>
+                <input
+                  v-model.number="taskCreateForm.schedule_duration_minutes"
+                  type="number"
+                  min="1"
+                  class="w-full md:w-72 px-2 py-1.5 text-xs rounded border border-zinc-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                />
+              </div>
+
+              <div v-else>
+                <label class="block text-[11px] text-zinc-500 mb-1">触发时刻</label>
+                <input
+                  v-model="taskCreateForm.schedule_daily_time"
+                  type="time"
+                  class="w-full md:w-72 px-2 py-1.5 text-xs rounded border border-zinc-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                />
+              </div>
+
+              <div v-if="taskCreateForm.schedule_loop_mode === 'weekly'">
+                <label class="block text-[11px] text-zinc-500 mb-1">每周触发的星期</label>
+                <div class="flex flex-wrap items-center gap-3">
+                  <label
+                    v-for="day in WEEKDAY_OPTIONS"
+                    :key="day.value"
+                    class="text-xs text-zinc-600 dark:text-zinc-300 flex items-center gap-1.5"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="taskCreateForm.schedule_weekly_days.includes(day.value)"
+                      @change="onWeeklyDayChange(day.value, $event)"
+                    />
+                    <span>{{ day.label }}</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-[11px] text-zinc-500 mb-1">循环轮数上限（0 = 不限）</label>
+                  <input
+                    v-model.number="taskCreateForm.schedule_max_runs"
+                    type="number"
+                    min="0"
+                    class="w-full px-2 py-1.5 text-xs rounded border border-zinc-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  />
+                </div>
+                <div>
+                  <label class="block text-[11px] text-zinc-500 mb-1">循环截止日期（可选）</label>
+                  <input
+                    v-model="taskCreateForm.schedule_end_at"
+                    type="date"
+                    class="w-full px-2 py-1.5 text-xs rounded border border-zinc-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- 单次定时：时长 / 日期二选一 -->
+            <div v-else class="space-y-3">
               <div>
                 <label class="block text-[11px] text-zinc-500 mb-1">定时方式</label>
                 <div class="flex flex-wrap items-center gap-3">
@@ -486,21 +600,15 @@ const taskStateFilterButtonClass = (state: JobStateFilter) => {
                       name="task-schedule-time-mode"
                       value="datetime"
                       :checked="taskCreateForm.schedule_time_mode === 'datetime'"
-                      :disabled="!taskCreateForm.schedule_enabled || taskCreateForm.schedule_loop_enabled"
+                      :disabled="!taskCreateForm.schedule_enabled"
                       @change="onScheduleTimeModeChange"
                     />
                     <span>定时日期</span>
                   </label>
                 </div>
-                <div
-                  v-if="taskCreateForm.schedule_enabled && taskCreateForm.schedule_loop_enabled"
-                  class="text-[10px] text-zinc-400 mt-1"
-                >
-                  循环运行模式下不支持定时日期，固定使用定时时长。
-                </div>
               </div>
 
-              <div v-if="taskCreateForm.schedule_time_mode === 'duration' || taskCreateForm.schedule_loop_enabled">
+              <div v-if="taskCreateForm.schedule_time_mode === 'duration'">
                 <label class="block text-[11px] text-zinc-500 mb-1">定时时长（分钟）</label>
                 <input
                   v-model.number="taskCreateForm.schedule_duration_minutes"

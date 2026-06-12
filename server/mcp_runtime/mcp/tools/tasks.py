@@ -13,6 +13,22 @@ from api.services.chat_media import delete_message_media
 from connector_runtime.dispatch.agent_dispatch import get_run_session_context
 from api.services.governance import assert_can_manage_or_legacy
 from api.services.task_completion_notify import notify_task_completion
+from api.services.task_schedule import (
+    AT_KEYS as _SCHEDULE_AT_KEYS,
+    DAILY_TIME_KEYS as _SCHEDULE_DAILY_TIME_KEYS,
+    DURATION_KEYS as _SCHEDULE_DURATION_KEYS,
+    END_AT_KEYS as _SCHEDULE_END_AT_KEYS,
+    LOOP_MODE_KEYS as _SCHEDULE_LOOP_MODE_KEYS,
+    LOOP_MODES,
+    MAX_RUNS_KEYS as _SCHEDULE_MAX_RUNS_KEYS,
+    WEEKLY_DAYS_KEYS as _SCHEDULE_WEEKLY_DAYS_KEYS,
+    describe_schedule,
+    finalize_schedule,
+    normalize_schedule,
+    parse_daily_time,
+    parse_timestamp_strict,
+    parse_weekly_days,
+)
 from api.services.task_system import extract_task_payload
 
 _FINISHED_STATUSES = {"completed", "cancelled", "stopped", "error"}
@@ -22,17 +38,6 @@ _TASK_LIST_STATUSES = _ACTIVE_STATUSES | _FINISHED_STATUSES
 # Phase 5: concurrency caps (0 = unlimited)
 _MAX_ACTIVE_TASKS_PER_AI = 10
 _MAX_ACTIVE_SUBTASKS_PER_MANAGER = 20
-
-_SCHEDULE_AT_KEYS: tuple[str, ...] = (
-    "schedule_at",
-    "run_at",
-    "schedule_time",
-)
-_SCHEDULE_DURATION_KEYS: tuple[str, ...] = (
-    "schedule_duration_minutes",
-    "duration_minutes",
-    "interval_minutes",
-)
 
 
 def _to_bool(value: Any, default: bool = False) -> bool:
@@ -98,50 +103,14 @@ def _is_non_empty_schedule_value(value: Any) -> bool:
         return bool(value.strip())
     return True
 
-def _parse_schedule_at_strict(value: Any) -> tuple[Optional[float], Optional[str], bool]:
-    if value is None:
-        return None, None, False
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None, None, False
-    else:
-        text = str(value).strip()
-    provided = True
-
-    if isinstance(value, (int, float)):
-        ts = float(value)
-        if ts <= 0:
-            return None, "schedule_at 必须是正数时间戳（Unix 秒）", provided
-        return ts, None, provided
-
-    try:
-        ts = float(text)
-        if ts <= 0:
-            return None, "schedule_at 必须是正数时间戳（Unix 秒）", provided
-        return ts, None, provided
-    except Exception:
-        pass
-
-    iso_text = text
-    if iso_text.endswith("Z"):
-        iso_text = iso_text[:-1] + "+00:00"
-    try:
-        dt = datetime.fromisoformat(iso_text)
-    except Exception:
-        return None, "schedule_at 字符串必须是 ISO-8601 时间（示例: 2026-03-24T16:30:00+08:00）", provided
-
-    if dt.tzinfo is None or dt.utcoffset() is None:
-        return None, "schedule_at 使用 ISO-8601 时必须包含时区（+08:00 或 Z）", provided
-    return dt.timestamp(), None, provided
-
-def _normalize_schedule_at_arg(args: Dict[str, Any], value: float) -> Dict[str, Any]:
+def _override_schedule_arg(args: Dict[str, Any], key: str, value: Any) -> Dict[str, Any]:
+    """把解析后的值写回 args（含嵌套 schedule 对象），覆盖原始别名输入。"""
     out = dict(args or {})
-    out["schedule_at"] = float(value)
+    out[key] = value
     schedule_raw = out.get("schedule")
     if isinstance(schedule_raw, dict):
         schedule_obj = dict(schedule_raw)
-        schedule_obj["schedule_at"] = float(value)
+        schedule_obj[key] = value
         out["schedule"] = schedule_obj
     return out
 
@@ -159,61 +128,12 @@ def _resolve_schedule_run_immediately(args: Dict[str, Any], default: bool = Fals
     return _to_bool(raw, default)
 
 def _build_task_payload_from_args(args: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
-    schedule_enabled_raw = _pick_schedule_value(args, (
-        "enabled", "enable", "schedule_enabled", "is_enabled", "active", "on",
-    ))
-    schedule_at = _pick_schedule_value(args, _SCHEDULE_AT_KEYS)
-    schedule_duration = _pick_schedule_value(args, _SCHEDULE_DURATION_KEYS)
-    schedule_loop_enabled = _pick_schedule_value(args, (
-        "loop_enabled", "schedule_loop_enabled", "loop", "repeat", "recurring",
-    ))
-    schedule_run_immediately = _pick_schedule_value(args, (
-        "run_immediately", "schedule_run_immediately", "first_run_immediately",
-        "immediate", "run_now",
-    ))
-
-    has_schedule_hint = any(
-        item not in (None, "", False)
-        for item in [schedule_at, schedule_duration, schedule_loop_enabled, schedule_run_immediately]
-    )
-    schedule_raw = args.get("schedule")
-    schedule_obj = schedule_raw if isinstance(schedule_raw, dict) else {}
-    if isinstance(schedule_obj, dict) and bool(schedule_obj):
-        has_schedule_hint = True
-    schedule_enabled = _to_bool(schedule_enabled_raw, has_schedule_hint)
-
-    payload_source: Dict[str, Any] = {
-        "schedule_enabled": schedule_enabled,
-        "schedule_at": schedule_at,
-        "schedule_duration_minutes": schedule_duration,
-        "schedule_loop_enabled": _to_bool(schedule_loop_enabled, False),
-        "schedule_run_immediately": _to_bool(schedule_run_immediately, False),
-    }
-    task_payload = extract_task_payload(payload_source)
-
+    """构建任务 payload；schedule 的别名兼容、hint 推断与 schedule_at 补全
+    统一由 extract_task_payload → task_schedule 模块完成。"""
+    task_payload = extract_task_payload(args if isinstance(args, dict) else {})
     schedule = task_payload.get("schedule")
-    if isinstance(schedule, dict):
-        loop_enabled = bool(schedule.get("loop_enabled"))
-        run_immediately = bool(schedule.get("run_immediately")) and loop_enabled
-        schedule["loop_enabled"] = bool(loop_enabled)
-        schedule["run_immediately"] = bool(run_immediately)
-        if bool(schedule.get("enabled")):
-            try:
-                duration_minutes = max(1, int(schedule.get("duration_minutes") or 30))
-            except Exception:
-                duration_minutes = 30
-            try:
-                schedule_at_val = float(schedule.get("schedule_at") or 0)
-            except Exception:
-                schedule_at_val = 0.0
-            if run_immediately:
-                schedule_at_val = float(time.time())
-            elif schedule_at_val <= 0:
-                schedule_at_val = float(time.time() + duration_minutes * 60)
-            schedule["duration_minutes"] = duration_minutes
-            schedule["schedule_at"] = float(schedule_at_val)
-            schedule["enabled"] = True
-    return task_payload, bool(schedule_enabled)
+    schedule_enabled = bool(isinstance(schedule, dict) and schedule.get("enabled"))
+    return task_payload, schedule_enabled
 
 def _enforce_task_schedule_mode(
     task_payload: Dict[str, Any],
@@ -222,34 +142,12 @@ def _enforce_task_schedule_mode(
     loop_enabled: bool,
     run_immediately: bool,
 ) -> None:
-    schedule = task_payload.get("schedule")
-    if not isinstance(schedule, dict):
-        schedule = {}
-        task_payload["schedule"] = schedule
-
-    try:
-        duration_minutes = max(1, int(schedule.get("duration_minutes") or 30))
-    except Exception:
-        duration_minutes = 30
-
-    run_now = bool(enabled and loop_enabled and run_immediately)
-    schedule_at = _safe_timestamp(schedule.get("schedule_at"))
-
-    if enabled:
-        if run_now:
-            schedule_at_val: Optional[float] = float(time.time())
-        elif schedule_at is None:
-            schedule_at_val = float(time.time() + duration_minutes * 60)
-        else:
-            schedule_at_val = float(schedule_at)
-    else:
-        schedule_at_val = None
-
+    """按 mode 强制覆盖定时开关，再统一重算 schedule_at。"""
+    schedule = normalize_schedule(task_payload.get("schedule"))
     schedule["enabled"] = bool(enabled)
-    schedule["loop_enabled"] = bool(loop_enabled) if enabled else False
-    schedule["run_immediately"] = bool(run_now)
-    schedule["duration_minutes"] = int(duration_minutes)
-    schedule["schedule_at"] = schedule_at_val
+    schedule["loop_enabled"] = bool(enabled and loop_enabled)
+    schedule["run_immediately"] = bool(enabled and loop_enabled and run_immediately)
+    task_payload["schedule"] = finalize_schedule(schedule)
 
 def _task_create_type_from_payload(task_payload: Dict[str, Any]) -> str:
     schedule = task_payload.get("schedule")
@@ -279,26 +177,51 @@ def _task_create_impl(
     normalized_args = dict(args or {})
     raw_schedule_at = _pick_schedule_value(normalized_args, _SCHEDULE_AT_KEYS)
     raw_schedule_duration = _pick_schedule_value(normalized_args, _SCHEDULE_DURATION_KEYS)
-    parsed_schedule_at, schedule_at_error, has_schedule_at_input = _parse_schedule_at_strict(raw_schedule_at)
+    parsed_schedule_at, schedule_at_error, has_schedule_at_input = parse_timestamp_strict(raw_schedule_at)
     has_duration_input = _is_non_empty_schedule_value(raw_schedule_duration)
     if schedule_at_error:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"{source_tool}: {schedule_at_error}。"
+                f"{source_tool}: schedule_at {schedule_at_error}。"
                 "仅支持 Unix 秒时间戳，或带时区 ISO-8601（例如 2026-03-24T16:30:00+08:00）。"
             ),
         )
     if has_schedule_at_input and parsed_schedule_at is not None:
-        normalized_args = _normalize_schedule_at_arg(normalized_args, parsed_schedule_at)
+        normalized_args = _override_schedule_arg(normalized_args, "schedule_at", parsed_schedule_at)
+
+    # 循环专属参数（仅 mode=recurring 接受）
+    raw_loop_mode = _pick_schedule_value(normalized_args, _SCHEDULE_LOOP_MODE_KEYS)
+    raw_daily_time = _pick_schedule_value(normalized_args, _SCHEDULE_DAILY_TIME_KEYS)
+    raw_weekly_days = _pick_schedule_value(normalized_args, _SCHEDULE_WEEKLY_DAYS_KEYS)
+    raw_max_runs = _pick_schedule_value(normalized_args, _SCHEDULE_MAX_RUNS_KEYS)
+    raw_end_at = _pick_schedule_value(normalized_args, _SCHEDULE_END_AT_KEYS)
+    has_loop_param = any(
+        _is_non_empty_schedule_value(item)
+        for item in (raw_loop_mode, raw_daily_time, raw_weekly_days, raw_max_runs, raw_end_at)
+    )
+    parsed_end_at, end_at_error, has_end_at_input = parse_timestamp_strict(raw_end_at)
+    if end_at_error:
+        raise HTTPException(status_code=400, detail=f"{source_tool}: schedule_end_at {end_at_error}。")
+    if has_end_at_input and parsed_end_at is not None:
+        normalized_args = _override_schedule_arg(normalized_args, "schedule_end_at", parsed_end_at)
 
     if mode == "immediate":
-        if has_schedule_at_input or has_duration_input:
+        if has_schedule_at_input or has_duration_input or has_loop_param:
             raise HTTPException(
                 status_code=400,
-                detail=f"{source_tool}: mode=immediate 不接受定时参数，请移除 schedule_at/schedule_duration_minutes。",
+                detail=f"{source_tool}: mode=immediate 不接受任何定时/循环参数，请移除 schedule_* 字段。",
             )
     elif mode == "scheduled":
+        if has_loop_param:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{source_tool}: mode=scheduled 不接受循环参数"
+                    "（schedule_loop_mode/schedule_daily_time/schedule_weekly_days/schedule_max_runs/schedule_end_at），"
+                    "循环请使用 mode=recurring。"
+                ),
+            )
         if has_schedule_at_input and has_duration_input:
             raise HTTPException(
                 status_code=400,
@@ -320,10 +243,35 @@ def _task_create_impl(
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"{source_tool}: mode=recurring 不支持 schedule_at，请仅使用 schedule_duration_minutes，"
-                    "可选 schedule_run_immediately。"
+                    f"{source_tool}: mode=recurring 不支持 schedule_at；"
+                    "请用 schedule_loop_mode 选择循环方式（interval/daily/weekly）。"
                 ),
             )
+        loop_mode = str(raw_loop_mode or "interval").strip().lower()
+        if loop_mode not in LOOP_MODES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{source_tool}: schedule_loop_mode 必须是 interval、daily 或 weekly。",
+            )
+        if loop_mode in {"daily", "weekly"} and parse_daily_time(raw_daily_time) is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{source_tool}: loop_mode={loop_mode} 需要 schedule_daily_time（HH:MM，服务器本地时区）。",
+            )
+        if loop_mode == "weekly" and not parse_weekly_days(raw_weekly_days):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"{source_tool}: loop_mode=weekly 需要 schedule_weekly_days，"
+                    "如 [0,2,4]（0=周一 ... 6=周日）。"
+                ),
+            )
+        if loop_mode == "interval" and _is_non_empty_schedule_value(raw_daily_time):
+            raise HTTPException(
+                status_code=400,
+                detail=f"{source_tool}: schedule_daily_time 仅在 loop_mode=daily/weekly 时有效。",
+            )
+        normalized_args = _override_schedule_arg(normalized_args, "schedule_loop_mode", loop_mode)
     else:
         raise HTTPException(
             status_code=400,
@@ -475,23 +423,27 @@ def _format_ts_utc(ts: Optional[float]) -> str:
     return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat(timespec="seconds")
 
 def _build_task_schedule_meta(task_payload: Dict[str, Any], trigger_type: str) -> Dict[str, Any]:
-    schedule = task_payload.get("schedule") if isinstance(task_payload, dict) else {}
-    if not isinstance(schedule, dict):
-        schedule = {}
-    enabled = bool(schedule.get("enabled"))
+    raw = task_payload.get("schedule") if isinstance(task_payload, dict) else {}
+    schedule = normalize_schedule(raw)
     schedule_at = _safe_timestamp(schedule.get("schedule_at"))
-    duration_minutes = int(schedule.get("duration_minutes") or 30) if enabled else int(schedule.get("duration_minutes") or 0)
-    loop_enabled = bool(schedule.get("loop_enabled"))
-    run_immediately = bool(schedule.get("run_immediately"))
+    end_at = _safe_timestamp(schedule.get("end_at"))
     return {
         "trigger_type": str(trigger_type or "").strip(),
-        "schedule_enabled": enabled,
+        "schedule_enabled": schedule["enabled"],
         "schedule_at_unix": schedule_at,
         "schedule_at_local": _format_ts_local(schedule_at),
         "schedule_at_utc": _format_ts_utc(schedule_at),
-        "schedule_duration_minutes": max(0, int(duration_minutes or 0)),
-        "schedule_loop_enabled": loop_enabled,
-        "schedule_run_immediately": run_immediately,
+        "schedule_duration_minutes": schedule["duration_minutes"] if schedule["enabled"] else 0,
+        "schedule_loop_enabled": schedule["loop_enabled"],
+        "schedule_loop_mode": schedule["loop_mode"] if schedule["loop_enabled"] else "",
+        "schedule_daily_time": schedule["daily_time"],
+        "schedule_weekly_days": schedule["weekly_days"],
+        "schedule_max_runs": schedule["max_runs"],
+        "schedule_runs_done": schedule["runs_done"],
+        "schedule_end_at_unix": end_at,
+        "schedule_end_at_local": _format_ts_local(end_at),
+        "schedule_run_immediately": schedule["run_immediately"],
+        "schedule_summary": describe_schedule(schedule),
     }
 
 def _task_job_payload(row: AITaskJob) -> Dict[str, Any]:
@@ -627,6 +579,16 @@ def _merge_task_payload_for_update(existing_payload: Dict[str, Any], args: Dict[
             "repeat",
             "schedule_run_immediately",
             "run_now",
+            "schedule_loop_mode",
+            "loop_mode",
+            "schedule_daily_time",
+            "daily_time",
+            "schedule_weekly_days",
+            "weekly_days",
+            "schedule_max_runs",
+            "max_runs",
+            "schedule_end_at",
+            "end_at",
             "schedule",
         )
     )

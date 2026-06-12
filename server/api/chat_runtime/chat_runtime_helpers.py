@@ -136,6 +136,11 @@ def _create_loop_scheduled_job(
     source_job: Optional[AITaskJob],
     now: float,
 ) -> Optional[AITaskJob]:
+    """循环任务完成后创建下一轮实例；循环已结束（轮数跑满/超截止时间）返回 None。
+
+    下一轮触发时刻由 task_schedule.build_next_loop_schedule 按循环方式
+    （interval / daily / weekly）统一计算。
+    """
     if not source_job:
         return None
     if str(source_job.trigger_type or "").strip().lower() != "schedule":
@@ -146,24 +151,12 @@ def _create_loop_scheduled_job(
         payload = {}
     if not isinstance(payload, dict):
         payload = {}
-    schedule = payload.get("schedule") if isinstance(payload, dict) else {}
-    if not isinstance(schedule, dict):
+
+    from api.services.task_schedule import build_next_loop_schedule
+
+    next_schedule = build_next_loop_schedule(payload.get("schedule"), now)
+    if next_schedule is None:
         return None
-    if not bool(schedule.get("enabled")):
-        return None
-    if not bool(schedule.get("loop_enabled")):
-        return None
-    try:
-        duration_minutes = max(1, int(schedule.get("duration_minutes") or 30))
-    except Exception:
-        duration_minutes = 30
-    next_schedule = dict(schedule)
-    next_schedule["enabled"] = True
-    next_schedule["loop_enabled"] = True
-    # "立即执行"仅用于首次创建；循环续建后统一按时长触发。
-    next_schedule["run_immediately"] = False
-    next_schedule["duration_minutes"] = duration_minutes
-    next_schedule["schedule_at"] = float(now + duration_minutes * 60)
     payload["schedule"] = next_schedule
     next_job = AITaskJob(
         job_id=f"job_{uuid.uuid4().hex[:12]}",

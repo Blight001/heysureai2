@@ -2099,6 +2099,17 @@ def _run_worker_impl(
                         completion_notice_lines.append(f"- 完成摘要: {task_summary}")
                     if next_loop_job is not None:
                         completion_notice_lines.append(f"- 循环任务已创建: {next_loop_job.job_id}")
+                    elif completed_job is not None:
+                        try:
+                            from api.services.task_schedule import normalize_schedule as _norm_sched
+                            _payload = json.loads(completed_job.task_payload) if completed_job.task_payload else {}
+                            _sched = _norm_sched(_payload.get("schedule") if isinstance(_payload, dict) else {})
+                            if _sched["enabled"] and _sched["loop_enabled"]:
+                                completion_notice_lines.append(
+                                    "- 循环已结束（达到轮数上限或超过截止时间），不再创建下一轮"
+                                )
+                        except Exception:
+                            pass
                     completion_notice_lines.append("")
                     completion_notice_lines.append("本任务对话已自动锁定，不再继续后续操作。")
                     completion_notice = "\n".join(completion_notice_lines)

@@ -160,8 +160,12 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         description=(
             "Create a task with explicit mode. mode=immediate runs as soon as the scheduler picks it; "
             "mode=scheduled creates a one-time scheduled task using schedule_at or schedule_duration_minutes; "
-            "mode=recurring creates a loop task using schedule_duration_minutes and optional schedule_run_immediately. "
-            "schedule_at must be Unix seconds or timezone-aware ISO-8601."
+            "mode=recurring creates a loop task. Loop styles via schedule_loop_mode: "
+            "interval (every schedule_duration_minutes after completion), "
+            "daily (every day at schedule_daily_time), "
+            "weekly (on schedule_weekly_days at schedule_daily_time). "
+            "Loops can be bounded by schedule_max_runs and/or schedule_end_at. "
+            "schedule_at/schedule_end_at must be Unix seconds or timezone-aware ISO-8601."
         ),
         input_schema={
             "type": "object",
@@ -175,8 +179,21 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
                 "instruction": {"type": "string", "description": "任务执行说明/要求。"},
                 "priority": {"type": "integer", "description": "优先级 1-10，默认 5。"},
                 "schedule_at": {"type": ["number", "string"], "description": "一次性执行时间。支持 Unix 秒，或带时区的 ISO-8601（必须包含 +08:00 或 Z）。"},
-                "schedule_duration_minutes": {"type": "integer", "description": "scheduled: now + 该分钟数；recurring: 循环间隔（分钟）。默认 30。"},
-                "schedule_run_immediately": {"type": "boolean", "description": "mode=recurring 时是否首次立即执行。"},
+                "schedule_duration_minutes": {"type": "integer", "description": "scheduled: now + 该分钟数；recurring(interval): 每轮完成后的循环间隔（分钟）。默认 30。"},
+                "schedule_loop_mode": {
+                    "type": "string",
+                    "enum": ["interval", "daily", "weekly"],
+                    "description": "循环方式（仅 mode=recurring）：interval=按间隔分钟，daily=每天定时，weekly=每周指定星期定时。默认 interval。",
+                },
+                "schedule_daily_time": {"type": "string", "description": "daily/weekly 循环的触发时刻 HH:MM（服务器本地时区），如 \"09:30\"。"},
+                "schedule_weekly_days": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "weekly 循环的星期列表，0=周一 ... 6=周日，如 [0,2,4]。",
+                },
+                "schedule_max_runs": {"type": "integer", "description": "循环总轮数上限，0 或省略 = 不限。跑满后自动停止续期。"},
+                "schedule_end_at": {"type": ["number", "string"], "description": "循环截止时间（Unix 秒或带时区 ISO-8601）；下一轮超过该时刻则停止续期。"},
+                "schedule_run_immediately": {"type": "boolean", "description": "mode=recurring 时是否首轮立即执行。"},
                 "template_id": {"type": "string", "description": "可选模板 ID。"},
                 "target_ai_config_id": {"type": "integer", "description": "assistant_admin 代理投递目标 AI 配置 ID。"},
             },
