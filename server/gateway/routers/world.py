@@ -5,7 +5,9 @@
 """
 
 import json
+import re
 import time
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
@@ -19,9 +21,50 @@ from .auth import get_current_user
 PREFIX = "/api/world"
 router = APIRouter()
 
+# 外观元数据默认值；skin_json 里只存与默认不同的键
+APPEARANCE_DEFAULTS = {"skin": "", "tint": "", "scale": 1.0, "aura": ""}
+HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+SCALE_MIN, SCALE_MAX = 0.7, 1.4
+
 
 class ActorMetaUpdate(BaseModel):
-    skin: str = ""
+    """部分更新：None = 不改该字段（旧客户端只传 skin 时不丢调色等配置）。"""
+
+    skin: Optional[str] = None
+    tint: Optional[str] = None
+    scale: Optional[float] = None
+    aura: Optional[str] = None
+
+
+def _parse_meta(skin_json: str) -> dict:
+    """skin_json → 外观字典（带默认值兜底，容忍历史脏数据）。"""
+    try:
+        raw = json.loads(skin_json or "{}")
+        if not isinstance(raw, dict):
+            raw = {}
+    except (ValueError, TypeError):
+        raw = {}
+    meta = dict(APPEARANCE_DEFAULTS)
+    skin = str(raw.get("skin") or "")
+    if skin:
+        meta["skin"] = skin
+    tint = str(raw.get("tint") or "")
+    if HEX_COLOR_RE.match(tint):
+        meta["tint"] = tint
+    aura = str(raw.get("aura") or "")
+    if HEX_COLOR_RE.match(aura):
+        meta["aura"] = aura
+    try:
+        scale = float(raw.get("scale", 1.0))
+    except (ValueError, TypeError):
+        scale = 1.0
+    if SCALE_MIN <= scale <= SCALE_MAX:
+        meta["scale"] = scale
+    return meta
+
+
+def _meta_item(row: WorldActorMeta) -> dict:
+    return {"ai_config_id": row.ai_config_id, **_parse_meta(row.skin_json)}
 
 
 @router.get("/snapshot")
@@ -64,13 +107,7 @@ async def world_snapshot(
     meta_rows = session.exec(
         select(WorldActorMeta).where(WorldActorMeta.user_id == user.id)
     ).all()
-    actor_meta = []
-    for row in meta_rows:
-        try:
-            skin = str(json.loads(row.skin_json or "{}").get("skin") or "")
-        except (ValueError, TypeError):
-            skin = ""
-        actor_meta.append({"ai_config_id": row.ai_config_id, "skin": skin})
+    actor_meta = [_meta_item(row) for row in meta_rows]
 
     return {
         "cards": cards,
@@ -91,14 +128,7 @@ async def list_actor_meta(
     rows = session.exec(
         select(WorldActorMeta).where(WorldActorMeta.user_id == user.id)
     ).all()
-    items = []
-    for row in rows:
-        try:
-            skin = str(json.loads(row.skin_json or "{}").get("skin") or "")
-        except (ValueError, TypeError):
-            skin = ""
-        items.append({"ai_config_id": row.ai_config_id, "skin": skin})
-    return {"items": items}
+    return {"items": [_meta_item(row) for row in rows]}
 
 
 @router.put("/actors/{ai_config_id}/meta")
@@ -117,11 +147,6 @@ async def update_actor_meta(
     ).first()
     if not cfg:
         raise HTTPException(status_code=404, detail="AI 成员不存在")
-    skin = str(body.skin or "").strip()
-    # 皮肤 key 是前端资产文件名；只做基本防注入校验，不维护白名单
-    # （资产由前端 manifest 管理，后端不感知具体皮肤列表）。
-    if len(skin) > 64 or any(c in skin for c in "/\\<>\"'"):
-        raise HTTPException(status_code=400, detail="非法皮肤标识")
     row = session.exec(
         select(WorldActorMeta).where(
             WorldActorMeta.user_id == user.id,
@@ -130,8 +155,32 @@ async def update_actor_meta(
     ).first()
     if not row:
         row = WorldActorMeta(user_id=user.id, ai_config_id=ai_config_id)
-    row.skin_json = json.dumps({"skin": skin}, ensure_ascii=False)
+    meta = _parse_meta(row.skin_json)
+
+    if body.skin is not None:
+        skin = str(body.skin).strip()
+        # 皮肤 key 是前端资产文件名；只做基本防注入校验，不维护白名单
+        # （资产由前端 manifest 管理，后端不感知具体皮肤列表）。
+        if len(skin) > 64 or any(c in skin for c in "/\\<>\"'"):
+            raise HTTPException(status_code=400, detail="非法皮肤标识")
+        meta["skin"] = skin
+    if body.tint is not None:
+        tint = str(body.tint).strip()
+        if tint and not HEX_COLOR_RE.match(tint):
+            raise HTTPException(status_code=400, detail="非法调色值（应为 #RRGGBB）")
+        meta["tint"] = tint
+    if body.aura is not None:
+        aura = str(body.aura).strip()
+        if aura and not HEX_COLOR_RE.match(aura):
+            raise HTTPException(status_code=400, detail="非法光环颜色（应为 #RRGGBB）")
+        meta["aura"] = aura
+    if body.scale is not None:
+        meta["scale"] = round(min(SCALE_MAX, max(SCALE_MIN, float(body.scale))), 2)
+
+    # 只存非默认键，保持 skin_json 紧凑
+    stored = {k: v for k, v in meta.items() if v != APPEARANCE_DEFAULTS[k]}
+    row.skin_json = json.dumps(stored, ensure_ascii=False)
     row.updated_at = time.time()
     session.add(row)
     session.commit()
-    return {"ok": True, "ai_config_id": ai_config_id, "skin": skin}
+    return {"ok": True, "ai_config_id": ai_config_id, **meta}

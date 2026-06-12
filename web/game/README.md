@@ -43,6 +43,11 @@
       "🕐 北京时间 HH:MM + 时段"；滚轮缩放下限改为动态"恰好铺满视口"，
       视野永远不会超出地图（容器尺寸变化自动校正）；修复 ?hour 缺省时被
       误判为调试 0 点导致昼夜错乱的 bug
+- [x] 成员外观自定义（2026-06-12）：点击成员 → 抽屉"外观自定义"面板——皮肤（4 色）、
+      调色（预设色板 + 自定义取色器，乘法 tint）、体型（0.7-1.4 缩放滑杆，脚底贴地）、
+      光环（脚下 ADD 混合呼吸发光，预设 + 自定义色）；改动即在地图实时预览，
+      "保存外观"落库（`WorldActorMeta.skin_json` 扩展为多键 JSON，部分更新合并语义，
+      旧数据/旧客户端兼容，无需迁移）
 - [ ] P3 其余项按需：项目分区领地（竞技场 / 时间轴回放 / 多人观战已确认不做，2026-06-11）
 
 ## 访问
@@ -57,7 +62,7 @@ cd web && npm install && npm run dev   # 拉取后先 npm install（游戏世界
 
 数据来自现有 REST 轮询（8s）+ Socket.IO 实时事件；**所有写操作 1:1 走现有接口**
 （启停=toggle-run、绑定=agents/bind、审批=librarian、派任务=task-trigger），
-皮肤走新增的 `/api/world/actors/*/meta`（表 `worldactormeta`，纯表现层）。
+外观（皮肤/调色/体型/光环）走 `/api/world/actors/*/meta`（表 `worldactormeta`，纯表现层）。
 锚区规则（谁站在哪）见设计方案 §4.3，实现在 `scenes/WorldScene.ts` 的 `anchorFor`。
 
 生产构建（`npm run build`）后两个入口都在 `web/dist`，由 gateway 静态托管，后端无需改动。

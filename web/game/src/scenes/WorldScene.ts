@@ -8,7 +8,7 @@ import { toggleAiRun } from '@/api/ai'
 import { assignAgentAi } from '@/api/agents'
 import { triggerTaskForAgent } from '@/api/task'
 import { approveProposal, rejectProposal } from '@/api/librarian'
-import { setWorldActorSkin } from '@/api/world'
+import { setWorldActorMeta } from '@/api/world'
 import { SHEETS, TILES } from '../assetManifest'
 import { MemberActor } from '../actors/MemberActor'
 import {
@@ -383,10 +383,18 @@ export class WorldScene extends Phaser.Scene {
         await assignAgentAi(agentId, aiConfigId)
         await refresh()
       },
-      setSkin: async (id, skin) => {
-        await setWorldActorSkin(id, skin)
+      setAppearance: async (id, meta) => {
+        await setWorldActorMeta(id, meta)
         await refresh()
         this.reopenMember(id)
+      },
+      previewAppearance: (id, meta) => {
+        // 仅本地预览，不落库；下次快照刷新会回到已保存外观
+        const actor = this.actors.get(id)
+        const m = this.snap?.members.find(x => x.id === id)
+        if (!actor || !m) return
+        actor.previewSkin(skinFor(m.role, id, meta.skin))
+        actor.applyAppearance(meta)
       },
       createTask: async (id, title, instruction) => {
         await triggerTaskForAgent(

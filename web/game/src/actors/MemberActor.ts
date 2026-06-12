@@ -20,12 +20,27 @@ const TOKEN_BAR_H = 5
 
 export type EmoteKind = keyof typeof EMOTES | null
 
+/** 外观自定义（WorldActorMeta）：调色 / 体型 / 光环 */
+export interface ActorAppearance {
+  tint: string
+  scale: number
+  aura: string
+}
+
+const hexToColor = (hex: string): number | null => {
+  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return null
+  return parseInt(hex.slice(1), 16)
+}
+
 export class MemberActor extends Phaser.GameObjects.Container {
   readonly memberId: number
   member: WorldMember
   private sprite: Phaser.GameObjects.Sprite
   private tokenBar: Phaser.GameObjects.Graphics
   private emote: Phaser.GameObjects.Image
+  private aura: Phaser.GameObjects.Image
+  private auraOn = false
+  private auraPhase = Math.random() * Math.PI * 2
   private skin: string
   private zone: Rect
   private target: Point | null = null
@@ -42,9 +57,16 @@ export class MemberActor extends Phaser.GameObjects.Container {
     this.skin = skin
     this.zone = zone
 
+    // 光环垫在角色脚下（ADD 混合），由外观自定义开关
+    this.aura = scene.add.image(0, -6, 'glow.png', 0)
+    this.aura.setBlendMode(Phaser.BlendModes.ADD)
+    this.aura.setVisible(false)
+    this.add(this.aura)
+
     this.sprite = scene.add.sprite(0, -24, skin, 0)
     this.sprite.setOrigin(0.5, 0.5)
     this.add(this.sprite)
+    this.applyAppearance(member)
 
     this.tokenBar = scene.add.graphics()
     this.add(this.tokenBar)
@@ -110,6 +132,7 @@ export class MemberActor extends Phaser.GameObjects.Container {
       this.sprite.stop()
       this.sprite.setTexture(skin, 0)
     }
+    this.applyAppearance(member)
     this.refreshEmote()
     this.refreshTokenBar()
     // 停用：原地坐下打瞌睡
@@ -121,6 +144,35 @@ export class MemberActor extends Phaser.GameObjects.Container {
     } else {
       this.sprite.setAlpha(1)
     }
+  }
+
+  /** 应用外观自定义（调色 / 体型 / 光环）；抽屉调参时也用于实时预览 */
+  applyAppearance(a: ActorAppearance) {
+    const tint = hexToColor(a.tint)
+    if (tint !== null) this.sprite.setTint(tint)
+    else this.sprite.clearTint()
+
+    const scale = Phaser.Math.Clamp(Number.isFinite(a.scale) && a.scale > 0 ? a.scale : 1, 0.7, 1.4)
+    this.sprite.setScale(scale)
+    this.sprite.y = -24 * scale // 体型变化时保持脚底贴地
+
+    const auraColor = hexToColor(a.aura)
+    this.auraOn = auraColor !== null
+    if (auraColor !== null) {
+      this.aura.setTint(auraColor)
+      this.aura.setScale(1.6 * scale, 0.9 * scale)
+      this.aura.setVisible(true)
+    } else {
+      this.aura.setVisible(false)
+    }
+  }
+
+  /** 预览皮肤贴图（抽屉换肤未保存时的所见即所得） */
+  previewSkin(skin: string) {
+    if (skin === this.skin || this.dying) return
+    this.skin = skin
+    this.sprite.stop()
+    this.sprite.setTexture(skin, 0)
   }
 
   setAnchor(zone: Rect) {
@@ -195,6 +247,8 @@ export class MemberActor extends Phaser.GameObjects.Container {
 
   /** 每帧推进；返回 false 表示已销毁 */
   tick(time: number, deltaMs: number): boolean {
+    // 光环呼吸（独立于行走状态机，停用/拖拽时也生效）
+    if (this.auraOn) this.aura.setAlpha(0.42 + 0.16 * Math.sin(time / 420 + this.auraPhase))
     if (this.dying || this.dragging) {
       this.syncDepth()
       return true
