@@ -8,6 +8,9 @@
  *   可在设置 → 界面偏好中实时切换。
  * - 颜色随亮/暗主题自适应；prefers-reduced-motion 时整体禁用；
  *   标签页隐藏时暂停渲染。
+ * - 移动端：缓冲区尺寸取 canvas 自身盒子（而非 window.innerWidth/Height），
+ *   避免地址栏/软键盘导致宽高比错位被拉伸；触屏通过 pointer 事件互动，
+ *   抬手后光晕淡出；小屏降低粒子密度与连线距离以保证性能。
  */
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useUiEffects } from '@/composables/useUiEffects'
@@ -27,32 +30,57 @@ let width = 0
 let height = 0
 let raf = 0
 let running = false
+let resizeObserver: ResizeObserver | null = null
 const mouse = { x: -9999, y: -9999, active: false }
 const glowPos = { x: -9999, y: -9999 }
 
-const LINK_DIST = 130
-const MOUSE_DIST = 170
+// 小屏下缩短连线距离、降低密度，避免画面拥挤且省电
+let linkDist = 130
+let mouseDist = 170
 
 const isDark = () => document.documentElement.classList.contains('dark')
+
+const makeNode = (): Node => ({
+  x: Math.random() * width,
+  y: Math.random() * height,
+  vx: (Math.random() - 0.5) * 0.32,
+  vy: (Math.random() - 0.5) * 0.32,
+  r: 1 + Math.random() * 1.5,
+})
 
 const resize = () => {
   const canvas = canvasEl.value
   const ctx = canvas?.getContext('2d')
   if (!canvas || !ctx) return
   const dpr = Math.min(window.devicePixelRatio || 1, 2)
-  width = window.innerWidth
-  height = window.innerHeight
+  // 以 canvas 自身盒子为准：缓冲区与 CSS 显示尺寸宽高比始终一致，
+  // 移动端地址栏收起/软键盘弹出时不会被拉伸压扁
+  const rect = canvas.getBoundingClientRect()
+  const newWidth = Math.max(1, Math.round(rect.width))
+  const newHeight = Math.max(1, Math.round(rect.height))
+  // 已有粒子按比例映射到新尺寸，地址栏频繁伸缩时画面不闪变
+  if (width > 0 && height > 0 && nodes.length > 0) {
+    const sx = newWidth / width
+    const sy = newHeight / height
+    for (const n of nodes) {
+      n.x *= sx
+      n.y *= sy
+    }
+  }
+  width = newWidth
+  height = newHeight
   canvas.width = width * dpr
   canvas.height = height * dpr
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  const count = Math.min(90, Math.max(30, Math.floor((width * height) / 22000)))
-  nodes = Array.from({ length: count }, () => ({
-    x: Math.random() * width,
-    y: Math.random() * height,
-    vx: (Math.random() - 0.5) * 0.32,
-    vy: (Math.random() - 0.5) * 0.32,
-    r: 1 + Math.random() * 1.5,
-  }))
+
+  const small = width < 640
+  linkDist = small ? 100 : 130
+  mouseDist = small ? 130 : 170
+  const count = small
+    ? Math.min(45, Math.max(16, Math.floor((width * height) / 30000)))
+    : Math.min(90, Math.max(30, Math.floor((width * height) / 22000)))
+  while (nodes.length > count) nodes.pop()
+  while (nodes.length < count) nodes.push(makeNode())
 }
 
 const step = () => {
@@ -78,8 +106,8 @@ const step = () => {
         const dx = n.x - mouse.x
         const dy = n.y - mouse.y
         const dist = Math.hypot(dx, dy)
-        if (dist > 0.5 && dist < MOUSE_DIST) {
-          const force = ((MOUSE_DIST - dist) / MOUSE_DIST) * 0.55
+        if (dist > 0.5 && dist < mouseDist) {
+          const force = ((mouseDist - dist) / mouseDist) * 0.55
           n.x += (dx / dist) * force
           n.y += (dy / dist) * force
         }
@@ -96,8 +124,8 @@ const step = () => {
         const dx = nodes[i].x - nodes[j].x
         const dy = nodes[i].y - nodes[j].y
         const dist = Math.hypot(dx, dy)
-        if (dist >= LINK_DIST) continue
-        ctx.strokeStyle = `rgba(${lineColor}, ${((1 - dist / LINK_DIST) * lineBase).toFixed(3)})`
+        if (dist >= linkDist) continue
+        ctx.strokeStyle = `rgba(${lineColor}, ${((1 - dist / linkDist) * lineBase).toFixed(3)})`
         ctx.beginPath()
         ctx.moveTo(nodes[i].x, nodes[i].y)
         ctx.lineTo(nodes[j].x, nodes[j].y)
@@ -109,8 +137,8 @@ const step = () => {
     if (interactive) {
       for (const n of nodes) {
         const dist = Math.hypot(n.x - mouse.x, n.y - mouse.y)
-        if (dist >= MOUSE_DIST) continue
-        ctx.strokeStyle = `rgba(${lineColor}, ${((1 - dist / MOUSE_DIST) * (lineBase * 2.2)).toFixed(3)})`
+        if (dist >= mouseDist) continue
+        ctx.strokeStyle = `rgba(${lineColor}, ${((1 - dist / mouseDist) * (lineBase * 2.2)).toFixed(3)})`
         ctx.beginPath()
         ctx.moveTo(n.x, n.y)
         ctx.lineTo(mouse.x, mouse.y)
@@ -130,7 +158,8 @@ const step = () => {
   if (effects.mouseGlow && glowEl.value) {
     glowPos.x += (mouse.x - glowPos.x) * 0.08
     glowPos.y += (mouse.y - glowPos.y) * 0.08
-    glowEl.value.style.transform = `translate(${glowPos.x - 220}px, ${glowPos.y - 220}px)`
+    const half = glowEl.value.offsetWidth / 2
+    glowEl.value.style.transform = `translate(${glowPos.x - half}px, ${glowPos.y - half}px)`
     glowEl.value.style.opacity = mouse.active ? '1' : '0'
   }
 
@@ -151,7 +180,8 @@ const stop = () => {
   if (glowEl.value) glowEl.value.style.opacity = '0'
 }
 
-const onMove = (ev: MouseEvent) => {
+// pointer 事件同时覆盖鼠标与触屏：手指按下/拖动时粒子跟随互动
+const onPointerMove = (ev: PointerEvent) => {
   mouse.x = ev.clientX
   mouse.y = ev.clientY
   if (!mouse.active) {
@@ -159,6 +189,11 @@ const onMove = (ev: MouseEvent) => {
     glowPos.x = mouse.x
     glowPos.y = mouse.y
   }
+}
+
+// 触屏抬手后没有"光标位置"，让光晕与连线淡出，避免停留在最后触点
+const onPointerEnd = (ev: PointerEvent) => {
+  if (ev.pointerType !== 'mouse') mouse.active = false
 }
 
 const onLeave = () => {
@@ -184,8 +219,18 @@ watch(
 
 onMounted(() => {
   resize()
-  window.addEventListener('resize', resize)
-  window.addEventListener('mousemove', onMove, { passive: true })
+  // ResizeObserver 跟随 canvas 自身盒子变化（地址栏伸缩、横竖屏、键盘弹出
+  // 都会触发），比 window resize 更可靠；不支持时回落到 window resize
+  if (typeof ResizeObserver !== 'undefined' && canvasEl.value) {
+    resizeObserver = new ResizeObserver(resize)
+    resizeObserver.observe(canvasEl.value)
+  } else {
+    window.addEventListener('resize', resize)
+  }
+  window.addEventListener('pointerdown', onPointerMove, { passive: true })
+  window.addEventListener('pointermove', onPointerMove, { passive: true })
+  window.addEventListener('pointerup', onPointerEnd, { passive: true })
+  window.addEventListener('pointercancel', onPointerEnd, { passive: true })
   document.documentElement.addEventListener('mouseleave', onLeave)
   document.addEventListener('visibilitychange', onVisibility)
   if (effects.particles || effects.mouseGlow) start()
@@ -193,8 +238,13 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stop()
+  resizeObserver?.disconnect()
+  resizeObserver = null
   window.removeEventListener('resize', resize)
-  window.removeEventListener('mousemove', onMove)
+  window.removeEventListener('pointerdown', onPointerMove)
+  window.removeEventListener('pointermove', onPointerMove)
+  window.removeEventListener('pointerup', onPointerEnd)
+  window.removeEventListener('pointercancel', onPointerEnd)
   document.documentElement.removeEventListener('mouseleave', onLeave)
   document.removeEventListener('visibilitychange', onVisibility)
 })
@@ -205,7 +255,7 @@ onBeforeUnmount(() => {
     <canvas ref="canvasEl" class="absolute inset-0 h-full w-full"></canvas>
     <div
       ref="glowEl"
-      class="ambient-mouse-glow absolute left-0 top-0 h-[440px] w-[440px] opacity-0"
+      class="ambient-mouse-glow absolute left-0 top-0 h-[280px] w-[280px] opacity-0 sm:h-[440px] sm:w-[440px]"
     ></div>
   </div>
 </template>
