@@ -11,8 +11,18 @@ export interface TriggerTaskPayload {
   priority: number
   schedule_enabled: boolean
   schedule_loop_enabled: boolean
+  /** 循环方式：interval=按间隔分钟，daily=每天定时，weekly=每周指定星期定时 */
+  schedule_loop_mode?: 'interval' | 'daily' | 'weekly'
   schedule_run_immediately: boolean
   schedule_duration_minutes: number
+  /** daily/weekly 循环触发时刻 HH:MM */
+  schedule_daily_time?: string
+  /** weekly 循环的星期列表，0=周一 ... 6=周日 */
+  schedule_weekly_days?: number[]
+  /** 循环总轮数上限，0=不限 */
+  schedule_max_runs?: number
+  /** 循环截止时间（Unix 秒），null=不限 */
+  schedule_end_at?: number | null
   schedule_at: number | string | null
   override_token_limit_enabled: boolean
   token_limit_override: number

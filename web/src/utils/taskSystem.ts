@@ -59,21 +59,38 @@ export interface AITaskGenerationItem {
   }
 }
 
+export type TaskLoopMode = 'interval' | 'daily' | 'weekly'
+
 export interface TaskCreateForm {
   title: string
   instruction: string
   priority: number
   schedule_enabled: boolean
   schedule_loop_enabled: boolean
+  schedule_loop_mode: TaskLoopMode
   schedule_run_immediately: boolean
   schedule_time_mode: 'duration' | 'datetime'
   schedule_duration_minutes: number
+  schedule_daily_time: string
+  schedule_weekly_days: number[]
+  schedule_max_runs: number
+  schedule_end_at: string
   schedule_at: string
   override_token_limit_enabled: boolean
   token_limit_override: number
   override_mcp_tools_enabled: boolean
   mcp_tools_override: string[]
 }
+
+export const WEEKDAY_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: '周一' },
+  { value: 1, label: '周二' },
+  { value: 2, label: '周三' },
+  { value: 3, label: '周四' },
+  { value: 4, label: '周五' },
+  { value: 5, label: '周六' },
+  { value: 6, label: '周日' },
+]
 
 export interface SystemAutoControlDefaults {
   start_task_prompt: string
@@ -219,6 +236,8 @@ const formatTs = (value?: number) => {
   return d.toLocaleString()
 }
 
+const weekdayLabel = (day: number) => WEEKDAY_OPTIONS.find(item => item.value === day)?.label || String(day)
+
 export const getTaskPayloadTags = (payload?: Record<string, any>) => {
   const src = payload && typeof payload === 'object' ? payload : {}
   const out: string[] = []
@@ -226,10 +245,26 @@ export const getTaskPayloadTags = (payload?: Record<string, any>) => {
   if (schedule.enabled) {
     const duration = Number(schedule.duration_minutes) || 0
     const at = Number(schedule.schedule_at) || 0
-    if (duration > 0) out.push(`定时时长: ${duration}分钟`)
-    if (at > 0) out.push(`定时日期: ${formatTs(at)}`)
-    if (schedule.loop_enabled) out.push('循环运行: 开启')
-    if (schedule.loop_enabled && schedule.run_immediately) out.push('首次执行: 立即')
+    const loopMode = String(schedule.loop_mode || 'interval')
+    if (schedule.loop_enabled) {
+      if (loopMode === 'daily') {
+        out.push(`循环: 每天 ${schedule.daily_time || ''}`)
+      } else if (loopMode === 'weekly') {
+        const days = Array.isArray(schedule.weekly_days) ? schedule.weekly_days.map(weekdayLabel).join('、') : ''
+        out.push(`循环: 每${days} ${schedule.daily_time || ''}`)
+      } else {
+        out.push(`循环: 每 ${duration} 分钟`)
+      }
+      const maxRuns = Number(schedule.max_runs) || 0
+      if (maxRuns > 0) out.push(`轮数: ${Number(schedule.runs_done) || 0}/${maxRuns}`)
+      const endAt = Number(schedule.end_at) || 0
+      if (endAt > 0) out.push(`截止: ${formatTs(endAt)}`)
+      if (at > 0) out.push(`下次执行: ${formatTs(at)}`)
+      if (schedule.run_immediately) out.push('首次执行: 立即')
+    } else {
+      if (duration > 0 && at <= 0) out.push(`定时时长: ${duration}分钟`)
+      if (at > 0) out.push(`定时日期: ${formatTs(at)}`)
+    }
   }
   const token = src.override_token_limit || {}
   if (token.enabled) out.push(`Token覆盖: ${Number(token.value) || 0}`)

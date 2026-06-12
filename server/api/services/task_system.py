@@ -3,7 +3,6 @@ its task items, decode task payloads, and resolve task session/generation ids.""
 
 import json
 import re
-from datetime import datetime
 from typing import Any, Dict, Optional
 
 from sqlmodel import Session, select
@@ -169,33 +168,11 @@ def _parse_int(value: Any, default: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(maximum, parsed))
 
 
-def _parse_timestamp(value: Any) -> Optional[float]:
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        parsed = float(value)
-        return parsed if parsed > 0 else None
-    text = str(value).strip()
-    if not text:
-        return None
-    try:
-        parsed = float(text)
-        return parsed if parsed > 0 else None
-    except Exception:
-        pass
-    try:
-        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        return dt.timestamp()
-    except Exception:
-        return None
-
-
 def extract_task_payload(body: Dict[str, Any]) -> Dict[str, Any]:
-    schedule_enabled = _parse_bool(body.get("schedule_enabled"), False)
-    schedule_loop_enabled = _parse_bool(body.get("schedule_loop_enabled"), False)
-    schedule_run_immediately = _parse_bool(body.get("schedule_run_immediately"), False)
-    schedule_duration_minutes = _parse_int(body.get("schedule_duration_minutes"), 30, 1, 7 * 24 * 60)
-    schedule_at = _parse_timestamp(body.get("schedule_at"))
+    # schedule 的解析/校验/补全统一走 task_schedule 模块（唯一权威实现）
+    from .task_schedule import extract_schedule, finalize_schedule
+
+    schedule = finalize_schedule(extract_schedule(body))
 
     override_token_limit_enabled = _parse_bool(body.get("override_token_limit_enabled"), False)
     token_limit_override = _parse_int(body.get("token_limit_override"), 10000, 1, 10**9)
@@ -218,13 +195,7 @@ def extract_task_payload(body: Dict[str, Any]) -> Dict[str, Any]:
             mcp_tools_override.append(item)
 
     return {
-        "schedule": {
-            "enabled": schedule_enabled,
-            "loop_enabled": schedule_loop_enabled,
-            "run_immediately": schedule_run_immediately,
-            "duration_minutes": schedule_duration_minutes,
-            "schedule_at": schedule_at,
-        },
+        "schedule": schedule,
         "override_token_limit": {
             "enabled": override_token_limit_enabled,
             "value": token_limit_override,

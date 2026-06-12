@@ -337,28 +337,15 @@ def process_task_scheduler() -> Dict[str, int]:
             ).all()
 
             def _is_job_time_ready(row: AITaskJob) -> bool:
+                from api.services.task_schedule import is_time_ready
+
                 try:
                     payload = json.loads(row.task_payload) if row.task_payload else {}
                 except Exception:
                     payload = {}
                 if not isinstance(payload, dict):
                     return True
-                schedule = payload.get("schedule")
-                if not isinstance(schedule, dict):
-                    return True
-                if not bool(schedule.get("enabled")):
-                    return True
-                try:
-                    schedule_at = float(schedule.get("schedule_at") or 0)
-                except Exception:
-                    schedule_at = 0.0
-                if schedule_at <= 0:
-                    try:
-                        duration_minutes = max(1, int(schedule.get("duration_minutes") or 30))
-                    except Exception:
-                        duration_minutes = 30
-                    schedule_at = float(row.created_at or now) + duration_minutes * 60
-                return now >= schedule_at
+                return is_time_ready(payload.get("schedule"), created_at=row.created_at, now=now)
 
             running = next((j for j in jobs if j.status == "running"), None)
             queued_jobs = [j for j in jobs if j.status == "queued" and _is_job_time_ready(j)]
