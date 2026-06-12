@@ -111,14 +111,14 @@ export class Overlay {
     this.hud.innerHTML = html
   }
 
-  /** 左下角静音开关（P2 音效） */
+  /** 左下角静音开关（P2 声音） */
   initMuteButton(parent: HTMLElement, initialMuted: boolean, onChange: (muted: boolean) => void) {
     const btn = document.createElement('button')
     btn.type = 'button'
     btn.className = 'gw-mute'
     let muted = initialMuted
     const render = () => {
-      btn.textContent = muted ? '🔇 音效关' : '🔊 音效开'
+      btn.textContent = muted ? '🔇 声音关' : '🔊 声音开'
     }
     render()
     btn.onclick = () => {

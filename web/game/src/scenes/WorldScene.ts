@@ -47,6 +47,20 @@ const sfxUrls = import.meta.glob('../../assets/sfx/*.wav', {
   import: 'default',
 }) as Record<string, string>
 
+const bgmUrls = import.meta.glob('../../assets/bgm/*.mp3', {
+  eager: true,
+  query: '?url',
+  import: 'default',
+}) as Record<string, string>
+
+const bgmTracks = Object.entries(bgmUrls)
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([path, url], index) => ({
+    key: `bgm_${index}`,
+    url,
+    name: path.split('/').pop() ?? `bgm_${index}`,
+  }))
+
 const urlFor = (file: string): string => {
   const url = assetUrls[`../../assets/${file}`]
   if (!url) throw new Error(`资产缺失: ${file}`)
@@ -78,6 +92,9 @@ export class WorldScene extends Phaser.Scene {
   private prevGeneration = new Map<number, number>()
   private prevPending = 0
   private muted = false
+  private currentBgm: Phaser.Sound.BaseSound | null = null
+  private currentBgmIndex = -1
+  private bgmAutoplayArmed = false
   private nightOverlay: Phaser.GameObjects.Rectangle | null = null
   /** 开场云层（数据就绪后镜头拉近 + 云朵飘散） */
   private clouds: Phaser.GameObjects.Image[] = []
@@ -114,6 +131,9 @@ export class WorldScene extends Phaser.Scene {
     for (const [path, url] of Object.entries(sfxUrls)) {
       const key = path.split('/').pop()!.replace('.wav', '')
       this.load.audio(key, url as string)
+    }
+    for (const track of bgmTracks) {
+      this.load.audio(track.key, track.url)
     }
   }
 
@@ -216,13 +236,23 @@ export class WorldScene extends Phaser.Scene {
   // ---------------------------------------------------------------- P2 氛围
   private createAudio() {
     this.muted = localStorage.getItem('gw-muted') === '1'
+    this.sound.mute = this.muted
     this.overlay.initMuteButton(document.body, this.muted, muted => {
       this.muted = muted
+      this.sound.mute = muted
       try {
         localStorage.setItem('gw-muted', muted ? '1' : '0')
       } catch {
         // ignore
       }
+      if (!muted) this.startBgm()
+    })
+    if (!this.muted) this.startBgm()
+    this.input.once('pointerdown', () => this.startBgm())
+    this.input.keyboard?.once('keydown', () => this.startBgm())
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.currentBgm?.destroy()
+      this.currentBgm = null
     })
   }
 
@@ -232,6 +262,38 @@ export class WorldScene extends Phaser.Scene {
       this.sound.play(key, { volume })
     } catch {
       // 浏览器自动播放策略：首次手势前播放失败属预期
+    }
+  }
+
+  private startBgm() {
+    if (this.muted || bgmTracks.length === 0) return
+    if (this.currentBgm?.isPlaying || this.bgmAutoplayArmed) return
+    this.playNextBgm()
+  }
+
+  private playNextBgm() {
+    if (this.muted || bgmTracks.length === 0) {
+      this.bgmAutoplayArmed = false
+      return
+    }
+    let nextIndex = Phaser.Math.Between(0, bgmTracks.length - 1)
+    if (bgmTracks.length > 1 && nextIndex === this.currentBgmIndex) {
+      nextIndex = (nextIndex + 1 + Phaser.Math.Between(0, bgmTracks.length - 2)) % bgmTracks.length
+    }
+    const track = bgmTracks[nextIndex]
+    this.currentBgm?.destroy()
+    this.currentBgm = this.sound.add(track.key, { volume: 0.22 })
+    this.currentBgmIndex = nextIndex
+    this.bgmAutoplayArmed = true
+    this.currentBgm.once(Phaser.Sound.Events.COMPLETE, () => {
+      this.bgmAutoplayArmed = false
+      this.playNextBgm()
+    })
+    const started = this.currentBgm.play()
+    if (!started) {
+      this.bgmAutoplayArmed = false
+      this.currentBgm.destroy()
+      this.currentBgm = null
     }
   }
 
