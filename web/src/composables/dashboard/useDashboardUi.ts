@@ -1,16 +1,15 @@
 import { computed, ref, type Ref } from 'vue'
-import type { Agent, KnowledgeItem, ProjectItem } from '@/types'
+import type { Agent, KnowledgeItem } from '@/types'
 
 interface UseDashboardUiOptions {
   unassignedProjectId: string
   agents: Ref<Agent[]>
-  projects: Ref<ProjectItem[]>
   knowledgeBase: Ref<KnowledgeItem[]>
   addKnowledge: (title: string, author: string, tags: string[]) => void
 }
 
 export const useDashboardUi = (options: UseDashboardUiOptions) => {
-  const { unassignedProjectId, agents, projects, knowledgeBase, addKnowledge } = options
+  const { unassignedProjectId, agents, knowledgeBase, addKnowledge } = options
   const CONTEXT_MENU_WIDTH = 144
   const CONTEXT_MENU_HEIGHT = 34
   const CONTEXT_MENU_MARGIN = 8
@@ -31,8 +30,6 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
   const settingsOpen = ref(false)
   const leftCollapsed = ref(false)
   const rightCollapsed = ref(false)
-  const projectFilterOpen = ref(false)
-  const projectFilter = ref<'all' | 'active' | 'inactive'>('all')
   const knowledgeFilterOpen = ref(false)
   const knowledgeFilter = ref<'all' | 'intrinsic' | 'personas' | 'skills' | 'tools' | 'inheritance' | 'system' | 'business'>('all')
   const userMenuOpen = ref(false)
@@ -65,11 +62,6 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
   const closeSettings = () => {
     if (!settingsOpen.value) return
     settingsOpen.value = false
-  }
-
-  const closeProjectFilter = () => {
-    if (!projectFilterOpen.value) return
-    projectFilterOpen.value = false
   }
 
   const closeKnowledgeFilter = () => {
@@ -139,79 +131,6 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
   const activeAgents = computed(() => agents.value.filter(a => a.status !== 'dead').reverse())
   const deadAgents = computed(() => agents.value.filter(a => a.status === 'dead').reverse())
 
-  const centerGridClass = computed(() => {
-    if (leftCollapsed.value && rightCollapsed.value) {
-      return 'grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6'
-    }
-    if (leftCollapsed.value || rightCollapsed.value) {
-      return 'grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-2 gap-6'
-    }
-    return 'grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-2 gap-6'
-  })
-
-  const projectGridClass = computed(() => {
-    if (leftCollapsed.value && rightCollapsed.value) {
-      return 'grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2 gap-6'
-    }
-    if (leftCollapsed.value || rightCollapsed.value) {
-      return 'grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-2 gap-6'
-    }
-    return 'grid grid-cols-1 gap-6'
-  })
-
-  const projectGroups = computed(() => {
-    const hasLearningAgents = agents.value.some(
-      agent => agent.role === 'worker'
-        && isUnassignedAgent(agent)
-        && hasAssignedWork(agent)
-    )
-    const base = [
-      ...projects.value,
-      ...(hasLearningAgents
-        ? [{
-            id: unassignedProjectId,
-            name: '学习中',
-            description: '尚未绑定项目但已有任务的 Agent',
-            status: 'running' as const,
-            aiMemberIds: [],
-            readonly: true,
-          }]
-        : []),
-    ]
-
-    return base.map(project => {
-      const activeAgentsByProject = agents.value.filter(
-        agent => agent.status !== 'dead'
-          && (agent.projectId || unassignedProjectId) === project.id
-          && (project.id !== unassignedProjectId || (agent.role === 'worker' && hasAssignedWork(agent)))
-      )
-      const deadAgentsByProject = agents.value.filter(
-        agent => agent.status === 'dead'
-          && (agent.projectId || unassignedProjectId) === project.id
-          && project.id !== unassignedProjectId
-      )
-      const aiMemberIds = Array.from(
-        new Set(
-          activeAgentsByProject
-            .concat(deadAgentsByProject)
-            .map(agent => agent.aiConfigId)
-            .filter((id): id is number => typeof id === 'number')
-        )
-      ).sort((a, b) => a - b)
-
-      return {
-        ...project,
-        aiMemberIds: project.id === unassignedProjectId ? aiMemberIds : (project.aiMemberIds?.length ? project.aiMemberIds : aiMemberIds),
-        activeAgents: activeAgentsByProject,
-        deadAgents: deadAgentsByProject,
-      }
-    }).filter(project => {
-      if (projectFilter.value === 'active') return project.status === 'running'
-      if (projectFilter.value === 'inactive') return project.status === 'ended'
-      return true
-    })
-  })
-
   const filteredKnowledgeBase = computed(() => {
     if (knowledgeFilter.value === 'all') return knowledgeBase.value
     if (knowledgeFilter.value === 'inheritance') {
@@ -244,15 +163,12 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
     settingsOpen,
     leftCollapsed,
     rightCollapsed,
-    projectFilterOpen,
-    projectFilter,
     knowledgeFilterOpen,
     knowledgeFilter,
     userMenuOpen,
     openContextMenu,
     closeContextMenu,
     closeSettings,
-    closeProjectFilter,
     closeKnowledgeFilter,
     openGuidanceDialog,
     closeGuidanceDialog,
@@ -262,9 +178,6 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
     sidebarMemberAgents,
     activeAgents,
     deadAgents,
-    centerGridClass,
-    projectGridClass,
-    projectGroups,
     filteredKnowledgeBase,
   }
 }

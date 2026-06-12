@@ -160,13 +160,29 @@ def _user_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
 # ---------- AI 间通信 ----------
 
 
+def _emit_ai_message_event(user_id: int, from_id: int, to_id: int, kind: str) -> None:
+    """世界页信使演出通知。best-effort，失败不影响消息投递。"""
+    try:
+        from api.services.world_events import emit_world_event
+
+        emit_world_event(user_id, "ai_message", {
+            "from_ai_config_id": from_id,
+            "to_ai_config_id": to_id,
+            "kind": kind,
+        })
+    except Exception:
+        pass
+
+
 def _reply_result(
     *,
+    user_id: int,
     completed_reply: Dict[str, Any],
     ai_config_id: int,
     to_id: int,
     return_session_id: str,
 ) -> Dict[str, Any]:
+    _emit_ai_message_event(user_id, ai_config_id, to_id, "reply")
     target_session_id = str(completed_reply.get("from_session_id") or return_session_id or "").strip()
     return {
         "message_id": completed_reply.get("message_id"),
@@ -238,6 +254,7 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         )
         if completed_reply is not None:
             return _reply_result(
+                user_id=user_id,
                 completed_reply=completed_reply,
                 ai_config_id=int(ai_config_id),
                 to_id=to_id,
@@ -264,6 +281,7 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         )
         if completed_reply is not None:
             return _reply_result(
+                user_id=user_id,
                 completed_reply=completed_reply,
                 ai_config_id=int(ai_config_id),
                 to_id=to_id,
@@ -314,6 +332,8 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+    _emit_ai_message_event(user_id, int(ai_config_id), to_id, "message")
 
     try:
         wakeup = ai_message_service.wake_idle_target_for_message(

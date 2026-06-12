@@ -104,6 +104,16 @@ export const SHEETS: SheetDef[] = [
 
   // ---- 灵魂 / 特效 / UI ----
   strip('soul.png', '灵魂（飞向英灵殿）', 'effect', 24, 24, 4, 5),
+  strip('envelope.png', '信封（AI 互发消息的信使）', 'effect', 24, 18, 1),
+  strip('cloud.png', '云朵（开场加载层，2 形态）', 'effect', 128, 64, 2),
+
+  // ---- 装饰 ----
+  strip('lamp.png', '灯柱（帧1=夜晚点亮）', 'tileset', 24, 56, 2),
+  strip('fence.png', '栅栏（横栏/立柱）', 'tileset', 32, 32, 2),
+  strip('bench.png', '长椅', 'tileset', 40, 24, 1),
+  strip('signpost.png', '路牌', 'tileset', 32, 40, 1),
+  strip('butterfly.png', '蝴蝶（扇翅，运行时 tint 变色）', 'effect', 16, 16, 2, 8),
+  strip('glow.png', '径向光晕（夜间灯光/萤火虫，ADD 混合）', 'effect', 32, 32, 1),
   {
     file: 'emotes.png',
     label: '表情气泡（沙漏/灯泡/对勾/感叹/放大镜/Zzz/卷轴/骷髅）',
@@ -148,6 +158,8 @@ export const TILES = {
   waterB: 10,
   stone: 11,
   bush: 12,
+  plazaA: 13,
+  plazaB: 14,
 } as const
 
 /** emotes.png 图标索引 */

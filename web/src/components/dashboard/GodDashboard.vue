@@ -24,7 +24,7 @@ import { resolveAvatarUrl } from '@/utils/avatar'
 
 const SystemSettingsPanel = defineAsyncComponent(() => import('./panels/SystemSettingsPanel.vue'))
 const LeftSidebarPanel = defineAsyncComponent(() => import('./panels/LeftSidebarPanel.vue'))
-const EvolutionArenaPanel = defineAsyncComponent(() => import('./panels/EvolutionArenaPanel.vue'))
+const WorldArenaPanel = defineAsyncComponent(() => import('./panels/WorldArenaPanel.vue'))
 const ValhallaPanel = defineAsyncComponent(() => import('./panels/ValhallaPanel.vue'))
 const ChatInterface = defineAsyncComponent(() => import('@/components/chat/ChatInterface.vue'))
 const McpToolsModal = defineAsyncComponent(() => import('./modals/McpToolsModal.vue'))
@@ -33,7 +33,6 @@ const TaskManagementModal = defineAsyncComponent(() => import('./modals/TaskMana
 const AiConfigModal = defineAsyncComponent(() => import('./modals/AiConfigModal.vue'))
 const AdminModal = defineAsyncComponent(() => import('./modals/AdminModal.vue'))
 const ProposalReviewModal = defineAsyncComponent(() => import('@/components/librarian/ProposalReviewModal.vue'))
-const WorldMapOverlay = defineAsyncComponent(() => import('./panels/WorldMapOverlay.vue'))
 
 const { alert, confirm } = useMessage()
 
@@ -54,7 +53,6 @@ const chatModalOpen = ref(false)
 const chatTarget = ref<Agent | null>(null)
 const proposalReviewOpen = ref(false)
 const adminModalOpen = ref(false)
-const worldMapOpen = ref(false)
 const isAdminUser = computed(() => ['owner', 'admin'].includes(props.currentUser?.role || ''))
 let dashboardRefreshTimer: number | null = null
 let dashboardRefreshLoopActive = false
@@ -116,7 +114,6 @@ const {
   agents,
   connectedAgents,
   knowledgeBase,
-  projects,
   globalGeneration,
   allFiles,
   dashboardSocketConnected,
@@ -126,9 +123,6 @@ const {
   loadValhallaEntries,
   valhallaEntries,
   librarianPending,
-  createProject,
-  updateProject,
-  deleteProject,
   toggleAiRunByConfigId,
   addKnowledge,
   createSeedData,
@@ -147,15 +141,12 @@ const {
   settingsOpen,
   leftCollapsed,
   rightCollapsed,
-  projectFilterOpen,
-  projectFilter,
   knowledgeFilterOpen,
   knowledgeFilter,
   userMenuOpen,
   openContextMenu,
   closeContextMenu,
   closeSettings,
-  closeProjectFilter,
   closeKnowledgeFilter,
   openGuidanceDialog,
   closeGuidanceDialog,
@@ -164,14 +155,10 @@ const {
   adminAgents,
   sidebarMemberAgents,
   activeAgents,
-  centerGridClass,
-  projectGridClass,
-  projectGroups,
   filteredKnowledgeBase,
 } = useDashboardUi({
   unassignedProjectId: UNASSIGNED_PROJECT_ID,
   agents,
-  projects,
   knowledgeBase,
   addKnowledge,
 })
@@ -319,12 +306,10 @@ const openAgentChat = (agent: Agent) => {
   chatModalOpen.value = true
 }
 
-// 游戏世界（iframe）请求打开某成员对话：关掉世界覆盖层，复用现有聊天弹窗
+// 游戏世界（中间 iframe）请求打开某成员对话：复用现有聊天弹窗
 const onWorldOpenChat = (aiConfigId: number) => {
   const agent = agents.value.find(a => Number(a.aiConfigId) === aiConfigId)
-  if (!agent) return
-  worldMapOpen.value = false
-  openAgentChat(agent)
+  if (agent) openAgentChat(agent)
 }
 
 const closeAgentChat = () => {
@@ -434,7 +419,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="relative isolate h-screen flex flex-col bg-zinc-50 text-zinc-900 overflow-hidden font-sans dark:bg-zinc-950 dark:text-zinc-100 bg-gradient-to-br from-zinc-50 via-zinc-100 to-indigo-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-indigo-950/20 animate-gradient" @click="closeContextMenu(); closeSettings(); closeProjectFilter(); closeKnowledgeFilter(); closeUserMenu()">
+  <div class="relative isolate h-screen flex flex-col bg-zinc-50 text-zinc-900 overflow-hidden font-sans dark:bg-zinc-950 dark:text-zinc-100 bg-gradient-to-br from-zinc-50 via-zinc-100 to-indigo-50/30 dark:from-zinc-950 dark:via-zinc-900 dark:to-indigo-950/20 animate-gradient" @click="closeContextMenu(); closeSettings(); closeKnowledgeFilter(); closeUserMenu()">
     <div class="app-background-glow pointer-events-none absolute inset-0"></div>
     <div class="pointer-events-none absolute inset-0 opacity-60">
       <div class="app-background-orb app-background-orb-left"></div>
@@ -463,13 +448,6 @@ onUnmounted(() => {
            <span class="text-xs text-zinc-400 uppercase font-semibold">文明代数</span>
            <span class="text-lg font-bold text-emerald-600 leading-none">Gen {{ globalGeneration }}</span>
         </div>
-        <button
-          class="ml-2 w-8 h-8 md:w-9 md:h-9 rounded-full border border-emerald-200 bg-white text-emerald-600 hover:text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50 transition-colors dark:bg-zinc-800 dark:border-emerald-700/60 dark:text-emerald-300 dark:hover:text-emerald-200 shadow-sm hover:shadow-md flex items-center justify-center"
-          title="Agent 进化与实战区域"
-          @click.stop="worldMapOpen = true; closeContextMenu()"
-        >
-          <AppIcon name="globe" class="w-4 h-4 md:w-[18px] md:h-[18px]" />
-        </button>
         <button
           v-if="isAdminUser"
           class="ml-2 w-8 h-8 md:w-9 md:h-9 rounded-full border border-amber-200 bg-white text-amber-600 hover:text-amber-700 hover:border-amber-300 hover:bg-amber-50 transition-colors dark:bg-zinc-800 dark:border-amber-700/60 dark:text-amber-300 dark:hover:text-amber-200 shadow-sm hover:shadow-md flex items-center justify-center"
@@ -548,27 +526,10 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <!-- 中间：进化场 (Worker Agents) -->
-      <EvolutionArenaPanel
+      <!-- 中间：Agent 进化与实战区域（游戏世界实时画面） -->
+      <WorldArenaPanel
         class="h-auto lg:h-full min-h-[500px] lg:min-h-0"
-        :project-groups="projectGroups"
-        :project-grid-class="projectGridClass"
-        :center-grid-class="centerGridClass"
-        :filter-open="projectFilterOpen"
-        :filter-value="projectFilter"
-        :all-agents="agents"
-        @update:filter-open="projectFilterOpen = $event"
-        @update:filter-value="projectFilter = $event"
-        @context="openContextMenu"
-        @show-tools="showAgentTools"
-        @show-context="openAgentWorkspaceContext"
-        @show-tasks="openAgentTaskList"
-        @show-task-detail="openAgentTaskDetailFromCard"
-        @chat="openAgentChat"
-        @settings="openAgentSettings"
-        @create-project="createProject"
-        @update-project="updateProject"
-        @delete-project="deleteProject"
+        @open-chat="onWorldOpenChat"
       />
 
       <!-- 右侧：英灵殿 (Logs / Dead Agents) -->
@@ -790,8 +751,6 @@ onUnmounted(() => {
       @close="proposalReviewOpen = false"
     />
 
-    <!-- Agent 进化与实战区域（游戏世界 iframe） -->
-    <WorldMapOverlay v-if="worldMapOpen" @close="worldMapOpen = false" @open-chat="onWorldOpenChat" />
 
     </div>
   </div>

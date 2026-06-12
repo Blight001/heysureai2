@@ -227,7 +227,22 @@ def gen_tileset():
     c.px(6, 6, GRASS_L)
     c.px(10, 8, GRASS_L)
     tiles.append(c)
-    # 13-15 预留空位
+    # 13/14 石板广场（两变体）
+    for f in range(2):
+        c = C(T, T)
+        rng = random.Random(100 + f)
+        c.rect(0, 0, T, T, (172, 170, 178, 255))
+        # 石板接缝
+        for yy in (0, 8):
+            c.hline(0, yy, T, (140, 138, 148, 255))
+        for xx in (0, 8):
+            c.vline(xx + (4 if f else 0), 0, T, (140, 138, 148, 255))
+        for _ in range(5):
+            c.px(rng.randrange(T), rng.randrange(T), (190, 188, 196, 255))
+        for _ in range(3):
+            c.px(rng.randrange(T), rng.randrange(T), (150, 148, 158, 255))
+        tiles.append(c)
+    # 15 预留空位
     while len(tiles) < 16:
         tiles.append(C(T, T))
 
@@ -762,6 +777,173 @@ def gen_emotes():
     save_strip(icons, "emotes.png", scale=1)
 
 
+def gen_envelope():
+    """信封（AI 互发消息的信使精灵）。"""
+    c = C(12, 9)
+    c.rect(1, 1, 10, 7, PAPER)
+    c.outline(1, 1, 10, 7, OUT)
+    # 封口折线
+    for i in range(5):
+        c.px(1 + i, 1 + i * 0.8, (200, 188, 160, 255))
+        c.px(10 - i, 1 + i * 0.8, (200, 188, 160, 255))
+    c.px(5, 4, (200, 188, 160, 255))
+    c.px(6, 4, (200, 188, 160, 255))
+    # 红色火漆点
+    c.px(5, 5, (200, 80, 80, 255))
+    c.px(6, 5, (200, 80, 80, 255))
+    c.add_silhouette_outline()
+    save_strip([c], "envelope.png")
+
+
+def gen_lamp():
+    """灯柱：帧0 熄灭 / 帧1 点亮（夜晚切换）。"""
+    frames = []
+    for f in range(2):
+        c = C(12, 28)
+        c.vline(5, 8, 18, (70, 66, 80, 255))
+        c.vline(6, 8, 18, (90, 86, 100, 255))
+        c.rect(3, 25, 6, 2, (70, 66, 80, 255))
+        # 灯头
+        c.rect(3, 2, 6, 6, (70, 66, 80, 255))
+        c.rect(4, 3, 4, 4, FLAME_Y if f else (110, 116, 140, 255))
+        if f:
+            c.px(5, 4, FLAME_W)
+            c.px(6, 4, FLAME_W)
+            c.px(2, 4, (255, 230, 150, 140))
+            c.px(9, 4, (255, 230, 150, 140))
+        c.px(5, 1, (90, 86, 100, 255))
+        c.px(6, 1, (90, 86, 100, 255))
+        c.add_silhouette_outline()
+        frames.append(c)
+    save_strip(frames, "lamp.png")
+
+
+def gen_fence():
+    """栅栏：帧0 横栏 / 帧1 立柱（拼线段用）。"""
+    frames = []
+    # 横栏
+    c = C(16, 16)
+    c.hline(0, 6, 16, WOOD)
+    c.hline(0, 7, 16, WOOD_D)
+    c.hline(0, 11, 16, WOOD)
+    c.hline(0, 12, 16, WOOD_D)
+    for x in (2, 13):
+        c.vline(x, 3, 11, WOOD)
+        c.vline(x + 1, 3, 11, WOOD_D)
+    c.add_silhouette_outline()
+    frames.append(c)
+    # 立柱
+    c = C(16, 16)
+    c.vline(7, 3, 11, WOOD)
+    c.vline(8, 3, 11, WOOD_D)
+    c.px(7, 2, WOOD)
+    c.px(8, 2, WOOD)
+    c.add_silhouette_outline()
+    frames.append(c)
+    save_strip(frames, "fence.png")
+
+
+def gen_bench():
+    """长椅。"""
+    c = C(20, 12)
+    c.rect(1, 3, 18, 3, WOOD)
+    c.hline(1, 5, 18, WOOD_D)
+    c.rect(1, 7, 2, 4, WOOD_D)
+    c.rect(17, 7, 2, 4, WOOD_D)
+    c.hline(3, 7, 14, WOOD)
+    c.add_silhouette_outline()
+    save_strip([c], "bench.png")
+
+
+def gen_signpost():
+    """路牌（出生地指路）。"""
+    c = C(16, 20)
+    c.vline(7, 4, 14, WOOD)
+    c.vline(8, 4, 14, WOOD_D)
+    c.rect(2, 3, 12, 5, (206, 178, 132, 255))
+    c.outline(2, 3, 12, 5, WOOD_D)
+    c.hline(4, 5, 7, (150, 128, 96, 255))
+    c.px(13, 5, (150, 128, 96, 255))
+    c.add_silhouette_outline()
+    save_strip([c], "signpost.png")
+
+
+def gen_butterfly():
+    """蝴蝶：2 帧扇翅（运行时 tint 出多色）。"""
+    frames = []
+    for f in range(2):
+        c = C(8, 8)
+        body = (90, 70, 50, 255)
+        wing = (240, 170, 70, 255)
+        wing_l = (255, 210, 120, 255)
+        c.vline(4, 2, 4, body)
+        if f == 0:  # 展翅
+            for dx in (1, 6):
+                c.rect(dx, 2, 2, 3, wing)
+            c.px(1, 2, wing_l)
+            c.px(7, 2, wing_l)
+        else:  # 收翅
+            c.rect(2, 2, 2, 3, wing)
+            c.rect(5, 2, 2, 3, wing)
+            c.px(2, 2, wing_l)
+            c.px(6, 2, wing_l)
+        frames.append(c)
+    save_strip(frames, "butterfly.png")
+
+
+def gen_glow():
+    """径向光晕（夜间灯光/萤火虫，ADD 混合用）。"""
+    c = C(32, 32)
+    for yy in range(32):
+        for xx in range(32):
+            r = math.hypot(xx - 15.5, yy - 15.5) / 14.0
+            if r < 1.0:
+                a = int(255 * (1 - r) ** 2)
+                c.px(xx, yy, (255, 255, 255, a))
+    save_strip([c], "glow.png", scale=1)
+
+
+def gen_clouds():
+    """云朵（开场加载层）：两个形态变体，柔边半透明，无描边。"""
+    frames = []
+    for f in range(2):
+        c = C(64, 32)
+        rng = random.Random(800 + f)
+        body = (236, 242, 250, 235)
+        lite = (250, 252, 255, 245)
+        shade = (198, 212, 232, 210)
+        # 叠 5~6 个椭圆团块拼出云形
+        blobs = [(18, 20, 11), (32, 16, 13), (46, 20, 10), (26, 22, 9), (40, 23, 8)]
+        if f == 1:
+            blobs = [(14, 21, 9), (27, 17, 12), (42, 18, 11), (52, 22, 7), (33, 23, 10)]
+        for cx, cy, r in blobs:
+            for yy in range(int(cy - r * 0.6), int(cy + r * 0.6) + 1):
+                for xx in range(cx - r, cx + r + 1):
+                    if ((xx - cx) / r) ** 2 + ((yy - cy) / (r * 0.6)) ** 2 <= 1.0:
+                        c.px(xx, yy, body)
+        # 顶部高光 / 底部阴影
+        for cx, cy, r in blobs:
+            for xx in range(cx - r + 2, cx + r - 1):
+                c.px(xx, cy - int(r * 0.6) + 1, lite)
+        for xx in range(8, 58):
+            for yy in range(24, 28):
+                if c.img.getpixel((xx, yy))[3] != 0:
+                    c.px(xx, yy, shade)
+        # 边缘随机抠几个像素做柔边
+        for _ in range(20):
+            x, y = rng.randrange(64), rng.randrange(32)
+            px = c.img.getpixel((x, y))
+            if px[3] != 0:
+                neighbors = sum(
+                    1 for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                    if 0 <= x + dx < 64 and 0 <= y + dy < 32 and c.img.getpixel((x + dx, y + dy))[3] != 0
+                )
+                if neighbors < 4:
+                    c.px(x, y, (0, 0, 0, 0))
+        frames.append(c)
+    save_strip(frames, "cloud.png")
+
+
 def gen_effects():
     # 烟雾 4 帧：扩散 + 淡出
     frames = []
@@ -810,6 +992,14 @@ def main():
     gen_characters()
     gen_soul()
     gen_emotes()
+    gen_envelope()
+    gen_lamp()
+    gen_fence()
+    gen_bench()
+    gen_signpost()
+    gen_butterfly()
+    gen_glow()
+    gen_clouds()
     gen_effects()
     print("完成。")
 
