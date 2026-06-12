@@ -1,15 +1,19 @@
 import { get, post } from './http'
 
-// 知识与进化工坊（agent/workshop/）：AI 侧绑定管理。
-// 绑定是 AI 调用 librarian.* / evolution.* 工具的唯一门槛。
+// 知识与进化工坊（server/workshop/，服务端内置）：绑定管理。
+// 绑定是 AI 调用 librarian.* / evolution.* 工具的唯一门槛；
+// 工坊与 AI 为 1:1 —— 只能绑定一个 AI 数字成员，绑定新成员会替换旧绑定。
 
 export interface WorkshopAgentItem {
   agent_id: string
   name: string
   online: boolean
   tools: string[]
+  /** 是否绑定到查询的 AI */
   bound: boolean
-  bound_ai_count: number
+  /** 当前绑定的成员（1:1，可能是其它 AI），null = 未绑定 */
+  bound_ai_config_id: number | null
+  bound_ai_name: string
 }
 
 export const fetchWorkshopBindings = (aiConfigId: number) =>
@@ -19,7 +23,13 @@ export const fetchWorkshopBindings = (aiConfigId: number) =>
   )
 
 export const setWorkshopBinding = (aiConfigId: number, agentId: string, bound: boolean) =>
-  post<{ ai_config_id: number; agent_id: string; bound: boolean }>(
+  post<{
+    ai_config_id: number
+    agent_id: string
+    bound: boolean
+    replaced_ai_config_id: number | null
+    replaced_ai_name: string
+  }>(
     '/api/workshop/bindings',
     { ai_config_id: aiConfigId, agent_id: agentId, bound },
     { fallbackError: '更新知识工坊绑定失败' },

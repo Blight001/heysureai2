@@ -167,7 +167,7 @@ async def bind_agent_ai(
         if workshop_engine.is_builtin_workshop_agent_id(agent_id):
             raise HTTPException(
                 status_code=400,
-                detail="知识工坊请通过 /api/workshop/bindings 按 AI 绑定（一坊可服务多个 AI）",
+                detail="知识工坊请通过 /api/workshop/bindings 绑定（1:1，只能绑定一个 AI 数字成员）",
             )
     except HTTPException:
         raise

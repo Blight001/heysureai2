@@ -9,6 +9,7 @@
   用户登录/拉取 AI 列表时自动接入，作坊面板与社会显示随之出现工坊。
 - **绑定仍是唯一门槛**：AI 须经 ``WorkshopAiBinding``（AI 配置弹窗勾选或
   世界里拖拽）绑定工坊后才能看到/调用 ``librarian.*`` / ``evolution.*``。
+  工坊与 AI 为 **1:1**：同一时间只绑定一个数字成员，新绑定替换旧绑定。
 - **进程内执行**：调用经 ``agent_dispatch`` 的 workshop 分支直达
   :func:`execute_tool` ——policy 钩子 → 服务端 handler，无 socket 往返。
 
@@ -120,13 +121,23 @@ def ensure_presence_for_user(user_id) -> None:
 
 
 def connected_entry_for_user(user_id) -> Dict[str, Any]:
-    """作坊面板/社会显示用的虚拟"已连接设备"条目（始终在线）。"""
+    """作坊面板/社会显示用的虚拟"已连接设备"条目（始终在线）。
+
+    1:1 绑定语义下把当前绑定的成员透出为 ``aiConfigId``，世界场景的
+    悬浮提示与成员漫游区域据此联动。"""
+    bound_cfg_id = None
+    try:
+        from api.workshop_bindings import bound_config_id_for_agent
+
+        bound_cfg_id = bound_config_id_for_agent(user_id, agent_id_for_user(user_id))
+    except Exception:
+        bound_cfg_id = None
     return {
         "id": agent_id_for_user(user_id),
         "name": WORKSHOP_DISPLAY_NAME,
         "platform": WORKSHOP_PLATFORM,
         "isWorkshop": True,
-        "aiConfigId": None,
+        "aiConfigId": bound_cfg_id,
         "userId": int(user_id),
         "capabilities": capability_names(),
         "version": "builtin",

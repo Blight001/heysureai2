@@ -877,16 +877,24 @@ export class WorldScene extends Phaser.Scene {
         const w = this.snap.workshops.find(x => x.agentId === drop.agentId)
         if (!w) return
         if (w.type === 'workshop') {
-          // 知识与进化工坊：AI 侧多对一绑定（一坊服务多个 AI）
-          if (window.confirm(`把成员「${m.name}」绑定到 ${w.name}？绑定后可调用知识与进化工具。`)) {
+          // 知识与进化工坊：1:1 绑定，绑定新成员会替换旧绑定
+          const current = this.snap.members.find(x => x.id === w.aiConfigId)
+          const hint = current && current.id !== m.id
+            ? `工坊当前绑定的是「${current.name}」，继续将替换为「${m.name}」。`
+            : '绑定后可调用知识与进化工具。'
+          if (window.confirm(`把成员「${m.name}」绑定到 ${w.name}？${hint}`)) {
             void setWorkshopBinding(m.id, w.agentId, true).then(() => this.store.refreshNow()).catch(() => undefined)
           }
         } else if (window.confirm(`把成员「${m.name}」绑定到 ${w.name}？`)) {
           void assignAgentAi(w.agentId, m.id).then(() => this.store.refreshNow()).catch(() => undefined)
         }
       } else if (drop.kind === 'spawn' && m.boundAgentIds.length) {
-        if (window.confirm(`把成员「${m.name}」从端侧 agent 上解绑？`)) {
-          void Promise.all(m.boundAgentIds.map(id => assignAgentAi(id, null)))
+        if (window.confirm(`把成员「${m.name}」从端侧 agent / 知识工坊上解绑？`)) {
+          void Promise.all(m.boundAgentIds.map(id => {
+            const w = this.snap?.workshops.find(x => x.agentId === id)
+            // 知识工坊是 AI 侧 1:1 绑定，解绑走工坊接口；其余设备走 1:1 设备解绑
+            return w?.type === 'workshop' ? setWorkshopBinding(m.id, id, false) : assignAgentAi(id, null)
+          }))
             .then(() => this.store.refreshNow())
             .catch(() => undefined)
         }
@@ -1133,7 +1141,8 @@ export class WorldScene extends Phaser.Scene {
         badge: view.offlineSince !== null ? '离线' : '在线',
         rows: [
           { label: '形态', value: '服务端内置 · 自动上线' },
-          { label: '绑定', value: '拖成员到此绑定；一坊可服务多个 AI' },
+          { label: '成员', value: bound ? `${bound.name}（ID ${bound.id}）` : '未绑定（拖成员到此绑定）' },
+          { label: '说明', value: '只能绑定一个数字成员，新绑定会替换旧绑定' },
           { label: '工具', value: `${w.capabilities} 个知识/进化工具` },
           { label: '错误', value: w.lastError || '' },
         ],
