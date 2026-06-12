@@ -39,6 +39,8 @@ const boot = async () => {
     scene: [],
   })
   game.scene.add('world', WorldScene, true, { store, overlay })
+  // 调试/测试句柄：冒烟脚本断言相机状态
+  ;(window as unknown as Record<string, unknown>).__worldGame = game
 
   // iframe 不可见时暂停渲染循环，避免后台烧 CPU
   document.addEventListener('visibilitychange', () => {
