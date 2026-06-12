@@ -526,7 +526,7 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <!-- 中间：Agent 进化与实战区域（游戏世界实时画面） -->
+      <!-- 中间：社会显示（游戏世界实时画面） -->
       <WorldArenaPanel
         class="h-auto lg:h-full min-h-[500px] lg:min-h-0"
         @open-chat="onWorldOpenChat"

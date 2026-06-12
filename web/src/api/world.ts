@@ -1,6 +1,6 @@
 import { get, put } from './http'
 
-/** 游戏世界（Agent 进化与实战区域）的表现层元数据：皮肤等，不承载业务。 */
+/** 游戏世界（社会显示）的表现层元数据：皮肤等，不承载业务。 */
 
 export interface WorldActorMetaItem {
   ai_config_id: number

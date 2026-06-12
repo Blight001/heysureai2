@@ -1083,7 +1083,7 @@ export class WorldScene extends Phaser.Scene {
   private updateHud(snap: WorldSnapshot) {
     if (!snap.authOk) {
       this.overlay.setHud(
-        `<div class="h-title">Agent 进化与实战区域</div>` +
+        `<div class="h-title">社会显示</div>` +
         `<div class="h-err">${snap.lastError || '连接中…'}</div>`,
       )
       return
@@ -1092,7 +1092,7 @@ export class WorldScene extends Phaser.Scene {
     const online = snap.workshops.length
     const running = snap.members.filter(m => m.runtimeStatus === 'running' || m.taskStatus === 'running').length
     this.overlay.setHud(
-      `<div class="h-title">Agent 进化与实战区域</div>` +
+      `<div class="h-title">社会显示</div>` +
       `<div>存活成员 <b>${alive}</b> · 在线作坊 <b>${online}</b> · 干活中 <b>${running}</b></div>` +
       `<div>英灵殿 <b>${snap.valhallaCount}</b> · 知识 <b>${snap.knowledgeActive}</b>` +
       (snap.knowledgePending > 0 ? ` · <span class="h-err">待审批 ${snap.knowledgePending}</span>` : '') +

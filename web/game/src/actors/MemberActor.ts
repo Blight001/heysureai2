@@ -12,6 +12,11 @@ import type { WorldMember } from '../world/store'
 
 const WALK_SPEED = 42 // px/s
 const ARRIVE_EPS = 4
+const HITBOX_W = 44
+const HITBOX_H = 70
+const HITBOX_TOP = -68
+const TOKEN_BAR_W = 34
+const TOKEN_BAR_H = 5
 
 export type EmoteKind = keyof typeof EMOTES | null
 
@@ -19,6 +24,7 @@ export class MemberActor extends Phaser.GameObjects.Container {
   readonly memberId: number
   member: WorldMember
   private sprite: Phaser.GameObjects.Sprite
+  private tokenBar: Phaser.GameObjects.Graphics
   private emote: Phaser.GameObjects.Image
   private skin: string
   private zone: Rect
@@ -40,13 +46,19 @@ export class MemberActor extends Phaser.GameObjects.Container {
     this.sprite.setOrigin(0.5, 0.5)
     this.add(this.sprite)
 
-    this.emote = scene.add.image(0, -56, 'emotes.png', 0)
+    this.tokenBar = scene.add.graphics()
+    this.add(this.tokenBar)
+
+    this.emote = scene.add.image(0, -84, 'emotes.png', 0)
     this.emote.setVisible(false)
     this.add(this.emote)
 
-    this.setSize(32, 48)
-    // 命中区对齐精灵（容器原点在脚底）
-    this.setInteractive(new Phaser.Geom.Rectangle(-16, -48, 32, 48), Phaser.Geom.Rectangle.Contains)
+    this.setSize(HITBOX_W, HITBOX_H)
+    // Container 命中测试会把本地坐标加 displayOrigin，hitArea 需使用校正后的坐标。
+    this.setInteractive(
+      new Phaser.Geom.Rectangle(0, HITBOX_TOP + HITBOX_H / 2, HITBOX_W, HITBOX_H),
+      Phaser.Geom.Rectangle.Contains,
+    )
     scene.add.existing(this)
   }
 
@@ -99,6 +111,7 @@ export class MemberActor extends Phaser.GameObjects.Container {
       this.sprite.setTexture(skin, 0)
     }
     this.refreshEmote()
+    this.refreshTokenBar()
     // 停用：原地坐下打瞌睡
     if (!member.enabled && !this.dying) {
       this.target = null
@@ -132,6 +145,29 @@ export class MemberActor extends Phaser.GameObjects.Container {
       this.emote.setFrame(EMOTES[kind])
       this.emote.setVisible(true)
     }
+  }
+
+  private refreshTokenBar() {
+    const g = this.tokenBar
+    g.clear()
+    const m = this.member
+    const x = -TOKEN_BAR_W / 2
+    const y = -66
+    g.fillStyle(0x1f2933, 0.86)
+    g.fillRect(x - 1, y - 1, TOKEN_BAR_W + 2, TOKEN_BAR_H + 2)
+    if (m.tokenLimit <= 0) {
+      g.fillStyle(0x8a90a0, 0.9)
+      g.fillRect(x, y, TOKEN_BAR_W, TOKEN_BAR_H)
+      return
+    }
+
+    const usedRatio = Phaser.Math.Clamp(m.tokensUsed / m.tokenLimit, 0, 1)
+    const remainingRatio = 1 - usedRatio
+    const color = remainingRatio > 0.45 ? 0x45c46f : remainingRatio > 0.18 ? 0xf4b942 : 0xef5b5b
+    g.fillStyle(0x0f141b, 0.95)
+    g.fillRect(x, y, TOKEN_BAR_W, TOKEN_BAR_H)
+    g.fillStyle(color, 0.98)
+    g.fillRect(x, y, Math.max(1, TOKEN_BAR_W * remainingRatio), TOKEN_BAR_H)
   }
 
   private emoteOverrideUntil = 0
