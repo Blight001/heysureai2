@@ -521,7 +521,7 @@ onUnmounted(() => {
             @show-task-detail="openAgentTaskDetailFromCard"
             @chat="openAgentChat"
             @settings="openAgentSettings"
-            @create-ai="openCreateAiConfig('assistant_admin')"
+            @create-ai="openCreateAiConfig('worker')"
           />
         </div>
       </section>

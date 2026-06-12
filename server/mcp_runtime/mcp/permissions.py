@@ -74,10 +74,12 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # Admin / governance — assistant_admin only.
     "admin.list_agents": ROLE_ASSISTANT_ADMIN,
     "admin.get_overview": ROLE_ASSISTANT_ADMIN,
-    # Evolution — proposing/listing is manager+; reviewing/applying is assistant_admin.
+    # Evolution — 已迁出至知识工坊 agent（agent/workshop/），运行时可用性由
+    # "AI ↔ 工坊绑定"决定；以下最低角色由 gateway /api/workshop/execute 复核。
+    # 角色扁平化后审批不再要求辅助管理员，管理者（manager）即可。
     "evolution.input": ROLE_MANAGER,
     "evolution.list": ROLE_MANAGER,
-    "evolution.review": ROLE_ASSISTANT_ADMIN,
+    "evolution.review": ROLE_MANAGER,
 }
 
 

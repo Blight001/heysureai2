@@ -22,11 +22,6 @@ from .tools.prompts import (
     _prompt_write_ai,
     _prompt_write_system,
 )
-from .tools.evolution import (
-    _evolution_input,
-    _evolution_list,
-    _evolution_review,
-)
 from .tools.communication import (
     _ai_send_message,
     _user_send_message,
@@ -40,14 +35,12 @@ from .tools.conversation import (
     _new_conversation,
     _switch_conversation,
 )
-from .tools.librarian import (
-    _librarian_archive,
-    _librarian_consult,
-    _librarian_list_topics,
-    _librarian_propose,
-    _librarian_read,
-)
 from .tools.web_search import _web_search
+
+# 注意：librarian.* / evolution.*（知识与进化）已迁出内置 MCP，由独立的
+# 知识工坊 agent（agent/workshop/）注册并经 gateway /api/workshop/execute
+# 回调执行。AI 必须绑定工坊 agent 才能看到/调用这些工具。
+# handler 实现仍在 tools/librarian.py、tools/evolution.py，由工坊 REST 复用。
 
 
 def _register_builtin_tools(registry: MCPRegistry) -> None:
@@ -552,54 +545,6 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     ))
 
     registry.register(MCPTool(
-        name="evolution.input",
-        description="Submit an evolution proposal (improvement to prompts/tools/workflows) for core-manager review.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "proposal": {"type": "string"},
-                "type": {
-                    "type": "string",
-                    "enum": ["prompt_rule", "tool_rule", "workflow_rule", "memory", "failure_case", "success_case"],
-                },
-                "risk": {"type": "string"},
-                "target_scope": {"type": "object"},
-                "evidence": {"type": "array", "items": {"type": "object"}},
-            },
-            "required": ["proposal"],
-        },
-        handler=_evolution_input,
-        destructive=True,
-    ))
-    registry.register(MCPTool(
-        name="evolution.list",
-        description="List submitted evolution inputs, optionally filtered by review_status.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "review_status": {"type": "string", "enum": ["queued", "accepted", "rejected", "applied"]},
-                "limit": {"type": "integer"},
-            },
-        },
-        handler=_evolution_list,
-    ))
-    registry.register(MCPTool(
-        name="evolution.review",
-        description="Review an evolution input: accept/reject/apply (core manager). Provide applied_to when applying.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "evolution_input_id": {"type": "string"},
-                "decision": {"type": "string", "enum": ["accept", "reject", "apply"]},
-                "applied_to": {"type": "string"},
-            },
-            "required": ["evolution_input_id", "decision"],
-        },
-        handler=_evolution_review,
-        destructive=True,
-    ))
-
-    registry.register(MCPTool(
         name="prompt.list_targets",
         description="List current AI prompt targets and global/system prompt keys. Current AI base prompts live in AI config prompt, not user.admin_prompt.",
         input_schema={"type": "object", "properties": {}},
@@ -726,99 +671,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         destructive=True,
     ))
 
-    # ---------- Librarian / 图书管理员 ----------
-    registry.register(MCPTool(
-        name="librarian.propose",
-        description=(
-            "Propose a new procedure (how-to) to the Librarian's knowledge base. "
-            "Status starts as 'pending' and requires user approval before becoming searchable. "
-            "Use this when the user explicitly says 'remember this'/'next time do X'."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "Short procedure title."},
-                "scenario": {"type": "string", "description": "When this procedure applies."},
-                "steps": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Ordered steps to perform.",
-                },
-                "gotchas": {"type": "array", "items": {"type": "string"}},
-                "triggers": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Keywords used for auto-matching against future tasks.",
-                },
-                "scope": {"type": "string", "enum": ["global", "ai", "project"]},
-                "scope_target": {"type": "string"},
-                "evidence": {
-                    "type": "object",
-                    "description": "Provenance: {job_id, generation, message_id}",
-                },
-            },
-            "required": ["title", "steps"],
-        },
-        handler=_librarian_propose,
-        destructive=True,
-    ))
-    registry.register(MCPTool(
-        name="librarian.consult",
-        description=(
-            "Ask the Librarian for relevant procedures by free-text query. "
-            "Returns at most k results with full steps. Use this when you're unsure how to proceed."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "What you want to know how to do."},
-                "k": {"type": "integer", "description": "Max number of results (default 5)."},
-                "scope": {"type": "string", "enum": ["global", "ai", "project"]},
-            },
-            "required": ["query"],
-        },
-        handler=_librarian_consult,
-    ))
-    registry.register(MCPTool(
-        name="librarian.list_topics",
-        description=(
-            "List procedure titles + triggers only (progressive disclosure). "
-            "Use this to browse what the librarian knows before drilling in with librarian.read."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "scope": {"type": "string", "enum": ["global", "ai", "project"]},
-                "status": {
-                    "type": "string",
-                    "enum": ["pending", "active", "archived", "rejected", "all"],
-                    "description": "Default is 'active'.",
-                },
-            },
-        },
-        handler=_librarian_list_topics,
-    ))
-    registry.register(MCPTool(
-        name="librarian.read",
-        description="Read full markdown body of a procedure by memory_id.",
-        input_schema={
-            "type": "object",
-            "properties": {"memory_id": {"type": "string"}},
-            "required": ["memory_id"],
-        },
-        handler=_librarian_read,
-    ))
-    registry.register(MCPTool(
-        name="librarian.archive",
-        description="Archive (soft-delete) a procedure. Restricted to librarian role.",
-        input_schema={
-            "type": "object",
-            "properties": {"memory_id": {"type": "string"}},
-            "required": ["memory_id"],
-        },
-        handler=_librarian_archive,
-        destructive=True,
-    ))
+    # librarian.* / evolution.* 见文件顶部说明：已迁出至知识工坊 agent。
 
 
 registry = MCPRegistry()

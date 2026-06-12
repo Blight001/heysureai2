@@ -29,9 +29,11 @@ from api.database import engine
 from connector_runtime.dispatch.desktop_agent_tools import (
     get_connected_browser_agent,
     get_connected_desktop_agent,
+    get_connected_workshop_agent,
     is_browser_tool,
     is_desktop_tool,
     is_endpoint_agent_tool,
+    is_workshop_tool,
 )
 from api.services.screenshot_store import attach_persisted_screenshot
 from api.models import AgentDispatchTask, ChatMessageCreate
@@ -207,6 +209,8 @@ def _agent_kind_label(agent_id: str) -> str:
         if str(agent.get("id")) != str(agent_id):
             continue
         platform = str(agent.get("platform") or "").lower()
+        if bool(agent.get("isWorkshop")) or "workshop" in platform:
+            return "知识工坊Agent"
         if bool(agent.get("isBrowserExtension")) or "browser-extension" in platform:
             return "浏览器Agent"
         if bool(agent.get("isWindowsDesktop")) or "desktop" in platform:
@@ -558,7 +562,9 @@ async def dispatch_endpoint_tool(
     if not is_endpoint_agent_tool(tool_name) or not ai_config_id:
         return None
 
-    if is_browser_tool(tool_name):
+    if is_workshop_tool(tool_name):
+        agent = get_connected_workshop_agent(ai_config_id, user_id)
+    elif is_browser_tool(tool_name):
         agent = get_connected_browser_agent(ai_config_id, user_id)
     elif is_desktop_tool(tool_name):
         agent = get_connected_desktop_agent(ai_config_id, user_id)
@@ -604,12 +610,19 @@ async def dispatch_endpoint_tool_and_wait(
         return {"success": False, "error": "ai_config_id is required for endpoint MCP tools"}
 
     agent = None
-    if is_browser_tool(tool_name):
+    if is_workshop_tool(tool_name):
+        agent = get_connected_workshop_agent(ai_config_id, user_id)
+    elif is_browser_tool(tool_name):
         agent = get_connected_browser_agent(ai_config_id, user_id)
     elif is_desktop_tool(tool_name):
         agent = get_connected_desktop_agent(ai_config_id, user_id)
     if not agent:
-        kind = "browser" if is_browser_tool(tool_name) else "desktop"
+        if is_workshop_tool(tool_name):
+            kind = "workshop"
+        elif is_browser_tool(tool_name):
+            kind = "browser"
+        else:
+            kind = "desktop"
         return {"success": False, "error": f"No connected {kind} agent bound to ai_config_id={ai_config_id}"}
 
     agent_id = str(agent.get("id") or "").strip()
