@@ -90,9 +90,17 @@ const unassign = async (device: ConnectedAgent) => {
 
 const deviceTypeLabel = (device: ConnectedAgent) => {
   const platform = String(device.platform || '').toLowerCase()
+  if (isWorkshopDevice(device)) return '知识工坊'
   if (device.isBrowserExtension || platform.includes('browser')) return '浏览器插件'
   if (device.isWindowsDesktop || platform.includes('desktop') || platform.includes('windows')) return '软件端'
   return '设备端'
+}
+
+// 知识与进化工坊：绑定是 AI 侧多对一（在 AI 配置弹窗里勾选），
+// 不走本面板的设备 1:1 "分配成员"。
+const isWorkshopDevice = (device: ConnectedAgent) => {
+  const platform = String(device.platform || '').toLowerCase()
+  return platform.includes('workshop')
 }
 
 const isSoftwareDevice = (device: ConnectedAgent) => {
@@ -102,7 +110,7 @@ const isSoftwareDevice = (device: ConnectedAgent) => {
 
 const isEndpointDevice = (device: ConnectedAgent) => {
   const platform = String(device.platform || '').toLowerCase()
-  return isSoftwareDevice(device) || !!device.isBrowserExtension || platform.includes('browser')
+  return isSoftwareDevice(device) || !!device.isBrowserExtension || platform.includes('browser') || isWorkshopDevice(device)
 }
 
 const deviceDisplayName = (device: ConnectedAgent) => {
@@ -192,7 +200,15 @@ const memberStatusBadgeClass = (device: ConnectedAgent) => hasLinkedMember(devic
         </span>
       </div>
 
-      <div class="mt-2 rounded-lg border p-2" :class="memberPanelClass(device)">
+      <!-- 知识工坊：AI 侧多对一绑定，不走设备 1:1 分配 -->
+      <div
+        v-if="isWorkshopDevice(device)"
+        class="mt-2 rounded-lg border border-indigo-200 bg-indigo-50/60 p-2 text-[10px] text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-300"
+      >
+        知识与进化工坊：一个工坊可同时服务多个 AI。请在各 AI 的配置弹窗 → MCP 工具权限 → "知识与进化工坊" 中勾选绑定。
+      </div>
+
+      <div v-else class="mt-2 rounded-lg border p-2" :class="memberPanelClass(device)">
         <div class="mb-1 flex items-center justify-between gap-2">
           <div class="text-[10px]" :class="memberLabelClass(device)">分配成员</div>
           <span class="shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-medium" :class="memberStatusBadgeClass(device)">
