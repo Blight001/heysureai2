@@ -71,22 +71,32 @@ TOOL_DEFS = [
         "destructive": True,
     },
     {
-        "name": "librarian.set_inheritance_thought_endpoint",
+        "name": "librarian.create_inheritance_thought",
         "description": (
-            "改端：更新一条已安装传承思想的端归类（any 通用 / desktop 桌面端 / "
-            "browser 浏览器端）。id 来自 librarian.list_inheritance_thoughts。"
+            "主动创建一条传承思想：直接写 SKILL.md 正文落本地快照并登记到传承思想库"
+            "（不走 ClawHub/npx 安装，来源标记 manual）。"
+            "endpoint_kind 按端归类：any=通用、desktop=桌面端专属、browser=浏览器端专属；"
+            "不传则按当前绑定的端侧作坊自动推断。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "id": {"type": "string", "description": "传承思想 ID（即列表返回的 id/slug）。"},
+                "name": {"type": "string", "description": "传承思想名称（即 Skill 名）。"},
+                "content": {
+                    "type": "string",
+                    "description": "SKILL.md 正文；不含 frontmatter 时会自动补 name/description 头。",
+                },
+                "summary": {"type": "string", "description": "一句话摘要（可选；作为 description）。"},
                 "endpoint_kind": {
                     "type": "string",
                     "enum": ["any", "desktop", "browser"],
-                    "description": "目标端归类：any 通用 / desktop 桌面端 / browser 浏览器端。",
+                    "description": (
+                        "端归类：any=通用、desktop=桌面端专属、browser=浏览器端专属。"
+                        "省略则按创建成员当前绑定的端侧作坊自动推断。"
+                    ),
                 },
             },
-            "required": ["id", "endpoint_kind"],
+            "required": ["name", "content"],
             "additionalProperties": False,
         },
         "destructive": True,
@@ -94,13 +104,21 @@ TOOL_DEFS = [
     {
         "name": "librarian.edit_inheritance_thought",
         "description": (
-            "按行编辑一条传承思想的 SKILL.md。先调用 librarian.get_inheritance_thought "
-            "获取 lines、line_count 和 content_sha256，再基于行号提交一个 edit 或 edits 批次。"
+            "按行编辑一条传承思想的 SKILL.md，并/或改端（endpoint_kind）。"
+            "编辑正文：先调用 librarian.get_inheritance_thought 获取 lines、line_count、"
+            "content_sha256，再基于行号提交一个 edit 或 edits 批次。"
+            "改端：传 endpoint_kind（any 通用 / desktop 桌面端 / browser 浏览器端）即可，"
+            "可与行编辑同时进行，也可只改端不动正文。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "id": {"type": "string", "description": "传承思想 ID。"},
+                "endpoint_kind": {
+                    "type": "string",
+                    "enum": ["any", "desktop", "browser"],
+                    "description": "改端目标：any 通用 / desktop 桌面端 / browser 浏览器端（可选）。",
+                },
                 "expected_sha256": {
                     "type": "string",
                     "description": "读取时返回的 content_sha256；内容已变化时拒绝编辑。",

@@ -38,9 +38,9 @@ _TOOL_HANDLERS = {
         "workshop.handlers",
         "install_skill_package",
     ),
-    "librarian.set_inheritance_thought_endpoint": (
+    "librarian.create_inheritance_thought": (
         "workshop.handlers",
-        "set_inheritance_thought_endpoint",
+        "create_inheritance_thought",
     ),
     "librarian.edit_inheritance_thought": (
         "workshop.handlers",

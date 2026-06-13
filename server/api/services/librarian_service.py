@@ -52,6 +52,7 @@ _ARCHIVE_DIR = "archives"
 _INHERITANCE_THOUGHTS_DIR = "inheritance_thoughts"
 _CLAWHUB_REMOTE_DIR = "remote/clawhub"
 _NPX_SKILLS_DIR = "local/npx"
+_MANUAL_SKILLS_DIR = "local/manual"
 _INDEX_FILE = "index.json"
 _CLAWHUB_SKILLS_STATE_FILE = "clawhub_skills.json"
 _INTRINSIC_PROPERTIES_OVERRIDES_FILE = "intrinsic_properties_overrides.json"
@@ -641,45 +642,151 @@ def _apply_skill_line_edits(content: str, arguments: Dict[str, Any]) -> tuple[st
     return updated, len(edits)
 
 
+def _has_skill_line_edits(arguments: Dict[str, Any]) -> bool:
+    """是否带有 SKILL.md 行编辑指令（区别于纯改端）。"""
+    raw_edits = arguments.get("edits")
+    if isinstance(raw_edits, list) and raw_edits:
+        return True
+    if str(arguments.get("mode") or "").strip():
+        return True
+    return any(arguments.get(key) is not None for key in ("line", "line_number", "start_line"))
+
+
 def edit_inheritance_thought(
     *,
     user_id: int,
     thought_id: str,
     arguments: Dict[str, Any],
 ) -> Dict[str, Any]:
+    """按行编辑 SKILL.md 与/或改端（endpoint_kind）。两者均可单独使用。"""
     thought_id = _normalize_clawhub_slug(thought_id)
+    endpoint_raw = arguments.get("endpoint_kind")
+    has_endpoint = endpoint_raw is not None and str(endpoint_raw).strip() != ""
+    has_line_edits = _has_skill_line_edits(arguments)
+    if not has_line_edits and not has_endpoint:
+        raise ValueError("nothing to edit: provide line edits and/or endpoint_kind")
+
     current = clawhub_installed_skill_detail(user_id=int(user_id), slug=thought_id)
     old_content = str(current.get("skill_card") or "")
-    expected = str(arguments.get("expected_sha256") or "").strip().lower()
     old_sha256 = _text_sha256(old_content)
-    if expected and expected != old_sha256:
-        raise ValueError("SKILL.md changed after it was read; read it again before editing")
-    new_content, edit_count = _apply_skill_line_edits(old_content, arguments)
-    updated = update_clawhub_installed_skill(
-        user_id=int(user_id),
-        slug=thought_id,
-        skill_card=new_content,
-    )
+    new_content = old_content
+    edit_count = 0
 
-    item = updated.get("detail", {}).get("skill") if isinstance(updated.get("detail"), dict) else None
-    if isinstance(item, dict):
-        install_dir = _clawhub_installed_dir(int(user_id), item)
-        metadata = _skill_card_metadata(install_dir, str(item.get("displayName") or thought_id))
-        state = _load_clawhub_state(int(user_id))
-        installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
-        if isinstance(installed.get(thought_id), dict):
-            installed[thought_id]["displayName"] = metadata["name"]
-            installed[thought_id]["summary"] = metadata["description"]
-            state["installed"] = installed
-            _save_clawhub_state(int(user_id), state)
+    if has_line_edits:
+        expected = str(arguments.get("expected_sha256") or "").strip().lower()
+        if expected and expected != old_sha256:
+            raise ValueError("SKILL.md changed after it was read; read it again before editing")
+        new_content, edit_count = _apply_skill_line_edits(old_content, arguments)
+        update_clawhub_installed_skill(
+            user_id=int(user_id),
+            slug=thought_id,
+            skill_card=new_content,
+        )
+
+    state = _load_clawhub_state(int(user_id))
+    installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
+    row = installed.get(thought_id)
+    if isinstance(row, dict):
+        if has_line_edits:
+            install_dir = _clawhub_installed_dir(int(user_id), row)
+            metadata = _skill_card_metadata(install_dir, str(row.get("displayName") or thought_id))
+            row["displayName"] = metadata["name"]
+            row["summary"] = metadata["description"]
+        if has_endpoint:
+            row["endpoint_kind"] = _normalize_endpoint(endpoint_raw)
+        installed[thought_id] = row
+        state["installed"] = installed
+        _save_clawhub_state(int(user_id), state)
+
+    final_endpoint = _normalize_endpoint(
+        row.get("endpoint_kind") if isinstance(row, dict) else endpoint_raw
+    )
     return {
         "updated": True,
         "id": thought_id,
         "edit_count": edit_count,
+        "endpoint_kind": final_endpoint,
         "old_sha256": old_sha256,
         "content_sha256": _text_sha256(new_content),
         "line_count": len(new_content.splitlines()),
     }
+
+
+def _ensure_skill_frontmatter(body: str, *, name: str, description: str) -> str:
+    """确保 SKILL.md 带 name/description frontmatter，便于元数据解析与运行时使用。"""
+    text = str(body or "")
+    if text.lstrip().startswith("---"):
+        return text if text.endswith("\n") else text + "\n"
+    lines = ["---", f"name: {json.dumps(name, ensure_ascii=False)}"]
+    if description:
+        lines.append(f"description: {json.dumps(description, ensure_ascii=False)}")
+    lines.append("---")
+    return "\n".join(lines) + "\n\n" + text.strip() + "\n"
+
+
+def create_inheritance_thought(
+    *,
+    user_id: int,
+    name: str,
+    content: str,
+    summary: Optional[str] = None,
+    endpoint_kind: Optional[str] = None,
+    ai_config_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """主动创建一条传承思想：AI 直接写 SKILL.md，落本地快照并登记到传承思想库。
+
+    与安装路径（ClawHub/npx）并列，``source="manual"``。``endpoint_kind`` 端归类
+    显式优先，未传按安装成员当前绑定的端侧 agent 自动推断。
+    """
+    import hashlib
+
+    name = str(name or "").strip()
+    if not name:
+        raise ValueError("name is required")
+    body = str(content or "").strip()
+    if not body:
+        raise ValueError("content is required")
+
+    slug_base = _slugify(name) or "skill"
+    suffix = hashlib.sha1(f"{name}-{time.time()}".encode("utf-8")).hexdigest()[:8]
+    thought_id = f"manual/{slug_base}-{suffix}"
+    safe_name = thought_id.split("/", 1)[1]
+    install_rel = f"{_INHERITANCE_THOUGHTS_DIR}/{_MANUAL_SKILLS_DIR}/{safe_name}"
+    install_dir = safe_join(_kb_root(user_id), install_rel)
+    os.makedirs(install_dir, exist_ok=True)
+
+    summary_text = str(summary or "").strip()
+    skill_md = _ensure_skill_frontmatter(body, name=name, description=summary_text)
+    _safe_write(os.path.join(install_dir, "SKILL.md"), skill_md)
+    installed_at = time.time()
+    with open(os.path.join(install_dir, "heysure_manual_create.json"), "w", encoding="utf-8") as f:
+        json.dump(
+            {"source": "manual", "name": name, "installed_at": installed_at},
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    meta = _skill_card_metadata(install_dir, name)
+    resolved_endpoint = _resolve_endpoint_kind(int(user_id), ai_config_id, endpoint_kind)
+    state = _load_clawhub_state(user_id)
+    installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
+    installed[thought_id] = {
+        "slug": thought_id,
+        "displayName": meta["name"],
+        "summary": meta["description"] or summary_text,
+        "version": None,
+        "ownerHandle": "",
+        "source": "manual",
+        "path": install_rel,
+        "installed_at": installed_at,
+        "auto_enabled": False,
+        "endpoint_kind": resolved_endpoint,
+        "trust": {"verdict": "self-authored"},
+    }
+    state["installed"] = installed
+    _save_clawhub_state(user_id, state)
+    return dict(installed[thought_id], id=thought_id)
 
 
 def delete_inheritance_thought(*, user_id: int, thought_id: str) -> Dict[str, Any]:
