@@ -584,37 +584,8 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                   <span>启用系统自动控制</span>
                   <input type="checkbox" v-model="form.system_auto_control.enabled" />
                 </label>
-                <div>
-                  <label class="block text-[11px] text-zinc-500 mb-1">启动执行任务提示词</label>
-                  <textarea
-                    v-model="form.system_auto_control.start_task_prompt"
-                    rows="2"
-                    class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs"
-                  ></textarea>
-                </div>
-                <div>
-                  <label class="block text-[11px] text-zinc-500 mb-1">继续被暂停任务提示词</label>
-                  <textarea
-                    v-model="form.system_auto_control.resume_task_prompt"
-                    rows="2"
-                    class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs"
-                  ></textarea>
-                </div>
-                <div>
-                  <label class="block text-[11px] text-zinc-500 mb-1">任务监督提示词（AI 未标记完成时自动追问）</label>
-                  <textarea
-                    v-model="form.system_auto_control.supervision_prompt"
-                    rows="2"
-                    class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs"
-                  ></textarea>
-                </div>
-                <div>
-                  <label class="block text-[11px] text-zinc-500 mb-1">传承提示文案（阈值默认使用上方 Token 上限）</label>
-                  <textarea
-                    v-model="form.system_auto_control.inheritance_notice"
-                    rows="2"
-                    class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs"
-                  ></textarea>
+                <div class="rounded border border-indigo-100 bg-indigo-50 px-3 py-2 text-[11px] text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300">
+                  任务启动、恢复、监督与传承 Prompt 已改为统一控制，请在“固有思路 → 统一任务提示词”中编辑。
                 </div>
 
                 <div class="pt-1 border-t border-zinc-200 dark:border-zinc-700 text-[11px] text-zinc-500 dark:text-zinc-400">

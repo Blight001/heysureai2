@@ -23,6 +23,7 @@ import { visionCaptureGlobal, visionCaptureMouse } from '../tools/vision'
 import { handsStart, handsStop, handsSnapshot, handsEvents, handsMouse } from '../tools/hands'
 import { earStart, earStop, earLatest } from '../tools/ear'
 import { registerTools } from './registry'
+import { DYNAMIC_MCP_MANAGER_DEFINITION } from './dynamic'
 
 const OBJ = (properties: Record<string, any>, required: string[] = []) => ({
   type: 'object',
@@ -32,6 +33,7 @@ const OBJ = (properties: Record<string, any>, required: string[] = []) => ({
 })
 
 registerTools([
+  DYNAMIC_MCP_MANAGER_DEFINITION,
   // Filesystem (cross-platform)
   {
     id: 'fs.list', platform: 'all',

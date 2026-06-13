@@ -26,6 +26,7 @@ from api.models import (
 from .auth import get_current_user
 from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.services.model_presets import normalize_model_presets
+from api.services.task_system import compact_system_auto_control
 from .ai_base import (
     _default_system_auto_control_for_user,
     _normalize_ai_role,
@@ -153,7 +154,9 @@ async def create_ai_config(
         mcp_enabled=body.mcp_enabled if body.mcp_enabled is not None else True,
         switch_key=switch_key,
         mcp_tools=clamped_mcp_tools,
-        system_auto_control=body.system_auto_control or _default_system_auto_control_for_user(user),
+        system_auto_control=compact_system_auto_control(
+            body.system_auto_control or _default_system_auto_control_for_user(user)
+        ),
     )
     # Apply per-bot config slices via each adapter. Inactive channels are
     # auto-disabled so an "enabled" flag in a non-selected channel never
@@ -170,8 +173,12 @@ async def create_ai_config(
     return _cfg_response(cfg, user.id)
 
 
-def _write_persona_file(user_id: int, cfg: AssistantAIConfig, prompt: Optional[str] = None) -> None:
-    """文件为真相源：把该 AI 的人格 / 自动控制 Prompt 写入 personas/<id>-<名>.md。
+def _write_persona_file(
+    user_id: int,
+    cfg: AssistantAIConfig,
+    prompt: Optional[str] = None,
+) -> None:
+    """文件为真相源：写入 AI 人格文件。
 
     ``prompt`` 为本次请求显式提交的人格文本；不传时由 write_persona 保留文件
     既有内容。best-effort——失败不影响配置保存。
@@ -278,6 +285,8 @@ async def update_ai_config(
     updates.pop("workspace_root", None)
     # 人格 Prompt 列已删：从 setattr 循环里取出，单独落盘到 personas 文件。
     prompt_update = updates.pop("prompt", None)
+    if "system_auto_control" in updates:
+        updates["system_auto_control"] = compact_system_auto_control(updates["system_auto_control"])
     if next_ai_role == "assistant_admin":
         updates["token_limit"] = 0
     for key, value in updates.items():
@@ -288,7 +297,11 @@ async def update_ai_config(
     session.add(cfg)
     session.commit()
     session.refresh(cfg)
-    _write_persona_file(user.id, cfg, prompt=prompt_update)
+    _write_persona_file(
+        user.id,
+        cfg,
+        prompt=prompt_update,
+    )
     _refresh_bot_long_connections_if_needed(
         bot_snapshot_before != _bot_runtime_snapshot(cfg)
     )
@@ -505,7 +518,7 @@ async def clone_ai_config(
         mcp_enabled=src.mcp_enabled,
         switch_key=f"assistant_{int(time.time() * 1000)}",
         mcp_tools=clamp_tools_json(user, config_role_tier(src), src.mcp_tools),
-        system_auto_control=src.system_auto_control,
+        system_auto_control=compact_system_auto_control(src.system_auto_control),
     )
     session.add(new_cfg)
     session.commit()

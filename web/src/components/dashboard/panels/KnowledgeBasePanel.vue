@@ -68,7 +68,6 @@ const savingPersonaId = ref<number | null>(null)
 const personaEditError = ref('')
 const personaEditNotice = ref('')
 const personaDraftPrompt = ref('')
-const personaDraftAutoPrompts = ref<Record<string, string>>({})
 const editingPropertyCategory = ref<string | null>(null)
 const savingPropertyCategory = ref<string | null>(null)
 const propertyEditError = ref('')
@@ -108,11 +107,17 @@ const installedEndpointSaving = ref(false)
 
 const ENDPOINT_LABELS: Record<string, string> = { any: '通用', desktop: '桌面端', browser: '浏览器端' }
 const endpointLabel = (kind?: string | null) => ENDPOINT_LABELS[String(kind || 'any')] || '通用'
+const deviceTypeLabel = (kind?: string | null) => ({
+  desktop: '桌面设备',
+  browser: '浏览器设备',
+  linux: 'Linux 设备',
+}[String(kind || '').toLowerCase()] || String(kind || '端侧设备'))
 
 const detailContent = computed(() => currentDetail.value?.body || currentDetail.value?.summary || '（无内容）')
 const intrinsicProperties = computed(() => currentDetail.value?.intrinsic_properties || null)
 const intrinsicPersonas = computed(() => currentDetail.value?.intrinsic_personas || null)
 const systemPrompts = computed(() => currentDetail.value?.system_prompts || null)
+const inheritanceSkills = computed(() => currentDetail.value?.inheritance_skills || null)
 const inheritanceThoughts = computed(() => currentDetail.value?.inheritance_tools || null)
 
 const filteredInstalledThoughts = computed(() => {
@@ -128,11 +133,10 @@ const installedEndpointKind = computed<'any' | 'desktop' | 'browser'>(() => {
 
 const toolParameters = (tool: { parameters?: Array<{ name: string; type: string; required: boolean; description: string }> }) =>
   Array.isArray(tool.parameters) ? tool.parameters : []
+const formatImplementationCode = (code: unknown) => JSON.stringify(code, null, 2)
 
 type IntrinsicPersonaAgent = NonNullable<KnowledgeEntryItem['intrinsic_personas']>['agents'][number]
 type IntrinsicPropertyCategory = NonNullable<KnowledgeEntryItem['intrinsic_properties']>['categories'][number]
-
-const autoPromptValue = (key: string) => personaDraftAutoPrompts.value[key] ?? ''
 
 const startEditPersona = (agent: IntrinsicPersonaAgent) => {
   if (!agent.id) return
@@ -140,32 +144,12 @@ const startEditPersona = (agent: IntrinsicPersonaAgent) => {
   personaEditError.value = ''
   personaEditNotice.value = ''
   personaDraftPrompt.value = agent.prompt || ''
-  personaDraftAutoPrompts.value = Object.fromEntries(
-    (agent.auto_prompts || []).map(prompt => [prompt.key, prompt.content || '']),
-  )
 }
 
 const cancelEditPersona = () => {
   editingPersonaId.value = null
   personaEditError.value = ''
   personaDraftPrompt.value = ''
-  personaDraftAutoPrompts.value = {}
-}
-
-const updateDraftAutoPrompt = (key: string, value: string) => {
-  personaDraftAutoPrompts.value = {
-    ...personaDraftAutoPrompts.value,
-    [key]: value,
-  }
-}
-
-const parseAutoControl = (agent: IntrinsicPersonaAgent) => {
-  try {
-    const parsed = JSON.parse(agent.system_auto_control_raw || '{}')
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
-  } catch {
-    return {}
-  }
 }
 
 const savePersona = async (agent: IntrinsicPersonaAgent) => {
@@ -173,43 +157,11 @@ const savePersona = async (agent: IntrinsicPersonaAgent) => {
   savingPersonaId.value = agent.id
   personaEditError.value = ''
   personaEditNotice.value = ''
-  const rawAutoControlPrompt = (agent.auto_prompts || []).find(prompt => prompt.key === 'system_auto_control')
-  if (rawAutoControlPrompt) {
-    try {
-      await updateAiConfigFields(agent.id, {
-        prompt: personaDraftPrompt.value,
-        system_auto_control: autoPromptValue(rawAutoControlPrompt.key),
-      })
-      agent.prompt = personaDraftPrompt.value
-      agent.system_auto_control_raw = autoPromptValue(rawAutoControlPrompt.key)
-      rawAutoControlPrompt.content = autoPromptValue(rawAutoControlPrompt.key)
-      editingPersonaId.value = null
-      personaEditNotice.value = `${agent.name} 已保存`
-    } catch (err) {
-      personaEditError.value = (err as Error).message || '保存失败'
-    } finally {
-      savingPersonaId.value = null
-    }
-    return
-  }
-  const autoControl = {
-    ...parseAutoControl(agent),
-    enabled: agent.auto_control_enabled ?? false,
-  }
-  for (const prompt of agent.auto_prompts || []) {
-    autoControl[prompt.key] = autoPromptValue(prompt.key)
-  }
   try {
     await updateAiConfigFields(agent.id, {
       prompt: personaDraftPrompt.value,
-      system_auto_control: JSON.stringify(autoControl),
     })
     agent.prompt = personaDraftPrompt.value
-    agent.system_auto_control_raw = JSON.stringify(autoControl)
-    agent.auto_prompts = (agent.auto_prompts || []).map(prompt => ({
-      ...prompt,
-      content: autoPromptValue(prompt.key),
-    }))
     editingPersonaId.value = null
     personaEditNotice.value = `${agent.name} 已保存`
   } catch (err) {
@@ -578,7 +530,6 @@ const closeDetail = () => {
   personaEditError.value = ''
   personaEditNotice.value = ''
   personaDraftPrompt.value = ''
-  personaDraftAutoPrompts.value = {}
   editingPropertyCategory.value = null
   savingPropertyCategory.value = null
   propertyEditError.value = ''
@@ -717,6 +668,17 @@ const closeDetail = () => {
                   系统设置提示词，保存后同步系统设置
                 </span>
               </template>
+              <template v-else-if="inheritanceSkills">
+                <span class="px-1.5 py-0.5 rounded bg-zinc-100 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                  {{ inheritanceSkills.device_total }} 台在线设备
+                </span>
+                <span class="px-1.5 py-0.5 rounded bg-zinc-100 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                  {{ inheritanceSkills.total }} 个 MCP
+                </span>
+                <span class="text-[10px] text-zinc-500 dark:text-zinc-400">
+                  按设备分类，展开查看详情
+                </span>
+              </template>
               <template v-else-if="inheritanceThoughts">
                 <span class="px-1.5 py-0.5 rounded bg-zinc-100 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
                   {{ inheritanceThoughts.installed_total }} 个本地快照
@@ -735,6 +697,9 @@ const closeDetail = () => {
               </template>
               <template v-else-if="systemPrompts">
                 {{ currentDetail?.summary || systemPrompts.description }}
+              </template>
+              <template v-else-if="inheritanceSkills">
+                {{ inheritanceSkills.description }}
               </template>
               <template v-else-if="inheritanceThoughts">
                 {{ inheritanceThoughts.description }}
@@ -768,7 +733,7 @@ const closeDetail = () => {
               </span>
             </div>
 
-            <div v-if="currentDetail.summary && !intrinsicProperties && !intrinsicPersonas && !systemPrompts && !inheritanceThoughts" class="mb-4">
+            <div v-if="currentDetail.summary && !intrinsicProperties && !intrinsicPersonas && !systemPrompts && !inheritanceSkills && !inheritanceThoughts" class="mb-4">
               <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">摘要</div>
               <div class="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300 bg-zinc-50 dark:bg-zinc-800/40 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800">
                 {{ currentDetail.summary }}
@@ -933,20 +898,6 @@ const closeDetail = () => {
                       />
                       <pre v-else class="whitespace-pre-wrap font-mono text-xs leading-relaxed text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900/70 p-3 rounded border border-zinc-100 dark:border-zinc-700">{{ agent.prompt || '（空）' }}</pre>
                     </div>
-                    <div
-                      v-for="prompt in agent.auto_prompts"
-                      :key="`${agent.id}-${prompt.key}`"
-                    >
-                      <div class="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400 mb-1">{{ prompt.label }}</div>
-                      <textarea
-                        v-if="editingPersonaId === agent.id"
-                        :value="autoPromptValue(prompt.key)"
-                        rows="5"
-                        class="w-full resize-y whitespace-pre-wrap font-mono text-xs leading-relaxed text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900/70 p-3 rounded border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-800"
-                        @input="updateDraftAutoPrompt(prompt.key, ($event.target as HTMLTextAreaElement).value)"
-                      />
-                      <pre v-else class="whitespace-pre-wrap font-mono text-xs leading-relaxed text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900/70 p-3 rounded border border-zinc-100 dark:border-zinc-700">{{ prompt.content || '（空）' }}</pre>
-                    </div>
                     <div v-if="editingPersonaId === agent.id" class="flex justify-end gap-2 pt-1">
                       <button
                         type="button"
@@ -1047,6 +998,112 @@ const closeDetail = () => {
                       >
                         {{ savingPromptSection === section.key ? '保存中…' : '保存' }}
                       </button>
+                    </div>
+                  </div>
+                </details>
+              </div>
+            </template>
+            <template v-else-if="inheritanceSkills">
+              <div class="space-y-3">
+                <div
+                  v-if="!inheritanceSkills.devices.length"
+                  class="rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-4 py-10 text-center text-xs text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/40 dark:text-zinc-500"
+                >
+                  暂无在线设备 MCP。设备连接并上报工具后会显示在这里。
+                </div>
+                <details
+                  v-for="device in inheritanceSkills.devices"
+                  :key="`${device.agent_type}-${device.agent_id}`"
+                  class="group overflow-hidden rounded-lg border border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/40"
+                >
+                  <summary class="list-none cursor-pointer px-3 py-3 select-none">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <div class="flex min-w-0 items-center gap-2">
+                        <span class="text-zinc-400 transition-transform group-open:rotate-90">›</span>
+                        <div class="min-w-0">
+                          <div class="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                            {{ deviceTypeLabel(device.agent_type) }}
+                          </div>
+                          <div class="mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-500">
+                            设备号：{{ device.agent_id || '未提供' }}
+                            <template v-if="device.updated_at"> · 上报于 {{ formatTime(device.updated_at) }}</template>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="flex shrink-0 items-center gap-2 text-[10px] text-zinc-500 dark:text-zinc-400">
+                        <span class="rounded bg-white px-2 py-1 dark:bg-zinc-900">{{ device.tool_count }} 个 MCP</span>
+                        <span class="text-zinc-400 group-open:hidden">展开详情</span>
+                        <span class="hidden text-indigo-500 group-open:inline dark:text-indigo-300">收起</span>
+                      </div>
+                    </div>
+                  </summary>
+                  <div class="divide-y divide-zinc-100 border-t border-zinc-100 dark:divide-zinc-800 dark:border-zinc-800">
+                    <div
+                      v-for="tool in device.tools"
+                      :key="`${device.agent_id}-${tool.name}`"
+                      class="bg-white px-3 py-3 dark:bg-zinc-900/40"
+                    >
+                      <div class="grid grid-cols-1 gap-2 md:grid-cols-[13rem_1fr]">
+                        <div>
+                          <div class="mb-0.5 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">调用工具</div>
+                          <code class="break-all text-[11px] text-indigo-600 dark:text-indigo-300">{{ tool.name }}</code>
+                        </div>
+                        <div>
+                          <div class="mb-0.5 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">工具描述</div>
+                          <div class="text-xs leading-relaxed text-zinc-700 dark:text-zinc-200">
+                            {{ tool.description || '（无描述）' }}
+                            <span v-if="tool.destructive" class="ml-1 text-amber-600 dark:text-amber-300">可能产生写入/变更</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="mt-2">
+                        <div class="mb-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">参数说明</div>
+                        <div v-if="toolParameters(tool).length" class="overflow-hidden rounded border border-zinc-100 dark:border-zinc-700">
+                          <div
+                            v-for="param in toolParameters(tool)"
+                            :key="`${device.agent_id}-${tool.name}-${param.name}`"
+                            class="grid grid-cols-1 gap-2 border-b border-zinc-100 px-2 py-1.5 text-[11px] last:border-b-0 dark:border-zinc-700 md:grid-cols-[11rem_6rem_4rem_1fr]"
+                          >
+                            <code class="break-all text-zinc-700 dark:text-zinc-200">{{ param.name }}</code>
+                            <span class="text-zinc-500 dark:text-zinc-400">{{ param.type || 'any' }}</span>
+                            <span :class="param.required ? 'text-rose-600 dark:text-rose-300' : 'text-zinc-400 dark:text-zinc-500'">
+                              {{ param.required ? '必填' : '可选' }}
+                            </span>
+                            <span class="text-zinc-600 dark:text-zinc-300">{{ param.description || '（无描述）' }}</span>
+                          </div>
+                        </div>
+                        <div v-else class="text-[11px] text-zinc-500 dark:text-zinc-400">无参数</div>
+                      </div>
+                      <div v-if="tool.implementation" class="mt-3 rounded border border-indigo-100 bg-indigo-50/50 p-2.5 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                          <div class="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">底层实现</div>
+                          <code class="text-[10px] text-indigo-500 dark:text-indigo-400">{{ tool.implementation.kind || 'unknown' }}</code>
+                        </div>
+                        <div v-if="tool.implementation.source_files?.length" class="mt-2">
+                          <div class="mb-1 text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">源码入口</div>
+                          <div class="flex flex-wrap gap-1">
+                            <code
+                              v-for="sourceFile in tool.implementation.source_files"
+                              :key="`${device.agent_id}-${tool.name}-${sourceFile}`"
+                              class="break-all rounded bg-white px-1.5 py-1 text-[10px] text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
+                            >{{ sourceFile }}</code>
+                          </div>
+                        </div>
+                        <div v-if="tool.implementation.editable_via" class="mt-2 text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-300">
+                          修改入口：<code>{{ tool.implementation.editable_via }}</code>，先调用 <code>inspect</code>，再调用 <code>get_source</code> 读取源码或 <code>upsert</code> 创建同名覆盖。
+                        </div>
+                        <details v-if="tool.implementation.handler_source" class="mt-2">
+                          <summary class="cursor-pointer text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">查看处理函数入口</summary>
+                          <pre class="mt-1 max-h-52 overflow-auto whitespace-pre-wrap break-all rounded bg-white p-2 font-mono text-[10px] leading-relaxed text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">{{ tool.implementation.handler_source }}</pre>
+                        </details>
+                        <details v-if="tool.implementation.code?.length" class="mt-2" open>
+                          <summary class="cursor-pointer text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">动态程序代码</summary>
+                          <pre class="mt-1 max-h-72 overflow-auto whitespace-pre-wrap break-all rounded bg-white p-2 font-mono text-[10px] leading-relaxed text-zinc-700 dark:bg-zinc-900 dark:text-zinc-200">{{ formatImplementationCode(tool.implementation.code) }}</pre>
+                        </details>
+                      </div>
+                    </div>
+                    <div v-if="!device.tools.length" class="px-3 py-6 text-center text-xs text-zinc-400">
+                      该设备暂未上报 MCP 工具
                     </div>
                   </div>
                 </details>

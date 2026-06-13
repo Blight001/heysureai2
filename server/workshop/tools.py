@@ -163,8 +163,10 @@ TOOL_DEFS = [
     {
         "name": "librarian.read_inheritance_skills",
         "description": (
-            "读取知识库中的「传承技能」：即知识工坊当前在线的所有 MCP 工具信息"
-            "（名称、描述、入参 schema）。只读，不接受参数。"
+            "读取知识库中的「传承技能」：即当前账号在线设备上报的 MCP 工具信息。"
+            "除名称、描述和入参 schema 外，还返回实现类型、源码入口、处理函数片段或"
+            "动态程序代码，以及通过 mcp.manage_dynamic_tool 执行 inspect/get_source/"
+            "upsert 的修改路径。只读，不接受参数。"
         ),
         "inputSchema": {
             "type": "object",
@@ -230,8 +232,8 @@ TOOL_DEFS = [
     {
         "name": "librarian.read_intrinsic_personas",
         "description": (
-            "读取知识库中的「固有人格」：当前用户下所有 AI 的人格 Prompt 与"
-            "自动控制 Prompt 内容。只读，不接受参数。"
+            "读取知识库中的「固有人格」：当前用户下所有 AI 的人格 Prompt。"
+            "只读，不接受参数。"
         ),
         "inputSchema": {
             "type": "object",
@@ -243,8 +245,7 @@ TOOL_DEFS = [
     {
         "name": "librarian.update_intrinsic_persona",
         "description": (
-            "修改「固有人格」：更新指定 AI 的人格 Prompt 与/或自动控制 Prompt 段，"
-            "只更新显式给出的字段，保存后同步 AI 配置。"
+            "修改「固有人格」：更新指定 AI 的人格 Prompt，保存后同步 AI 配置。"
         ),
         "inputSchema": {
             "type": "object",
@@ -255,18 +256,10 @@ TOOL_DEFS = [
                 },
                 "prompt": {
                     "type": "string",
-                    "description": "人格 Prompt 全文；省略则不改动人格 Prompt。",
-                },
-                "auto_prompts": {
-                    "type": "object",
-                    "description": (
-                        "自动控制 Prompt 段，按键覆盖；可用键："
-                        "start_task_prompt、resume_task_prompt、supervision_prompt、inheritance_notice。"
-                    ),
-                    "additionalProperties": {"type": "string"},
+                    "description": "人格 Prompt 全文。",
                 },
             },
-            "required": ["ai_config_id"],
+            "required": ["ai_config_id", "prompt"],
             "additionalProperties": False,
         },
         "destructive": True,
@@ -274,8 +267,8 @@ TOOL_DEFS = [
     {
         "name": "librarian.read_system_prompts",
         "description": (
-            "读取知识库中的「固有思路」：系统设置中的 MCP、默认任务与 AI 通信"
-            "提示词配置。只读，不接受参数。"
+            "读取知识库中的「固有思路」：所有 AI 统一使用的 MCP、默认任务与"
+            "AI 通信提示词。只读，不接受参数。"
         ),
         "inputSchema": {
             "type": "object",
@@ -287,7 +280,7 @@ TOOL_DEFS = [
     {
         "name": "librarian.update_system_prompts",
         "description": (
-            "修改「固有思路」：按配置键覆盖一个或多个系统提示词，保存后同步系统设置。"
+            "修改「固有思路」：更新所有 AI 统一使用的系统提示词。"
         ),
         "inputSchema": {
             "type": "object",

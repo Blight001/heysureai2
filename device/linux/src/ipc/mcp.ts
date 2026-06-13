@@ -6,7 +6,7 @@
 import { ipcMain } from 'electron'
 import { store } from '../store'
 import { getAgent } from '../services/agent-runtime'
-import { getToolDefs } from '../executor'
+import { getAllToolDefs, getToolDefs, isToolEnabled } from '../executor'
 import { sendActivityLog } from '../services/activity-log'
 
 type DescOverride = { description?: string; parameters?: Record<string, string> }
@@ -15,10 +15,22 @@ function overrides(): Record<string, DescOverride> {
   return (store.get('toolDescOverrides') as any) || {}
 }
 
+function enabledMap(): Record<string, boolean> {
+  return (store.get('toolEnabled') as any) || {}
+}
+
+function setEnabled(name: string, enabled: boolean) {
+  const all = enabledMap()
+  if (enabled) delete all[name]
+  else all[name] = false
+  store.set('toolEnabled', all)
+}
+
 // getToolDefs() with the saved local description edits applied.
-function effectiveDefs() {
+function effectiveDefs(includeDisabled = false) {
   const ov = overrides()
-  return getToolDefs().map(def => {
+  const defs = includeDisabled ? getAllToolDefs() : getToolDefs()
+  return defs.map(def => {
     const o = ov[def.name]
     if (!o) return def
     const desc = String(o.description || '').trim()
@@ -38,9 +50,18 @@ function effectiveDefs() {
 export function registerMcpIpc(): void {
   // List effective tool defs + which tools have local edits.
   ipcMain.handle('mcp:list', () => ({
-    tools: effectiveDefs(),
+    tools: effectiveDefs(true),
     overrides: overrides(),
+    enabled: enabledMap(),
   }))
+
+  ipcMain.handle('mcp:set-enabled', (_e, payload: { tool: string; enabled: boolean }) => {
+    const name = String(payload?.tool || '').trim()
+    if (!name || !getAllToolDefs().some(def => def.name === name)) return false
+    setEnabled(name, payload?.enabled !== false)
+    getAgent()?.refreshRegistration()
+    return true
+  })
 
   // Save (or clear) a tool's local description / parameter edits.
   ipcMain.handle('mcp:save-desc', (_e, payload: { tool: string; description?: string; parameters?: Record<string, string> }) => {
@@ -57,7 +78,7 @@ export function registerMcpIpc(): void {
     else all[name] = { description: desc, parameters: params }
     store.set('toolDescOverrides', all)
     // Re-report toolDefs so the server picks up the edit (no reconnect needed).
-    getAgent()?.connect()
+    getAgent()?.refreshRegistration()
     return true
   })
 
@@ -65,6 +86,7 @@ export function registerMcpIpc(): void {
   ipcMain.handle('mcp:test', async (_e, payload: { tool: string; args: Record<string, any> }) => {
     const tool = String(payload?.tool || '').trim()
     if (!tool) return { success: false, error: '工具名为空' }
+    if (!isToolEnabled(tool)) return { success: false, error: '该工具已在本机 MCP 栏目中关闭' }
     const agent = getAgent()
     if (!agent) return { success: false, error: 'agent 未初始化' }
     sendActivityLog('task', 'running', `测试: ${tool}`, payload.args)

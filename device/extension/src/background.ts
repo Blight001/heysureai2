@@ -3,7 +3,7 @@
 import { io, Socket } from 'socket.io-client'
 import { getSettings, saveSettings, pushActivity, getActivity, getAuth } from './lib/storage'
 import { getAgentEndpoint } from './lib/client'
-import { executeTask, executeBrowserTool, effectiveToolDefs } from './lib/tools'
+import { executeTask, executeBrowserTool, effectiveToolDefs, DYNAMIC_MCP_STORAGE_KEY } from './lib/tools'
 import { callAI } from './lib/ai'
 import { screenshotToolContent } from './lib/ai'
 import {
@@ -737,6 +737,10 @@ void restoreAndConnectOnStartup()
 // to register even if the one-off popup port message is missed.
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local') return
+  if (changes[DYNAMIC_MCP_STORAGE_KEY]) {
+    if (socket?.connected) void emitRegisterOn(socket)
+    return
+  }
   const authChange = changes._auth_state
   if (!authChange) return
 

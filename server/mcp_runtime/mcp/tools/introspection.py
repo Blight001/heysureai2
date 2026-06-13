@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 
 from api.database import engine
 from api.models import AssistantAIConfig
-from api.agent_presence import online_tool_defs
+from api.agent_presence import online_tool_defs_for_user
 from ..core import MCP_INTROSPECTION_TOOLS
 
 
@@ -81,7 +81,15 @@ def _describe_one_tool(name: str, endpoint_defs: Dict[str, Any], user_id: int = 
             "name": name,
             "description": str(spec.get("description") or "").strip(),
             "inputSchema": spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {},
-            "destructive": True,
+            "destructive": bool(spec.get("destructive", True)),
+            "implementation": spec.get("implementation") if isinstance(spec.get("implementation"), dict) else {},
+            "implementation_help": {
+                "inspect": {
+                    "tool": "mcp.manage_dynamic_tool",
+                    "arguments": {"action": "inspect", "name": name},
+                },
+                "note": "Call inspect to locate/read the underlying source and obtain a starter_definition before editing.",
+            },
             "call_format": {"tool": name, "arguments": {}},
         }
     tool = registry.get(name)
@@ -115,7 +123,7 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
     - ``query``: keyword search across tool names + descriptions.
     """
 
-    endpoint_defs = online_tool_defs()
+    endpoint_defs = online_tool_defs_for_user(user_id)
     allowed = _allowed_tool_names(user_id, ai_config_id)
 
     requested: list[str] = []

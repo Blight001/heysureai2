@@ -55,13 +55,6 @@ export interface KnowledgeEntryItem {
       platform: string
       generation: number
       prompt: string
-      system_auto_control_raw?: string
-      auto_control_enabled?: boolean
-      auto_prompts: Array<{
-        key: string
-        label: string
-        content: string
-      }>
       updated_at: number
     }>
   }
@@ -105,7 +98,36 @@ export interface KnowledgeEntryItem {
     description: string
     workshop: string
     online: boolean
+    device_total: number
     total: number
+    devices: Array<{
+      agent_id: string
+      agent_type: string
+      updated_at: number
+      tool_count: number
+      tools: Array<{
+        name: string
+        description: string
+        inputSchema?: Record<string, any>
+        parameters?: Array<{
+          name: string
+          type: string
+          required: boolean
+          description: string
+        }>
+        destructive?: boolean
+        implementation?: {
+          kind?: string
+          source_files?: string[]
+          handler_source?: string
+          editable_via?: string
+          code?: Array<Record<string, any>>
+          definition?: Record<string, any>
+          storage_file?: string
+          storage_key?: string
+        }
+      }>
+    }>
     tools: Array<{
       name: string
       description: string
@@ -116,6 +138,10 @@ export interface KnowledgeEntryItem {
         required: boolean
         description: string
       }>
+      destructive?: boolean
+      implementation?: Record<string, any>
+      agent_id?: string
+      agent_type?: string
     }>
   }
 }

@@ -20,6 +20,7 @@ import { visionCaptureGlobal, visionCaptureMouse } from '../tools/vision'
 import { handsStart, handsStop, handsSnapshot, handsEvents, handsMouse } from '../tools/hands'
 import { uiInspect, uiClick } from '../tools/uia'
 import { registerTools } from './registry'
+import { DYNAMIC_MCP_MANAGER_DEFINITION } from './dynamic'
 
 const OBJ = (properties: Record<string, any>, required: string[] = []) => ({
   type: 'object',
@@ -29,6 +30,7 @@ const OBJ = (properties: Record<string, any>, required: string[] = []) => ({
 })
 
 registerTools([
+  DYNAMIC_MCP_MANAGER_DEFINITION,
   // Shell (cross-platform)
   {
     id: 'shell.run', platform: 'all',

@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   mcpList: () => ipcRenderer.invoke('mcp:list'),
   mcpSaveDesc: (payload: { tool: string; description?: string; parameters?: Record<string, string> }) =>
     ipcRenderer.invoke('mcp:save-desc', payload),
+  mcpSetEnabled: (payload: { tool: string; enabled: boolean }) => ipcRenderer.invoke('mcp:set-enabled', payload),
   mcpTest: (payload: { tool: string; args: Record<string, any> }) => ipcRenderer.invoke('mcp:test', payload),
   // Version
   version: process.env.npm_package_version || '1.0.0',

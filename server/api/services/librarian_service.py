@@ -68,17 +68,17 @@ _BUILTIN_ENTRIES = {
     "builtin.intrinsic_personas": {
         "title": "固有人格",
         "triggers": ["固有人格", "AI人格", "Prompt"],
-        "summary": "当前所有 AI 的人格 prompt 与自动控制 prompt 内容。",
+        "summary": "当前所有 AI 的人格 prompt 内容。",
     },
     "builtin.system_prompts": {
         "title": "固有思路",
         "triggers": ["固有思路", "提示词配置", "Prompt"],
-        "summary": "系统设置中的 MCP、任务和 AI 通信提示词配置。",
+        "summary": "所有 AI 统一使用的 MCP、任务和通信提示词配置。",
     },
     "builtin.inheritance_skills": {
         "title": "传承技能",
         "triggers": ["传承技能", "在线MCP", "工坊工具"],
-        "summary": "知识工坊当前在线的所有 MCP 工具信息。",
+        "summary": "当前账号在线设备实时上报的 MCP 工具与动态代码能力。",
     },
     "builtin.inheritance_tools": {
         "title": "传承思想",
@@ -1369,35 +1369,54 @@ def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None) 
 
 
 def _inheritance_skills_payload(user_id: int = 0) -> Dict[str, Any]:
-    """传承技能 = 知识工坊当前在线的所有 MCP 工具信息。
-
-    工坊是服务端内置的"虚拟端侧"，始终在线并上报其工具定义；这里直接读取
-    工坊上报的在线工具目录（名称 / 描述 / 入参 schema）展示给知识库。"""
-    workshop_name = "知识工坊（内置）"
-    tool_defs: Dict[str, Any] = {}
+    """传承技能 = 当前账号在线端侧实时上报的 MCP 工具信息。"""
+    devices: List[Dict[str, Any]] = []
     try:
-        from workshop import engine as workshop_engine
+        from api.agent_presence import online_tool_catalog_for_user
 
-        workshop_name = workshop_engine.WORKSHOP_DISPLAY_NAME
-        tool_defs = workshop_engine.tool_defs_map()
+        devices = online_tool_catalog_for_user(int(user_id or 0))
     except Exception as exc:
         logger.info(f"inheritance skills payload failed: {exc}")
-        tool_defs = {}
+        devices = []
 
+    enriched_devices: List[Dict[str, Any]] = []
     tools: List[Dict[str, Any]] = []
-    for name in sorted(tool_defs.keys()):
-        spec = tool_defs.get(name) if isinstance(tool_defs.get(name), dict) else {}
-        schema = spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {}
-        tools.append({
-            "name": name,
-            "description": str(spec.get("description") or "").strip(),
-            "inputSchema": schema,
-            "parameters": _mcp_schema_parameter_rows(name, schema, None),
+    for device in devices:
+        agent_id = str(device.get("agent_id") or "")
+        agent_type = str(device.get("agent_type") or "desktop")
+        device_tools: List[Dict[str, Any]] = []
+        for spec in device.get("tools") or []:
+            if not isinstance(spec, dict):
+                continue
+            name = str(spec.get("name") or "").strip()
+            if not name:
+                continue
+            schema = spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {}
+            tool = {
+                "name": name,
+                "description": str(spec.get("description") or "").strip(),
+                "inputSchema": schema,
+                "parameters": _mcp_schema_parameter_rows(name, schema, None),
+                "destructive": bool(spec.get("destructive")),
+                "agent_id": agent_id,
+                "agent_type": agent_type,
+                "implementation": spec.get("implementation") if isinstance(spec.get("implementation"), dict) else {},
+            }
+            device_tools.append(tool)
+            tools.append(tool)
+        enriched_devices.append({
+            "agent_id": agent_id,
+            "agent_type": agent_type,
+            "updated_at": float(device.get("updated_at") or 0),
+            "tool_count": len(device_tools),
+            "tools": device_tools,
         })
     return {
-        "description": "知识工坊当前在线的 MCP 工具（传承技能）如下；这些工具由内置工坊实时上报。",
-        "workshop": workshop_name,
-        "online": True,
+        "description": "当前账号在线设备实时上报的 MCP 工具（传承技能）如下；动态工具保存并热加载后会立即出现在这里。",
+        "workshop": "知识工坊（内置）",
+        "online": bool(devices),
+        "devices": enriched_devices,
+        "device_total": len(enriched_devices),
         "total": len(tools),
         "tools": tools,
     }
@@ -1410,6 +1429,7 @@ def _render_inheritance_skills_body(payload: Dict[str, Any]) -> str:
         str(payload.get("description") or ""),
         "",
         f"工坊：{payload.get('workshop') or ''}",
+        f"在线设备数：{int(payload.get('device_total') or 0)}",
         f"在线 MCP 工具数：{int(payload.get('total') or 0)}",
         "",
     ]
@@ -1420,7 +1440,8 @@ def _render_inheritance_skills_body(payload: Dict[str, Any]) -> str:
     for tool in tools:
         name = str(tool.get("name") or "").strip()
         description = str(tool.get("description") or "").strip() or "（无描述）"
-        lines.append(f"- `{name}`: {description}")
+        source = f"{tool.get('agent_type') or 'device'}:{tool.get('agent_id') or ''}"
+        lines.append(f"- `{name}` [{source}]: {description}")
         params = tool.get("parameters") if isinstance(tool.get("parameters"), list) else []
         if params:
             for param in params:
@@ -1431,6 +1452,19 @@ def _render_inheritance_skills_body(payload: Dict[str, Any]) -> str:
                 lines.append(f"  - 参数 `{param_name}` ({param_type}, {required}): {param_desc}")
         else:
             lines.append("  - 参数：无")
+        implementation = tool.get("implementation") if isinstance(tool.get("implementation"), dict) else {}
+        if implementation:
+            kind = str(implementation.get("kind") or "unknown")
+            lines.append(f"  - 实现类型：`{kind}`")
+            source_files = implementation.get("source_files") if isinstance(implementation.get("source_files"), list) else []
+            if source_files:
+                lines.append("  - 源码入口：" + "、".join(f"`{str(item)}`" for item in source_files if str(item).strip()))
+            editable_via = str(implementation.get("editable_via") or "").strip()
+            if editable_via:
+                lines.append(f"  - 修改入口：`{editable_via}`（先 `inspect`，再 `get_source` / `upsert`）")
+            code = implementation.get("code")
+            if isinstance(code, list):
+                lines.extend(["  - 动态实现：", "", "```json", json.dumps(code, ensure_ascii=False, indent=2), "```"])
     return "\n".join(lines).strip()
 
 
@@ -1444,27 +1478,6 @@ def _intrinsic_personas_payload(user_id: int) -> Dict[str, Any]:
 
     agents: List[Dict[str, Any]] = []
     for cfg in rows:
-        auto_prompts: List[Dict[str, str]] = []
-        parsed: Any = None
-        # 人格 / 自动控制 Prompt 真相源在 personas 文件：用 effective_* 读取。
-        effective_auto = kb_store.effective_auto_control_json(cfg.user_id, cfg)
-        try:
-            parsed = json.loads(effective_auto or "{}")
-            if isinstance(parsed, dict):
-                labels = {
-                    "start_task_prompt": "任务启动 Prompt",
-                    "resume_task_prompt": "任务恢复 Prompt",
-                    "supervision_prompt": "监督 Prompt",
-                    "inheritance_notice": "传承提醒 Prompt",
-                }
-                for key, label in labels.items():
-                    value = str(parsed.get(key) or "").strip()
-                    auto_prompts.append({"key": key, "label": label, "content": value})
-        except Exception:
-            raw = str(effective_auto or "").strip()
-            if raw:
-                auto_prompts.append({"key": "system_auto_control", "label": "自动控制 Prompt 原文", "content": raw})
-
         agents.append({
             "id": cfg.id,
             "name": cfg.name,
@@ -1477,14 +1490,11 @@ def _intrinsic_personas_payload(user_id: int) -> Dict[str, Any]:
             "platform": cfg.platform,
             "generation": cfg.generation,
             "prompt": str(kb_store.effective_ai_prompt(cfg.user_id, cfg) or "").strip(),
-            "system_auto_control_raw": str(effective_auto or ""),
-            "auto_control_enabled": bool(parsed.get("enabled")) if isinstance(parsed, dict) else False,
-            "auto_prompts": auto_prompts,
             "updated_at": cfg.updated_at,
         })
 
     return {
-        "description": "当前用户下所有 AI 的固定人格与系统自动控制 prompt 内容如下。",
+        "description": "当前用户下所有 AI 的固定人格 prompt 如下。",
         "total": len(agents),
         "agents": agents,
     }
@@ -1510,20 +1520,7 @@ def _render_intrinsic_personas_body(payload: Dict[str, Any]) -> str:
         lines.append("")
         lines.append(str(agent.get("prompt") or "（空）"))
         lines.append("")
-        for prompt in agent.get("auto_prompts") or []:
-            lines.append(f"### {prompt.get('label') or prompt.get('key')}")
-            lines.append("")
-            lines.append(str(prompt.get("content") or "（空）"))
-            lines.append("")
     return "\n".join(lines).strip()
-
-
-_PERSONA_AUTO_PROMPT_KEYS = (
-    "start_task_prompt",
-    "resume_task_prompt",
-    "supervision_prompt",
-    "inheritance_notice",
-)
 
 
 def save_intrinsic_persona(
@@ -1531,9 +1528,8 @@ def save_intrinsic_persona(
     user_id: int,
     ai_config_id: int,
     prompt: Optional[str] = None,
-    auto_prompts: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """更新一个 AI 的固有人格：人格 Prompt 与/或自动控制 Prompt 段。
+    """更新一个 AI 的固有人格 Prompt。
 
     只更新显式给出的字段；文件为真相源，写入 personas/*.md 并刷回 DB。"""
     with Session(engine) as session:
@@ -1551,20 +1547,6 @@ def save_intrinsic_persona(
             cfg.prompt = str(prompt)
         else:
             cfg.prompt = kb_store.effective_ai_prompt(int(user_id), cfg)
-
-        # 自动控制 Prompt 段：在当前有效 JSON 上按键覆盖。
-        try:
-            auto = json.loads(kb_store.effective_auto_control_json(int(user_id), cfg) or "{}")
-            if not isinstance(auto, dict):
-                auto = {}
-        except Exception:
-            auto = {}
-        if isinstance(auto_prompts, dict):
-            for key, value in auto_prompts.items():
-                normalized = str(key or "").strip()
-                if normalized in _PERSONA_AUTO_PROMPT_KEYS:
-                    auto[normalized] = str(value or "")
-        cfg.system_auto_control = json.dumps(auto, ensure_ascii=False)
 
         session.add(cfg)
         session.commit()
@@ -1592,13 +1574,13 @@ _SYSTEM_PROMPT_SECTIONS = [
     },
     {
         "key": "task",
-        "title": "默认任务提示词",
+        "title": "统一任务提示词",
         "items": [
-            ("default_start_task_prompt", "启动执行任务提示词", "text"),
-            ("default_resume_task_prompt", "继续被暂停任务提示词", "text"),
-            ("default_supervision_prompt", "任务监督提示词", "text"),
+            ("default_start_task_prompt", "任务启动 Prompt", "text"),
+            ("default_resume_task_prompt", "任务恢复 Prompt", "text"),
+            ("default_supervision_prompt", "监督 Prompt", "text"),
             ("default_supervision_idle_seconds", "AI 停止思考提醒秒数", "number"),
-            ("default_inheritance_notice", "传承提示文案", "text"),
+            ("default_inheritance_notice", "传承提醒 Prompt", "text"),
         ],
     },
     {
@@ -1647,7 +1629,7 @@ def _system_prompts_payload(user_id: int) -> Dict[str, Any]:
                 "items": items,
             })
         return {
-            "description": "系统设置中的 MCP、默认任务和 AI 通信提示词配置如下；编辑保存后会同步系统设置。",
+            "description": "系统统一提示词如下；任务启动、恢复、监督与传承 Prompt 保存后对所有 AI 生效。",
             "total": total,
             "sections": sections,
         }

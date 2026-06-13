@@ -24,6 +24,12 @@ DEFAULT_SYSTEM_AUTO_CONTROL: Dict[str, Any] = {
     "inheritance_notice": DEFAULT_INHERITANCE_NOTICE,
     "tasks": [],
 }
+TASK_FLOW_PROMPT_KEYS = (
+    "start_task_prompt",
+    "resume_task_prompt",
+    "supervision_prompt",
+    "inheritance_notice",
+)
 
 TASK_RUNTIME_REQUIRED_TOOLS = {
     "task.complete",
@@ -84,6 +90,22 @@ def normalize_system_auto_control(raw: Optional[str]) -> Dict[str, Any]:
         raw_tasks = []
     cfg["tasks"] = [normalize_task_item(item) for item in raw_tasks]
     return cfg
+
+
+def compact_system_auto_control(raw: Optional[str]) -> str:
+    """Persist only per-AI controls; task-flow prompts are user-level settings."""
+    try:
+        parsed = json.loads(raw or "{}")
+        if not isinstance(parsed, dict):
+            parsed = {}
+    except Exception:
+        parsed = {}
+    for key in TASK_FLOW_PROMPT_KEYS:
+        parsed.pop(key, None)
+    parsed["enabled"] = bool(parsed.get("enabled", False))
+    raw_tasks = parsed.get("tasks")
+    parsed["tasks"] = raw_tasks if isinstance(raw_tasks, list) else []
+    return json.dumps(parsed, ensure_ascii=False)
 
 
 def normalize_tasks_from_control(raw: Optional[str]) -> list[Dict[str, Any]]:

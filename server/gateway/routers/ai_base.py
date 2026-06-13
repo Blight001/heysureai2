@@ -13,10 +13,6 @@ from fastapi import APIRouter, HTTPException
 from sqlmodel import Session, select
 
 from api.models import (
-    DEFAULT_INHERITANCE_NOTICE,
-    DEFAULT_RESUME_TASK_PROMPT,
-    DEFAULT_START_TASK_PROMPT,
-    DEFAULT_SUPERVISION_PROMPT,
     AssistantAIConfig,
     User,
 )
@@ -41,25 +37,8 @@ def _sanitize_task_generation_prompt(text: str) -> str:
     return cleaned.strip()
 
 def _default_system_auto_control_for_user(user: User) -> str:
-    # 方案 A：默认任务提示直接读 KnowledgeBase/system/*.md（缺失回退 DB / 内置默认）。
-    from api.services import kb_store
-
-    uid = getattr(user, "id", 0)
-
-    def _eff(key: str, fallback_const: str) -> str:
-        return kb_store.effective_system_value(uid, key, getattr(user, key, "")) or fallback_const
-
-    return json.dumps(
-        {
-            "enabled": False,
-            "start_task_prompt": _eff("default_start_task_prompt", DEFAULT_START_TASK_PROMPT),
-            "resume_task_prompt": _eff("default_resume_task_prompt", DEFAULT_RESUME_TASK_PROMPT),
-            "supervision_prompt": _eff("default_supervision_prompt", DEFAULT_SUPERVISION_PROMPT),
-            "inheritance_notice": _eff("default_inheritance_notice", DEFAULT_INHERITANCE_NOTICE),
-            "tasks": [],
-        },
-        ensure_ascii=False,
-    )
+    _ = user
+    return json.dumps({"enabled": False, "tasks": []}, ensure_ascii=False)
 
 def _normalize_ai_role(value: Optional[str]) -> str:
     role = (value or "").strip().lower()

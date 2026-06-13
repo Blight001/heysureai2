@@ -12,6 +12,7 @@ import {
 } from './services/agent-runtime'
 import { bindActivityLogTarget } from './services/activity-log'
 import { registerAllIpc } from './ipc'
+import { initializeDynamicMcp } from './executor/dynamic'
 
 app.setName('HeySure Agent')
 if (process.platform === 'win32') {
@@ -23,6 +24,7 @@ async function bootstrap(): Promise<void> {
 
   clearAiSelectionIfLoggedOut()
   initAgent(store.store)
+  initializeDynamicMcp(() => getAgent()?.refreshRegistration())
 
   registerAllIpc()
   Menu.setApplicationMenu(null)

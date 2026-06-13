@@ -8,12 +8,26 @@
 import { BROWSER_TOOLS, isToolEnabledByDefault } from './definitions'
 import { AIToolDef } from '../types'
 import { getToolDescOverrides, getToolEnabledMap } from '../storage'
+import { dynamicMcpToolDefs } from './dynamic'
+
+async function allToolDefs(): Promise<AIToolDef[]> {
+  const merged = new Map(BROWSER_TOOLS.map(tool => [tool.name, {
+    ...tool,
+    implementation: {
+      kind: 'builtin',
+      source_files: ['src/lib/tools/definitions.ts', 'src/lib/tools/browser.ts', 'src/lib/tools/router.ts', 'dist/background.js'],
+      editable_via: 'mcp.manage_dynamic_tool',
+    },
+  }] as const))
+  for (const tool of await dynamicMcpToolDefs()) merged.set(tool.name, tool)
+  return Array.from(merged.values())
+}
 
 /** Resolve every browser tool's effective on/off state (explicit choice ?? default). */
 export async function resolveToolEnabledMap(): Promise<Record<string, boolean>> {
   const explicit = await getToolEnabledMap()
   const out: Record<string, boolean> = {}
-  for (const tool of BROWSER_TOOLS) {
+  for (const tool of await allToolDefs()) {
     out[tool.name] = tool.name in explicit ? !!explicit[tool.name] : isToolEnabledByDefault(tool.name)
   }
   return out
@@ -22,13 +36,13 @@ export async function resolveToolEnabledMap(): Promise<Record<string, boolean>> 
 /** Names of the currently enabled tools, preserving BROWSER_TOOLS order. */
 export async function enabledToolNames(): Promise<string[]> {
   const enabled = await resolveToolEnabledMap()
-  return BROWSER_TOOLS.filter(t => enabled[t.name]).map(t => t.name)
+  return (await allToolDefs()).filter(t => enabled[t.name]).map(t => t.name)
 }
 
 export async function effectiveToolDefs(): Promise<AIToolDef[]> {
   const overrides = await getToolDescOverrides()
   const enabled = await resolveToolEnabledMap()
-  return BROWSER_TOOLS.filter(tool => enabled[tool.name]).map(tool => {
+  return (await allToolDefs()).filter(tool => enabled[tool.name]).map(tool => {
     const o = overrides[tool.name]
     if (!o) return tool
     const desc = (o.description || '').trim()

@@ -186,17 +186,13 @@ def update_intrinsic_persona(
     if target_id <= 0:
         raise HTTPException(status_code=400, detail="ai_config_id is required")
     prompt = args.get("prompt")
-    auto_prompts = args.get("auto_prompts")
-    if auto_prompts is not None and not isinstance(auto_prompts, dict):
-        raise HTTPException(status_code=400, detail="auto_prompts must be an object")
-    if prompt is None and not auto_prompts:
-        raise HTTPException(status_code=400, detail="prompt or auto_prompts is required")
+    if prompt is None:
+        raise HTTPException(status_code=400, detail="prompt is required")
     try:
         return librarian_service.save_intrinsic_persona(
             user_id=int(user_id),
             ai_config_id=target_id,
-            prompt=str(prompt) if prompt is not None else None,
-            auto_prompts=auto_prompts if isinstance(auto_prompts, dict) else None,
+            prompt=str(prompt),
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

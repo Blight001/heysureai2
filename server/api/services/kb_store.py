@@ -4,7 +4,7 @@
 Markdown 文件，并让文件成为运行时的真相源：
 
     KnowledgeBase/
-    ├── personas/<id>-<名>.md      固有人格：每个 AI 一个 md（人格 Prompt + 自动控制 Prompt）
+    ├── personas/<id>-<名>.md      固有人格：每个 AI 一个人格 Prompt
     ├── mcp/<namespace>/<tool>.md  固有技能：每个 MCP 工具的介绍与参数
     ├── system/<key>.md            固有思路：User 表里每个系统提示字段一个 md
     ├── skills/                    传承技能（沿用 inheritance_thoughts 落盘，目录占位）
@@ -27,6 +27,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -97,15 +98,22 @@ SYSTEM_PROMPT_KEYS: Tuple[Tuple[str, str], ...] = (
 )
 _SYSTEM_PROMPT_TYPE = {key: kind for key, kind in SYSTEM_PROMPT_KEYS}
 
-# persona md 内部用 ``## @key`` 分隔不同 Prompt 段，round-trip 稳定。
+# Markdown 内部用 ``## @key`` 分隔不同 Prompt 段，round-trip 稳定。
 _PERSONA_SECTIONS: Tuple[Tuple[str, str], ...] = (
     ("prompt", "人格 Prompt"),
-    ("start_task_prompt", "任务启动 Prompt"),
-    ("resume_task_prompt", "任务恢复 Prompt"),
-    ("supervision_prompt", "监督 Prompt"),
-    ("inheritance_notice", "传承提醒 Prompt"),
 )
-_PERSONA_AUTO_KEYS = ("start_task_prompt", "resume_task_prompt", "supervision_prompt", "inheritance_notice")
+_LEGACY_AGENT_THOUGHT_KEYS = (
+    "start_task_prompt",
+    "resume_task_prompt",
+    "supervision_prompt",
+    "inheritance_notice",
+)
+_GLOBAL_TASK_PROMPT_KEYS = {
+    "start_task_prompt": "default_start_task_prompt",
+    "resume_task_prompt": "default_resume_task_prompt",
+    "supervision_prompt": "default_supervision_prompt",
+    "inheritance_notice": "default_inheritance_notice",
+}
 
 
 # ---------- 基础 IO ----------
@@ -260,28 +268,19 @@ def _persona_path(user_id: int, cfg_id: int, name: str) -> str:
     return os.path.join(_kb_root(user_id), PERSONAS_DIR, fname)
 
 
-def _render_persona_fields(cfg_id: Any, name: str, role: str, prompt: str, auto: Dict[str, Any]) -> str:
+def _render_persona_fields(cfg_id: Any, name: str, role: str, prompt: str) -> str:
     header = _build_frontmatter({"id": cfg_id, "name": name, "role": role})
     parts: List[str] = [header]
     values = {"prompt": str(prompt or "")}
-    auto = auto if isinstance(auto, dict) else {}
-    for key in _PERSONA_AUTO_KEYS:
-        values[key] = str(auto.get(key) or "")
     for key, label in _PERSONA_SECTIONS:
         parts.append(f"## @{key} {label}\n\n{values.get(key, '').strip()}\n")
     return "\n".join(parts).strip() + "\n"
 
 
 def _render_persona(cfg: AssistantAIConfig, prompt: Optional[str] = None) -> str:
-    try:
-        auto = json.loads(getattr(cfg, "system_auto_control", "") or "{}")
-        if not isinstance(auto, dict):
-            auto = {}
-    except Exception:
-        auto = {}
     if prompt is None:
         prompt = getattr(cfg, "prompt", None)
-    return _render_persona_fields(cfg.id, cfg.name, getattr(cfg, "ai_role", ""), prompt or "", auto)
+    return _render_persona_fields(cfg.id, cfg.name, getattr(cfg, "ai_role", ""), prompt or "")
 
 
 def _parse_persona(text: str) -> Tuple[Dict[str, str], Dict[str, str]]:
@@ -314,17 +313,11 @@ def write_persona(user_id: int, cfg: AssistantAIConfig, prompt: Optional[str] = 
 
 
 def seed_persona_raw(user_id: int, cfg_id: Any, name: str, role: str, prompt: str, auto_control_json: str) -> None:
-    """迁移用：用原始字段值写 persona 文件（已存在则跳过）。"""
+    """迁移用：将 AI 人格落盘（已存在则跳过）。"""
+    _ = auto_control_json
     path = _persona_path(user_id, cfg_id, name)
-    if _read_text(path) is not None:
-        return
-    try:
-        auto = json.loads(auto_control_json or "{}")
-        if not isinstance(auto, dict):
-            auto = {}
-    except Exception:
-        auto = {}
-    _write_text(path, _render_persona_fields(cfg_id, name, role, prompt or "", auto))
+    if _read_text(path) is None:
+        _write_text(path, _render_persona_fields(cfg_id, name, role, prompt or ""))
 
 
 def hydrate_ai_prompt(cfg: AssistantAIConfig) -> AssistantAIConfig:
@@ -376,6 +369,46 @@ def _prune_stale_personas(user_id: int, cfg_id: int, keep: str) -> None:
                 pass
     except Exception:
         pass
+
+
+def cleanup_legacy_agent_thoughts(user_id: int, session: Optional[Session] = None) -> None:
+    """Remove obsolete per-AI task prompts after switching to unified control."""
+    from .task_system import compact_system_auto_control
+
+    own = session is None
+    sess = session or Session(engine)
+    changed = False
+    try:
+        rows = sess.exec(
+            select(AssistantAIConfig).where(AssistantAIConfig.user_id == int(user_id))
+        ).all()
+        for cfg in rows:
+            compacted = compact_system_auto_control(cfg.system_auto_control)
+            if compacted != str(cfg.system_auto_control or ""):
+                cfg.system_auto_control = compacted
+                sess.add(cfg)
+                changed = True
+            persona_path = _persona_path(user_id, cfg.id, cfg.name)
+            persona_raw = _read_text(persona_path)
+            if persona_raw is not None:
+                _meta, sections = _parse_persona(persona_raw)
+                if any(key in sections for key in _LEGACY_AGENT_THOUGHT_KEYS):
+                    _write_text(persona_path, _render_persona_fields(
+                        cfg.id,
+                        cfg.name,
+                        getattr(cfg, "ai_role", ""),
+                        sections.get("prompt", ""),
+                    ))
+        legacy_dir = os.path.join(_kb_root(user_id), SYSTEM_DIR, "agents")
+        if os.path.isdir(legacy_dir):
+            shutil.rmtree(legacy_dir)
+        if changed:
+            sess.commit()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"kb_store cleanup_legacy_agent_thoughts user={user_id} failed: {exc}")
+    finally:
+        if own:
+            sess.close()
 
 
 def seed_personas(user_id: int, session: Optional[Session] = None) -> None:
@@ -430,21 +463,6 @@ def sync_personas_to_db(user_id: int, *, session: Optional[Session] = None) -> b
             if new_prompt is not None and str(cfg.prompt or "") != new_prompt:
                 cfg.prompt = new_prompt
                 cfg_changed = True
-            # 合并自动控制 Prompt 段。
-            try:
-                auto = json.loads(cfg.system_auto_control or "{}")
-                if not isinstance(auto, dict):
-                    auto = {}
-            except Exception:
-                auto = {}
-            auto_changed = False
-            for key in _PERSONA_AUTO_KEYS:
-                if key in sections and str(auto.get(key) or "") != sections[key]:
-                    auto[key] = sections[key]
-                    auto_changed = True
-            if auto_changed:
-                cfg.system_auto_control = json.dumps(auto, ensure_ascii=False)
-                cfg_changed = True
             if cfg_changed:
                 sess.add(cfg)
                 changed = True
@@ -476,28 +494,17 @@ def effective_ai_prompt(user_id: int, cfg: Any) -> str:
 
 
 def effective_auto_control_json(user_id: int, cfg: Any) -> str:
-    """system_auto_control JSON：把 persona 文件里的 4 个 Prompt 段覆盖进 cfg 的
-    JSON（保留 enabled / tasks 等其余键）；文件缺失原样返回 cfg 值。"""
+    """Return per-AI switches/tasks with unified user-level task prompts injected."""
     base = str(getattr(cfg, "system_auto_control", "") or "") if cfg is not None else ""
-    if not (user_id and cfg is not None and getattr(cfg, "id", None) is not None):
-        return base
-    raw = _read_text(_persona_path(int(user_id), cfg.id, cfg.name))
-    if raw is None:
-        return base
     try:
-        _meta, sections = _parse_persona(raw)
-        try:
-            auto = json.loads(base or "{}")
-            if not isinstance(auto, dict):
-                auto = {}
-        except Exception:
+        auto = json.loads(base or "{}")
+        if not isinstance(auto, dict):
             auto = {}
-        for key in _PERSONA_AUTO_KEYS:
-            if key in sections:
-                auto[key] = sections[key]
-        return json.dumps(auto, ensure_ascii=False)
     except Exception:
-        return base
+        auto = {}
+    for key, system_key in _GLOBAL_TASK_PROMPT_KEYS.items():
+        auto[key] = effective_system_value(user_id, system_key)
+    return json.dumps(auto, ensure_ascii=False)
 
 
 def effective_system_value(user_id: int, key: str, fallback: Any = None) -> str:
@@ -633,9 +640,9 @@ _README = """# KnowledgeBase
 
 本目录是该用户所有 AI 共享的知识与配置真相源。子目录：
 
-- `personas/`  固有人格：每个 AI 的人格 Prompt 与自动控制 Prompt（文件名 `<id>-<名>.md`）。
+- `personas/`  固有人格：每个 AI 的人格 Prompt（文件名 `<id>-<名>.md`）。
 - `mcp/`       固有技能：每个 MCP 工具的介绍与参数（按 namespace 分目录）。
-- `system/`    固有思路：系统级提示词，每个配置项一个文件。
+- `system/`    固有思路：所有 AI 统一使用的系统级提示词。
 - `skills/`    传承技能：沉淀的技能卡。
 - `topics/`    传承知识：流程性知识条目。
 
@@ -1035,6 +1042,7 @@ def ensure_user_kb(user_id: int, *, session: Optional[Session] = None) -> None:
             if user:
                 seed_system_prompts(user_id, user)
             seed_personas(user_id, session=sess)
+            cleanup_legacy_agent_thoughts(user_id, session=sess)
             # Memory / EvolutionInput：先导出缺失文件，再以文件为准回写 DB。
             seed_memories(user_id, session=sess)
             seed_evolution(user_id, session=sess)

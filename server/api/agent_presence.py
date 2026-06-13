@@ -51,6 +51,7 @@ def _decode_defs(row: EndpointAgentPresence) -> Dict[str, dict]:
             "description": str(spec.get("description") or "").strip(),
             "input_schema": schema if isinstance(schema, dict) else {},
             "destructive": bool(spec.get("destructive")),
+            "implementation": spec.get("implementation") if isinstance(spec.get("implementation"), dict) else {},
         }
     return out
 
@@ -238,6 +239,83 @@ def online_tool_defs() -> Dict[str, dict]:
                     **spec,
                     "mcpSource": str(row.agent_type or "desktop").strip() or "desktop",
                 })
+    return out
+
+
+def online_tool_defs_for_user(user_id) -> Dict[str, dict]:
+    """Merged online endpoint definitions for one account only."""
+    uid = _int(user_id)
+    if uid is None:
+        return {}
+    out: Dict[str, dict] = {}
+    with Session(engine) as session:
+        rows = session.exec(
+            select(EndpointAgentPresence).where(
+                EndpointAgentPresence.user_id == uid,
+                EndpointAgentPresence.online == True,  # noqa: E712
+            ).order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
+        ).all()
+        seen_agents: Set[str] = set()
+        for row in rows:
+            agent_id = str(row.agent_id or "").strip()
+            if not agent_id or agent_id in seen_agents:
+                continue
+            seen_agents.add(agent_id)
+            if str(row.agent_type or "").strip() == "workshop":
+                continue
+            for name, spec in _decode_defs(row).items():
+                out.setdefault(name, {
+                    **spec,
+                    "mcpSource": str(row.agent_type or "desktop").strip() or "desktop",
+                    "agent_id": agent_id,
+                })
+    return out
+
+
+def online_tool_catalog_for_user(user_id) -> List[Dict[str, object]]:
+    """Online endpoint MCP definitions owned by one user, grouped by device.
+
+    Unlike ``online_tool_defs`` this helper is safe for user-facing knowledge
+    views: it never merges another account's endpoint metadata into the result.
+    """
+    uid = _int(user_id)
+    if uid is None:
+        return []
+    out: List[Dict[str, object]] = []
+    with Session(engine) as session:
+        rows = session.exec(
+            select(EndpointAgentPresence).where(
+                EndpointAgentPresence.user_id == uid,
+                EndpointAgentPresence.online == True,  # noqa: E712
+            ).order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
+        ).all()
+        seen_agents: Set[str] = set()
+        for row in rows:
+            agent_id = str(row.agent_id or "").strip()
+            if not agent_id or agent_id in seen_agents:
+                continue
+            seen_agents.add(agent_id)
+            agent_type = str(row.agent_type or "desktop").strip() or "desktop"
+            if agent_type == "workshop":
+                continue
+            capabilities = _decode(row)
+            defs = _decode_defs(row)
+            tools = []
+            for name in sorted(capabilities):
+                spec = defs.get(name, {})
+                tools.append({
+                    "name": name,
+                    "description": str(spec.get("description") or "").strip(),
+                    "input_schema": spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {},
+                    "destructive": bool(spec.get("destructive")),
+                    "implementation": spec.get("implementation") if isinstance(spec.get("implementation"), dict) else {},
+                })
+            out.append({
+                "agent_id": agent_id,
+                "agent_type": agent_type,
+                "updated_at": float(row.updated_at or 0),
+                "tools": tools,
+            })
     return out
 
 

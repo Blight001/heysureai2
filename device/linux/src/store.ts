@@ -44,6 +44,7 @@ interface AgentSettings {
   // reported to the server via agent:register -> toolDefs. Keyed by tool id.
   // { [toolId]: { description?: string; parameters?: { [param]: string } } }
   toolDescOverrides: Record<string, { description?: string; parameters?: Record<string, string> }>
+  toolEnabled: Record<string, boolean>
 }
 
 const defaults: AgentSettings = {
@@ -76,6 +77,7 @@ const defaults: AgentSettings = {
   mouseFx: true,
   offlineMode: false,
   toolDescOverrides: {},
+  toolEnabled: {},
 }
 
 export const store = new Store<AgentSettings>({ defaults })

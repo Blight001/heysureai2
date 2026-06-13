@@ -111,10 +111,6 @@ interface SystemAutoControlTaskItem {
 
 export interface SystemAutoControlConfig {
   enabled: boolean
-  start_task_prompt: string
-  resume_task_prompt: string
-  supervision_prompt: string
-  inheritance_notice: string
   tasks: SystemAutoControlTaskItem[]
 }
 
@@ -160,25 +156,11 @@ const normalizeTaskItem = (raw: any): SystemAutoControlTaskItem => ({
   interval_minutes: Math.max(1, Number(raw?.interval_minutes) || 30),
 })
 
-const defaultSystemAutoControl = (defaults: SystemAutoControlDefaults): SystemAutoControlConfig => ({
-  enabled: false,
-  start_task_prompt: defaults.start_task_prompt,
-  resume_task_prompt: defaults.resume_task_prompt,
-  supervision_prompt: defaults.supervision_prompt,
-  inheritance_notice: defaults.inheritance_notice,
-  tasks: [],
-})
-
-export const normalizeSystemAutoControl = (raw: unknown, defaults: SystemAutoControlDefaults): SystemAutoControlConfig => {
-  const base = defaultSystemAutoControl(defaults)
+export const normalizeSystemAutoControl = (raw: unknown, _defaults: SystemAutoControlDefaults): SystemAutoControlConfig => {
   const src = raw && typeof raw === 'object' ? (raw as Record<string, any>) : {}
   const tasks = Array.isArray(src.tasks) ? src.tasks.map(normalizeTaskItem) : []
   return {
     enabled: !!src.enabled,
-    start_task_prompt: String(src.start_task_prompt || base.start_task_prompt),
-    resume_task_prompt: String(src.resume_task_prompt || base.resume_task_prompt),
-    supervision_prompt: String(src.supervision_prompt || base.supervision_prompt),
-    inheritance_notice: String(src.inheritance_notice || base.inheritance_notice),
     tasks,
   }
 }

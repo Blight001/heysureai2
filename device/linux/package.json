@@ -29,7 +29,7 @@
     "appId": "com.heysure.agent.linux",
     "productName": "HeySure Agent",
     "directories": { "output": "release" },
-    "files": ["dist/**/*", "assets/**/*"],
+    "files": ["dist/**/*", "src/**/*", "assets/**/*"],
     "linux": {
       "target": ["AppImage", "deb"],
       "category": "Utility",

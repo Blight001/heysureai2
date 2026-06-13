@@ -181,6 +181,8 @@ def agent_endpoint_tool_defs(agent: Optional[Dict[str, Any]]) -> Dict[str, Dict[
         out[name] = {
             "description": str(raw.get("description") or "").strip(),
             "input_schema": schema,
+            "destructive": bool(raw.get("destructive")),
+            "implementation": raw.get("implementation") if isinstance(raw.get("implementation"), dict) else {},
         }
     return out
 

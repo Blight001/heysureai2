@@ -26,26 +26,63 @@ export interface ToolDefinition {
   // instead of hardcoding desktop tool schemas. Optional for back-compat.
   description?: string
   inputSchema?: Record<string, any>
+  destructive?: boolean
+  implementation?: Record<string, any>
 }
 
 export interface ToolDef {
   name: string
   description: string
   input_schema: Record<string, any>
+  destructive?: boolean
+  implementation?: Record<string, any>
 }
 
 const registry = new Map<string, ToolDefinition>()
+const builtinTools = new Map<string, ToolDefinition>()
+const dynamicToolIds = new Set<string>()
 
 export function registerTool(def: ToolDefinition): void {
   registry.set(def.id, def)
+  builtinTools.set(def.id, def)
 }
 
 export function registerTools(defs: ToolDefinition[]): void {
   for (const def of defs) registerTool(def)
 }
 
+export function replaceDynamicTools(defs: ToolDefinition[]): void {
+  for (const id of dynamicToolIds) {
+    const builtin = builtinTools.get(id)
+    if (builtin) registry.set(id, builtin)
+    else registry.delete(id)
+  }
+  dynamicToolIds.clear()
+  for (const def of defs) {
+    registry.set(def.id, def)
+    dynamicToolIds.add(def.id)
+  }
+}
+
 export function getTool(id: string): ToolDefinition | undefined {
   return registry.get(id)
+}
+
+export function getBuiltinTool(id: string): ToolDefinition | undefined {
+  return builtinTools.get(id)
+}
+
+function builtinSourceFiles(id: string): string[] {
+  if (id === 'mcp.manage_dynamic_tool') {
+    return ['src/executor/dynamic.ts', 'dist/executor/dynamic.js']
+  }
+  const namespace = String(id || '').split('.', 1)[0]
+  return [
+    'src/executor/catalog.ts',
+    `src/tools/${namespace}.ts`,
+    'dist/executor/catalog.js',
+    `dist/tools/${namespace}.js`,
+  ]
 }
 
 export function listToolIds(): string[] {
@@ -61,5 +98,12 @@ export function listToolDefs(): ToolDef[] {
       name: t.id,
       description: t.description || `Run desktop tool ${t.id} on the connected Linux agent.`,
       input_schema: t.inputSchema || { type: 'object', properties: {}, additionalProperties: true },
+      destructive: !!t.destructive,
+      implementation: t.implementation || {
+        kind: dynamicToolIds.has(t.id) ? 'dynamic' : 'builtin',
+        source_files: builtinSourceFiles(t.id),
+        handler_source: String(t.handler),
+        editable_via: 'mcp.manage_dynamic_tool',
+      },
     }))
 }
