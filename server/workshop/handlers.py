@@ -89,3 +89,116 @@ def delete_inheritance_thought(
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+def read_inheritance_skills(
+    user_id: int,
+    args: Dict[str, Any],
+    ai_config_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    _ = args, ai_config_id
+    return librarian_service.read(
+        user_id=int(user_id),
+        memory_id="builtin.inheritance_skills",
+    )
+
+
+def read_intrinsic_skills(
+    user_id: int,
+    args: Dict[str, Any],
+    ai_config_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    _ = args, ai_config_id
+    return librarian_service.read(
+        user_id=int(user_id),
+        memory_id="builtin.intrinsic_properties",
+    )
+
+
+def update_intrinsic_skills(
+    user_id: int,
+    args: Dict[str, Any],
+    ai_config_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    _ = ai_config_id
+    tools = args.get("tools")
+    if not isinstance(tools, list) or not tools:
+        raise HTTPException(status_code=400, detail="tools (non-empty list) is required")
+    try:
+        return librarian_service.save_intrinsic_properties_overrides(
+            user_id=int(user_id),
+            tools=tools,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def read_intrinsic_personas(
+    user_id: int,
+    args: Dict[str, Any],
+    ai_config_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    _ = args, ai_config_id
+    return librarian_service.read(
+        user_id=int(user_id),
+        memory_id="builtin.intrinsic_personas",
+    )
+
+
+def update_intrinsic_persona(
+    user_id: int,
+    args: Dict[str, Any],
+    ai_config_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    _ = ai_config_id
+    try:
+        target_id = int(args.get("ai_config_id") or 0)
+    except (TypeError, ValueError):
+        target_id = 0
+    if target_id <= 0:
+        raise HTTPException(status_code=400, detail="ai_config_id is required")
+    prompt = args.get("prompt")
+    auto_prompts = args.get("auto_prompts")
+    if auto_prompts is not None and not isinstance(auto_prompts, dict):
+        raise HTTPException(status_code=400, detail="auto_prompts must be an object")
+    if prompt is None and not auto_prompts:
+        raise HTTPException(status_code=400, detail="prompt or auto_prompts is required")
+    try:
+        return librarian_service.save_intrinsic_persona(
+            user_id=int(user_id),
+            ai_config_id=target_id,
+            prompt=str(prompt) if prompt is not None else None,
+            auto_prompts=auto_prompts if isinstance(auto_prompts, dict) else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+def read_system_prompts(
+    user_id: int,
+    args: Dict[str, Any],
+    ai_config_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    _ = args, ai_config_id
+    return librarian_service.read(
+        user_id=int(user_id),
+        memory_id="builtin.system_prompts",
+    )
+
+
+def update_system_prompts(
+    user_id: int,
+    args: Dict[str, Any],
+    ai_config_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    _ = ai_config_id
+    prompts = args.get("prompts")
+    if not isinstance(prompts, list) or not prompts:
+        raise HTTPException(status_code=400, detail="prompts (non-empty list) is required")
+    try:
+        return librarian_service.save_system_prompts(
+            user_id=int(user_id),
+            prompts=prompts,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -65,6 +65,15 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "librarian.install_skill_package": ROLE_MANAGER,
     "librarian.edit_inheritance_thought": ROLE_MANAGER,
     "librarian.delete_inheritance_thought": ROLE_MANAGER,
+    # Knowledge workshop — read built-in knowledge categories (read-only for everyone).
+    "librarian.read_inheritance_skills": ROLE_MEMBER,
+    "librarian.read_intrinsic_skills": ROLE_MEMBER,
+    "librarian.read_intrinsic_personas": ROLE_MEMBER,
+    "librarian.read_system_prompts": ROLE_MANAGER,
+    # Editing built-in categories changes global/system config — raise to higher tiers.
+    "librarian.update_intrinsic_skills": ROLE_ASSISTANT_ADMIN,
+    "librarian.update_intrinsic_persona": ROLE_MANAGER,
+    "librarian.update_system_prompts": ROLE_ASSISTANT_ADMIN,
     # Send message — outbound to the human user; every tier by default.
     "message.send_to_user": ROLE_MEMBER,
     # Conversation maintenance — every tier can manage its own scoped sessions.

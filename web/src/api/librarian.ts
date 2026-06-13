@@ -100,6 +100,23 @@ export interface KnowledgeEntryItem {
       trust?: Record<string, any>
     }>
   }
+  inheritance_skills?: {
+    description: string
+    workshop: string
+    online: boolean
+    total: number
+    tools: Array<{
+      name: string
+      description: string
+      inputSchema?: Record<string, any>
+      parameters?: Array<{
+        name: string
+        type: string
+        required: boolean
+        description: string
+      }>
+    }>
+  }
 }
 
 export interface ClawHubSkillSearchResult {
@@ -180,7 +197,7 @@ export const saveIntrinsicProperties = (
   post<KnowledgeEntryItem>(
     '/api/librarian/intrinsic-properties',
     { tools },
-    { token, fallbackError: '固有属性保存失败' },
+    { token, fallbackError: '固有技能保存失败' },
   )
 
 export const saveSystemPrompts = (

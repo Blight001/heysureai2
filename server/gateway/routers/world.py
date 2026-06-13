@@ -133,6 +133,13 @@ async def world_snapshot(
             memory_id = str(item.get("memory_id") or "")
             if not memory_id:
                 continue
+            # 内置类目（固有技能/固有人格/固有思路/传承技能/传承思想）的正文计算昂贵：
+            # 会枚举整个 MCP 注册表并落盘、读取全部人格与系统提示词文件。世界页只用
+            # 计数与摘要，完整详情在主控制台知识库按需读取；这里只放轻量元数据，避免
+            # 首屏与每次 8s 轮询都重算全部资源。
+            if memory_id.startswith("builtin."):
+                knowledge_items.append(item)
+                continue
             try:
                 knowledge_items.append(librarian_service.read(user_id=user.id, memory_id=memory_id))
             except Exception:

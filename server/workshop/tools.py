@@ -111,6 +111,160 @@ TOOL_DEFS = [
         },
         "destructive": True,
     },
+    {
+        "name": "librarian.read_inheritance_skills",
+        "description": (
+            "读取知识库中的「传承技能」：即知识工坊当前在线的所有 MCP 工具信息"
+            "（名称、描述、入参 schema）。只读，不接受参数。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+        "destructive": False,
+    },
+    {
+        "name": "librarian.read_intrinsic_skills",
+        "description": (
+            "读取知识库中的「固有技能」：系统固定注册的服务端 MCP 工具清单，"
+            "按 namespace 分组返回每个工具的描述与参数说明。只读，不接受参数。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+        "destructive": False,
+    },
+    {
+        "name": "librarian.update_intrinsic_skills",
+        "description": (
+            "修改「固有技能」：覆盖一个或多个 MCP 工具的中文描述与参数说明，"
+            "保存后会同步 mcp.list_tools / mcp.describe_tool 的展示。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tools": {
+                    "type": "array",
+                    "description": "要更新的工具列表；每项至少包含工具名 name。",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "精确的 MCP 工具名。"},
+                            "description": {"type": "string", "description": "工具中文描述。"},
+                            "parameters": {
+                                "type": "array",
+                                "description": "参数说明列表；每项含 name 与 description。",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string", "description": "参数名。"},
+                                        "description": {"type": "string", "description": "参数中文说明。"},
+                                    },
+                                    "required": ["name"],
+                                    "additionalProperties": True,
+                                },
+                            },
+                        },
+                        "required": ["name"],
+                        "additionalProperties": True,
+                    },
+                },
+            },
+            "required": ["tools"],
+            "additionalProperties": False,
+        },
+        "destructive": True,
+    },
+    {
+        "name": "librarian.read_intrinsic_personas",
+        "description": (
+            "读取知识库中的「固有人格」：当前用户下所有 AI 的人格 Prompt 与"
+            "自动控制 Prompt 内容。只读，不接受参数。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+        "destructive": False,
+    },
+    {
+        "name": "librarian.update_intrinsic_persona",
+        "description": (
+            "修改「固有人格」：更新指定 AI 的人格 Prompt 与/或自动控制 Prompt 段，"
+            "只更新显式给出的字段，保存后同步 AI 配置。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "ai_config_id": {
+                    "type": "integer",
+                    "description": "目标 AI 配置 ID，即固有人格列表中每个 agent 的 id。",
+                },
+                "prompt": {
+                    "type": "string",
+                    "description": "人格 Prompt 全文；省略则不改动人格 Prompt。",
+                },
+                "auto_prompts": {
+                    "type": "object",
+                    "description": (
+                        "自动控制 Prompt 段，按键覆盖；可用键："
+                        "start_task_prompt、resume_task_prompt、supervision_prompt、inheritance_notice。"
+                    ),
+                    "additionalProperties": {"type": "string"},
+                },
+            },
+            "required": ["ai_config_id"],
+            "additionalProperties": False,
+        },
+        "destructive": True,
+    },
+    {
+        "name": "librarian.read_system_prompts",
+        "description": (
+            "读取知识库中的「固有思路」：系统设置中的 MCP、默认任务与 AI 通信"
+            "提示词配置。只读，不接受参数。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+        "destructive": False,
+    },
+    {
+        "name": "librarian.update_system_prompts",
+        "description": (
+            "修改「固有思路」：按配置键覆盖一个或多个系统提示词，保存后同步系统设置。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "prompts": {
+                    "type": "array",
+                    "description": "要更新的配置项列表；每项含配置键 key 与内容 content。",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "key": {"type": "string", "description": "系统提示词配置键。"},
+                            "content": {
+                                "type": ["string", "number"],
+                                "description": "配置内容；数值类配置传数字。",
+                            },
+                        },
+                        "required": ["key", "content"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["prompts"],
+            "additionalProperties": False,
+        },
+        "destructive": True,
+    },
 ]
 
 TOOL_NAMES = [item["name"] for item in TOOL_DEFS]

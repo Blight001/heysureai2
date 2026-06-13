@@ -60,8 +60,8 @@ _VALID_STATUSES = {"pending", "active", "archived", "rejected"}
 _BUILTIN_UPDATED_AT = 1893456000.0  # 2030-01-01, keeps built-in categories at the top.
 _BUILTIN_ENTRIES = {
     "builtin.intrinsic_properties": {
-        "title": "固有属性",
-        "triggers": ["固有属性", "固定MCP", "MCP工具"],
+        "title": "固有技能",
+        "triggers": ["固有技能", "固定MCP", "MCP工具"],
         "summary": "系统固定 MCP 工具清单及其描述。",
     },
     "builtin.intrinsic_personas": {
@@ -76,8 +76,8 @@ _BUILTIN_ENTRIES = {
     },
     "builtin.inheritance_skills": {
         "title": "传承技能",
-        "triggers": ["传承技能", "Python脚本", "技能沉淀"],
-        "summary": "预留给后续沉淀的 Python 脚本技能，目前为空。",
+        "triggers": ["传承技能", "在线MCP", "工坊工具"],
+        "summary": "知识工坊当前在线的所有 MCP 工具信息。",
     },
     "builtin.inheritance_tools": {
         "title": "传承思想",
@@ -963,7 +963,9 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
             out["system_prompts"] = prompts
             out["body"] = _render_system_prompts_body(prompts)
         elif memory_id == "builtin.inheritance_skills":
-            out["body"] = ""
+            skills = _inheritance_skills_payload(int(user_id or 0))
+            out["inheritance_skills"] = skills
+            out["body"] = _render_inheritance_skills_body(skills)
         elif memory_id == "builtin.inheritance_tools":
             thoughts = _inheritance_thoughts_payload(int(user_id or 0))
             out["inheritance_tools"] = thoughts
@@ -1170,7 +1172,7 @@ def save_intrinsic_properties_overrides(*, user_id: int, tools: List[Dict[str, A
 def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None) -> str:
     data = payload or _intrinsic_properties_payload()
     lines = [
-        "# 固有属性",
+        "# 固有技能",
         "",
         str(data.get("description") or ""),
         "",
@@ -1197,6 +1199,72 @@ def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None) 
             else:
                 lines.append("  - 参数：无")
         lines.append("")
+    return "\n".join(lines).strip()
+
+
+def _inheritance_skills_payload(user_id: int = 0) -> Dict[str, Any]:
+    """传承技能 = 知识工坊当前在线的所有 MCP 工具信息。
+
+    工坊是服务端内置的"虚拟端侧"，始终在线并上报其工具定义；这里直接读取
+    工坊上报的在线工具目录（名称 / 描述 / 入参 schema）展示给知识库。"""
+    workshop_name = "知识工坊（内置）"
+    tool_defs: Dict[str, Any] = {}
+    try:
+        from workshop import engine as workshop_engine
+
+        workshop_name = workshop_engine.WORKSHOP_DISPLAY_NAME
+        tool_defs = workshop_engine.tool_defs_map()
+    except Exception as exc:
+        logger.info(f"inheritance skills payload failed: {exc}")
+        tool_defs = {}
+
+    tools: List[Dict[str, Any]] = []
+    for name in sorted(tool_defs.keys()):
+        spec = tool_defs.get(name) if isinstance(tool_defs.get(name), dict) else {}
+        schema = spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {}
+        tools.append({
+            "name": name,
+            "description": str(spec.get("description") or "").strip(),
+            "inputSchema": schema,
+            "parameters": _mcp_schema_parameter_rows(name, schema, None),
+        })
+    return {
+        "description": "知识工坊当前在线的 MCP 工具（传承技能）如下；这些工具由内置工坊实时上报。",
+        "workshop": workshop_name,
+        "online": True,
+        "total": len(tools),
+        "tools": tools,
+    }
+
+
+def _render_inheritance_skills_body(payload: Dict[str, Any]) -> str:
+    lines = [
+        "# 传承技能",
+        "",
+        str(payload.get("description") or ""),
+        "",
+        f"工坊：{payload.get('workshop') or ''}",
+        f"在线 MCP 工具数：{int(payload.get('total') or 0)}",
+        "",
+    ]
+    tools = payload.get("tools") if isinstance(payload.get("tools"), list) else []
+    if not tools:
+        lines.append("暂无在线 MCP 工具。")
+        return "\n".join(lines).strip()
+    for tool in tools:
+        name = str(tool.get("name") or "").strip()
+        description = str(tool.get("description") or "").strip() or "（无描述）"
+        lines.append(f"- `{name}`: {description}")
+        params = tool.get("parameters") if isinstance(tool.get("parameters"), list) else []
+        if params:
+            for param in params:
+                required = "必填" if param.get("required") else "可选"
+                param_name = str(param.get("name") or "").strip()
+                param_type = str(param.get("type") or "any").strip()
+                param_desc = str(param.get("description") or "").strip() or "（无描述）"
+                lines.append(f"  - 参数 `{param_name}` ({param_type}, {required}): {param_desc}")
+        else:
+            lines.append("  - 参数：无")
     return "\n".join(lines).strip()
 
 
@@ -1282,6 +1350,67 @@ def _render_intrinsic_personas_body(payload: Dict[str, Any]) -> str:
             lines.append(str(prompt.get("content") or "（空）"))
             lines.append("")
     return "\n".join(lines).strip()
+
+
+_PERSONA_AUTO_PROMPT_KEYS = (
+    "start_task_prompt",
+    "resume_task_prompt",
+    "supervision_prompt",
+    "inheritance_notice",
+)
+
+
+def save_intrinsic_persona(
+    *,
+    user_id: int,
+    ai_config_id: int,
+    prompt: Optional[str] = None,
+    auto_prompts: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """更新一个 AI 的固有人格：人格 Prompt 与/或自动控制 Prompt 段。
+
+    只更新显式给出的字段；文件为真相源，写入 personas/*.md 并刷回 DB。"""
+    with Session(engine) as session:
+        cfg = session.exec(
+            select(AssistantAIConfig).where(
+                AssistantAIConfig.id == int(ai_config_id),
+                AssistantAIConfig.user_id == int(user_id),
+            )
+        ).first()
+        if not cfg:
+            raise ValueError("AI config not found")
+
+        # 人格 Prompt：未显式给出则保留当前有效值（文件优先）。
+        if prompt is not None:
+            cfg.prompt = str(prompt)
+        else:
+            cfg.prompt = kb_store.effective_ai_prompt(int(user_id), cfg)
+
+        # 自动控制 Prompt 段：在当前有效 JSON 上按键覆盖。
+        try:
+            auto = json.loads(kb_store.effective_auto_control_json(int(user_id), cfg) or "{}")
+            if not isinstance(auto, dict):
+                auto = {}
+        except Exception:
+            auto = {}
+        if isinstance(auto_prompts, dict):
+            for key, value in auto_prompts.items():
+                normalized = str(key or "").strip()
+                if normalized in _PERSONA_AUTO_PROMPT_KEYS:
+                    auto[normalized] = str(value or "")
+        cfg.system_auto_control = json.dumps(auto, ensure_ascii=False)
+
+        session.add(cfg)
+        session.commit()
+        session.refresh(cfg)
+
+        # 文件为真相源：写入 personas/<id>-<名>.md（权威）。
+        try:
+            kb_store.write_persona(int(user_id), cfg, prompt=cfg.prompt)
+        except Exception as exc:
+            logger.info(f"write_persona {ai_config_id} failed: {exc}")
+
+    return _builtin_entry("builtin.intrinsic_personas", user_id=user_id, with_body=True) or {}
 
 
 _SYSTEM_PROMPT_SECTIONS = [
