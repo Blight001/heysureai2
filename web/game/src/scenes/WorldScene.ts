@@ -10,8 +10,10 @@ import { setWorkshopBinding } from '@/api/workshop'
 import { triggerTaskForAgent } from '@/api/task'
 import { approveProposal, rejectProposal } from '@/api/librarian'
 import { setWorldActorMeta } from '@/api/world'
-import { SHEETS, TILES } from '../assetManifest'
+import { ROLE_SKINS, SHEETS, TILES } from '../assetManifest'
 import { MemberActor } from '../actors/MemberActor'
+import { GovernorActor } from '../actors/GovernorActor'
+import { portraitSpecFor, type PortraitSpec } from '../ui/portrait'
 import {
   FIXED_BUILDINGS,
   MAP_H,
@@ -75,6 +77,9 @@ interface WorkshopView {
 
 const OFFLINE_KEEP_MS = 60000
 
+/** 总督按 F 交互的最大距离（世界像素） */
+const INTERACT_RANGE = 96
+
 export class WorldScene extends Phaser.Scene {
   private store!: WorldStore
   private overlay!: Overlay
@@ -110,6 +115,12 @@ export class WorldScene extends Phaser.Scene {
   private worldHour = 12
   private nightGlows: { img: Phaser.GameObjects.Image; base: number; phase: number }[] = []
   private fireflies: { img: Phaser.GameObjects.Image; vx: number; vy: number; phase: number }[] = []
+  /** 总督（玩家化身）：无 token / 无任务，用户用 WSAD 操控，按 F 与附近 AI 交互 */
+  private governor!: GovernorActor
+  private governorMode = false
+  private moveKeys!: Record<string, Phaser.Input.Keyboard.Key>
+  private interactPrompt!: Phaser.GameObjects.Text
+  private nearestInteractId: number | null = null
 
   constructor() {
     super('world')
@@ -142,12 +153,14 @@ export class WorldScene extends Phaser.Scene {
     this.createDecor()
     this.createBuildings()
     this.createCamera()
+    this.createGovernor()
     this.createDrawer()
     this.createDayNight()
     this.createAudio()
     this.createCloudCurtain()
     this.wireHover()
     this.wireClickAndDrag()
+    this.wireGovernorControls()
     this.store.subscribe(snap => this.applySnapshot(snap))
     this.store.onEvent(ev => this.handleWorldEvent(ev))
     this.store.start()
@@ -488,12 +501,12 @@ export class WorldScene extends Phaser.Scene {
       approveProposal: async memoryId => {
         await approveProposal(getAuthToken(), memoryId)
         await refresh()
-        this.drawer.openLibrary(this.snap!)
+        this.drawer.openLibrary(this.snap!, this.portraitForBuilding('building_library.png'))
       },
       rejectProposal: async memoryId => {
         await rejectProposal(getAuthToken(), memoryId)
         await refresh()
-        this.drawer.openLibrary(this.snap!)
+        this.drawer.openLibrary(this.snap!, this.portraitForBuilding('building_library.png'))
       },
       openChat: id => {
         this.openMemberChat(id)
@@ -505,14 +518,14 @@ export class WorldScene extends Phaser.Scene {
   /** 操作后抽屉数据已过期：用新快照重开成员面板 */
   private reopenMember(id: number) {
     const m = this.snap?.members.find(x => x.id === id)
-    if (m && this.drawer.isOpen) this.drawer.openMember(m, this.snap!)
+    if (m && this.drawer.isOpen) this.drawer.openMember(m, this.snap!, this.portraitForMember(m))
   }
 
   private focusMember(id: number) {
     const actor = this.actors.get(id)
     const m = this.snap?.members.find(x => x.id === id)
     if (actor) this.cameras.main.pan(actor.x, actor.y, 400, 'Sine.easeInOut')
-    if (m && this.snap) this.drawer.openMember(m, this.snap)
+    if (m && this.snap) this.drawer.openMember(m, this.snap, this.portraitForMember(m))
   }
 
   // ---------------------------------------------------------------- 初始化
@@ -766,7 +779,8 @@ export class WorldScene extends Phaser.Scene {
       dragging = false
     })
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (!dragging || !p.isDown || this.draggingActor) return
+      // 总督操控模式下相机跟随总督，拖拽平移让位
+      if (!dragging || !p.isDown || this.draggingActor || this.governorMode) return
       cam.scrollX -= (p.x - lastX) / cam.zoom
       cam.scrollY -= (p.y - lastY) / cam.zoom
       lastX = p.x
@@ -788,6 +802,118 @@ export class WorldScene extends Phaser.Scene {
   /** 缩放下限 = 恰好铺满视口的缩放值，保证视野永远不超出地图 */
   private minZoom(): number {
     return Math.max(this.scale.width / WORLD_W, this.scale.height / WORLD_H)
+  }
+
+  // ---------------------------------------------------------------- 总督（玩家化身）
+  private createGovernor() {
+    this.governor = new GovernorActor(this, { x: 980, y: 600 }, ROLE_SKINS.coreAdmin)
+    this.interactPrompt = this.add.text(0, 0, '按 F 交互', {
+      fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
+      fontSize: '12px',
+      color: '#fff7d6',
+      backgroundColor: '#2a2410cc',
+      padding: { x: 6, y: 2 },
+    })
+    this.interactPrompt.setOrigin(0.5, 1)
+    this.interactPrompt.setDepth(200000)
+    this.interactPrompt.setVisible(false)
+  }
+
+  private wireGovernorControls() {
+    const kb = this.input.keyboard
+    if (!kb) return
+    // enableCapture=false：不 preventDefault，避免在底部面板输入框里打 WASD 被吞
+    this.moveKeys = kb.addKeys('W,A,S,D', false) as Record<string, Phaser.Input.Keyboard.Key>
+    kb.on('keydown-F', () => this.tryInteract())
+    kb.on('keydown-G', () => {
+      if (!this.isTextInputFocused()) this.setGovernorMode(!this.governorMode)
+    })
+    this.overlay.initGovernorButton(document.body, this.governorMode, active => this.setGovernorMode(active))
+  }
+
+  /** 焦点是否在表单输入上（避免在面板里打字时误触 WSAD/F/G） */
+  private isTextInputFocused(): boolean {
+    const tag = document.activeElement?.tagName
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+  }
+
+  private setGovernorMode(on: boolean) {
+    if (on === this.governorMode) return
+    this.governorMode = on
+    const cam = this.cameras.main
+    if (on) {
+      cam.stopFollow()
+      cam.startFollow(this.governor, true, 0.12, 0.12)
+      if (cam.zoom < 1) cam.zoomTo(Math.min(1.3, Math.max(1, cam.zoom)), 500, 'Sine.easeInOut')
+    } else {
+      cam.stopFollow()
+      this.governor.setVelocity(0, 0)
+      this.interactPrompt.setVisible(false)
+      this.nearestInteractId = null
+    }
+    this.overlay.setGovernorActive(on)
+  }
+
+  /** 按 F：与最近的 AI 成员交互——在底部面板打开其信息 */
+  private tryInteract() {
+    if (!this.governorMode || this.isTextInputFocused()) return
+    if (this.nearestInteractId === null || !this.snap) return
+    const m = this.snap.members.find(x => x.id === this.nearestInteractId)
+    if (!m) return
+    this.cancelPendingMemberClick()
+    this.drawer.openMember(m, this.snap, this.portraitForMember(m))
+    this.playSfx('ui_click', 0.4)
+  }
+
+  /** 每帧推进总督移动与"按 F 交互"提示 */
+  private updateGovernor(time: number, delta: number) {
+    if (this.governorMode && !this.isTextInputFocused() && this.moveKeys) {
+      let dx = 0
+      let dy = 0
+      if (this.moveKeys.A?.isDown) dx -= 1
+      if (this.moveKeys.D?.isDown) dx += 1
+      if (this.moveKeys.W?.isDown) dy -= 1
+      if (this.moveKeys.S?.isDown) dy += 1
+      this.governor.setVelocity(dx, dy)
+    } else {
+      this.governor.setVelocity(0, 0)
+    }
+    this.governor.tick(time, delta)
+
+    // 交互提示：高亮最近的存活成员
+    if (!this.governorMode) {
+      this.interactPrompt.setVisible(false)
+      this.nearestInteractId = null
+      return
+    }
+    let best: MemberActor | null = null
+    let bestDist = INTERACT_RANGE
+    for (const actor of this.actors.values()) {
+      if (actor.isDying) continue
+      const d = Phaser.Math.Distance.Between(this.governor.x, this.governor.y, actor.x, actor.y)
+      if (d < bestDist) {
+        bestDist = d
+        best = actor
+      }
+    }
+    if (best) {
+      this.nearestInteractId = best.memberId
+      this.interactPrompt.setPosition(best.x, best.y - 92)
+      this.interactPrompt.setVisible(true)
+    } else {
+      this.nearestInteractId = null
+      this.interactPrompt.setVisible(false)
+    }
+  }
+
+  /** 角色头像规格（上半身）：从成员皮肤纹理裁取 */
+  private portraitForMember(m: WorldMember): PortraitSpec {
+    return portraitSpecFor(urlFor, skinFor(m.role, m.id, m.skin), 0, 'character')
+  }
+
+  /** 建筑头像规格（上半身）：从建筑 sheet 第 0 帧裁取 */
+  private portraitForBuilding(sheetFile: string): PortraitSpec {
+    return portraitSpecFor(urlFor, sheetFile, 0, 'building')
   }
 
   private wireHover() {
@@ -832,13 +958,15 @@ export class WorldScene extends Phaser.Scene {
         }
         const agentId = obj.getData?.('agentId') as string | undefined
         if (agentId) {
-          this.drawer.openWorkshop(agentId, this.snap)
+          const view = this.workshops.get(agentId)
+          const portrait = view ? this.portraitForBuilding(view.sprite.texture.key) : null
+          this.drawer.openWorkshop(agentId, this.snap, portrait)
           return
         }
         const key = obj.getData?.('buildingKey') as string | undefined
-        if (key === 'library') this.drawer.openLibrary(this.snap)
-        else if (key === 'valhalla') this.drawer.openValhalla(this.snap)
-        else if (key === 'spawn') this.drawer.openSpawn(this.snap)
+        if (key === 'library') this.drawer.openLibrary(this.snap, this.portraitForBuilding('building_library.png'))
+        else if (key === 'valhalla') this.drawer.openValhalla(this.snap, this.portraitForBuilding('building_valhalla.png'))
+        else if (key === 'spawn') this.drawer.openSpawn(this.snap, this.portraitForBuilding('building_spawn.png'))
       },
     )
 
@@ -1105,7 +1233,7 @@ export class WorldScene extends Phaser.Scene {
     const timer = this.time.delayedCall(220, () => {
       this.pendingMemberClick = null
       const fresh = this.snap?.members.find(item => item.id === member.id)
-      if (fresh && this.snap) this.drawer.openMember(fresh, this.snap)
+      if (fresh && this.snap) this.drawer.openMember(fresh, this.snap, this.portraitForMember(fresh))
     })
     this.pendingMemberClick = { memberId: member.id, timer }
   }
@@ -1218,6 +1346,7 @@ export class WorldScene extends Phaser.Scene {
   // ---------------------------------------------------------------- 主循环
   update(time: number, delta: number) {
     for (const actor of this.actors.values()) actor.tick(time, delta)
+    this.updateGovernor(time, delta)
     // 蝴蝶：白天飘向目标 + 正弦浮动（夜间隐去休息）
     const day = 1 - this.nightness
     for (const b of this.butterflies) {

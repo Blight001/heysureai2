@@ -23,6 +23,8 @@ export interface TooltipData {
 export class Overlay {
   private tooltip: HTMLDivElement
   private hud: HTMLDivElement
+  private govBtn: HTMLButtonElement | null = null
+  private govHint: HTMLDivElement | null = null
 
   constructor(parent: HTMLElement) {
     const style = document.createElement('style')
@@ -60,6 +62,21 @@ export class Overlay {
         padding: 5px 10px;
       }
       .gw-mute:hover { border-color: #5a6175; }
+      .gw-gov {
+        position: fixed; left: 12px; bottom: 48px; z-index: 30; cursor: pointer;
+        background: rgba(28, 30, 38, 0.88); border: 2px solid #4a4f5e; border-radius: 4px;
+        color: #d6dae2; font: 12px ui-monospace, "Cascadia Mono", Consolas, monospace;
+        padding: 5px 10px;
+      }
+      .gw-gov:hover { border-color: #5a6175; }
+      .gw-gov.active { border-color: #f0c060; color: #f0c060; }
+      .gw-gov-hint {
+        position: fixed; left: 12px; bottom: 84px; z-index: 30; display: none;
+        background: rgba(28, 30, 38, 0.88); border: 2px solid #f0c060; border-radius: 4px;
+        color: #f0e0b0; font: 11px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
+        padding: 5px 10px; max-width: 220px;
+      }
+      .gw-gov-hint.show { display: block; }
     `
     document.head.appendChild(style)
 
@@ -125,5 +142,29 @@ export class Overlay {
       onChange(muted)
     }
     parent.appendChild(btn)
+  }
+
+  /** 总督操控开关 + 操作提示（左下角） */
+  initGovernorButton(parent: HTMLElement, initialActive: boolean, onChange: (active: boolean) => void) {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'gw-gov'
+    this.govBtn = btn
+    const hint = document.createElement('div')
+    hint.className = 'gw-gov-hint'
+    hint.innerHTML = 'WASD 移动总督 · 走到 AI 旁按 <b>F</b> 交互 · 再次点击退出'
+    this.govHint = hint
+    this.setGovernorActive(initialActive)
+    btn.onclick = () => onChange(!btn.classList.contains('active'))
+    parent.appendChild(btn)
+    parent.appendChild(hint)
+  }
+
+  setGovernorActive(active: boolean) {
+    if (this.govBtn) {
+      this.govBtn.classList.toggle('active', active)
+      this.govBtn.textContent = active ? '🚪 退出总督' : '🎮 操控总督'
+    }
+    this.govHint?.classList.toggle('show', active)
   }
 }
