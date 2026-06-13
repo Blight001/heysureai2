@@ -9,7 +9,7 @@ from ``api.core.settings`` directly.
 import os
 import re
 
-from .settings import SERVER_DIR, SQLITE_FILE, SQLITE_URL, settings  # noqa: F401 (本模块刻意 re-export 这些历史别名)
+from .settings import SERVER_DIR, SQLITE_FILE, settings  # noqa: F401 (本模块刻意 re-export 这些历史别名)
 
 
 # ---------- Paths (no env, no migration needed) ----------

@@ -25,9 +25,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 SERVER_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPOSITORY_DIR = os.path.dirname(SERVER_DIR)
 DATA_DIR = os.path.join(SERVER_DIR, "data")
+# Retained only for the explicit one-shot SQLite-to-Postgres migration tool.
 SQLITE_FILE = os.path.join(DATA_DIR, "heysure.db")
-SQLITE_URL = f"sqlite:///{SQLITE_FILE}"
 
 
 class Settings(BaseSettings):
@@ -41,7 +42,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="HEYSURE_",
-        env_file=".env",
+        env_file=os.path.join(REPOSITORY_DIR, ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -59,9 +60,9 @@ class Settings(BaseSettings):
     # ---- Database ------------------------------------------------------------
 
     database_url: str = Field(
-        default=SQLITE_URL,
+        ...,
         alias="DATABASE_URL",
-        description="SQLAlchemy URL; ``sqlite:///...`` or ``postgresql+psycopg://...``.",
+        description="Required PostgreSQL SQLAlchemy URL.",
     )
     db_auto_migrate: bool = Field(
         default=True,
@@ -215,7 +216,11 @@ class Settings(BaseSettings):
     @classmethod
     def _strip_database_url(cls, value: object) -> object:
         if isinstance(value, str):
-            return value.strip() or SQLITE_URL
+            value = value.strip()
+        if not isinstance(value, str) or not value:
+            raise ValueError("DATABASE_URL is required and must point to PostgreSQL")
+        if not value.lower().startswith(("postgresql://", "postgresql+psycopg://")):
+            raise ValueError("DATABASE_URL must use PostgreSQL; SQLite is no longer supported")
         return value
 
     @field_validator(
@@ -242,8 +247,7 @@ class Settings(BaseSettings):
 
     @property
     def database_dialect(self) -> str:
-        url = self.database_url.lower()
-        return "postgresql" if url.startswith("postgres") else "sqlite"
+        return "postgresql"
 
     @property
     def psycopg_dsn(self) -> str:

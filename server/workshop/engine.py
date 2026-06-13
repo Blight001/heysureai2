@@ -38,6 +38,14 @@ _TOOL_HANDLERS = {
         "workshop.handlers",
         "install_skill_package",
     ),
+    "librarian.edit_inheritance_thought": (
+        "workshop.handlers",
+        "edit_inheritance_thought",
+    ),
+    "librarian.delete_inheritance_thought": (
+        "workshop.handlers",
+        "delete_inheritance_thought",
+    ),
 }
 
 # 同进程内每用户 ensure 去抖：presence 写盘不必每个请求都做。

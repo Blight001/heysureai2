@@ -186,7 +186,7 @@ AI_DISPATCH_MODE=remote
 
 | Variable | Description |
 | --- | --- |
-| `DATABASE_URL` | Database connection string. If omitted, the server can fall back to local SQLite. |
+| `DATABASE_URL` | Required PostgreSQL connection string. Startup fails if it is missing or uses another database. |
 | `HEYSURE_INTERNAL_TOKEN` | Bearer token used by the gateway when calling internal runtime `/internal/*` endpoints. |
 | `MCP_RUNTIME_URL` | MCP runtime URL. Defaults to `http://127.0.0.1:3001`. |
 | `CONNECTOR_RUNTIME_URL` | Connector runtime URL. Defaults to `http://127.0.0.1:3002`. |

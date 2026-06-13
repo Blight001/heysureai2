@@ -52,3 +52,40 @@ def install_skill_package(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def edit_inheritance_thought(
+    user_id: int,
+    args: Dict[str, Any],
+    ai_config_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    _ = ai_config_id
+    thought_id = str(args.get("id") or "").strip()
+    if not thought_id:
+        raise HTTPException(status_code=400, detail="id is required")
+    try:
+        return librarian_service.edit_inheritance_thought(
+            user_id=int(user_id),
+            thought_id=thought_id,
+            arguments=args,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def delete_inheritance_thought(
+    user_id: int,
+    args: Dict[str, Any],
+    ai_config_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    _ = ai_config_id
+    thought_id = str(args.get("id") or "").strip()
+    if not thought_id:
+        raise HTTPException(status_code=400, detail="id is required")
+    try:
+        return librarian_service.delete_inheritance_thought(
+            user_id=int(user_id),
+            thought_id=thought_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

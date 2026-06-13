@@ -1,7 +1,7 @@
 """Process entrypoint for the ``ai-runtime`` service.
 
-Consumes ``ChatRun`` rows queued by api-gateway (via NOTIFY on Postgres
-or polling on SQLite) and runs ``chat_worker._run_worker`` for each one.
+Consumes ``ChatRun`` rows queued by api-gateway via Postgres NOTIFY and runs
+``chat_worker._run_worker`` for each one.
 
 Required env:
     HEYSURE_SERVICE_ROLE=worker         — disables the local Socket.IO server

@@ -5,14 +5,9 @@ Wires Alembic to the project's single source of schema truth:
 - ``SQLModel.metadata`` — populated by importing :mod:`api.models` (the same
   metadata the application uses), so ``--autogenerate`` diffs against the live
   models.
-- ``settings.database_url`` — the same SQLAlchemy URL the app connects with,
-  so migrations always run against the configured backend (SQLite in dev /
-  single-node, Postgres in prod). ``ALEMBIC_DATABASE_URL`` can override it for
+- ``settings.database_url`` — the same PostgreSQL URL the app connects with.
+  ``ALEMBIC_DATABASE_URL`` can override it for
   one-off targets (e.g. CI's throwaway databases).
-
-``render_as_batch`` is enabled for SQLite so that ``ALTER TABLE`` operations
-that SQLite cannot do natively (drop/alter column) are emulated via the
-table-rebuild ("batch") strategy. It is a no-op on Postgres.
 """
 
 import os
@@ -29,6 +24,12 @@ _SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SERVER_DIR not in sys.path:
     sys.path.insert(0, _SERVER_DIR)
 
+# Let standalone Alembic commands use their explicit override without also
+# requiring a duplicate DATABASE_URL environment variable.
+_override_db_url = os.environ.get("ALEMBIC_DATABASE_URL")
+if _override_db_url:
+    os.environ.setdefault("DATABASE_URL", _override_db_url)
+
 # Importing the models package populates ``SQLModel.metadata`` as a side effect.
 from api import models  # noqa: E402,F401
 from api.core.settings import settings  # noqa: E402
@@ -39,14 +40,12 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Resolve the database URL: explicit override > app settings.
-_db_url = os.environ.get("ALEMBIC_DATABASE_URL") or settings.database_url
+_db_url = _override_db_url or settings.database_url
+if not _db_url.lower().startswith(("postgresql://", "postgresql+psycopg://")):
+    raise RuntimeError("Alembic requires a PostgreSQL DATABASE_URL")
 config.set_main_option("sqlalchemy.url", _db_url)
 
 target_metadata = SQLModel.metadata
-
-
-def _is_sqlite() -> bool:
-    return _db_url.lower().startswith("sqlite")
 
 
 def run_migrations_offline() -> None:
@@ -56,7 +55,6 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        render_as_batch=_is_sqlite(),
         compare_type=True,
     )
     with context.begin_transaction():
@@ -74,7 +72,6 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            render_as_batch=_is_sqlite(),
             compare_type=True,
         )
         with context.begin_transaction():

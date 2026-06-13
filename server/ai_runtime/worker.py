@@ -1,19 +1,13 @@
-"""``ai-runtime`` worker pool — consume chat runs from the queue.
+"""``ai-runtime`` worker pool — consume chat runs from the Postgres queue.
 
-The dispatcher is dialect-aware:
-- **Postgres**: a single LISTEN connection waits on the ``ai_run_queued``
+A single LISTEN connection waits on the ``ai_run_queued``
   channel. Each NOTIFY wakes the dispatcher, which then claims one row via
   ``SELECT … FROM chatrun WHERE status='queued' ORDER BY id FOR UPDATE
   SKIP LOCKED LIMIT 1``. Multiple ai-runtime instances can run side by
   side and the database arbitrates fairly.
-- **SQLite**: polling fallback, since SQLite has neither LISTEN/NOTIFY
-  nor real row-level locking. Only one ai-runtime instance is supported
-  in this mode.
 
-In both cases the actual heavy lifting is delegated to ``_run_worker``
-exactly like the monolith thread does today; the worker just runs it in
-a dedicated thread per claimed run and the dispatcher loops back for the
-next NOTIFY.
+The actual heavy lifting is delegated to ``_run_worker`` in a dedicated
+thread per claimed run, and the dispatcher loops back for the next NOTIFY.
 """
 
 from __future__ import annotations
@@ -38,17 +32,11 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = settings.database_url
 
 
-def database_dialect() -> str:
-    return settings.database_dialect
-
-
 def psycopg_dsn() -> str:
     return settings.psycopg_dsn
 
 
 QUEUE_CHANNEL = "ai_run_queued"
-POLL_INTERVAL_SECONDS = 2.0  # SQLite fallback only
-
 # Cap on simultaneous in-flight runs per ai-runtime instance. Each run holds
 # a thread + Python stack + an LLM HTTP connection, so unbounded growth from
 # a NOTIFY burst would exhaust the process. Override via env if you scale
@@ -74,17 +62,15 @@ def active_runs() -> Dict[str, Any]:
 
 
 def notify_queue(run_id: str) -> None:
-    """Best-effort NOTIFY for Postgres; no-op on SQLite.
+    """Best-effort Postgres NOTIFY after a queued run is committed.
 
     Callers must have already INSERTed the queued ChatRun row + committed.
     The payload carries the ``run_id`` so the dispatcher could (in theory)
     skip the SKIP LOCKED query, but we keep that path for fairness with
     multiple workers.
     """
-    if database_dialect() != "postgresql":
-        return
     try:
-        import psycopg  # local import keeps SQLite-only deployments lean
+        import psycopg
     except Exception:
         return
     try:
@@ -101,24 +87,18 @@ def notify_queue(run_id: str) -> None:
 
 def _claim_one_queued_run() -> Optional[ChatRun]:
     """Atomically claim one queued run; mark it running with a heartbeat."""
-    dialect = database_dialect()
     with Session(engine) as session:
-        if dialect == "postgresql":
-            from sqlalchemy import text
+        from sqlalchemy import text
 
-            row_id = session.exec(
-                text(
-                    "SELECT id FROM chatrun WHERE status = 'queued' "
-                    "ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1"
-                )
-            ).scalar_one_or_none()
-            if row_id is None:
-                return None
-            run = session.get(ChatRun, int(row_id))
-        else:
-            run = session.exec(
-                select(ChatRun).where(ChatRun.status == "queued").order_by(ChatRun.id)
-            ).first()
+        row_id = session.exec(
+            text(
+                "SELECT id FROM chatrun WHERE status = 'queued' "
+                "ORDER BY id FOR UPDATE SKIP LOCKED LIMIT 1"
+            )
+        ).scalar_one_or_none()
+        if row_id is None:
+            return None
+        run = session.get(ChatRun, int(row_id))
         if not run:
             return None
         now = time.time()
@@ -313,26 +293,14 @@ def _listen_postgres(stop_evt: threading.Event) -> None:
             backoff = min(backoff * 2, 30.0)
 
 
-def _poll_sqlite(stop_evt: threading.Event) -> None:
-    while not stop_evt.is_set():
-        try:
-            _drain_dispatcher()
-        except Exception:
-            logger.exception("poll sweep failed")
-        if stop_evt.wait(POLL_INTERVAL_SECONDS):
-            return
-
-
 def run_dispatcher_forever(stop_evt: Optional[threading.Event] = None) -> None:
     """Block forever, dispatching queued runs as they appear.
 
-    Designed to be called from ``ai_runtime/main.py``. Catches dialect once
-    at start and chooses the LISTEN/NOTIFY or polling path accordingly.
+    Designed to be called from ``ai_runtime/main.py``.
     """
     evt = stop_evt or threading.Event()
     logger.info(
-        f"dispatcher starting (dialect={database_dialect()}, "
-        f"db={DATABASE_URL.split('@')[-1]})"
+        f"dispatcher starting (dialect=postgresql, db={DATABASE_URL.split('@')[-1]})"
     )
     # Boot-time recovery sweep — re-enqueue any 'running' rows whose worker
     # died across the restart. The watchdog will reap if heartbeats are
@@ -343,7 +311,4 @@ def run_dispatcher_forever(stop_evt: Optional[threading.Event] = None) -> None:
             logger.warning(f"boot watchdog reaped {len(reaped)} stale runs")
     except Exception:
         logger.exception("boot reap failed")
-    if database_dialect() == "postgresql":
-        _listen_postgres(evt)
-    else:
-        _poll_sqlite(evt)
+    _listen_postgres(evt)

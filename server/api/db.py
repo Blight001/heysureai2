@@ -26,8 +26,7 @@ be in, so a single command works for new installs and existing deployments:
   head`` applies any new revisions (a fast no-op when already current).
 
 The legacy catch-up runs *outside* any Alembic transaction so its own
-``engine.begin()`` / ``sqlite3.connect`` connections never deadlock against an
-open migration transaction on SQLite.
+``engine.begin()`` connections do not conflict with Alembic's transaction.
 """
 
 import logging

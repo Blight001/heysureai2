@@ -60,6 +60,57 @@ TOOL_DEFS = [
         },
         "destructive": True,
     },
+    {
+        "name": "librarian.edit_inheritance_thought",
+        "description": (
+            "按行编辑一条传承思想的 SKILL.md。先调用 librarian.get_inheritance_thought "
+            "获取 lines、line_count 和 content_sha256，再基于行号提交一个 edit 或 edits 批次。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "传承思想 ID。"},
+                "expected_sha256": {
+                    "type": "string",
+                    "description": "读取时返回的 content_sha256；内容已变化时拒绝编辑。",
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": [
+                        "replace_line", "insert_before", "insert_after", "delete_line",
+                        "append", "prepend", "replace_all"
+                    ],
+                },
+                "line": {"type": "integer", "minimum": 1},
+                "line_number": {"type": "integer", "minimum": 1},
+                "start_line": {"type": "integer", "minimum": 1},
+                "end_line": {"type": "integer", "minimum": 1},
+                "text": {"type": "string"},
+                "content": {"type": "string", "description": "text 的别名。"},
+                "edits": {
+                    "type": "array",
+                    "description": "按数组顺序执行；后续编辑的行号基于前面编辑后的内容。",
+                    "items": {"type": "object"},
+                },
+            },
+            "required": ["id"],
+            "additionalProperties": False,
+        },
+        "destructive": True,
+    },
+    {
+        "name": "librarian.delete_inheritance_thought",
+        "description": "按 ID 删除一条传承思想的本地快照与索引记录。此操作不可恢复。",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "传承思想 ID。"},
+            },
+            "required": ["id"],
+            "additionalProperties": False,
+        },
+        "destructive": True,
+    },
 ]
 
 TOOL_NAMES = [item["name"] for item in TOOL_DEFS]

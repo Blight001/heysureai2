@@ -497,7 +497,148 @@ def read_inheritance_thought(*, user_id: int, thought_id: str) -> Dict[str, Any]
         slug=str(thought_id or "").strip(),
     )
     detail["id"] = str(detail.get("slug") or thought_id)
+    content = str(detail.get("skill_card") or "")
+    detail["lines"] = [
+        {"line": index, "text": text}
+        for index, text in enumerate(content.splitlines(), start=1)
+    ]
+    detail["line_count"] = len(detail["lines"])
+    detail["content_sha256"] = _text_sha256(content)
     return detail
+
+
+def _text_sha256(content: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(str(content or "").encode("utf-8")).hexdigest()
+
+
+def _line_number(value: Any, field: str, line_count: int) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be an integer") from exc
+    if number < 1 or number > line_count:
+        raise ValueError(f"{field} must be between 1 and {line_count}")
+    return number
+
+
+def _edit_text(edit: Dict[str, Any]) -> str:
+    if "text" in edit:
+        return str(edit.get("text") or "")
+    if "content" in edit:
+        return str(edit.get("content") or "")
+    return ""
+
+
+def _apply_one_skill_line_edit(lines: List[str], edit: Dict[str, Any]) -> None:
+    mode = str(edit.get("mode") or "").strip().lower()
+    if not mode and any(key in edit for key in ("line", "line_number", "start_line")):
+        mode = "replace_line"
+    if mode == "replace_all":
+        lines[:] = _edit_text(edit).splitlines()
+        return
+    if mode in {"append", "prepend"}:
+        new_lines = _edit_text(edit).splitlines()
+        if mode == "append":
+            lines.extend(new_lines)
+        else:
+            lines[:0] = new_lines
+        return
+    if not lines:
+        raise ValueError(f"{mode or 'line edit'} requires non-empty content")
+
+    if mode in {"replace_line", "delete_line"}:
+        start_raw = edit.get("start_line", edit.get("line", edit.get("line_number")))
+        if start_raw is None:
+            raise ValueError("line/line_number/start_line is required")
+        end_raw = edit.get("end_line", start_raw)
+        start = _line_number(start_raw, "start_line", len(lines))
+        end = _line_number(end_raw, "end_line", len(lines))
+        if end < start:
+            raise ValueError("end_line must be >= start_line")
+        replacement = [] if mode == "delete_line" else _edit_text(edit).splitlines()
+        lines[start - 1:end] = replacement
+        return
+    if mode in {"insert_before", "insert_after"}:
+        raw = edit.get("line", edit.get("line_number", edit.get("start_line")))
+        if raw is None:
+            raise ValueError("line/line_number is required")
+        number = _line_number(raw, "line", len(lines))
+        index = number - 1 if mode == "insert_before" else number
+        lines[index:index] = _edit_text(edit).splitlines()
+        return
+    raise ValueError(
+        "unsupported edit mode; use replace_line, insert_before, insert_after, "
+        "delete_line, append, prepend, or replace_all"
+    )
+
+
+def _apply_skill_line_edits(content: str, arguments: Dict[str, Any]) -> tuple[str, int]:
+    raw_edits = arguments.get("edits")
+    if isinstance(raw_edits, list) and raw_edits:
+        if not all(isinstance(item, dict) for item in raw_edits):
+            raise ValueError("edits must be an array of objects")
+        edits = list(raw_edits)
+    else:
+        edits = [arguments]
+    lines = str(content or "").splitlines()
+    had_trailing_newline = str(content or "").endswith("\n")
+    for edit in edits:
+        _apply_one_skill_line_edit(lines, edit)
+    updated = "\n".join(lines)
+    if had_trailing_newline and updated:
+        updated += "\n"
+    return updated, len(edits)
+
+
+def edit_inheritance_thought(
+    *,
+    user_id: int,
+    thought_id: str,
+    arguments: Dict[str, Any],
+) -> Dict[str, Any]:
+    thought_id = _normalize_clawhub_slug(thought_id)
+    current = clawhub_installed_skill_detail(user_id=int(user_id), slug=thought_id)
+    old_content = str(current.get("skill_card") or "")
+    expected = str(arguments.get("expected_sha256") or "").strip().lower()
+    old_sha256 = _text_sha256(old_content)
+    if expected and expected != old_sha256:
+        raise ValueError("SKILL.md changed after it was read; read it again before editing")
+    new_content, edit_count = _apply_skill_line_edits(old_content, arguments)
+    updated = update_clawhub_installed_skill(
+        user_id=int(user_id),
+        slug=thought_id,
+        skill_card=new_content,
+    )
+
+    item = updated.get("detail", {}).get("skill") if isinstance(updated.get("detail"), dict) else None
+    if isinstance(item, dict):
+        install_dir = _clawhub_installed_dir(int(user_id), item)
+        metadata = _skill_card_metadata(install_dir, str(item.get("displayName") or thought_id))
+        state = _load_clawhub_state(int(user_id))
+        installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
+        if isinstance(installed.get(thought_id), dict):
+            installed[thought_id]["displayName"] = metadata["name"]
+            installed[thought_id]["summary"] = metadata["description"]
+            state["installed"] = installed
+            _save_clawhub_state(int(user_id), state)
+    return {
+        "updated": True,
+        "id": thought_id,
+        "edit_count": edit_count,
+        "old_sha256": old_sha256,
+        "content_sha256": _text_sha256(new_content),
+        "line_count": len(new_content.splitlines()),
+    }
+
+
+def delete_inheritance_thought(*, user_id: int, thought_id: str) -> Dict[str, Any]:
+    result = delete_clawhub_installed_skill(
+        user_id=int(user_id),
+        slug=str(thought_id or "").strip(),
+    )
+    return {"deleted": True, "id": str(result.get("slug") or thought_id)}
 
 
 _SAFE_SKILLS_PACKAGE = re.compile(r"^[^\x00-\x1f\x7f]{1,500}$")

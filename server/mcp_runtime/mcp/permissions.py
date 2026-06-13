@@ -63,6 +63,8 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "prompt.write_system": ROLE_ASSISTANT_ADMIN,
     # Knowledge workshop package installation writes user-level global skills.
     "librarian.install_skill_package": ROLE_MANAGER,
+    "librarian.edit_inheritance_thought": ROLE_MANAGER,
+    "librarian.delete_inheritance_thought": ROLE_MANAGER,
     # Send message — outbound to the human user; every tier by default.
     "message.send_to_user": ROLE_MEMBER,
     # Conversation maintenance — every tier can manage its own scoped sessions.

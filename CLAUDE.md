@@ -34,7 +34,7 @@ API Gateway (3000)  ──对外唯一入口，挂载 server/gateway/routers/*
 
 - 4 个进程**共享** `server/api/` 这一层（模型、DB、认证、服务、配置）；各 `*_runtime/` 只负责把共享层接成一个进程。
 - 进程角色通过启动前设置环境变量区分（见各 `*_runtime/main.py` 顶部注释）。
-- 默认数据库：未配置 `DATABASE_URL` 时回落到 `server/data/heysure.db` (SQLite)；生产用 Postgres。
+- 数据库仅支持 PostgreSQL，`DATABASE_URL` 为必填项。
 
 ## 常用命令
 

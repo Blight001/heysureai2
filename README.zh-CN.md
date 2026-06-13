@@ -184,7 +184,7 @@ AI_DISPATCH_MODE=remote
 
 | 变量 | 说明 |
 | --- | --- |
-| `DATABASE_URL` | 数据库连接，未配置时可回退到本地 SQLite |
+| `DATABASE_URL` | 必填的 PostgreSQL 数据库连接；缺失或使用其他数据库时服务拒绝启动 |
 | `HEYSURE_INTERNAL_TOKEN` | Gateway 访问内部 runtime `/internal/*` 接口的令牌 |
 | `MCP_RUNTIME_URL` | MCP runtime 地址，默认 `http://127.0.0.1:3001` |
 | `CONNECTOR_RUNTIME_URL` | Connector runtime 地址，默认 `http://127.0.0.1:3002` |

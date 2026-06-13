@@ -32,7 +32,7 @@ HEYSURE_INTERNAL_TOKEN=heysure-dev-internal-token-change-me
 
 重要变量：
 
-- `DATABASE_URL`：数据库连接。未配置时默认使用 `server/data/heysure.db`。
+- `DATABASE_URL`：必填的 PostgreSQL 数据库连接；缺失或使用其他数据库时服务拒绝启动。
 - `HEYSURE_INTERNAL_TOKEN`：拆分进程之间访问 `/internal/*` 接口时使用的内部令牌。
 - `MCP_RUNTIME_URL`：MCP runtime 地址，默认 `http://127.0.0.1:3001`。
 - `CONNECTOR_RUNTIME_URL`：connector runtime 地址，默认 `http://127.0.0.1:3002`。
@@ -50,7 +50,7 @@ HEYSURE_INTERNAL_TOKEN=heysure-dev-internal-token-change-me
 | `ai_runtime/` | AI worker 入口、任务队列消费、推理流程和内部状态服务 |
 | `mcp_runtime/` | MCP 插件加载、工具注册、工具 HTTP 包装 |
 | `connector_runtime/` | 外部连接器、机器人适配器和 endpoint agent 调度 |
-| `data/` | 本地数据、workspace、SQLite 默认数据库 |
+| `data/` | 本地运行数据与 workspace |
 | `logs/` | 服务日志 |
 | `scripts/` | 辅助脚本 |
 | `static/` | 后端静态资源 |
