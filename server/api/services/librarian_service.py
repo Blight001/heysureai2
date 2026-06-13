@@ -101,7 +101,7 @@ _INTRINSIC_TOOL_DESCRIPTIONS_ZH = {
     "prompt.read_system": "读取当前用户的全局/系统 prompt 模板；当前 AI 基础 prompt 请使用 prompt.read_ai。",
     "prompt.write_ai": "按行编辑一个 AI 配置的 prompt；未指定目标时编辑当前 AI。",
     "prompt.write_system": "按行编辑一个全局/系统 prompt 模板；主要用于运行时注入模板或旧版兜底模板。",
-    "task.complete": "将当前任务标记为已完成，并可附带完成摘要。",
+    "task.complete": "将当前任务标记为已完成，必须提供非空完成摘要。",
     "task.create": "创建任务，支持立即执行、一次性定时或循环任务。",
     "task.delete": "管理员或管理者接管工具：硬删除任务，停止活跃运行并清理相关任务会话消息。",
     "task.inherit": "在任务轮换到下一代之前提交传承摘要。",

@@ -107,8 +107,6 @@ interface AgentProps {
 const props = defineProps<AgentProps>()
 const emit = defineEmits<{
   (e: 'context', payload: { agent: AgentProps['agent']; x: number; y: number }): void
-  (e: 'show-tools', agent: AgentProps['agent']): void
-  (e: 'show-context', agent: AgentProps['agent']): void
   (e: 'chat', agent: AgentProps['agent']): void
   (e: 'show-tasks', agent: AgentProps['agent']): void
   (e: 'show-task-detail', payload: { agent: AgentProps['agent']; jobId: string }): void
@@ -166,6 +164,7 @@ const statusDisplay = computed(() => {
     default: return { text: '未知', class: 'text-gray-500' }
   }
 })
+const showStatusDisplay = computed(() => !statusDisplay.value.text.startsWith('空闲中'))
 
 const cardBorderClass = computed(() => {
   if (props.agent.aiRole === 'assistant_admin') return 'border-2 border-violet-300 ring-1 ring-inset ring-violet-200/80 shadow-[0_0_14px_rgba(196,181,253,0.5)] dark:border-violet-400/70 dark:ring-violet-500/35 dark:shadow-[0_0_16px_rgba(139,92,246,0.22)]'
@@ -215,9 +214,6 @@ const scheduledTaskSnapshots = computed(() => {
 const showTaskSnapshotBlock = computed(() => {
   if (props.agent.aiRole !== 'digital_member') return false
   return Boolean(taskSnapshotDisplay.value || scheduledTaskSnapshots.value.length > 0)
-})
-const showWorkspaceContextButton = computed(() => {
-  return props.agent.aiRole === 'digital_member' && props.agent.digitalMemberRole === 'manager'
 })
 
 const roleBadge = computed(() => {
@@ -557,10 +553,7 @@ const onCardPointerUp = (event: PointerEvent) => {
             <span class="truncate">{{ agent.platform }}</span>
           </span>
         </h3>
-        <div
-          v-if="botConnection || desktopConnection || browserConnection"
-          class="mt-2 flex flex-wrap items-center justify-start gap-1.5"
-        >
+        <div class="mt-2 flex flex-wrap items-center justify-start gap-1.5">
           <span
             v-if="botConnection"
             class="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-none"
@@ -568,6 +561,9 @@ const onCardPointerUp = (event: PointerEvent) => {
             :title="botConnection.title"
           >
             {{ botConnection.text }}
+          </span>
+          <span class="shrink-0 text-xs font-mono text-zinc-400 dark:text-zinc-500">
+            ID: {{ agent.id.slice(-4) }}
           </span>
           <span
             v-if="desktopConnection"
@@ -598,9 +594,10 @@ const onCardPointerUp = (event: PointerEvent) => {
     </div>
 
     <!-- 状态标签 -->
-    <div v-if="!isAssistantAdmin" class="mb-3 flex justify-between items-start gap-2 min-w-0">
+    <div v-if="!isAssistantAdmin && (showStatusDisplay || showRecentUserChatBadge)" class="mb-3 flex items-start gap-2 min-w-0">
       <div class="flex flex-wrap items-start gap-1.5 min-w-0">
         <span
+          v-if="showStatusDisplay"
           class="px-2 py-1 rounded text-xs font-medium border break-words"
           :class="statusDisplay.class"
         >
@@ -614,17 +611,14 @@ const onCardPointerUp = (event: PointerEvent) => {
           最近1分钟内用户沟通
         </span>
       </div>
-      <span class="text-xs font-mono text-zinc-400 dark:text-zinc-500 shrink-0">ID: {{ agent.id.slice(-4) }}</span>
     </div>
-    <div v-else class="mb-3 flex justify-end items-start gap-2 min-w-0">
+    <div v-else-if="showRecentUserChatBadge" class="mb-3 flex items-start gap-2 min-w-0">
       <span
-        v-if="showRecentUserChatBadge"
         class="px-2 py-1 rounded text-xs font-medium border border-cyan-200 bg-cyan-50 text-cyan-700 dark:border-cyan-500/40 dark:bg-cyan-500/10 dark:text-cyan-300"
         title="最近 1 分钟内收到用户对话数据"
       >
         最近1分钟内用户沟通
       </span>
-      <span class="text-xs font-mono text-zinc-400 dark:text-zinc-500 shrink-0">ID: {{ agent.id.slice(-4) }}</span>
     </div>
 
     <!-- 生命条 / Token 消耗 -->
@@ -717,16 +711,6 @@ const onCardPointerUp = (event: PointerEvent) => {
 
     <!-- 底部操作栏 (上帝干预) -->
     <div v-if="canControl && agent.status !== 'dead'" class="flex justify-end gap-2 mt-3 pt-2 border-t border-zinc-50 opacity-0 group-hover:opacity-100 transition-opacity dark:border-zinc-800">
-      <button class="text-xs text-zinc-500 hover:text-indigo-600 px-2 py-1 hover:bg-zinc-50 rounded transition-colors dark:text-zinc-400 dark:hover:text-indigo-300 dark:hover:bg-zinc-800" @click.stop="emit('show-tools', agent)">
-        查看 MCP
-      </button>
-      <button
-        v-if="showWorkspaceContextButton"
-        class="text-xs text-zinc-500 hover:text-indigo-600 px-2 py-1 hover:bg-zinc-50 rounded transition-colors dark:text-zinc-400 dark:hover:text-indigo-300 dark:hover:bg-zinc-800"
-        @click.stop="emit('show-context', agent)"
-      >
-        读取目录
-      </button>
       <button v-if="!isAssistantAdmin" class="text-xs text-zinc-500 hover:text-indigo-600 px-2 py-1 hover:bg-zinc-50 rounded transition-colors dark:text-zinc-400 dark:hover:text-indigo-300 dark:hover:bg-zinc-800" @click.stop="emit('show-tasks', agent)">
         任务列表
       </button>

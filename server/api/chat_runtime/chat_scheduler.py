@@ -180,7 +180,7 @@ def _start_task_run(
         + briefing_block
         + (f"[上代关键上下文]\n{previous_summary}\n\n" if previous_summary else "")
         + unfinished_block
-        + f"执行完成后请调用 MCP 工具 `task.complete`（参数包含 `job_id={job.job_id}`）标记任务完成。"
+        + f"执行完成后请调用 MCP 工具 `task.complete`（参数包含 `job_id={job.job_id}` 和非空 `summary`）标记任务完成。"
     )
     user_msg = _save_message(
         session,

@@ -33,6 +33,7 @@ type CachedOutcome =
 
 export class HeySureAgent {
   private socket: Socket | null = null
+  private registrationRetryTimer: ReturnType<typeof setInterval> | null = null
   private taskOutcomes = new Map<string, CachedOutcome>()
   private settings: AgentSettings
   private events: AgentEvents
@@ -114,10 +115,11 @@ export class HeySureAgent {
     this.socket.on('connect', () => {
       this.setStatus('connected')
       this.log('info', '已连接到服务器')
-      this.register()
+      this.startRegistrationHandshake()
     })
 
     this.socket.on('disconnect', (reason: string) => {
+      this.stopRegistrationHandshake()
       this.setStatus('disconnected', reason)
       this.log('warn', `连接断开: ${reason}`)
     })
@@ -128,6 +130,7 @@ export class HeySureAgent {
     })
 
     this.socket.on('device:registered', (data: any) => {
+      this.stopRegistrationHandshake()
       const raw = data?.aiConfigId
       const n = typeof raw === 'number' ? raw : (raw != null && String(raw).trim() !== '' ? Number(raw) : null)
       this._boundAiConfigId = Number.isFinite(n as number) ? (n as number) : null
@@ -138,6 +141,7 @@ export class HeySureAgent {
     })
 
     this.socket.on('device:register_rejected', (data: any) => {
+      this.stopRegistrationHandshake()
       const reason = data?.reason || '注册被拒绝'
       this.setStatus('error', reason)
       this.log('error', `注册失败: ${reason}`)
@@ -157,6 +161,7 @@ export class HeySureAgent {
   }
 
   disconnect(): void {
+    this.stopRegistrationHandshake()
     this.socket?.disconnect()
     this.socket = null
     // A deliberate close is not a reconnect — clear the orange prompt so we
@@ -165,7 +170,31 @@ export class HeySureAgent {
     this.setStatus('disconnected')
   }
 
-  private register(): void {
+  private stopRegistrationHandshake(): void {
+    if (this.registrationRetryTimer) {
+      clearInterval(this.registrationRetryTimer)
+      this.registrationRetryTimer = null
+    }
+  }
+
+  private startRegistrationHandshake(): void {
+    this.stopRegistrationHandshake()
+    if (!this.register()) return
+    // A transport connection is not enough for the server to expose this
+    // device. Keep registering until the server confirms device:registered;
+    // this also heals a connection whose first custom event was lost while
+    // Socket.IO was finishing its reconnect handshake.
+    this.registrationRetryTimer = setInterval(() => {
+      if (!this.socket?.connected || this._status === 'registered') {
+        this.stopRegistrationHandshake()
+        return
+      }
+      this.log('warn', '尚未收到服务器注册确认，正在重试')
+      this.register()
+    }, 3000)
+  }
+
+  private register(): boolean {
     const deviceId = this.settings.deviceId ||
       `agent-${os.hostname().toLowerCase().replace(/[^a-z0-9]/g, '-')}`
     const hasAuth = !!this.settings.authToken
@@ -173,29 +202,38 @@ export class HeySureAgent {
     // connects; an operator assigns a server-side AI to this device from the
     // web Workshop ("作坊") panel. The server re-applies that binding on every
     // register, so we send aiConfigId: null and let the server decide.
-    this.log('info', '注册 agent（AI 由服务器作坊分配）')
-    this.socket?.emit('device:register', {
-      id: deviceId,
-      name: this.settings.agentName || os.hostname(),
-      group: this.settings.agentGroup || '',
-      platform: `win32-desktop (${os.hostname()})`,
-      os: getPlatformInfo(),
-      capabilities: getAvailableTools(),
-      // Full self-described tool schemas (with the user's local description edits
-      // merged in). The server stores these and surfaces them in mcp.list_tools /
-      // describe_tool instead of hardcoding desktop tool schemas, so a tool added
-      // to the catalog — or a description edited in the app — needs no server change.
-      toolDefs: this.effectiveToolDefs(),
-      version: '2.0.0',
-      // The server requires a valid user JWT. ``authToken`` is the source
-      // of truth; agentToken is kept as a legacy shared-secret fallback.
-      token: this.settings.authToken || this.settings.agentToken || '',
-      workspaceRoot: this.workspaceRoot,
-      lifecycle: 'registered',
-      isWindowsDesktop: true,
-      aiConfigId: null,
-      userId: hasAuth ? this.settings.userId : null,
-    })
+    try {
+      this.log('info', '注册 agent（AI 由服务器作坊分配）')
+      this.socket?.emit('device:register', {
+        id: deviceId,
+        name: this.settings.agentName || os.hostname(),
+        group: this.settings.agentGroup || '',
+        platform: `win32-desktop (${os.hostname()})`,
+        os: getPlatformInfo(),
+        capabilities: getAvailableTools(),
+        // Full self-described tool schemas (with the user's local description edits
+        // merged in). The server stores these and surfaces them in mcp.list_tools /
+        // describe_tool instead of hardcoding desktop tool schemas, so a tool added
+        // to the catalog — or a description edited in the app — needs no server change.
+        toolDefs: this.effectiveToolDefs(),
+        version: '2.0.0',
+        // The server requires a valid user JWT. ``authToken`` is the source
+        // of truth; agentToken is kept as a legacy shared-secret fallback.
+        token: this.settings.authToken || this.settings.agentToken || '',
+        workspaceRoot: this.workspaceRoot,
+        lifecycle: 'registered',
+        isWindowsDesktop: true,
+        aiConfigId: null,
+        userId: hasAuth ? this.settings.userId : null,
+      })
+      return true
+    } catch (err: any) {
+      const reason = err?.message || String(err)
+      this.stopRegistrationHandshake()
+      this.setStatus('error', reason)
+      this.log('error', `注册负载构造失败: ${reason}`)
+      return false
+    }
   }
 
   refreshRegistration(): void {

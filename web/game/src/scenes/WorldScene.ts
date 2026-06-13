@@ -115,7 +115,7 @@ export class WorldScene extends Phaser.Scene {
   /** 夜深度 0..1（昼夜系统每分钟更新，光晕/萤火虫/蝴蝶联动） */
   private nightness = 0
   private worldHour = 12
-  private nightGlows: { img: Phaser.GameObjects.Image; base: number; phase: number }[] = []
+  private nightGlows: { img: Phaser.GameObjects.Image; base: number; pulse: number; phase: number }[] = []
   private fireflies: { img: Phaser.GameObjects.Image; vx: number; vy: number; phase: number }[] = []
   /**
    * 辅助管理员操控：把世界里已有的「辅助管理员」当作玩家化身，
@@ -339,7 +339,7 @@ export class WorldScene extends Phaser.Scene {
     this.nightOverlay.setBlendMode(Phaser.BlendModes.MULTIPLY)
     const WHITE = Phaser.Display.Color.ValueToColor(0xffffff)
     const DUSK = Phaser.Display.Color.ValueToColor(0xe09a64) // 黄昏暖橙
-    const NIGHT = Phaser.Display.Color.ValueToColor(0x3d4a86) // 深夜蓝
+    const NIGHT = Phaser.Display.Color.ValueToColor(0x6473a8) // 保留道路与建筑细节的月夜蓝
     const apply = () => {
       const rawHour = new URLSearchParams(window.location.search).get('hour')
       const debugHour = rawHour === null ? NaN : Number(rawHour)
@@ -688,11 +688,11 @@ export class WorldScene extends Phaser.Scene {
     for (const tx of [12, 22, 32, 42, 50]) {
       const lamp = deco('lamp.png', tx * TILE + 16, 21 * TILE - 2)
       this.lamps.push(lamp)
-      this.addNightGlow(lamp.x, lamp.y - 44, 0xffcc66, 3.4, 0.5)
+      this.addStreetLampGlow(lamp)
     }
     const streetLamp = deco('lamp.png', 30 * TILE + 16, 31 * TILE) // 作坊街路口
     this.lamps.push(streetLamp)
-    this.addNightGlow(streetLamp.x, streetLamp.y - 44, 0xffcc66, 3.4, 0.5)
+    this.addStreetLampGlow(streetLamp)
     // 建筑灯火与泉水的夜光
     this.addNightGlow(880, 438, 0xffb866, 6, 0.35) // 图书馆窗火
     this.addNightGlow(1540, 250, 0xffa040, 4.2, 0.45) // 英灵殿长明火
@@ -741,15 +741,29 @@ export class WorldScene extends Phaser.Scene {
     })
   }
 
-  /** 注册一个夜间发光点（ADD 混合，盖在夜色层之上，白天不可见） */
-  private addNightGlow(x: number, y: number, color: number, scale: number, base: number) {
+  /** 灯泡发光之外，再把暖光投射到灯柱周围的路面。 */
+  private addStreetLampGlow(lamp: Phaser.GameObjects.Image) {
+    this.addNightGlow(lamp.x, lamp.y - 44, 0xffd477, 4.4, 0.62)
+    this.addNightGlow(lamp.x, lamp.y - 2, 0xffbd5b, 12.5, 0.38, 4.5, 0.02)
+  }
+
+  /** 注册一个夜间发光点（ADD 混合，盖在夜色层之上，白天不可见）。 */
+  private addNightGlow(
+    x: number,
+    y: number,
+    color: number,
+    scaleX: number,
+    base: number,
+    scaleY = scaleX,
+    pulse = 0.12,
+  ) {
     const img = this.add.image(x, y, 'glow.png', 0)
     img.setBlendMode(Phaser.BlendModes.ADD)
     img.setTint(color)
-    img.setScale(scale)
+    img.setScale(scaleX, scaleY)
     img.setDepth(155000)
     img.setAlpha(0)
-    this.nightGlows.push({ img, base, phase: Math.random() * Math.PI * 2 })
+    this.nightGlows.push({ img, base, pulse, phase: Math.random() * Math.PI * 2 })
   }
 
   private spawnSmoke(x: number, y: number) {
@@ -1435,7 +1449,7 @@ export class WorldScene extends Phaser.Scene {
     }
     // 夜间灯光光晕：呼吸式微闪
     for (const g of this.nightGlows) {
-      g.img.setAlpha(this.nightness * (g.base + 0.12 * Math.sin(time / 480 + g.phase)))
+      g.img.setAlpha(this.nightness * (g.base + g.pulse * Math.sin(time / 480 + g.phase)))
     }
     // 萤火虫：夜间游移 + 呼吸闪烁，碰到边界反弹
     if (this.nightness > 0.05) {

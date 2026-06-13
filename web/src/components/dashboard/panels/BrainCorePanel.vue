@@ -40,8 +40,6 @@ interface Props {
 const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'context', payload: { agent: Agent; x: number; y: number }): void
-  (e: 'show-tools', agent: Agent): void
-  (e: 'show-context', agent: Agent): void
   (e: 'show-tasks', agent: Agent): void
   (e: 'show-task-detail', payload: { agent: Agent; jobId: string }): void
   (e: 'chat', agent: Agent): void
@@ -116,8 +114,6 @@ const toggleViewMode = () => {
             :key="agent.id"
             :agent="agent"
             @context="emit('context', $event)"
-            @show-tools="emit('show-tools', $event)"
-            @show-context="emit('show-context', $event)"
             @show-tasks="emit('show-tasks', $event)"
             @show-task-detail="emit('show-task-detail', $event)"
             @chat="emit('chat', $event)"
@@ -139,8 +135,6 @@ const toggleViewMode = () => {
             :key="agent.id"
             :agent="agent"
             @context="emit('context', $event)"
-            @show-tools="emit('show-tools', $event)"
-            @show-context="emit('show-context', $event)"
             @show-tasks="emit('show-tasks', $event)"
             @show-task-detail="emit('show-task-detail', $event)"
             @chat="emit('chat', $event)"
@@ -162,8 +156,6 @@ const toggleViewMode = () => {
             :key="agent.id"
             :agent="agent"
             @context="emit('context', $event)"
-            @show-tools="emit('show-tools', $event)"
-            @show-context="emit('show-context', $event)"
             @show-tasks="emit('show-tasks', $event)"
             @show-task-detail="emit('show-task-detail', $event)"
             @chat="emit('chat', $event)"

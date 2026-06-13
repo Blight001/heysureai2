@@ -279,14 +279,18 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     ))
     registry.register(MCPTool(
         name="task.complete",
-        description="Mark current task as completed.",
+        description="Mark current task as completed with a required completion summary.",
         input_schema={
             "type": "object",
             "properties": {
                 "job_id": {"type": "string"},
-                "summary": {"type": "string"},
+                "summary": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Non-empty completion summary.",
+                },
             },
-            "required": [],
+            "required": ["summary"],
         },
         handler=_task_complete,
         destructive=True,

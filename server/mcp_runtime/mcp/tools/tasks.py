@@ -917,6 +917,8 @@ def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[in
         raise HTTPException(status_code=400, detail="ai_config_id is required for task tools")
     job_id = str(args.get("job_id") or "").strip()
     summary = str(args.get("summary") or "").strip()
+    if not summary:
+        raise HTTPException(status_code=400, detail="summary is required for task.complete")
     with Session(engine) as session:
         row = None
         if job_id:

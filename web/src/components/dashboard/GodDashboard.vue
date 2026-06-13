@@ -28,7 +28,6 @@ const WorldArenaPanel = defineAsyncComponent(() => import('./panels/WorldArenaPa
 const ValhallaPanel = defineAsyncComponent(() => import('./panels/ValhallaPanel.vue'))
 const ChatInterface = defineAsyncComponent(() => import('@/components/chat/ChatInterface.vue'))
 const McpToolsModal = defineAsyncComponent(() => import('./modals/McpToolsModal.vue'))
-const WorkspaceContextModal = defineAsyncComponent(() => import('./modals/WorkspaceContextModal.vue'))
 const TaskManagementModal = defineAsyncComponent(() => import('./modals/TaskManagementModal.vue'))
 const AiConfigModal = defineAsyncComponent(() => import('./modals/AiConfigModal.vue'))
 const AdminModal = defineAsyncComponent(() => import('./modals/AdminModal.vue'))
@@ -167,19 +166,7 @@ const {
   toolModalOpen,
   toolModalTitle,
   toolModalItems,
-  workspaceContextModalOpen,
-  workspaceContextModalLoading,
-  workspaceContextModalTitle,
-  workspaceContextModalTree,
-  workspaceContextModalGitDiff,
-  workspaceContextModalError,
-  workspaceContextModalChanged,
-  workspaceContextModalTarget,
-  showAgentTools,
   showAllServerMcpTools,
-  closeWorkspaceContextModal,
-  loadAgentWorkspaceContext,
-  openAgentWorkspaceContext,
 } = useMcpAndWorkspaceModal({ mcpToolMetaByName })
 
 const defaultMcpTools = [...DEFAULT_MCP_TOOLS]
@@ -272,10 +259,6 @@ const findFreshAgent = (agent: Agent | null) => {
 const syncOpenAgentReferences = () => {
   chatTarget.value = findFreshAgent(chatTarget.value)
   taskListTarget.value = findFreshAgent(taskListTarget.value)
-  workspaceContextModalTarget.value = findFreshAgent(workspaceContextModalTarget.value)
-  if (workspaceContextModalTarget.value) {
-    workspaceContextModalTitle.value = workspaceContextModalTarget.value.name
-  }
 }
 
 const refreshDashboardAfterSave = async () => {
@@ -515,8 +498,6 @@ onUnmounted(() => {
             :brain-view-mode="brainViewMode"
             @context="openContextMenu"
             @update:brain-view-mode="saveBrainViewMode"
-            @show-tools="showAgentTools"
-            @show-context="openAgentWorkspaceContext"
             @show-tasks="openAgentTaskList"
             @show-task-detail="openAgentTaskDetailFromCard"
             @chat="openAgentChat"
@@ -567,19 +548,6 @@ onUnmounted(() => {
       :title="toolModalTitle"
       :items="toolModalItems"
       @close="toolModalOpen = false"
-    />
-
-    <WorkspaceContextModal
-      :show="workspaceContextModalOpen"
-      :loading="workspaceContextModalLoading"
-      :title="workspaceContextModalTitle"
-      :tree="workspaceContextModalTree"
-      :gitDiff="workspaceContextModalGitDiff"
-      :error="workspaceContextModalError"
-      :changedPaths="workspaceContextModalChanged"
-      :canRefresh="!!workspaceContextModalTarget"
-      @close="closeWorkspaceContextModal"
-      @refresh="workspaceContextModalTarget && loadAgentWorkspaceContext(workspaceContextModalTarget)"
     />
 
     <TaskManagementModal
