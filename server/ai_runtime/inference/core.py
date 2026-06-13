@@ -24,13 +24,13 @@ from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, User
 from api.services import valhalla_service
 from ai_runtime.inference import ai_message_service
-from connector_runtime.dispatch.agent_dispatch import (
+from connector_runtime.dispatch.device_dispatch import (
     dispatch_endpoint_tool_and_wait,
     get_run_session_context,
     set_run_session_context,
 )
 from api.services.task_completion_notify import notify_task_completion
-from connector_runtime.dispatch.desktop_agent_tools import (
+from connector_runtime.dispatch.desktop_device_tools import (
     build_endpoint_tools_payload,
     endpoint_bridge_tools_for_config,
     endpoint_tools_for_config,
@@ -478,7 +478,7 @@ async def _call_mcp_or_endpoint_tool(
     if is_endpoint_agent_tool(tool):
         # Desktop / browser agents register their socket on the api-gateway, so
         # endpoint-tool dispatch is served there (gateway.routers.
-        # agent_dispatch_internal). In the monolith api_gateway_url is empty and
+        # device_dispatch_internal). In the monolith api_gateway_url is empty and
         # we dispatch in-process below.
         agent_host_url = settings.api_gateway_url
         if agent_host_url:
@@ -1200,7 +1200,7 @@ def _run_worker_impl(
                         effective_tool_allowlist = {
                             str(tool).strip() for tool in tools if isinstance(tool, str) and str(tool).strip()
                         }
-                        from connector_runtime.dispatch.desktop_agent_tools import strip_endpoint_tool_config_names
+                        from connector_runtime.dispatch.desktop_device_tools import strip_endpoint_tool_config_names
 
                         effective_tool_allowlist = strip_endpoint_tool_config_names(
                             with_workspace_read_by_name_compat(effective_tool_allowlist)

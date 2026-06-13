@@ -92,7 +92,7 @@ def create_app() -> FastAPI:
         # Re-establish the caller's run session context so tools that rely on
         # get_run_session_context() (conversation.*, communication.*) work in
         # the split (remote HTTP) deployment, then restore the previous value.
-        from connector_runtime.dispatch.agent_dispatch import set_run_session_context
+        from connector_runtime.dispatch.device_dispatch import set_run_session_context
 
         token = set_run_session_context(req.session_context or None)
         try:
@@ -104,7 +104,7 @@ def create_app() -> FastAPI:
             )
         finally:
             try:
-                from connector_runtime.dispatch.agent_dispatch import _RUN_SESSION_CONTEXT
+                from connector_runtime.dispatch.device_dispatch import _RUN_SESSION_CONTEXT
 
                 _RUN_SESSION_CONTEXT.reset(token)
             except Exception:

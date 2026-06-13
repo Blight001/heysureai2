@@ -5,7 +5,7 @@ import {
 } from '../services/server-client'
 import {
   rebuildAgent, clearSelectedAiConfig, getAgent,
-} from '../services/agent-runtime'
+} from '../services/device-runtime'
 
 export function registerAiConfigIpc(): void {
   ipcMain.handle('ai-config:list', async () => {
@@ -36,7 +36,7 @@ export function registerAiConfigIpc(): void {
     store.set('selectedAiConfigLifecycle', cfg.lifecycle_status || 'working')
     store.set('selectedAiConfigProject', cfg.project_name || '')
     store.set('agentToken', store.get('authToken'))
-    store.set('agentId', `win-desktop-${cfg.id}`)
+    store.set('deviceId', `win-desktop-${cfg.id}`)
     store.set('agentName', 'Windows Agent')
     store.set('agentGroup', cfg.project_name || '')
 

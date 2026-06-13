@@ -1,12 +1,12 @@
 import { Tray, Menu, app, nativeImage } from 'electron'
 import * as path from 'path'
-import type { AgentStatus } from '../agent'
+import type { DeviceStatus } from '../device'
 
 const ASSET_DIR = path.join(__dirname, '../../assets')
 // PNG renders reliably for the Linux tray / app icon (.ico support is patchy).
 const APP_ICON_PATH = path.join(ASSET_DIR, 'desktop.png')
 
-const TRAY_ICON_PATHS: Record<AgentStatus, string> = {
+const TRAY_ICON_PATHS: Record<DeviceStatus, string> = {
   disconnected: path.join(ASSET_DIR, 'desktop.png'),
   connecting:   path.join(ASSET_DIR, 'desktop_yellow.png'),
   connected:    path.join(ASSET_DIR, 'desktop_green.png'),
@@ -14,7 +14,7 @@ const TRAY_ICON_PATHS: Record<AgentStatus, string> = {
   error:        path.join(ASSET_DIR, 'desktop_red.png'),
 }
 
-export const STATUS_LABELS: Record<AgentStatus, string> = {
+export const STATUS_LABELS: Record<DeviceStatus, string> = {
   disconnected: '未连接',
   connecting:   '连接中...',
   connected:    '已连接',
@@ -22,7 +22,7 @@ export const STATUS_LABELS: Record<AgentStatus, string> = {
   error:        '连接错误',
 }
 
-function loadTrayIcon(status: AgentStatus): Electron.NativeImage {
+function loadTrayIcon(status: DeviceStatus): Electron.NativeImage {
   const iconPath = TRAY_ICON_PATHS[status] || TRAY_ICON_PATHS.disconnected
   const image = nativeImage.createFromPath(iconPath)
   if (image.isEmpty()) {
@@ -49,7 +49,7 @@ export function createTray(cb: TrayCallbacks): Tray {
   return tray
 }
 
-export function updateTray(status: AgentStatus): void {
+export function updateTray(status: DeviceStatus): void {
   if (!tray || !callbacks) return
   tray.setImage(loadTrayIcon(status))
   tray.setToolTip(`HeySure Agent — ${STATUS_LABELS[status]}`)

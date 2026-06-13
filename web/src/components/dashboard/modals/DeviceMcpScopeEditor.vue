@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { getAgentMcpScope, setAgentMcpScope, type AgentMcpScope } from '@/api/agents'
+import { getDeviceMcpScope, setDeviceMcpScope, type DeviceMcpScope } from '@/api/devices'
 import { getMcpToolParamRows, getMcpToolZhLabel } from '@/utils/mcpTools'
 
 const props = defineProps<{
-  agentId: string
-  // Re-fetch whenever this changes (e.g. agent:list refresh tick).
+  deviceId: string
+  // Re-fetch whenever this changes (e.g. device:list refresh tick).
   refreshKey?: string | number
 }>()
 
-const scope = ref<AgentMcpScope | null>(null)
+const scope = ref<DeviceMcpScope | null>(null)
 const selected = ref<Set<string>>(new Set())
 const loading = ref(false)
 const saving = ref(false)
@@ -18,12 +18,12 @@ const notice = ref('')
 const detailOpen = ref(false)
 
 const load = async () => {
-  if (!props.agentId) return
+  if (!props.deviceId) return
   loading.value = true
   error.value = ''
   notice.value = ''
   try {
-    const data = await getAgentMcpScope(props.agentId)
+    const data = await getDeviceMcpScope(props.deviceId)
     scope.value = data
     selected.value = new Set(data.allowed || [])
   } catch (err: any) {
@@ -34,12 +34,12 @@ const load = async () => {
   }
 }
 
-watch(() => [props.agentId, props.refreshKey], load, { immediate: true })
+watch(() => [props.deviceId, props.refreshKey], load, { immediate: true })
 
 const capabilities = computed(() => scope.value?.capabilities || [])
 const scopeTitle = computed(() => {
-  if (scope.value?.agentType === 'workshop') return '知识工坊 MCP 权限'
-  if (scope.value?.agentType === 'browser') return '浏览器端 MCP 权限'
+  if (scope.value?.deviceType === 'workshop') return '知识工坊 MCP 权限'
+  if (scope.value?.deviceType === 'browser') return '浏览器端 MCP 权限'
   return '软件端 MCP 权限'
 })
 // Scope is keyed per individual agent, so it can be configured even before the
@@ -119,12 +119,12 @@ const toggleSelectAll = () => {
 }
 
 const save = async () => {
-  if (!props.agentId || !canSave.value) return
+  if (!props.deviceId || !canSave.value) return
   saving.value = true
   error.value = ''
   notice.value = ''
   try {
-    const data = await setAgentMcpScope(props.agentId, Array.from(selected.value))
+    const data = await setDeviceMcpScope(props.deviceId, Array.from(selected.value))
     scope.value = data
     selected.value = new Set(data.allowed || [])
     notice.value = '已保存'
@@ -154,7 +154,7 @@ const closeDetail = () => {
           {{ scopeTitle }}
         </div>
         <div class="text-[10px] text-zinc-400 dark:text-zinc-500 truncate">
-          {{ scope?.agentName || agentId }}
+          {{ scope?.agentName || deviceId }}
           <span v-if="capabilities.length"> · {{ selected.size }} / {{ capabilities.length }}</span>
         </div>
       </div>
@@ -195,7 +195,7 @@ const closeDetail = () => {
             <div class="min-w-0">
               <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">MCP 权限详情</div>
               <div class="text-[10px] text-zinc-400 dark:text-zinc-500 truncate">
-                {{ scope?.agentName || agentId }} · {{ capabilities.length }} 个工具
+                {{ scope?.agentName || deviceId }} · {{ capabilities.length }} 个工具
               </div>
             </div>
             <button

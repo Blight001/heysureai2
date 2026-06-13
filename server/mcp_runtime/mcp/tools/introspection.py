@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 
 from api.database import engine
 from api.models import AssistantAIConfig
-from api.agent_presence import online_tool_defs_for_user
+from api.device_presence import online_tool_defs_for_user
 from ..core import MCP_INTROSPECTION_TOOLS
 
 
@@ -18,7 +18,7 @@ def _tool_namespace(name: str) -> str:
 
 
 def _allowed_tool_names(user_id: int, ai_config_id: Optional[int]) -> set[str]:
-    from connector_runtime.dispatch.desktop_agent_tools import (
+    from connector_runtime.dispatch.desktop_device_tools import (
         endpoint_bridge_tools_for_config,
         endpoint_tools_for_config,
         strip_endpoint_tool_config_names,
@@ -73,7 +73,7 @@ def _resolve_tool_alias(name: str, allowed: set[str]) -> str:
 
 def _describe_one_tool(name: str, endpoint_defs: Dict[str, Any], user_id: int = 0) -> Dict[str, Any]:
     from ..registry import registry
-    from connector_runtime.dispatch.desktop_agent_tools import is_endpoint_agent_tool
+    from connector_runtime.dispatch.desktop_device_tools import is_endpoint_agent_tool
 
     if is_endpoint_agent_tool(name):
         spec = endpoint_defs.get(name) or {}

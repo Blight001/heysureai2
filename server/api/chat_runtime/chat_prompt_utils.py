@@ -27,7 +27,7 @@ from api.chat_runtime.mcp_parser import (
     extract_first_complete_mcp_call,
     parse_mcp_payload,
 )
-from connector_runtime.dispatch.desktop_agent_tools import (
+from connector_runtime.dispatch.desktop_device_tools import (
     endpoint_bridge_tools_for_config,
     endpoint_tools_for_config,
 )
@@ -93,7 +93,7 @@ def _looks_like_mcp_template(text: str) -> bool:
     return ("<mcp-call>" in src and has_tools_line and has_rules_line)
 
 def _parse_allowed_tools_for_cfg(cfg: Optional[AssistantAIConfig]) -> set[str]:
-    from connector_runtime.dispatch.desktop_agent_tools import strip_endpoint_tool_config_names
+    from connector_runtime.dispatch.desktop_device_tools import strip_endpoint_tool_config_names
 
     if not cfg:
         return set()
@@ -321,8 +321,8 @@ def _render_mcp_tool_catalog(allowed_tools: set[str], endpoint_tools: Optional[s
     presence-derived ``is_endpoint_agent_tool`` snapshot disagrees. Any remaining
     non-builtin, non-endpoint name is a stale config entry and is omitted.
     """
-    from api.agent_presence import online_tool_defs
-    from connector_runtime.dispatch.desktop_agent_tools import is_endpoint_agent_tool
+    from api.device_presence import online_tool_defs
+    from connector_runtime.dispatch.desktop_device_tools import is_endpoint_agent_tool
 
     allowed = {str(name).strip() for name in (allowed_tools or set()) if str(name).strip()}
     if not allowed:
@@ -487,7 +487,7 @@ def _build_mcp_stream_warning(
             parsed_allowed = json.loads(cfg.mcp_tools or "[]")
             if isinstance(parsed_allowed, list):
                 allowed_tools = {str(v).strip() for v in parsed_allowed if isinstance(v, str) and str(v).strip()}
-                from connector_runtime.dispatch.desktop_agent_tools import strip_endpoint_tool_config_names
+                from connector_runtime.dispatch.desktop_device_tools import strip_endpoint_tool_config_names
 
                 allowed_tools = strip_endpoint_tool_config_names(with_workspace_read_by_name_compat(allowed_tools))
         except Exception:

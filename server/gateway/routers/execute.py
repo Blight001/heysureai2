@@ -7,19 +7,19 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from api.sio import sio, agents
-from connector_runtime.dispatch.agent_dispatch import dispatch_task_to_agent
+from connector_runtime.dispatch.device_dispatch import dispatch_task_to_agent
 
 router = APIRouter()
 
 class ExecuteRequest(BaseModel):
-    agentId: str
+    deviceId: str
     flowData: dict
 
 @router.post("/execute")
 async def execute_flow(req: ExecuteRequest):
     target_sid = None
     for sid, agent in agents.items():
-        if agent.get("id") == req.agentId:
+        if agent.get("id") == req.deviceId:
             target_sid = sid
             break
 
@@ -30,8 +30,8 @@ async def execute_flow(req: ExecuteRequest):
         raise HTTPException(status_code=404, detail="Agent not found")
 
 
-class AgentDispatchRequest(BaseModel):
-    agentId: str
+class DeviceDispatchRequest(BaseModel):
+    deviceId: str
     userId: int
     instruction: str = ""
     tool: str = ""
@@ -43,11 +43,11 @@ class AgentDispatchRequest(BaseModel):
 
 
 @router.post("/agent/dispatch")
-async def dispatch_agent_task(req: AgentDispatchRequest):
+async def dispatch_agent_task(req: DeviceDispatchRequest):
     if not req.instruction and not req.tool:
         raise HTTPException(status_code=400, detail="Provide an instruction or a tool to run")
     result = await dispatch_task_to_agent(
-        agent_id=req.agentId,
+        device_id=req.deviceId,
         user_id=req.userId,
         ai_config_id=req.aiConfigId,
         ai_kind=req.aiKind,

@@ -2,7 +2,7 @@
 // Imported once for its side effects via executor/index.ts.
 //
 // 描述规范（中文为主 + 英文术语）：每个工具的 description 说明「用途 + 典型使用
-// 场景」，每个参数的 description 说明「含义 + 取值/默认」。这些文案随 agent:register
+// 场景」，每个参数的 description 说明「含义 + 取值/默认」。这些文案随 device:register
 // 的 toolDefs 上报给服务器，是 AI 在 mcp.list_tools / mcp.describe_tool 中看到的
 // 权威说明——服务器不再硬编码桌面工具的描述与 schema。新增工具只需在此追加一条。
 

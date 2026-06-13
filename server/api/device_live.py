@@ -41,7 +41,7 @@ async def emit_agent_list_for_user(user_id: int, *, to=None) -> None:
     if uid is None:
         return
     await sio.emit(
-        "agent:list",
+        "device:list",
         connected_agent_rows_for_user(uid),
         to=to or f"user_{uid}",
     )

@@ -1,10 +1,10 @@
-export type AgentStatus = 'disconnected' | 'connecting' | 'connected' | 'registered' | 'error'
+export type DeviceStatus = 'disconnected' | 'connecting' | 'connected' | 'registered' | 'error'
 
 export interface AgentSettings {
   serverUrl:    string
   agentSocketUrl: string
   agentToken:   string
-  agentId:      string
+  deviceId:      string
   agentName:    string
   agentGroup:   string
   aiKey:        string
@@ -21,7 +21,7 @@ export const SETTING_DEFAULTS: AgentSettings = {
   serverUrl:   'http://localhost:3000',
   agentSocketUrl: '',
   agentToken:  '',
-  agentId:     '',
+  deviceId:     '',
   agentName:   'Browser Agent',
   agentGroup:  '',
   aiKey:       '',
@@ -102,8 +102,8 @@ export interface OfflineChatToolEvent {
 
 // ── Popup <-> Background messages ────────────────────────────────────────
 export type PopupMsg =
-  | { type: 'agent:connect' }
-  | { type: 'agent:disconnect' }
+  | { type: 'device:connect' }
+  | { type: 'device:disconnect' }
   | { type: 'auth:logout' }
   | { type: 'settings:get' }
   | { type: 'settings:save'; payload: Partial<AgentSettings> }
@@ -120,7 +120,7 @@ export type PopupMsg =
   | { type: 'mcp:test'; requestId: string; tool: string; args: Record<string, any> }
 
 export type BgMsg =
-  | { type: 'agent:status';    status: AgentStatus; reason?: string; aiConfigId?: number | null }
+  | { type: 'device:status';    status: DeviceStatus; reason?: string; aiConfigId?: number | null }
   | { type: 'activity:log';    entry: ActivityEntry }
   | { type: 'task:start';      data: any }
   | { type: 'task:result';     data: any }

@@ -1,11 +1,11 @@
 /**
- * 世界场景：草原 tilemap + 3 固定建筑 + 作坊街（随 agent:list 增减）
+ * 世界场景：草原 tilemap + 3 固定建筑 + 作坊街（随 device:list 增减）
  * + 成员按锚区规则站位/游荡 + hover tooltip + 状态气泡。只读。
  */
 import Phaser from 'phaser'
 import { getAuthToken } from '@/api/http'
 import { toggleAiRun } from '@/api/ai'
-import { assignAgentAi, getAgentMcpScope, setAgentMcpScope } from '@/api/agents'
+import { assignDeviceAi, getDeviceMcpScope, setDeviceMcpScope } from '@/api/agents'
 import { setWorkshopBinding } from '@/api/workshop'
 import { triggerTaskForAgent } from '@/api/task'
 import { approveProposal, rejectProposal } from '@/api/librarian'
@@ -469,13 +469,13 @@ export class WorldScene extends Phaser.Scene {
         await refresh()
         this.reopenMember(id)
       },
-      assignAgent: async (agentId, aiConfigId) => {
-        await assignAgentAi(agentId, aiConfigId)
+      assignAgent: async (deviceId, aiConfigId) => {
+        await assignDeviceAi(deviceId, aiConfigId)
         await refresh()
       },
-      loadAgentMcpScope: agentId => getAgentMcpScope(agentId),
-      saveAgentMcpScope: async (agentId, tools) => {
-        await setAgentMcpScope(agentId, tools)
+      loadDeviceMcpScope: deviceId => getDeviceMcpScope(deviceId),
+      saveDeviceMcpScope: async (deviceId, tools) => {
+        await setDeviceMcpScope(deviceId, tools)
       },
       setAppearance: async (id, meta) => {
         await setWorldActorMeta(id, meta)
@@ -993,11 +993,11 @@ export class WorldScene extends Phaser.Scene {
           if (m) this.handleMemberClick(m)
           return
         }
-        const agentId = obj.getData?.('agentId') as string | undefined
-        if (agentId) {
-          const view = this.workshops.get(agentId)
+        const deviceId = obj.getData?.('deviceId') as string | undefined
+        if (deviceId) {
+          const view = this.workshops.get(deviceId)
           const portrait = view ? this.portraitForBuilding(view.sprite.texture.key) : null
-          this.drawer.openWorkshop(agentId, this.snap, portrait)
+          this.drawer.openWorkshop(deviceId, this.snap, portrait)
           return
         }
         const key = obj.getData?.('buildingKey') as string | undefined
@@ -1034,7 +1034,7 @@ export class WorldScene extends Phaser.Scene {
       const m = this.snap.members.find(x => x.id === obj.memberId)
       if (!m) return
       if (drop.kind === 'workshop') {
-        const w = this.snap.workshops.find(x => x.agentId === drop.agentId)
+        const w = this.snap.workshops.find(x => x.deviceId === drop.deviceId)
         if (!w) return
         if (w.type === 'workshop') {
           const current = this.snap.members.find(x => x.id === w.aiConfigId)
@@ -1042,16 +1042,16 @@ export class WorldScene extends Phaser.Scene {
             ? `工坊当前绑定的是「${current.name}」，继续将替换为「${m.name}」。`
             : '绑定后可使用工坊后续接入的 MCP 能力。'
           if (window.confirm(`把成员「${m.name}」绑定到 ${w.name}？${hint}`)) {
-            void setWorkshopBinding(m.id, w.agentId, true).then(() => this.store.refreshNow()).catch(() => undefined)
+            void setWorkshopBinding(m.id, w.deviceId, true).then(() => this.store.refreshNow()).catch(() => undefined)
           }
         } else if (window.confirm(`把成员「${m.name}」绑定到 ${w.name}？`)) {
-          void assignAgentAi(w.agentId, m.id).then(() => this.store.refreshNow()).catch(() => undefined)
+          void assignDeviceAi(w.deviceId, m.id).then(() => this.store.refreshNow()).catch(() => undefined)
         }
       } else if (drop.kind === 'spawn' && m.boundAgentIds.length) {
         if (window.confirm(`把成员「${m.name}」从端侧 agent / 知识工坊上解绑？`)) {
           void Promise.all(m.boundAgentIds.map(id => {
-            const w = this.snap?.workshops.find(x => x.agentId === id)
-            return w?.type === 'workshop' ? setWorkshopBinding(m.id, id, false) : assignAgentAi(id, null)
+            const w = this.snap?.workshops.find(x => x.deviceId === id)
+            return w?.type === 'workshop' ? setWorkshopBinding(m.id, id, false) : assignDeviceAi(id, null)
           }))
             .then(() => this.store.refreshNow())
             .catch(() => undefined)
@@ -1061,11 +1061,11 @@ export class WorldScene extends Phaser.Scene {
   }
 
   /** 拖放落点 → 作坊 / 出生地 */
-  private resolveDropTarget(x: number, y: number): { kind: 'workshop'; agentId: string } | { kind: 'spawn' } | null {
-    for (const [agentId, view] of this.workshops) {
+  private resolveDropTarget(x: number, y: number): { kind: 'workshop'; deviceId: string } | { kind: 'spawn' } | null {
+    for (const [deviceId, view] of this.workshops) {
       if (view.offlineSince !== null) continue
       if (Phaser.Math.Distance.Between(x, y, view.sprite.x, view.sprite.y) < 70) {
-        return { kind: 'workshop', agentId }
+        return { kind: 'workshop', deviceId }
       }
     }
     const spawn = this.buildings.get('spawn')
@@ -1176,10 +1176,10 @@ export class WorldScene extends Phaser.Scene {
   private reconcileWorkshops(snap: WorldSnapshot) {
     const seen = new Set<string>()
     for (const w of snap.workshops) {
-      seen.add(w.agentId)
-      let view = this.workshops.get(w.agentId)
+      seen.add(w.deviceId)
+      let view = this.workshops.get(w.deviceId)
       if (!view) {
-        const slot = this.claimSlot(w.agentId)
+        const slot = this.claimSlot(w.deviceId)
         const pos = workshopSlotPos(slot)
         const sheet = w.type === 'workshop'
           ? 'building_workshop_knowledge.png'
@@ -1192,8 +1192,8 @@ export class WorldScene extends Phaser.Scene {
         view = { sprite, slot, data: w, offlineSince: w.online ? null : Date.now() }
         const captured = view
         sprite.setData('tooltip', () => this.workshopTooltip(captured))
-        sprite.setData('agentId', w.agentId)
-        this.workshops.set(w.agentId, view)
+        sprite.setData('deviceId', w.deviceId)
+        this.workshops.set(w.deviceId, view)
         if (!w.online) sprite.setTint(0x8a8a8a)
       }
       view.data = w
@@ -1221,8 +1221,8 @@ export class WorldScene extends Phaser.Scene {
     }
     // 掉线：变灰保留 60s 再拆除
     const now = Date.now()
-    for (const [agentId, view] of this.workshops) {
-      if (seen.has(agentId)) continue
+    for (const [deviceId, view] of this.workshops) {
+      if (seen.has(deviceId)) continue
       if (view.offlineSince === null) {
         view.offlineSince = now
         view.sprite.stop()
@@ -1230,25 +1230,25 @@ export class WorldScene extends Phaser.Scene {
         view.sprite.setTint(0x8a8a8a)
       } else if (now - view.offlineSince > OFFLINE_KEEP_MS) {
         view.sprite.destroy()
-        this.releaseSlot(agentId)
-        this.workshops.delete(agentId)
+        this.releaseSlot(deviceId)
+        this.workshops.delete(deviceId)
       }
     }
   }
 
-  private claimSlot(agentId: string): number {
+  private claimSlot(deviceId: string): number {
     const free = this.slotOwner.findIndex(o => o === null)
     if (free >= 0) {
-      this.slotOwner[free] = agentId
+      this.slotOwner[free] = deviceId
       return free
     }
     // 插槽用尽：街道向东延伸
-    this.slotOwner.push(agentId)
+    this.slotOwner.push(deviceId)
     return this.slotOwner.length - 1
   }
 
-  private releaseSlot(agentId: string) {
-    const i = this.slotOwner.indexOf(agentId)
+  private releaseSlot(deviceId: string) {
+    const i = this.slotOwner.indexOf(deviceId)
     if (i >= 0) this.slotOwner[i] = null
   }
 

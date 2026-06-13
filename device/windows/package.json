@@ -1,5 +1,5 @@
 {
-  "name": "heysure-agent-win",
+  "name": "heysure-device-win",
   "version": "1.0.0",
   "description": "HeySure Agent - Windows Desktop Edition",
   "license": "Apache-2.0",
@@ -28,8 +28,8 @@
     "@types/node": "^20.12.0"
   },
   "build": {
-    "appId": "com.heysure.agent.win",
-    "productName": "HeySure Agent",
+    "appId": "com.heysure.device.win",
+    "productName": "HeySure Device",
     "directories": {
       "output": "release"
     },

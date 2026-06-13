@@ -1,5 +1,5 @@
 {
-  "name": "heysure-agent-linux",
+  "name": "heysure-device-linux",
   "version": "1.0.0",
   "description": "HeySure Agent - Linux Desktop Edition",
   "license": "Apache-2.0",
@@ -26,8 +26,8 @@
     "@types/node": "^20.12.0"
   },
   "build": {
-    "appId": "com.heysure.agent.linux",
-    "productName": "HeySure Agent",
+    "appId": "com.heysure.device.linux",
+    "productName": "HeySure Device",
     "directories": { "output": "release" },
     "files": ["dist/**/*", "src/**/*", "assets/**/*"],
     "linux": {

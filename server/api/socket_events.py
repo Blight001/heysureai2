@@ -3,8 +3,8 @@ import time
 
 from sqlmodel import Session, select
 
-from api.agent_bindings import get_binding, set_binding
-from api.agent_live import emit_agent_list_for_user
+from api.device_bindings import get_binding, set_binding
+from api.device_live import emit_agent_list_for_user
 from api.database import engine
 from api.models import AssistantAIConfig
 from api.sio import (
@@ -13,7 +13,7 @@ from api.sio import (
     is_agent_shared_secret,
     resolve_agent_user,
 )
-from connector_runtime.dispatch.agent_dispatch import (
+from connector_runtime.dispatch.device_dispatch import (
     handle_task_error,
     handle_task_progress,
     handle_task_result,
@@ -47,28 +47,28 @@ def _coerce_positive_int(value):
         return None
 
 
-def _has_live_same_type_ai_binding(*, user_id: int, ai_config_id: int, agent_id: str, agent_info: dict) -> bool:
+def _has_live_same_type_ai_binding(*, user_id: int, ai_config_id: int, device_id: str, agent_info: dict) -> bool:
     """Whether another live endpoint agent of the same type already owns this AI."""
     try:
-        from connector_runtime.dispatch.desktop_agent_tools import agent_type_of
+        from connector_runtime.dispatch.desktop_device_tools import device_type_of
     except Exception:
         return False
-    incoming_type = agent_type_of(agent_info)
+    incoming_type = device_type_of(agent_info)
     if incoming_type not in {"desktop", "browser", "workshop"}:
         return False
     target_cfg = _coerce_positive_int(ai_config_id)
     if not target_cfg:
         return False
-    target_agent_id = str(agent_id or "").strip()
+    target_device_id = str(device_id or "").strip()
     for agent in agents.values():
         existing_id = str(agent.get("id") or "").strip()
-        if not existing_id or existing_id == target_agent_id:
+        if not existing_id or existing_id == target_device_id:
             continue
         if _coerce_positive_int(agent.get("userId") or agent.get("user_id")) != user_id:
             continue
         if _coerce_positive_int(agent.get("aiConfigId") or agent.get("ai_config_id")) != target_cfg:
             continue
-        if agent_type_of(agent) == incoming_type:
+        if device_type_of(agent) == incoming_type:
             return True
     return False
 
@@ -102,7 +102,7 @@ def register_agent_socket_events():
     survive api-gateway restarts. The monolith registers BOTH this and the
     user-side block on the same sio instance.
     """
-    @sio.on('agent:register')
+    @sio.on('device:register')
     async def agent_register(sid, info):
         info = info if isinstance(info, dict) else {}
         token = info.get('token')
@@ -122,7 +122,7 @@ def register_agent_socket_events():
             if not resolved:
                 logger.info('Agent registration rejected (no auth): %s', info.get('id'))
                 await sio.emit(
-                    'agent:register_rejected',
+                    'device:register_rejected',
                     {'reason': 'agent must be logged in (invalid or missing user token)'},
                     to=sid,
                 )
@@ -135,8 +135,8 @@ def register_agent_socket_events():
         # reconnects. The persisted binding is the only source of truth: after an
         # operator clears the assignment, a reconnecting client must not revive a
         # stale locally-saved aiConfigId.
-        agent_id = str(info.get('id') or sid)
-        bound_ai = get_binding(owner_user_id, agent_id) if owner_user_id is not None else None
+        device_id = str(info.get('id') or sid)
+        bound_ai = get_binding(owner_user_id, device_id) if owner_user_id is not None else None
         claimed_ai = bound_ai
         if owner_user_id is not None and not _ai_config_belongs_to_user(claimed_ai, owner_user_id):
             logger.warning(
@@ -144,7 +144,7 @@ def register_agent_socket_events():
                 f"agent={info.get('id')} user={owner_user_id} ai={claimed_ai}"
             )
             await sio.emit(
-                'agent:register_rejected',
+                'device:register_rejected',
                 {'reason': 'selected AI does not belong to the logged-in user'},
                 to=sid,
             )
@@ -155,26 +155,26 @@ def register_agent_socket_events():
             and _has_live_same_type_ai_binding(
                 user_id=owner_user_id,
                 ai_config_id=claimed_ai,
-                agent_id=agent_id,
+                device_id=device_id,
                 agent_info=info,
             )
         ):
             logger.warning(
                 f"Agent persisted binding ignored (duplicate same-type AI binding): "
-                f"agent={agent_id} user={owner_user_id} ai={claimed_ai}"
+                f"agent={device_id} user={owner_user_id} ai={claimed_ai}"
             )
-            set_binding(owner_user_id, agent_id, None)
+            set_binding(owner_user_id, device_id, None)
             claimed_ai = None
 
         # Idempotent: drop any stale socket entry for the same logical agent id
         # so a reconnect updates the socketId instead of duplicating the agent.
-        for old_sid in [s for s, a in agents.items() if str(a.get('id')) == agent_id and s != sid]:
+        for old_sid in [s for s, a in agents.items() if str(a.get('id')) == device_id and s != sid]:
             del agents[old_sid]
 
         info.pop('token', None)
         agents[sid] = {
             **info,
-            'id': agent_id,
+            'id': device_id,
             'aiConfigId': claimed_ai,
             'socketId': sid,
             'userId': owner_user_id,
@@ -192,27 +192,27 @@ def register_agent_socket_events():
             'dispatchable': True,
         }
         logger.info(
-            f"Agent registered: {agent_id} user={owner_user_id} "
+            f"Agent registered: {device_id} user={owner_user_id} "
             f"ai={agents[sid].get('aiConfigId')}"
         )
         # Mirror this endpoint agent into the shared DB presence snapshot so
         # ai-runtime / mcp-runtime (separate processes) can discover and
         # classify its tools. Never let a presence write break registration.
         try:
-            from connector_runtime.dispatch.desktop_agent_tools import (
-                agent_type_of,
+            from connector_runtime.dispatch.desktop_device_tools import (
+                device_type_of,
                 agent_endpoint_tools,
                 agent_endpoint_tool_defs,
             )
-            from api.agent_presence import upsert_presence
-            from api.agent_mcp_permissions import reconcile_scope_with_capabilities
+            from api.device_presence import upsert_presence
+            from api.device_mcp_permissions import reconcile_scope_with_capabilities
 
-            atype = agent_type_of(agents[sid])
+            atype = device_type_of(agents[sid])
             if atype:
                 capabilities = sorted(agent_endpoint_tools(agents[sid]))
                 upsert_presence(
                     owner_user_id,
-                    agent_id,
+                    device_id,
                     claimed_ai,
                     atype,
                     capabilities,
@@ -222,16 +222,16 @@ def register_agent_socket_events():
                 if owner_user_id is not None:
                     reconcile_scope_with_capabilities(
                         owner_user_id,
-                        agent_id,
+                        device_id,
                         capabilities,
                         ai_config_id=claimed_ai,
-                        agent_type=atype,
+                        device_type=atype,
                     )
         except Exception:
-            logger.exception('Failed to record endpoint agent presence: %s', agent_id)
+            logger.exception('Failed to record endpoint agent presence: %s', device_id)
         # Include the server-side bound AI so the device can show whether an AI
         # is assigned yet (status indicator: green = bound, yellow = none).
-        await sio.emit('agent:registered', {'id': agent_id, 'aiConfigId': claimed_ai}, to=sid)
+        await sio.emit('device:registered', {'id': device_id, 'aiConfigId': claimed_ai}, to=sid)
         if owner_user_id is not None:
             await emit_agent_list_for_user(owner_user_id)
 
@@ -260,14 +260,14 @@ def register_agent_socket_events():
     @sio.on('disconnect')
     async def disconnect(sid):
         if sid in agents:
-            agent_id_for_presence = str(agents[sid].get('id') or '')
+            device_id_for_presence = str(agents[sid].get('id') or '')
             owner_user_id = agents[sid].get('userId')
             del agents[sid]
             try:
-                from api.agent_presence import set_offline
-                set_offline(agent_id_for_presence)
+                from api.device_presence import set_offline
+                set_offline(device_id_for_presence)
             except Exception:
-                logger.exception('Failed to mark endpoint agent offline: %s', agent_id_for_presence)
+                logger.exception('Failed to mark endpoint agent offline: %s', device_id_for_presence)
             if owner_user_id is not None:
                 await emit_agent_list_for_user(owner_user_id)
 

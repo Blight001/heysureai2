@@ -2,7 +2,7 @@
 // re-wires renderer events on construction, and exposes a small API the IPC
 // layer + tray menu can call.
 
-import { HeySureAgent } from '../agent'
+import { HeySureAgent } from '../device'
 import { store, AgentSettings } from '../store'
 import { getMainWindow } from '../windows/main-window'
 import { sendActivityLog } from './activity-log'
@@ -15,7 +15,7 @@ function buildAgent(settings: AgentSettings): HeySureAgent {
   return new HeySureAgent(settings, {
     onStatusChange: (status, reason, aiConfigId) => {
       updateTray(status)
-      getMainWindow()?.webContents.send('agent:status-changed', status, reason, aiConfigId ?? null)
+      getMainWindow()?.webContents.send('device:status-changed', status, reason, aiConfigId ?? null)
       sendActivityLog(
         'system',
         status === 'registered' ? 'success' : status === 'error' ? 'error' : 'info',
@@ -29,7 +29,7 @@ function buildAgent(settings: AgentSettings): HeySureAgent {
     onReconnecting: (active, reason) => {
       // Just drive the orange UI prompt; the retry loop fires every couple of
       // seconds, so logging each attempt here would spam the activity log.
-      getMainWindow()?.webContents.send('agent:reconnecting', active, reason ?? null)
+      getMainWindow()?.webContents.send('device:reconnecting', active, reason ?? null)
     },
     onTaskStart: (taskId, tool, args) => {
       getMainWindow()?.webContents.send('task:start', {
@@ -78,8 +78,8 @@ export function clearSelectedAiConfig(): void {
   store.set('selectedAiConfigLifecycle', 'working')
   store.set('selectedAiConfigProject', '')
   store.set('agentToken', '')
-  store.set('agentId', '')
-  store.set('agentName', 'Windows Agent')
+  store.set('deviceId', '')
+  store.set('agentName', 'Linux Agent')
   store.set('agentGroup', '')
 }
 

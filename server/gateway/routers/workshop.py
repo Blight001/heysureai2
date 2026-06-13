@@ -5,7 +5,7 @@
 工坊与 AI 是 **1:1 绑定**——同一时间只能绑定一个 AI 数字成员，
 绑定新成员会替换旧绑定（存 ``WorkshopAiBinding``）。
 
-工具执行不走 REST：调度层（agent_dispatch 的 workshop 分支）直接进程内
+工具执行不走 REST：调度层（device_dispatch 的 workshop 分支）直接进程内
 调用 ``workshop.engine.execute_tool``，其中完成白名单/归属/绑定/角色复核。
 """
 
@@ -20,7 +20,7 @@ from api.models import AssistantAIConfig
 from api.workshop_bindings import (
     bound_config_id_for_agent,
     set_workshop_binding,
-    workshop_agent_ids_for_config,
+    workshop_device_ids_for_config,
 )
 from .auth import get_current_user
 
@@ -30,7 +30,7 @@ router = APIRouter(prefix="/workshop", tags=["workshop"])
 
 class WorkshopBindRequest(BaseModel):
     ai_config_id: int
-    agent_id: str
+    device_id: str
     bound: bool = True
 
 
@@ -72,26 +72,26 @@ async def list_workshop_bindings(
     user = get_current_user(authorization, session)
     cfg = _load_owned_config(session, user.id, ai_config_id)
 
-    from api.agent_presence import online_workshop_agents_for_user
+    from api.device_presence import online_workshop_agents_for_user
     from workshop import engine as workshop_engine
 
     workshop_engine.ensure_presence_for_user(user.id)
-    bound_ids = set(workshop_agent_ids_for_config(user.id, cfg.id))
-    online = {agent_id: caps for agent_id, caps in online_workshop_agents_for_user(user.id)}
+    bound_ids = set(workshop_device_ids_for_config(user.id, cfg.id))
+    online = {device_id: caps for device_id, caps in online_workshop_agents_for_user(user.id)}
 
     names: Dict[str, str] = {
-        workshop_engine.agent_id_for_user(user.id): workshop_engine.WORKSHOP_DISPLAY_NAME,
+        workshop_engine.device_id_for_user(user.id): workshop_engine.WORKSHOP_DISPLAY_NAME,
     }
 
     items = []
-    for agent_id in sorted(set(online) | bound_ids):
-        bound_cfg_id = bound_config_id_for_agent(user.id, agent_id)
+    for device_id in sorted(set(online) | bound_ids):
+        bound_cfg_id = bound_config_id_for_agent(user.id, device_id)
         items.append({
-            "agent_id": agent_id,
-            "name": names.get(agent_id) or agent_id,
-            "online": agent_id in online,
-            "tools": sorted(online.get(agent_id) or []),
-            "bound": agent_id in bound_ids,
+            "device_id": device_id,
+            "name": names.get(device_id) or device_id,
+            "online": device_id in online,
+            "tools": sorted(online.get(device_id) or []),
+            "bound": device_id in bound_ids,
             "bound_ai_config_id": bound_cfg_id,
             "bound_ai_name": _config_name(session, user.id, bound_cfg_id),
         })
@@ -106,19 +106,19 @@ async def update_workshop_binding(
 ):
     user = get_current_user(authorization, session)
     cfg = _load_owned_config(session, user.id, payload.ai_config_id)
-    agent_id = str(payload.agent_id or "").strip()
-    if not agent_id:
-        raise HTTPException(status_code=400, detail="agent_id is required")
+    device_id = str(payload.device_id or "").strip()
+    if not device_id:
+        raise HTTPException(status_code=400, detail="device_id is required")
     if bool(payload.bound) and str(cfg.ai_role or "") != "digital_member":
         raise HTTPException(status_code=400, detail="知识工坊只能绑定 AI 数字成员")
     # 1:1：绑定会替换该工坊原有的绑定，把被替换的成员返回给前端提示。
-    replaced_id = bound_config_id_for_agent(user.id, agent_id)
+    replaced_id = bound_config_id_for_agent(user.id, device_id)
     if replaced_id == int(cfg.id):
         replaced_id = None
-    stored = set_workshop_binding(user.id, agent_id, cfg.id, bound=bool(payload.bound))
+    stored = set_workshop_binding(user.id, device_id, cfg.id, bound=bool(payload.bound))
     return {
         "ai_config_id": cfg.id,
-        "agent_id": agent_id,
+        "device_id": device_id,
         "bound": stored,
         "replaced_ai_config_id": replaced_id if bool(payload.bound) else None,
         "replaced_ai_name": _config_name(session, user.id, replaced_id) if bool(payload.bound) else "",

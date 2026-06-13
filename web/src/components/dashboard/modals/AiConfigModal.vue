@@ -3,8 +3,8 @@ import { computed, ref, watch } from 'vue'
 import { getMcpToolZhLabel, groupMcpToolsBySource } from '@/utils/mcpTools'
 import { fetchWorkshopBindings, setWorkshopBinding, type WorkshopAgentItem } from '@/api/workshop'
 import type { ModelPreset } from '@/types'
-import type { ConnectedAgent } from '@/composables/dashboard/useDashboardData'
-import AgentMcpScopeEditor from './AgentMcpScopeEditor.vue'
+import type { ConnectedDevice } from '@/composables/dashboard/useDashboardData'
+import DeviceMcpScopeEditor from './DeviceMcpScopeEditor.vue'
 
 type SettingsSection = 'mcp' | 'auto' | 'bot'
 
@@ -15,7 +15,7 @@ interface Props {
   deleteConfirm: boolean
   settingsSection: SettingsSection | ''
   availableMcpTools: string[]
-  connectedAgents?: ConnectedAgent[]
+  connectedDevices?: ConnectedDevice[]
   modelPresets: ModelPreset[]
   onClose: () => void
   onToggleSettingsSection: (section: SettingsSection) => void
@@ -57,10 +57,10 @@ const groupedAvailableMcpTools = computed(() => groupMcpToolsBySource(props.avai
 // Connected endpoint agents bound to the AI being edited. Their endpoint MCP
 // tools are governed per-agent (not via mcp_tools), so they get their own
 // permission editor here. Disconnected agents simply don't appear.
-const boundEndpointAgents = computed<ConnectedAgent[]>(() => {
+const boundEndpointAgents = computed<ConnectedDevice[]>(() => {
   const cfgId = Number(props.form?.id)
   if (!Number.isFinite(cfgId) || cfgId <= 0) return []
-  return (props.connectedAgents || []).filter((agent) => {
+  return (props.connectedDevices || []).filter((agent) => {
     if (Number(agent.aiConfigId) !== cfgId) return false
     const platform = String(agent.platform || '').toLowerCase()
     return !!agent.isWindowsDesktop || !!agent.isBrowserExtension
@@ -148,7 +148,7 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
     }
   }
   try {
-    await setWorkshopBinding(cfgId, agent.agent_id, next)
+    await setWorkshopBinding(cfgId, agent.device_id, next)
     await loadWorkshopAgents()
   } catch (err: any) {
     workshopError.value = err?.message || '更新知识工坊绑定失败'
@@ -351,7 +351,7 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                      server MCP list, and only show while the device is online. -->
                 <div v-if="boundEndpointAgents.length" class="mb-3 space-y-2">
                   <div class="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">已连接 Agent 的 MCP 权限</div>
-                  <AgentMcpScopeEditor
+                  <DeviceMcpScopeEditor
                     v-for="agent in boundEndpointAgents"
                     :key="`ai-config-agent-scope-${agent.id}`"
                     :agent-id="agent.id"
@@ -381,7 +381,7 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                   </div>
                   <label
                     v-for="agent in workshopAgents"
-                    :key="`workshop-${agent.agent_id}`"
+                    :key="`workshop-${agent.device_id}`"
                     class="mt-2 flex items-center justify-between gap-2 rounded border border-zinc-200 bg-white/70 px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900/50"
                   >
                     <span class="flex items-center gap-2 min-w-0">

@@ -4,7 +4,7 @@
 工坊不再是用户手动运行的独立 agent 进程，而是服务端内置的"虚拟端侧"：
 
 - **自动上线**：``ensure_presence_for_user(user_id)`` 给每个账号写一条
-  ``EndpointAgentPresence``（agent_type="workshop"，always online）并默认
+  ``DevicePresence``（device_type="workshop"，always online）并默认
   放开 per-agent scope。该函数挂在 ``ensure_default_ai_for_user`` 上，
   用户登录/拉取 AI 列表时自动接入，作坊面板与社会显示随之出现工坊。
 - **专用绑定保留**：AI 仍通过 ``WorkshopAiBinding`` 与工坊 1:1 绑定。
@@ -85,12 +85,12 @@ _ENSURE_TTL_SECONDS = 60.0
 _last_ensure_at: Dict[int, float] = {}
 
 
-def agent_id_for_user(user_id) -> str:
+def device_id_for_user(user_id) -> str:
     return f"{_AGENT_ID_PREFIX}{int(user_id)}"
 
 
-def is_builtin_workshop_agent_id(agent_id) -> bool:
-    return str(agent_id or "").startswith(_AGENT_ID_PREFIX)
+def is_builtin_workshop_device_id(device_id) -> bool:
+    return str(device_id or "").startswith(_AGENT_ID_PREFIX)
 
 
 def capability_names() -> List[str]:
@@ -130,14 +130,14 @@ def ensure_presence_for_user(user_id) -> None:
         return
     _last_ensure_at[uid] = now
     try:
-        from api.agent_mcp_permissions import get_scope, set_scope
-        from api.agent_presence import upsert_presence
+        from api.device_mcp_permissions import get_scope, set_scope
+        from api.device_presence import upsert_presence
 
-        agent_id = agent_id_for_user(uid)
+        device_id = device_id_for_user(uid)
         caps = capability_names()
         upsert_presence(
             uid,
-            agent_id,
+            device_id,
             None,
             "workshop",
             caps,
@@ -147,8 +147,8 @@ def ensure_presence_for_user(user_id) -> None:
         # 内置工坊的工具范围默认放开：绑定才是访问门槛，且 capabilities
         # 已被限制在工坊命名空间内。仅在没有记录时写默认值，保留操作员
         # 之后在前端做的收窄。
-        if get_scope(uid, agent_id) is None:
-            set_scope(uid, agent_id, caps, ai_config_id=None, agent_type="workshop")
+        if get_scope(uid, device_id) is None:
+            set_scope(uid, device_id, caps, ai_config_id=None, device_type="workshop")
     except Exception:
         _last_ensure_at.pop(uid, None)
         logger.exception("ensure builtin workshop presence failed user=%s", user_id)
@@ -163,11 +163,11 @@ def connected_entry_for_user(user_id) -> Dict[str, Any]:
     try:
         from api.workshop_bindings import bound_config_id_for_agent
 
-        bound_cfg_id = bound_config_id_for_agent(user_id, agent_id_for_user(user_id))
+        bound_cfg_id = bound_config_id_for_agent(user_id, device_id_for_user(user_id))
     except Exception:
         bound_cfg_id = None
     return {
-        "id": agent_id_for_user(user_id),
+        "id": device_id_for_user(user_id),
         "name": WORKSHOP_DISPLAY_NAME,
         "platform": WORKSHOP_PLATFORM,
         "isWorkshop": True,
@@ -203,7 +203,7 @@ def execute_tool(user_id: int, ai_config_id: Optional[int], tool: str, args: Opt
 
     from api.database import engine as db_engine
     from api.models import AssistantAIConfig, User
-    from api.workshop_bindings import workshop_agent_ids_for_config
+    from api.workshop_bindings import workshop_device_ids_for_config
 
     if not ai_config_id:
         raise HTTPException(status_code=400, detail="ai_config_id is required for workshop tools")
@@ -219,7 +219,7 @@ def execute_tool(user_id: int, ai_config_id: Optional[int], tool: str, args: Opt
         user = session.get(User, int(user_id))
 
     # 绑定是工坊工具的唯一门槛。
-    if not workshop_agent_ids_for_config(user_id, cfg.id):
+    if not workshop_device_ids_for_config(user_id, cfg.id):
         raise HTTPException(
             status_code=403,
             detail=f"AI config {cfg.id} 未绑定知识工坊，无法调用 {tool}（在 AI 配置弹窗或世界中绑定）",

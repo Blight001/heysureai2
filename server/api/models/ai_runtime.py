@@ -43,7 +43,7 @@ class AgentDispatchTask(SQLModel, table=True):
     ai_kind: str = Field(default="assistant")
     session_id: Optional[str] = Field(default=None)
     session_name: Optional[str] = None
-    agent_id: str = Field(default="")
+    device_id: str = Field(default="")
     tool: str = Field(default="")
     instruction: str = Field(default="")
     status: str = Field(default="pending", index=True)  # pending/completed/error/timeout

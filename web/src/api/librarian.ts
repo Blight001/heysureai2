@@ -101,8 +101,8 @@ export interface KnowledgeEntryItem {
     device_total: number
     total: number
     devices: Array<{
-      agent_id: string
-      agent_type: string
+      device_id: string
+      device_type: string
       updated_at: number
       tool_count: number
       tools: Array<{
@@ -140,8 +140,8 @@ export interface KnowledgeEntryItem {
       }>
       destructive?: boolean
       implementation?: Record<string, any>
-      agent_id?: string
-      agent_type?: string
+      device_id?: string
+      device_type?: string
     }>
   }
 }

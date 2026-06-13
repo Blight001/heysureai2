@@ -8,7 +8,7 @@ export const IS_LINUX = process.platform === 'linux'
 // (keyboard / mouse / screen) rely on an X11 session plus robotjs; window /
 // process / speech tools shell out to standard Linux utilities (wmctrl,
 // xdotool, ps, espeak-ng / spd-say). The full list is reported to the server
-// via agent:register so the AI knows what this device can do.
+// via device:register so the AI knows what this device can do.
 export const LINUX_CAPABILITIES = [
   'fs.list', 'fs.read', 'fs.write',
   'shell.run', 'git.diff',

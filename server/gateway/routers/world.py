@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from api.database import get_session
-from api.models import AssistantAIConfig, EndpointAgentPresence, WorldActorMeta
+from api.models import AssistantAIConfig, DevicePresence, WorldActorMeta
 from .auth import get_current_user
 
 
@@ -81,39 +81,39 @@ async def world_snapshot(
 
     from api.services import librarian_service, valhalla_service
     from .ai_misc_routes import list_ai_cards
-    from .agents import list_connected_agents
+    from .devices import list_connected_devices
 
     try:
         cards = await list_ai_cards(session=session, authorization=authorization)
     except Exception:
         cards = []
     try:
-        connected = await list_connected_agents(session=session, authorization=authorization)
+        connected = await list_connected_devices(session=session, authorization=authorization)
         agents = connected.get("agents", [])
     except Exception:
         agents = []
     # 世界需要保留已绑定但离线的作坊，才能把成员自动安置到出生地。
     # 普通“已连接设备”列表仍只展示在线设备，不受这里的世界投影影响。
     try:
-        online_ids = {str(row.get("id") or row.get("agentId") or "") for row in agents}
+        online_ids = {str(row.get("id") or row.get("deviceId") or "") for row in agents}
         offline_rows = session.exec(
-            select(EndpointAgentPresence).where(
-                EndpointAgentPresence.user_id == user.id,
-                EndpointAgentPresence.online == False,  # noqa: E712
-                EndpointAgentPresence.ai_config_id.is_not(None),
+            select(DevicePresence).where(
+                DevicePresence.user_id == user.id,
+                DevicePresence.online == False,  # noqa: E712
+                DevicePresence.ai_config_id.is_not(None),
             )
         ).all()
         for row in offline_rows:
-            agent_id = str(row.agent_id or "").strip()
-            if not agent_id or agent_id in online_ids:
+            device_id = str(row.device_id or "").strip()
+            if not device_id or device_id in online_ids:
                 continue
-            agent_type = str(row.agent_type or "").strip()
+            device_type = str(row.device_type or "").strip()
             agents.append({
-                "id": agent_id,
-                "name": agent_id,
-                "platform": agent_type,
-                "isWindowsDesktop": agent_type == "desktop",
-                "isBrowserExtension": agent_type == "browser",
+                "id": device_id,
+                "name": device_id,
+                "platform": device_type,
+                "isWindowsDesktop": device_type == "desktop",
+                "isBrowserExtension": device_type == "browser",
                 "aiConfigId": row.ai_config_id,
                 "capabilities": [],
                 "lifecycle": "offline",

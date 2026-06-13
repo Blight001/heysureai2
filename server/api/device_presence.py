@@ -2,7 +2,7 @@
 
 Written by the process that owns the agent sockets (api-gateway, on
 register / disconnect / bind) and read by every process during endpoint tool
-discovery and classification. See ``api.models.agent_presence``.
+discovery and classification. See ``api.models.device_presence``.
 """
 
 import json
@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from sqlmodel import Session, select
 
 from .database import engine
-from .models import EndpointAgentPresence
+from .models import DevicePresence
 
 
 def _int(value) -> Optional[int]:
@@ -24,7 +24,7 @@ def _int(value) -> Optional[int]:
         return None
 
 
-def _decode(row: EndpointAgentPresence) -> Set[str]:
+def _decode(row: DevicePresence) -> Set[str]:
     try:
         parsed = json.loads(row.capabilities_json or "[]")
     except Exception:
@@ -34,7 +34,7 @@ def _decode(row: EndpointAgentPresence) -> Set[str]:
     return {str(x).strip() for x in parsed if str(x).strip()}
 
 
-def _decode_defs(row: EndpointAgentPresence) -> Dict[str, dict]:
+def _decode_defs(row: DevicePresence) -> Dict[str, dict]:
     try:
         parsed = json.loads(getattr(row, "tool_defs_json", "") or "{}")
     except Exception:
@@ -56,18 +56,18 @@ def _decode_defs(row: EndpointAgentPresence) -> Dict[str, dict]:
     return out
 
 
-def _load_presence_rows(session: Session, agent_id: str):
+def _load_presence_rows(session: Session, device_id: str):
     return session.exec(
-        select(EndpointAgentPresence)
-        .where(EndpointAgentPresence.agent_id == agent_id)
-        .order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
+        select(DevicePresence)
+        .where(DevicePresence.device_id == device_id)
+        .order_by(DevicePresence.updated_at.desc(), DevicePresence.id.desc())
     ).all()
 
 
 def upsert_presence(
-    user_id, agent_id, ai_config_id, agent_type, capabilities, online: bool = True, tool_defs=None
+    user_id, device_id, ai_config_id, device_type, capabilities, online: bool = True, tool_defs=None
 ) -> None:
-    aid = str(agent_id or "").strip()
+    aid = str(device_id or "").strip()
     if not aid:
         return
     caps = sorted({str(c).strip() for c in (capabilities or []) if str(c).strip()})
@@ -79,11 +79,11 @@ def upsert_presence(
         for stale in rows[1:]:
             session.delete(stale)
         if not row:
-            row = EndpointAgentPresence(agent_id=aid)
+            row = DevicePresence(device_id=aid)
             session.add(row)
         row.user_id = uid or row.user_id or 0
         row.ai_config_id = _int(ai_config_id)
-        row.agent_type = str(agent_type or "").strip()
+        row.device_type = str(device_type or "").strip()
         row.capabilities_json = json.dumps(caps, ensure_ascii=False)
         row.tool_defs_json = json.dumps(defs, ensure_ascii=False)
         row.online = bool(online)
@@ -91,8 +91,8 @@ def upsert_presence(
         session.commit()
 
 
-def set_offline(agent_id) -> None:
-    aid = str(agent_id or "").strip()
+def set_offline(device_id) -> None:
+    aid = str(device_id or "").strip()
     if not aid:
         return
     with Session(engine) as session:
@@ -109,8 +109,8 @@ def set_offline(agent_id) -> None:
             session.commit()
 
 
-def update_binding(agent_id, ai_config_id) -> None:
-    aid = str(agent_id or "").strip()
+def update_binding(device_id, ai_config_id) -> None:
+    aid = str(device_id or "").strip()
     if not aid:
         return
     with Session(engine) as session:
@@ -132,7 +132,7 @@ def mark_all_offline() -> None:
     their own rows back online."""
     with Session(engine) as session:
         rows = session.exec(
-            select(EndpointAgentPresence).where(EndpointAgentPresence.online == True)  # noqa: E712
+            select(DevicePresence).where(DevicePresence.online == True)  # noqa: E712
         ).all()
         for row in rows:
             row.online = False
@@ -141,9 +141,9 @@ def mark_all_offline() -> None:
             session.commit()
 
 
-def online_agents_for_config(user_id, ai_config_id) -> List[Tuple[str, str, Set[str]]]:
-    """``(agent_id, agent_type, capabilities)`` for every online agent bound to a
-    config. ``agent_id`` lets callers apply per-agent MCP scope."""
+def online_devices_for_config(user_id, ai_config_id) -> List[Tuple[str, str, Set[str]]]:
+    """``(device_id, device_type, capabilities)`` for every online agent bound to a
+    config. ``device_id`` lets callers apply per-agent MCP scope."""
     cfg = _int(ai_config_id)
     if not cfg:
         return []
@@ -151,20 +151,20 @@ def online_agents_for_config(user_id, ai_config_id) -> List[Tuple[str, str, Set[
     out: List[Tuple[str, str, Set[str]]] = []
     with Session(engine) as session:
         rows = session.exec(
-            select(EndpointAgentPresence).where(
-                EndpointAgentPresence.ai_config_id == cfg,
-                EndpointAgentPresence.online == True,  # noqa: E712
-            ).order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
+            select(DevicePresence).where(
+                DevicePresence.ai_config_id == cfg,
+                DevicePresence.online == True,  # noqa: E712
+            ).order_by(DevicePresence.updated_at.desc(), DevicePresence.id.desc())
         ).all()
         seen_agents: Set[str] = set()
         for row in rows:
-            agent_id = str(row.agent_id or "").strip()
-            if not agent_id or agent_id in seen_agents:
+            device_id = str(row.device_id or "").strip()
+            if not device_id or device_id in seen_agents:
                 continue
-            seen_agents.add(agent_id)
+            seen_agents.add(device_id)
             if uid and row.user_id and row.user_id != uid:
                 continue
-            out.append((agent_id, str(row.agent_type or "").strip(), _decode(row)))
+            out.append((device_id, str(row.device_type or "").strip(), _decode(row)))
     return out
 
 
@@ -174,21 +174,21 @@ def online_tool_names() -> Tuple[Set[str], Set[str]]:
     browser: Set[str] = set()
     with Session(engine) as session:
         rows = session.exec(
-            select(EndpointAgentPresence)
-            .where(EndpointAgentPresence.online == True)  # noqa: E712
-            .order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
+            select(DevicePresence)
+            .where(DevicePresence.online == True)  # noqa: E712
+            .order_by(DevicePresence.updated_at.desc(), DevicePresence.id.desc())
         ).all()
         seen_agents: Set[str] = set()
         for row in rows:
-            agent_id = str(row.agent_id or "").strip()
-            if not agent_id or agent_id in seen_agents:
+            device_id = str(row.device_id or "").strip()
+            if not device_id or device_id in seen_agents:
                 continue
-            seen_agents.add(agent_id)
+            seen_agents.add(device_id)
             caps = _decode(row)
-            agent_type = str(row.agent_type or "").strip()
-            if agent_type == "workshop":
+            device_type = str(row.device_type or "").strip()
+            if device_type == "workshop":
                 continue
-            if agent_type == "browser":
+            if device_type == "browser":
                 browser |= caps
             else:
                 desktop |= caps
@@ -200,20 +200,20 @@ def online_workshop_agents_for_user(user_id) -> List[Tuple[str, Set[str]]]:
     out: List[Tuple[str, Set[str]]] = []
     with Session(engine) as session:
         rows = session.exec(
-            select(EndpointAgentPresence).where(
-                EndpointAgentPresence.agent_type == "workshop",
-                EndpointAgentPresence.online == True,  # noqa: E712
-            ).order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
+            select(DevicePresence).where(
+                DevicePresence.device_type == "workshop",
+                DevicePresence.online == True,  # noqa: E712
+            ).order_by(DevicePresence.updated_at.desc(), DevicePresence.id.desc())
         ).all()
         seen_agents: Set[str] = set()
         for row in rows:
-            agent_id = str(row.agent_id or "").strip()
-            if not agent_id or agent_id in seen_agents:
+            device_id = str(row.device_id or "").strip()
+            if not device_id or device_id in seen_agents:
                 continue
-            seen_agents.add(agent_id)
+            seen_agents.add(device_id)
             if uid and row.user_id and row.user_id != uid:
                 continue
-            out.append((agent_id, _decode(row)))
+            out.append((device_id, _decode(row)))
     return out
 
 
@@ -224,20 +224,20 @@ def online_tool_defs() -> Dict[str, dict]:
     out: Dict[str, dict] = {}
     with Session(engine) as session:
         rows = session.exec(
-            select(EndpointAgentPresence)
-            .where(EndpointAgentPresence.online == True)  # noqa: E712
-            .order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
+            select(DevicePresence)
+            .where(DevicePresence.online == True)  # noqa: E712
+            .order_by(DevicePresence.updated_at.desc(), DevicePresence.id.desc())
         ).all()
         seen_agents: Set[str] = set()
         for row in rows:
-            agent_id = str(row.agent_id or "").strip()
-            if not agent_id or agent_id in seen_agents:
+            device_id = str(row.device_id or "").strip()
+            if not device_id or device_id in seen_agents:
                 continue
-            seen_agents.add(agent_id)
+            seen_agents.add(device_id)
             for name, spec in _decode_defs(row).items():
                 out.setdefault(name, {
                     **spec,
-                    "mcpSource": str(row.agent_type or "desktop").strip() or "desktop",
+                    "mcpSource": str(row.device_type or "desktop").strip() or "desktop",
                 })
     return out
 
@@ -250,24 +250,24 @@ def online_tool_defs_for_user(user_id) -> Dict[str, dict]:
     out: Dict[str, dict] = {}
     with Session(engine) as session:
         rows = session.exec(
-            select(EndpointAgentPresence).where(
-                EndpointAgentPresence.user_id == uid,
-                EndpointAgentPresence.online == True,  # noqa: E712
-            ).order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
+            select(DevicePresence).where(
+                DevicePresence.user_id == uid,
+                DevicePresence.online == True,  # noqa: E712
+            ).order_by(DevicePresence.updated_at.desc(), DevicePresence.id.desc())
         ).all()
         seen_agents: Set[str] = set()
         for row in rows:
-            agent_id = str(row.agent_id or "").strip()
-            if not agent_id or agent_id in seen_agents:
+            device_id = str(row.device_id or "").strip()
+            if not device_id or device_id in seen_agents:
                 continue
-            seen_agents.add(agent_id)
-            if str(row.agent_type or "").strip() == "workshop":
+            seen_agents.add(device_id)
+            if str(row.device_type or "").strip() == "workshop":
                 continue
             for name, spec in _decode_defs(row).items():
                 out.setdefault(name, {
                     **spec,
-                    "mcpSource": str(row.agent_type or "desktop").strip() or "desktop",
-                    "agent_id": agent_id,
+                    "mcpSource": str(row.device_type or "desktop").strip() or "desktop",
+                    "device_id": device_id,
                 })
     return out
 
@@ -284,19 +284,19 @@ def online_tool_catalog_for_user(user_id) -> List[Dict[str, object]]:
     out: List[Dict[str, object]] = []
     with Session(engine) as session:
         rows = session.exec(
-            select(EndpointAgentPresence).where(
-                EndpointAgentPresence.user_id == uid,
-                EndpointAgentPresence.online == True,  # noqa: E712
-            ).order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
+            select(DevicePresence).where(
+                DevicePresence.user_id == uid,
+                DevicePresence.online == True,  # noqa: E712
+            ).order_by(DevicePresence.updated_at.desc(), DevicePresence.id.desc())
         ).all()
         seen_agents: Set[str] = set()
         for row in rows:
-            agent_id = str(row.agent_id or "").strip()
-            if not agent_id or agent_id in seen_agents:
+            device_id = str(row.device_id or "").strip()
+            if not device_id or device_id in seen_agents:
                 continue
-            seen_agents.add(agent_id)
-            agent_type = str(row.agent_type or "desktop").strip() or "desktop"
-            if agent_type == "workshop":
+            seen_agents.add(device_id)
+            device_type = str(row.device_type or "desktop").strip() or "desktop"
+            if device_type == "workshop":
                 continue
             capabilities = _decode(row)
             defs = _decode_defs(row)
@@ -311,18 +311,18 @@ def online_tool_catalog_for_user(user_id) -> List[Dict[str, object]]:
                     "implementation": spec.get("implementation") if isinstance(spec.get("implementation"), dict) else {},
                 })
             out.append({
-                "agent_id": agent_id,
-                "agent_type": agent_type,
+                "device_id": device_id,
+                "device_type": device_type,
                 "updated_at": float(row.updated_at or 0),
                 "tools": tools,
             })
     return out
 
 
-def tool_defs_for_agent(user_id, agent_id) -> Dict[str, dict]:
+def tool_defs_for_agent(user_id, device_id) -> Dict[str, dict]:
     """Self-described tool definitions for one user-owned endpoint agent."""
     uid = _int(user_id)
-    aid = str(agent_id or "").strip()
+    aid = str(device_id or "").strip()
     if uid is None or not aid:
         return {}
     with Session(engine) as session:

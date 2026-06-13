@@ -4,7 +4,7 @@ import { resolveAgentSocketUrl, resolveBaseUrl, serverFetch } from '../services/
 import { cacheUserAvatar } from '../services/avatar-cache'
 import {
   getAgent, rebuildAgent, clearSelectedAiConfig,
-} from '../services/agent-runtime'
+} from '../services/device-runtime'
 
 export function registerAuthIpc(): void {
   ipcMain.handle('auth:login', async (_event, params: { serverUrl: string; account: string; password: string }) => {

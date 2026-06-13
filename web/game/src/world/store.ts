@@ -1,6 +1,6 @@
 /**
- * 数据绑定层：把现有 REST（listAiCards / listConnectedAgents / valhalla / librarian）
- * 和 Socket.IO（ui:join → agent:list / mcp:status / librarian:*）归一成一个世界快照，
+ * 数据绑定层：把现有 REST（listAiCards / listConnectedDevices / valhalla / librarian）
+ * 和 Socket.IO（ui:join → device:list / mcp:status / librarian:*）归一成一个世界快照，
  * 供 Phaser 场景消费。框架无关（不依赖 Vue），只读不写。
  *
  * 角色判定与 useDashboardData.ts 对齐：
@@ -12,7 +12,7 @@ import { io, type Socket } from 'socket.io-client'
 import { get, getAuthToken } from '@/api/http'
 import { me } from '@/api/auth'
 import { listAiCards } from '@/api/ai'
-import { listConnectedAgents } from '@/api/agents'
+import { listConnectedDevices } from '@/api/agents'
 import { listValhallaEntries, type ValhallaEntry } from '@/api/valhalla'
 import { listEntries, listProposals, readEntry, type KnowledgeEntryItem } from '@/api/librarian'
 import { listWorldActorMeta, type WorldActorAppearance } from '@/api/world'
@@ -46,7 +46,7 @@ export interface WorldMember {
   projectId: string
   projectName: string
   platform: string
-  /** 绑定的端侧 agent id（来自 agent:list 的 aiConfigId 反查） */
+  /** 绑定的端侧 agent id（来自 device:list 的 aiConfigId 反查） */
   boundAgentIds: string[]
   /** 用户在世界里指定的皮肤（WorldActorMeta），空 = 默认哈希皮肤 */
   skin: string
@@ -59,7 +59,7 @@ export interface WorldMember {
 }
 
 export interface WorldWorkshop {
-  agentId: string
+  deviceId: string
   name: string
   type: 'desktop' | 'browser' | 'workshop'
   lifecycle: string
@@ -219,7 +219,7 @@ export class WorldStore {
       this.snapshot.socketConnected = false
       this.emit()
     })
-    socket.on('agent:list', (rows: unknown) => {
+    socket.on('device:list', (rows: unknown) => {
       this.rawAgents = Array.isArray(rows) ? rows : []
       this.rebuildWorkshops()
       this.emit()
@@ -264,7 +264,7 @@ export class WorldStore {
       const type = workshopTypeOf(raw)
       if (!type) continue
       workshops.push({
-        agentId: String(raw.id || raw.socketId || ''),
+        deviceId: String(raw.id || raw.socketId || ''),
         name: String(raw.name || raw.id || 'agent'),
         type,
         lifecycle: String(raw.lifecycle || 'connected'),
@@ -275,14 +275,14 @@ export class WorldStore {
         online: raw.online !== false && String(raw.lifecycle || '').toLowerCase() !== 'offline',
       })
     }
-    workshops.sort((a, b) => a.agentId.localeCompare(b.agentId))
+    workshops.sort((a, b) => a.deviceId.localeCompare(b.deviceId))
     this.snapshot.workshops = workshops
     // 成员 ←→ 作坊绑定反查
     const byConfig = new Map<number, string[]>()
     for (const w of workshops) {
       if (w.aiConfigId === null) continue
       const list = byConfig.get(w.aiConfigId) || []
-      list.push(w.agentId)
+      list.push(w.deviceId)
       byConfig.set(w.aiConfigId, list)
     }
     for (const m of this.snapshot.members) {
@@ -404,7 +404,7 @@ export class WorldStore {
 
   /** 分域回退（兼容未部署 /api/world/snapshot 的后端） */
   private async refreshViaDomains(token: string) {
-    const [cards, connected] = await Promise.all([listAiCards(), listConnectedAgents()])
+    const [cards, connected] = await Promise.all([listAiCards(), listConnectedDevices()])
     if (Array.isArray(connected?.agents)) this.applyAgentRows(connected.agents)
     try {
       const meta = await listWorldActorMeta()

@@ -3,9 +3,9 @@
 Kept separate from the socket / REST layers so the dispatch path (which reads
 the scope on every endpoint tool call) and the Workshop / AI-settings editors
 (which write it) share one source of truth. See
-``api.models.agent_mcp_permission``.
+``api.models.device_mcp_permission``.
 
-Scope is keyed by ``(user_id, agent_id)`` — each individual connected agent has
+Scope is keyed by ``(user_id, device_id)`` — each individual connected agent has
 its own allow-list. A missing row means "closed" — the bound AI may not use any
 tool from that agent until the Workshop saves a scope. Callers distinguish that
 from an explicit empty allow-list: ``get_scope`` returns ``None`` for "no
@@ -19,7 +19,7 @@ from typing import Iterable, Optional, Set
 from sqlmodel import Session, select
 
 from .database import engine
-from .models import AgentTypeMcpPermission
+from .models import DeviceTypeMcpPermission
 
 VALID_AGENT_TYPES = ("linux", "desktop", "browser", "workshop")
 
@@ -33,12 +33,12 @@ def _coerce_int(value) -> Optional[int]:
         return None
 
 
-def _agent_id(value) -> str:
+def _device_id(value) -> str:
     return str(value or "").strip()
 
 
-def _normalize_type(agent_type) -> str:
-    value = str(agent_type or "").strip().lower()
+def _normalize_type(device_type) -> str:
+    value = str(device_type or "").strip().lower()
     return value if value in VALID_AGENT_TYPES else ""
 
 
@@ -52,22 +52,22 @@ def _decode_tools(raw: str) -> Set[str]:
     return {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
 
 
-def _load_scope_rows(session: Session, user_id: int, agent_id: str):
+def _load_scope_rows(session: Session, user_id: int, device_id: str):
     return session.exec(
-        select(AgentTypeMcpPermission)
+        select(DeviceTypeMcpPermission)
         .where(
-            AgentTypeMcpPermission.user_id == user_id,
-            AgentTypeMcpPermission.agent_id == agent_id,
+            DeviceTypeMcpPermission.user_id == user_id,
+            DeviceTypeMcpPermission.device_id == device_id,
         )
-        .order_by(AgentTypeMcpPermission.updated_at.desc(), AgentTypeMcpPermission.id.desc())
+        .order_by(DeviceTypeMcpPermission.updated_at.desc(), DeviceTypeMcpPermission.id.desc())
     ).all()
 
 
-def get_scope(user_id, agent_id) -> Optional[Set[str]]:
+def get_scope(user_id, device_id) -> Optional[Set[str]]:
     """Return the saved allow-list for (user, agent), or ``None`` when no row
     exists (meaning: default closed)."""
     uid = _coerce_int(user_id)
-    aid = _agent_id(agent_id)
+    aid = _device_id(device_id)
     if uid is None or not aid:
         return None
     with Session(engine) as session:
@@ -80,18 +80,18 @@ def get_scope(user_id, agent_id) -> Optional[Set[str]]:
         return _decode_tools(row.tools_json) if row else None
 
 
-def set_scope(user_id, agent_id, tools: Iterable[str], *, ai_config_id=None, agent_type="") -> Optional[Set[str]]:
-    """Upsert the allow-list for one agent. ``ai_config_id`` / ``agent_type`` are
+def set_scope(user_id, device_id, tools: Iterable[str], *, ai_config_id=None, device_type="") -> Optional[Set[str]]:
+    """Upsert the allow-list for one agent. ``ai_config_id`` / ``device_type`` are
     stored as informational columns. Returns the stored set, or ``None`` on bad
     input."""
     uid = _coerce_int(user_id)
-    aid = _agent_id(agent_id)
+    aid = _device_id(device_id)
     if uid is None or not aid:
         return None
     allowed = sorted({str(item).strip() for item in (tools or []) if str(item).strip()})
     encoded = json.dumps(allowed, ensure_ascii=False)
     cfg = _coerce_int(ai_config_id)
-    atype = _normalize_type(agent_type)
+    atype = _normalize_type(device_type)
     with Session(engine) as session:
         rows = _load_scope_rows(session, uid, aid)
         row = rows[0] if rows else None
@@ -100,11 +100,11 @@ def set_scope(user_id, agent_id, tools: Iterable[str], *, ai_config_id=None, age
         if row:
             row.tools_json = encoded
             row.ai_config_id = cfg
-            row.agent_type = atype or row.agent_type
+            row.device_type = atype or row.device_type
             row.updated_at = time.time()
         else:
-            row = AgentTypeMcpPermission(
-                user_id=uid, agent_id=aid, ai_config_id=cfg, agent_type=atype, tools_json=encoded
+            row = DeviceTypeMcpPermission(
+                user_id=uid, device_id=aid, ai_config_id=cfg, device_type=atype, tools_json=encoded
             )
             session.add(row)
         session.commit()
@@ -113,11 +113,11 @@ def set_scope(user_id, agent_id, tools: Iterable[str], *, ai_config_id=None, age
 
 def reconcile_scope_with_capabilities(
     user_id,
-    agent_id,
+    device_id,
     capabilities: Iterable[str],
     *,
     ai_config_id=None,
-    agent_type="",
+    device_type="",
 ) -> Optional[Set[str]]:
     """Prune any stored MCP scope entries that are no longer reported by the agent.
 
@@ -125,12 +125,12 @@ def reconcile_scope_with_capabilities(
     after the device's advertised capability set changes.
     """
     uid = _coerce_int(user_id)
-    aid = _agent_id(agent_id)
+    aid = _device_id(device_id)
     if uid is None or not aid:
         return None
     live_caps = {str(item).strip() for item in (capabilities or []) if str(item).strip()}
     cfg = _coerce_int(ai_config_id)
-    atype = _normalize_type(agent_type)
+    atype = _normalize_type(device_type)
     with Session(engine) as session:
         rows = _load_scope_rows(session, uid, aid)
         row = rows[0] if rows else None
@@ -151,8 +151,8 @@ def reconcile_scope_with_capabilities(
         if cfg is not None and row.ai_config_id != cfg:
             row.ai_config_id = cfg
             dirty = True
-        if atype and row.agent_type != atype:
-            row.agent_type = atype
+        if atype and row.device_type != atype:
+            row.device_type = atype
             dirty = True
         if dirty:
             session.commit()

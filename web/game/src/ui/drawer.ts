@@ -6,7 +6,7 @@
  *  - 内容按"栏目（标签页）"组织——底部高度有限，内容多时用户切标签查看，不再被截断。
  *
  * 设计原则（方案 §0①）：面板只是现有 REST 链路的调用方——
- * 启停=toggleAiRun、绑定=assignAgentAi、审批=librarian approve/reject、
+ * 启停=toggleAiRun、绑定=assignDeviceAi、审批=librarian approve/reject、
  * 派任务=task-trigger、皮肤=world meta。操作完成后 store.refreshNow()，
  * 地图与主控制台两边自然同步。
  */
@@ -14,7 +14,7 @@ import { MEMBER_SKINS } from '../assetManifest'
 import type { WorldMember, WorldSnapshot } from '../world/store'
 import { renderPortrait, type PortraitSpec } from './portrait'
 
-interface AgentMcpScopeView {
+interface DeviceMcpScopeView {
   capabilities: string[]
   allowed: string[]
   hasRecord: boolean
@@ -50,9 +50,9 @@ export interface AppearanceDraft {
 
 export interface DrawerActions {
   toggleRun(aiConfigId: number): Promise<void>
-  assignAgent(agentId: string, aiConfigId: number | null): Promise<void>
-  loadAgentMcpScope(agentId: string): Promise<AgentMcpScopeView>
-  saveAgentMcpScope(agentId: string, tools: string[]): Promise<void>
+  assignAgent(deviceId: string, aiConfigId: number | null): Promise<void>
+  loadDeviceMcpScope(deviceId: string): Promise<DeviceMcpScopeView>
+  saveDeviceMcpScope(deviceId: string, tools: string[]): Promise<void>
   setAppearance(aiConfigId: number, meta: AppearanceDraft): Promise<void>
   /** 调参时所见即所得（仅本地，不落库；下次快照刷新自动回到已保存值） */
   previewAppearance(aiConfigId: number, meta: AppearanceDraft): void
@@ -356,30 +356,30 @@ export class Drawer {
   private memberBindTab(m: WorldMember, snap: WorldSnapshot) {
     const bind = this.section('端侧绑定（作坊）')
     const bindFb = this.feedback(bind)
-    for (const agentId of m.boundAgentIds) {
-      const w = snap.workshops.find(x => x.agentId === agentId)
+    for (const deviceId of m.boundAgentIds) {
+      const w = snap.workshops.find(x => x.deviceId === deviceId)
       const item = document.createElement('div')
       item.className = 'd-item'
       const label = document.createElement('span')
-      label.textContent = `${w?.name || agentId}（${w?.type === 'browser' ? '瞭望塔' : '机械坊'}）`
+      label.textContent = `${w?.name || deviceId}（${w?.type === 'browser' ? '瞭望塔' : '机械坊'}）`
       const un = document.createElement('button')
       un.type = 'button'
       un.className = 'd-btn warn'
       un.style.float = 'right'
       un.textContent = '解绑'
-      un.onclick = () => void this.runAction(un, bindFb, () => this.actions.assignAgent(agentId, null), '已解绑')
+      un.onclick = () => void this.runAction(un, bindFb, () => this.actions.assignAgent(deviceId, null), '已解绑')
       item.appendChild(un)
       item.appendChild(label)
       bind.appendChild(item)
     }
-    const freeWorkshops = snap.workshops.filter(w => !m.boundAgentIds.includes(w.agentId))
+    const freeWorkshops = snap.workshops.filter(w => !m.boundAgentIds.includes(w.deviceId))
     if (freeWorkshops.length) {
       const sel = document.createElement('select')
       sel.className = 'd-sel'
       sel.innerHTML =
         `<option value="">选择作坊以绑定本成员…</option>` +
         freeWorkshops
-          .map(w => `<option value="${esc(w.agentId)}">${esc(w.name)}（${w.type === 'browser' ? '瞭望塔' : '机械坊'}${w.aiConfigId ? ' · 已有成员' : ''}）</option>`)
+          .map(w => `<option value="${esc(w.deviceId)}">${esc(w.name)}（${w.type === 'browser' ? '瞭望塔' : '机械坊'}${w.aiConfigId ? ' · 已有成员' : ''}）</option>`)
           .join('')
       const bd = document.createElement('button')
       bd.type = 'button'
@@ -605,8 +605,8 @@ export class Drawer {
   }
 
   // ---------------------------------------------------------------- 作坊
-  openWorkshop(agentId: string, snap: WorldSnapshot, portrait?: PortraitSpec | null) {
-    const w = snap.workshops.find(x => x.agentId === agentId)
+  openWorkshop(deviceId: string, snap: WorldSnapshot, portrait?: PortraitSpec | null) {
+    const w = snap.workshops.find(x => x.deviceId === deviceId)
     if (!w) return
     const title = w.type === 'desktop' ? '机械坊（桌面 Agent）' : w.type === 'browser' ? '瞭望塔（浏览器 Agent）' : '知识工坊'
     this.openPanel({
@@ -647,7 +647,7 @@ export class Drawer {
             btn.textContent = '保存分配'
             btn.onclick = () => {
               const v = sel.value === '' ? null : Number(sel.value)
-              void this.runAction(btn, fb, () => this.actions.assignAgent(w.agentId, v), v === null ? '已解绑' : '已分配')
+              void this.runAction(btn, fb, () => this.actions.assignAgent(w.deviceId, v), v === null ? '已解绑' : '已分配')
             }
             assign.appendChild(sel)
             assign.appendChild(btn)
@@ -659,17 +659,17 @@ export class Drawer {
             }
           },
         },
-        { name: 'MCP 权限', build: () => this.mcpScopeSection(w.agentId) },
+        { name: 'MCP 权限', build: () => this.mcpScopeSection(w.deviceId) },
       ],
     })
   }
 
-  private mcpScopeSection(agentId: string) {
+  private mcpScopeSection(deviceId: string) {
     const sec = this.section('Agent MCP 权限')
     const fb = this.feedback(sec)
     fb.className = 'd-dim'
     fb.textContent = '加载中…'
-    void this.actions.loadAgentMcpScope(agentId).then(scope => {
+    void this.actions.loadDeviceMcpScope(deviceId).then(scope => {
       sec.innerHTML = '<div class="d-sec-title">Agent MCP 权限</div>'
       const info = document.createElement('div')
       info.className = 'd-dim'
@@ -722,7 +722,7 @@ export class Drawer {
       save.className = 'd-btn ok'
       save.textContent = '保存 MCP 权限'
       save.onclick = () =>
-        void this.runAction(save, saveFb, () => this.actions.saveAgentMcpScope(agentId, Array.from(selected)), 'MCP 权限已保存')
+        void this.runAction(save, saveFb, () => this.actions.saveDeviceMcpScope(deviceId, Array.from(selected)), 'MCP 权限已保存')
       sec.appendChild(all)
       sec.appendChild(none)
       sec.appendChild(save)

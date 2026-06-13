@@ -52,9 +52,9 @@ from .defaults import (
     DEFAULT_USER_MESSAGE_NOTICE,
 )
 from .admin_audit import AdminAuditLog
-from .agent_binding import AgentAiBinding
-from .agent_mcp_permission import AgentTypeMcpPermission
-from .agent_presence import EndpointAgentPresence
+from .device_binding import DeviceAiBinding
+from .device_mcp_permission import DeviceTypeMcpPermission
+from .device_presence import DevicePresence
 from .bot_session_route import BotSessionRoute, BotUserCursor
 from .workshop_binding import WorkshopAiBinding
 from .knowledge import EvolutionInput, KnowledgeEntry, Memory, ValhallaEntry
@@ -95,9 +95,9 @@ __all__ = [
     "SystemSetting",
     "EmailVerificationCode",
     # agent device bindings
-    "AgentAiBinding",
-    "AgentTypeMcpPermission",
-    "EndpointAgentPresence",
+    "DeviceAiBinding",
+    "DeviceTypeMcpPermission",
+    "DevicePresence",
     "WorkshopAiBinding",
     # chat
     "ChatMessage",

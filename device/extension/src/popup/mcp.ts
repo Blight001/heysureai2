@@ -68,7 +68,7 @@ const TOOL_LABELS: Record<string, { zh: string; en: string }> = {
 // immediately drops or picks up the affected tools, and refresh the list.
 async function applyEnabledChange(fn: () => Promise<void>) {
   await fn()
-  sendToBackground({ type: 'agent:connect' })
+  sendToBackground({ type: 'device:connect' })
   await renderMcpList()
 }
 
@@ -291,7 +291,7 @@ async function renderDetail(tool: AIToolDef) {
   dom.mcpDetail.querySelector('#detail-enable')!.addEventListener('change', async (e) => {
     const checked = (e.target as HTMLInputElement).checked
     await setToolEnabled(tool.name, checked)
-    sendToBackground({ type: 'agent:connect' })
+    sendToBackground({ type: 'device:connect' })
     await renderDetail(tool)
   })
 
@@ -303,7 +303,7 @@ async function renderDetail(tool: AIToolDef) {
     })
     await setToolDescOverride(tool.name, { description, parameters })
     // Re-report toolDefs so the server picks up the edit without reconnecting.
-    sendToBackground({ type: 'agent:connect' })
+    sendToBackground({ type: 'device:connect' })
     const fb = dom.mcpDetail.querySelector('#edit-feedback') as HTMLElement
     fb.textContent = '已保存，稍后同步给服务器'
     fb.style.color = 'var(--success)'
@@ -312,7 +312,7 @@ async function renderDetail(tool: AIToolDef) {
 
   dom.mcpDetail.querySelector('#edit-reset')!.addEventListener('click', async () => {
     await setToolDescOverride(tool.name, { description: '', parameters: {} })
-    sendToBackground({ type: 'agent:connect' })
+    sendToBackground({ type: 'device:connect' })
     await renderDetail(tool)
   })
 

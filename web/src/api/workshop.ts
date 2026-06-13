@@ -5,7 +5,7 @@ import { get, post } from './http'
 // 工坊与 AI 为 1:1 —— 只能绑定一个 AI 数字成员，绑定新成员会替换旧绑定。
 
 export interface WorkshopAgentItem {
-  agent_id: string
+  device_id: string
   name: string
   online: boolean
   tools: string[]
@@ -22,15 +22,15 @@ export const fetchWorkshopBindings = (aiConfigId: number) =>
     { fallbackError: '知识工坊列表加载失败' },
   )
 
-export const setWorkshopBinding = (aiConfigId: number, agentId: string, bound: boolean) =>
+export const setWorkshopBinding = (aiConfigId: number, deviceId: string, bound: boolean) =>
   post<{
     ai_config_id: number
-    agent_id: string
+    device_id: string
     bound: boolean
     replaced_ai_config_id: number | null
     replaced_ai_name: string
   }>(
     '/api/workshop/bindings',
-    { ai_config_id: aiConfigId, agent_id: agentId, bound },
+    { ai_config_id: aiConfigId, device_id: deviceId, bound },
     { fallbackError: '更新知识工坊绑定失败' },
   )

@@ -6,7 +6,7 @@ import KnowledgeBasePanel from './KnowledgeBasePanel.vue'
 import { deleteValhallaEntries, readValhallaEntry, type ValhallaEntry, type ValhallaEntryDetail } from '@/api/valhalla'
 import { getAuthToken } from '@/api/http'
 import { useMessage } from '@/composables/useMessage'
-import type { ConnectedAgent } from '@/composables/dashboard/useDashboardData'
+import type { ConnectedDevice } from '@/composables/dashboard/useDashboardData'
 
 interface Agent {
   id: string
@@ -27,7 +27,7 @@ interface Agent {
 interface Props {
   entries: ValhallaEntry[]
   activeAgents: Agent[]
-  connectedAgents: ConnectedAgent[]
+  connectedDevices: ConnectedDevice[]
   knowledgeItems: { id: string; title: string; author: string; time: string; tags: string[] }[]
   knowledgeTotalCount: number
   librarianPendingCount: number

@@ -296,7 +296,7 @@ def _normalize_endpoint(value: Any) -> str:
 def _infer_endpoint_kind(user_id: int, ai_config_id: Optional[int]) -> str:
     """按安装成员当前在线绑定的端侧 agent 类型推断端归类。
 
-    读取共享 ``EndpointAgentPresence``（agent_type desktop/browser，工坊为
+    读取共享 ``DevicePresence``（device_type desktop/browser，工坊为
     workshop→归 any）。仅当成员唯一绑定到某一端时返回该端，否则（无绑定 /
     同时绑定多端 / 仅工坊）回 ``any``。best-effort：异常一律回 ``any``。
     """
@@ -307,11 +307,11 @@ def _infer_endpoint_kind(user_id: int, ai_config_id: Optional[int]) -> str:
     if not cfg:
         return "any"
     try:
-        from ..agent_presence import online_agents_for_config
+        from ..device_presence import online_devices_for_config
 
         kinds = {
-            _normalize_endpoint(agent_type)
-            for _agent_id, agent_type, _caps in online_agents_for_config(user_id, cfg)
+            _normalize_endpoint(device_type)
+            for _device_id, device_type, _caps in online_devices_for_config(user_id, cfg)
         }
     except Exception:
         return "any"
@@ -1372,7 +1372,7 @@ def _inheritance_skills_payload(user_id: int = 0) -> Dict[str, Any]:
     """传承技能 = 当前账号在线端侧实时上报的 MCP 工具信息。"""
     devices: List[Dict[str, Any]] = []
     try:
-        from api.agent_presence import online_tool_catalog_for_user
+        from api.device_presence import online_tool_catalog_for_user
 
         devices = online_tool_catalog_for_user(int(user_id or 0))
     except Exception as exc:
@@ -1382,8 +1382,8 @@ def _inheritance_skills_payload(user_id: int = 0) -> Dict[str, Any]:
     enriched_devices: List[Dict[str, Any]] = []
     tools: List[Dict[str, Any]] = []
     for device in devices:
-        agent_id = str(device.get("agent_id") or "")
-        agent_type = str(device.get("agent_type") or "desktop")
+        device_id = str(device.get("device_id") or "")
+        device_type = str(device.get("device_type") or "desktop")
         device_tools: List[Dict[str, Any]] = []
         for spec in device.get("tools") or []:
             if not isinstance(spec, dict):
@@ -1398,15 +1398,15 @@ def _inheritance_skills_payload(user_id: int = 0) -> Dict[str, Any]:
                 "inputSchema": schema,
                 "parameters": _mcp_schema_parameter_rows(name, schema, None),
                 "destructive": bool(spec.get("destructive")),
-                "agent_id": agent_id,
-                "agent_type": agent_type,
+                "device_id": device_id,
+                "device_type": device_type,
                 "implementation": spec.get("implementation") if isinstance(spec.get("implementation"), dict) else {},
             }
             device_tools.append(tool)
             tools.append(tool)
         enriched_devices.append({
-            "agent_id": agent_id,
-            "agent_type": agent_type,
+            "device_id": device_id,
+            "device_type": device_type,
             "updated_at": float(device.get("updated_at") or 0),
             "tool_count": len(device_tools),
             "tools": device_tools,
@@ -1440,7 +1440,7 @@ def _render_inheritance_skills_body(payload: Dict[str, Any]) -> str:
     for tool in tools:
         name = str(tool.get("name") or "").strip()
         description = str(tool.get("description") or "").strip() or "（无描述）"
-        source = f"{tool.get('agent_type') or 'device'}:{tool.get('agent_id') or ''}"
+        source = f"{tool.get('device_type') or 'device'}:{tool.get('device_id') or ''}"
         lines.append(f"- `{name}` [{source}]: {description}")
         params = tool.get("parameters") if isinstance(tool.get("parameters"), list) else []
         if params:

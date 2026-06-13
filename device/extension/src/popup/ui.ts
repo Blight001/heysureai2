@@ -1,7 +1,7 @@
 // popup/ui.ts — shared presentation layer: theme, the 3-state connection
 // indicator, settings/login/members modals, tool-call stats and the auth chip.
 
-import { AgentStatus } from '../lib/types'
+import { DeviceStatus } from '../lib/types'
 import { state } from './state'
 import { sendToBackground } from './transport'
 import * as dom from './dom'
@@ -30,10 +30,10 @@ export function renderStatus() {
   dom.statusLabel.textContent = label
 }
 
-export function setStatus(status: AgentStatus) {
+export function setStatus(status: DeviceStatus) {
   state.currentStatus = status
   // Losing the connection clears any prior AI binding so we don't show green
-  // while offline; it is re-applied on the next agent:registered.
+  // while offline; it is re-applied on the next device:registered.
   if (status !== 'registered' && status !== 'connected') state.boundAiConfigId = null
   renderStatus()
   renderMembers()

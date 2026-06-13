@@ -112,7 +112,7 @@ const effectiveMcpErrorIcon = computed(() => mcpErrorIconEnabled.value ? mcpErro
 let resolveMcpAutoApprove = (_configId?: number) => false
 const {
   agents,
-  connectedAgents,
+  connectedDevices,
   knowledgeBase,
   globalGeneration,
   allFiles,
@@ -511,7 +511,7 @@ onUnmounted(() => {
             :admin-agents="adminAgents"
             :member-agents="sidebarMemberAgents"
             :active-agents="activeAgents"
-            :connected-agents="connectedAgents"
+            :connected-agents="connectedDevices"
             :brain-view-mode="brainViewMode"
             @context="openContextMenu"
             @update:brain-view-mode="saveBrainViewMode"
@@ -545,7 +545,7 @@ onUnmounted(() => {
           <ValhallaPanel
             :entries="valhallaEntries"
             :active-agents="activeAgents"
-            :connected-agents="connectedAgents"
+            :connected-agents="connectedDevices"
             :knowledge-items="filteredKnowledgeBase"
             :knowledge-total-count="filteredKnowledgeBase.length"
             :librarian-pending-count="librarianPending.length"
@@ -657,7 +657,7 @@ onUnmounted(() => {
       :delete-confirm="aiConfigDeleteConfirm"
       :settings-section="aiConfigSettingsSection"
       :available-mcp-tools="configAvailableMcpTools"
-      :connected-agents="connectedAgents"
+      :connected-agents="connectedDevices"
       :model-presets="modelPresets"
       :on-close="() => aiConfigModalOpen = false"
       :on-toggle-settings-section="toggleAiConfigSettingsSection"
