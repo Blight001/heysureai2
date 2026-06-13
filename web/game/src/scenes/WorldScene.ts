@@ -10,9 +10,8 @@ import { setWorkshopBinding } from '@/api/workshop'
 import { triggerTaskForAgent } from '@/api/task'
 import { approveProposal, rejectProposal } from '@/api/librarian'
 import { setWorldActorMeta } from '@/api/world'
-import { ROLE_SKINS, SHEETS, TILES } from '../assetManifest'
+import { SHEETS, TILES } from '../assetManifest'
 import { MemberActor } from '../actors/MemberActor'
-import { GovernorActor } from '../actors/GovernorActor'
 import { portraitSpecFor, type PortraitSpec } from '../ui/portrait'
 import {
   FIXED_BUILDINGS,
@@ -115,9 +114,12 @@ export class WorldScene extends Phaser.Scene {
   private worldHour = 12
   private nightGlows: { img: Phaser.GameObjects.Image; base: number; phase: number }[] = []
   private fireflies: { img: Phaser.GameObjects.Image; vx: number; vy: number; phase: number }[] = []
-  /** 总督（玩家化身）：无 token / 无任务，用户用 WSAD 操控，按 F 与附近 AI 交互 */
-  private governor!: GovernorActor
+  /**
+   * 总督操控：把世界里已有的「核心管理员」（无 token 上限 / 无任务）当作玩家化身，
+   * 用户用 WSAD 操控其移动，按 F 与附近其它 AI 交互。不再额外生成化身，避免重复。
+   */
   private governorMode = false
+  private governorId: number | null = null
   private moveKeys!: Record<string, Phaser.Input.Keyboard.Key>
   private interactPrompt!: Phaser.GameObjects.Text
   private nearestInteractId: number | null = null
@@ -804,9 +806,8 @@ export class WorldScene extends Phaser.Scene {
     return Math.max(this.scale.width / WORLD_W, this.scale.height / WORLD_H)
   }
 
-  // ---------------------------------------------------------------- 总督（玩家化身）
+  // ---------------------------------------------------------------- 总督操控
   private createGovernor() {
-    this.governor = new GovernorActor(this, { x: 980, y: 600 }, ROLE_SKINS.coreAdmin)
     this.interactPrompt = this.add.text(0, 0, '按 F 交互', {
       fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
       fontSize: '12px',
@@ -831,6 +832,13 @@ export class WorldScene extends Phaser.Scene {
     this.overlay.initGovernorButton(document.body, this.governorMode, active => this.setGovernorMode(active))
   }
 
+  /** 当前可被操控的总督（世界里存活的核心管理员）对应的 actor */
+  private governorActor(): MemberActor | null {
+    const m = this.snap?.members.find(x => x.role === 'core_admin' && x.lifecycle !== 'dead')
+    if (!m) return null
+    return this.actors.get(m.id) ?? null
+  }
+
   /** 焦点是否在表单输入上（避免在面板里打字时误触 WSAD/F/G） */
   private isTextInputFocused(): boolean {
     const tag = document.activeElement?.tagName
@@ -839,22 +847,34 @@ export class WorldScene extends Phaser.Scene {
 
   private setGovernorMode(on: boolean) {
     if (on === this.governorMode) return
-    this.governorMode = on
     const cam = this.cameras.main
     if (on) {
+      const gov = this.governorActor()
+      if (!gov) {
+        // 世界里没有核心管理员可操控：提示并保持关闭
+        this.overlay.flashGovernorHint('世界里暂无核心管理员（总督）可操控')
+        this.overlay.setGovernorActive(false)
+        return
+      }
+      this.governorMode = true
+      this.governorId = gov.memberId
+      gov.setControlled(true)
       cam.stopFollow()
-      cam.startFollow(this.governor, true, 0.12, 0.12)
+      cam.startFollow(gov, true, 0.12, 0.12)
       if (cam.zoom < 1) cam.zoomTo(Math.min(1.3, Math.max(1, cam.zoom)), 500, 'Sine.easeInOut')
     } else {
+      this.governorMode = false
+      const gov = this.governorId !== null ? this.actors.get(this.governorId) : null
+      gov?.setControlled(false)
+      this.governorId = null
       cam.stopFollow()
-      this.governor.setVelocity(0, 0)
       this.interactPrompt.setVisible(false)
       this.nearestInteractId = null
     }
-    this.overlay.setGovernorActive(on)
+    this.overlay.setGovernorActive(this.governorMode)
   }
 
-  /** 按 F：与最近的 AI 成员交互——在底部面板打开其信息 */
+  /** 按 F：与最近的其它 AI 成员交互——在底部面板打开其信息 */
   private tryInteract() {
     if (!this.governorMode || this.isTextInputFocused()) return
     if (this.nearestInteractId === null || !this.snap) return
@@ -865,32 +885,37 @@ export class WorldScene extends Phaser.Scene {
     this.playSfx('ui_click', 0.4)
   }
 
-  /** 每帧推进总督移动与"按 F 交互"提示 */
-  private updateGovernor(time: number, delta: number) {
-    if (this.governorMode && !this.isTextInputFocused() && this.moveKeys) {
+  /** 每帧：把 WSAD 输入喂给总督 actor，并刷新"按 F 交互"提示 */
+  private updateGovernor() {
+    const gov = this.governorMode ? this.governorActor() : null
+    // 总督（核心管理员）离场（死亡/被删）→ 自动退出操控
+    if (this.governorMode && !gov) {
+      this.setGovernorMode(false)
+      return
+    }
+    if (!gov) {
+      this.interactPrompt.setVisible(false)
+      this.nearestInteractId = null
+      return
+    }
+    if (!this.isTextInputFocused() && this.moveKeys) {
       let dx = 0
       let dy = 0
       if (this.moveKeys.A?.isDown) dx -= 1
       if (this.moveKeys.D?.isDown) dx += 1
       if (this.moveKeys.W?.isDown) dy -= 1
       if (this.moveKeys.S?.isDown) dy += 1
-      this.governor.setVelocity(dx, dy)
+      gov.setControlVelocity(dx, dy)
     } else {
-      this.governor.setVelocity(0, 0)
+      gov.setControlVelocity(0, 0)
     }
-    this.governor.tick(time, delta)
 
-    // 交互提示：高亮最近的存活成员
-    if (!this.governorMode) {
-      this.interactPrompt.setVisible(false)
-      this.nearestInteractId = null
-      return
-    }
+    // 交互提示：高亮最近的存活成员（排除总督自己）
     let best: MemberActor | null = null
     let bestDist = INTERACT_RANGE
     for (const actor of this.actors.values()) {
-      if (actor.isDying) continue
-      const d = Phaser.Math.Distance.Between(this.governor.x, this.governor.y, actor.x, actor.y)
+      if (actor === gov || actor.isDying) continue
+      const d = Phaser.Math.Distance.Between(gov.x, gov.y, actor.x, actor.y)
       if (d < bestDist) {
         bestDist = d
         best = actor
@@ -1346,7 +1371,7 @@ export class WorldScene extends Phaser.Scene {
   // ---------------------------------------------------------------- 主循环
   update(time: number, delta: number) {
     for (const actor of this.actors.values()) actor.tick(time, delta)
-    this.updateGovernor(time, delta)
+    this.updateGovernor()
     // 蝴蝶：白天飘向目标 + 正弦浮动（夜间隐去休息）
     const day = 1 - this.nightness
     for (const b of this.butterflies) {

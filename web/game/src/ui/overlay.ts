@@ -25,6 +25,7 @@ export class Overlay {
   private hud: HTMLDivElement
   private govBtn: HTMLButtonElement | null = null
   private govHint: HTMLDivElement | null = null
+  private readonly govHintDefault = 'WASD 移动总督 · 走到 AI 旁按 <b>F</b> 交互 · 再次点击退出'
 
   constructor(parent: HTMLElement) {
     const style = document.createElement('style')
@@ -152,7 +153,7 @@ export class Overlay {
     this.govBtn = btn
     const hint = document.createElement('div')
     hint.className = 'gw-gov-hint'
-    hint.innerHTML = 'WASD 移动总督 · 走到 AI 旁按 <b>F</b> 交互 · 再次点击退出'
+    hint.innerHTML = this.govHintDefault
     this.govHint = hint
     this.setGovernorActive(initialActive)
     btn.onclick = () => onChange(!btn.classList.contains('active'))
@@ -165,6 +166,21 @@ export class Overlay {
       this.govBtn.classList.toggle('active', active)
       this.govBtn.textContent = active ? '🚪 退出总督' : '🎮 操控总督'
     }
-    this.govHint?.classList.toggle('show', active)
+    if (this.govHint) {
+      this.govHint.innerHTML = this.govHintDefault
+      this.govHint.classList.toggle('show', active)
+    }
+  }
+
+  /** 临时提示（如"无核心管理员可操控"），2.5s 后恢复默认 */
+  flashGovernorHint(text: string) {
+    if (!this.govHint) return
+    this.govHint.textContent = text
+    this.govHint.classList.add('show')
+    window.setTimeout(() => {
+      if (!this.govHint) return
+      this.govHint.innerHTML = this.govHintDefault
+      this.govHint.classList.toggle('show', this.govBtn?.classList.contains('active') ?? false)
+    }, 2500)
   }
 }
