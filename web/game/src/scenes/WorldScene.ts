@@ -18,6 +18,7 @@ import {
   MAP_H,
   MAP_W,
   TILE,
+  WORKSHOP_SCALE,
   WORKSHOP_SLOTS,
   WORLD_H,
   WORLD_W,
@@ -692,7 +693,7 @@ export class WorldScene extends Phaser.Scene {
     this.lamps.push(streetLamp)
     this.addNightGlow(streetLamp.x, streetLamp.y - 44, 0xffcc66, 3.4, 0.5)
     // 建筑灯火与泉水的夜光
-    this.addNightGlow(880, 446, 0xffb866, 4.5, 0.35) // 图书馆窗火
+    this.addNightGlow(880, 438, 0xffb866, 6, 0.35) // 图书馆窗火
     this.addNightGlow(1540, 250, 0xffa040, 4.2, 0.45) // 英灵殿长明火
     this.addNightGlow(290, 640, 0x7fd8ff, 3.2, 0.4) // 出生地泉水
     // 萤火虫：夜间出没（白天 alpha=0），缓慢游移 + 呼吸闪烁
@@ -762,7 +763,8 @@ export class WorldScene extends Phaser.Scene {
     for (const def of FIXED_BUILDINGS) {
       const sprite = this.add.sprite(def.pos.x, def.pos.y, def.sheet, 0)
       sprite.setOrigin(0.5, 0.55)
-      sprite.setDepth(def.pos.y + sprite.height * 0.4)
+      sprite.setScale(def.scale)
+      sprite.setDepth(def.pos.y + sprite.displayHeight * 0.4)
       sprite.setInteractive()
       sprite.setData('tooltip', () => this.buildingTooltip(def.key, def.label))
       sprite.setData('buildingKey', def.key)
@@ -1180,10 +1182,11 @@ export class WorldScene extends Phaser.Scene {
         const slot = this.claimSlot(w.agentId)
         const pos = workshopSlotPos(slot)
         const sheet = w.type === 'workshop'
-          ? 'building_library.png'
+          ? 'building_workshop_knowledge.png'
           : w.type === 'desktop' ? 'building_workshop_desktop.png' : 'building_workshop_browser.png'
         const sprite = this.add.sprite(pos.x, pos.y, sheet, 0)
         sprite.setOrigin(0.5, 0.6)
+        sprite.setScale(WORKSHOP_SCALE)
         sprite.setDepth(pos.y)
         sprite.setInteractive()
         view = { sprite, slot, data: w, offlineSince: w.online ? null : Date.now() }

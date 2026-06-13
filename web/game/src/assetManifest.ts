@@ -91,6 +91,7 @@ export const SHEETS: SheetDef[] = [
   // ---- 动态作坊 ----
   strip('building_workshop_desktop.png', '作坊·机械坊（桌面 agent）', 'building', 64, 64, 4),
   strip('building_workshop_browser.png', '作坊·瞭望塔（浏览器 agent）', 'building', 64, 80, 4),
+  strip('building_workshop_knowledge.png', '作坊·知识工坊（知识与进化）', 'building', 64, 80, 4),
 
   // ---- 角色 ----
   character('char_admin.png', '核心管理员（紫袍金冠）'),

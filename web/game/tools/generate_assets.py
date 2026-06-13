@@ -11,6 +11,7 @@
   building_valhalla.png       48x56@1x -> 96x112  x4 帧（英灵殿）
   building_workshop_desktop.png 32x32@1x -> 64x64 x4 帧（桌面 agent 作坊·机械坊）
   building_workshop_browser.png 32x40@1x -> 64x80 x4 帧（浏览器 agent 作坊·瞭望塔）
+  building_workshop_knowledge.png 32x40@1x -> 64x80 x4 帧（知识工坊·学者书斋，悬浮魔典脉冲）
   char_*.png                  16x24@1x -> 32x48，4 列 x 5 行：
                               行 0-3 = 走路 下/左/右/上（第 0 帧兼站立），
                               行 4 = [闭眼 idle, 坐下, 跪倒, 躺倒]
@@ -484,6 +485,59 @@ def gen_workshop_browser():
         c.add_silhouette_outline()
         frames.append(c)
     save_strip(frames, "building_workshop_browser.png")
+
+
+def gen_workshop_knowledge():
+    """知识工坊（知识与进化）：学者书斋——暖木墙体 + 靛蓝坡顶 + 悬浮发光魔典 4 帧脉冲。
+    服务端内置作坊，**专属贴图**，不再复用传承图书馆，避免世界里出现两座图书馆。"""
+    glow_seq = [
+        (150, 170, 240, 255),
+        (190, 205, 255, 255),
+        (232, 240, 255, 255),
+        (190, 205, 255, 255),
+    ]
+    frames = []
+    for f in range(4):
+        c = C(32, 40)
+        g = glow_seq[f]
+        # 墙体（暖木 + 砖缝，右侧背光压暗）
+        c.rect(5, 18, 22, 21, WALL)
+        c.rect(22, 18, 5, 21, WALL_SH)
+        for by in range(23, 39, 5):
+            c.hline(6, by, 20, WALL_SH)
+        c.outline(5, 18, 22, 21, WOOD_D)
+        # 靛蓝坡顶（层理）+ 金檐 + 顶饰
+        for i, y in enumerate(range(10, 18)):
+            half = 2 + i * 1.5
+            c.hline(16 - half, y, half * 2, INDIGO if i % 2 else INDIGO_D)
+        c.hline(4, 17, 24, GOLD_D)
+        c.vline(16, 6, 4, GOLD_D)
+        c.px(16, 5, GOLD)
+        # 圆窗 x2（透出靛蓝学识之光）
+        for wx in (9, 23):
+            c.disc(wx, 27, 2, g)
+            c.ring(wx, 27, 2, GOLD_D)
+        # 木门
+        c.rect(13, 30, 6, 9, WOOD_D)
+        c.px(17, 35, GOLD)
+        # 悬浮魔典（书脊居中 + 翻开双页 + 文字行），按帧上下浮动
+        by = 2 + (f % 2)
+        c.rect(11, by, 10, 6, PAPER)
+        c.rect(10, by, 1, 6, WOOD_D)
+        c.rect(21, by, 1, 6, WOOD_D)
+        c.vline(16, by, 6, GOLD_D)
+        c.hline(12, by + 2, 3, INDIGO_D)
+        c.hline(18, by + 2, 3, INDIGO_D)
+        c.hline(12, by + 4, 3, INDIGO_D)
+        c.hline(18, by + 4, 3, INDIGO_D)
+        # 知识火花：环绕魔典脉冲旋转（金 / 靛光交替）
+        for k in range(4):
+            a = math.radians(k * 90 + f * 22.5)
+            col = g if (f + k) % 2 == 0 else GOLD
+            c.px(16 + 8 * math.cos(a), by + 3 + 6 * math.sin(a), col)
+        c.add_silhouette_outline()
+        frames.append(c)
+    save_strip(frames, "building_workshop_knowledge.png")
 
 
 # ================================================================ 角色
@@ -972,6 +1026,7 @@ def main():
     gen_valhalla()
     gen_workshop_desktop()
     gen_workshop_browser()
+    gen_workshop_knowledge()
     gen_characters()
     gen_soul()
     gen_emotes()
