@@ -142,7 +142,7 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
       return knowledgeBase.value.filter(item => item.tags.includes('传承'))
     }
     if (knowledgeFilter.value === 'intrinsic') {
-      return knowledgeBase.value.filter(item => item.tags.includes('固有属性'))
+      return knowledgeBase.value.filter(item => item.tags.includes('固有技能'))
     }
     if (knowledgeFilter.value === 'personas') {
       return knowledgeBase.value.filter(item => item.tags.includes('固有人格'))

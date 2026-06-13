@@ -5,7 +5,7 @@ Markdown 文件，并让文件成为运行时的真相源：
 
     KnowledgeBase/
     ├── personas/<id>-<名>.md      固有人格：每个 AI 一个 md（人格 Prompt + 自动控制 Prompt）
-    ├── mcp/<namespace>/<tool>.md  固有属性：每个 MCP 工具的介绍与参数
+    ├── mcp/<namespace>/<tool>.md  固有技能：每个 MCP 工具的介绍与参数
     ├── system/<key>.md            固有思路：User 表里每个系统提示字段一个 md
     ├── skills/                    传承技能（沿用 inheritance_thoughts 落盘，目录占位）
     └── topics/<slug>.md           传承知识（KnowledgeEntry，已是 md）
@@ -514,7 +514,7 @@ def effective_system_value(user_id: int, key: str, fallback: Any = None) -> str:
 
 
 # ============================================================
-# 3) 固有属性（MCP 介绍 / 参数）—— mcp/<namespace>/<tool>.md
+# 3) 固有技能（MCP 介绍 / 参数）—— mcp/<namespace>/<tool>.md
 # ============================================================
 
 def _mcp_namespace(name: str) -> str:
@@ -634,7 +634,7 @@ _README = """# KnowledgeBase
 本目录是该用户所有 AI 共享的知识与配置真相源。子目录：
 
 - `personas/`  固有人格：每个 AI 的人格 Prompt 与自动控制 Prompt（文件名 `<id>-<名>.md`）。
-- `mcp/`       固有属性：每个 MCP 工具的介绍与参数（按 namespace 分目录）。
+- `mcp/`       固有技能：每个 MCP 工具的介绍与参数（按 namespace 分目录）。
 - `system/`    固有思路：系统级提示词，每个配置项一个文件。
 - `skills/`    传承技能：沉淀的技能卡。
 - `topics/`    传承知识：流程性知识条目。

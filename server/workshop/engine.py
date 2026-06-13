@@ -46,6 +46,34 @@ _TOOL_HANDLERS = {
         "workshop.handlers",
         "delete_inheritance_thought",
     ),
+    "librarian.read_inheritance_skills": (
+        "workshop.handlers",
+        "read_inheritance_skills",
+    ),
+    "librarian.read_intrinsic_skills": (
+        "workshop.handlers",
+        "read_intrinsic_skills",
+    ),
+    "librarian.update_intrinsic_skills": (
+        "workshop.handlers",
+        "update_intrinsic_skills",
+    ),
+    "librarian.read_intrinsic_personas": (
+        "workshop.handlers",
+        "read_intrinsic_personas",
+    ),
+    "librarian.update_intrinsic_persona": (
+        "workshop.handlers",
+        "update_intrinsic_persona",
+    ),
+    "librarian.read_system_prompts": (
+        "workshop.handlers",
+        "read_system_prompts",
+    ),
+    "librarian.update_system_prompts": (
+        "workshop.handlers",
+        "update_system_prompts",
+    ),
 }
 
 # 同进程内每用户 ensure 去抖：presence 写盘不必每个请求都做。
