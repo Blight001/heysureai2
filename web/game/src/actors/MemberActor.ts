@@ -11,6 +11,7 @@ import { VALHALLA_DOOR, clampToWorld, randomPointIn, type Point, type Rect } fro
 import type { WorldMember } from '../world/store'
 
 const WALK_SPEED = 42 // px/s
+const CONTROL_SPEED = 150 // px/s，玩家（总督）操控时的移动速度
 const ARRIVE_EPS = 4
 const HITBOX_W = 44
 const HITBOX_H = 70
@@ -63,6 +64,11 @@ export class MemberActor extends Phaser.GameObjects.Container {
   private idleUntil = 0
   private dying = false
   private dragging = false
+  /** 玩家（总督）接管：停止自治游荡，改由 WSAD 驱动；不显示血条 */
+  private controlled = false
+  private controlVx = 0
+  private controlVy = 0
+  private controlFacing: 'down' | 'up' | 'left' | 'right' = 'down'
 
   constructor(scene: Phaser.Scene, member: WorldMember, skin: string, zone: Rect) {
     const start = randomPointIn(zone)
@@ -146,6 +152,35 @@ export class MemberActor extends Phaser.GameObjects.Container {
     return this.dragging
   }
 
+  /** 玩家接管 / 释放（总督功能）。接管时停止游荡并隐藏血条，释放后回锚区。 */
+  setControlled(on: boolean) {
+    if (this.controlled === on) return
+    this.controlled = on
+    this.controlVx = 0
+    this.controlVy = 0
+    if (on) {
+      this.target = null
+      this.via = null
+      this.sprite.stop()
+      this.sprite.setFrame(0)
+      this.setAlpha(1)
+    } else {
+      this.target = clampToWorld(randomPointIn(this.zone))
+      this.idleUntil = 0
+    }
+    this.refreshTokenBar()
+  }
+
+  get isControlled(): boolean {
+    return this.controlled
+  }
+
+  /** WSAD 合成的单位方向（0 = 停） */
+  setControlVelocity(dx: number, dy: number) {
+    this.controlVx = dx
+    this.controlVy = dy
+  }
+
   private isOnScreen(): boolean {
     const view = this.scene.cameras.main.worldView
     return (
@@ -208,6 +243,8 @@ export class MemberActor extends Phaser.GameObjects.Container {
   setAnchor(zone: Rect) {
     if (zone === this.zone) return
     this.zone = zone
+    // 玩家接管（总督）时不被锚区拉走
+    if (this.controlled) return
     // 锚区变化：走过去（不瞬移，让调度可见）
     this.target = clampToWorld(randomPointIn(zone))
     this.idleUntil = 0
@@ -233,15 +270,12 @@ export class MemberActor extends Phaser.GameObjects.Container {
     const g = this.tokenBar
     g.clear()
     const m = this.member
+    // 总督（受控）或无 token 上限的角色：不显示血条
+    if (this.controlled || m.tokenLimit <= 0) return
     const x = -TOKEN_BAR_W / 2
     const y = -66
     g.fillStyle(0x1f2933, 0.86)
     g.fillRect(x - 1, y - 1, TOKEN_BAR_W + 2, TOKEN_BAR_H + 2)
-    if (m.tokenLimit <= 0) {
-      g.fillStyle(0x8a90a0, 0.9)
-      g.fillRect(x, y, TOKEN_BAR_W, TOKEN_BAR_H)
-      return
-    }
 
     const usedRatio = Phaser.Math.Clamp(m.tokensUsed / m.tokenLimit, 0, 1)
     const remainingRatio = 1 - usedRatio
@@ -303,6 +337,31 @@ export class MemberActor extends Phaser.GameObjects.Container {
     // 光环呼吸（独立于行走状态机，停用/拖拽时也生效）
     if (this.auraOn) this.aura.setAlpha(0.42 + 0.16 * Math.sin(time / 420 + this.auraPhase))
     if (this.dying || this.dragging) {
+      this.syncDepth()
+      return true
+    }
+    // 玩家（总督）接管：用 WSAD 速度移动，跳过自治游荡
+    if (this.controlled) {
+      if (this.controlVx !== 0 || this.controlVy !== 0) {
+        const len = Math.hypot(this.controlVx, this.controlVy) || 1
+        const step = (CONTROL_SPEED * deltaMs) / 1000
+        const np = clampToWorld({
+          x: this.x + (this.controlVx / len) * step,
+          y: this.y + (this.controlVy / len) * step,
+        })
+        this.x = np.x
+        this.y = np.y
+        this.controlFacing = Math.abs(this.controlVx) > Math.abs(this.controlVy)
+          ? (this.controlVx > 0 ? 'right' : 'left')
+          : (this.controlVy > 0 ? 'down' : 'up')
+        const animKey = `${this.skin}:walk_${this.controlFacing}`
+        if (this.sprite.anims.currentAnim?.key !== animKey || !this.sprite.anims.isPlaying) {
+          this.sprite.play(animKey)
+        }
+      } else if (this.sprite.anims.isPlaying) {
+        this.sprite.stop()
+        this.sprite.setFrame(0)
+      }
       this.syncDepth()
       return true
     }
