@@ -85,6 +85,7 @@ export class WorldScene extends Phaser.Scene {
   private buildings = new Map<string, Phaser.GameObjects.Sprite>()
   private snap: WorldSnapshot | null = null
   private draggingActor: MemberActor | null = null
+  private pendingMemberClick: { memberId: number; timer: Phaser.Time.TimerEvent } | null = null
   /** 演出触发用：上一轮快照的任务状态 / 代数 / 待审批数 */
   private prevTaskStatus = new Map<number, string>()
   private prevGeneration = new Map<number, number>()
@@ -150,7 +151,10 @@ export class WorldScene extends Phaser.Scene {
     this.store.subscribe(snap => this.applySnapshot(snap))
     this.store.onEvent(ev => this.handleWorldEvent(ev))
     this.store.start()
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.store.stop())
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.cancelPendingMemberClick()
+      this.store.stop()
+    })
   }
 
   // ---------------------------------------------------------------- 开场云层
@@ -813,7 +817,7 @@ export class WorldScene extends Phaser.Scene {
   private wireClickAndDrag() {
     this.input.dragDistanceThreshold = 8
 
-    // 成员单击直接隔空对话；建筑和作坊仍打开对应操作抽屉。
+    // 成员单击查看信息，双击隔空对话；建筑和作坊打开对应操作抽屉。
     this.input.on(
       'gameobjectup',
       (pointer: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
@@ -823,7 +827,7 @@ export class WorldScene extends Phaser.Scene {
         this.playSfx('ui_click', 0.4)
         if (obj instanceof MemberActor) {
           const m = this.snap.members.find(x => x.id === obj.memberId)
-          if (m) this.openMemberChat(m.id)
+          if (m) this.handleMemberClick(m)
           return
         }
         const agentId = obj.getData?.('agentId') as string | undefined
@@ -841,6 +845,7 @@ export class WorldScene extends Phaser.Scene {
     // 拖拽成员 → 放到作坊上绑定 / 放到出生地解绑
     this.input.on('dragstart', (_p: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
       if (obj instanceof MemberActor && !obj.isDying) {
+        this.cancelPendingMemberClick()
         this.draggingActor = obj
         obj.beginDrag()
         this.overlay.hideTooltip()
@@ -1088,6 +1093,28 @@ export class WorldScene extends Phaser.Scene {
     this.buildings.get('library')?.setFrame(snap.knowledgePending > 0 ? 1 : 0)
   }
 
+  private handleMemberClick(member: WorldMember) {
+    if (this.pendingMemberClick?.memberId === member.id) {
+      this.cancelPendingMemberClick()
+      this.drawer.close()
+      this.openMemberChat(member.id)
+      return
+    }
+
+    this.cancelPendingMemberClick()
+    const timer = this.time.delayedCall(220, () => {
+      this.pendingMemberClick = null
+      const fresh = this.snap?.members.find(item => item.id === member.id)
+      if (fresh && this.snap) this.drawer.openMember(fresh, this.snap)
+    })
+    this.pendingMemberClick = { memberId: member.id, timer }
+  }
+
+  private cancelPendingMemberClick() {
+    this.pendingMemberClick?.timer.remove(false)
+    this.pendingMemberClick = null
+  }
+
   private openMemberChat(id: number) {
     if (window.parent !== window) {
       window.parent.postMessage({ type: 'world:open-chat', aiConfigId: id }, window.location.origin)
@@ -1172,7 +1199,6 @@ export class WorldScene extends Phaser.Scene {
   private updateHud(snap: WorldSnapshot) {
     if (!snap.authOk) {
       this.overlay.setHud(
-        `<div class="h-title">社会显示</div>` +
         `<div class="h-err">${snap.lastError || '连接中…'}</div>`,
       )
       return
@@ -1181,13 +1207,11 @@ export class WorldScene extends Phaser.Scene {
     const online = snap.workshops.length
     const running = snap.members.filter(m => m.runtimeStatus === 'running' || m.taskStatus === 'running').length
     this.overlay.setHud(
-      `<div class="h-title">社会显示</div>` +
       `<div>存活成员 <b>${alive}</b> · 在线作坊 <b>${online}</b> · 干活中 <b>${running}</b></div>` +
       `<div>英灵殿 <b>${snap.valhallaCount}</b> · 知识 <b>${snap.knowledgeActive}</b>` +
       (snap.knowledgePending > 0 ? ` · <span class="h-err">待审批 ${snap.knowledgePending}</span>` : '') +
       `</div>` +
-      `<div class="h-dim">🕐 ${this.clockLabel()}</div>` +
-      `<div class="h-dim">${snap.socketConnected ? '<span class="h-ok">● 实时连接</span>' : '○ 轮询模式'} · 拖拽平移 / 滚轮缩放 / 悬浮看属性</div>`,
+      `<div class="h-dim">🕐 ${this.clockLabel()}</div>`,
     )
   }
 

@@ -499,7 +499,7 @@ onUnmounted(() => {
     <main class="flex-1 overflow-y-auto lg:overflow-hidden p-6 flex flex-col lg:flex-row" :class="leftCollapsed || rightCollapsed ? 'gap-4' : 'gap-6'">
 
       <!-- 左侧：数字社会核心管理员 (管理员 + 知识库) -->
-      <section class="flex flex-col gap-6 transition-all duration-300 relative shrink-0" :class="leftCollapsed ? 'lg:w-10 lg:min-w-[40px] w-full' : 'lg:w-[30%] lg:min-w-[420px] w-full'">
+      <section class="flex flex-col gap-6 transition-all duration-300 relative shrink-0" :class="leftCollapsed ? 'lg:w-10 lg:min-w-[40px] w-full' : 'lg:w-[20%] lg:min-w-[280px] w-full'">
         <button class="hidden lg:block absolute -right-3 top-4 w-6 h-6 rounded-full border border-zinc-200 bg-white text-zinc-500 text-xs shadow hover:text-indigo-600 hover:border-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300 z-10 transition-transform hover:scale-110" @click="leftCollapsed = !leftCollapsed">
           {{ leftCollapsed ? '⟩' : '⟨' }}
         </button>
@@ -528,12 +528,12 @@ onUnmounted(() => {
 
       <!-- 中间：社会显示（游戏世界实时画面） -->
       <WorldArenaPanel
-        class="h-auto lg:h-full min-h-[500px] lg:min-h-0"
+        class="h-auto lg:h-full min-h-[500px] lg:min-h-0 lg:min-w-0 flex-1"
         @open-chat="onWorldOpenChat"
       />
 
       <!-- 右侧：英灵殿 (Logs / Dead Agents) -->
-      <section class="transition-all duration-300 relative shrink-0" :class="rightCollapsed ? 'lg:w-10 lg:min-w-[40px] w-full' : 'lg:w-1/4 lg:min-w-[300px] w-full'">
+      <section class="transition-all duration-300 relative shrink-0" :class="rightCollapsed ? 'lg:w-10 lg:min-w-[40px] w-full' : 'lg:w-[16.6667%] lg:min-w-[200px] w-full'">
         <button class="hidden lg:block absolute -left-3 top-4 w-6 h-6 rounded-full border border-zinc-200 bg-white text-zinc-500 text-xs shadow hover:text-indigo-600 hover:border-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300 z-10 transition-transform hover:scale-110" @click="rightCollapsed = !rightCollapsed">
           {{ rightCollapsed ? '⟨' : '⟩' }}
         </button>

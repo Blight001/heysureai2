@@ -297,7 +297,7 @@ onUnmounted(() => {
             ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-400'
             : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
         >
-          <AppIcon name="book" class="w-4 h-4" /> 传承知识库
+          <AppIcon name="book" class="w-4 h-4" /> 知识库
         </button>
         <button
           @click="activeTab = 'active'"

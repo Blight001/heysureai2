@@ -1,5 +1,5 @@
 /**
- * DOM 覆盖层：悬浮 tooltip + 左上角 HUD。
+ * DOM 覆盖层：悬浮 tooltip + 右下角 HUD。
  * P0 只读；P1 的设置抽屉 / 操作菜单也挂在这一层（Vue 化）。
  */
 
@@ -46,15 +46,13 @@ export class Overlay {
       .gw-tooltip .t-bar { height: 6px; background: #3a3f4c; border-radius: 3px; margin: 4px 0 2px; overflow: hidden; }
       .gw-tooltip .t-bar > div { height: 100%; }
       .gw-hud {
-        position: fixed; left: 12px; top: 12px; z-index: 30;
+        position: fixed; right: 12px; bottom: 12px; z-index: 30;
         background: rgba(28, 30, 38, 0.88); border: 2px solid #4a4f5e; border-radius: 4px;
         color: #d6dae2; font: 12px/1.7 ui-monospace, "Cascadia Mono", Consolas, monospace;
-        padding: 8px 12px; max-width: 320px;
+        padding: 8px 12px; max-width: 320px; text-align: right;
       }
-      .gw-hud .h-title { color: #f0c060; font-weight: bold; }
       .gw-hud .h-dim { color: #8a90a0; }
       .gw-hud .h-err { color: #e08484; }
-      .gw-hud .h-ok { color: #84d99a; }
       .gw-mute {
         position: fixed; left: 12px; bottom: 12px; z-index: 30; cursor: pointer;
         background: rgba(28, 30, 38, 0.88); border: 2px solid #4a4f5e; border-radius: 4px;
