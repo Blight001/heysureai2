@@ -15,5 +15,8 @@ export type { BrowserToolCategory, BrowserToolKind } from './definitions'
 export { executeBrowserOnly } from './browser'
 export { executeBrowserTool } from './router'
 export { executeTask } from './executor'
-export { effectiveToolDefs, resolveToolEnabledMap, enabledToolNames } from './overrides'
-export { DYNAMIC_MCP_MANAGER_NAME, DYNAMIC_MCP_STORAGE_KEY, getDynamicMcpDefinitions } from './dynamic'
+export { allToolDefs, effectiveToolDefs, resolveToolEnabledMap, enabledToolNames } from './overrides'
+export {
+  BROWSER_DYNAMIC_MCP_MANAGER_NAME, DYNAMIC_MCP_MANAGER_NAME,
+  DYNAMIC_MCP_STORAGE_KEY, getDynamicMcpDefinitions,
+} from './dynamic'

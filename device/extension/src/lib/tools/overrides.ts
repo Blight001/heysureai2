@@ -10,7 +10,7 @@ import { AIToolDef } from '../types'
 import { getToolDescOverrides, getToolEnabledMap } from '../storage'
 import { dynamicMcpToolDefs } from './dynamic'
 
-async function allToolDefs(): Promise<AIToolDef[]> {
+export async function allToolDefs(): Promise<AIToolDef[]> {
   const merged = new Map(BROWSER_TOOLS.map(tool => [tool.name, {
     ...tool,
     implementation: {

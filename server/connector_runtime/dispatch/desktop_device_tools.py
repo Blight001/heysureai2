@@ -129,9 +129,13 @@ def device_type_of(agent: Optional[Dict[str, Any]]) -> Optional[str]:
 
 
 def _agent_capabilities(agent: Dict[str, Any], device_type: str) -> Set[str]:
-    """Tool names of the given type that ``agent`` reports. Browser-namespaced
-    names only ever count as browser tools；workshop agent 只允许上报工坊命名
-    空间的工具（防止借工坊通道注册桌面执行类工具）；the rest as desktop tools."""
+    """Tool names that ``agent`` reports, owned by its actual device type.
+
+    Browser extensions may create dynamically named MCP tools, so their
+    capabilities cannot be restricted to the historical ``browser_*`` prefix.
+    Workshop devices remain namespace-restricted because that channel has a
+    separate trust and binding model.
+    """
     names: Set[str] = set()
     for cap in agent.get("capabilities") or []:
         name = str(cap or "").strip()
@@ -141,7 +145,7 @@ def _agent_capabilities(agent: Dict[str, Any], device_type: str) -> Set[str]:
             if is_workshop_tool(name):
                 names.add(name)
         elif device_type == "browser":
-            if _is_browser_namespaced(name):
+            if not is_workshop_tool(name):
                 names.add(name)
         else:
             if not _is_browser_namespaced(name) and not is_workshop_tool(name):
@@ -212,8 +216,12 @@ def is_desktop_tool(name: str) -> bool:
     tool = str(name or "").strip()
     if is_workshop_tool(tool):
         return False
-    if tool in desktop_tool_names():
+    desktop_live = desktop_tool_names()
+    browser_live = browser_tool_names()
+    if tool in desktop_live:
         return True
+    if tool in browser_live:
+        return False
     return tool in _presence_tool_names()[0]
 
 
@@ -221,9 +229,14 @@ def is_browser_tool(name: str) -> bool:
     tool = str(name or "").strip()
     if _is_browser_namespaced(tool):
         return True
-    if tool in _reported_endpoint_tools(want_desktop=False):
+    browser_live = browser_tool_names()
+    desktop_live = desktop_tool_names()
+    if tool in browser_live and tool not in desktop_live:
         return True
-    return tool in _presence_tool_names()[1]
+    desktop_presence, browser_presence = _presence_tool_names()
+    if tool in browser_presence and tool not in desktop_presence:
+        return True
+    return False
 
 
 def is_endpoint_agent_tool(name: str) -> bool:

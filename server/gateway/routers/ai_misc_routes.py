@@ -269,9 +269,20 @@ async def list_ai_cards(
         )
     ).all()
     core_session_tokens: Dict[tuple[Optional[int], str], int] = {}
+    latest_task_assistant_by_session: Dict[tuple[int, str], ChatMessage] = {}
     for msg in core_messages:
         key = (msg.ai_config_id, msg.session_id)
         core_session_tokens[key] = core_session_tokens.get(key, 0) + int(msg.total_tokens or 0)
+        session_id = str(msg.session_id or "")
+        if (
+            msg.ai_config_id is not None
+            and msg.role == "assistant"
+            and session_id.startswith("session_task_")
+        ):
+            message_key = (int(msg.ai_config_id), session_id)
+            previous = latest_task_assistant_by_session.get(message_key)
+            if previous is None or float(msg.created_at or 0) > float(previous.created_at or 0):
+                latest_task_assistant_by_session[message_key] = msg
     core_task_tokens_by_prefix: Dict[tuple[int, str], int] = {}
     for (cfg_id, sid), total in core_session_tokens.items():
         if cfg_id is None:
@@ -459,6 +470,12 @@ async def list_ai_cards(
         live_text = str(run_live.get("text") or "")
         live_reasoning = str(run_live.get("reasoning") or "")
         live_tool = str(run_live.get("current_tool") or "").strip()
+        latest_task_message = latest_task_assistant_by_session.get((int(cfg.id), active_run_session_id))
+        persisted_task_thinking = ""
+        if latest_task_message is not None:
+            persisted_task_thinking = str(
+                latest_task_message.think or latest_task_message.content or ""
+            ).strip()
         cfg_task_jobs = task_jobs_by_cfg.get(int(cfg.id), [])
         cfg_task_summaries = [_build_task_summary(job, int(cfg.token_limit or 0)) for job in cfg_task_jobs]
         cfg_task_summaries_by_activity = sorted(
@@ -561,7 +578,7 @@ async def list_ai_cards(
                 "task_current_or_recent": current_or_recent_task,
                 "task_recent_completed": latest_completed_task,
                 "task_scheduled_tasks": scheduled_tasks,
-                "latest_thinking": live_reasoning or live_text,
+                "latest_thinking": live_reasoning or live_text or persisted_task_thinking,
             }
         )
     return cards

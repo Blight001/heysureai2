@@ -3,8 +3,9 @@
 // editable local descriptions and a direct local test runner.
 
 import {
-  BROWSER_TOOLS, BROWSER_TOOL_CATEGORIES, BROWSER_TOOL_KIND_LABELS,
-  BrowserToolKind, browserToolKind, browserToolCategory, resolveToolEnabledMap,
+  BROWSER_TOOL_CATEGORIES, BROWSER_TOOL_KIND_LABELS,
+  BrowserToolCategory, BrowserToolKind, allToolDefs, browserToolKind,
+  resolveToolEnabledMap,
 } from '../lib/tools'
 import { AIToolDef } from '../lib/types'
 import {
@@ -16,6 +17,8 @@ import { sendToBackground } from './transport'
 
 let overrides: Record<string, { description?: string; parameters?: Record<string, string> }> = {}
 let enabledMap: Record<string, boolean> = {}
+let currentToolDefs: AIToolDef[] = []
+let currentCategories: BrowserToolCategory[] = BROWSER_TOOL_CATEGORIES
 const expandedKinds = new Set<BrowserToolKind>()
 
 const KIND_META: Record<BrowserToolKind, { zh: string; en: string }> = {
@@ -29,6 +32,7 @@ const CATEGORY_META: Record<string, { zh: string; en: string }> = {
   '页面交互': { zh: '页面交互', en: 'INTERACTION' },
   '数据与脚本': { zh: '数据与脚本', en: 'DATA & SCRIPT' },
   '浏览器状态': { zh: '浏览器状态', en: 'BROWSER STATE' },
+  'MCP 动态管理': { zh: 'MCP 动态管理', en: 'DYNAMIC MCP' },
 }
 
 const TOOL_LABELS: Record<string, { zh: string; en: string }> = {
@@ -62,6 +66,7 @@ const TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   browser_cookie: { zh: '管理 Cookie', en: 'Cookie Manager' },
   browser_storage: { zh: '管理存储', en: 'Storage Manager' },
   browser_session: { zh: '管理会话', en: 'Session Manager' },
+  'browser_mcp.manage_dynamic_tool': { zh: '管理动态 MCP', en: 'Dynamic MCP Manager' },
 }
 
 // Persist a tool/category enable change, then re-report toolDefs so the server
@@ -124,15 +129,20 @@ export async function renderMcpList() {
   dom.mcpListPane.classList.remove('hidden')
   overrides = await getToolDescOverrides()
   enabledMap = await resolveToolEnabledMap()
-  const visibleKindCount = new Set(BROWSER_TOOL_CATEGORIES.map(c => c.kind)).size
-  dom.mcpCount.textContent = `${BROWSER_TOOLS.length} 个 · ${visibleKindCount} 类`
+  currentToolDefs = await allToolDefs()
+  const categorized = new Set(BROWSER_TOOL_CATEGORIES.flatMap(category => category.tools))
+  const dynamicTools = currentToolDefs.map(tool => tool.name).filter(name => !categorized.has(name))
+  currentCategories = dynamicTools.length
+    ? [...BROWSER_TOOL_CATEGORIES, { title: 'MCP 动态管理', kind: 'special', tools: dynamicTools }]
+    : BROWSER_TOOL_CATEGORIES
+  dom.mcpCount.textContent = `${currentToolDefs.length} 个 · ${currentCategories.length} 组`
   dom.mcpList.innerHTML = ''
-  const byName = new Map(BROWSER_TOOLS.map(t => [t.name, t]))
+  const byName = new Map(currentToolDefs.map(t => [t.name, t]))
 
   // Group by kind (基础类 / 特殊类), each with a select-all toggle, then by category.
   const kinds: BrowserToolKind[] = ['basic', 'special']
   for (const kind of kinds) {
-    const cats = BROWSER_TOOL_CATEGORIES.filter(c => c.kind === kind)
+    const cats = currentCategories.filter(c => c.kind === kind)
     if (!cats.length) continue
     const kindTools = cats.flatMap(c => c.tools).filter(n => byName.has(n))
     const kindOn = kindTools.filter(n => enabledMap[n]).length
@@ -217,7 +227,7 @@ export async function renderMcpList() {
 }
 
 async function openTool(name: string) {
-  const tool = BROWSER_TOOLS.find(t => t.name === name)
+  const tool = currentToolDefs.find(t => t.name === name) || (await allToolDefs()).find(t => t.name === name)
   if (!tool) return
   state.openToolName = name
   dom.mcpListPane.classList.add('hidden')
@@ -230,7 +240,8 @@ async function renderDetail(tool: AIToolDef) {
   overrides = await getToolDescOverrides()
   enabledMap = await resolveToolEnabledMap()
   const on = !!enabledMap[tool.name]
-  const kind = browserToolKind(tool.name)
+  const category = currentCategories.find(item => item.tools.includes(tool.name))
+  const kind = category?.kind || browserToolKind(tool.name)
   const meta = toolMeta(tool.name)
   const params = paramEntries(tool)
   const paramHtml = params.length
@@ -262,7 +273,7 @@ async function renderDetail(tool: AIToolDef) {
           <input type="checkbox" id="detail-enable" ${on ? 'checked' : ''}/>
           <span>启用此工具（上报给服务器，AI 可调用）</span>
         </label>
-        <span class="tool-kind-tag ${kind}">${esc(BROWSER_TOOL_KIND_LABELS[kind])} · ${esc(browserToolCategory(tool.name) || '未分类')}</span>
+        <span class="tool-kind-tag ${kind}">${esc(BROWSER_TOOL_KIND_LABELS[kind])} · ${esc(category?.title || '未分类')}</span>
       </div>
     </div>
     <div class="card">

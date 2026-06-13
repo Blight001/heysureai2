@@ -24,7 +24,7 @@ const entries = [
 
 // Avatar images are now served by the backend (/avatars/avatarsN.png) and
 // fetched + cached at runtime, so they're no longer bundled with the extension.
-const staticDirs = ['icons']
+const staticDirs = ['icons', 'src']
 
 function ensureDist() {
   if (!fs.existsSync('dist')) fs.mkdirSync('dist', { recursive: true })

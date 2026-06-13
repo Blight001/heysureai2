@@ -5,7 +5,7 @@
 import Phaser from 'phaser'
 import { getAuthToken } from '@/api/http'
 import { toggleAiRun } from '@/api/ai'
-import { assignDeviceAi, getDeviceMcpScope, setDeviceMcpScope } from '@/api/agents'
+import { assignDeviceAi, getDeviceMcpScope, setDeviceMcpScope } from '@/api/devices'
 import { setWorkshopBinding } from '@/api/workshop'
 import { triggerTaskForAgent } from '@/api/task'
 import { approveProposal, rejectProposal } from '@/api/librarian'
@@ -70,9 +70,12 @@ const urlFor = (file: string): string => {
 
 interface WorkshopView {
   sprite: Phaser.GameObjects.Sprite
+  taskGlow: Phaser.GameObjects.Image
   slot: number
   data: WorldWorkshop
   offlineSince: number | null
+  taskActive: boolean
+  glowPhase: number
 }
 
 const OFFLINE_KEEP_MS = 60000
@@ -91,8 +94,7 @@ export class WorldScene extends Phaser.Scene {
   private snap: WorldSnapshot | null = null
   private draggingActor: MemberActor | null = null
   private pendingMemberClick: { memberId: number; timer: Phaser.Time.TimerEvent } | null = null
-  /** 演出触发用：上一轮快照的任务状态 / 代数 / 待审批数 */
-  private prevTaskStatus = new Map<number, string>()
+  /** 演出触发用：上一轮快照的代数 / 待审批数 */
   private prevGeneration = new Map<number, number>()
   private prevPending = 0
   private muted = false
@@ -393,7 +395,6 @@ export class WorldScene extends Phaser.Scene {
     const actor = Number.isFinite(id) ? this.actors.get(id) : undefined
     switch (ev.type) {
       case 'task_started':
-        actor?.flashEmote('scroll', 2200)
         this.playSfx('scroll')
         break
       case 'task_finished':
@@ -1128,14 +1129,8 @@ export class WorldScene extends Phaser.Scene {
     }
   }
 
-  /** 轮询触发版事件演出：领任务动线 / 传承重生光效 */
+  /** 轮询触发版事件演出：传承重生光效 */
   private playTransitions(m: WorldMember, actor: MemberActor) {
-    const prevStatus = this.prevTaskStatus.get(m.id)
-    if (prevStatus !== undefined && prevStatus !== 'running' && m.taskStatus === 'running') {
-      actor.flashEmote('scroll', 2200)
-    }
-    this.prevTaskStatus.set(m.id, m.taskStatus)
-
     const prevGen = this.prevGeneration.get(m.id)
     if (prevGen !== undefined && m.generation > prevGen) {
       // 传承重生：出生地与成员脚下各放一圈火花
@@ -1184,12 +1179,27 @@ export class WorldScene extends Phaser.Scene {
         const sheet = w.type === 'workshop'
           ? 'building_workshop_knowledge.png'
           : w.type === 'desktop' ? 'building_workshop_desktop.png' : 'building_workshop_browser.png'
+        const taskGlow = this.add.image(pos.x, pos.y - 24, 'glow.png', 0)
+        taskGlow.setBlendMode(Phaser.BlendModes.ADD)
+        taskGlow.setTint(w.type === 'browser' ? 0x72d8ff : w.type === 'workshop' ? 0xc99cff : 0xffd36b)
+        taskGlow.setScale(6.8, 5.2)
+        // 夜幕遮罩 depth=150000；任务高光需要位于其上方才不会在夜间消失。
+        taskGlow.setDepth(155100)
+        taskGlow.setAlpha(0)
         const sprite = this.add.sprite(pos.x, pos.y, sheet, 0)
         sprite.setOrigin(0.5, 0.6)
         sprite.setScale(WORKSHOP_SCALE)
         sprite.setDepth(pos.y)
         sprite.setInteractive()
-        view = { sprite, slot, data: w, offlineSince: w.online ? null : Date.now() }
+        view = {
+          sprite,
+          taskGlow,
+          slot,
+          data: w,
+          offlineSince: w.online ? null : Date.now(),
+          taskActive: false,
+          glowPhase: Math.random() * Math.PI * 2,
+        }
         const captured = view
         sprite.setData('tooltip', () => this.workshopTooltip(captured))
         sprite.setData('deviceId', w.deviceId)
@@ -1208,7 +1218,13 @@ export class WorldScene extends Phaser.Scene {
       }
       // 动效：绑定成员在干活 or agent 正在执行任务
       const boundMember = snap.members.find(m => m.id === w.aiConfigId)
-      const active = w.online && (w.lifecycle === 'dispatching' || boundMember?.runtimeStatus === 'running')
+      const active = w.online && (
+        w.lifecycle === 'dispatching'
+        || boundMember?.taskStatus === 'running'
+        || (boundMember?.hasActiveTask && boundMember.runtimeStatus === 'running')
+      )
+      view.taskActive = !!active
+      if (!active) view.taskGlow.setAlpha(0)
       const animKey = `${view.sprite.texture.key}:loop`
       if (active) {
         if (view.sprite.anims.currentAnim?.key !== animKey || !view.sprite.anims.isPlaying) {
@@ -1229,6 +1245,7 @@ export class WorldScene extends Phaser.Scene {
         view.sprite.setFrame(0)
         view.sprite.setTint(0x8a8a8a)
       } else if (now - view.offlineSince > OFFLINE_KEEP_MS) {
+        view.taskGlow.destroy()
         view.sprite.destroy()
         this.releaseSlot(deviceId)
         this.workshops.delete(deviceId)
@@ -1387,6 +1404,17 @@ export class WorldScene extends Phaser.Scene {
       actor.tick(time, delta)
     }
     this.updateGovernor()
+    // 执行任务的作坊：在昼夜环境中保持柔和、可辨识的呼吸高光。
+    for (const view of this.workshops.values()) {
+      if (!view.taskActive || view.offlineSince !== null) {
+        view.taskGlow.setAlpha(0)
+        continue
+      }
+      const pulse = 0.5 + 0.5 * Math.sin(time / 230 + view.glowPhase)
+      const nightBoost = this.nightness * 0.08
+      view.taskGlow.setAlpha(0.18 + pulse * 0.2 + nightBoost)
+      view.taskGlow.setScale(6.4 + pulse * 1.2, 4.9 + pulse * 0.9)
+    }
     // 蝴蝶：白天飘向目标 + 正弦浮动（夜间隐去休息）
     const day = 1 - this.nightness
     for (const b of this.butterflies) {

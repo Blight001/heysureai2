@@ -11,7 +11,12 @@ type DynamicInstruction = { op: 'call' | 'set' | 'return'; tool?: string; args?:
 
 export const DYNAMIC_MCP_STORAGE_KEY = '_dynamic_mcp_tools'
 export const DYNAMIC_MCP_MANAGER_NAME = 'mcp.manage_dynamic_tool'
+export const BROWSER_DYNAMIC_MCP_MANAGER_NAME = 'browser_mcp.manage_dynamic_tool'
 const NAME_RE = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$/
+
+function isManagerName(name: string): boolean {
+  return name === DYNAMIC_MCP_MANAGER_NAME || name === BROWSER_DYNAMIC_MCP_MANAGER_NAME
+}
 
 function revision(value: any): string {
   const text = JSON.stringify(value)
@@ -26,7 +31,7 @@ function revision(value: any): string {
 function validate(raw: any): DynamicMcpDefinition {
   const name = String(raw?.name || '').trim()
   if (!NAME_RE.test(name)) throw new Error(`Invalid dynamic MCP name: ${name || '(empty)'}`)
-  if (name === DYNAMIC_MCP_MANAGER_NAME) throw new Error(`${name} is reserved`)
+  if (isManagerName(name)) throw new Error(`${name} is reserved`)
   const description = String(raw?.description || '').trim()
   if (!description) throw new Error(`Dynamic MCP ${name} requires description`)
   const inputSchema = raw?.input_schema ?? raw?.inputSchema
@@ -85,7 +90,7 @@ async function runProgram(
     if (step.op === 'set') { context.vars[String(step.name)] = render(step.value, context); continue }
     if (step.op === 'return') return render(step.value, context)
     const target = String(step.tool || '').trim()
-    if (target === DYNAMIC_MCP_MANAGER_NAME) throw new Error('Dynamic MCP code cannot invoke the management tool')
+    if (isManagerName(target)) throw new Error('Dynamic MCP code cannot invoke the management tool')
     const builtinTarget = target.startsWith('builtin:') ? target.slice('builtin:'.length) : ''
     const childArgs = render(step.args || {}, context)
     const child = all.find(item => item.name === target)
@@ -106,7 +111,7 @@ export async function executeDynamicMcp(
   callTool: (name: string, args: any) => Promise<any>,
   callBuiltin: (name: string, args: any) => Promise<any>,
 ): Promise<{ handled: boolean; result?: any }> {
-  if (name === DYNAMIC_MCP_MANAGER_NAME) return { handled: true, result: await manageDynamicMcp(args) }
+  if (isManagerName(name)) return { handled: true, result: await manageDynamicMcp(args) }
   const all = await getDynamicMcpDefinitions()
   const def = all.find(item => item.name === name)
   if (!def) return { handled: false }
@@ -114,6 +119,10 @@ export async function executeDynamicMcp(
 }
 
 const BROWSER_SOURCE_FILES = ['src/lib/tools/definitions.ts', 'src/lib/tools/browser.ts', 'src/lib/tools/router.ts', 'dist/background.js']
+
+function sourceFilesForTool(name: string): string[] {
+  return isManagerName(name) ? ['src/lib/tools/dynamic.ts', 'dist/background.js'] : BROWSER_SOURCE_FILES
+}
 
 async function readExtensionSource(requested: string): Promise<Record<string, any>> {
   const relative = String(requested || '').trim().replace(/\\/g, '/')
@@ -127,23 +136,32 @@ async function readExtensionSource(requested: string): Promise<Record<string, an
   return { path: relative, content, size: content.length }
 }
 
-async function inspectTool(name: string, all: DynamicMcpDefinition[]): Promise<Record<string, any>> {
+async function readToolSources(name: string): Promise<Record<string, any>[]> {
+  const sources: Record<string, any>[] = []
+  for (const sourcePath of sourceFilesForTool(name)) {
+    try { sources.push(await readExtensionSource(sourcePath)) } catch { /* optional source variant */ }
+  }
+  return sources
+}
+
+async function inspectTool(name: string, all: DynamicMcpDefinition[], includeSource = true): Promise<Record<string, any>> {
   const dynamic = all.find(item => item.name === name)
   const builtin = BROWSER_TOOLS.find(item => item.name === name)
-  if (!dynamic && !builtin && name !== DYNAMIC_MCP_MANAGER_NAME) throw new Error(`MCP tool not found: ${name}`)
-  const active = dynamic || builtin || DYNAMIC_MCP_MANAGER_DEF
+  if (!dynamic && !builtin && !isManagerName(name)) throw new Error(`MCP tool not found: ${name}`)
+  const active = dynamic || builtin || BROWSER_DYNAMIC_MCP_MANAGER_DEF
   return {
     ok: true,
     name,
     implementation_kind: dynamic ? 'dynamic_override' : 'builtin',
     active_definition: active,
-    source_files: name === DYNAMIC_MCP_MANAGER_NAME ? ['src/lib/tools/dynamic.ts', 'dist/background.js'] : BROWSER_SOURCE_FILES,
+    source_files: sourceFilesForTool(name),
+    sources: includeSource ? await readToolSources(name) : undefined,
     dynamic_storage_key: DYNAMIC_MCP_STORAGE_KEY,
     edit_workflow: [
-      `Call ${DYNAMIC_MCP_MANAGER_NAME} action=get_source for a source_files path to read the packaged implementation.`,
-      `Call ${DYNAMIC_MCP_MANAGER_NAME} action=upsert with starter_definition or a revised definition.`,
+      `Call ${BROWSER_DYNAMIC_MCP_MANAGER_NAME} action=get_source with a tool name to read the packaged implementation.`,
+      `Call ${BROWSER_DYNAMIC_MCP_MANAGER_NAME} action=upsert with starter_definition or a revised definition.`,
       `Use builtin:${name} inside a call instruction to wrap the original implementation.`,
-      `Call ${DYNAMIC_MCP_MANAGER_NAME} action=delete to restore the built-in implementation.`,
+      `Call ${BROWSER_DYNAMIC_MCP_MANAGER_NAME} action=delete to restore the built-in implementation.`,
     ],
     starter_definition: dynamic || {
       name,
@@ -162,10 +180,26 @@ export async function manageDynamicMcp(args: Record<string, any>): Promise<any> 
   const all = await getDynamicMcpDefinitions()
   if (action === 'reload') return { ok: true, tools: all.length, revision: revision(all) }
   if (action === 'list') return { ok: true, revision: revision(all), tools: all.map(item => ({ name: item.name, description: item.description, revision: revision(item) })) }
-  if (action === 'get_source') return { ok: true, source: await readExtensionSource(args?.source_path) }
   const name = String(args?.name || args?.definition?.name || '').trim()
+  if (action === 'get_source') {
+    const requested = String(args?.source_path || '').trim()
+    const sources: Record<string, any>[] = []
+    if (requested) {
+      try { sources.push(await readExtensionSource(requested)) } catch (err) {
+        if (!name) throw err
+      }
+    }
+    if (name) {
+      const seen = new Set(sources.map(source => source.path))
+      for (const source of await readToolSources(name)) {
+        if (!seen.has(source.path)) sources.push(source)
+      }
+    }
+    if (!sources.length) throw new Error('get_source requires name or a readable source_path')
+    return { ok: true, name: name || undefined, requested_path: requested || undefined, source: sources[0], sources }
+  }
   if (!name) throw new Error('name is required')
-  if (action === 'inspect') return inspectTool(name, all)
+  if (action === 'inspect') return inspectTool(name, all, args?.include_source !== false)
   const current = all.find(item => item.name === name)
   if (action === 'get') {
     if (!current) throw new Error(`Dynamic MCP not found: ${name}`)
@@ -190,9 +224,10 @@ export const DYNAMIC_MCP_MANAGER_DEF: AIToolDef = {
   input_schema: {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['list', 'get', 'inspect', 'get_source', 'upsert', 'delete', 'reload'], description: '管理动作。inspect 可查看任意工具实现入口，get_source 可读取扩展源码。' },
-      name: { type: 'string', description: '动态 MCP 名称，如 custom.collect_page。' },
-      source_path: { type: 'string', description: 'get_source 要读取的相对源码路径，来自 inspect.source_files。' },
+      action: { type: 'string', enum: ['list', 'get', 'inspect', 'get_source', 'upsert', 'delete', 'reload'], description: '管理动作。inspect 默认返回实现源码；get_source 可按工具名读取全部相关源码。' },
+      name: { type: 'string', description: 'MCP 名称，如 browser_click 或 custom.collect_page。get_source 只传名称即可读取源码。' },
+      source_path: { type: 'string', description: '可选相对源码路径；读取失败但提供 name 时会自动按工具名查找。' },
+      include_source: { type: 'boolean', description: 'inspect 是否附带完整源码，默认 true。' },
       expected_revision: { type: 'string', description: 'get 返回的修订哈希；更新/删除时用于防止覆盖并发修改。' },
       definition: {
         type: 'object', description: 'upsert 使用的完整动态 MCP 定义。',
@@ -213,9 +248,19 @@ export const DYNAMIC_MCP_MANAGER_DEF: AIToolDef = {
   },
 }
 
+export const BROWSER_DYNAMIC_MCP_MANAGER_DEF: AIToolDef = {
+  ...DYNAMIC_MCP_MANAGER_DEF,
+  name: BROWSER_DYNAMIC_MCP_MANAGER_NAME,
+  description: '动态管理本浏览器设备的传承 MCP 代码。可读取浏览器工具源码、创建或覆盖工具，并在保存后立即热加载和重新上报。',
+  implementation: {
+    ...DYNAMIC_MCP_MANAGER_DEF.implementation,
+    editable_via: BROWSER_DYNAMIC_MCP_MANAGER_NAME,
+  },
+}
+
 export async function dynamicMcpToolDefs(): Promise<AIToolDef[]> {
   const dynamic = await getDynamicMcpDefinitions()
-  return [DYNAMIC_MCP_MANAGER_DEF, ...dynamic.map(def => ({
+  return [BROWSER_DYNAMIC_MCP_MANAGER_DEF, ...dynamic.map(def => ({
     name: def.name,
     description: def.description,
     input_schema: def.input_schema,
@@ -224,7 +269,7 @@ export async function dynamicMcpToolDefs(): Promise<AIToolDef[]> {
       definition: def,
       code: def.code,
       storage_key: DYNAMIC_MCP_STORAGE_KEY,
-      editable_via: DYNAMIC_MCP_MANAGER_NAME,
+      editable_via: BROWSER_DYNAMIC_MCP_MANAGER_NAME,
     },
   }))]
 }

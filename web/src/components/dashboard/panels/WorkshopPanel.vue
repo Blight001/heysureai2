@@ -291,7 +291,7 @@ const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(devi
       <DeviceMcpScopeEditor
         v-if="isEndpointDevice(device)"
         class="mt-2"
-        :agent-id="device.id"
+      :device-id="device.id"
         :refresh-key="`${device.aiConfigId ?? ''}-${device.lifecycle ?? ''}`"
       />
       <div v-else-if="device.capabilities.length" class="mt-2 flex flex-wrap gap-1">

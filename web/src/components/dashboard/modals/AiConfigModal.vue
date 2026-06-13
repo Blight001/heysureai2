@@ -354,7 +354,7 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                   <DeviceMcpScopeEditor
                     v-for="agent in boundEndpointAgents"
                     :key="`ai-config-agent-scope-${agent.id}`"
-                    :agent-id="agent.id"
+                    :device-id="agent.id"
                     :refresh-key="`${agent.aiConfigId ?? ''}-${settingsSection}`"
                   />
                 </div>

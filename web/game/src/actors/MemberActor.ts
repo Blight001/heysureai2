@@ -18,8 +18,7 @@ const HITBOX_H = 70
 const HITBOX_TOP = -68
 const TOKEN_BAR_W = 34
 const TOKEN_BAR_H = 5
-const SPEECH_MAX_CHARS = 86
-const SPEECH_W = 150
+const SPEECH_W = 260
 
 export type EmoteKind = keyof typeof EMOTES | null
 
@@ -37,13 +36,13 @@ const hexToColor = (hex: string): number | null => {
 
 const speechPreview = (raw: string): string => {
   const cleaned = String(raw || '')
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```[^\n]*\n?/g, '')
+    .replace(/<\/?think>/gi, '')
     .replace(/__HS_MCP_STATE__=.*$/s, '')
-    .replace(/\s+/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim()
-  if (!cleaned) return ''
-  return cleaned.length > SPEECH_MAX_CHARS ? `${cleaned.slice(0, SPEECH_MAX_CHARS)}...` : cleaned
+  return cleaned
 }
 
 export class MemberActor extends Phaser.GameObjects.Container {
@@ -270,9 +269,10 @@ export class MemberActor extends Phaser.GameObjects.Container {
     if (Date.now() < this.emoteOverrideUntil) return
     const m = this.member
     let kind: EmoteKind = null
-    if (!m.enabled) kind = 'zzz'
+    if (m.taskStatus === 'running') kind = null
+    else if (!m.enabled) kind = 'zzz'
     else if (m.tokenLimit > 0 && m.tokensUsed / m.tokenLimit >= 0.9) kind = 'hourglass'
-    else if (m.runtimeStatus === 'running' || m.taskStatus === 'running') kind = 'scroll'
+    else if (m.runtimeStatus === 'running') kind = 'scroll'
     else if (m.runtimeStatus === 'error') kind = 'alert'
     if (kind === null) {
       this.emote.setVisible(false)
@@ -303,26 +303,27 @@ export class MemberActor extends Phaser.GameObjects.Container {
   }
 
   private refreshSpeechBubble() {
+    const taskRunning = this.member.taskStatus === 'running'
     const text = speechPreview(this.member.latestSpeech)
-    const visible = !!text && this.member.enabled && !this.dying
+    const visible = taskRunning && !!text && this.member.enabled && !this.dying
     this.speechBubble.setVisible(visible)
     this.speechText.setVisible(visible)
     if (!visible) return
 
-    const x = 24
-    const y = -88
     this.speechText.setText(text)
+    const h = Math.max(28, this.speechText.height + 14)
+    const x = -SPEECH_W / 2
+    const y = -94 - h
     this.speechText.setPosition(x + 9, y + 7)
 
-    const h = Math.max(28, this.speechText.height + 14)
     const g = this.speechBubble
     g.clear()
-    g.fillStyle(0xffffff, 0.92)
+    g.fillStyle(0xffffff, 0.97)
     g.fillRoundedRect(x, y, SPEECH_W, h, 7)
-    g.lineStyle(1, 0x2f3640, 0.18)
+    g.lineStyle(2, 0x6d5bd0, 0.62)
     g.strokeRoundedRect(x, y, SPEECH_W, h, 7)
-    g.fillStyle(0xffffff, 0.92)
-    g.fillTriangle(x + 1, y + h - 17, x - 9, y + h - 9, x + 1, y + h - 4)
+    g.fillStyle(0xffffff, 0.97)
+    g.fillTriangle(-8, y + h - 1, 0, y + h + 10, 8, y + h - 1)
   }
 
   private emoteOverrideUntil = 0

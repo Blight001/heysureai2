@@ -153,7 +153,7 @@ const toggleViewMode = () => {
         <div class="mb-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400">数字社会成员</div>
 
         <div v-if="memberAgents.length === 0" class="p-4 text-xs text-zinc-400 text-center rounded border border-dashed border-zinc-200 dark:border-zinc-700 dark:text-zinc-500">
-          暂无空闲成员
+          暂无数字成员
         </div>
 
         <TransitionGroup v-else name="list" tag="div" class="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto overflow-x-visible pr-2 pt-2 pb-1">

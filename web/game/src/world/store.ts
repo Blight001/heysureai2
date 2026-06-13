@@ -12,7 +12,7 @@ import { io, type Socket } from 'socket.io-client'
 import { get, getAuthToken } from '@/api/http'
 import { me } from '@/api/auth'
 import { listAiCards } from '@/api/ai'
-import { listConnectedDevices } from '@/api/agents'
+import { listConnectedDevices } from '@/api/devices'
 import { listValhallaEntries, type ValhallaEntry } from '@/api/valhalla'
 import { listEntries, listProposals, readEntry, type KnowledgeEntryItem } from '@/api/librarian'
 import { listWorldActorMeta, type WorldActorAppearance } from '@/api/world'
@@ -88,7 +88,8 @@ export interface WorldSnapshot {
 
 type Listener = (snap: WorldSnapshot) => void
 
-const POLL_MS = 8000
+const POLL_IDLE_MS = 8000
+const POLL_TASK_MS = 1200
 
 const num = (v: unknown, fallback = 0): number => {
   const n = Number(v)
@@ -139,6 +140,7 @@ export class WorldStore {
   private listeners: Listener[] = []
   private socket: Socket | null = null
   private pollTimer: number | null = null
+  private started = false
   private rawAgents: Record<string, any>[] = []
   private rawOfflineAgents: Record<string, any>[] = []
   private runtimeOverride = new Map<number, { state: WorldMember['runtimeStatus']; tool: string }>()
@@ -194,15 +196,27 @@ export class WorldStore {
   }
 
   start() {
-    void this.refresh()
-    this.pollTimer = window.setInterval(() => void this.refresh(), POLL_MS)
+    if (this.started) return
+    this.started = true
+    void this.refresh().finally(() => this.schedulePoll())
   }
 
   stop() {
-    if (this.pollTimer !== null) window.clearInterval(this.pollTimer)
+    this.started = false
+    if (this.pollTimer !== null) window.clearTimeout(this.pollTimer)
     this.pollTimer = null
     this.socket?.disconnect()
     this.socket = null
+  }
+
+  private schedulePoll() {
+    if (!this.started) return
+    if (this.pollTimer !== null) window.clearTimeout(this.pollTimer)
+    const hasRunningTask = this.snapshot.members.some(member => member.taskStatus === 'running')
+    this.pollTimer = window.setTimeout(() => {
+      this.pollTimer = null
+      void this.refresh().finally(() => this.schedulePoll())
+    }, hasRunningTask ? POLL_TASK_MS : POLL_IDLE_MS)
   }
 
   private async ensureSocket() {

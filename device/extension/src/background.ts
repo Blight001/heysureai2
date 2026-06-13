@@ -565,7 +565,11 @@ chrome.runtime.onConnect.addListener((port) => {
 
   port.onMessage.addListener(async (msg: PopupMsg) => {
     switch (msg.type) {
-      case 'device:connect':    { await connect(); break }
+      case 'device:connect':    {
+        if (socket?.connected) await emitRegisterOn(socket)
+        else await connect()
+        break
+      }
       case 'device:disconnect': { disconnect();    break }
       case 'auth:logout': {
         // Drop the socket entirely so the server sees us leaving and we
