@@ -25,7 +25,7 @@ export class Overlay {
   private hud: HTMLDivElement
   private govBtn: HTMLButtonElement | null = null
   private govHint: HTMLDivElement | null = null
-  private readonly govHintDefault = 'WASD 移动总督 · 走到 AI 旁按 <b>F</b> 交互 · 再次点击退出'
+  private readonly govHintDefault = 'WASD 移动辅助管理员 · 走到 AI 旁按 <b>F</b> 交互 · 再次点击退出'
 
   constructor(parent: HTMLElement) {
     const style = document.createElement('style')
@@ -145,7 +145,7 @@ export class Overlay {
     parent.appendChild(btn)
   }
 
-  /** 总督操控开关 + 操作提示（左下角） */
+  /** 辅助管理员操控开关 + 操作提示（左下角） */
   initGovernorButton(parent: HTMLElement, initialActive: boolean, onChange: (active: boolean) => void) {
     const btn = document.createElement('button')
     btn.type = 'button'
@@ -164,7 +164,7 @@ export class Overlay {
   setGovernorActive(active: boolean) {
     if (this.govBtn) {
       this.govBtn.classList.toggle('active', active)
-      this.govBtn.textContent = active ? '🚪 退出总督' : '🎮 操控总督'
+      this.govBtn.textContent = active ? '🚪 退出操控' : '🎮 操控辅助管理员'
     }
     if (this.govHint) {
       this.govHint.innerHTML = this.govHintDefault
@@ -172,7 +172,7 @@ export class Overlay {
     }
   }
 
-  /** 临时提示（如"无核心管理员可操控"），2.5s 后恢复默认 */
+  /** 临时提示（如"无辅助管理员可操控"），2.5s 后恢复默认 */
   flashGovernorHint(text: string) {
     if (!this.govHint) return
     this.govHint.textContent = text

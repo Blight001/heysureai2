@@ -89,14 +89,6 @@ _INTRINSIC_TOOL_DESCRIPTIONS_ZH = {
     "conversation.delete": "删除当前 AI 作用域内指定聊天会话及其中所有消息。",
     "conversation.find": "查找或列出当前 AI 作用域内的聊天会话，可按会话名、会话 ID 或消息内容搜索。",
     "conversation.forget_before_current": "删除当前活跃会话中当前用户消息之前的历史消息，用于按用户要求遗忘此前上下文。",
-    "evolution.input": "提交一条系统进化建议，供核心管理员评审 prompt、工具或工作流改进。",
-    "evolution.list": "列出已提交的系统进化建议，可按评审状态筛选。",
-    "evolution.review": "评审系统进化建议，可执行接受、拒绝或应用，并记录应用位置。",
-    "librarian.archive": "归档一条流程知识，使其不再出现在默认知识检索中，仅限图书管理员角色使用。",
-    "librarian.consult": "按自由文本向图书管理员查询相关流程知识，返回最多 k 条完整步骤。",
-    "librarian.list_topics": "列出流程知识标题、触发词和摘要，用于先浏览再按需读取全文。",
-    "librarian.propose": "向图书管理员知识库提交新的流程沉淀申请，初始为待审批，用户通过后才可检索。",
-    "librarian.read": "根据 memory_id 读取指定流程知识的完整 Markdown 正文。",
     "mcp.describe_tool": "按工具名（支持 tools 批量或 query 关键词搜索）读取已允许 MCP 工具的完整说明和参数 schema。",
     "prompt.list_targets": "列出当前 AI prompt 目标和全局/系统 prompt 键；当前 AI 基础 prompt 位于 AI 配置中。",
     "prompt.read_ai": "读取一个 AI 配置实际使用的基础 prompt；未指定目标时读取当前 AI。",
@@ -1623,7 +1615,7 @@ def brief(
                 summary = summary[:200] + "…"
             line = f"- 【{r.title}】({r.memory_id})：{summary}"
             if used + len(line) + 1 > max_chars:
-                lines.append("- …其余条目可调 `librarian.consult` 进一步查询")
+                lines.append("- …其余条目可在控制台知识库中进一步查询")
                 break
             lines.append(line)
             used += len(line) + 1

@@ -39,15 +39,20 @@ export const assignAgentAi = (agentId: string, aiConfigId: number | null) =>
 export interface AgentMcpScope {
   agentId: string
   agentName?: string
-  agentType?: 'desktop' | 'browser' | null
+  agentType?: 'desktop' | 'browser' | 'workshop' | null
   platform?: string
   aiConfigId?: number | null
   capabilities: string[]
+  toolDefs?: Record<string, {
+    description?: string
+    input_schema?: Record<string, any>
+    destructive?: boolean
+  }>
   allowed: string[]
   hasRecord: boolean
 }
 
-// Endpoint (desktop / browser) MCP permission scope for a connected agent.
+// Endpoint (desktop / browser / workshop) MCP permission scope for a connected agent.
 // Visible only while the device is online; persisted per (AI, agent type) so a
 // reconnecting agent of the same type keeps its scope.
 export const getAgentMcpScope = (agentId: string) =>

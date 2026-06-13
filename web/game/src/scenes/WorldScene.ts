@@ -76,7 +76,7 @@ interface WorkshopView {
 
 const OFFLINE_KEEP_MS = 60000
 
-/** 总督按 F 交互的最大距离（世界像素） */
+/** 辅助管理员按 F 交互的最大距离（世界像素） */
 const INTERACT_RANGE = 96
 
 export class WorldScene extends Phaser.Scene {
@@ -115,7 +115,7 @@ export class WorldScene extends Phaser.Scene {
   private nightGlows: { img: Phaser.GameObjects.Image; base: number; phase: number }[] = []
   private fireflies: { img: Phaser.GameObjects.Image; vx: number; vy: number; phase: number }[] = []
   /**
-   * 总督操控：把世界里已有的「核心管理员」（无 token 上限 / 无任务）当作玩家化身，
+   * 辅助管理员操控：把世界里已有的「辅助管理员」当作玩家化身，
    * 用户用 WSAD 操控其移动，按 F 与附近其它 AI 交互。不再额外生成化身，避免重复。
    */
   private governorMode = false
@@ -123,6 +123,14 @@ export class WorldScene extends Phaser.Scene {
   private moveKeys!: Record<string, Phaser.Input.Keyboard.Key>
   private interactPrompt!: Phaser.GameObjects.Text
   private nearestInteractId: number | null = null
+  private chatMemberId: number | null = null
+  private readonly onParentMessage = (event: MessageEvent) => {
+    if (event.origin !== window.location.origin) return
+    const data = event.data as { type?: string; aiConfigId?: number | null } | null
+    if (data?.type !== 'world:chat-state') return
+    const id = Number(data.aiConfigId)
+    this.chatMemberId = Number.isFinite(id) && id > 0 ? id : null
+  }
 
   constructor() {
     super('world')
@@ -163,11 +171,13 @@ export class WorldScene extends Phaser.Scene {
     this.wireHover()
     this.wireClickAndDrag()
     this.wireGovernorControls()
+    window.addEventListener('message', this.onParentMessage)
     this.store.subscribe(snap => this.applySnapshot(snap))
     this.store.onEvent(ev => this.handleWorldEvent(ev))
     this.store.start()
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.cancelPendingMemberClick()
+      window.removeEventListener('message', this.onParentMessage)
       this.store.stop()
     })
   }
@@ -781,7 +791,7 @@ export class WorldScene extends Phaser.Scene {
       dragging = false
     })
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      // 总督操控模式下相机跟随总督，拖拽平移让位
+      // 辅助管理员操控模式下相机跟随该角色，拖拽平移让位
       if (!dragging || !p.isDown || this.draggingActor || this.governorMode) return
       cam.scrollX -= (p.x - lastX) / cam.zoom
       cam.scrollY -= (p.y - lastY) / cam.zoom
@@ -806,7 +816,7 @@ export class WorldScene extends Phaser.Scene {
     return Math.max(this.scale.width / WORLD_W, this.scale.height / WORLD_H)
   }
 
-  // ---------------------------------------------------------------- 总督操控
+  // ---------------------------------------------------------------- 辅助管理员操控
   private createGovernor() {
     this.interactPrompt = this.add.text(0, 0, '按 F 交互', {
       fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
@@ -832,9 +842,9 @@ export class WorldScene extends Phaser.Scene {
     this.overlay.initGovernorButton(document.body, this.governorMode, active => this.setGovernorMode(active))
   }
 
-  /** 当前可被操控的总督（世界里存活的核心管理员）对应的 actor */
+  /** 当前可被操控的辅助管理员对应的 actor */
   private governorActor(): MemberActor | null {
-    const m = this.snap?.members.find(x => x.role === 'core_admin' && x.lifecycle !== 'dead')
+    const m = this.snap?.members.find(x => x.role === 'assistant_admin' && x.lifecycle !== 'dead')
     if (!m) return null
     return this.actors.get(m.id) ?? null
   }
@@ -851,8 +861,8 @@ export class WorldScene extends Phaser.Scene {
     if (on) {
       const gov = this.governorActor()
       if (!gov) {
-        // 世界里没有核心管理员可操控：提示并保持关闭
-        this.overlay.flashGovernorHint('世界里暂无核心管理员（总督）可操控')
+        // 世界里没有辅助管理员可操控：提示并保持关闭
+        this.overlay.flashGovernorHint('世界里暂无辅助管理员可操控')
         this.overlay.setGovernorActive(false)
         return
       }
@@ -885,10 +895,10 @@ export class WorldScene extends Phaser.Scene {
     this.playSfx('ui_click', 0.4)
   }
 
-  /** 每帧：把 WSAD 输入喂给总督 actor，并刷新"按 F 交互"提示 */
+  /** 每帧：把 WSAD 输入喂给辅助管理员 actor，并刷新"按 F 交互"提示 */
   private updateGovernor() {
     const gov = this.governorMode ? this.governorActor() : null
-    // 总督（核心管理员）离场（死亡/被删）→ 自动退出操控
+    // 辅助管理员离场（死亡/被删）→ 自动退出操控
     if (this.governorMode && !gov) {
       this.setGovernorMode(false)
       return
@@ -910,7 +920,7 @@ export class WorldScene extends Phaser.Scene {
       gov.setControlVelocity(0, 0)
     }
 
-    // 交互提示：高亮最近的存活成员（排除总督自己）
+    // 交互提示：高亮最近的存活成员（排除受控辅助管理员自己）
     let best: MemberActor | null = null
     let bestDist = INTERACT_RANGE
     for (const actor of this.actors.values()) {
@@ -1025,11 +1035,10 @@ export class WorldScene extends Phaser.Scene {
         const w = this.snap.workshops.find(x => x.agentId === drop.agentId)
         if (!w) return
         if (w.type === 'workshop') {
-          // 知识与进化工坊：1:1 绑定，绑定新成员会替换旧绑定
           const current = this.snap.members.find(x => x.id === w.aiConfigId)
           const hint = current && current.id !== m.id
             ? `工坊当前绑定的是「${current.name}」，继续将替换为「${m.name}」。`
-            : '绑定后可调用知识与进化工具。'
+            : '绑定后可使用工坊后续接入的 MCP 能力。'
           if (window.confirm(`把成员「${m.name}」绑定到 ${w.name}？${hint}`)) {
             void setWorkshopBinding(m.id, w.agentId, true).then(() => this.store.refreshNow()).catch(() => undefined)
           }
@@ -1040,7 +1049,6 @@ export class WorldScene extends Phaser.Scene {
         if (window.confirm(`把成员「${m.name}」从端侧 agent / 知识工坊上解绑？`)) {
           void Promise.all(m.boundAgentIds.map(id => {
             const w = this.snap?.workshops.find(x => x.agentId === id)
-            // 知识工坊是 AI 侧 1:1 绑定，解绑走工坊接口；其余设备走 1:1 设备解绑
             return w?.type === 'workshop' ? setWorkshopBinding(m.id, id, false) : assignAgentAi(id, null)
           }))
             .then(() => this.store.refreshNow())
@@ -1370,7 +1378,11 @@ export class WorldScene extends Phaser.Scene {
 
   // ---------------------------------------------------------------- 主循环
   update(time: number, delta: number) {
-    for (const actor of this.actors.values()) actor.tick(time, delta)
+    for (const actor of this.actors.values()) {
+      const stationary = this.drawer.activeMemberId === actor.memberId || this.chatMemberId === actor.memberId
+      actor.setStationary(stationary)
+      actor.tick(time, delta)
+    }
     this.updateGovernor()
     // 蝴蝶：白天飘向目标 + 正弦浮动（夜间隐去休息）
     const day = 1 - this.nightness

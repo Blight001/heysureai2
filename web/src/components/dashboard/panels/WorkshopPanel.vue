@@ -120,7 +120,7 @@ const deviceTypeLabel = (device: ConnectedAgent) => {
   return '设备端'
 }
 
-// 知识与进化工坊使用专用绑定接口，但在本面板保持与其它设备一致的交互。
+// 内置知识工坊使用专用绑定接口，但在本面板保持与其它设备一致的交互。
 const isWorkshopDevice = (device: ConnectedAgent) => {
   const platform = String(device.platform || '').toLowerCase()
   return platform.includes('workshop')

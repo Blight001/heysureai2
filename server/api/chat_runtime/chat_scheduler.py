@@ -159,8 +159,7 @@ def _start_task_run(
         if brief_text.strip():
             briefing_block = (
                 "[图书管理员预先简报]\n"
-                "以下条目可能与本任务相关，建议优先参考其步骤；如需细节调 "
-                "`librarian.read(memory_id)` 查看全文。\n"
+                "以下条目可能与本任务相关，建议优先参考其步骤；完整内容可在控制台知识库查看。\n"
                 f"{brief_text}\n\n"
             )
     except Exception as _bex:

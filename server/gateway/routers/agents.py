@@ -12,7 +12,8 @@ from api.agent_mcp_permissions import get_scope, set_scope
 from api.database import get_session
 from api.models import AgentAiBinding, AssistantAIConfig, EndpointAgentPresence
 from .auth import get_current_user
-from api.sio import sio, agents, agent_token_required
+from api.sio import agents, agent_token_required
+from api.agent_live import connected_agent_rows_for_user, emit_agent_list_for_user
 from connector_runtime.dispatch.desktop_agent_tools import agent_endpoint_tools, agent_type_of
 
 router = APIRouter()
@@ -52,7 +53,7 @@ def _presence_agent_type(session: Session, user_id: int, agent_id: str) -> Optio
         .order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
     ).first()
     agent_type = str(row.agent_type or "").strip() if row else ""
-    return agent_type if agent_type in {"desktop", "browser"} else None
+    return agent_type if agent_type in {"desktop", "browser", "workshop"} else None
 
 
 def _agent_type_for_binding(session: Session, user_id: int, agent_id: str) -> Optional[str]:
@@ -102,6 +103,19 @@ def _scope_view(agent: dict, user_id: int) -> dict:
         ai_config_id = None
     scope = get_scope(user_id, agent_id) if agent_id else None
     allowed = [] if scope is None else sorted(set(capabilities) & scope)
+    try:
+        from api.agent_presence import tool_defs_for_agent
+
+        tool_defs = tool_defs_for_agent(user_id, agent_id)
+    except Exception:
+        tool_defs = {}
+    if agent_type == "workshop" and not tool_defs:
+        try:
+            from workshop import engine as workshop_engine
+
+            tool_defs = workshop_engine.tool_defs_map()
+        except Exception:
+            tool_defs = {}
     return {
         "agentId": agent_id,
         "agentName": str(agent.get("name") or agent.get("id") or ""),
@@ -109,6 +123,7 @@ def _scope_view(agent: dict, user_id: int) -> dict:
         "platform": str(agent.get("platform") or ""),
         "aiConfigId": ai_config_id,
         "capabilities": capabilities,
+        "toolDefs": {name: tool_defs.get(name, {}) for name in capabilities},
         "allowed": allowed,
         "hasRecord": scope is not None,
     }
@@ -121,16 +136,7 @@ async def list_connected_agents(
 ):
     # Auth-gate the view; the agent registry itself is process-global.
     user = get_current_user(authorization, session)
-    rows = list(agents.values())
-    # 知识与进化工坊是服务端内置的虚拟端侧：为当前用户附加一条常在线条目，
-    # 作坊面板与社会显示（游戏世界）据此渲染，无需用户运行独立程序。
-    try:
-        from workshop import engine as workshop_engine
-
-        workshop_engine.ensure_presence_for_user(user.id)
-        rows.append(workshop_engine.connected_entry_for_user(user.id))
-    except Exception:
-        pass
+    rows = connected_agent_rows_for_user(user.id)
     return {
         "agents": rows,
         "count": len(rows),
@@ -160,20 +166,15 @@ async def bind_agent_ai(
     agent_id = (payload.agentId or "").strip()
     if not agent_id:
         raise HTTPException(status_code=400, detail="agentId required")
-    # 知识工坊是 AI 侧多对一绑定（/api/workshop/bindings），不走设备 1:1 分配。
     try:
         from workshop import engine as workshop_engine
 
         if workshop_engine.is_builtin_workshop_agent_id(agent_id):
-            raise HTTPException(
-                status_code=400,
-                detail="知识工坊请通过 /api/workshop/bindings 绑定（1:1，只能绑定一个 AI 数字成员）",
-            )
+            raise HTTPException(status_code=400, detail="知识工坊请通过 /api/workshop/bindings 绑定")
     except HTTPException:
         raise
     except Exception:
         pass
-
     cfg_id = payload.aiConfigId
     previous_same_type_agent_id = None
     if cfg_id:
@@ -221,7 +222,7 @@ async def bind_agent_ai(
     except Exception:
         pass
 
-    await sio.emit("agent:list", list(agents.values()))
+    await emit_agent_list_for_user(user.id)
     return {"ok": True, "agentId": agent_id, "aiConfigId": stored}
 
 
@@ -241,7 +242,7 @@ async def get_agent_mcp_scope(
     if not agent:
         raise HTTPException(status_code=404, detail="设备未连接")
     if not agent_type_of(agent):
-        raise HTTPException(status_code=400, detail="该设备不是软件端 / 浏览器端 Agent")
+        raise HTTPException(status_code=400, detail="该设备不是可管理的端点 Agent")
     return _scope_view(agent, user.id)
 
 
@@ -286,5 +287,5 @@ async def set_agent_mcp_scope(
     requested = {str(t).strip() for t in (payload.tools or []) if str(t).strip()}
     set_scope(user.id, agent_id, requested & capabilities, ai_config_id=ai_config_id, agent_type=agent_type)
 
-    await sio.emit("agent:list", list(agents.values()))
+    await emit_agent_list_for_user(user.id)
     return _scope_view(agent, user.id)

@@ -37,12 +37,6 @@ from .tools.conversation import (
 )
 from .tools.web_search import _web_search
 
-# 注意：librarian.* / evolution.*（知识与进化）已迁出内置 MCP，由服务端
-# 内置的知识工坊（server/workshop/，每账号自动上线）提供。AI 必须绑定工坊
-# 才能看到/调用这些工具；执行经 workshop.engine.execute_tool 进程内完成。
-# handler 实现仍在 tools/librarian.py、tools/evolution.py，由工坊引擎复用。
-
-
 def _register_builtin_tools(registry: MCPRegistry) -> None:
     """Populate ``registry`` with all builtin tools.
 
@@ -670,9 +664,6 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         handler=_prompt_write_system,
         destructive=True,
     ))
-
-    # librarian.* / evolution.* 见文件顶部说明：已迁出至知识工坊 agent。
-
 
 registry = MCPRegistry()
 _register_builtin_tools(registry)

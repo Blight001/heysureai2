@@ -1,4 +1,4 @@
-"""Persistent AI → workshop-agent binding (知识与进化工坊).
+"""Persistent AI → builtin workshop-agent binding.
 
 The knowledge & evolution workshop (server-builtin, see ``server/workshop/``)
 binds **1:1**：一个工坊同一时间只服务一个 AI 数字成员（绑定新成员替换旧

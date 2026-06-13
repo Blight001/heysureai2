@@ -465,8 +465,6 @@ async def _call_mcp_or_endpoint_tool(
     ai_config_id: Optional[int],
 ) -> Dict[str, object]:
     if is_workshop_tool(tool):
-        # 知识与进化工坊是服务端内置的：任何进程都能直接执行，无需绕道
-        # gateway 的 socket 调度（拆分部署时也省一次 HTTP 往返）。
         return {
             "tool": tool,
             "destructive": True,

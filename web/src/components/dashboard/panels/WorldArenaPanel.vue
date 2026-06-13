@@ -4,14 +4,28 @@
  * 原"项目安排 + 运行中 AI 卡片"功能已按需求移除（2026-06-11）。
  * postMessage 桥：world:open-chat → 父页面打开对应成员聊天弹窗。
  */
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import AppIcon from '@/components/common/AppIcon.vue'
+
+const props = defineProps<{
+  chatAiConfigId?: number | null
+}>()
 
 const emit = defineEmits<{
   (e: 'open-chat', aiConfigId: number): void
 }>()
 
 const GAME_URL = '/game/'
+const gameFrame = ref<HTMLIFrameElement | null>(null)
+
+const syncChatState = () => {
+  gameFrame.value?.contentWindow?.postMessage(
+    { type: 'world:chat-state', aiConfigId: props.chatAiConfigId ?? null },
+    window.location.origin,
+  )
+}
+
+watch(() => props.chatAiConfigId, syncChatState)
 
 const onMessage = (event: MessageEvent) => {
   if (event.origin !== window.location.origin) return
@@ -31,9 +45,11 @@ onUnmounted(() => window.removeEventListener('message', onMessage))
       <span class="flex items-center gap-1.5"><AppIcon name="globe" class="w-3.5 h-3.5" /> 社会显示</span>
     </div>
     <iframe
+      ref="gameFrame"
       :src="GAME_URL"
       class="flex-1 w-full border-0"
       title="社会显示"
+      @load="syncChatState"
     />
   </section>
 </template>

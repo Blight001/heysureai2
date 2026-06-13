@@ -1212,6 +1212,14 @@ def _migrate_user(
         "memory.list",
         "memory.update",
         "memory.archive",
+        "librarian.propose",
+        "librarian.consult",
+        "librarian.list_topics",
+        "librarian.read",
+        "librarian.archive",
+        "evolution.input",
+        "evolution.list",
+        "evolution.review",
         "debug.ping",
     ):
         _remove_role_permission_tool_item(cursor, _tool)
@@ -1347,6 +1355,14 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
         "memory.list",
         "memory.update",
         "memory.archive",
+        "librarian.propose",
+        "librarian.consult",
+        "librarian.list_topics",
+        "librarian.read",
+        "librarian.archive",
+        "evolution.input",
+        "evolution.list",
+        "evolution.review",
         "debug.ping",
     ):
         _remove_json_array_item(cursor, "assistantaiconfig", "mcp_tools", _tool)

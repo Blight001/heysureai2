@@ -529,6 +529,7 @@ onUnmounted(() => {
       <!-- 中间：社会显示（游戏世界实时画面） -->
       <WorldArenaPanel
         class="h-auto lg:h-full min-h-[500px] lg:min-h-0 lg:min-w-0 flex-1"
+        :chat-ai-config-id="chatModalOpen ? chatTarget?.aiConfigId : null"
         @open-chat="onWorldOpenChat"
       />
 

@@ -94,9 +94,9 @@ const onModelPresetChange = () => {
   props.form.model = preset?.model || ''
 }
 
-// ---------- 知识与进化工坊绑定 ----------
+// ---------- 内置知识工坊绑定 ----------
 // 工坊 agent（agent/workshop/）服务多个 AI；在这里为当前 AI 单独绑定/解绑。
-// 绑定是该 AI 调用 librarian.* / evolution.* 工具的唯一门槛。
+// 当前工具集为空，绑定关系保留给后续 MCP 能力使用。
 const workshopAgents = ref<WorkshopAgentItem[]>([])
 const workshopLoading = ref(false)
 const workshopError = ref('')
@@ -359,21 +359,20 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                   />
                 </div>
 
-                <!-- 知识与进化工坊（server/workshop/，服务端内置）：1:1 绑定。
-                     绑定后该 AI 才能看到并调用 librarian.* / evolution.* 工具。 -->
+                <!-- 服务端内置知识工坊：保留 1:1 专用绑定。 -->
                 <div
                   v-if="editingConfigId && form.ai_role_group !== 'assistant_admin'"
                   class="mb-3 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3 dark:border-indigo-500/30 dark:bg-indigo-500/5"
                 >
                   <div class="flex items-center justify-between">
-                    <div class="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">知识与进化工坊</div>
+                    <div class="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">知识工坊</div>
                     <button
                       class="text-[10px] px-1.5 py-0.5 rounded border border-indigo-200 text-indigo-600 dark:border-indigo-500/40 dark:text-indigo-300"
                       @click="loadWorkshopAgents"
                     >刷新</button>
                   </div>
                   <p class="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-                    工坊由服务端内置、每个账号自动上线（无需运行任何程序）。绑定后本 AI 才能调用知识库（librarian.*）与进化（evolution.*）工具；工坊只能绑定一个 AI 数字成员，绑定新成员会替换旧绑定。
+                    工坊由服务端内置并自动上线。当前不携带 MCP 工具；绑定关系继续保留，后续接入新 MCP 后可直接沿用。工坊只能绑定一个 AI 数字成员。
                   </p>
                   <div v-if="workshopLoading" class="mt-2 text-[11px] text-zinc-400">加载中…</div>
                   <div v-else-if="workshopError" class="mt-2 text-[11px] text-rose-500">{{ workshopError }}</div>

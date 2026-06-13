@@ -6,7 +6,7 @@ Layout:
 - registry     — singleton ``registry`` populated with every built-in tool.
 - permissions  — per-role allow-list policy.
 - tools.*      — concrete handlers, grouped by domain (workspace, tasks,
-                 projects, prompts, memory, communication, human, librarian).
+                 prompts, communication, and conversation).
 
 External callers should keep importing from ``mcp_runtime.mcp`` (this package) for
 the small public surface re-exported below; reach into ``mcp_runtime.mcp.core`` /

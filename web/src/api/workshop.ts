@@ -1,7 +1,7 @@
 import { get, post } from './http'
 
-// 知识与进化工坊（server/workshop/，服务端内置）：绑定管理。
-// 绑定是 AI 调用 librarian.* / evolution.* 工具的唯一门槛；
+// 服务端内置知识工坊 Agent 的专用绑定管理。
+// 当前工具集为空，绑定关系保留给后续 MCP 能力使用。
 // 工坊与 AI 为 1:1 —— 只能绑定一个 AI 数字成员，绑定新成员会替换旧绑定。
 
 export interface WorkshopAgentItem {

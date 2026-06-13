@@ -27,7 +27,8 @@ from api.models import (
     ChatSessionCreate,
     TokenUsageSnapshot,
 )
-from api.sio import agents, sio
+from api.sio import agents
+from api.agent_live import emit_agent_list_for_user
 from .auth import get_current_user
 from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.services.model_presets import resolve_model_preset
@@ -181,7 +182,7 @@ async def delete_ai_config(
             agent["aiConfigId"] = None
             changed_live = True
     if changed_live:
-        await sio.emit("agent:list", list(agents.values()))
+        await emit_agent_list_for_user(user.id)
     return {"success": True}
 
 @router.get("/runtime-status")

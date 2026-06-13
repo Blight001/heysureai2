@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""内置工坊引擎：按用户自动上线 + 进程内执行知识/进化工具。
+"""内置工坊引擎：按用户自动上线并保留专用绑定能力。
 
 工坊不再是用户手动运行的独立 agent 进程，而是服务端内置的"虚拟端侧"：
 
@@ -7,14 +7,8 @@
   ``EndpointAgentPresence``（agent_type="workshop"，always online）并默认
   放开 per-agent scope。该函数挂在 ``ensure_default_ai_for_user`` 上，
   用户登录/拉取 AI 列表时自动接入，作坊面板与社会显示随之出现工坊。
-- **绑定仍是唯一门槛**：AI 须经 ``WorkshopAiBinding``（AI 配置弹窗勾选或
-  世界里拖拽）绑定工坊后才能看到/调用 ``librarian.*`` / ``evolution.*``。
-  工坊与 AI 为 **1:1**：同一时间只绑定一个数字成员，新绑定替换旧绑定。
-- **进程内执行**：调用经 ``agent_dispatch`` 的 workshop 分支直达
-  :func:`execute_tool` ——policy 钩子 → 服务端 handler，无 socket 往返。
-
-安全边界：execute_tool 在服务端复核工具白名单、AI 归属、绑定关系与
-角色最低权限；capabilities 被限制在工坊命名空间内。
+- **专用绑定保留**：AI 仍通过 ``WorkshopAiBinding`` 与工坊 1:1 绑定。
+- **MCP 暂为空**：旧知识库、进化和审批写入工具已移除，后续可重新接入。
 """
 
 import logging
@@ -23,7 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 
-from . import policy, tools
+from . import tools
 
 logger = logging.getLogger(__name__)
 
@@ -31,17 +25,7 @@ _AGENT_ID_PREFIX = "workshop_builtin_"
 WORKSHOP_DISPLAY_NAME = "知识工坊（内置）"
 WORKSHOP_PLATFORM = "Workshop-Server"
 
-# 工具白名单：工坊可执行的全部工具 → 服务端 handler（数据真相源）。
-_TOOL_HANDLERS = {
-    "librarian.propose": ("mcp_runtime.mcp.tools.librarian", "_librarian_propose"),
-    "librarian.consult": ("mcp_runtime.mcp.tools.librarian", "_librarian_consult"),
-    "librarian.list_topics": ("mcp_runtime.mcp.tools.librarian", "_librarian_list_topics"),
-    "librarian.read": ("mcp_runtime.mcp.tools.librarian", "_librarian_read"),
-    "librarian.archive": ("mcp_runtime.mcp.tools.librarian", "_librarian_archive"),
-    "evolution.input": ("mcp_runtime.mcp.tools.evolution", "_evolution_input"),
-    "evolution.list": ("mcp_runtime.mcp.tools.evolution", "_evolution_list"),
-    "evolution.review": ("mcp_runtime.mcp.tools.evolution", "_evolution_review"),
-}
+_TOOL_HANDLERS = {}
 
 # 同进程内每用户 ensure 去抖：presence 写盘不必每个请求都做。
 _ENSURE_TTL_SECONDS = 60.0
@@ -58,10 +42,7 @@ def is_builtin_workshop_agent_id(agent_id) -> bool:
 
 def capability_names() -> List[str]:
     """工坊上报的工具名（强制限制在工坊命名空间，且必须有 handler）。"""
-    return sorted(
-        name for name in tools.TOOL_NAMES
-        if str(name).startswith(("librarian.", "evolution.")) and name in _TOOL_HANDLERS
-    )
+    return sorted(name for name in tools.TOOL_NAMES if name in _TOOL_HANDLERS)
 
 
 def tool_defs_map() -> Dict[str, Dict[str, Any]]:
@@ -204,6 +185,4 @@ def execute_tool(user_id: int, ai_config_id: Optional[int], tool: str, args: Opt
     module_name, func_name = spec
     handler = getattr(importlib.import_module(module_name), func_name)
 
-    shaped_args = policy.before_execute(tool, dict(args or {}))
-    result = handler(int(user_id), shaped_args, int(cfg.id))
-    return policy.after_execute(tool, shaped_args, result)
+    return handler(int(user_id), dict(args or {}), int(cfg.id))

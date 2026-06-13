@@ -64,6 +64,7 @@ export interface DrawerActions {
 }
 
 export class Drawer {
+  activeMemberId: number | null = null
   private el: HTMLDivElement
   /** 当前激活标签页的内容容器；section()/feedback() 都挂到这里 */
   private host!: HTMLElement
@@ -201,6 +202,7 @@ export class Drawer {
   }
 
   close() {
+    this.activeMemberId = null
     this.el.classList.remove('open')
     this.bodyEl.innerHTML = ''
     this.tabsEl.innerHTML = ''
@@ -212,6 +214,7 @@ export class Drawer {
 
   /** 打开面板：设置头像 + 标题 + 标签页，默认展示第一栏。 */
   private openPanel(opts: { title: string; subtitle?: string; portrait?: PortraitSpec | null; tabs: PanelTab[] }) {
+    this.activeMemberId = null
     this.portraitName.textContent = opts.title
     this.portraitSub.textContent = opts.subtitle || ''
     this.portraitFrame.innerHTML = ''
@@ -309,6 +312,7 @@ export class Drawer {
         { name: '外观', build: () => this.appearanceSection(m) },
       ],
     })
+    this.activeMemberId = m.id
   }
 
   private memberInfoTab(m: WorldMember) {

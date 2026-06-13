@@ -11,7 +11,7 @@ import { VALHALLA_DOOR, clampToWorld, randomPointIn, type Point, type Rect } fro
 import type { WorldMember } from '../world/store'
 
 const WALK_SPEED = 42 // px/s
-const CONTROL_SPEED = 150 // px/s，玩家（总督）操控时的移动速度
+const CONTROL_SPEED = 150 // px/s，玩家操控辅助管理员时的移动速度
 const ARRIVE_EPS = 4
 const HITBOX_W = 44
 const HITBOX_H = 70
@@ -64,8 +64,9 @@ export class MemberActor extends Phaser.GameObjects.Container {
   private idleUntil = 0
   private dying = false
   private dragging = false
-  /** 玩家（总督）接管：停止自治游荡，改由 WSAD 驱动；不显示血条 */
+  /** 玩家接管辅助管理员：停止自治游荡，改由 WSAD 驱动；不显示血条 */
   private controlled = false
+  private stationary = false
   private controlVx = 0
   private controlVy = 0
   private controlFacing: 'down' | 'up' | 'left' | 'right' = 'down'
@@ -152,7 +153,7 @@ export class MemberActor extends Phaser.GameObjects.Container {
     return this.dragging
   }
 
-  /** 玩家接管 / 释放（总督功能）。接管时停止游荡并隐藏血条，释放后回锚区。 */
+  /** 玩家接管 / 释放。接管时停止游荡并隐藏血条，释放后回锚区。 */
   setControlled(on: boolean) {
     if (this.controlled === on) return
     this.controlled = on
@@ -173,6 +174,21 @@ export class MemberActor extends Phaser.GameObjects.Container {
 
   get isControlled(): boolean {
     return this.controlled
+  }
+
+  /** 交互或对话期间原地驻足，结束后恢复自治游荡。 */
+  setStationary(on: boolean) {
+    if (this.stationary === on) return
+    this.stationary = on
+    if (on) {
+      this.target = null
+      this.via = null
+      this.sprite.stop()
+      this.sprite.setFrame(0)
+    } else if (!this.controlled && this.member.enabled) {
+      this.target = clampToWorld(randomPointIn(this.zone))
+      this.idleUntil = 0
+    }
   }
 
   /** WSAD 合成的单位方向（0 = 停） */
@@ -243,8 +259,8 @@ export class MemberActor extends Phaser.GameObjects.Container {
   setAnchor(zone: Rect) {
     if (zone === this.zone) return
     this.zone = zone
-    // 玩家接管（总督）时不被锚区拉走
-    if (this.controlled) return
+    // 玩家接管时不被锚区拉走
+    if (this.controlled || this.stationary) return
     // 锚区变化：走过去（不瞬移，让调度可见）
     this.target = clampToWorld(randomPointIn(zone))
     this.idleUntil = 0
@@ -270,7 +286,7 @@ export class MemberActor extends Phaser.GameObjects.Container {
     const g = this.tokenBar
     g.clear()
     const m = this.member
-    // 总督（受控）或无 token 上限的角色：不显示血条
+    // 受控角色或无 token 上限的角色：不显示血条
     if (this.controlled || m.tokenLimit <= 0) return
     const x = -TOKEN_BAR_W / 2
     const y = -66
@@ -340,7 +356,7 @@ export class MemberActor extends Phaser.GameObjects.Container {
       this.syncDepth()
       return true
     }
-    // 玩家（总督）接管：用 WSAD 速度移动，跳过自治游荡
+    // 玩家接管：用 WSAD 速度移动，跳过自治游荡
     if (this.controlled) {
       if (this.controlVx !== 0 || this.controlVy !== 0) {
         const len = Math.hypot(this.controlVx, this.controlVy) || 1
@@ -359,6 +375,14 @@ export class MemberActor extends Phaser.GameObjects.Container {
           this.sprite.play(animKey)
         }
       } else if (this.sprite.anims.isPlaying) {
+        this.sprite.stop()
+        this.sprite.setFrame(0)
+      }
+      this.syncDepth()
+      return true
+    }
+    if (this.stationary) {
+      if (this.sprite.anims.isPlaying) {
         this.sprite.stop()
         this.sprite.setFrame(0)
       }

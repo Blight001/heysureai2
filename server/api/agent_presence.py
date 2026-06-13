@@ -50,6 +50,7 @@ def _decode_defs(row: EndpointAgentPresence) -> Dict[str, dict]:
         out[key] = {
             "description": str(spec.get("description") or "").strip(),
             "input_schema": schema if isinstance(schema, dict) else {},
+            "destructive": bool(spec.get("destructive")),
         }
     return out
 
@@ -167,9 +168,7 @@ def online_agents_for_config(user_id, ai_config_id) -> List[Tuple[str, str, Set[
 
 
 def online_tool_names() -> Tuple[Set[str], Set[str]]:
-    """``(desktop_tools, browser_tools)`` advertised by all online agents — used
-    for context-free tool classification. 工坊（workshop）agent 的工具单独走
-    :func:`online_workshop_agents_for_user`，不混入桌面桶。"""
+    """``(desktop_tools, browser_tools)`` advertised by online endpoint agents."""
     desktop: Set[str] = set()
     browser: Set[str] = set()
     with Session(engine) as session:
@@ -196,9 +195,6 @@ def online_tool_names() -> Tuple[Set[str], Set[str]]:
 
 
 def online_workshop_agents_for_user(user_id) -> List[Tuple[str, Set[str]]]:
-    """``(agent_id, capabilities)`` for every online workshop agent of a user.
-    绑定关系（哪些 AI 可用）由 ``api.workshop_bindings`` 决定，这里只回答
-    "谁在线、各自上报了什么工具"。"""
     uid = _int(user_id)
     out: List[Tuple[str, Set[str]]] = []
     with Session(engine) as session:
@@ -238,5 +234,23 @@ def online_tool_defs() -> Dict[str, dict]:
                 continue
             seen_agents.add(agent_id)
             for name, spec in _decode_defs(row).items():
-                out.setdefault(name, spec)
+                out.setdefault(name, {
+                    **spec,
+                    "mcpSource": str(row.agent_type or "desktop").strip() or "desktop",
+                })
     return out
+
+
+def tool_defs_for_agent(user_id, agent_id) -> Dict[str, dict]:
+    """Self-described tool definitions for one user-owned endpoint agent."""
+    uid = _int(user_id)
+    aid = str(agent_id or "").strip()
+    if uid is None or not aid:
+        return {}
+    with Session(engine) as session:
+        rows = _load_presence_rows(session, aid)
+        for row in rows:
+            if row.user_id and row.user_id != uid:
+                continue
+            return _decode_defs(row)
+    return {}

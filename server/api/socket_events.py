@@ -4,6 +4,7 @@ import time
 from sqlmodel import Session, select
 
 from api.agent_bindings import get_binding, set_binding
+from api.agent_live import emit_agent_list_for_user
 from api.database import engine
 from api.models import AssistantAIConfig
 from api.sio import (
@@ -53,7 +54,7 @@ def _has_live_same_type_ai_binding(*, user_id: int, ai_config_id: int, agent_id:
     except Exception:
         return False
     incoming_type = agent_type_of(agent_info)
-    if incoming_type not in {"desktop", "browser"}:
+    if incoming_type not in {"desktop", "browser", "workshop"}:
         return False
     target_cfg = _coerce_positive_int(ai_config_id)
     if not target_cfg:
@@ -91,7 +92,7 @@ def register_user_socket_events():
         await sio.enter_room(sid, f"user_{user_id}")
         # Opportunistically clean up dispatches whose agent vanished.
         purge_stale_dispatches()
-        await sio.emit('agent:list', list(agents.values()), to=sid)
+        await emit_agent_list_for_user(user_id, to=sid)
 
 
 def register_agent_socket_events():
@@ -231,7 +232,8 @@ def register_agent_socket_events():
         # Include the server-side bound AI so the device can show whether an AI
         # is assigned yet (status indicator: green = bound, yellow = none).
         await sio.emit('agent:registered', {'id': agent_id, 'aiConfigId': claimed_ai}, to=sid)
-        await sio.emit('agent:list', list(agents.values()))
+        if owner_user_id is not None:
+            await emit_agent_list_for_user(owner_user_id)
 
     @sio.on('flow:log')
     async def flow_log(sid, data):
@@ -244,24 +246,30 @@ def register_agent_socket_events():
     @sio.on('task:result')
     async def task_result(sid, data):
         await handle_task_result(data if isinstance(data, dict) else {})
-        await sio.emit('agent:list', list(agents.values()))
+        owner_user_id = (agents.get(sid) or {}).get('userId')
+        if owner_user_id is not None:
+            await emit_agent_list_for_user(owner_user_id)
 
     @sio.on('task:error')
     async def task_error(sid, data):
         await handle_task_error(data if isinstance(data, dict) else {})
-        await sio.emit('agent:list', list(agents.values()))
+        owner_user_id = (agents.get(sid) or {}).get('userId')
+        if owner_user_id is not None:
+            await emit_agent_list_for_user(owner_user_id)
 
     @sio.on('disconnect')
     async def disconnect(sid):
         if sid in agents:
             agent_id_for_presence = str(agents[sid].get('id') or '')
+            owner_user_id = agents[sid].get('userId')
             del agents[sid]
             try:
                 from api.agent_presence import set_offline
                 set_offline(agent_id_for_presence)
             except Exception:
                 logger.exception('Failed to mark endpoint agent offline: %s', agent_id_for_presence)
-            await sio.emit('agent:list', list(agents.values()))
+            if owner_user_id is not None:
+                await emit_agent_list_for_user(owner_user_id)
 
 
 def register_socket_events():

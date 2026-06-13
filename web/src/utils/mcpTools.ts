@@ -123,9 +123,6 @@ const getMcpToolFallbackTag = (name: string) => {
   if (hasMcpPrefix(name, 'desktop')) return '桌面能力'
   if (hasMcpPrefix(name, 'task')) return '任务'
   if (hasMcpPrefix(name, 'prompt')) return 'Prompt'
-  if (name === 'librarian.archive') return '归档'
-  if (hasMcpPrefix(name, 'librarian')) return '知识总结'
-  if (hasMcpPrefix(name, 'evolution')) return '进化'
   // 发消息：发给用户 / 发给其他 AI，单独成栏，不再混入「会话管理」。
   if (hasMcpPrefix(name, 'message')) return '发消息'
   if (hasMcpPrefix(name, 'feishu')) return '会话管理'
@@ -157,7 +154,7 @@ export const getMcpToolZhLabel = (name: string) => {
 
 const getMcpToolZhTag = (name: string) => getMcpToolFallbackTag(name)
 
-const MEMORY_PREFIX_ORDER = ['memory', 'librarian']
+const MEMORY_PREFIX_ORDER = ['memory']
 const TASK_TOOL_ORDER = [
   'task.create',
   'task.update',

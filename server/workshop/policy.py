@@ -1,33 +1,12 @@
 # -*- coding: utf-8 -*-
-"""工坊策略钩子 —— 控制"知识与进化方向"的唯一改动点。
-
-每次工具调用都会经过这两个钩子（见 server/workshop/engine.py）：
-
-    before_execute(tool, args)          → 改写/补全入参后再执行
-    after_execute(tool, args, result)   → 改写/增强结果后再返回给 AI
-
-默认行为：
-- 写入类工具（propose / input / review）的结果会附带 ``direction.md``
-  的方向指引，提醒 AI 沉淀知识、提交进化建议时对齐方向；
-- consult 检索结果同样附带方向指引，引导后续行动。
-
-你可以在这里做任何事：给 propose 强制补 triggers、按方向过滤检索结果、
-拒绝偏离方向的进化建议……direction.md 保存即生效；改本文件需重启服务
-进程。
-"""
+"""Reserved hooks for future workshop MCP tools."""
 
 from pathlib import Path
 from typing import Any, Dict
 
 _DIRECTION_FILE = Path(__file__).resolve().parent / "direction.md"
 
-# 附带方向指引的工具（写入类 + 检索类）
-_GUIDED_TOOLS = {
-    "librarian.propose",
-    "librarian.consult",
-    "evolution.input",
-    "evolution.review",
-}
+_GUIDED_TOOLS = set()
 
 
 def load_direction() -> str:

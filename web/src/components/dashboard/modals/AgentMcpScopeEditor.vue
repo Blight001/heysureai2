@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { getAgentMcpScope, setAgentMcpScope, type AgentMcpScope } from '@/api/agents'
-import { getMcpToolZhLabel } from '@/utils/mcpTools'
+import { getMcpToolParamRows, getMcpToolZhLabel } from '@/utils/mcpTools'
 
 const props = defineProps<{
   agentId: string
@@ -37,6 +37,11 @@ const load = async () => {
 watch(() => [props.agentId, props.refreshKey], load, { immediate: true })
 
 const capabilities = computed(() => scope.value?.capabilities || [])
+const scopeTitle = computed(() => {
+  if (scope.value?.agentType === 'workshop') return '知识工坊 MCP 权限'
+  if (scope.value?.agentType === 'browser') return '浏览器端 MCP 权限'
+  return '软件端 MCP 权限'
+})
 // Scope is keyed per individual agent, so it can be configured even before the
 // device is assigned an AI. Saving only needs a connected agent that reports
 // tools.
@@ -50,29 +55,6 @@ const dirty = computed(() => {
   for (const t of selected.value) if (!base.has(t)) return true
   return false
 })
-
-const introItems = [
-  {
-    key: 'MCP',
-    title: '模型上下文协议',
-    description: 'AI 通过 MCP 发现工具、读取工具说明并按名称调用。这里展示的是当前设备对外暴露的 MCP 权限范围。',
-  },
-  {
-    key: 'list_tools',
-    title: '查看工具列表',
-    description: '先看当前设备上报了哪些工具，再决定是否展开某个条目查看说明或调整权限。',
-  },
-  {
-    key: 'describe_tool',
-    title: '读取工具详情',
-    description: '用于查看某个工具的用途、参数和说明。需要确认怎么调用时，先看工具详情。',
-  },
-  {
-    key: 'scope',
-    title: '权限范围',
-    description: '这里只列出当前在线设备上报的工具；勾选状态表示当前 AI 是否允许使用它。',
-  },
-] as const
 
 // 分类与扩展端 BROWSER_TOOL_CATEGORIES 保持一致。状态管理类工具已合并为
 // browser_tab / browser_cookie / browser_storage / browser_session /
@@ -111,6 +93,19 @@ const basicToolIntro = (tool: string) => {
   if (name.startsWith('process_')) return '进程工具，用于列出或结束系统进程。'
   return '通用 MCP 工具。'
 }
+
+const toolDefinition = (tool: string) => scope.value?.toolDefs?.[tool] || {}
+
+const toolDescription = (tool: string) => {
+  return String(toolDefinition(tool).description || '').trim() || basicToolIntro(tool)
+}
+
+const toolParams = (tool: string) => getMcpToolParamRows({
+  name: tool,
+  description: toolDescription(tool),
+  inputSchema: toolDefinition(tool).input_schema || {},
+  destructive: !!toolDefinition(tool).destructive,
+})
 
 const toggle = (tool: string) => {
   const next = new Set(selected.value)
@@ -156,7 +151,7 @@ const closeDetail = () => {
     <div class="flex items-center justify-between gap-2">
       <div class="min-w-0">
         <div class="text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">
-          {{ scope?.agentType === 'browser' ? '浏览器端 MCP 权限' : '软件端 MCP 权限' }}
+          {{ scopeTitle }}
         </div>
         <div class="text-[10px] text-zinc-400 dark:text-zinc-500 truncate">
           {{ scope?.agentName || agentId }}
@@ -213,29 +208,7 @@ const closeDetail = () => {
           </div>
 
           <div class="min-h-0 flex-1 overflow-y-auto p-4">
-            <div class="mb-3 rounded-lg border border-indigo-200/80 bg-indigo-50/70 px-3 py-2 dark:border-indigo-900/60 dark:bg-indigo-950/20">
-              <div class="mb-2 flex items-center justify-between gap-2">
-                <div class="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">基础 MCP 介绍</div>
-                <div class="text-[10px] text-indigo-500 dark:text-indigo-400">先看概念，再看权限</div>
-              </div>
-              <div class="grid grid-cols-1 gap-1.5 md:grid-cols-3">
-                <div
-                  v-for="item in introItems"
-                  :key="item.key"
-                  class="flex h-full items-start gap-2 rounded-md border border-indigo-100 bg-white/70 px-2.5 py-2 dark:border-indigo-900/40 dark:bg-zinc-950/50"
-                >
-                  <div class="min-w-[88px] shrink-0 font-mono text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">
-                    {{ item.key }}
-                  </div>
-                  <div class="min-w-0">
-                    <div class="text-[11px] font-medium text-zinc-800 dark:text-zinc-100">{{ item.title }}</div>
-                    <div class="mt-0.5 text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-400">{{ item.description }}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 gap-1.5 md:grid-cols-3">
+            <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
               <label
                 v-for="tool in capabilities"
                 :key="tool"
@@ -251,9 +224,29 @@ const closeDetail = () => {
                   @change="toggle(tool)"
                 />
                 <span class="min-w-0">
-                  <span class="block text-[10px] font-mono font-semibold break-all" :title="`${label(tool)} (${tool})`">{{ label(tool) }}</span>
-                  <span class="mt-0.5 block text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                    {{ basicToolIntro(tool) }}
+                  <span class="flex items-center gap-1.5 text-[10px] font-mono font-semibold break-all" :title="`${label(tool)} (${tool})`">
+                    {{ label(tool) }}
+                    <span
+                      v-if="toolDefinition(tool).destructive"
+                      class="rounded bg-amber-100 px-1 py-0.5 font-sans text-[9px] font-medium text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
+                    >
+                      写入/变更
+                    </span>
+                  </span>
+                  <span class="mt-1 block text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-300">
+                    {{ toolDescription(tool) }}
+                  </span>
+                  <span v-if="toolParams(tool).length" class="mt-1.5 block border-t border-zinc-200/80 pt-1.5 dark:border-zinc-700/80">
+                    <span class="mb-1 block text-[9px] font-medium text-zinc-400">参数</span>
+                    <span
+                      v-for="param in toolParams(tool)"
+                      :key="param.name"
+                      class="mb-1 block text-[9px] leading-relaxed text-zinc-500 last:mb-0 dark:text-zinc-400"
+                    >
+                      <span class="font-mono font-semibold text-zinc-700 dark:text-zinc-200">{{ param.name }}</span>
+                      <span> · {{ param.type }} · {{ param.required ? '必填' : '选填' }}</span>
+                      <span v-if="param.description">：{{ param.description }}</span>
+                    </span>
                   </span>
                 </span>
               </label>

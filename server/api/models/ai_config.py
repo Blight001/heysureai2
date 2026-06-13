@@ -9,9 +9,7 @@ _DEFAULT_MCP_TOOLS = (
     '"task.create","task.update","task.delete","task.list",'
     '"task.inherit","task.complete",'
     '"prompt.list_targets","prompt.read_ai","prompt.write_ai","prompt.read_system",'
-    '"prompt.write_system","evolution.input","evolution.list","evolution.review",'
-    '"librarian.propose","librarian.consult","librarian.list_topics","librarian.read",'
-    '"librarian.archive","message.send_to_user","conversation.forget_before_current",'
+    '"prompt.write_system","message.send_to_user","conversation.forget_before_current",'
     '"conversation.find","conversation.create","conversation.delete","message.send_to_ai"]'
 )
 

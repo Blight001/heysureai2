@@ -32,6 +32,7 @@ from connector_runtime.dispatch.desktop_agent_tools import (
     endpoint_bridge_tools_for_config,
     endpoint_tools_for_config,
     is_endpoint_agent_tool,
+    is_workshop_tool,
     strip_endpoint_tool_config_names,
 )
 from api.services.task_system import with_workspace_read_by_name_compat
@@ -93,11 +94,7 @@ async def list_mcp_tools(
             "description": str(spec.get("description") or "").strip(),
             "inputSchema": spec.get("input_schema") if isinstance(spec.get("input_schema"), dict) else {},
             "destructive": True,
-            "mcpSource": (
-                "workshop" if str(name).startswith(("librarian.", "evolution."))
-                else "browser" if str(name).startswith(("browser_", "card_"))
-                else "desktop"
-            ),
+            "mcpSource": str(spec.get("mcpSource") or "desktop"),
         }
         for name, spec in sorted(endpoint_defs.items())
     ]
@@ -128,7 +125,7 @@ async def list_mcp_tools(
                 "inputSchema": {},
                 "destructive": is_endpoint_agent_tool(name),
                 "mcpSource": (
-                    "workshop" if str(name).startswith(("librarian.", "evolution."))
+                    "workshop" if is_workshop_tool(name)
                     else "browser" if str(name).startswith(("browser_", "card_"))
                     else ("desktop" if is_endpoint_agent_tool(name) else "server")
                 ),
