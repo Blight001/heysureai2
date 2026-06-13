@@ -96,7 +96,7 @@ const getEndpointCapabilityTag = (name: string) => {
   if (hasMcpPrefix(name, 'process')) return '进程'
 
   // 浏览器工具分类与扩展端 BROWSER_TOOL_CATEGORIES 保持一致（单一来源在
-  // agent/extension/.../definitions.ts；Web 端无法直接 import 扩展代码，故镜像于此）。
+  // device/extension/.../definitions.ts；Web 端无法直接 import 扩展代码，故镜像于此）。
   // 兼容旧的按动词拆分的工具名（browser_cookie_get 等），它们已被合并为
   // browser_cookie 等带 action 的工具，但历史 scope 里可能仍存有旧名。
   // 浏览器端来源本身已是「浏览器 MCP」，故标签去掉冗余的「浏览器」前缀，

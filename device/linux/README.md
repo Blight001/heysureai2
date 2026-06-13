@@ -4,7 +4,7 @@ An Electron desktop agent that connects to the HeySure server over Socket.IO,
 registers itself as a **desktop** endpoint, and exposes a catalog of MCP tools
 the AI can call to observe and control this Linux machine.
 
-This is the Linux counterpart to `agent/windows`. It shares the same architecture
+This is the Linux counterpart to `device/windows`. It shares the same architecture
 (socket runtime, tool registry, executor, IPC, renderer) and re-implements the
 platform-specific tools against native Linux utilities instead of PowerShell.
 

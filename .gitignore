@@ -49,18 +49,18 @@ web/tsconfig.node.tsbuildinfo
 web/vite.config.js
 web/vite.config.d.ts
 
-# Win agent (Electron) build output
-agent/windows/dist/
-agent/windows/release/
-agent/windows/tsconfig.tsbuildinfo
+# Win device (Electron) build output
+device/windows/dist/
+device/windows/release/
+device/windows/tsconfig.tsbuildinfo
 
-# Linux agent (Electron) build output
-agent/linux/dist/
-agent/linux/release/
-agent/linux/tsconfig.tsbuildinfo
+# Linux device (Electron) build output
+device/linux/dist/
+device/linux/release/
+device/linux/tsconfig.tsbuildinfo
 
 # Browser extension build output
-agent/extension/dist/
+device/extension/dist/
 
 # Build artifacts
 *.out
