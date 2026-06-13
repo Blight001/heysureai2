@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""内置工坊引擎：按用户自动上线并保留专用绑定能力。
+"""内置工坊引擎：按用户自动上线并提供专用 MCP 能力。
 
 工坊不再是用户手动运行的独立 agent 进程，而是服务端内置的"虚拟端侧"：
 
@@ -8,7 +8,7 @@
   放开 per-agent scope。该函数挂在 ``ensure_default_ai_for_user`` 上，
   用户登录/拉取 AI 列表时自动接入，作坊面板与社会显示随之出现工坊。
 - **专用绑定保留**：AI 仍通过 ``WorkshopAiBinding`` 与工坊 1:1 绑定。
-- **MCP 暂为空**：旧知识库、进化和审批写入工具已移除，后续可重新接入。
+- **传承思想 MCP**：当前提供列表、详情查询和 Skill 包安装导入。
 """
 
 import logging
@@ -25,7 +25,20 @@ _AGENT_ID_PREFIX = "workshop_builtin_"
 WORKSHOP_DISPLAY_NAME = "知识工坊（内置）"
 WORKSHOP_PLATFORM = "Workshop-Server"
 
-_TOOL_HANDLERS = {}
+_TOOL_HANDLERS = {
+    "librarian.list_inheritance_thoughts": (
+        "workshop.handlers",
+        "list_inheritance_thoughts",
+    ),
+    "librarian.get_inheritance_thought": (
+        "workshop.handlers",
+        "get_inheritance_thought",
+    ),
+    "librarian.install_skill_package": (
+        "workshop.handlers",
+        "install_skill_package",
+    ),
+}
 
 # 同进程内每用户 ensure 去抖：presence 写盘不必每个请求都做。
 _ENSURE_TTL_SECONDS = 60.0

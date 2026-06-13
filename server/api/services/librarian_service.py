@@ -22,10 +22,14 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import time
 import uuid
 import zipfile
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import yaml
 
 from sqlmodel import Session, select
 
@@ -47,6 +51,7 @@ _TOPICS_DIR = "topics"
 _ARCHIVE_DIR = "archives"
 _INHERITANCE_THOUGHTS_DIR = "inheritance_thoughts"
 _CLAWHUB_REMOTE_DIR = "remote/clawhub"
+_NPX_SKILLS_DIR = "local/npx"
 _INDEX_FILE = "index.json"
 _CLAWHUB_SKILLS_STATE_FILE = "clawhub_skills.json"
 _INTRINSIC_PROPERTIES_OVERRIDES_FILE = "intrinsic_properties_overrides.json"
@@ -77,7 +82,7 @@ _BUILTIN_ENTRIES = {
     "builtin.inheritance_tools": {
         "title": "传承思想",
         "triggers": ["传承思想", "Markdown文件", "思想沉淀"],
-        "summary": "预留给后续沉淀的 Markdown 思想文档，目前为空。",
+        "summary": "从 ClawHub 安装到本地知识库的 Markdown 思想与技能快照。",
     },
 }
 
@@ -461,11 +466,271 @@ def _clawhub_installed_items(user_id: int) -> List[Dict[str, Any]]:
 def _inheritance_thoughts_payload(user_id: int) -> Dict[str, Any]:
     installed = _clawhub_installed_items(user_id)
     return {
-        "description": "传承思想支持从 ClawHub 发现、校验并下载 Skill 到本地 KnowledgeBase 快照；运行时只使用本地文件。",
+        "description": "传承思想支持从 ClawHub 或 npx skills 安装 Skill 到本地 KnowledgeBase 快照；运行时只使用本地文件。",
         "registry_url": clawhub.registry_base_url(),
         "storage_root": f"{_INHERITANCE_THOUGHTS_DIR}/{_CLAWHUB_REMOTE_DIR}",
         "installed_total": len(installed),
         "installed": installed,
+    }
+
+
+def list_inheritance_thoughts(*, user_id: int) -> Dict[str, Any]:
+    """Return installed inheritance thoughts using their ClawHub slug as ID."""
+    payload = _inheritance_thoughts_payload(int(user_id))
+    items: List[Dict[str, Any]] = []
+    for installed in payload.get("installed") or []:
+        item = dict(installed)
+        item["id"] = str(item.get("slug") or "")
+        items.append(item)
+    return {
+        "items": items,
+        "total": len(items),
+        "description": payload.get("description"),
+        "storage_root": payload.get("storage_root"),
+    }
+
+
+def read_inheritance_thought(*, user_id: int, thought_id: str) -> Dict[str, Any]:
+    """Return one installed inheritance thought by the ID emitted by the list."""
+    detail = clawhub_installed_skill_detail(
+        user_id=int(user_id),
+        slug=str(thought_id or "").strip(),
+    )
+    detail["id"] = str(detail.get("slug") or thought_id)
+    return detail
+
+
+_SAFE_SKILLS_PACKAGE = re.compile(r"^[^\x00-\x1f\x7f]{1,500}$")
+
+
+def _normalize_skills_package(package: str) -> str:
+    value = str(package or "").strip()
+    lowered = value.lower()
+    if (
+        not value
+        or value.startswith(("-", ".", "/", "\\"))
+        or re.match(r"^[a-zA-Z]:[\\/]", value)
+        or lowered.startswith("file:")
+        or not _SAFE_SKILLS_PACKAGE.fullmatch(value)
+    ):
+        raise ValueError("invalid skills package")
+    return value
+
+
+def _global_agent_skills_root() -> str:
+    return os.path.join(str(Path.home()), ".agents", "skills")
+
+
+def _skill_directory_fingerprint(path: str) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    root = os.path.abspath(path)
+    for current, dirs, files in os.walk(root, followlinks=False):
+        dirs.sort()
+        files.sort()
+        for name in dirs:
+            item = os.path.join(current, name)
+            if os.path.islink(item):
+                rel = os.path.relpath(item, root).replace("\\", "/")
+                digest.update(f"link:{rel}\0{os.readlink(item)}".encode("utf-8"))
+        for name in files:
+            item = os.path.join(current, name)
+            if os.path.islink(item):
+                rel = os.path.relpath(item, root).replace("\\", "/")
+                digest.update(f"link:{rel}\0{os.readlink(item)}".encode("utf-8"))
+                continue
+            rel = os.path.relpath(item, root).replace("\\", "/")
+            digest.update(f"{rel}\0".encode("utf-8"))
+            with open(item, "rb") as f:
+                for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _global_skill_snapshot(root: str) -> Dict[str, str]:
+    if not os.path.isdir(root):
+        return {}
+    snapshot: Dict[str, str] = {}
+    for name in sorted(os.listdir(root)):
+        path = os.path.join(root, name)
+        if os.path.isdir(path) and os.path.isfile(os.path.join(path, "SKILL.md")):
+            snapshot[name] = _skill_directory_fingerprint(path)
+    return snapshot
+
+
+def _global_skills_lock_path() -> str:
+    state_home = str(os.environ.get("XDG_STATE_HOME") or "").strip()
+    if state_home:
+        return os.path.join(state_home, "skills", ".skill-lock.json")
+    return os.path.join(str(Path.home()), ".agents", ".skill-lock.json")
+
+
+def _global_skills_lock_snapshot() -> Dict[str, str]:
+    try:
+        with open(_global_skills_lock_path(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    skills = data.get("skills") if isinstance(data, dict) else None
+    if not isinstance(skills, dict):
+        return {}
+    return {
+        str(name): json.dumps(item, ensure_ascii=False, sort_keys=True)
+        for name, item in skills.items()
+        if isinstance(item, dict)
+    }
+
+
+def _skill_card_metadata(skill_dir: str, fallback_name: str) -> Dict[str, str]:
+    card_path = os.path.join(skill_dir, "SKILL.md")
+    with open(card_path, "r", encoding="utf-8") as f:
+        card = f.read()
+    metadata: Dict[str, Any] = {}
+    if card.startswith("---"):
+        end = card.find("\n---", 3)
+        if end >= 0:
+            try:
+                loaded = yaml.safe_load(card[3:end])
+                metadata = loaded if isinstance(loaded, dict) else {}
+            except Exception:
+                metadata = {}
+    return {
+        "name": str(metadata.get("name") or fallback_name).strip() or fallback_name,
+        "description": str(metadata.get("description") or "").strip(),
+    }
+
+
+def _validate_skill_tree_for_import(skill_dir: str) -> None:
+    if os.path.islink(skill_dir):
+        raise ValueError("global skill directory may not be a symlink")
+    for current, dirs, files in os.walk(skill_dir, followlinks=False):
+        for name in dirs + files:
+            if os.path.islink(os.path.join(current, name)):
+                raise ValueError(f"skill contains unsupported symlink: {name}")
+
+
+def _import_global_skill_snapshot(
+    *,
+    user_id: int,
+    package: str,
+    skill_name: str,
+    source_dir: str,
+) -> Dict[str, Any]:
+    thought_id = f"npx/{skill_name}"
+    _validate_skill_tree_for_import(source_dir)
+    import hashlib
+
+    safe_name = f"{_slugify(skill_name)}-{hashlib.sha1(skill_name.encode('utf-8')).hexdigest()[:8]}"
+    install_rel = f"{_INHERITANCE_THOUGHTS_DIR}/{_NPX_SKILLS_DIR}/{safe_name}"
+    install_dir = safe_join(_kb_root(user_id), install_rel)
+    temp_dir = f"{install_dir}.tmp-{uuid.uuid4().hex[:8]}"
+    os.makedirs(os.path.dirname(install_dir), exist_ok=True)
+    try:
+        shutil.copytree(source_dir, temp_dir)
+        if not os.path.isfile(os.path.join(temp_dir, "SKILL.md")):
+            raise ValueError(f"installed skill has no SKILL.md: {skill_name}")
+        if os.path.isdir(install_dir):
+            shutil.rmtree(install_dir)
+        os.replace(temp_dir, install_dir)
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
+
+    meta = _skill_card_metadata(install_dir, skill_name)
+    installed_at = time.time()
+    install_meta = {
+        "source": "npx:skills",
+        "package": package,
+        "skill_name": skill_name,
+        "installed_at": installed_at,
+        "global_source_path": source_dir,
+    }
+    with open(os.path.join(install_dir, "heysure_npx_install.json"), "w", encoding="utf-8") as f:
+        json.dump(install_meta, f, ensure_ascii=False, indent=2)
+
+    state = _load_clawhub_state(user_id)
+    installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
+    installed[thought_id] = {
+        "slug": thought_id,
+        "displayName": meta["name"],
+        "summary": meta["description"],
+        "version": None,
+        "ownerHandle": "",
+        "source": "npx:skills",
+        "package": package,
+        "path": install_rel,
+        "installed_at": installed_at,
+        "auto_enabled": False,
+        "trust": {"verdict": "unverified"},
+    }
+    state["installed"] = installed
+    _save_clawhub_state(user_id, state)
+    return dict(installed[thought_id], id=thought_id)
+
+
+def install_npx_skill_package(
+    *,
+    user_id: int,
+    package: str,
+    timeout: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Install via skills CLI, then snapshot changed global skills into the KB."""
+    package = _normalize_skills_package(package)
+    try:
+        timeout_seconds = int(timeout or 300)
+    except (TypeError, ValueError):
+        timeout_seconds = 300
+    timeout_seconds = max(30, min(timeout_seconds, 600))
+    npx = shutil.which("npx.cmd") or shutil.which("npx")
+    if not npx:
+        raise ValueError("npx is not installed or not available in PATH")
+
+    global_root = _global_agent_skills_root()
+    before = _global_skill_snapshot(global_root)
+    lock_before = _global_skills_lock_snapshot()
+    try:
+        result = subprocess.run(
+            [npx, "skills", "add", package, "-g", "-y"],
+            shell=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError(f"npx skills install timed out after {timeout_seconds} seconds") from exc
+    except OSError as exc:
+        raise ValueError(f"failed to start npx skills: {exc}") from exc
+    output = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part and part.strip())
+    if result.returncode != 0:
+        raise ValueError(f"npx skills install failed ({result.returncode}): {output[-4000:]}")
+
+    after = _global_skill_snapshot(global_root)
+    lock_after = _global_skills_lock_snapshot()
+    changed = [name for name, value in lock_after.items() if lock_before.get(name) != value and name in after]
+    if not changed:
+        changed = [name for name, fingerprint in after.items() if before.get(name) != fingerprint]
+    if not changed:
+        raise ValueError("installation succeeded but no new or updated global skills were detected")
+
+    imported = [
+        _import_global_skill_snapshot(
+            user_id=int(user_id),
+            package=package,
+            skill_name=name,
+            source_dir=os.path.join(global_root, name),
+        )
+        for name in changed
+    ]
+    return {
+        "installed": True,
+        "package": package,
+        "command": "npx skills add <package> -g -y",
+        "imported": imported,
+        "total": len(imported),
+        "output": output[-8000:],
     }
 
 
@@ -1151,6 +1416,8 @@ def clawhub_installed_skill_detail(*, user_id: int, slug: str) -> Dict[str, Any]
         with open(skill_card_path, "r", encoding="utf-8") as f:
             skill_card = f.read()
     metadata_path = os.path.join(install_dir, "heysure_clawhub_install.json")
+    if not os.path.exists(metadata_path):
+        metadata_path = os.path.join(install_dir, "heysure_npx_install.json")
     metadata: Dict[str, Any] = {}
     if os.path.exists(metadata_path):
         try:
