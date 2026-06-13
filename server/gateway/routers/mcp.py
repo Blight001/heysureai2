@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
 from api.database import get_session
-from api.agent_presence import online_tool_defs
+from api.device_presence import online_tool_defs
 from mcp_runtime.mcp import registry
 from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
 from mcp_runtime.mcp.loader import reload_registry
@@ -26,8 +26,8 @@ from mcp_runtime.mcp.permissions import (
 from api.models import AssistantAIConfig
 from .auth import get_current_user
 from api.runtime.internal_http import require_internal_token
-from connector_runtime.dispatch.agent_dispatch import dispatch_endpoint_tool_and_wait
-from connector_runtime.dispatch.desktop_agent_tools import (
+from connector_runtime.dispatch.device_dispatch import dispatch_endpoint_tool_and_wait
+from connector_runtime.dispatch.desktop_device_tools import (
     connected_endpoint_tool_catalog,
     endpoint_bridge_tools_for_config,
     endpoint_tools_for_config,

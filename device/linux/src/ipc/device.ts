@@ -2,12 +2,12 @@ import { ipcMain } from 'electron'
 import { store } from '../store'
 import {
   getAgent, clearAiSelectionIfLoggedOut,
-} from '../services/agent-runtime'
+} from '../services/device-runtime'
 import { sendActivityLog } from '../services/activity-log'
 import { pingServer } from '../services/server-client'
 
-export function registerAgentIpc(): void {
-  ipcMain.handle('agent:connect', () => {
+export function registerDeviceIpc(): void {
+  ipcMain.handle('device:connect', () => {
     if (!store.get('authToken')) {
       if (clearAiSelectionIfLoggedOut()) {
         getAgent()?.updateSettings(store.store)
@@ -19,12 +19,12 @@ export function registerAgentIpc(): void {
     return true
   })
 
-  ipcMain.handle('agent:disconnect', () => {
+  ipcMain.handle('device:disconnect', () => {
     getAgent()?.disconnect()
     return true
   })
 
-  ipcMain.handle('agent:status', () => getAgent()?.status || 'disconnected')
+  ipcMain.handle('device:status', () => getAgent()?.status || 'disconnected')
 
   ipcMain.handle('connection:test', async () => {
     const raw = String(store.get('serverUrl') || '')

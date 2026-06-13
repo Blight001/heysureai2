@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from api.database import engine
-from api.agent_bindings import get_binding
+from api.device_bindings import get_binding
 from api.models import AIRuntimeStatus, AssistantAIConfig
 from api.sio import agents
 from ..core import generate_file_tree, get_project_root, safe_join
@@ -189,8 +189,8 @@ def _list_connected_socket_agents(
         if expected_user_id and agent_user_id and agent_user_id != expected_user_id:
             continue
 
-        agent_id = str(row.get("id") or "").strip()
-        bound_ai_config_id = get_binding(expected_user_id, agent_id) if expected_user_id and agent_id else None
+        device_id = str(row.get("id") or "").strip()
+        bound_ai_config_id = get_binding(expected_user_id, device_id) if expected_user_id and device_id else None
         if expected_ai_config_id and bound_ai_config_id != expected_ai_config_id:
             continue
 

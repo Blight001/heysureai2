@@ -12,12 +12,12 @@ contextBridge.exposeInMainWorld('heysureAPI', {
   saveSettings: (settings: any) => ipcRenderer.invoke('settings:save', settings),
   autoCalibrateMouse: () => ipcRenderer.invoke('settings:auto-calibrate-mouse').catch((err: any) => { throw cleanIpcError(err) }),
   // Agent control
-  connect: () => ipcRenderer.invoke('agent:connect'),
-  disconnect: () => ipcRenderer.invoke('agent:disconnect'),
-  getStatus: () => ipcRenderer.invoke('agent:status'),
+  connect: () => ipcRenderer.invoke('device:connect'),
+  disconnect: () => ipcRenderer.invoke('device:disconnect'),
+  getStatus: () => ipcRenderer.invoke('device:status'),
   // Events from main to renderer
   onStatusChange: (cb: (status: string, reason?: string, aiConfigId?: number | null) => void) => {
-    ipcRenderer.on('agent:status-changed', (_, status, reason, aiConfigId) => cb(status, reason, aiConfigId))
+    ipcRenderer.on('device:status-changed', (_, status, reason, aiConfigId) => cb(status, reason, aiConfigId))
   },
   onActivityLog: (cb: (entry: any) => void) => {
     ipcRenderer.on('activity:log', (_, entry) => cb(entry))
@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('heysureAPI', {
     ipcRenderer.on('auth:refreshed', () => cb())
   },
   onReconnecting: (cb: (active: boolean, reason: string | null) => void) => {
-    ipcRenderer.on('agent:reconnecting', (_, active, reason) => cb(active, reason))
+    ipcRenderer.on('device:reconnecting', (_, active, reason) => cb(active, reason))
   },
   // Theme
   setTheme: (theme: 'dark' | 'light') => ipcRenderer.invoke('theme:set', theme),

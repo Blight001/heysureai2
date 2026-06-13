@@ -526,6 +526,50 @@ def _consolidate_bot_session_routes(engine) -> None:
     _copy("qq", "qqsessionroute", _build_qq)
 
 
+def _migrate_rename_device_tables() -> None:
+    """端侧设备表/列 agent->device 改名（与 Alembic 同名 revision 对齐）。
+
+    供 legacy-adopt 路径（pre-Alembic 老库）使用：renames 端侧设备相关表与列
+    endpointagentpresence/agentaibinding/agenttypemcppermission ->
+    devicepresence/deviceaibinding/devicetypemcppermission，列 agent_id->device_id、
+    agent_type->device_type。幂等：仅当旧表存在且新表不存在时执行。
+    """
+    from ..database import engine
+    from sqlalchemy import inspect
+
+    renames = [
+        ("endpointagentpresence", "devicepresence",
+         [("agent_id", "device_id"), ("agent_type", "device_type")],
+         [("ix_endpointagentpresence_agent_id", "ix_devicepresence_device_id"),
+          ("ix_endpointagentpresence_ai_config_id", "ix_devicepresence_ai_config_id"),
+          ("ix_endpointagentpresence_online", "ix_devicepresence_online"),
+          ("ix_endpointagentpresence_user_id", "ix_devicepresence_user_id")]),
+        ("agentaibinding", "deviceaibinding",
+         [("agent_id", "device_id")],
+         [("ix_agentaibinding_agent_id", "ix_deviceaibinding_device_id"),
+          ("ix_agentaibinding_ai_config_id", "ix_deviceaibinding_ai_config_id"),
+          ("ix_agentaibinding_user_id", "ix_deviceaibinding_user_id")]),
+        ("agenttypemcppermission", "devicetypemcppermission",
+         [("agent_id", "device_id"), ("agent_type", "device_type")],
+         [("ix_agenttypemcppermission_agent_id", "ix_devicetypemcppermission_device_id"),
+          ("ix_agenttypemcppermission_agent_type", "ix_devicetypemcppermission_device_type"),
+          ("ix_agenttypemcppermission_ai_config_id", "ix_devicetypemcppermission_ai_config_id"),
+          ("ix_agenttypemcppermission_user_id", "ix_devicetypemcppermission_user_id")]),
+    ]
+    is_pg = database_dialect() == "postgresql"
+    existing = set(inspect(engine).get_table_names())
+    with engine.begin() as conn:
+        for old_t, new_t, cols, idxs in renames:
+            if old_t not in existing or new_t in existing:
+                continue
+            conn.exec_driver_sql(f'ALTER TABLE "{old_t}" RENAME TO "{new_t}"')
+            for old_c, new_c in cols:
+                conn.exec_driver_sql(f'ALTER TABLE "{new_t}" RENAME COLUMN "{old_c}" TO "{new_c}"')
+            if is_pg:
+                for old_i, new_i in idxs:
+                    conn.exec_driver_sql(f'ALTER INDEX IF EXISTS "{old_i}" RENAME TO "{new_i}"')
+
+
 def run_pending_migrations() -> None:
     _migrate_assistantaiconfig_strip_markdown_symbols()
     _migrate_user_ui_plain_text_output_enabled()
@@ -538,6 +582,7 @@ def run_pending_migrations() -> None:
     _migrate_assistantaiconfig_prune_unknown_mcp_tools()
     _migrate_valhallaentry_content()
     _migrate_chatmessagemedia_message_cascade()
+    _migrate_rename_device_tables()
     # Only run for SQLite. Postgres deployments either start fresh or are
     # seeded by the migration script, both of which produce a current schema.
     if database_dialect() != "sqlite":

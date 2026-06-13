@@ -4,14 +4,14 @@
 // popup's in-memory store. Account, status, settings and the AI member list are
 // surfaced via modals.
 
-import { AgentStatus } from '../lib/types'
+import { DeviceStatus } from '../lib/types'
 import { AuthState } from '../lib/storage'
 import { MemberConfig } from '../lib/client'
 
 export const state = {
   currentTheme: 'dark' as 'dark' | 'light',
-  currentStatus: 'disconnected' as AgentStatus,
-  // Server-side bound AI for this device (from agent:registered). null = none
+  currentStatus: 'disconnected' as DeviceStatus,
+  // Server-side bound AI for this device (from device:registered). null = none
   // assigned yet → status indicator shows yellow instead of green.
   boundAiConfigId: null as number | null,
   hasAiKey: false,

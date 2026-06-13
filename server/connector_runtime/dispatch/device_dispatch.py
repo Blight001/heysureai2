@@ -4,12 +4,12 @@ OPT-03: Desktop Agent task dispatch + result handling.
 Bridges the server task system and connected desktop agents over Socket.IO.
 
 Socket protocol:
-    agent:register   agent → server   { id, name, platform, capabilities[], version }
+    device:register   agent → server   { id, name, platform, capabilities[], version }
     task:dispatch    server → agent   { taskId, userId, aiConfigId, sessionId,
                                          instruction, tool, args, allowedTools[] }
-    task:progress    agent → server   { taskId, agentId, message }
-    task:result      agent → server   { taskId, agentId, success, tool, result, summary }
-    task:error       agent → server   { taskId, agentId, error }
+    task:progress    agent → server   { taskId, deviceId, message }
+    task:result      agent → server   { taskId, deviceId, success, tool, result, summary }
+    task:error       agent → server   { taskId, deviceId, error }
 
 Results are persisted into the originating chat session and broadcast to the
 user's UI room so the frontend updates live.
@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 
 from api.database import engine
-from connector_runtime.dispatch.desktop_agent_tools import (
+from connector_runtime.dispatch.desktop_device_tools import (
     get_connected_browser_agent,
     get_connected_desktop_agent,
     is_browser_tool,
@@ -51,7 +51,7 @@ def _persist_dispatch(
     ai_kind: str,
     session_id: str,
     session_name: Optional[str],
-    agent_id: str,
+    device_id: str,
     tool: str,
     instruction: str,
 ) -> None:
@@ -66,7 +66,7 @@ def _persist_dispatch(
                 ai_kind=ai_kind or "assistant",
                 session_id=session_id,
                 session_name=session_name,
-                agent_id=agent_id,
+                device_id=device_id,
                 tool=tool or "",
                 instruction=instruction or "",
                 status="pending",
@@ -177,9 +177,9 @@ def purge_stale_dispatches(now: Optional[float] = None) -> int:
     return len(stale)
 
 
-def _update_agent_task_state(agent_id: str, *, status: str, task_id: str, error: Optional[str] = None) -> None:
+def _update_agent_task_state(device_id: str, *, status: str, task_id: str, error: Optional[str] = None) -> None:
     for agent in agents.values():
-        if str(agent.get("id")) == str(agent_id):
+        if str(agent.get("id")) == str(device_id):
             agent["lastTaskId"] = task_id
             agent["lastTaskStatus"] = status
             agent["lastTaskAt"] = time.time()
@@ -196,16 +196,16 @@ def get_run_session_context() -> Optional[Dict[str, Any]]:
     return _RUN_SESSION_CONTEXT.get()
 
 
-def _find_agent_sid(agent_id: str) -> Optional[str]:
+def _find_agent_sid(device_id: str) -> Optional[str]:
     for sid, agent in agents.items():
-        if str(agent.get("id")) == str(agent_id):
+        if str(agent.get("id")) == str(device_id):
             return sid
     return None
 
 
-def _agent_kind_label(agent_id: str) -> str:
+def _device_kind_label(device_id: str) -> str:
     for agent in agents.values():
-        if str(agent.get("id")) != str(agent_id):
+        if str(agent.get("id")) != str(device_id):
             continue
         platform = str(agent.get("platform") or "").lower()
         if bool(agent.get("isWorkshop")) or "workshop" in platform:
@@ -220,7 +220,7 @@ def _agent_kind_label(agent_id: str) -> str:
 
 async def dispatch_task_to_agent(
     *,
-    agent_id: str,
+    device_id: str,
     user_id: int,
     ai_config_id: Optional[int],
     ai_kind: str,
@@ -235,9 +235,9 @@ async def dispatch_task_to_agent(
     timeout_seconds: int = 120,
     suppress_session_message: bool = False,
 ) -> Dict[str, Any]:
-    target_sid = _find_agent_sid(agent_id)
+    target_sid = _find_agent_sid(device_id)
     if not target_sid:
-        return {"success": False, "error": f"Agent not connected: {agent_id}"}
+        return {"success": False, "error": f"Agent not connected: {device_id}"}
 
     purge_stale_dispatches()
     task_id = f"atask_{uuid.uuid4().hex[:12]}"
@@ -252,7 +252,7 @@ async def dispatch_task_to_agent(
         "allowedTools": allowed_tools or [],
     }
     _PENDING_DISPATCHES[task_id] = {
-        "agent_id": agent_id,
+        "device_id": device_id,
         "user_id": user_id,
         "ai_config_id": ai_config_id,
         "ai_kind": ai_kind or "assistant",
@@ -274,7 +274,7 @@ async def dispatch_task_to_agent(
         ai_kind=ai_kind,
         session_id=session_id,
         session_name=session_name,
-        agent_id=agent_id,
+        device_id=device_id,
         tool=tool or "",
         instruction=instruction or "",
     )
@@ -293,7 +293,7 @@ async def dispatch_task_to_agent(
             return {
                 "success": False,
                 "taskId": task_id,
-                "agentId": agent_id,
+                "deviceId": device_id,
                 "tool": tool or "",
                 "error": f"Endpoint agent result timeout after {timeout_seconds}s",
             }
@@ -302,8 +302,8 @@ async def dispatch_task_to_agent(
     return {
         "success": True,
         "taskId": task_id,
-        "agentId": agent_id,
-        "note": f"Task dispatched to {_agent_kind_label(agent_id)}. Result will arrive asynchronously and be appended to this session.",
+        "deviceId": device_id,
+        "note": f"Task dispatched to {_device_kind_label(device_id)}. Result will arrive asynchronously and be appended to this session.",
     }
 
 
@@ -314,7 +314,7 @@ def _resolve_result_context(data: Dict[str, Any]) -> Dict[str, Any]:
     if ctx:
         return ctx
     return {
-        "agent_id": str(data.get("agentId") or "unknown"),
+        "device_id": str(data.get("deviceId") or "unknown"),
         "user_id": data.get("userId"),
         "ai_config_id": data.get("aiConfigId"),
         "ai_kind": data.get("aiKind") or "assistant",
@@ -412,9 +412,9 @@ async def _emit_to_user(ctx: Dict[str, Any], event: str, payload: Dict[str, Any]
 
 async def handle_task_progress(data: Dict[str, Any]) -> None:
     ctx = _resolve_result_context(data)
-    await _emit_to_user(ctx, "agent:task_progress", {
+    await _emit_to_user(ctx, "device:task_progress", {
         "taskId": data.get("taskId"),
-        "agentId": ctx.get("agent_id"),
+        "deviceId": ctx.get("device_id"),
         "message": str(data.get("message") or ""),
         "updatedAt": time.time(),
     })
@@ -423,7 +423,7 @@ async def handle_task_progress(data: Dict[str, Any]) -> None:
 async def handle_task_result(data: Dict[str, Any]) -> None:
     ctx = _resolve_result_context(data)
     task_id = str(data.get("taskId") or "")
-    agent_id = str(ctx.get("agent_id") or data.get("agentId") or "unknown")
+    device_id = str(ctx.get("device_id") or data.get("deviceId") or "unknown")
     success = bool(data.get("success", True))
     tool = str(data.get("tool") or ctx.get("tool") or "")
     summary = str(data.get("summary") or "")
@@ -446,10 +446,10 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
     status = "成功" if success else "失败"
     display_result = _omit_screenshot_bytes(result) if tool in _SCREENSHOT_TOOLS else result
     result_text = result if isinstance(result, str) else _safe_dump(display_result)
-    agent_label = _agent_kind_label(agent_id)
+    agent_label = _device_kind_label(device_id)
     content = (
         f"[{agent_label}执行结果]\n"
-        f"Agent: {agent_id}\n"
+        f"Agent: {device_id}\n"
         f"工具: {tool or '(综合任务)'}\n"
         f"状态: {status}\n\n"
         f"[摘要]\n{summary or '(无摘要)'}\n\n"
@@ -457,7 +457,7 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
     )
     if not bool(ctx.get("suppress_session_message")):
         _save_agent_message(ctx, content, "agent_task_result")
-    _update_agent_task_state(agent_id, status="success" if success else "failed", task_id=task_id)
+    _update_agent_task_state(device_id, status="success" if success else "failed", task_id=task_id)
     _finalize_dispatch_row(
         task_id,
         status="completed" if success else "error",
@@ -470,7 +470,7 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
     waiter_payload = {
         "success": success,
         "taskId": task_id,
-        "agentId": agent_id,
+        "deviceId": device_id,
         "tool": tool,
         "summary": summary,
         "result": result,
@@ -480,9 +480,9 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
         future = waiter.get("future")
         if loop and future and not future.done():
             loop.call_soon_threadsafe(future.set_result, waiter_payload)
-    await _emit_to_user(ctx, "agent:task_result", {
+    await _emit_to_user(ctx, "device:task_result", {
         "taskId": task_id,
-        "agentId": agent_id,
+        "deviceId": device_id,
         "success": success,
         "tool": tool,
         "summary": summary,
@@ -495,18 +495,18 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
 async def handle_task_error(data: Dict[str, Any]) -> None:
     ctx = _resolve_result_context(data)
     task_id = str(data.get("taskId") or "")
-    agent_id = str(ctx.get("agent_id") or data.get("agentId") or "unknown")
+    device_id = str(ctx.get("device_id") or data.get("deviceId") or "unknown")
     error = str(data.get("error") or "Unknown agent error")
-    agent_label = _agent_kind_label(agent_id)
+    agent_label = _device_kind_label(device_id)
     content = (
         f"[{agent_label}执行失败]\n"
-        f"Agent: {agent_id}\n"
+        f"Agent: {device_id}\n"
         f"工具: {ctx.get('tool') or '(综合任务)'}\n\n"
         f"[错误]\n{error}"
     )
     if not bool(ctx.get("suppress_session_message")):
         _save_agent_message(ctx, content, "agent_task_error")
-    _update_agent_task_state(agent_id, status="error", task_id=task_id, error=error)
+    _update_agent_task_state(device_id, status="error", task_id=task_id, error=error)
     _finalize_dispatch_row(
         task_id,
         status="error",
@@ -521,14 +521,14 @@ async def handle_task_error(data: Dict[str, Any]) -> None:
             loop.call_soon_threadsafe(future.set_result, {
                 "success": False,
                 "taskId": task_id,
-                "agentId": agent_id,
+                "deviceId": device_id,
                 "tool": str(ctx.get("tool") or ""),
                 "error": error,
                 "result": None,
             })
-    await _emit_to_user(ctx, "agent:task_error", {
+    await _emit_to_user(ctx, "device:task_error", {
         "taskId": task_id,
-        "agentId": agent_id,
+        "deviceId": device_id,
         "error": error,
         "updatedAt": time.time(),
     })
@@ -556,17 +556,17 @@ async def _execute_workshop_inline(
 
     from workshop import engine as workshop_engine
 
-    agent_id = workshop_engine.agent_id_for_user(user_id)
+    device_id = workshop_engine.device_id_for_user(user_id)
     try:
         result = await asyncio.to_thread(
             workshop_engine.execute_tool, user_id, ai_config_id, tool, dict(args or {})
         )
-        return {"success": True, "agentId": agent_id, "tool": tool, "summary": "", "result": result}
+        return {"success": True, "deviceId": device_id, "tool": tool, "summary": "", "result": result}
     except HTTPException as exc:
-        return {"success": False, "agentId": agent_id, "tool": tool, "error": str(exc.detail)}
+        return {"success": False, "deviceId": device_id, "tool": tool, "error": str(exc.detail)}
     except Exception as exc:
         logger.exception("workshop tool failed tool=%s user=%s", tool, user_id)
-        return {"success": False, "agentId": agent_id, "tool": tool, "error": str(exc)}
+        return {"success": False, "deviceId": device_id, "tool": tool, "error": str(exc)}
 
 
 async def dispatch_endpoint_tool(
@@ -602,7 +602,7 @@ async def dispatch_endpoint_tool(
             ai_kind=str(run_ctx.get("ai_kind") or "assistant"),
             session_id=str(run_ctx.get("session_id") or ""),
             session_name=run_ctx.get("session_name"),
-            agent_id=workshop_engine.agent_id_for_user(user_id),
+            device_id=workshop_engine.device_id_for_user(user_id),
             tool=tool_name,
             instruction=f"Run workshop MCP tool {tool_name}",
         )
@@ -627,13 +627,13 @@ async def dispatch_endpoint_tool(
         agent = None
     if not agent:
         return None
-    agent_id = str(agent.get("id") or "").strip()
-    if not agent_id:
+    device_id = str(agent.get("id") or "").strip()
+    if not device_id:
         return None
 
     run_ctx = get_run_session_context() or {}
     result = await dispatch_task_to_agent(
-        agent_id=agent_id,
+        device_id=device_id,
         user_id=user_id,
         ai_config_id=ai_config_id,
         ai_kind=str(run_ctx.get("ai_kind") or "assistant"),
@@ -679,8 +679,8 @@ async def dispatch_endpoint_tool_and_wait(
         kind = "browser" if is_browser_tool(tool_name) else "desktop"
         return {"success": False, "error": f"No connected {kind} agent bound to ai_config_id={ai_config_id}"}
 
-    agent_id = str(agent.get("id") or "").strip()
-    if not agent_id:
+    device_id = str(agent.get("id") or "").strip()
+    if not device_id:
         return {"success": False, "error": "Connected endpoint agent has no id"}
 
     effective_timeout_seconds = _endpoint_timeout_seconds(
@@ -690,7 +690,7 @@ async def dispatch_endpoint_tool_and_wait(
     )
     run_ctx = get_run_session_context() or {}
     return await dispatch_task_to_agent(
-        agent_id=agent_id,
+        device_id=device_id,
         user_id=user_id,
         ai_config_id=ai_config_id,
         ai_kind=str(run_ctx.get("ai_kind") or "assistant"),

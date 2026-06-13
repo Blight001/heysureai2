@@ -60,13 +60,13 @@ export async function doLogin() {
     updateUserChip()
     // Logged in → link to the server. The device then shows up in the web
     // Workshop panel where an operator assigns it an AI.
-    sendToBackground({ type: 'agent:connect' })
+    sendToBackground({ type: 'device:connect' })
     closeLoginModal()
     openMembersModal()
   } catch (err: any) {
     dom.loginFeedback.textContent = `登录失败：${err?.message || err}`
     dom.loginFeedback.style.color = 'var(--error)'
-    sendToBackground({ type: 'agent:connect' })
+    sendToBackground({ type: 'device:connect' })
   } finally {
     dom.loginBtn.disabled = false
   }
@@ -103,6 +103,6 @@ export function wireMembers() {
   dom.membersModal.addEventListener('click', (e) => { if (e.target === dom.membersModal) closeMembersModal() })
   dom.membersModalClose.addEventListener('click', () => closeMembersModal())
   dom.logoutBtn.addEventListener('click', () => void doLogout())
-  dom.connectBtn.addEventListener('click', () => sendToBackground({ type: 'agent:connect' }))
-  dom.disconnectBtn.addEventListener('click', () => sendToBackground({ type: 'agent:disconnect' }))
+  dom.connectBtn.addEventListener('click', () => sendToBackground({ type: 'device:connect' }))
+  dom.disconnectBtn.addEventListener('click', () => sendToBackground({ type: 'device:disconnect' }))
 }

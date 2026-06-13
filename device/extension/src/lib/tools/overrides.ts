@@ -1,6 +1,6 @@
 // tools/overrides.ts — merge the user's local description edits onto the static
 // BROWSER_TOOLS schemas, and apply the user's enable/disable selection. The
-// result is what gets reported to the server via agent:register -> toolDefs, so
+// result is what gets reported to the server via device:register -> toolDefs, so
 // server-side mcp.list_tools / describe_tool reflect the popup's edited
 // descriptions without any server-side storage, and disabled tools are withheld
 // entirely (server + AI never see them).

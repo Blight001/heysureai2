@@ -78,7 +78,7 @@ def _resolve_ai_runtime(session: Session, user: User, ai_kind: str, ai_config_id
     return cfg, api_key, base_url, model, system_prompt
 
 def _parse_allowed_tools(raw: Optional[str]) -> set[str]:
-    from connector_runtime.dispatch.desktop_agent_tools import strip_endpoint_tool_config_names
+    from connector_runtime.dispatch.desktop_device_tools import strip_endpoint_tool_config_names
 
     try:
         parsed = json.loads(raw or "[]")

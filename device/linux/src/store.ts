@@ -4,7 +4,7 @@ interface AgentSettings {
   serverUrl: string
   agentSocketUrl: string
   agentToken: string
-  agentId: string
+  deviceId: string
   agentName: string
   agentGroup: string
   workspaceRoot: string
@@ -41,7 +41,7 @@ interface AgentSettings {
   // browser extension. Persisted here; honoured by the runtime where supported.
   offlineMode: boolean
   // Local per-tool description edits, merged onto getToolDefs() before they are
-  // reported to the server via agent:register -> toolDefs. Keyed by tool id.
+  // reported to the server via device:register -> toolDefs. Keyed by tool id.
   // { [toolId]: { description?: string; parameters?: { [param]: string } } }
   toolDescOverrides: Record<string, { description?: string; parameters?: Record<string, string> }>
   toolEnabled: Record<string, boolean>
@@ -51,7 +51,7 @@ const defaults: AgentSettings = {
   serverUrl: process.env.SERVER_URL || 'http://127.0.0.1:3000',
   agentSocketUrl: '',
   agentToken: process.env.AGENT_TOKEN || '',
-  agentId: process.env.AGENT_ID || '',
+  deviceId: process.env.AGENT_ID || '',
   agentName: process.env.AGENT_NAME || 'Linux Agent',
   agentGroup: process.env.AGENT_GROUP || '',
   workspaceRoot: process.env.WORKSPACE_ROOT || '',

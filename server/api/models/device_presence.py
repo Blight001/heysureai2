@@ -7,7 +7,7 @@ could not tell which endpoint tools an AI may use. This table mirrors the live
 registry into the shared DB so *every* process can resolve and classify
 endpoint tools the same way.
 
-One row per logical ``agent_id``. ``online`` is flipped on register / disconnect
+One row per logical ``device_id``. ``online`` is flipped on register / disconnect
 (and reset on a fresh gateway boot); ``ai_config_id`` tracks the current
 Workshop assignment; ``capabilities_json`` is the agent's type-filtered tool
 list. Discovery reads ``online`` rows; dispatch still uses the live socket on
@@ -21,13 +21,13 @@ from typing import Optional
 from sqlmodel import Field, SQLModel
 
 
-class EndpointAgentPresence(SQLModel, table=True):
+class DevicePresence(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(default=0, index=True)
-    agent_id: str = Field(index=True)
+    device_id: str = Field(index=True)
     ai_config_id: Optional[int] = Field(default=None, index=True)
     # "desktop" | "browser"
-    agent_type: str = Field(default="")
+    device_type: str = Field(default="")
     # JSON array of the agent's (type-filtered) endpoint tool names.
     capabilities_json: str = Field(default="[]")
     # JSON object mapping each reported tool name to its self-described

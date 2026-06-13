@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { store, AgentSettings } from '../store'
 import { executeCapture, getCaptureDisplayGeometry } from '../capture-bridge'
-import { getAgent, clearAiSelectionIfLoggedOut } from '../services/agent-runtime'
+import { getAgent, clearAiSelectionIfLoggedOut } from '../services/device-runtime'
 import { sendActivityLog } from '../services/activity-log'
 import { getCoordinateCalibration, rememberCaptureGeometry } from '../tools/shared/coordinates'
 import { getRobot, sleep } from '../tools/shared/robot'
@@ -69,7 +69,7 @@ export function registerSettingsIpc(): void {
       'serverUrl',
       'agentSocketUrl',
       'agentToken',
-      'agentId',
+      'deviceId',
       'agentName',
       'agentGroup',
       'workspaceRoot',

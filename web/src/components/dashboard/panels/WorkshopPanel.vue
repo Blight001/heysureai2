@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue'
-import type { ConnectedAgent } from '@/composables/dashboard/useDashboardData'
-import { assignAgentAi } from '@/api/agents'
+import type { ConnectedDevice } from '@/composables/dashboard/useDashboardData'
+import { assignDeviceAi } from '@/api/devices'
 import { setWorkshopBinding } from '@/api/workshop'
-import AgentMcpScopeEditor from '../modals/AgentMcpScopeEditor.vue'
+import DeviceMcpScopeEditor from '../modals/DeviceMcpScopeEditor.vue'
 
 interface Agent {
   id: string
@@ -21,7 +21,7 @@ interface Agent {
 }
 
 interface Props {
-  devices: ConnectedAgent[]
+  devices: ConnectedDevice[]
   agents: Agent[]
 }
 
@@ -50,7 +50,7 @@ const busy = reactive<Record<string, boolean>>({})
 const errors = reactive<Record<string, string>>({})
 const bindingOverride = reactive<Record<string, number | null>>({})
 
-const linkedConfigId = (device: ConnectedAgent): number | null => {
+const linkedConfigId = (device: ConnectedDevice): number | null => {
   if (device.id in bindingOverride) return bindingOverride[device.id]
   const id = Number(device.aiConfigId)
   return Number.isFinite(id) && id > 0 ? id : null
@@ -58,17 +58,17 @@ const linkedConfigId = (device: ConnectedAgent): number | null => {
 
 // Current dropdown value: an explicit pick if the operator changed it, else the
 // device's existing binding.
-const selectionFor = (device: ConnectedAgent): string => {
+const selectionFor = (device: ConnectedDevice): string => {
   if (device.id in selection) return selection[device.id]
   const id = linkedConfigId(device)
   return id ? String(id) : ''
 }
 
-const onSelect = (device: ConnectedAgent, event: Event) => {
+const onSelect = (device: ConnectedDevice, event: Event) => {
   selection[device.id] = (event.target as HTMLSelectElement).value
 }
 
-const assign = async (device: ConnectedAgent) => {
+const assign = async (device: ConnectedDevice) => {
   const chosen = selectionFor(device)
   const cfgId = chosen === '' ? null : Number(chosen)
   busy[device.id] = true
@@ -83,8 +83,8 @@ const assign = async (device: ConnectedAgent) => {
       }
       bindingOverride[device.id] = cfgId
     } else {
-      // The server broadcasts an updated agent:list, so the card refreshes itself.
-      await assignAgentAi(device.id, cfgId)
+      // The server broadcasts an updated device:list, so the card refreshes itself.
+      await assignDeviceAi(device.id, cfgId)
     }
   } catch (err: any) {
     errors[device.id] = err?.message || '分配失败'
@@ -93,7 +93,7 @@ const assign = async (device: ConnectedAgent) => {
   }
 }
 
-const unassign = async (device: ConnectedAgent) => {
+const unassign = async (device: ConnectedDevice) => {
   selection[device.id] = ''
   busy[device.id] = true
   errors[device.id] = ''
@@ -103,7 +103,7 @@ const unassign = async (device: ConnectedAgent) => {
       if (currentId) await setWorkshopBinding(currentId, device.id, false)
       bindingOverride[device.id] = null
     } else {
-      await assignAgentAi(device.id, null)
+      await assignDeviceAi(device.id, null)
     }
   } catch (err: any) {
     errors[device.id] = err?.message || '解绑失败'
@@ -112,7 +112,7 @@ const unassign = async (device: ConnectedAgent) => {
   }
 }
 
-const deviceTypeLabel = (device: ConnectedAgent) => {
+const deviceTypeLabel = (device: ConnectedDevice) => {
   const platform = String(device.platform || '').toLowerCase()
   if (isWorkshopDevice(device)) return '知识工坊'
   if (device.isBrowserExtension || platform.includes('browser')) return '浏览器插件'
@@ -121,22 +121,22 @@ const deviceTypeLabel = (device: ConnectedAgent) => {
 }
 
 // 内置知识工坊使用专用绑定接口，但在本面板保持与其它设备一致的交互。
-const isWorkshopDevice = (device: ConnectedAgent) => {
+const isWorkshopDevice = (device: ConnectedDevice) => {
   const platform = String(device.platform || '').toLowerCase()
   return platform.includes('workshop')
 }
 
-const isSoftwareDevice = (device: ConnectedAgent) => {
+const isSoftwareDevice = (device: ConnectedDevice) => {
   const platform = String(device.platform || '').toLowerCase()
   return !!device.isWindowsDesktop || platform.includes('desktop') || platform.includes('windows')
 }
 
-const isEndpointDevice = (device: ConnectedAgent) => {
+const isEndpointDevice = (device: ConnectedDevice) => {
   const platform = String(device.platform || '').toLowerCase()
   return isSoftwareDevice(device) || !!device.isBrowserExtension || platform.includes('browser') || isWorkshopDevice(device)
 }
 
-const deviceDisplayName = (device: ConnectedAgent) => {
+const deviceDisplayName = (device: ConnectedDevice) => {
   if (isSoftwareDevice(device)) return 'Windows Agent'
   return device.name || device.id || 'Agent'
 }
@@ -169,29 +169,29 @@ const lifecycleClass = (lifecycle?: string) => {
   }
 }
 
-const linkedMember = (device: ConnectedAgent) => {
+const linkedMember = (device: ConnectedDevice) => {
   const id = linkedConfigId(device)
   if (!id) return undefined
   return memberByConfigId.value.get(id)
 }
 
-const hasLinkedMember = (device: ConnectedAgent) => !!linkedMember(device)
+const hasLinkedMember = (device: ConnectedDevice) => !!linkedMember(device)
 
-const memberPanelClass = (device: ConnectedAgent) => hasLinkedMember(device)
+const memberPanelClass = (device: ConnectedDevice) => hasLinkedMember(device)
   ? 'border-emerald-200 bg-emerald-50/80 dark:border-emerald-500/30 dark:bg-emerald-500/10'
   : 'border-amber-200 bg-amber-50/80 dark:border-amber-500/30 dark:bg-amber-500/10'
 
-const deviceCardClass = (device: ConnectedAgent) => hasLinkedMember(device)
+const deviceCardClass = (device: ConnectedDevice) => hasLinkedMember(device)
   ? 'border-emerald-200 bg-emerald-50/60 dark:border-emerald-500/30 dark:bg-emerald-500/10'
   : 'border-amber-200 bg-amber-50/60 dark:border-amber-500/30 dark:bg-amber-500/10'
 
-const memberLabelClass = (device: ConnectedAgent) => hasLinkedMember(device)
+const memberLabelClass = (device: ConnectedDevice) => hasLinkedMember(device)
   ? 'text-emerald-600 dark:text-emerald-300'
   : 'text-amber-600 dark:text-amber-300'
 
-const memberStatusLabel = (device: ConnectedAgent) => hasLinkedMember(device) ? '已链接成员' : '未链接成员'
+const memberStatusLabel = (device: ConnectedDevice) => hasLinkedMember(device) ? '已链接成员' : '未链接成员'
 
-const memberStatusBadgeClass = (device: ConnectedAgent) => hasLinkedMember(device)
+const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(device)
   ? 'border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-200'
   : 'border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200'
 </script>
@@ -288,7 +288,7 @@ const memberStatusBadgeClass = (device: ConnectedAgent) => hasLinkedMember(devic
       </div>
 
       <!-- Endpoint agents: edit their per-(AI, type) MCP permission scope. -->
-      <AgentMcpScopeEditor
+      <DeviceMcpScopeEditor
         v-if="isEndpointDevice(device)"
         class="mt-2"
         :agent-id="device.id"

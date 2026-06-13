@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import AppIcon from '@/components/common/AppIcon.vue'
 import BrainCorePanel from './BrainCorePanel.vue'
 import WorkshopPanel from './WorkshopPanel.vue'
-import type { ConnectedAgent } from '@/composables/dashboard/useDashboardData'
+import type { ConnectedDevice } from '@/composables/dashboard/useDashboardData'
 
 interface Agent {
   id: string
@@ -37,7 +37,7 @@ interface Props {
   adminAgents: Agent[]
   memberAgents: Agent[]
   activeAgents: Agent[]
-  connectedAgents: ConnectedAgent[]
+  connectedDevices: ConnectedDevice[]
   brainViewMode: 'sections' | 'all'
 }
 
@@ -105,7 +105,7 @@ const activeTab = ref<'brain' | 'knowledge'>('brain')
         <WorkshopPanel
           v-else
           class="flex-1"
-          :devices="connectedAgents"
+          :devices="connectedDevices"
           :agents="activeAgents"
         />
       </Transition>

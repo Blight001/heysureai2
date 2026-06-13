@@ -7,13 +7,13 @@ import { executeTask, executeBrowserTool, effectiveToolDefs, DYNAMIC_MCP_STORAGE
 import { callAI } from './lib/ai'
 import { screenshotToolContent } from './lib/ai'
 import {
-  AgentStatus, DispatchedTask, ActivityEntry,
+  DeviceStatus, DispatchedTask, ActivityEntry,
   PopupMsg, BgMsg, ChatMessage, ChatToolEvent, AIToolDef, OfflineChatToolEvent,
 } from './lib/types'
 
 // ── State ─────────────────────────────────────────────────────────────────
 let socket:        Socket | null = null
-let currentStatus: AgentStatus   = 'disconnected'
+let currentStatus: DeviceStatus   = 'disconnected'
 const taskOutcomes = new Map<string, any>()
 const popupPorts   = new Set<chrome.runtime.Port>()
 const offlineChatControllers = new Map<string, { canceled: boolean }>()
@@ -62,19 +62,19 @@ function log(type: string, status: string, message: string, data?: any) {
 }
 
 function refreshPopupStatus() {
-  broadcast({ type: 'agent:status', status: currentStatus, aiConfigId: boundAiConfigId })
+  broadcast({ type: 'device:status', status: currentStatus, aiConfigId: boundAiConfigId })
 }
 
-// Server-side bound AI for this device, learned from agent:registered. null =
+// Server-side bound AI for this device, learned from device:registered. null =
 // none assigned yet → the popup status indicator shows yellow instead of green.
 let boundAiConfigId: number | null = null
 
 // ── Status management ─────────────────────────────────────────────────────
-function setStatus(status: AgentStatus, reason?: string) {
+function setStatus(status: DeviceStatus, reason?: string) {
   currentStatus = status
   if (status !== 'registered' && status !== 'connected') boundAiConfigId = null
-  broadcast({ type: 'agent:status', status, reason, aiConfigId: boundAiConfigId })
-  const colors: Record<AgentStatus, string> = {
+  broadcast({ type: 'device:status', status, reason, aiConfigId: boundAiConfigId })
+  const colors: Record<DeviceStatus, string> = {
     disconnected: '#787878', connecting: '#f59e0b',
     connected: '#6366f1',    registered: '#22c55e',  error: '#ef4444',
   }
@@ -120,7 +120,7 @@ async function emitRegisterOn(s: Socket): Promise<void> {
   const settings = await getSettings()
   const auth = await getAuth()
   if (settings.offlineMode) return
-  const id = settings.agentId || await getMachineId()
+  const id = settings.deviceId || await getMachineId()
   currentAgentId = id
   // The extension no longer picks its own AI — it logs in and connects, then an
   // operator assigns a server-side AI to this device from the web Workshop
@@ -130,7 +130,7 @@ async function emitRegisterOn(s: Socket): Promise<void> {
   // are derived from the same enabled toolDefs so the two never drift — disabled
   // (e.g. unchecked 特殊类) tools are withheld from the server entirely.
   const toolDefs = await effectiveToolDefs()
-  s.emit('agent:register', {
+  s.emit('device:register', {
     id,
     aiConfigId: null,
     name:            settings.agentName || 'Browser Agent',
@@ -162,7 +162,7 @@ async function connect() {
     return
   }
 
-  // Hard gate: an unauthenticated agent is rejected at agent:register
+  // Hard gate: an unauthenticated agent is rejected at device:register
   // anyway. Refusing to even open the socket prevents the UI from
   // flashing "已连接" before the server rejects.
   const auth = await getAuth()
@@ -230,7 +230,7 @@ function attachOperationalListeners(s: Socket, agentName: string) {
     log('system', 'error', `连接失败: ${err.message}`)
   })
 
-  s.on('agent:registered', (data: any) => {
+  s.on('device:registered', (data: any) => {
     const raw = data?.aiConfigId
     const parsed = typeof raw === 'number' ? raw : (raw != null && String(raw).trim() !== '' ? Number(raw) : null)
     boundAiConfigId = Number.isFinite(parsed as number) ? (parsed as number) : null
@@ -238,7 +238,7 @@ function attachOperationalListeners(s: Socket, agentName: string) {
     log('system', 'success', `已注册: ${data?.name || agentName}${boundAiConfigId == null ? '（未分配 AI）' : ''}`)
   })
 
-  s.on('agent:list', (rows: any[]) => {
+  s.on('device:list', (rows: any[]) => {
     if (!currentAgentId || !Array.isArray(rows)) return
     const mine = rows.find(row => String(row?.id || '') === currentAgentId)
     if (!mine) return
@@ -252,7 +252,7 @@ function attachOperationalListeners(s: Socket, agentName: string) {
     }
   })
 
-  s.on('agent:register_rejected', (data: any) => {
+  s.on('device:register_rejected', (data: any) => {
     const reason = data?.reason || '注册被服务器拒绝'
     // Non-transient: the token is invalid/expired or the AI no longer
     // belongs to this user. Reconnecting and re-registering with the same
@@ -556,7 +556,7 @@ chrome.runtime.onConnect.addListener((port) => {
   popupPorts.add(port)
 
   // Send current state immediately
-  postToPopup(port, { type: 'agent:status', status: currentStatus, aiConfigId: boundAiConfigId })
+  postToPopup(port, { type: 'device:status', status: currentStatus, aiConfigId: boundAiConfigId })
   getActivity().then(entries => {
     entries.forEach(e => postToPopup(port, { type: 'activity:log', entry: e }))
   })
@@ -565,8 +565,8 @@ chrome.runtime.onConnect.addListener((port) => {
 
   port.onMessage.addListener(async (msg: PopupMsg) => {
     switch (msg.type) {
-      case 'agent:connect':    { await connect(); break }
-      case 'agent:disconnect': { disconnect();    break }
+      case 'device:connect':    { await connect(); break }
+      case 'device:disconnect': { disconnect();    break }
       case 'auth:logout': {
         // Drop the socket entirely so the server sees us leaving and we
         // don't keep re-registering with an empty/stale token.

@@ -102,7 +102,7 @@ else:
 agents = {}
 
 
-def agent_token_required() -> bool:
+def device_token_required() -> bool:
     # Agent registration always requires a logged-in user JWT now.
     # The AGENT_TOKEN env var is an optional shared-secret bypass for
     # server-trusted internal agents.

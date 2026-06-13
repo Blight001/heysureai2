@@ -1013,7 +1013,7 @@ const closeDetail = () => {
                 </div>
                 <details
                   v-for="device in inheritanceSkills.devices"
-                  :key="`${device.agent_type}-${device.agent_id}`"
+                  :key="`${device.device_type}-${device.device_id}`"
                   class="group overflow-hidden rounded-lg border border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/40"
                 >
                   <summary class="list-none cursor-pointer px-3 py-3 select-none">
@@ -1022,10 +1022,10 @@ const closeDetail = () => {
                         <span class="text-zinc-400 transition-transform group-open:rotate-90">›</span>
                         <div class="min-w-0">
                           <div class="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-                            {{ deviceTypeLabel(device.agent_type) }}
+                            {{ deviceTypeLabel(device.device_type) }}
                           </div>
                           <div class="mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-500">
-                            设备号：{{ device.agent_id || '未提供' }}
+                            设备号：{{ device.device_id || '未提供' }}
                             <template v-if="device.updated_at"> · 上报于 {{ formatTime(device.updated_at) }}</template>
                           </div>
                         </div>
@@ -1040,7 +1040,7 @@ const closeDetail = () => {
                   <div class="divide-y divide-zinc-100 border-t border-zinc-100 dark:divide-zinc-800 dark:border-zinc-800">
                     <div
                       v-for="tool in device.tools"
-                      :key="`${device.agent_id}-${tool.name}`"
+                      :key="`${device.device_id}-${tool.name}`"
                       class="bg-white px-3 py-3 dark:bg-zinc-900/40"
                     >
                       <div class="grid grid-cols-1 gap-2 md:grid-cols-[13rem_1fr]">
@@ -1061,7 +1061,7 @@ const closeDetail = () => {
                         <div v-if="toolParameters(tool).length" class="overflow-hidden rounded border border-zinc-100 dark:border-zinc-700">
                           <div
                             v-for="param in toolParameters(tool)"
-                            :key="`${device.agent_id}-${tool.name}-${param.name}`"
+                            :key="`${device.device_id}-${tool.name}-${param.name}`"
                             class="grid grid-cols-1 gap-2 border-b border-zinc-100 px-2 py-1.5 text-[11px] last:border-b-0 dark:border-zinc-700 md:grid-cols-[11rem_6rem_4rem_1fr]"
                           >
                             <code class="break-all text-zinc-700 dark:text-zinc-200">{{ param.name }}</code>
@@ -1084,7 +1084,7 @@ const closeDetail = () => {
                           <div class="flex flex-wrap gap-1">
                             <code
                               v-for="sourceFile in tool.implementation.source_files"
-                              :key="`${device.agent_id}-${tool.name}-${sourceFile}`"
+                              :key="`${device.device_id}-${tool.name}-${sourceFile}`"
                               class="break-all rounded bg-white px-1.5 py-1 text-[10px] text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300"
                             >{{ sourceFile }}</code>
                           </div>

@@ -21,7 +21,7 @@ import { renderMcpList, wireMcp, resolveTest } from './mcp'
 // ── Port & background messages ────────────────────────────────────────────
 function handleBackgroundMessage(msg: BgMsg) {
   switch (msg.type) {
-    case 'agent:status':
+    case 'device:status':
       setStatus(msg.status)
       if (typeof msg.aiConfigId !== 'undefined') setBoundAi(msg.aiConfigId ?? null)
       break

@@ -5,7 +5,7 @@ Hosts:
   compatibility shim) where desktop / browser agents register and stream
   task results.
 - HTTP ``/internal/agent/dispatch``: synchronous wrapper around
-  :func:`connector_runtime.dispatch.agent_dispatch.dispatch_endpoint_tool_and_wait` so
+  :func:`connector_runtime.dispatch.device_dispatch.dispatch_endpoint_tool_and_wait` so
   ai-runtime can fire a tool dispatch over HTTP and wait for the agent's
   reply within the same process that holds the Socket.IO session.
 - HTTP ``/internal/feishu/send``: outbound Feishu helper for ai-runtime.
@@ -39,7 +39,7 @@ from api.runtime.internal_http import require_internal_token
 logger = logging.getLogger(__name__)
 
 
-class AgentDispatchRequest(BaseModel):
+class DeviceDispatchRequest(BaseModel):
     user_id: int
     ai_config_id: Optional[int] = None
     tool: str
@@ -64,7 +64,7 @@ async def _lifespan(app: FastAPI):
 
     # Reap any dispatch rows whose original Future died with a previous
     # connector-runtime process. The poller would otherwise wait forever.
-    from connector_runtime.dispatch.agent_dispatch import expire_orphan_dispatches
+    from connector_runtime.dispatch.device_dispatch import expire_orphan_dispatches
     try:
         expired = expire_orphan_dispatches()
         if expired:
@@ -176,11 +176,11 @@ def create_app() -> FastAPI:
         return payload
 
     @router.post("/agent/dispatch")
-    async def agent_dispatch(req: AgentDispatchRequest) -> Dict[str, Any]:
+    async def device_dispatch(req: DeviceDispatchRequest) -> Dict[str, Any]:
         # Non-blocking: emit task:dispatch to the agent + persist a pending
         # row. The caller polls /agent/dispatch/result/{task_id} for the
         # outcome so connector-runtime restarts don't strand the request.
-        from connector_runtime.dispatch.agent_dispatch import dispatch_endpoint_tool
+        from connector_runtime.dispatch.device_dispatch import dispatch_endpoint_tool
         try:
             task_id = await dispatch_endpoint_tool(
                 user_id=req.user_id,
@@ -195,7 +195,7 @@ def create_app() -> FastAPI:
         return {"ok": True, "task_id": task_id, "status": "pending"}
 
     @router.get("/agent/dispatch/result/{task_id}")
-    def agent_dispatch_result(task_id: str) -> Dict[str, Any]:
+    def device_dispatch_result(task_id: str) -> Dict[str, Any]:
         # DB-backed lookup so connector-runtime restarts don't lose state.
         from sqlmodel import Session, select
         from api.database import engine
@@ -213,7 +213,7 @@ def create_app() -> FastAPI:
             "summary": row.summary,
             "error": row.error,
             "result": None,
-            "agent_id": row.agent_id,
+            "device_id": row.device_id,
             "tool": row.tool,
         }
         if row.result_json:

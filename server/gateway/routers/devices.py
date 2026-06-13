@@ -1,4 +1,4 @@
-"""``/api/agents`` routes: list connected endpoint agents, bind an agent to an AI
+"""``/api/devices`` routes: list connected endpoint agents, bind an agent to an AI
 config, and get/set an agent's per-device MCP tool scope."""
 
 from typing import List, Optional
@@ -7,61 +7,61 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
-from api.agent_bindings import set_binding
-from api.agent_mcp_permissions import get_scope, set_scope
+from api.device_bindings import set_binding
+from api.device_mcp_permissions import get_scope, set_scope
 from api.database import get_session
-from api.models import AgentAiBinding, AssistantAIConfig, EndpointAgentPresence
+from api.models import DeviceAiBinding, AssistantAIConfig, DevicePresence
 from .auth import get_current_user
-from api.sio import agents, agent_token_required
-from api.agent_live import connected_agent_rows_for_user, emit_agent_list_for_user
-from connector_runtime.dispatch.desktop_agent_tools import agent_endpoint_tools, agent_type_of
+from api.sio import agents, device_token_required
+from api.device_live import connected_agent_rows_for_user, emit_agent_list_for_user
+from connector_runtime.dispatch.desktop_device_tools import agent_endpoint_tools, device_type_of
 
 router = APIRouter()
-PREFIX = "/api/agents"
+PREFIX = "/api/devices"
 
 
-def _find_connected_agent(agent_id: str, user_id: int) -> Optional[dict]:
-    """The live agent record for this (agent_id, user), or None when the device
+def _find_connected_agent(device_id: str, user_id: int) -> Optional[dict]:
+    """The live agent record for this (device_id, user), or None when the device
     is not currently connected. Scope is only visible while connected — a
     disconnected agent is simply not shown.
 
     内置知识工坊不走 socket，按需合成一条常在线虚拟记录。"""
-    aid = str(agent_id or "").strip()
+    aid = str(device_id or "").strip()
     for agent in agents.values():
         if str(agent.get("id") or "") == aid and agent.get("userId") == user_id:
             return agent
     try:
         from workshop import engine as workshop_engine
 
-        if aid == workshop_engine.agent_id_for_user(user_id):
+        if aid == workshop_engine.device_id_for_user(user_id):
             return workshop_engine.connected_entry_for_user(user_id)
     except Exception:
         pass
     return None
 
 
-def _presence_agent_type(session: Session, user_id: int, agent_id: str) -> Optional[str]:
-    aid = str(agent_id or "").strip()
+def _presence_device_type(session: Session, user_id: int, device_id: str) -> Optional[str]:
+    aid = str(device_id or "").strip()
     if not aid:
         return None
     row = session.exec(
-        select(EndpointAgentPresence)
+        select(DevicePresence)
         .where(
-            EndpointAgentPresence.agent_id == aid,
-            EndpointAgentPresence.user_id == user_id,
+            DevicePresence.device_id == aid,
+            DevicePresence.user_id == user_id,
         )
-        .order_by(EndpointAgentPresence.updated_at.desc(), EndpointAgentPresence.id.desc())
+        .order_by(DevicePresence.updated_at.desc(), DevicePresence.id.desc())
     ).first()
-    agent_type = str(row.agent_type or "").strip() if row else ""
-    return agent_type if agent_type in {"desktop", "browser", "workshop"} else None
+    device_type = str(row.device_type or "").strip() if row else ""
+    return device_type if device_type in {"desktop", "browser", "workshop"} else None
 
 
-def _agent_type_for_binding(session: Session, user_id: int, agent_id: str) -> Optional[str]:
-    connected = _find_connected_agent(agent_id, user_id)
-    live_type = agent_type_of(connected)
+def _device_type_for_binding(session: Session, user_id: int, device_id: str) -> Optional[str]:
+    connected = _find_connected_agent(device_id, user_id)
+    live_type = device_type_of(connected)
     if live_type:
         return live_type
-    return _presence_agent_type(session, user_id, agent_id)
+    return _presence_device_type(session, user_id, device_id)
 
 
 def _existing_same_type_binding(
@@ -69,22 +69,22 @@ def _existing_same_type_binding(
     *,
     user_id: int,
     ai_config_id: int,
-    agent_id: str,
-    agent_type: str,
+    device_id: str,
+    device_type: str,
 ) -> Optional[str]:
     """Return another bound agent id for this AI/type, if one exists."""
-    target_id = str(agent_id or "").strip()
+    target_id = str(device_id or "").strip()
     rows = session.exec(
-        select(AgentAiBinding).where(
-            AgentAiBinding.user_id == user_id,
-            AgentAiBinding.ai_config_id == ai_config_id,
+        select(DeviceAiBinding).where(
+            DeviceAiBinding.user_id == user_id,
+            DeviceAiBinding.ai_config_id == ai_config_id,
         )
     ).all()
     for row in rows:
-        existing_id = str(row.agent_id or "").strip()
+        existing_id = str(row.device_id or "").strip()
         if not existing_id or existing_id == target_id:
             continue
-        if _agent_type_for_binding(session, user_id, existing_id) == agent_type:
+        if _device_type_for_binding(session, user_id, existing_id) == device_type:
             return existing_id
     return None
 
@@ -93,23 +93,23 @@ def _scope_view(agent: dict, user_id: int) -> dict:
     """Capabilities + effective allow-list for a connected agent. Scope is keyed
     per individual agent; with no saved record no endpoint tool is allowed
     (default-closed)."""
-    agent_type = agent_type_of(agent)
-    agent_id = str(agent.get("id") or "")
+    device_type = device_type_of(agent)
+    device_id = str(agent.get("id") or "")
     capabilities = sorted(agent_endpoint_tools(agent))
     ai_config_id = agent.get("aiConfigId") or agent.get("ai_config_id")
     try:
         ai_config_id = int(ai_config_id) if ai_config_id else None
     except (TypeError, ValueError):
         ai_config_id = None
-    scope = get_scope(user_id, agent_id) if agent_id else None
+    scope = get_scope(user_id, device_id) if device_id else None
     allowed = [] if scope is None else sorted(set(capabilities) & scope)
     try:
-        from api.agent_presence import tool_defs_for_agent
+        from api.device_presence import tool_defs_for_agent
 
-        tool_defs = tool_defs_for_agent(user_id, agent_id)
+        tool_defs = tool_defs_for_agent(user_id, device_id)
     except Exception:
         tool_defs = {}
-    if agent_type == "workshop" and not tool_defs:
+    if device_type == "workshop" and not tool_defs:
         try:
             from workshop import engine as workshop_engine
 
@@ -117,9 +117,9 @@ def _scope_view(agent: dict, user_id: int) -> dict:
         except Exception:
             tool_defs = {}
     return {
-        "agentId": agent_id,
+        "deviceId": device_id,
         "agentName": str(agent.get("name") or agent.get("id") or ""),
-        "agentType": agent_type,
+        "deviceType": device_type,
         "platform": str(agent.get("platform") or ""),
         "aiConfigId": ai_config_id,
         "capabilities": capabilities,
@@ -130,7 +130,7 @@ def _scope_view(agent: dict, user_id: int) -> dict:
 
 
 @router.get("/connected")
-async def list_connected_agents(
+async def list_connected_devices(
     session: Session = Depends(get_session),
     authorization: str = Header(None),
 ):
@@ -140,19 +140,19 @@ async def list_connected_agents(
     return {
         "agents": rows,
         "count": len(rows),
-        "token_required": agent_token_required(),
+        "token_required": device_token_required(),
     }
 
 
-class AgentBindRequest(BaseModel):
-    agentId: str
+class DeviceBindRequest(BaseModel):
+    deviceId: str
     # None / 0 unbinds the device (sets it back to "未分配").
     aiConfigId: Optional[int] = None
 
 
 @router.post("/bind")
 async def bind_agent_ai(
-    payload: AgentBindRequest,
+    payload: DeviceBindRequest,
     session: Session = Depends(get_session),
     authorization: str = Header(None),
 ):
@@ -163,20 +163,20 @@ async def bind_agent_ai(
     currently-connected socket for that agent is updated immediately.
     """
     user = get_current_user(authorization, session)
-    agent_id = (payload.agentId or "").strip()
-    if not agent_id:
-        raise HTTPException(status_code=400, detail="agentId required")
+    device_id = (payload.deviceId or "").strip()
+    if not device_id:
+        raise HTTPException(status_code=400, detail="deviceId required")
     try:
         from workshop import engine as workshop_engine
 
-        if workshop_engine.is_builtin_workshop_agent_id(agent_id):
+        if workshop_engine.is_builtin_workshop_device_id(device_id):
             raise HTTPException(status_code=400, detail="知识工坊请通过 /api/workshop/bindings 绑定")
     except HTTPException:
         raise
     except Exception:
         pass
     cfg_id = payload.aiConfigId
-    previous_same_type_agent_id = None
+    previous_same_type_device_id = None
     if cfg_id:
         cfg_id = int(cfg_id)
         cfg = session.exec(
@@ -184,30 +184,30 @@ async def bind_agent_ai(
         ).first()
         if not cfg or cfg.user_id != user.id:
             raise HTTPException(status_code=404, detail="AI 配置不存在或不属于当前用户")
-        agent_type = _agent_type_for_binding(session, user.id, agent_id)
-        if agent_type:
-            existing_agent_id = _existing_same_type_binding(
+        device_type = _device_type_for_binding(session, user.id, device_id)
+        if device_type:
+            existing_device_id = _existing_same_type_binding(
                 session,
                 user_id=user.id,
                 ai_config_id=cfg_id,
-                agent_id=agent_id,
-                agent_type=agent_type,
+                device_id=device_id,
+                device_type=device_type,
             )
-            if existing_agent_id:
-                previous_same_type_agent_id = existing_agent_id
+            if existing_device_id:
+                previous_same_type_device_id = existing_device_id
 
-    stored = set_binding(user.id, agent_id, cfg_id)
-    if previous_same_type_agent_id:
-        set_binding(user.id, previous_same_type_agent_id, None)
+    stored = set_binding(user.id, device_id, cfg_id)
+    if previous_same_type_device_id:
+        set_binding(user.id, previous_same_type_device_id, None)
 
     # Reflect the assignment on any live socket(s) for this agent right away so
     # the next dispatch routes correctly without waiting for a reconnect.
     for agent in agents.values():
-        if str(agent.get("id")) == agent_id and agent.get("userId") == user.id:
+        if str(agent.get("id")) == device_id and agent.get("userId") == user.id:
             agent["aiConfigId"] = stored
         elif (
-            previous_same_type_agent_id
-            and str(agent.get("id")) == previous_same_type_agent_id
+            previous_same_type_device_id
+            and str(agent.get("id")) == previous_same_type_device_id
             and agent.get("userId") == user.id
         ):
             agent["aiConfigId"] = None
@@ -215,20 +215,20 @@ async def bind_agent_ai(
     # Keep the shared DB presence snapshot in sync so off-gateway processes
     # resolve endpoint tools against the new assignment immediately.
     try:
-        from api.agent_presence import update_binding
-        update_binding(agent_id, stored)
-        if previous_same_type_agent_id:
-            update_binding(previous_same_type_agent_id, None)
+        from api.device_presence import update_binding
+        update_binding(device_id, stored)
+        if previous_same_type_device_id:
+            update_binding(previous_same_type_device_id, None)
     except Exception:
         pass
 
     await emit_agent_list_for_user(user.id)
-    return {"ok": True, "agentId": agent_id, "aiConfigId": stored}
+    return {"ok": True, "deviceId": device_id, "aiConfigId": stored}
 
 
-@router.get("/{agent_id}/mcp-scope")
+@router.get("/{device_id}/mcp-scope")
 async def get_agent_mcp_scope(
-    agent_id: str,
+    device_id: str,
     session: Session = Depends(get_session),
     authorization: str = Header(None),
 ):
@@ -238,34 +238,34 @@ async def get_agent_mcp_scope(
     the device is offline (an unbound agent still resolves, with aiConfigId
     null and every tool allowed — it just can't be persisted until assigned)."""
     user = get_current_user(authorization, session)
-    agent = _find_connected_agent(agent_id, user.id)
+    agent = _find_connected_agent(device_id, user.id)
     if not agent:
         raise HTTPException(status_code=404, detail="设备未连接")
-    if not agent_type_of(agent):
+    if not device_type_of(agent):
         raise HTTPException(status_code=400, detail="该设备不是可管理的端点 Agent")
     return _scope_view(agent, user.id)
 
 
-class AgentMcpScopeRequest(BaseModel):
+class DeviceMcpScopeRequest(BaseModel):
     tools: List[str] = []
 
 
-@router.put("/{agent_id}/mcp-scope")
+@router.put("/{device_id}/mcp-scope")
 async def set_agent_mcp_scope(
-    agent_id: str,
-    payload: AgentMcpScopeRequest,
+    device_id: str,
+    payload: DeviceMcpScopeRequest,
     session: Session = Depends(get_session),
     authorization: str = Header(None),
 ):
     """Persist the endpoint MCP permission scope for a connected agent, keyed per
-    individual agent (user, agent_id). Unknown tool names are dropped; the scope
+    individual agent (user, device_id). Unknown tool names are dropped; the scope
     follows the physical device across reconnects and AI reassignment."""
     user = get_current_user(authorization, session)
-    agent = _find_connected_agent(agent_id, user.id)
+    agent = _find_connected_agent(device_id, user.id)
     if not agent:
         raise HTTPException(status_code=404, detail="设备未连接")
-    agent_type = agent_type_of(agent)
-    if not agent_type:
+    device_type = device_type_of(agent)
+    if not device_type:
         raise HTTPException(status_code=400, detail="该设备不是端点 Agent")
 
     ai_config_id = agent.get("aiConfigId") or agent.get("ai_config_id")
@@ -285,7 +285,7 @@ async def set_agent_mcp_scope(
     # widen the scope beyond the live capability set.
     capabilities = agent_endpoint_tools(agent)
     requested = {str(t).strip() for t in (payload.tools or []) if str(t).strip()}
-    set_scope(user.id, agent_id, requested & capabilities, ai_config_id=ai_config_id, agent_type=agent_type)
+    set_scope(user.id, device_id, requested & capabilities, ai_config_id=ai_config_id, device_type=device_type)
 
     await emit_agent_list_for_user(user.id)
     return _scope_view(agent, user.id)

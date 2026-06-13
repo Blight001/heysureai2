@@ -2,7 +2,7 @@
 // No runtime dependencies; safe to import from any module.
 //
 // 描述规范（中文为主 + 英文术语）：每个工具的 description 说明「用途 + 典型使用
-// 场景」，每个参数的 description 说明「含义 + 取值/默认」。这些文案随 agent:register
+// 场景」，每个参数的 description 说明「含义 + 取值/默认」。这些文案随 device:register
 // 的 toolDefs 上报给服务器，是 AI 在 mcp.list_tools / mcp.describe_tool 中看到的
 // 权威说明——服务器不再硬编码浏览器工具的描述与 schema。
 //
@@ -495,7 +495,7 @@ export const BROWSER_CAPABILITIES = BROWSER_TOOLS.map(t => t.name)
 // popup / 服务器 / Web 端都应按这里归类，不要再各自维护一份 browser_* 名单。
 //
 // 大类（kind）：每个分类再归到「基础类 basic」或「特殊类 special」两个大组。所有工具
-// 默认开启，用户可在浏览器插件里逐个取消勾选；未勾选的工具不会随 agent:register 的
+// 默认开启，用户可在浏览器插件里逐个取消勾选；未勾选的工具不会随 device:register 的
 // capabilities/toolDefs 上报给服务器，因此服务器拿不到对应 MCP 数据，AI 也无法调用。
 export type BrowserToolKind = 'basic' | 'special'
 

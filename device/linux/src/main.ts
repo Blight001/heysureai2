@@ -9,7 +9,7 @@ import { createMainWindow, getMainWindow } from './windows/main-window'
 import { createTray, updateTray } from './windows/tray'
 import {
   initAgent, getAgent, clearAiSelectionIfLoggedOut, isAgentActive,
-} from './services/agent-runtime'
+} from './services/device-runtime'
 import { bindActivityLogTarget } from './services/activity-log'
 import { registerAllIpc } from './ipc'
 import { initializeDynamicMcp } from './executor/dynamic'

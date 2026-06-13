@@ -24,7 +24,7 @@ router = APIRouter(dependencies=[Depends(require_internal_token)])
 PREFIX = "/internal/agent"
 
 
-class AgentDispatchRequest(BaseModel):
+class DeviceDispatchRequest(BaseModel):
     user_id: int
     ai_config_id: Optional[int] = None
     tool: str
@@ -33,11 +33,11 @@ class AgentDispatchRequest(BaseModel):
 
 
 @router.post("/dispatch")
-async def agent_dispatch(req: AgentDispatchRequest) -> Dict[str, Any]:
+async def device_dispatch(req: DeviceDispatchRequest) -> Dict[str, Any]:
     # Non-blocking: emit task:dispatch to the agent + persist a pending row.
     # The caller polls /dispatch/result/{task_id} so a gateway restart between
     # the POST and the poll doesn't strand the request.
-    from connector_runtime.dispatch.agent_dispatch import dispatch_endpoint_tool
+    from connector_runtime.dispatch.device_dispatch import dispatch_endpoint_tool
     try:
         task_id = await dispatch_endpoint_tool(
             user_id=req.user_id,
@@ -53,7 +53,7 @@ async def agent_dispatch(req: AgentDispatchRequest) -> Dict[str, Any]:
 
 
 @router.get("/dispatch/result/{task_id}")
-def agent_dispatch_result(task_id: str) -> Dict[str, Any]:
+def device_dispatch_result(task_id: str) -> Dict[str, Any]:
     # DB-backed lookup so a gateway restart doesn't lose state.
     from sqlmodel import Session, select
     from api.database import engine
@@ -71,7 +71,7 @@ def agent_dispatch_result(task_id: str) -> Dict[str, Any]:
         "summary": row.summary,
         "error": row.error,
         "result": None,
-        "agent_id": row.agent_id,
+        "device_id": row.device_id,
         "tool": row.tool,
     }
     if row.result_json:

@@ -19,12 +19,12 @@ import {
   updateProject as apiUpdateProject,
   type UpsertProjectPayload,
 } from '@/api/projects'
-import { listConnectedAgents } from '@/api/agents'
+import { listConnectedDevices } from '@/api/devices'
 import { listWorkspaceFiles } from '@/api/workspace'
 import { getAuthToken } from '@/api/http'
 import { TOKEN_LIMIT_DEFAULTS } from '@/constants/dashboard'
 
-export interface ConnectedAgent {
+export interface ConnectedDevice {
   id: string
   name: string
   platform?: string
@@ -59,7 +59,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
   const { unassignedProjectId, alert, confirm, getCurrentUserId, getMcpAutoApprove } = options
 
   const agents = ref<Agent[]>([])
-  const connectedAgents = ref<ConnectedAgent[]>([])
+  const connectedDevices = ref<ConnectedDevice[]>([])
   const knowledgeBase = ref<KnowledgeItem[]>([])
   const projects = ref<ProjectItem[]>([])
   const globalGeneration = ref(1)
@@ -366,7 +366,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
   const parseConnectedAiConfigId = (raw: any) => {
     const direct = Number(raw?.aiConfigId ?? raw?.ai_config_id)
     if (Number.isFinite(direct) && direct > 0) return direct
-    const id = String(raw?.id || raw?.agentId || '')
+    const id = String(raw?.id || raw?.deviceId || '')
     const match = id.match(/^win-desktop-(\d+)$/)
     if (!match) return undefined
     const parsed = Number(match[1])
@@ -374,9 +374,9 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
   }
 
   const decorateAgentsWithEndpointConnections = () => {
-    const desktopByConfig = new Map<number, ConnectedAgent>()
-    const browserByConfig = new Map<number, ConnectedAgent>()
-    for (const connected of connectedAgents.value) {
+    const desktopByConfig = new Map<number, ConnectedDevice>()
+    const browserByConfig = new Map<number, ConnectedDevice>()
+    for (const connected of connectedDevices.value) {
       const configId = Number(connected.aiConfigId)
       if (!Number.isFinite(configId) || configId <= 0) continue
       const platform = String(connected.platform || '').toLowerCase()
@@ -406,7 +406,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     }
   }
 
-  const normalizeConnectedAgent = (raw: any): ConnectedAgent => ({
+  const normalizeConnectedDevice = (raw: any): ConnectedDevice => ({
     id: String(raw?.id ?? raw?.socketId ?? ''),
     name: String(raw?.name ?? raw?.id ?? 'agent'),
     platform: raw?.platform ? String(raw.platform) : undefined,
@@ -425,16 +425,16 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     connectedAt: Number.isFinite(Number(raw?.connectedAt)) ? Number(raw.connectedAt) : undefined,
   })
 
-  const applyConnectedAgents = (rows: any) => {
-    connectedAgents.value = (Array.isArray(rows) ? rows : []).map(normalizeConnectedAgent)
+  const applyConnectedDevices = (rows: any) => {
+    connectedDevices.value = (Array.isArray(rows) ? rows : []).map(normalizeConnectedDevice)
     decorateAgentsWithEndpointConnections()
   }
 
-  const loadConnectedAgents = async () => {
+  const loadConnectedDevices = async () => {
     if (!getAuthToken()) return
     try {
-      const data = await listConnectedAgents()
-      applyConnectedAgents(data?.agents)
+      const data = await listConnectedDevices()
+      applyConnectedDevices(data?.agents)
     } catch (err) {
       console.error('Failed to load connected agents:', err)
     }
@@ -446,7 +446,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     dashboardSocket.off('disconnect')
     dashboardSocket.off('connect_error')
     dashboardSocket.off('mcp:status')
-    dashboardSocket.off('agent:list')
+    dashboardSocket.off('device:list')
     dashboardSocket.disconnect()
     dashboardSocket = null
     dashboardSocketConnected.value = false
@@ -459,7 +459,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     dashboardSocket.on('connect', () => {
       dashboardSocketConnected.value = true
       dashboardSocket?.emit('ui:join', { userId })
-      void loadConnectedAgents()
+      void loadConnectedDevices()
     })
     dashboardSocket.on('disconnect', () => {
       dashboardSocketConnected.value = false
@@ -470,8 +470,8 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     dashboardSocket.on('mcp:status', (payload: McpStatusPayload) => {
       applyMcpStatusLive(payload)
     })
-    dashboardSocket.on('agent:list', (rows: any) => {
-      applyConnectedAgents(rows)
+    dashboardSocket.on('device:list', (rows: any) => {
+      applyConnectedDevices(rows)
     })
     dashboardSocket.on('librarian:proposal_new', () => {
       loadLibrarianPending()
@@ -554,7 +554,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     try {
       await Promise.all([
         loadAIAgents(),
-        loadConnectedAgents(),
+        loadConnectedDevices(),
         loadValhallaEntries(),
         loadLibrarianPending(),
         loadKnowledgeEntries(),
@@ -569,7 +569,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     await loadProjects()
     await Promise.all([
       loadAIAgents(),
-      loadConnectedAgents(),
+      loadConnectedDevices(),
       loadValhallaEntries(),
       loadLibrarianPending(),
       loadKnowledgeEntries(),
@@ -598,7 +598,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
 
   return {
     agents,
-    connectedAgents,
+    connectedDevices,
     knowledgeBase,
     projects,
     globalGeneration,
@@ -613,7 +613,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     loadLibrarianPending,
     librarianPending,
     loadKnowledgeEntries,
-    loadConnectedAgents,
+    loadConnectedDevices,
     createProject,
     updateProject,
     deleteProject,

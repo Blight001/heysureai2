@@ -6,7 +6,7 @@ from api.sio import agents
 # The live ``agents`` registry only exists in the process that owns the agent
 # socket server (api-gateway). To let every process (ai-runtime / mcp-runtime /
 # connector) discover and classify endpoint tools identically, connected agents
-# are mirrored into a shared DB presence snapshot (see ``api.agent_presence``).
+# are mirrored into a shared DB presence snapshot (see ``api.device_presence``).
 # Classification (``is_desktop_tool`` / ``is_browser_tool``) consults a short
 # TTL cache of that snapshot so it stays context-free and cheap across
 # processes.
@@ -20,7 +20,7 @@ def _presence_tool_names() -> Tuple[Set[str], Set[str]]:
     if _TOOLNAME_CACHE["expiry"] > now:
         return _TOOLNAME_CACHE["desktop"], _TOOLNAME_CACHE["browser"]
     try:
-        from api.agent_presence import online_tool_names
+        from api.device_presence import online_tool_names
         desktop, browser = online_tool_names()
     except Exception:
         desktop, browser = set(), set()
@@ -36,7 +36,7 @@ def _presence_tool_defs() -> Dict[str, Dict[str, Any]]:
     if _TOOLDEFS_CACHE["expiry"] > now:
         return _TOOLDEFS_CACHE["defs"]
     try:
-        from api.agent_presence import online_tool_defs
+        from api.device_presence import online_tool_defs
         defs = online_tool_defs()
     except Exception:
         defs = {}
@@ -51,7 +51,7 @@ ENDPOINT_BRIDGE_MCP_TOOLS = {"admin.list_agents"}
 
 # The endpoint (desktop / browser) tool surface is no longer a hardcoded
 # whitelist. Each connected agent advertises its own tools in the
-# ``capabilities`` array of ``agent:register`` (see ``api/socket_events.py``),
+# ``capabilities`` array of ``device:register`` (see ``api/socket_events.py``),
 # and the server derives everything below from that live list. A tool a
 # Windows agent gains at runtime (``speech.*``, ``vision.*``, ``hands.*`` …)
 # therefore becomes dispatchable with no server redeploy. Browser tools are
@@ -113,7 +113,7 @@ def is_workshop_tool(name: str) -> bool:
     return bool(tool) and tool.startswith(WORKSHOP_TOOL_PREFIXES)
 
 
-def agent_type_of(agent: Optional[Dict[str, Any]]) -> Optional[str]:
+def device_type_of(agent: Optional[Dict[str, Any]]) -> Optional[str]:
     """Classify a connected-agent record as ``"desktop"`` / ``"browser"`` /
     ``"workshop"`` (知识与进化工坊)."""
     if not isinstance(agent, dict):
@@ -128,7 +128,7 @@ def agent_type_of(agent: Optional[Dict[str, Any]]) -> Optional[str]:
     return None
 
 
-def _agent_capabilities(agent: Dict[str, Any], agent_type: str) -> Set[str]:
+def _agent_capabilities(agent: Dict[str, Any], device_type: str) -> Set[str]:
     """Tool names of the given type that ``agent`` reports. Browser-namespaced
     names only ever count as browser tools；workshop agent 只允许上报工坊命名
     空间的工具（防止借工坊通道注册桌面执行类工具）；the rest as desktop tools."""
@@ -137,10 +137,10 @@ def _agent_capabilities(agent: Dict[str, Any], agent_type: str) -> Set[str]:
         name = str(cap or "").strip()
         if not name:
             continue
-        if agent_type == "workshop":
+        if device_type == "workshop":
             if is_workshop_tool(name):
                 names.add(name)
-        elif agent_type == "browser":
+        elif device_type == "browser":
             if _is_browser_namespaced(name):
                 names.add(name)
         else:
@@ -152,7 +152,7 @@ def _agent_capabilities(agent: Dict[str, Any], agent_type: str) -> Set[str]:
 def agent_endpoint_tools(agent: Optional[Dict[str, Any]]) -> Set[str]:
     """Endpoint tool names a single connected agent reports, classified by its
     own type. Used by the per-agent permission editor."""
-    atype = agent_type_of(agent)
+    atype = device_type_of(agent)
     if not atype or not isinstance(agent, dict):
         return set()
     return _agent_capabilities(agent, atype)
@@ -160,11 +160,11 @@ def agent_endpoint_tools(agent: Optional[Dict[str, Any]]) -> Set[str]:
 
 def agent_endpoint_tool_defs(agent: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     """``{name: {description, input_schema}}`` self-described by a single agent
-    (via the ``toolDefs`` it ships in ``agent:register``), restricted to the
+    (via the ``toolDefs`` it ships in ``device:register``), restricted to the
     tools of its own type. The agent is the source of truth for its own tool
     schemas, so the server stores these verbatim instead of hardcoding them.
     A tool reported without a def simply gets no entry (generic fallback)."""
-    atype = agent_type_of(agent)
+    atype = device_type_of(agent)
     if not atype or not isinstance(agent, dict):
         return {}
     allowed = _agent_capabilities(agent, atype)
@@ -192,7 +192,7 @@ def _reported_endpoint_tools(*, want_desktop: bool) -> Set[str]:
     target = "desktop" if want_desktop else "browser"
     names: Set[str] = set()
     for agent in list(agents.values()):
-        if agent_type_of(agent) != target:
+        if device_type_of(agent) != target:
             continue
         names.update(_agent_capabilities(agent, target))
     return names
@@ -356,18 +356,18 @@ def workshop_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int
     config_id = _parse_int(ai_config_id)
     if not config_id:
         return set()
-    from api.agent_mcp_permissions import get_scope
-    from api.agent_presence import online_workshop_agents_for_user
-    from api.workshop_bindings import workshop_agent_ids_for_config
+    from api.device_mcp_permissions import get_scope
+    from api.device_presence import online_workshop_agents_for_user
+    from api.workshop_bindings import workshop_device_ids_for_config
 
-    bound_ids = set(workshop_agent_ids_for_config(user_id, config_id))
+    bound_ids = set(workshop_device_ids_for_config(user_id, config_id))
     if not bound_ids:
         return set()
     tools: Set[str] = set()
-    for agent_id, caps in online_workshop_agents_for_user(user_id):
-        if agent_id not in bound_ids:
+    for device_id, caps in online_workshop_agents_for_user(user_id):
+        if device_id not in bound_ids:
             continue
-        scope = get_scope(user_id, agent_id) if agent_id else None
+        scope = get_scope(user_id, device_id) if device_id else None
         if scope is None:
             continue
         tools |= {name for name in (caps & scope) if is_workshop_tool(name)}
@@ -380,7 +380,7 @@ def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int
     by that individual agent's saved per-agent permission scope. No saved scope
     row → no endpoint tools are allowed.
 
-    Resolved from the shared DB presence snapshot (``api.agent_presence``) so
+    Resolved from the shared DB presence snapshot (``api.device_presence``) so
     every process — gateway, ai-runtime, mcp-runtime, connector — gets the same
     answer without the in-memory agent registry. Endpoint tools are
     intentionally decoupled from ``cfg.mcp_tools`` (which governs server-side
@@ -389,13 +389,13 @@ def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int
     config_id = _parse_int(ai_config_id)
     if not config_id:
         return set()
-    from api.agent_presence import online_agents_for_config
-    from api.agent_mcp_permissions import get_scope
+    from api.device_presence import online_devices_for_config
+    from api.device_mcp_permissions import get_scope
 
     tools: Set[str] = set()
-    for agent_id, _agent_type, caps in online_agents_for_config(user_id, config_id):
+    for device_id, _device_type, caps in online_devices_for_config(user_id, config_id):
         # Each individual agent has its own MCP scope. No saved row → closed.
-        scope = get_scope(user_id, agent_id) if agent_id else None
+        scope = get_scope(user_id, device_id) if device_id else None
         if scope is None:
             continue
         tools |= caps & scope

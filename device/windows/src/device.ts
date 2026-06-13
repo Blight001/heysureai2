@@ -6,13 +6,13 @@ import { getPlatformInfo } from './platform'
 import { AgentSettings } from './store'
 import { normalizeServerUrl } from './server-url'
 
-export type AgentStatus = 'disconnected' | 'connecting' | 'connected' | 'registered' | 'error'
+export type DeviceStatus = 'disconnected' | 'connecting' | 'connected' | 'registered' | 'error'
 
 export interface AgentEvents {
   // aiConfigId is the server-side bound AI (null = none assigned yet), used by
   // the UI status indicator: green = connected + assigned, yellow = connected
   // but unassigned, red = disconnected.
-  onStatusChange?: (status: AgentStatus, reason?: string, aiConfigId?: number | null) => void
+  onStatusChange?: (status: DeviceStatus, reason?: string, aiConfigId?: number | null) => void
   onTaskStart?: (taskId: string, tool: string, args: any) => void
   onTaskResult?: (taskId: string, tool: string, result: any, success: boolean) => void
   onLog?: (level: 'info' | 'warn' | 'error', message: string, data?: any) => void
@@ -36,7 +36,7 @@ export class HeySureAgent {
   private taskOutcomes = new Map<string, CachedOutcome>()
   private settings: AgentSettings
   private events: AgentEvents
-  private _status: AgentStatus = 'disconnected'
+  private _status: DeviceStatus = 'disconnected'
   private _boundAiConfigId: number | null = null
   // Guards against re-login loops: we only kick off one auto re-auth per
   // connection attempt. Reset whenever we (re)connect or register successfully.
@@ -49,13 +49,13 @@ export class HeySureAgent {
     this.workspaceRoot = settings.workspaceRoot || path.join(os.homedir(), 'HeySureWorkspace')
   }
 
-  get status(): AgentStatus { return this._status }
+  get status(): DeviceStatus { return this._status }
   get boundAiConfigId(): number | null { return this._boundAiConfigId }
 
-  private setStatus(s: AgentStatus, reason?: string) {
+  private setStatus(s: DeviceStatus, reason?: string) {
     this._status = s
     // Losing the connection clears the binding so we don't show green offline;
-    // it is re-applied from the next agent:registered.
+    // it is re-applied from the next device:registered.
     if (s !== 'registered' && s !== 'connected') this._boundAiConfigId = null
     this.events.onStatusChange?.(s, reason, this._boundAiConfigId)
   }
@@ -74,7 +74,7 @@ export class HeySureAgent {
     if (this.socket) return
     // Hard gate: an agent that hasn't logged in cannot talk to the server.
     // Without this guard the socket would open transport-level, the UI would
-    // flash "已连接", then the server would reject agent:register a moment
+    // flash "已连接", then the server would reject device:register a moment
     // later. Refusing here keeps the status honest.
     if (!this.settings.authToken) {
       this.setStatus('disconnected')
@@ -127,7 +127,7 @@ export class HeySureAgent {
       this.log('error', `连接错误: ${err.message}`)
     })
 
-    this.socket.on('agent:registered', (data: any) => {
+    this.socket.on('device:registered', (data: any) => {
       const raw = data?.aiConfigId
       const n = typeof raw === 'number' ? raw : (raw != null && String(raw).trim() !== '' ? Number(raw) : null)
       this._boundAiConfigId = Number.isFinite(n as number) ? (n as number) : null
@@ -137,7 +137,7 @@ export class HeySureAgent {
       this.log('info', `注册成功: ${data?.name || this.settings.agentName}${this._boundAiConfigId == null ? '（未分配 AI）' : ''}`)
     })
 
-    this.socket.on('agent:register_rejected', (data: any) => {
+    this.socket.on('device:register_rejected', (data: any) => {
       const reason = data?.reason || '注册被拒绝'
       this.setStatus('error', reason)
       this.log('error', `注册失败: ${reason}`)
@@ -166,7 +166,7 @@ export class HeySureAgent {
   }
 
   private register(): void {
-    const agentId = this.settings.agentId ||
+    const deviceId = this.settings.deviceId ||
       `agent-${os.hostname().toLowerCase().replace(/[^a-z0-9]/g, '-')}`
     const hasAuth = !!this.settings.authToken
     // The desktop client no longer picks its own AI. It just logs in and
@@ -174,8 +174,8 @@ export class HeySureAgent {
     // web Workshop ("作坊") panel. The server re-applies that binding on every
     // register, so we send aiConfigId: null and let the server decide.
     this.log('info', '注册 agent（AI 由服务器作坊分配）')
-    this.socket?.emit('agent:register', {
-      id: agentId,
+    this.socket?.emit('device:register', {
+      id: deviceId,
       name: this.settings.agentName || os.hostname(),
       group: this.settings.agentGroup || '',
       platform: `win32-desktop (${os.hostname()})`,

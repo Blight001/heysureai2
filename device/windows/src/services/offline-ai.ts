@@ -1,5 +1,5 @@
 import { store } from '../store'
-import { getAgent } from './agent-runtime'
+import { getAgent } from './device-runtime'
 import { getToolDefs } from '../executor'
 import { sendActivityLog } from './activity-log'
 import * as fs from 'fs'

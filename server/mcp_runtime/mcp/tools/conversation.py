@@ -11,7 +11,7 @@ from api.database import engine
 from api.models import BotSessionRoute, ChatMessage, ChatSession
 from api.services.chat_media import delete_message_media
 from api.services.chat_persistence import _rebuild_usage_snapshots
-from connector_runtime.dispatch.agent_dispatch import get_run_session_context
+from connector_runtime.dispatch.device_dispatch import get_run_session_context
 
 
 def _coerce_int(value: Any) -> Optional[int]:

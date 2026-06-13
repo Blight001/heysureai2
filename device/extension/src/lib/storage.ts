@@ -97,7 +97,7 @@ export async function clearAvatarCache(): Promise<void> {
 // ── MCP tool description overrides (local edits) ─────────────────────────────
 // The user can edit a tool's description / parameter descriptions in the MCP
 // page. Edits are stored locally and merged onto BROWSER_TOOLS before they are
-// reported to the server via agent:register -> toolDefs, so the server stays
+// reported to the server via device:register -> toolDefs, so the server stays
 // the single consumer and needs no per-tool storage.
 export interface ToolDescOverride {
   description?: string

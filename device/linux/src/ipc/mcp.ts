@@ -5,7 +5,7 @@
 
 import { ipcMain } from 'electron'
 import { store } from '../store'
-import { getAgent } from '../services/agent-runtime'
+import { getAgent } from '../services/device-runtime'
 import { getAllToolDefs, getToolDefs, isToolEnabled } from '../executor'
 import { sendActivityLog } from '../services/activity-log'
 

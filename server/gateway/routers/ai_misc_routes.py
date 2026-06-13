@@ -15,20 +15,20 @@ from api.core.config import CONNECTOR_RUNTIME_URL
 from api.database import get_session
 from api.runtime.internal_http import InternalClient
 from api.models import (
-    AgentAiBinding,
-    AgentTypeMcpPermission,
+    DeviceAiBinding,
+    DeviceTypeMcpPermission,
     AITaskJob,
     AIRuntimeStatus,
     AssistantAIConfig,
     ChatMessage,
     ChatRun,
     ChatSession,
-    EndpointAgentPresence,
+    DevicePresence,
     ChatSessionCreate,
     TokenUsageSnapshot,
 )
 from api.sio import agents
-from api.agent_live import emit_agent_list_for_user
+from api.device_live import emit_agent_list_for_user
 from .auth import get_current_user
 from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.services.model_presets import resolve_model_preset
@@ -137,18 +137,18 @@ async def delete_ai_config(
         session.delete(row)
 
     binding_rows = session.exec(
-        select(AgentAiBinding).where(
-            AgentAiBinding.user_id == user.id,
-            AgentAiBinding.ai_config_id == config_id,
+        select(DeviceAiBinding).where(
+            DeviceAiBinding.user_id == user.id,
+            DeviceAiBinding.ai_config_id == config_id,
         )
     ).all()
     for row in binding_rows:
         session.delete(row)
 
     presence_rows = session.exec(
-        select(EndpointAgentPresence).where(
-            EndpointAgentPresence.user_id == user.id,
-            EndpointAgentPresence.ai_config_id == config_id,
+        select(DevicePresence).where(
+            DevicePresence.user_id == user.id,
+            DevicePresence.ai_config_id == config_id,
         )
     ).all()
     for row in presence_rows:
@@ -157,9 +157,9 @@ async def delete_ai_config(
         session.add(row)
 
     scope_rows = session.exec(
-        select(AgentTypeMcpPermission).where(
-            AgentTypeMcpPermission.user_id == user.id,
-            AgentTypeMcpPermission.ai_config_id == config_id,
+        select(DeviceTypeMcpPermission).where(
+            DeviceTypeMcpPermission.user_id == user.id,
+            DeviceTypeMcpPermission.ai_config_id == config_id,
         )
     ).all()
     for row in scope_rows:

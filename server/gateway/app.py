@@ -51,7 +51,7 @@ async def lifespan(app: FastAPI):
     # empty in-memory registry, so reset the shared presence snapshot — agents
     # flip their own rows back online as they reconnect.
     try:
-        from api.agent_presence import mark_all_offline
+        from api.device_presence import mark_all_offline
         mark_all_offline()
     except Exception:
         logger.exception("failed to reset endpoint agent presence on startup")
@@ -190,7 +190,7 @@ for _bot in iter_bots():
 # (the single public URL they also use for REST auth), so the gateway owns the
 # agent-side handlers + the live ``agents`` registry in every deployment. Task
 # dispatch is therefore served from here too (see gateway.routers.
-# agent_dispatch_internal); ai-runtime routes endpoint-tool dispatches to this
+# device_dispatch_internal); ai-runtime routes endpoint-tool dispatches to this
 # process via HEYSURE_API_GATEWAY_URL.
 register_user_socket_events()
 register_agent_socket_events()

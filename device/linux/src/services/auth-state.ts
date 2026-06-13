@@ -1,5 +1,5 @@
 import { store } from '../store'
-import { clearSelectedAiConfig, getAgent, rebuildAgent } from './agent-runtime'
+import { clearSelectedAiConfig, getAgent, rebuildAgent } from './device-runtime'
 import { sendActivityLog } from './activity-log'
 import { getMainWindow } from '../windows/main-window'
 import { reauthenticate } from './reauth'
@@ -52,7 +52,7 @@ export function recoverAuthSession(reason = '登录已过期，请重新登录')
     sendActivityLog('system', 'info', `检测到登录失效（${reason}），正在用保存的账号自动重新登录…`)
     // Show the orange "reconnecting" prompt while we re-login + reconnect. It is
     // cleared when the agent registers again, or by auth:expired if we give up.
-    getMainWindow()?.webContents.send('agent:reconnecting', true, '登录已失效，正在自动重新登录…')
+    getMainWindow()?.webContents.send('device:reconnecting', true, '登录已失效，正在自动重新登录…')
     const ok = await reauthenticate()
     if (ok) {
       // Fresh token in the store — rebuild the agent so it picks up the new

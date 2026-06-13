@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { store, AgentSettings } from '../store'
-import { getAgent, clearAiSelectionIfLoggedOut } from '../services/agent-runtime'
+import { getAgent, clearAiSelectionIfLoggedOut } from '../services/device-runtime'
 import { sendActivityLog } from '../services/activity-log'
 import {
   setMainWindowTheme,
