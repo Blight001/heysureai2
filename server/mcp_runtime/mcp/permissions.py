@@ -65,6 +65,7 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "librarian.install_skill_package": ROLE_MANAGER,
     "librarian.edit_inheritance_thought": ROLE_MANAGER,
     "librarian.delete_inheritance_thought": ROLE_MANAGER,
+    "librarian.set_inheritance_thought_endpoint": ROLE_MANAGER,
     # Knowledge workshop — read built-in knowledge categories (read-only for everyone).
     "librarian.read_inheritance_skills": ROLE_MEMBER,
     "librarian.read_intrinsic_skills": ROLE_MEMBER,

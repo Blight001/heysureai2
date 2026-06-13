@@ -40,6 +40,8 @@ TOOL_DEFS = [
         "description": (
             "通过 npx skills add <包名> -g -y 安装 Skill，并自动把本次新增或更新的"
             "全局 Skill 快照导入当前用户的传承思想。一个包包含多个 Skill 时会全部导入。"
+            "endpoint_kind 按端归类：any=通用、desktop=桌面端专属、browser=浏览器端专属；"
+            "不传则按当前绑定的端侧作坊自动判断，判断不出归为 any。"
         ),
         "inputSchema": {
             "type": "object",
@@ -54,8 +56,37 @@ TOOL_DEFS = [
                     "maximum": 600,
                     "description": "安装超时秒数，默认 300。",
                 },
+                "endpoint_kind": {
+                    "type": "string",
+                    "enum": ["any", "desktop", "browser"],
+                    "description": (
+                        "端归类：any=通用、desktop=桌面端专属、browser=浏览器端专属。"
+                        "省略则按安装成员当前绑定的端侧作坊自动推断。"
+                    ),
+                },
             },
             "required": ["package"],
+            "additionalProperties": False,
+        },
+        "destructive": True,
+    },
+    {
+        "name": "librarian.set_inheritance_thought_endpoint",
+        "description": (
+            "改端：更新一条已安装传承思想的端归类（any 通用 / desktop 桌面端 / "
+            "browser 浏览器端）。id 来自 librarian.list_inheritance_thoughts。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "传承思想 ID（即列表返回的 id/slug）。"},
+                "endpoint_kind": {
+                    "type": "string",
+                    "enum": ["any", "desktop", "browser"],
+                    "description": "目标端归类：any 通用 / desktop 桌面端 / browser 浏览器端。",
+                },
+            },
+            "required": ["id", "endpoint_kind"],
             "additionalProperties": False,
         },
         "destructive": True,

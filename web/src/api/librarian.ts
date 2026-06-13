@@ -97,6 +97,7 @@ export interface KnowledgeEntryItem {
       installed_at: number
       auto_enabled: boolean
       present: boolean
+      endpoint_kind?: 'any' | 'desktop' | 'browser'
       trust?: Record<string, any>
     }>
   }
@@ -229,12 +230,23 @@ export const readClawHubSkill = (token: string, slug: string) =>
 export const installClawHubSkill = (
   token: string,
   slug: string,
-  opts: { version?: string | null; force?: boolean } = {},
+  opts: { version?: string | null; force?: boolean; endpoint_kind?: 'any' | 'desktop' | 'browser' } = {},
 ) =>
   post<{ installed: boolean; skill: Record<string, any>; entry: KnowledgeEntryItem }>(
     `/api/librarian/inheritance-tools/clawhub/${encodeURIComponent(slug)}/install`,
-    { version: opts.version || undefined, force: !!opts.force },
+    { version: opts.version || undefined, force: !!opts.force, endpoint_kind: opts.endpoint_kind || undefined },
     { token, fallbackError: 'ClawHub 技能安装失败' },
+  )
+
+export const setInstalledClawHubSkillEndpoint = (
+  token: string,
+  slug: string,
+  endpointKind: 'any' | 'desktop' | 'browser',
+) =>
+  post<{ updated: boolean; slug: string; endpoint_kind: string; detail: ClawHubInstalledSkillDetail }>(
+    `/api/librarian/inheritance-tools/clawhub/installed/${encodeURIComponent(slug)}/endpoint`,
+    { endpoint_kind: endpointKind },
+    { token, fallbackError: '传承思想改端失败' },
   )
 
 export const readInstalledClawHubSkill = (token: string, slug: string) =>

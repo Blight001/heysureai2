@@ -40,18 +40,42 @@ def install_skill_package(
     args: Dict[str, Any],
     ai_config_id: Optional[int] = None,
 ) -> Dict[str, Any]:
-    _ = ai_config_id
     package = str(args.get("package") or "").strip()
     if not package:
         raise HTTPException(status_code=400, detail="package is required")
+    endpoint_kind = args.get("endpoint_kind")
     try:
         return librarian_service.install_npx_skill_package(
             user_id=int(user_id),
             package=package,
             timeout=args.get("timeout"),
+            endpoint_kind=str(endpoint_kind) if endpoint_kind else None,
+            ai_config_id=int(ai_config_id) if ai_config_id else None,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def set_inheritance_thought_endpoint(
+    user_id: int,
+    args: Dict[str, Any],
+    ai_config_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    _ = ai_config_id
+    thought_id = str(args.get("id") or "").strip()
+    if not thought_id:
+        raise HTTPException(status_code=400, detail="id is required")
+    endpoint_kind = str(args.get("endpoint_kind") or "").strip()
+    if not endpoint_kind:
+        raise HTTPException(status_code=400, detail="endpoint_kind is required")
+    try:
+        return librarian_service.set_inheritance_thought_endpoint(
+            user_id=int(user_id),
+            slug=thought_id,
+            endpoint_kind=endpoint_kind,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 def edit_inheritance_thought(

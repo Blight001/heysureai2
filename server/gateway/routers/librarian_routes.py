@@ -52,10 +52,15 @@ class SystemPromptsBody(BaseModel):
 class ClawHubInstallBody(BaseModel):
     version: Optional[str] = None
     force: bool = False
+    endpoint_kind: Optional[str] = None
 
 
 class ClawHubInstalledUpdateBody(BaseModel):
     skill_card: str = ""
+
+
+class InheritanceThoughtEndpointBody(BaseModel):
+    endpoint_kind: str = "any"
 
 
 @router.get("/proposals")
@@ -82,6 +87,24 @@ async def search_clawhub_skills(
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+
+
+@router.post("/inheritance-tools/clawhub/installed/{slug:path}/endpoint")
+async def set_installed_clawhub_skill_endpoint(
+    slug: str,
+    body: InheritanceThoughtEndpointBody,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    try:
+        return librarian_service.set_inheritance_thought_endpoint(
+            user_id=user.id,
+            slug=slug,
+            endpoint_kind=body.endpoint_kind,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get("/inheritance-tools/clawhub/installed/{slug:path}")
@@ -157,6 +180,7 @@ async def install_clawhub_skill(
             slug=slug,
             version=body.version,
             force=body.force,
+            endpoint_kind=body.endpoint_kind,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
