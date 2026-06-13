@@ -20,7 +20,7 @@ npm run dev          # esbuild watch 模式
 ## 目录结构
 
 ```
-agent/extension/
+device/extension/
 ├── manifest.json           # MV3 manifest（service worker / content scripts / 权限）
 ├── popup.html              # 弹窗 UI 骨架 + 内联样式
 ├── build.js                # esbuild 入口配置

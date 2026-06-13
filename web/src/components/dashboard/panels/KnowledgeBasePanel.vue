@@ -10,6 +10,7 @@ import {
   saveIntrinsicProperties,
   saveSystemPrompts,
   searchClawHubSkills,
+  setInstalledClawHubSkillEndpoint,
   updateInstalledClawHubSkill,
   type ClawHubInstalledSkillDetail,
   type ClawHubSkillDetail,
@@ -100,12 +101,30 @@ const installedClawhubError = ref('')
 const installedClawhubNotice = ref('')
 const installedClawhubSelected = ref<ClawHubInstalledSkillDetail | null>(null)
 const installedClawhubDraft = ref('')
+// 传承思想端归类：安装时选择 + 已装列表筛选 + 改端。
+const installEndpointKind = ref<'auto' | 'any' | 'desktop' | 'browser'>('auto')
+const thoughtEndpointFilter = ref<'all' | 'any' | 'desktop' | 'browser'>('all')
+const installedEndpointSaving = ref(false)
+
+const ENDPOINT_LABELS: Record<string, string> = { any: '通用', desktop: '桌面端', browser: '浏览器端' }
+const endpointLabel = (kind?: string | null) => ENDPOINT_LABELS[String(kind || 'any')] || '通用'
 
 const detailContent = computed(() => currentDetail.value?.body || currentDetail.value?.summary || '（无内容）')
 const intrinsicProperties = computed(() => currentDetail.value?.intrinsic_properties || null)
 const intrinsicPersonas = computed(() => currentDetail.value?.intrinsic_personas || null)
 const systemPrompts = computed(() => currentDetail.value?.system_prompts || null)
 const inheritanceThoughts = computed(() => currentDetail.value?.inheritance_tools || null)
+
+const filteredInstalledThoughts = computed(() => {
+  const installed = inheritanceThoughts.value?.installed || []
+  if (thoughtEndpointFilter.value === 'all') return installed
+  return installed.filter(skill => String(skill.endpoint_kind || 'any') === thoughtEndpointFilter.value)
+})
+
+const installedEndpointKind = computed<'any' | 'desktop' | 'browser'>(() => {
+  const kind = String(installedClawhubSelected.value?.skill?.endpoint_kind || 'any')
+  return kind === 'desktop' || kind === 'browser' ? kind : 'any'
+})
 
 const toolParameters = (tool: { parameters?: Array<{ name: string; type: string; required: boolean; description: string }> }) =>
   Array.isArray(tool.parameters) ? tool.parameters : []
@@ -336,6 +355,7 @@ const openClawHubModal = () => {
   clawhubModalOpen.value = true
   clawhubError.value = ''
   clawhubNotice.value = ''
+  installEndpointKind.value = 'auto'
 }
 
 const closeClawHubModal = () => {
@@ -377,6 +397,7 @@ const installSelectedClawHubSkill = async (force = false) => {
     const installed = await installClawHubSkill(token, slug, {
       version: selected.version,
       force,
+      endpoint_kind: installEndpointKind.value === 'auto' ? undefined : installEndpointKind.value,
     })
     currentDetail.value = installed.entry
     clawhubSelected.value = {
@@ -447,6 +468,24 @@ const saveInstalledClawHubSkill = async () => {
     installedClawhubError.value = (err as Error).message || '保存失败'
   } finally {
     installedClawhubSaving.value = false
+  }
+}
+
+const applyInstalledEndpoint = async (kind: 'any' | 'desktop' | 'browser') => {
+  const slug = installedClawhubSelected.value?.slug
+  if (!slug || kind === installedEndpointKind.value) return
+  installedEndpointSaving.value = true
+  installedClawhubError.value = ''
+  installedClawhubNotice.value = ''
+  try {
+    const token = getAuthToken()
+    const res = await setInstalledClawHubSkillEndpoint(token, slug, kind)
+    installedClawhubSelected.value = res.detail
+    installedClawhubNotice.value = `已改端为「${endpointLabel(kind)}」`
+  } catch (err) {
+    installedClawhubError.value = (err as Error).message || '改端失败'
+  } finally {
+    installedEndpointSaving.value = false
   }
 }
 
@@ -1041,9 +1080,22 @@ const closeDetail = () => {
                 </section>
 
                 <section v-if="inheritanceThoughts.installed.length" class="space-y-2">
-                  <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">已安装</div>
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">已安装</div>
+                    <div class="flex items-center gap-1 text-[10px]">
+                      <button
+                        v-for="opt in [{ v: 'all', t: '全部' }, { v: 'any', t: '通用' }, { v: 'desktop', t: '桌面端' }, { v: 'browser', t: '浏览器端' }]"
+                        :key="opt.v"
+                        type="button"
+                        class="px-1.5 py-0.5 rounded border transition-colors"
+                        :class="thoughtEndpointFilter === opt.v ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300' : 'border-zinc-200 text-zinc-500 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-400'"
+                        @click.stop.prevent="thoughtEndpointFilter = opt.v as any"
+                      >{{ opt.t }}</button>
+                    </div>
+                  </div>
+                  <div v-if="filteredInstalledThoughts.length === 0" class="text-center text-[11px] text-zinc-400 py-4">该端暂无传承思想</div>
                   <button
-                    v-for="skill in inheritanceThoughts.installed"
+                    v-for="skill in filteredInstalledThoughts"
                     :key="skill.slug"
                     type="button"
                     class="w-full text-left rounded-lg border border-zinc-100 bg-zinc-50 hover:border-indigo-200 dark:border-zinc-800 dark:bg-zinc-800/40 dark:hover:border-indigo-700 px-3 py-2 transition-colors"
@@ -1055,6 +1107,7 @@ const closeDetail = () => {
                         <code class="text-[11px] text-indigo-600 dark:text-indigo-300 break-all">{{ skill.slug }}</code>
                       </div>
                       <div class="flex flex-wrap items-center gap-1 text-[10px] text-zinc-500 dark:text-zinc-400">
+                        <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-300">{{ endpointLabel(skill.endpoint_kind) }}</span>
                         <span class="px-1.5 py-0.5 rounded bg-white dark:bg-zinc-900">{{ skill.version || 'latest' }}</span>
                         <span class="px-1.5 py-0.5 rounded bg-white dark:bg-zinc-900">{{ skill.present ? '文件可用' : '文件缺失' }}</span>
                         <span class="px-1.5 py-0.5 rounded bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-300">查看/编辑</span>
@@ -1160,14 +1213,28 @@ const closeDetail = () => {
                     {{ clawhubSelected.slug }} · {{ clawhubSelected.version || 'latest' }} · 扫描：{{ clawhubScanLabel }}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  class="px-3 py-1.5 rounded bg-indigo-600 text-xs text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-                  :disabled="clawhubInstallingSlug === clawhubSelected.slug"
-                  @click.stop.prevent="installSelectedClawHubSkill(clawhubSelected.installed)"
-                >
-                  {{ clawhubInstallingSlug === clawhubSelected.slug ? '处理中…' : (clawhubSelected.installed ? '更新快照' : '安装快照') }}
-                </button>
+                <div class="flex items-center gap-2">
+                  <label class="flex items-center gap-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                    端
+                    <select
+                      v-model="installEndpointKind"
+                      class="text-[11px] text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900/70 px-1.5 py-1 rounded border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-800"
+                    >
+                      <option value="auto">自动判断</option>
+                      <option value="any">通用</option>
+                      <option value="desktop">桌面端</option>
+                      <option value="browser">浏览器端</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    class="px-3 py-1.5 rounded bg-indigo-600 text-xs text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="clawhubInstallingSlug === clawhubSelected.slug"
+                    @click.stop.prevent="installSelectedClawHubSkill(clawhubSelected.installed)"
+                  >
+                    {{ clawhubInstallingSlug === clawhubSelected.slug ? '处理中…' : (clawhubSelected.installed ? '更新快照' : '安装快照') }}
+                  </button>
+                </div>
               </div>
               <div class="flex-1 min-h-0 overflow-y-auto p-4 custom-scrollbar">
                 <pre class="whitespace-pre-wrap font-mono text-xs leading-relaxed text-zinc-700 dark:text-zinc-200 bg-zinc-50 dark:bg-zinc-800/40 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800">{{ clawhubSelected.skill_card || '（无内容）' }}</pre>
@@ -1201,9 +1268,22 @@ const closeDetail = () => {
         <div v-if="installedClawhubLoading" class="flex-1 flex items-center justify-center text-sm text-zinc-400">加载中…</div>
         <div v-else class="flex-1 min-h-0 flex flex-col">
           <div class="px-5 py-3 border-b border-zinc-100 dark:border-zinc-800 flex flex-wrap items-center justify-between gap-2">
-            <div class="flex flex-wrap gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+            <div class="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
               <span class="px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800">{{ installedClawhubSelected?.skill?.version || 'latest' }}</span>
               <span class="px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800">{{ installedClawhubSelected?.present ? '文件可用' : '文件缺失' }}</span>
+              <label class="flex items-center gap-1">
+                端
+                <select
+                  :value="installedEndpointKind"
+                  :disabled="installedEndpointSaving || !installedClawhubSelected"
+                  class="text-[11px] text-zinc-700 dark:text-zinc-200 bg-white dark:bg-zinc-900/70 px-1.5 py-1 rounded border border-zinc-200 dark:border-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-800 disabled:opacity-60"
+                  @change="applyInstalledEndpoint(($event.target as HTMLSelectElement).value as 'any' | 'desktop' | 'browser')"
+                >
+                  <option value="any">通用</option>
+                  <option value="desktop">桌面端</option>
+                  <option value="browser">浏览器端</option>
+                </select>
+              </label>
               <span class="px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-800 truncate max-w-[20rem]">{{ installedClawhubSelected?.path || '' }}</span>
             </div>
             <div class="flex gap-2">

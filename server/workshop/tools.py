@@ -40,6 +40,8 @@ TOOL_DEFS = [
         "description": (
             "通过 npx skills add <包名> -g -y 安装 Skill，并自动把本次新增或更新的"
             "全局 Skill 快照导入当前用户的传承思想。一个包包含多个 Skill 时会全部导入。"
+            "endpoint_kind 按端归类：any=通用、desktop=桌面端专属、browser=浏览器端专属；"
+            "不传则按当前绑定的端侧作坊自动判断，判断不出归为 any。"
         ),
         "inputSchema": {
             "type": "object",
@@ -54,6 +56,14 @@ TOOL_DEFS = [
                     "maximum": 600,
                     "description": "安装超时秒数，默认 300。",
                 },
+                "endpoint_kind": {
+                    "type": "string",
+                    "enum": ["any", "desktop", "browser"],
+                    "description": (
+                        "端归类：any=通用、desktop=桌面端专属、browser=浏览器端专属。"
+                        "省略则按安装成员当前绑定的端侧作坊自动推断。"
+                    ),
+                },
             },
             "required": ["package"],
             "additionalProperties": False,
@@ -61,15 +71,54 @@ TOOL_DEFS = [
         "destructive": True,
     },
     {
+        "name": "librarian.create_inheritance_thought",
+        "description": (
+            "主动创建一条传承思想：直接写 SKILL.md 正文落本地快照并登记到传承思想库"
+            "（不走 ClawHub/npx 安装，来源标记 manual）。"
+            "endpoint_kind 按端归类：any=通用、desktop=桌面端专属、browser=浏览器端专属；"
+            "不传则按当前绑定的端侧作坊自动推断。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "传承思想名称（即 Skill 名）。"},
+                "content": {
+                    "type": "string",
+                    "description": "SKILL.md 正文；不含 frontmatter 时会自动补 name/description 头。",
+                },
+                "summary": {"type": "string", "description": "一句话摘要（可选；作为 description）。"},
+                "endpoint_kind": {
+                    "type": "string",
+                    "enum": ["any", "desktop", "browser"],
+                    "description": (
+                        "端归类：any=通用、desktop=桌面端专属、browser=浏览器端专属。"
+                        "省略则按创建成员当前绑定的端侧作坊自动推断。"
+                    ),
+                },
+            },
+            "required": ["name", "content"],
+            "additionalProperties": False,
+        },
+        "destructive": True,
+    },
+    {
         "name": "librarian.edit_inheritance_thought",
         "description": (
-            "按行编辑一条传承思想的 SKILL.md。先调用 librarian.get_inheritance_thought "
-            "获取 lines、line_count 和 content_sha256，再基于行号提交一个 edit 或 edits 批次。"
+            "按行编辑一条传承思想的 SKILL.md，并/或改端（endpoint_kind）。"
+            "编辑正文：先调用 librarian.get_inheritance_thought 获取 lines、line_count、"
+            "content_sha256，再基于行号提交一个 edit 或 edits 批次。"
+            "改端：传 endpoint_kind（any 通用 / desktop 桌面端 / browser 浏览器端）即可，"
+            "可与行编辑同时进行，也可只改端不动正文。"
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "id": {"type": "string", "description": "传承思想 ID。"},
+                "endpoint_kind": {
+                    "type": "string",
+                    "enum": ["any", "desktop", "browser"],
+                    "description": "改端目标：any 通用 / desktop 桌面端 / browser 浏览器端（可选）。",
+                },
                 "expected_sha256": {
                     "type": "string",
                     "description": "读取时返回的 content_sha256；内容已变化时拒绝编辑。",

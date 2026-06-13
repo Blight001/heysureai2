@@ -52,6 +52,7 @@ _ARCHIVE_DIR = "archives"
 _INHERITANCE_THOUGHTS_DIR = "inheritance_thoughts"
 _CLAWHUB_REMOTE_DIR = "remote/clawhub"
 _NPX_SKILLS_DIR = "local/npx"
+_MANUAL_SKILLS_DIR = "local/manual"
 _INDEX_FILE = "index.json"
 _CLAWHUB_SKILLS_STATE_FILE = "clawhub_skills.json"
 _INTRINSIC_PROPERTIES_OVERRIDES_FILE = "intrinsic_properties_overrides.json"
@@ -279,6 +280,54 @@ def _normalize_scope(scope: Any, scope_target: Any) -> tuple[str, Optional[str]]
     return raw, target
 
 
+# 传承思想端归类：any 通用 / desktop 桌面端 / browser 浏览器端。
+ENDPOINT_KINDS = ("any", "desktop", "browser")
+
+
+def _normalize_endpoint(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in {"desktop", "windows", "linux", "desktop_windows", "desktop_linux"}:
+        return "desktop"
+    if raw in {"browser", "extension", "browser_extension", "browser-extension"}:
+        return "browser"
+    return "any"
+
+
+def _infer_endpoint_kind(user_id: int, ai_config_id: Optional[int]) -> str:
+    """按安装成员当前在线绑定的端侧 agent 类型推断端归类。
+
+    读取共享 ``EndpointAgentPresence``（agent_type desktop/browser，工坊为
+    workshop→归 any）。仅当成员唯一绑定到某一端时返回该端，否则（无绑定 /
+    同时绑定多端 / 仅工坊）回 ``any``。best-effort：异常一律回 ``any``。
+    """
+    try:
+        cfg = int(ai_config_id) if ai_config_id else None
+    except (TypeError, ValueError):
+        cfg = None
+    if not cfg:
+        return "any"
+    try:
+        from ..agent_presence import online_agents_for_config
+
+        kinds = {
+            _normalize_endpoint(agent_type)
+            for _agent_id, agent_type, _caps in online_agents_for_config(user_id, cfg)
+        }
+    except Exception:
+        return "any"
+    kinds.discard("any")
+    if len(kinds) == 1:
+        return next(iter(kinds))
+    return "any"
+
+
+def _resolve_endpoint_kind(user_id: int, ai_config_id: Optional[int], endpoint_kind: Any) -> str:
+    """显式传入优先；未传（None/空）则按绑定的端侧 agent 自动推断。"""
+    if endpoint_kind is None or str(endpoint_kind).strip() == "":
+        return _infer_endpoint_kind(user_id, ai_config_id)
+    return _normalize_endpoint(endpoint_kind)
+
+
 def _yaml_frontmatter(meta: Dict[str, Any]) -> str:
     lines = ["---"]
     for k, v in meta.items():
@@ -456,6 +505,7 @@ def _clawhub_installed_items(user_id: int) -> List[Dict[str, Any]]:
             continue
         row = dict(item)
         row["slug"] = str(row.get("slug") or slug)
+        row["endpoint_kind"] = _normalize_endpoint(row.get("endpoint_kind"))
         rel_path = str(row.get("path") or "").strip()
         row["present"] = bool(rel_path and os.path.isdir(safe_join(_kb_root(user_id), rel_path)))
         items.append(row)
@@ -592,45 +642,151 @@ def _apply_skill_line_edits(content: str, arguments: Dict[str, Any]) -> tuple[st
     return updated, len(edits)
 
 
+def _has_skill_line_edits(arguments: Dict[str, Any]) -> bool:
+    """是否带有 SKILL.md 行编辑指令（区别于纯改端）。"""
+    raw_edits = arguments.get("edits")
+    if isinstance(raw_edits, list) and raw_edits:
+        return True
+    if str(arguments.get("mode") or "").strip():
+        return True
+    return any(arguments.get(key) is not None for key in ("line", "line_number", "start_line"))
+
+
 def edit_inheritance_thought(
     *,
     user_id: int,
     thought_id: str,
     arguments: Dict[str, Any],
 ) -> Dict[str, Any]:
+    """按行编辑 SKILL.md 与/或改端（endpoint_kind）。两者均可单独使用。"""
     thought_id = _normalize_clawhub_slug(thought_id)
+    endpoint_raw = arguments.get("endpoint_kind")
+    has_endpoint = endpoint_raw is not None and str(endpoint_raw).strip() != ""
+    has_line_edits = _has_skill_line_edits(arguments)
+    if not has_line_edits and not has_endpoint:
+        raise ValueError("nothing to edit: provide line edits and/or endpoint_kind")
+
     current = clawhub_installed_skill_detail(user_id=int(user_id), slug=thought_id)
     old_content = str(current.get("skill_card") or "")
-    expected = str(arguments.get("expected_sha256") or "").strip().lower()
     old_sha256 = _text_sha256(old_content)
-    if expected and expected != old_sha256:
-        raise ValueError("SKILL.md changed after it was read; read it again before editing")
-    new_content, edit_count = _apply_skill_line_edits(old_content, arguments)
-    updated = update_clawhub_installed_skill(
-        user_id=int(user_id),
-        slug=thought_id,
-        skill_card=new_content,
-    )
+    new_content = old_content
+    edit_count = 0
 
-    item = updated.get("detail", {}).get("skill") if isinstance(updated.get("detail"), dict) else None
-    if isinstance(item, dict):
-        install_dir = _clawhub_installed_dir(int(user_id), item)
-        metadata = _skill_card_metadata(install_dir, str(item.get("displayName") or thought_id))
-        state = _load_clawhub_state(int(user_id))
-        installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
-        if isinstance(installed.get(thought_id), dict):
-            installed[thought_id]["displayName"] = metadata["name"]
-            installed[thought_id]["summary"] = metadata["description"]
-            state["installed"] = installed
-            _save_clawhub_state(int(user_id), state)
+    if has_line_edits:
+        expected = str(arguments.get("expected_sha256") or "").strip().lower()
+        if expected and expected != old_sha256:
+            raise ValueError("SKILL.md changed after it was read; read it again before editing")
+        new_content, edit_count = _apply_skill_line_edits(old_content, arguments)
+        update_clawhub_installed_skill(
+            user_id=int(user_id),
+            slug=thought_id,
+            skill_card=new_content,
+        )
+
+    state = _load_clawhub_state(int(user_id))
+    installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
+    row = installed.get(thought_id)
+    if isinstance(row, dict):
+        if has_line_edits:
+            install_dir = _clawhub_installed_dir(int(user_id), row)
+            metadata = _skill_card_metadata(install_dir, str(row.get("displayName") or thought_id))
+            row["displayName"] = metadata["name"]
+            row["summary"] = metadata["description"]
+        if has_endpoint:
+            row["endpoint_kind"] = _normalize_endpoint(endpoint_raw)
+        installed[thought_id] = row
+        state["installed"] = installed
+        _save_clawhub_state(int(user_id), state)
+
+    final_endpoint = _normalize_endpoint(
+        row.get("endpoint_kind") if isinstance(row, dict) else endpoint_raw
+    )
     return {
         "updated": True,
         "id": thought_id,
         "edit_count": edit_count,
+        "endpoint_kind": final_endpoint,
         "old_sha256": old_sha256,
         "content_sha256": _text_sha256(new_content),
         "line_count": len(new_content.splitlines()),
     }
+
+
+def _ensure_skill_frontmatter(body: str, *, name: str, description: str) -> str:
+    """确保 SKILL.md 带 name/description frontmatter，便于元数据解析与运行时使用。"""
+    text = str(body or "")
+    if text.lstrip().startswith("---"):
+        return text if text.endswith("\n") else text + "\n"
+    lines = ["---", f"name: {json.dumps(name, ensure_ascii=False)}"]
+    if description:
+        lines.append(f"description: {json.dumps(description, ensure_ascii=False)}")
+    lines.append("---")
+    return "\n".join(lines) + "\n\n" + text.strip() + "\n"
+
+
+def create_inheritance_thought(
+    *,
+    user_id: int,
+    name: str,
+    content: str,
+    summary: Optional[str] = None,
+    endpoint_kind: Optional[str] = None,
+    ai_config_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """主动创建一条传承思想：AI 直接写 SKILL.md，落本地快照并登记到传承思想库。
+
+    与安装路径（ClawHub/npx）并列，``source="manual"``。``endpoint_kind`` 端归类
+    显式优先，未传按安装成员当前绑定的端侧 agent 自动推断。
+    """
+    import hashlib
+
+    name = str(name or "").strip()
+    if not name:
+        raise ValueError("name is required")
+    body = str(content or "").strip()
+    if not body:
+        raise ValueError("content is required")
+
+    slug_base = _slugify(name) or "skill"
+    suffix = hashlib.sha1(f"{name}-{time.time()}".encode("utf-8")).hexdigest()[:8]
+    thought_id = f"manual/{slug_base}-{suffix}"
+    safe_name = thought_id.split("/", 1)[1]
+    install_rel = f"{_INHERITANCE_THOUGHTS_DIR}/{_MANUAL_SKILLS_DIR}/{safe_name}"
+    install_dir = safe_join(_kb_root(user_id), install_rel)
+    os.makedirs(install_dir, exist_ok=True)
+
+    summary_text = str(summary or "").strip()
+    skill_md = _ensure_skill_frontmatter(body, name=name, description=summary_text)
+    _safe_write(os.path.join(install_dir, "SKILL.md"), skill_md)
+    installed_at = time.time()
+    with open(os.path.join(install_dir, "heysure_manual_create.json"), "w", encoding="utf-8") as f:
+        json.dump(
+            {"source": "manual", "name": name, "installed_at": installed_at},
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    meta = _skill_card_metadata(install_dir, name)
+    resolved_endpoint = _resolve_endpoint_kind(int(user_id), ai_config_id, endpoint_kind)
+    state = _load_clawhub_state(user_id)
+    installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
+    installed[thought_id] = {
+        "slug": thought_id,
+        "displayName": meta["name"],
+        "summary": meta["description"] or summary_text,
+        "version": None,
+        "ownerHandle": "",
+        "source": "manual",
+        "path": install_rel,
+        "installed_at": installed_at,
+        "auto_enabled": False,
+        "endpoint_kind": resolved_endpoint,
+        "trust": {"verdict": "self-authored"},
+    }
+    state["installed"] = installed
+    _save_clawhub_state(user_id, state)
+    return dict(installed[thought_id], id=thought_id)
 
 
 def delete_inheritance_thought(*, user_id: int, thought_id: str) -> Dict[str, Any]:
@@ -757,6 +913,7 @@ def _import_global_skill_snapshot(
     package: str,
     skill_name: str,
     source_dir: str,
+    endpoint_kind: str = "any",
 ) -> Dict[str, Any]:
     thought_id = f"npx/{skill_name}"
     _validate_skill_tree_for_import(source_dir)
@@ -803,6 +960,7 @@ def _import_global_skill_snapshot(
         "path": install_rel,
         "installed_at": installed_at,
         "auto_enabled": False,
+        "endpoint_kind": _normalize_endpoint(endpoint_kind),
         "trust": {"verdict": "unverified"},
     }
     state["installed"] = installed
@@ -815,9 +973,16 @@ def install_npx_skill_package(
     user_id: int,
     package: str,
     timeout: Optional[int] = None,
+    endpoint_kind: Optional[str] = None,
+    ai_config_id: Optional[int] = None,
 ) -> Dict[str, Any]:
-    """Install via skills CLI, then snapshot changed global skills into the KB."""
+    """Install via skills CLI, then snapshot changed global skills into the KB.
+
+    ``endpoint_kind`` 端归类（any/desktop/browser）：显式传入优先，未传则按安装
+    成员当前绑定的端侧 agent 自动推断。
+    """
     package = _normalize_skills_package(package)
+    resolved_endpoint = _resolve_endpoint_kind(int(user_id), ai_config_id, endpoint_kind)
     try:
         timeout_seconds = int(timeout or 300)
     except (TypeError, ValueError):
@@ -862,6 +1027,7 @@ def install_npx_skill_package(
             package=package,
             skill_name=name,
             source_dir=os.path.join(global_root, name),
+            endpoint_kind=resolved_endpoint,
         )
         for name in changed
     ]
@@ -1626,8 +1792,11 @@ def install_clawhub_skill(
     slug: str,
     version: Optional[str] = None,
     force: bool = False,
+    endpoint_kind: Optional[str] = None,
+    ai_config_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     slug = _normalize_clawhub_slug(slug)
+    resolved_endpoint = _resolve_endpoint_kind(int(user_id), ai_config_id, endpoint_kind)
     detail = clawhub.skill_detail(slug)
     resolved_version = str(version or _latest_clawhub_version(detail) or "").strip() or None
     scan: Dict[str, Any] = {}
@@ -1654,6 +1823,13 @@ def install_clawhub_skill(
     owner = detail.get("owner") if isinstance(detail.get("owner"), dict) else {}
     state = _load_clawhub_state(user_id)
     installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
+    # 未显式指定端归类时，force 更新保留旧值，否则采用推断结果。
+    if endpoint_kind is None or str(endpoint_kind).strip() == "":
+        prior = installed.get(slug) if isinstance(installed.get(slug), dict) else {}
+        prior_kind = _normalize_endpoint(prior.get("endpoint_kind"))
+        effective_endpoint = prior_kind if prior_kind != "any" else resolved_endpoint
+    else:
+        effective_endpoint = resolved_endpoint
     installed[slug] = {
         "slug": slug,
         "displayName": str(skill.get("displayName") or slug),
@@ -1665,6 +1841,7 @@ def install_clawhub_skill(
         "registry_url": clawhub.registry_base_url(),
         "installed_at": time.time(),
         "auto_enabled": False,
+        "endpoint_kind": effective_endpoint,
         "trust": _clawhub_trust_summary(detail, scan),
     }
     state["installed"] = installed
@@ -1726,6 +1903,25 @@ def update_clawhub_installed_skill(*, user_id: int, slug: str, skill_card: str) 
     }
 
 
+def set_inheritance_thought_endpoint(*, user_id: int, slug: str, endpoint_kind: Any) -> Dict[str, Any]:
+    """改端：更新一条已安装传承思想的端归类（any/desktop/browser）。"""
+    slug = _normalize_clawhub_slug(slug)
+    kind = _normalize_endpoint(endpoint_kind)
+    state = _load_clawhub_state(user_id)
+    installed = state.get("installed") if isinstance(state.get("installed"), dict) else {}
+    if not isinstance(installed.get(slug), dict):
+        raise ValueError("installed skill not found")
+    installed[slug]["endpoint_kind"] = kind
+    state["installed"] = installed
+    _save_clawhub_state(user_id, state)
+    return {
+        "updated": True,
+        "slug": slug,
+        "endpoint_kind": kind,
+        "detail": clawhub_installed_skill_detail(user_id=user_id, slug=slug),
+    }
+
+
 def delete_clawhub_installed_skill(*, user_id: int, slug: str) -> Dict[str, Any]:
     slug = _normalize_clawhub_slug(slug)
     item = _clawhub_installed_item(user_id, slug)
@@ -1750,7 +1946,9 @@ def _clawhub_installed_item(user_id: int, slug: str) -> Dict[str, Any]:
     item = installed.get(slug)
     if not isinstance(item, dict):
         raise ValueError("installed skill not found")
-    return dict(item)
+    out = dict(item)
+    out["endpoint_kind"] = _normalize_endpoint(out.get("endpoint_kind"))
+    return out
 
 
 def _clawhub_installed_dir(user_id: int, item: Dict[str, Any]) -> str:

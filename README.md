@@ -125,9 +125,9 @@ The model handles reasoning and decisions. The MCP Runtime enforces tool boundar
 | `server/ai_runtime/` | AI worker for chat queues, inference calls, message persistence, and runtime status. |
 | `server/mcp_runtime/` | MCP tool registration, plugin loading, permission checks, and internal tool calls. |
 | `server/connector_runtime/` | QQ and Feishu bot connectors plus external agent dispatch. |
-| `agent/windows/` | Windows desktop agent with window, screen, mouse, keyboard, clipboard, shell, and filesystem tools. |
-| `agent/linux/` | Linux desktop agent with equivalent local automation capabilities. |
-| `agent/extension/` | Chrome MV3 browser extension for browser automation and lightweight client features. |
+| `device/windows/` | Windows desktop client (shell) with window, screen, mouse, keyboard, clipboard, shell, and filesystem tools. |
+| `device/linux/` | Linux desktop client (shell) with equivalent local automation capabilities. |
+| `device/extension/` | Chrome MV3 browser extension for browser automation and lightweight client features. |
 | `doc/` | Architecture notes, prompts, governance ideas, and system design documents. |
 
 ## Quick Start
@@ -156,7 +156,7 @@ docker compose up -d --build
 ```bat
 server\run.bat          :: start backend split services
 web\run.bat             :: start the web console
-agent\windows\run.bat   :: start the Windows desktop agent
+device\windows\run.bat  :: start the Windows desktop client (shell)
 ```
 
 Health check:
@@ -223,25 +223,25 @@ python -m connector_runtime.main
 python -m ai_runtime.main
 ```
 
-### Windows Agent
+### Windows Client (device)
 
 ```bat
-cd agent\windows
+cd device\windows
 npm install
 npm run dev
 npm run build
 ```
 
-Package the Windows agent:
+Package the Windows client:
 
 ```bat
-agent\windows\build.bat
+device\windows\build.bat
 ```
 
-### Linux Agent
+### Linux Client (device)
 
 ```sh
-cd agent/linux
+cd device/linux
 npm install
 npm run dev
 npm run build
@@ -250,12 +250,12 @@ npm run build
 ### Browser Extension
 
 ```bat
-cd agent\extension
+cd device\extension
 npm install
 npm run build
 ```
 
-Then open Chrome Extensions and load `agent/extension/` as an unpacked extension.
+Then open Chrome Extensions and load `device/extension/` as an unpacked extension.
 
 ## MCP Tools
 
@@ -309,10 +309,10 @@ The `Archivist` core administrator is responsible for observation, guidance, sum
 | [`CLAUDE.md`](CLAUDE.md) | **Navigation entry point**: architecture / ports / commands / "where to change X" / conventions. |
 | [`server/CLAUDE.md`](server/CLAUDE.md) | Backend map: shared layer + 4 processes, `api/` layering, change lookup. |
 | [`web/CLAUDE.md`](web/CLAUDE.md) | Frontend map: directory responsibilities and change lookup. |
-| [`agent/CLAUDE.md`](agent/CLAUDE.md) | Agent map: the three clients and the win/linux duplication notes. |
+| [`device/CLAUDE.md`](device/CLAUDE.md) | Device map: the three client shells and the win/linux duplication notes. |
 | `server/README.md` | Backend service layout, local startup, environment variables, and runtime ports. |
-| `agent/linux/README.md` | Linux desktop agent notes. |
-| `agent/extension/README.md` | Browser extension notes. |
+| `device/linux/README.md` | Linux desktop client (shell) notes. |
+| `device/extension/README.md` | Browser extension notes. |
 | `doc/prompt/` | Prompts for core administrator, assistant administrator, desktop assistant, browser assistant, and MCP tool calling. |
 
 ## License
