@@ -96,7 +96,7 @@ export interface SystemAutoControlDefaults {
   start_task_prompt: string
   resume_task_prompt: string
   supervision_prompt: string
-  inheritance_notice: string
+  compression_prompt: string
 }
 
 interface SystemAutoControlTaskItem {

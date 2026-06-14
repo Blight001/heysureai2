@@ -41,7 +41,6 @@ def run_data_consolidations(engine) -> None:
     """
     _consolidate_bot_session_routes(engine)
     _consolidate_assistantaiconfig_bot_configs(engine)
-    _consolidate_valhalla_files_to_db(engine)
     _consolidate_prompts_to_files(engine)
     _cleanup_dead_workspace_folders(engine)
 
@@ -56,7 +55,7 @@ _USER_PROMPT_COLS = (
     "default_start_task_prompt",
     "default_resume_task_prompt",
     "default_supervision_prompt",
-    "default_inheritance_notice",
+    "default_compression_prompt",
     "prompt_ai_message_notify",
     "prompt_ai_message_inquiry",
     "prompt_ai_message_inquiry_reminder",
@@ -280,128 +279,30 @@ def _consolidate_assistantaiconfig_bot_configs(engine) -> None:
             logger.exception(f"drop column {col} failed: {exc}")
 
 
-def _consolidate_valhalla_files_to_db(engine) -> None:
-    """Import legacy Valhalla file content into ``valhallaentry`` columns.
-
-    Old generational handoffs stored their full markdown (``last_words.md`` /
-    ``final_words.md``) plus sidecar JSON on disk, keyed by ``file_path``. We
-    now keep everything in the database. For every row whose ``content`` is
-    still empty we read the file from the user workspace and back-fill
-    ``content`` + the ``*_json`` sidecar columns. Best-effort and idempotent:
-    once ``content`` is populated the row is skipped on later boots.
-    """
-    import os
-
-    from sqlalchemy import inspect, text
-
-    from .config import user_workspace_dir
-
-    insp = inspect(engine)
-    if "valhallaentry" not in set(insp.get_table_names()):
-        return
-    columns = {col["name"] for col in insp.get_columns("valhallaentry")}
-    if "content" not in columns:
-        return  # column migration hasn't run yet
-
-    imported = 0
-    with engine.begin() as conn:
-        rows = conn.execute(
-            text(
-                "SELECT id, user_id, file_path FROM valhallaentry "
-                "WHERE (content IS NULL OR content = '') AND file_path != ''"
-            )
-        ).mappings().all()
-        for row in rows:
-            file_path = str(row.get("file_path") or "").strip()
-            if not file_path:
-                continue
-            # Legacy layout: <user_workspace>/Valhalla/<file_path>
-            abs_path = os.path.join(
-                user_workspace_dir(int(row["user_id"])), "Valhalla", file_path.replace("/", os.sep)
-            )
-            content = _read_text_file(abs_path)
-            if not content:
-                continue
-            gen_dir = os.path.dirname(abs_path)
-            unfinished = _read_json_file(os.path.join(gen_dir, "unfinished.json"))
-            artifacts = _read_json_file(os.path.join(gen_dir, "artifacts.json"))
-            token_report = _read_json_file(os.path.join(gen_dir, "token_report.json"))
-            conn.execute(
-                text(
-                    "UPDATE valhallaentry SET content = :content, "
-                    "unfinished_json = :unfinished, artifacts_json = :artifacts, "
-                    "token_report_json = :token_report WHERE id = :id"
-                ),
-                {
-                    "content": content,
-                    "unfinished": json.dumps(
-                        (unfinished or {}).get("items", []) if isinstance(unfinished, dict) else [],
-                        ensure_ascii=False,
-                    ),
-                    "artifacts": json.dumps(
-                        (artifacts or {}).get("items", []) if isinstance(artifacts, dict) else [],
-                        ensure_ascii=False,
-                    ),
-                    "token_report": json.dumps(token_report or {}, ensure_ascii=False),
-                    "id": row["id"],
-                },
-            )
-            imported += 1
-    if imported:
-        logger.info(f"Valhalla: imported {imported} legacy file entries into the database")
-
-
 def _cleanup_dead_workspace_folders(engine) -> None:
     """Remove workspace subfolders that no longer back any feature.
 
-    - ``BrainCore`` / ``EvolutionArena`` / ``SystemSetting``: never (or no
-      longer) file-backed — evolution and settings live in the database.
-    - ``Valhalla``: removed per user only once every one of that user's
-      ``valhallaentry`` rows has its ``content`` imported, so we never delete
-      a file whose body hasn't made it into the DB yet ("先迁库再删").
+    ``BrainCore`` / ``EvolutionArena`` / ``SystemSetting`` / ``Valhalla``:
+    never (or no longer) file-backed — evolution and settings live in the
+    database, and the legacy generational-handoff (Valhalla) feature has been
+    removed in favour of automatic conversation compression.
 
     Best-effort: failures are logged and never abort startup.
     """
     import os
-
-    from sqlalchemy import inspect, text
 
     from .config import WORKSPACE_DIR, user_workspace_dir
 
     if not os.path.isdir(WORKSPACE_DIR):
         return
 
-    # Users whose Valhalla content is fully migrated (no rows left with an
-    # on-disk file_path but empty content).
-    valhalla_safe_users: set[int] = set()
-    valhalla_table_present = False
-    insp = inspect(engine)
-    if "valhallaentry" in set(insp.get_table_names()):
-        valhalla_table_present = True
-        with engine.begin() as conn:
-            pending = {
-                int(r[0])
-                for r in conn.execute(
-                    text(
-                        "SELECT DISTINCT user_id FROM valhallaentry "
-                        "WHERE (content IS NULL OR content = '') AND file_path != ''"
-                    )
-                ).all()
-            }
-        all_users = {
-            int(name) for name in os.listdir(WORKSPACE_DIR) if name.isdigit()
-        }
-        valhalla_safe_users = all_users - pending
-
     for name in os.listdir(WORKSPACE_DIR):
         if not name.isdigit():
             continue
         user_id = int(name)
         user_dir = user_workspace_dir(user_id)
-        for dead in ("BrainCore", "EvolutionArena", "SystemSetting"):
+        for dead in ("BrainCore", "EvolutionArena", "SystemSetting", "Valhalla"):
             _rmtree_quiet(os.path.join(user_dir, dead))
-        if valhalla_table_present and user_id in valhalla_safe_users:
-            _rmtree_quiet(os.path.join(user_dir, "Valhalla"))
 
 
 def _rmtree_quiet(path: str) -> None:
@@ -602,7 +503,6 @@ def run_pending_migrations() -> None:
     _migrate_agenttypemcppermission_nullable_ai_config()
     _migrate_assistantaiconfig_strip_endpoint_mcp_tools()
     _migrate_assistantaiconfig_prune_unknown_mcp_tools()
-    _migrate_valhallaentry_content()
     _migrate_chatmessagemedia_message_cascade()
     _migrate_rename_device_tables()
     # Only run for SQLite. Postgres deployments either start fresh or are
@@ -618,7 +518,7 @@ def run_pending_migrations() -> None:
         DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
         DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
         DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
-        DEFAULT_INHERITANCE_NOTICE,
+        DEFAULT_COMPRESSION_PROMPT,
         DEFAULT_MCP_CALL_METHOD,
         DEFAULT_MCP_DYNAMIC_RULE,
         DEFAULT_MCP_FORMAT_ERROR_HINT,
@@ -652,7 +552,7 @@ def run_pending_migrations() -> None:
             start_task_prompt=DEFAULT_START_TASK_PROMPT,
             resume_task_prompt=DEFAULT_RESUME_TASK_PROMPT,
             supervision_prompt=DEFAULT_SUPERVISION_PROMPT,
-            inheritance_notice=DEFAULT_INHERITANCE_NOTICE,
+            compression_prompt=DEFAULT_COMPRESSION_PROMPT,
             ai_message_notify=DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
             ai_message_inquiry=DEFAULT_AI_MESSAGE_INQUIRY_TEMPLATE,
             ai_message_inquiry_reminder=DEFAULT_AI_MESSAGE_INQUIRY_REMINDER,
@@ -1036,43 +936,6 @@ def _migrate_assistantaiconfig_prune_unknown_mcp_tools() -> None:
             )
 
 
-def _migrate_valhallaentry_content() -> None:
-    """Add the in-DB content columns to ``valhallaentry``.
-
-    Valhalla generational handoffs used to keep their full body in files
-    (``last_words.md`` etc.) with only an excerpt in the DB. They now live
-    entirely in the database, so existing rows get these columns back-filled
-    to empty defaults and the file content is imported separately by
-    ``_consolidate_valhalla_files_to_db``. Runs on every backend.
-    """
-    from ..database import engine
-    from sqlalchemy import inspect
-
-    insp = inspect(engine)
-    if "valhallaentry" not in set(insp.get_table_names()):
-        return
-    columns = {col["name"] for col in insp.get_columns("valhallaentry")}
-    additions = (
-        ("content", "TEXT DEFAULT ''"),
-        ("unfinished_json", "TEXT DEFAULT '[]'"),
-        ("artifacts_json", "TEXT DEFAULT '[]'"),
-        ("token_report_json", "TEXT DEFAULT '{}'"),
-    )
-    is_sqlite = database_dialect() == "sqlite"
-    with engine.begin() as conn:
-        for name, definition in additions:
-            if name in columns:
-                continue
-            if is_sqlite:
-                conn.exec_driver_sql(
-                    f"ALTER TABLE valhallaentry ADD COLUMN {name} {definition}"
-                )
-            else:
-                conn.exec_driver_sql(
-                    f"ALTER TABLE valhallaentry ADD COLUMN IF NOT EXISTS {name} {definition}"
-                )
-
-
 def _migrate_user_role() -> None:
     """Add the platform-level ``role`` (+ ``created_at``) columns and make
     sure exactly one ``owner`` exists.
@@ -1173,7 +1036,7 @@ def _migrate_user(
     start_task_prompt: str,
     resume_task_prompt: str,
     supervision_prompt: str,
-    inheritance_notice: str,
+    compression_prompt: str,
     ai_message_notify: str,
     ai_message_inquiry: str,
     ai_message_inquiry_reminder: str,
@@ -1203,7 +1066,7 @@ def _migrate_user(
     _add_column(cursor, "user", "default_resume_task_prompt", f"TEXT DEFAULT '{_quote(resume_task_prompt)}'", existing)
     _add_column(cursor, "user", "default_supervision_prompt", f"TEXT DEFAULT '{_quote(supervision_prompt)}'", existing)
     _add_column(cursor, "user", "default_supervision_idle_seconds", "INTEGER DEFAULT 25", existing)
-    _add_column(cursor, "user", "default_inheritance_notice", f"TEXT DEFAULT '{_quote(inheritance_notice)}'", existing)
+    _add_column(cursor, "user", "default_compression_prompt", f"TEXT DEFAULT '{_quote(compression_prompt)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_notify", f"TEXT DEFAULT '{_quote(ai_message_notify)}'", existing)
     _add_column(cursor, "user", "prompt_ai_message_inquiry", f"TEXT DEFAULT '{_quote(ai_message_inquiry)}'", existing)
     _add_column(cursor, "user", "ai_message_inquiry_reminder_seconds", "INTEGER DEFAULT 3", existing)

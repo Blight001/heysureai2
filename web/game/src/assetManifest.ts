@@ -86,7 +86,6 @@ export const SHEETS: SheetDef[] = [
   // ---- 固定建筑 ----
   strip('building_spawn.png', '出生地（泉水）', 'building', 64, 64, 4),
   strip('building_library.png', '传承知识库（图书馆）· 帧1=待审批亮灯', 'building', 96, 96, 2, 2),
-  strip('building_valhalla.png', '英灵殿 · 长明火', 'building', 96, 112, 4),
 
   // ---- 动态作坊 ----
   strip('building_workshop_desktop.png', '作坊·机械坊（桌面 agent）', 'building', 64, 64, 4),
@@ -102,8 +101,7 @@ export const SHEETS: SheetDef[] = [
   character('char_member_amber.png', '数字成员 · 黄'),
   character('char_member_slate.png', '数字成员 · 灰'),
 
-  // ---- 灵魂 / 特效 / UI ----
-  strip('soul.png', '灵魂（飞向英灵殿）', 'effect', 24, 24, 4, 5),
+  // ---- 特效 / UI ----
   strip('envelope.png', '信封（AI 互发消息的信使）', 'effect', 24, 18, 1),
   strip('cloud.png', '云朵（开场加载层，2 形态）', 'effect', 128, 64, 2),
 

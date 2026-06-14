@@ -37,7 +37,7 @@ class User(SQLModel, table=True):
     admin_model: str = Field(default="deepseek-chat")
     # 系统提示词文本（admin_prompt / mcp_call_method / mcp_namespace_hints /
     # mcp_dynamic_rule / mcp_format_error_hint / default_*_prompt /
-    # default_inheritance_notice / prompt_ai_message_* / prompt_user_message_notice）
+    # default_compression_prompt / prompt_ai_message_* / prompt_user_message_notice）
     # 已迁出数据库，真相源为 KnowledgeBase/system/*.md（见 api.services.kb_store）。
     # 这些数值/配置项不是提示词，保留在库。
     mcp_max_steps: int = Field(default=48)
@@ -106,7 +106,7 @@ class UserRead(SQLModel):
     default_resume_task_prompt: str
     default_supervision_prompt: str
     default_supervision_idle_seconds: int
-    default_inheritance_notice: str
+    default_compression_prompt: str
     prompt_ai_message_notify: str
     prompt_ai_message_inquiry: str
     ai_message_inquiry_reminder_seconds: int
@@ -148,7 +148,7 @@ class UserUpdate(SQLModel):
     default_resume_task_prompt: Optional[str] = None
     default_supervision_prompt: Optional[str] = None
     default_supervision_idle_seconds: Optional[int] = None
-    default_inheritance_notice: Optional[str] = None
+    default_compression_prompt: Optional[str] = None
     prompt_ai_message_notify: Optional[str] = None
     prompt_ai_message_inquiry: Optional[str] = None
     ai_message_inquiry_reminder_seconds: Optional[int] = None

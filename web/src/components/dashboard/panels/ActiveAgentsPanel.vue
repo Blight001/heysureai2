@@ -29,7 +29,7 @@ const groupedAgents = computed(() => {
   const groups: Record<string, { label: string; icon: AppIconName; agents: Agent[] }> = {
     working: { label: '执行中', icon: 'bolt', agents: [] },
     learning: { label: '学习中', icon: 'book', agents: [] },
-    reproducing: { label: '归档中', icon: 'dna', agents: [] }
+    reproducing: { label: '压缩中', icon: 'dna', agents: [] }
   }
 
   props.activeAgents.forEach(agent => {

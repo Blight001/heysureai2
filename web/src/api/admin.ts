@@ -260,7 +260,6 @@ export type DbCleanupCategory =
   | 'ai_messages'
   | 'knowledge'
   | 'projects'
-  | 'valhalla'
 
 export interface DbCleanupPayload {
   account: string

@@ -105,7 +105,6 @@ _INTRINSIC_TOOL_DESCRIPTIONS_ZH = {
     "task.complete": "将当前任务标记为已完成，必须提供非空完成摘要；成功后自动追加日期和摘要到该 AI 工作目录的 task.md。",
     "task.create": "创建任务，支持立即执行、一次性定时或循环任务。",
     "task.delete": "管理员或管理者接管工具：硬删除任务，停止活跃运行并清理相关任务会话消息。",
-    "task.inherit": "在任务轮换到下一代之前提交传承摘要。",
     "task.list": "列出任务；默认返回排队、运行和暂停任务，也可查看当前任务或历史任务。",
     "task.update": "管理员或管理者接管工具：更新任务标题、说明、优先级、状态或调度信息。",
     "message.send_to_user": "通过绑定的飞书或 QQ 机器人向人类用户发送文本或媒体消息。",
@@ -1581,7 +1580,7 @@ _SYSTEM_PROMPT_SECTIONS = [
             ("default_resume_task_prompt", "任务恢复 Prompt", "text"),
             ("default_supervision_prompt", "监督 Prompt", "text"),
             ("default_supervision_idle_seconds", "AI 停止思考提醒秒数", "number"),
-            ("default_inheritance_notice", "传承提醒 Prompt", "text"),
+            ("default_compression_prompt", "对话压缩 Prompt", "text"),
         ],
     },
     {

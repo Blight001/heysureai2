@@ -17,7 +17,6 @@ export type AppIconName =
   | 'workshop'
   | 'book'
   | 'globe'
-  | 'scroll'
   | 'seed'
   | 'bolt'
   | 'search'
@@ -143,14 +142,6 @@ const g = (color: string) => `url(#${uid}-${color})`
       <circle cx="19.6" cy="5" r="1.4" :fill="g('cyan')" />
     </template>
 
-    <!-- 卷轴（英灵殿遗言） -->
-    <template v-else-if="name === 'scroll'">
-      <path d="M7.2 4H17a2.6 2.6 0 012.6 2.6V20H8.4A2.6 2.6 0 015.8 17.4V6z" :fill="g('amber')" />
-      <circle cx="6.6" cy="6.2" r="2.3" :fill="g('amber')" opacity="0.55" />
-      <rect x="9.2" y="8.6" width="7.4" height="1.3" rx="0.65" fill="#fffbeb" opacity="0.85" />
-      <rect x="9.2" y="11.6" width="7.4" height="1.3" rx="0.65" fill="#fffbeb" opacity="0.65" />
-      <rect x="9.2" y="14.6" width="4.8" height="1.3" rx="0.65" fill="#fffbeb" opacity="0.5" />
-    </template>
 
     <!-- 新芽（存活 AI） -->
     <template v-else-if="name === 'seed'">

@@ -22,7 +22,7 @@ from api.database import engine
 from mcp_runtime.mcp import get_project_root, registry
 from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, User
-from api.services import valhalla_service
+from api.services import conversation_compress
 from ai_runtime.inference import ai_message_service
 from connector_runtime.dispatch.device_dispatch import (
     dispatch_endpoint_tool_and_wait,
@@ -51,7 +51,6 @@ from api.chat_runtime.chat_prompt_utils import (
     _build_mcp_stream_warning,
     _extract_first_mcp_call,
     _extract_mcp_error,
-    _render_inheritance_notice,
     _render_mcp_tool_catalog,
     _sanitize_large_media,
     _safe_json,
@@ -1239,7 +1238,7 @@ def _run_worker_impl(
             auto_ctl = normalize_system_auto_control(
                 kb_store.effective_auto_control_json(user_id, cfg) if cfg else None
             )
-            inheritance_notice_emitted = False
+            compression_failed = False
             task_payload = _load_task_payload_by_session(bg, user_id, ai_config_id, session_id)
             task_job = _load_task_job_by_session(bg, user_id, ai_config_id, session_id)
             is_task_runtime = bool(task_payload) or str(session_id or "").startswith("session_task_")
@@ -1343,6 +1342,11 @@ def _run_worker_impl(
             for m in history:
                 tags = str(getattr(m, "tags", "") or "")
                 if "system_notice_ai_error" in tags or "system_notice_ai_context_repaired" in tags:
+                    continue
+                # Messages folded into a conversation summary are excluded from
+                # the model context; the summary itself (conversation_summary)
+                # stays as a normal user message below.
+                if "compressed_away" in tags:
                     continue
                 if m.role in ("user", "assistant"):
                     item = {"role": m.role, "content": m.content}
@@ -1716,55 +1720,51 @@ def _run_worker_impl(
                     if latest_task_job:
                         task_job = latest_task_job
 
-                threshold = 0
-                session_tokens = 0
-                should_emit_inheritance_notice = False
-                inheritance_notice_text = ""
+                # Automatic conversation compression: when a digital member's
+                # session token count reaches its threshold, summarize the older
+                # part of the conversation into a compact summary and CONTINUE the
+                # same session (no new generation, no agent death).
                 task_is_finished = bool(task_job and _is_task_finished_status(str(task_job.status or "")))
-                if cfg and cfg.ai_role == "digital_member" and not inheritance_notice_emitted and not task_is_finished:
+                if (
+                    cfg
+                    and cfg.ai_role == "digital_member"
+                    and not task_is_finished
+                    and not compression_failed
+                    and payload_tool != "task.complete"
+                ):
                     threshold = token_threshold_override if token_threshold_override is not None else max(1, int(cfg.token_limit or 1))
-                    if threshold > 0:
-                        session_tokens = _session_total_tokens(bg, user_id, ai_kind, session_id, ai_config_id)
-                        if session_tokens >= threshold:
-                            if payload_tool not in {"task.complete", "task.inherit"}:
-                                inheritance_notice_text = _render_inheritance_notice(
-                                    str(auto_ctl.get("inheritance_notice") or ""),
-                                    cfg,
-                                    session_tokens,
-                                    threshold,
-                                )
-                                should_emit_inheritance_notice = True
-                if should_emit_inheritance_notice:
-                    current_job_id = str(task_job.job_id or "").strip() if task_job else ""
-                    job_hint = current_job_id or "请填写当前任务ID"
-                    notice = (
-                        "[系统提示]\n"
-                        f"{inheritance_notice_text}\n\n"
-                        "本代 token 生命周期已达到上限，请不要直接输出传承总结正文。\n"
-                        "请立即调用 MCP 工具 `task.inherit` 提交传承总结，并使用以下参数要求：\n"
-                        f"1) `job_id`: {job_hint}\n"
-                        "2) `summary`: 必须使用第一人称（我），并包含：本轮已完成事项、关键依据与结论、未完成风险与阻塞、下一步建议。\n\n"
-                        "调用成功后，系统会自动开启新一代对话并下发继续执行提示。"
-                    )
-                    _save_message(
-                        bg,
-                        user_id,
-                        ChatMessageCreate(
-                            role="user",
-                            content=notice,
-                            tags="auto_inheritance_notice_mcp",
-                            ai_config_id=ai_config_id,
-                            ai_kind=ai_kind,
-                            session_id=session_id,
-                            session_name=session_name,
-                            model=model,
-                            total_tokens=0,
-                        ),
-                    )
-                    convo.append({"role": "user", "content": notice})
-                    inheritance_notice_emitted = True
-                    # Force next turn to submit task.inherit via MCP instead of plain text summary.
-                    continue
+                    session_tokens = _session_total_tokens(bg, user_id, ai_kind, session_id, ai_config_id)
+                    if session_tokens >= threshold:
+                        rebuilt_convo = None
+                        try:
+                            rebuilt_convo = conversation_compress.compress_session(
+                                bg,
+                                convo=convo,
+                                user_id=user_id,
+                                ai_config_id=ai_config_id,
+                                ai_kind=ai_kind,
+                                session_id=session_id,
+                                session_name=session_name,
+                                model=model,
+                                api_key=api_key,
+                                base_url=base_url,
+                                system_prompt=system_prompt,
+                                compression_prompt=str(auto_ctl.get("compression_prompt") or ""),
+                                session_tokens=session_tokens,
+                                threshold=threshold,
+                            )
+                        except Exception:
+                            logger.exception("conversation_compress.compress_session failed")
+                            rebuilt_convo = None
+                        if rebuilt_convo:
+                            convo = rebuilt_convo
+                            # Reset live pending token state so the threshold is not
+                            # immediately re-hit on the next loop step.
+                            _set_run_live_usage(run_id, 0, 0, 0)
+                            continue
+                        # Compression failed or not enough history to compress:
+                        # don't retry-loop forever; fall through this turn.
+                        compression_failed = True
                 if not payload_call:
                     # Only check for text-format MCP warnings when not using native tool_calls.
                     if not _has_native_tc:
@@ -2103,92 +2103,7 @@ def _run_worker_impl(
                     _set_run_live_phase(run_id, "generating")
                     continue
 
-                if (not tool_failed) and tool == "task.inherit":
-                    result_payload = tool_result.get("result", tool_result)
-                    inherited_job_id = str(result_payload.get("job_id") or "").strip()
-                    inherited_summary = str(result_payload.get("summary") or "").strip()
-
-                    if ai_kind != "core" or ai_config_id is None or not cfg:
-                        _run_set_status(run_id, "error", "task.inherit is only supported in core task runtime", finished=True)
-                        return
-
-                    if inherited_job_id:
-                        task_job = bg.exec(
-                            select(AITaskJob).where(
-                                AITaskJob.user_id == user_id,
-                                AITaskJob.ai_config_id == ai_config_id,
-                                AITaskJob.job_id == inherited_job_id,
-                            )
-                        ).first()
-                    elif not task_job:
-                        task_job = _load_task_job_by_session(bg, user_id, ai_config_id, session_id)
-
-                    if not task_job:
-                        _run_set_status(run_id, "error", "task.inherit succeeded but task context is missing", finished=True)
-                        return
-                    if _is_task_finished_status(str(task_job.status or "")):
-                        _set_run_live_phase(run_id, "idle")
-                        _run_set_status(run_id, "completed", finished=True)
-                        return
-
-                    # 在 _start_task_run 重置 session_id 之前，落英灵殿（本代遗言）。
-                    prev_session_for_valhalla = str(task_job.session_id or session_id or "").strip()
-                    prev_generation_for_valhalla = parse_generation_from_session_id(prev_session_for_valhalla, 1) or 1
-                    try:
-                        valhalla_service.write_inherit(
-                            user_id=user_id,
-                            ai_config_id=ai_config_id,
-                            job_id=task_job.job_id,
-                            generation=prev_generation_for_valhalla,
-                            session_id=prev_session_for_valhalla,
-                            summary=inherited_summary,
-                        )
-                    except Exception as _vex:
-                        logger.exception("valhalla write_inherit failed")
-
-                    resume_prompt = str(auto_ctl.get("resume_task_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["resume_task_prompt"])
-                    next_run_id = _start_task_run(
-                        bg,
-                        cfg,
-                        task_job,
-                        resume_prompt,
-                        "resume",
-                        previous_summary_override=inherited_summary,
-                    )
-                    if not next_run_id:
-                        _run_set_status(run_id, "error", "Failed to start next generation after task.inherit", finished=True)
-                        return
-
-                    next_session_id = str(task_job.session_id or "").strip()
-                    inherit_notice_lines = [
-                        "[系统提示]",
-                        "已收到 `task.inherit` 传承总结，系统已自动开启下一代会话继续执行。",
-                    ]
-                    if inherited_job_id:
-                        inherit_notice_lines.append(f"- 任务ID: {inherited_job_id}")
-                    if next_session_id:
-                        inherit_notice_lines.append(f"- 新会话: {next_session_id}")
-                    inherit_notice_lines.append(f"- 新运行ID: {next_run_id}")
-                    inherit_notice = "\n".join(inherit_notice_lines)
-                    _save_message(
-                        bg,
-                        user_id,
-                        ChatMessageCreate(
-                            role="user",
-                            content=inherit_notice,
-                            tags="system_notice_task_inherit",
-                            ai_config_id=ai_config_id,
-                            ai_kind=ai_kind,
-                            session_id=session_id,
-                            session_name=session_name,
-                            model=model,
-                            total_tokens=0,
-                        ),
-                    )
-                    _set_run_live_phase(run_id, "idle")
-                    _run_set_status(run_id, "completed", finished=True)
-                    return
-                elif (not tool_failed) and tool == "task.complete":
+                if (not tool_failed) and tool == "task.complete":
                     result_payload = tool_result.get("result", tool_result)
                     task_id = str(result_payload.get("job_id") or "").strip()
                     task_title = str(result_payload.get("title") or "").strip()
@@ -2210,20 +2125,6 @@ def _run_worker_impl(
                         completed_job.finished_at = finished_at
                         completed_job.updated_at = finished_at
                         bg.add(completed_job)
-                        # 落英灵殿：本代 final_words
-                        try:
-                            comp_session_id = str(completed_job.session_id or session_id or "").strip()
-                            comp_generation = parse_generation_from_session_id(comp_session_id, 1) or 1
-                            valhalla_service.write_complete(
-                                user_id=user_id,
-                                ai_config_id=completed_job.ai_config_id,
-                                job_id=completed_job.job_id,
-                                generation=comp_generation,
-                                session_id=comp_session_id,
-                                summary=task_summary,
-                            )
-                        except Exception as _vex:
-                            logger.exception("valhalla write_complete failed")
                         try:
                             notify_task_completion(
                                 user_id=user_id,

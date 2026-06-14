@@ -3,11 +3,11 @@
  *
  * 状态机（见设计方案 §4.2）：idle ⇄ wander(walkTo)；目标锚区由场景按 §4.3 规则
  * 计算后通过 setAnchor 下发，Actor 只负责"平滑走过去 + 区内游荡"。
- * 死亡：collapse 姿态 → 灵魂精灵飞向英灵殿 → 自毁（由场景驱动）。
+ * 死亡：collapse 姿态 → 渐隐移除（由场景驱动）。
  */
 import Phaser from 'phaser'
 import { EMOTES } from '../assetManifest'
-import { VALHALLA_DOOR, clampToWorld, randomPointIn, type Point, type Rect } from '../world/layout'
+import { clampToWorld, randomPointIn, type Point, type Rect } from '../world/layout'
 import type { WorldMember } from '../world/store'
 
 const WALK_SPEED = 42 // px/s
@@ -432,7 +432,7 @@ export class MemberActor extends Phaser.GameObjects.Container {
     return true
   }
 
-  /** 死亡演出：踉跄倒地 → 灵魂出鞘飞向英灵殿 → 自毁 */
+  /** 死亡演出：踉跄倒地 → 渐隐移除 */
   die(onDone: () => void) {
     if (this.dying) return
     this.dying = true
@@ -443,25 +443,16 @@ export class MemberActor extends Phaser.GameObjects.Container {
     this.sprite.setFrame(18) // collapse
     const scene = this.scene
     scene.time.delayedCall(700, () => {
-      if (!this.scene) return
+      if (!this.scene) {
+        this.destroy()
+        onDone()
+        return
+      }
       this.sprite.setFrame(19) // lying
-      const soul = scene.add.sprite(this.x, this.y - 30, 'soul.png', 0)
-      soul.play('soul.png:loop')
-      soul.setDepth(100000)
-      scene.tweens.add({
-        targets: soul,
-        x: VALHALLA_DOOR.x,
-        y: VALHALLA_DOOR.y,
-        scale: 0.6,
-        alpha: 0.25,
-        duration: 2600,
-        ease: 'Sine.easeInOut',
-        onComplete: () => soul.destroy(),
-      })
       scene.tweens.add({
         targets: this,
         alpha: 0,
-        delay: 1400,
+        delay: 700,
         duration: 900,
         onComplete: () => {
           this.destroy()

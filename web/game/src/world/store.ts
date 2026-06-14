@@ -1,5 +1,5 @@
 /**
- * 数据绑定层：把现有 REST（listAiCards / listConnectedDevices / valhalla / librarian）
+ * 数据绑定层：把现有 REST（listAiCards / listConnectedDevices / librarian）
  * 和 Socket.IO（ui:join → device:list / mcp:status / librarian:*）归一成一个世界快照，
  * 供 Phaser 场景消费。框架无关（不依赖 Vue），只读不写。
  *
@@ -13,7 +13,6 @@ import { get, getAuthToken } from '@/api/http'
 import { me } from '@/api/auth'
 import { listAiCards } from '@/api/ai'
 import { listConnectedDevices } from '@/api/devices'
-import { listValhallaEntries, type ValhallaEntry } from '@/api/valhalla'
 import { listEntries, listProposals, readEntry, type KnowledgeEntryItem } from '@/api/librarian'
 import { listWorldActorMeta, type WorldActorAppearance } from '@/api/world'
 
@@ -77,8 +76,6 @@ export interface WorldSnapshot {
   userId: number | null
   members: WorldMember[]
   workshops: WorldWorkshop[]
-  valhallaCount: number
-  valhallaItems: ValhallaEntry[]
   knowledgeActive: number
   knowledgeItems: KnowledgeEntryItem[]
   knowledgePending: number
@@ -152,8 +149,6 @@ export class WorldStore {
     userId: null,
     members: [],
     workshops: [],
-    valhallaCount: 0,
-    valhallaItems: [],
     knowledgeActive: 0,
     knowledgeItems: [],
     knowledgePending: 0,
@@ -407,8 +402,6 @@ export class WorldStore {
     this.applyCards(Array.isArray(data.cards) ? data.cards : [])
     if (Array.isArray(data.agents)) this.applyAgentRows(data.agents)
     this.rebuildWorkshops()
-    this.snapshot.valhallaItems = Array.isArray(data.valhalla_items) ? data.valhalla_items : []
-    this.snapshot.valhallaCount = this.snapshot.valhallaItems.length
     this.snapshot.knowledgeItems = Array.isArray(data.knowledge_items) ? data.knowledge_items : []
     this.snapshot.knowledgeActive = this.snapshot.knowledgeItems.length || num(data.knowledge_active)
     this.snapshot.proposals = Array.isArray(data.proposals) ? data.proposals : []
@@ -417,7 +410,7 @@ export class WorldStore {
   }
 
   /** 分域回退（兼容未部署 /api/world/snapshot 的后端） */
-  private async refreshViaDomains(token: string) {
+  private async refreshViaDomains() {
     const [cards, connected] = await Promise.all([listAiCards(), listConnectedDevices()])
     if (Array.isArray(connected?.agents)) this.applyAgentRows(connected.agents)
     try {
@@ -428,13 +421,6 @@ export class WorldStore {
     }
     this.applyCards(cards as Record<string, any>[])
     this.rebuildWorkshops()
-    try {
-      const valhalla = await listValhallaEntries(token, { limit: 200 })
-      this.snapshot.valhallaItems = valhalla.items ?? []
-      this.snapshot.valhallaCount = this.snapshot.valhallaItems.length
-    } catch {
-      // best-effort
-    }
     await this.refreshKnowledge()
   }
 
@@ -452,7 +438,7 @@ export class WorldStore {
         this.snapshot.userId = num((user as Record<string, any>).id, NaN) || null
       }
       if (!(await this.refreshViaSnapshot())) {
-        await this.refreshViaDomains(token)
+        await this.refreshViaDomains()
       }
       this.snapshot.authOk = true
       this.snapshot.lastError = ''

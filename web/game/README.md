@@ -6,21 +6,21 @@
 ## 当前进度（P0 观察者 + P1 操作台 + P2 实时化 + P3 信使已完成）
 
 - [x] 第二入口接入（`game/index.html`，构建配置见 `web/vite.config.ts` 的 `rollupOptions.input`）
-- [x] 像素资产生成器 + 全套基础资产（地形 / 3 固定建筑 / 2 类作坊 / 7 套角色 / 灵魂 / 表情 / 特效）
+- [x] 像素资产生成器 + 全套基础资产（地形 / 2 固定建筑 / 3 类作坊 / 7 套角色 / 表情 / 特效）
 - [x] 资产清单 `src/assetManifest.ts`（帧布局与动画定义的唯一事实，预览页与 Phaser 共用）
 - [x] Phaser 3 世界场景：tilemap 草原 + 3 固定建筑 + 作坊街随 `agent:list` 增减 + 成员锚区游荡
 - [x] 数据绑定层 `src/world/store.ts`：复用 `web/src/api/*` + Socket.IO（`ui:join` / `agent:list` / `mcp:status` / `librarian:*`）
 - [x] hover tooltip（成员 token 进度条 / 任务 / 模型；建筑统计）+ HUD + 状态气泡（⏳/Zzz/卷轴/⚠）
-- [x] 死亡演出：倒地 → 灵魂飞向英灵殿 → 移除；建筑状态动效（图书馆待审批亮灯 / 作坊开工）
+- [x] 成员移除演出：倒地 → 渐隐移除；建筑状态动效（图书馆待审批亮灯 / 作坊开工）
 - [x] Dashboard 集成：游戏世界**直接内嵌主控制台中间实战区域**（`WorldArenaPanel.vue`，
       原进化场"项目安排 + 运行中 AI 卡片"按需求移除，顶栏独立打开按钮一并移除，2026-06-11）
-- [x] 成员单击直接隔空对话；操作抽屉保留作坊、图书馆、英灵殿与出生地管理功能
+- [x] 成员单击直接隔空对话；操作抽屉保留作坊、图书馆与出生地管理功能
 - [x] P1 拖拽：拖成员到作坊 = 绑定（确认后走 `assignAgentAi`），拖到出生地 = 解绑
 - [x] P1 皮肤持久化：`WorldActorMeta` 表（Alembic 迁移）+ `/api/world/actors/*/meta` + 抽屉换肤
 - [x] P1 演出（轮询触发版）：任务卷轴提示 / 知识沉淀图书管理员迎卷轴 / 传承重生火花
 - [x] postMessage 桥：抽屉"打开对话" → 父页面关闭覆盖层并打开该成员聊天弹窗
-- [x] P2 `world:event` 服务端直推：valhalla 入殿（传承/功成）、任务启动/完成四类事件
-      经 socket 直达世界页，演出零延迟（钩子在 `valhalla_service` / `chat_scheduler` / `tasks.py`，
+- [x] P2 `world:event` 服务端直推：传承/功成、任务启动/完成四类事件
+      经 socket 直达世界页，演出零延迟（钩子在 `chat_scheduler` / `tasks.py`，
       共享发射器 `api/services/world_events.py`，全部 best-effort）
 - [x] P2 `/api/world/snapshot` 聚合接口：首屏 1 个请求替代 6 个；旧后端自动分域回退
 - [x] P2 昼夜色调（按本地时间，`?hour=N` 可调试）+ 8-bit 音效（`tools/generate_sfx.py`
@@ -31,12 +31,12 @@
       钩子在 `communication.py`（新信件与回信两条成功路径均直推 `ai_message` 事件）
 - [x] 开场云层加载演出：等待首批数据时云朵铺满视口缓慢漂浮（远景视角），
       数据就绪后镜头由远拉近、云朵向两侧飘散渐隐（兜底 10s 自动揭幕）
-- [x] 布局与氛围升级：2 格窄路 / 图书馆石板广场 / 英灵殿暗草山丘 /
+- [x] 布局与氛围升级：2 格窄路 / 图书馆石板广场 /
       作坊街地块 / 出生地花圃+栅栏+路牌+长椅；新增装饰素材（灯柱/栅栏/长椅/
       路牌/蝴蝶）；持续动画——池塘水面波动、开工作坊烟囱炊烟、
       蝴蝶花间飞舞（tint 四色）、夜晚灯柱自动点亮
 - [x] 昼夜系统重做（乘法混合调色）：正午通透 → 黄昏整图暖橙 → 深夜蓝黑；
-      夜间光晕系统（灯柱暖光 / 图书馆窗火 / 英灵殿火光 / 泉水冷光，ADD 混合呼吸微闪）；
+      夜间光晕系统（灯柱暖光 / 图书馆窗火 / 泉水冷光，ADD 混合呼吸微闪）；
       萤火虫夜间出没游移闪烁、蝴蝶仅白天活动——三时段画面截然不同
 - [x] 世界时间以**北京时间（UTC+8）**为准（不随浏览器时区漂移），HUD 实时显示
       "🕐 北京时间 HH:MM + 时段"；滚轮缩放下限改为动态"恰好铺满视口"，
@@ -64,7 +64,7 @@
       ① **知识工坊专属贴图**——新增 `building_workshop_knowledge.png`（学者书斋：暖木墙体 +
       靛蓝坡顶 + 悬浮发光魔典 4 帧脉冲），不再复用传承图书馆贴图，**修复世界里同时出现两座
       图书馆**的视觉冲突（`reconcileWorkshops` 的 `w.type === 'workshop'` 分支）；
-      ② **固定建筑放大**——出生地 / 图书馆 / 英灵殿按体量加 `scale`（`FIXED_BUILDINGS[*].scale`），
+      ② **固定建筑放大**——出生地 / 图书馆按体量加 `scale`（`FIXED_BUILDINGS[*].scale`），
       作坊统一 `WORKSHOP_SCALE`，地标更醒目；图书馆略上移并放大夜间窗火光晕以对齐
 - [ ] P3 其余项按需：项目分区领地（竞技场 / 时间轴回放 / 多人观战已确认不做，2026-06-11）
 
@@ -95,7 +95,7 @@ game/
     preview.ts      ← 资产预览页（调试工具，零依赖 canvas）
     assetManifest.ts← 资产清单：每张图的帧尺寸 / 帧数 / 动画名 / 瓦片与表情索引
     scenes/WorldScene.ts ← 世界场景：地图生成 / 建筑 / 成员调度 / 相机 / 悬浮
-    actors/MemberActor.ts← 成员精灵：行走状态机 / 表情气泡 / 死亡演出
+    actors/MemberActor.ts← 成员精灵：行走状态机 / 表情气泡 / 移除渐隐演出
     world/store.ts  ← 数据绑定层（REST 轮询 + Socket.IO → WorldSnapshot，只读）
     world/layout.ts ← 地图尺寸 / 建筑坐标 / 锚区矩形 / 作坊插槽
     world/skins.ts  ← 角色→皮肤映射（普通成员按 id 哈希确定性取色，可被 WorldActorMeta 覆盖）

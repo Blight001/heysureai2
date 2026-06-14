@@ -920,45 +920,6 @@ def _task_list(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) 
             "tasks": tasks,
         }
 
-def _task_inherit(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    if not ai_config_id:
-        raise HTTPException(status_code=400, detail="ai_config_id is required for task tools")
-    job_id = str(args.get("job_id") or "").strip()
-    summary = str(args.get("summary") or "").strip()
-    if not summary:
-        raise HTTPException(status_code=400, detail="summary is required for task.inherit")
-    with Session(engine) as session:
-        row = None
-        if job_id:
-            row = session.exec(
-                select(AITaskJob).where(
-                    AITaskJob.user_id == user_id,
-                    AITaskJob.ai_config_id == ai_config_id,
-                    AITaskJob.job_id == job_id,
-                )
-            ).first()
-        if not row:
-            row = session.exec(
-                select(AITaskJob).where(
-                    AITaskJob.user_id == user_id,
-                    AITaskJob.ai_config_id == ai_config_id,
-                    AITaskJob.status == "running",
-                ).order_by(AITaskJob.priority.desc(), AITaskJob.created_at.asc())
-            ).first()
-        if not row:
-            raise HTTPException(status_code=404, detail="No running task to inherit")
-        if str(row.status or "").strip() in {"completed", "cancelled", "stopped", "error"}:
-            raise HTTPException(status_code=400, detail="Task already finished")
-        row.updated_at = time.time()
-        session.add(row)
-        session.commit()
-        return {
-            "inherited": True,
-            "job_id": row.job_id,
-            "title": row.title,
-            "summary": summary,
-        }
-
 def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     if not ai_config_id:
         raise HTTPException(status_code=400, detail="ai_config_id is required for task tools")

@@ -149,7 +149,6 @@ const CLEANUP_CATEGORIES: { key: DbCleanupCategory; label: string; desc: string 
   { key: 'ai_messages', label: 'AI 互发消息 + Token 用量', desc: 'aimessage · tokenusagesnapshot' },
   { key: 'knowledge', label: '知识库与记忆', desc: 'knowledgeentry · memory · evolutioninput' },
   { key: 'projects', label: '协作项目', desc: 'evolutionproject' },
-  { key: 'valhalla', label: '遗言 / 英灵殿', desc: 'valhallaentry' },
 ]
 const dbCleanupOpen = ref(false)
 const dbCleanupBusy = ref(false)
@@ -162,7 +161,7 @@ const dbCleanupForm = ref<{
 }>({
   account: '',
   password: '',
-  categories: { conversations: true, tasks: true, ai_messages: false, knowledge: false, projects: false, valhalla: false },
+  categories: { conversations: true, tasks: true, ai_messages: false, knowledge: false, projects: false },
   dropUnusedTables: true,
 })
 
@@ -800,7 +799,7 @@ const openDbCleanup = () => {
   dbCleanupForm.value = {
     account: props.currentUser?.account || '',
     password: '',
-    categories: { conversations: true, tasks: true, ai_messages: false, knowledge: false, projects: false, valhalla: false },
+    categories: { conversations: true, tasks: true, ai_messages: false, knowledge: false, projects: false },
     dropUnusedTables: true,
   }
   dbCleanupOpen.value = true

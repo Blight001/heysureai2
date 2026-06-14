@@ -66,33 +66,3 @@ class KnowledgeEntry(SQLModel, table=True):
     librarian_ai_config_id: Optional[int] = Field(default=None, index=True)  # 由哪个图书管理员负责
     created_at: float = Field(default_factory=time.time, index=True)
     updated_at: float = Field(default_factory=time.time)
-
-
-class ValhallaEntry(SQLModel, table=True):
-    """英灵殿（代际传承）事件。
-
-    完整正文与附属结构现在直接存数据库（``content`` / ``*_json``），不再依赖
-    文件系统；``file_path`` 仅为历史兼容字段，新写入留空。
-    """
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    user_id: int = Field(foreign_key="user.id", index=True)
-    ai_config_id: int = Field(foreign_key="assistantaiconfig.id", index=True)
-    ai_name: str = Field(default="")
-    job_id: str = Field(index=True)
-    job_title: str = Field(default="")
-    generation: int = Field(default=1)
-    kind: str = Field(default="inherit", index=True)  # inherit / complete / aborted
-    session_id: Optional[str] = Field(default=None, index=True)
-    file_path: str = Field(default="")  # 旧版相对 Valhalla/ 的路径，仅历史兼容
-    content: str = Field(default="")  # 完整 last_words.md / final_words.md 正文
-    unfinished_json: str = Field(default="[]")  # 未完成清单 JSON 数组
-    artifacts_json: str = Field(default="[]")  # 本代产出/变更 JSON 数组
-    token_report_json: str = Field(default="{}")  # token 统计 JSON
-    summary_excerpt: str = Field(default="")  # 列表展示用，最多 ~280 字符
-    token_used: int = Field(default=0)
-    token_limit: int = Field(default=0)
-    artifacts_count: int = Field(default=0)
-    unfinished_count: int = Field(default=0)
-    reason: Optional[str] = Field(default=None)  # aborted 才填
-    created_at: float = Field(default_factory=time.time, index=True)
