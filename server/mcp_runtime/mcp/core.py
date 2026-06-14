@@ -15,11 +15,11 @@ MCP_INTROSPECTION_TOOLS = {"mcp.describe_tool"}
 _IGNORED_WORKSPACE_DIRS = {".git", "__pycache__", "venv", "node_modules", ".aider"}
 
 def _resolve_ai_workspace(user_id: int, ai_config_id: Optional[int]) -> str:
-    """Resolve an AI's own working directory.
+    """Resolve the working directory available to an AI.
 
-    Each AI gets its own subdirectory under the user workspace
-    (``<id>-<slug>``); admin AIs share ``_admins``. Callers that pass no
-    ``ai_config_id`` get the user-root (shared) directory.
+    Manager digital members and assistant admins can manage the whole user
+    workspace. Regular members stay restricted to their own ``<id>-<slug>``
+    subdirectory. Callers that pass no ``ai_config_id`` get the user root.
 
     Note: the shared knowledge base is resolved separately
     (``user_shared_knowledge_dir``) so it stays one-per-user across AIs.
@@ -37,6 +37,14 @@ def _resolve_ai_workspace(user_id: int, ai_config_id: Optional[int]) -> str:
         ).first()
     if not cfg:
         return user_root
+
+    ai_role = str(cfg.ai_role or "").strip().lower()
+    member_role = str(cfg.digital_member_role or "").strip().lower()
+    if ai_role == "assistant_admin" or (
+        ai_role == "digital_member" and member_role == "manager"
+    ):
+        return user_root
+
     return os.path.abspath(os.path.join(user_root, ai_workspace_dirname(cfg.id, cfg.name, cfg.ai_role)))
 
 def get_project_root(user_id: int, ai_config_id: Optional[int] = None) -> str:

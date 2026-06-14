@@ -17,7 +17,7 @@ from ..models import (
 )
 
 DEFAULT_SYSTEM_AUTO_CONTROL: Dict[str, Any] = {
-    "enabled": False,
+    "enabled": True,
     "start_task_prompt": DEFAULT_START_TASK_PROMPT,
     "resume_task_prompt": DEFAULT_RESUME_TASK_PROMPT,
     "supervision_prompt": DEFAULT_SUPERVISION_PROMPT,
@@ -44,7 +44,10 @@ def with_workspace_read_by_name_compat(tools: set[str]) -> set[str]:
         str(item).strip()
         for item in (tools or set())
         if str(item).strip()
-        and (not str(item).strip().startswith("workspace.") or str(item).strip() == "workspace.run_command")
+        and (
+            not str(item).strip().startswith("workspace.")
+            or str(item).strip() in {"workspace.search", "workspace.run_command"}
+        )
     }
 
 
@@ -80,7 +83,7 @@ def normalize_system_auto_control(raw: Optional[str]) -> Dict[str, Any]:
                 cfg.update(parsed)
         except Exception:
             pass
-    cfg["enabled"] = bool(cfg.get("enabled", False))
+    cfg["enabled"] = True
     cfg["start_task_prompt"] = str(cfg.get("start_task_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["start_task_prompt"]).strip()
     cfg["resume_task_prompt"] = str(cfg.get("resume_task_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["resume_task_prompt"]).strip()
     cfg["supervision_prompt"] = str(cfg.get("supervision_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["supervision_prompt"]).strip()
@@ -102,7 +105,7 @@ def compact_system_auto_control(raw: Optional[str]) -> str:
         parsed = {}
     for key in TASK_FLOW_PROMPT_KEYS:
         parsed.pop(key, None)
-    parsed["enabled"] = bool(parsed.get("enabled", False))
+    parsed["enabled"] = True
     raw_tasks = parsed.get("tasks")
     parsed["tasks"] = raw_tasks if isinstance(raw_tasks, list) else []
     return json.dumps(parsed, ensure_ascii=False)

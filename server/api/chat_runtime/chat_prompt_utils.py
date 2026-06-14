@@ -665,6 +665,12 @@ def _set_run_live_reasoning(run_id: str, reasoning: str):
         _RUN_LIVE_META[run_id] = meta
     _emit_run_live_update(run_id)
 
+
+def _get_run_live_reasoning(run_id: str) -> str:
+    with _RUN_STATE_LOCK:
+        live = _RUN_LIVE_STATE.get(run_id) or {}
+        return str(live.get("reasoning") or "")
+
 def _set_run_live_phase(run_id: str, phase: str, current_tool: str = ""):
     with _RUN_STATE_LOCK:
         prev = _RUN_LIVE_STATE.get(run_id) or {}

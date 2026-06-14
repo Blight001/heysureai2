@@ -1,4 +1,5 @@
 import json
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -30,6 +31,7 @@ from api.services.task_schedule import (
     parse_weekly_days,
 )
 from api.services.task_system import extract_task_payload
+from ..core import get_project_root
 
 _FINISHED_STATUSES = {"completed", "cancelled", "stopped", "error"}
 _ACTIVE_STATUSES = {"queued", "running", "paused"}
@@ -38,6 +40,31 @@ _TASK_LIST_STATUSES = _ACTIVE_STATUSES | _FINISHED_STATUSES
 # Phase 5: concurrency caps (0 = unlimited)
 _MAX_ACTIVE_TASKS_PER_AI = 10
 _MAX_ACTIVE_SUBTASKS_PER_MANAGER = 20
+
+
+def _append_task_completion_archive(
+    user_id: int,
+    ai_config_id: int,
+    summary: str,
+    completed_at: float,
+) -> str:
+    workspace_root = get_project_root(user_id, ai_config_id)
+    archive_path = os.path.join(workspace_root, "task.md")
+    summary_line = " ".join(str(summary or "").split())
+    completed_date = datetime.fromtimestamp(completed_at).astimezone().date().isoformat()
+    entry = f"- {completed_date} | {summary_line}\n".encode("utf-8")
+
+    os.makedirs(workspace_root, exist_ok=True)
+    with open(archive_path, "a+b") as archive:
+        archive.seek(0, os.SEEK_END)
+        if archive.tell() > 0:
+            archive.seek(-1, os.SEEK_END)
+            if archive.read(1) not in {b"\n", b"\r"}:
+                archive.write(b"\n")
+        archive.write(entry)
+        archive.flush()
+        os.fsync(archive.fileno())
+    return archive_path
 
 
 def _to_bool(value: Any, default: bool = False) -> bool:
@@ -624,12 +651,8 @@ def _merge_task_payload_for_update(existing_payload: Dict[str, Any], args: Dict[
     return payload
 
 def _task_create(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    mode = str((args or {}).get("mode") or "").strip().lower()
-    if not mode:
-        raise HTTPException(
-            status_code=400,
-            detail="task.create: mode is required: immediate, scheduled, or recurring",
-        )
+    normalized_args = args if isinstance(args, dict) else {}
+    mode = str(normalized_args.get("mode") or "").strip().lower()
     mode_aliases = {
         "now": "immediate",
         "manual": "immediate",
@@ -639,7 +662,31 @@ def _task_create(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
         "repeat": "recurring",
     }
     mode = mode_aliases.get(mode, mode)
-    return _task_create_impl(user_id, args, ai_config_id, source_tool="task.create", mode=mode)
+    if not mode:
+        schedule_raw = normalized_args.get("schedule")
+        schedule_obj = schedule_raw if isinstance(schedule_raw, dict) else {}
+        has_loop_hint = any(
+            _is_non_empty_schedule_value(_pick_schedule_value(normalized_args, keys))
+            for keys in (
+                _SCHEDULE_LOOP_MODE_KEYS,
+                _SCHEDULE_DAILY_TIME_KEYS,
+                _SCHEDULE_WEEKLY_DAYS_KEYS,
+                _SCHEDULE_MAX_RUNS_KEYS,
+                _SCHEDULE_END_AT_KEYS,
+            )
+        ) or _to_bool(
+            _pick_value(schedule_obj, ("loop_enabled", "loop", "repeat")),
+            False,
+        )
+        has_schedule_hint = any(
+            _is_non_empty_schedule_value(_pick_schedule_value(normalized_args, keys))
+            for keys in (_SCHEDULE_AT_KEYS, _SCHEDULE_DURATION_KEYS)
+        ) or _to_bool(
+            _pick_value(schedule_obj, ("enabled", "schedule_enabled")),
+            False,
+        )
+        mode = "recurring" if has_loop_hint else ("scheduled" if has_schedule_hint else "immediate")
+    return _task_create_impl(user_id, normalized_args, ai_config_id, source_tool="task.create", mode=mode)
 
 def _task_update(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     job_id = str(args.get("job_id") or "").strip()
@@ -939,9 +986,18 @@ def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[in
             ).first()
         if not row:
             raise HTTPException(status_code=404, detail="No running task to complete")
+        if str(row.status or "").strip() in _FINISHED_STATUSES:
+            raise HTTPException(status_code=400, detail="Task already finished")
+        finished_at = time.time()
+        archive_path = _append_task_completion_archive(
+            user_id=user_id,
+            ai_config_id=ai_config_id,
+            summary=summary,
+            completed_at=finished_at,
+        )
         row.status = "completed"
-        row.finished_at = time.time()
-        row.updated_at = row.finished_at
+        row.finished_at = finished_at
+        row.updated_at = finished_at
         session.add(row)
         session.commit()
         try:
@@ -963,6 +1019,7 @@ def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[in
             "job_id": row.job_id,
             "title": row.title,
             "summary": summary,
+            "task_archive_path": archive_path,
             "completion_notification": notification,
             "next_step_hint": "任务已完成，可继续处理后续事项。",
         }

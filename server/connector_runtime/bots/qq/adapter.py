@@ -112,8 +112,9 @@ class QQBot(BotAdapter):
         # shared-pool multi-session tools, even for AI configs whose saved
         # MCP allowlist predates them.
         return {
-            "conversation.forget_before_current",
+            "conversation.edit",
             "conversation.list",
+            "conversation.detail",
             "conversation.switch",
             "conversation.new",
         }

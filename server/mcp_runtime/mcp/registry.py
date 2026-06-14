@@ -27,10 +27,10 @@ from .tools.communication import (
     _user_send_message,
 )
 from .tools.conversation import (
+    _conversation_detail,
     _create_conversation,
     _delete_conversation,
-    _find_conversation,
-    _forget_before_current,
+    _edit_conversation,
     _list_conversations,
     _new_conversation,
     _switch_conversation,
@@ -145,7 +145,9 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="task.create",
         description=(
-            "Create a task with explicit mode. mode=immediate runs as soon as the scheduler picks it; "
+            "Create a task. mode defaults to immediate when no scheduling fields are provided, and is "
+            "inferred as scheduled/recurring from schedule fields for backward compatibility. "
+            "mode=immediate runs as soon as the scheduler picks it; "
             "mode=scheduled creates a one-time scheduled task using schedule_at or schedule_duration_minutes; "
             "mode=recurring creates a loop task. Loop styles via schedule_loop_mode: "
             "interval (every schedule_duration_minutes after completion), "
@@ -184,7 +186,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
                 "template_id": {"type": "string", "description": "可选模板 ID。"},
                 "target_ai_config_id": {"type": "integer", "description": "assistant_admin 代理投递目标 AI 配置 ID。"},
             },
-            "required": ["mode", "title", "instruction"],
+            "required": ["title", "instruction"],
         },
         handler=_task_create,
         destructive=True,
@@ -279,7 +281,10 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     ))
     registry.register(MCPTool(
         name="task.complete",
-        description="Mark current task as completed with a required completion summary.",
+        description=(
+            "Mark the current task as completed with a required completion summary. "
+            "On success, the current date and summary are appended to task.md in this AI's workspace."
+        ),
         input_schema={
             "type": "object",
             "properties": {
@@ -340,52 +345,6 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     ))
 
     registry.register(MCPTool(
-        name="conversation.forget_before_current",
-        description=(
-            "Delete only the messages before the current user message in this active conversation. "
-            "Use when the user asks to forget previous context, reset prior context, or ignore everything before now. "
-            "This preserves the current user request and future messages; it does not clear the whole session."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "session_id": {
-                    "type": "string",
-                    "description": "Optional. Defaults to the active run session.",
-                },
-                "current_message_id": {
-                    "type": "integer",
-                    "description": "Optional. Defaults to the current user message in the active run.",
-                },
-            },
-        },
-        handler=_forget_before_current,
-        destructive=True,
-    ))
-
-    registry.register(MCPTool(
-        name="conversation.find",
-        description=(
-            "Find/list chat sessions for the current AI scope. Search by session name, session id, "
-            "or message content. Omit query to list recent sessions."
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "Optional keyword to search in session name, id, and message content."},
-                "keyword": {"type": "string", "description": "Alias of query."},
-                "session_id": {"type": "string", "description": "Optional exact session id."},
-                "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
-                "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run or assistant."},
-                "limit": {"type": "integer", "description": "Maximum sessions to return, 1-100. Defaults to 20."},
-                "include_messages": {"type": "boolean", "description": "Include full messages for matched sessions."},
-            },
-            "required": [],
-        },
-        handler=_find_conversation,
-    ))
-
-    registry.register(MCPTool(
         name="conversation.create",
         description="Create a new empty chat session for the current AI scope.",
         input_schema={
@@ -437,6 +396,53 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
             "required": [],
         },
         handler=_list_conversations,
+    ))
+
+    registry.register(MCPTool(
+        name="conversation.detail",
+        description=(
+            "Read one conversation and its messages for the current AI scope. "
+            "Defaults to the active conversation and supports offset/limit pagination."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Optional session id. Defaults to the active run session."},
+                "offset": {"type": "integer", "description": "Zero-based message offset. Defaults to 0."},
+                "limit": {"type": "integer", "description": "Messages to return, 1-500. Defaults to 100."},
+                "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
+                "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run."},
+            },
+            "required": [],
+        },
+        handler=_conversation_detail,
+    ))
+
+    registry.register(MCPTool(
+        name="conversation.edit",
+        description=(
+            "Edit a conversation without deleting the session. Use action=rename to change its name, "
+            "or action=clear to clear its messages. Clearing the active conversation preserves the "
+            "current user request by default so this run can still finish."
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["rename", "clear"], "description": "Edit action to perform."},
+                "session_id": {"type": "string", "description": "Optional session id. Defaults to the active run session."},
+                "name": {"type": "string", "description": "Required when action=rename."},
+                "session_name": {"type": "string", "description": "Alias of name."},
+                "keep_current_message": {
+                    "type": "boolean",
+                    "description": "For action=clear, preserve the current user message when editing the active conversation. Defaults to true.",
+                },
+                "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
+                "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run."},
+            },
+            "required": ["action"],
+        },
+        handler=_edit_conversation,
+        destructive=True,
     ))
 
     registry.register(MCPTool(

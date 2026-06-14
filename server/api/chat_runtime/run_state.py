@@ -18,7 +18,7 @@ stays with the chat router cluster.
 """
 
 import threading
-from typing import Dict
+from typing import Any, Dict
 
 
 STATE_PREFIX = "__HS_MCP_STATE__="
@@ -44,3 +44,54 @@ _TASK_RUNTIME_SECTION_TITLES: tuple[str, ...] = (
 _TASK_CREATE_TOOL_NAMES: set[str] = {
     "task.create",
 }
+
+
+def apply_relayed_run_live_state(payload: Any) -> bool:
+    """Mirror an ai-runtime live snapshot into the gateway process.
+
+    Split deployments keep separate Python heaps. The inference worker emits
+    ``chat:run_live`` through the gateway's internal Socket.IO relay, so that
+    relay is also the natural hand-off point for the polling APIs and AI-card
+    endpoints that still read ``_RUN_LIVE_STATE`` locally.
+    """
+    if not isinstance(payload, dict):
+        return False
+    run_id = str(payload.get("run_id") or "").strip()
+    if not run_id:
+        return False
+
+    try:
+        updated_at = float(payload.get("updated_at") or 0.0)
+    except (TypeError, ValueError):
+        updated_at = 0.0
+
+    with _RUN_STATE_LOCK:
+        previous = _RUN_LIVE_STATE.get(run_id) or {}
+        try:
+            previous_updated_at = float(previous.get("updated_at") or 0.0)
+        except (TypeError, ValueError):
+            previous_updated_at = 0.0
+        if (
+            updated_at
+            and previous_updated_at
+            and updated_at < previous_updated_at
+        ):
+            return False
+
+        _RUN_LIVE_STATE[run_id] = {
+            "text": str(payload.get("text") or ""),
+            "reasoning": str(payload.get("reasoning") or ""),
+            "phase": str(payload.get("phase") or "generating"),
+            "current_tool": str(payload.get("current_tool") or ""),
+            "pending_prompt_tokens": int(payload.get("prompt_tokens") or 0),
+            "pending_completion_tokens": int(
+                payload.get("completion_tokens") or 0
+            ),
+            "pending_total_tokens": int(payload.get("total_tokens") or 0),
+            "updated_at": updated_at or payload.get("updated_at"),
+        }
+        meta = dict(_RUN_LIVE_META.get(run_id) or {})
+        if payload.get("user_id") is not None:
+            meta["user_id"] = payload["user_id"]
+        _RUN_LIVE_META[run_id] = meta
+    return True

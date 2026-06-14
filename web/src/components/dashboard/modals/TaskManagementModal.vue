@@ -378,7 +378,7 @@ const taskStateFilterButtonClass = (state: JobStateFilter) => {
             </div>
           </div>
           <div v-if="taskListItems.length === 0" class="text-xs text-zinc-500 dark:text-zinc-400 py-4 text-center">
-            暂无任务模板。可在 AI 配置的“系统自动控制”里维护任务模板。
+            暂无任务模板。
           </div>
           <div v-else>
             <div class="text-xs font-semibold text-zinc-600 dark:text-zinc-300 mb-2">任务模板（优先级）</div>

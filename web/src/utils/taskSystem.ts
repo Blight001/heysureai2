@@ -160,7 +160,7 @@ export const normalizeSystemAutoControl = (raw: unknown, _defaults: SystemAutoCo
   const src = raw && typeof raw === 'object' ? (raw as Record<string, any>) : {}
   const tasks = Array.isArray(src.tasks) ? src.tasks.map(normalizeTaskItem) : []
   return {
-    enabled: !!src.enabled,
+    enabled: true,
     tasks,
   }
 }

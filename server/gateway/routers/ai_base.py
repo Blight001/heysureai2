@@ -38,7 +38,7 @@ def _sanitize_task_generation_prompt(text: str) -> str:
 
 def _default_system_auto_control_for_user(user: User) -> str:
     _ = user
-    return json.dumps({"enabled": False, "tasks": []}, ensure_ascii=False)
+    return json.dumps({"enabled": True, "tasks": []}, ensure_ascii=False)
 
 def _normalize_ai_role(value: Optional[str]) -> str:
     role = (value or "").strip().lower()

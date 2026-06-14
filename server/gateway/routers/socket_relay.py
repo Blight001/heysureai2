@@ -15,6 +15,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from api.chat_runtime.run_state import apply_relayed_run_live_state
 from api.runtime.internal_http import require_internal_token
 from api.sio import sio
 
@@ -35,6 +36,8 @@ class EmitRequest(BaseModel):
 async def relay_emit(req: EmitRequest) -> dict:
     if not req.event:
         raise HTTPException(status_code=400, detail="event required")
+    if req.event == "chat:run_live":
+        apply_relayed_run_live_state(req.data)
     kwargs = {}
     if req.to is not None:
         kwargs["to"] = req.to

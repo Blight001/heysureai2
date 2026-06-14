@@ -23,8 +23,9 @@ export const DEFAULT_MCP_TOOLS = [
   'prompt.write_system',
   'message.send_to_user',
   'message.send_to_ai',
-  'conversation.forget_before_current',
-  'conversation.find',
+  'conversation.list',
+  'conversation.detail',
   'conversation.create',
   'conversation.delete',
+  'conversation.edit',
 ] as const

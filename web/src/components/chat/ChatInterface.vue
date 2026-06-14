@@ -390,13 +390,30 @@ const runLiveTypingFrame = (ts: number) => {
 
 const updateLiveAssistantView = (text: string) => {
   const nextTarget = text || ''
+  const current = liveAssistantText.value || ''
   liveTargetText.value = nextTarget
-  stopLiveTypingLoop()
-  liveRenderLength = nextTarget.length
-  liveRenderVelocity = 0
-  applyLiveAssistantText(nextTarget)
-  if (nextTarget) {
-    maybeAutoScrollDuringLive(Date.now())
+
+  if (!nextTarget) {
+    applyLiveAssistantText('')
+    liveRenderLength = 0
+    stopLiveTypingLoop()
+    return
+  }
+
+  if (!nextTarget.startsWith(current)) {
+    applyLiveAssistantText('')
+    liveRenderLength = 0
+    liveRenderVelocity = 0
+  } else {
+    liveRenderLength = Math.min(
+      nextTarget.length,
+      Math.max(liveRenderLength, current.length),
+    )
+  }
+
+  if (liveTypingFrame === null) {
+    liveLastFrameTs = 0
+    liveTypingFrame = window.requestAnimationFrame(runLiveTypingFrame)
   }
 }
 
@@ -440,6 +457,15 @@ const normalizeAssistantVisibleText = (content: string): string => {
   }
 }
 
+const isSameStreamingAssistantText = (left: string, right: string): boolean => {
+  const a = normalizeAssistantVisibleText(left)
+  const b = normalizeAssistantVisibleText(right)
+  if (!a || !b) return false
+  if (a === b) return true
+  return Math.min(a.length, b.length) >= 12
+    && (a.startsWith(b) || b.startsWith(a))
+}
+
 const upsertHistoryMessages = async (incoming: ChatMessage[]) => {
   if (!incoming.length) return
   const existingIds = new Set(chatMessages.value.map(m => m.id).filter(Boolean))
@@ -447,12 +473,15 @@ const upsertHistoryMessages = async (incoming: ChatMessage[]) => {
   for (const msg of incoming) {
     if (msg.id && existingIds.has(msg.id)) continue
     const msgVisible = normalizeAssistantVisibleText(msg.content)
-    if (liveVisible && msg.role === 'assistant' && msgVisible === liveVisible) {
-      if (isRunActive.value) {
-        // Running stage: keep a single live bubble, don't duplicate with persisted history.
-        continue
-      }
-      if (liveAssistantText.value.trim()) {
+    if (
+      liveVisible
+      && msg.role === 'assistant'
+      && isSameStreamingAssistantText(msgVisible, liveVisible)
+    ) {
+      // Keep the persisted row so its thought/tool metadata is not lost when
+      // later message IDs advance the incremental-history cursor. The view
+      // suppresses the overlapping live bubble while this row is visible.
+      if (!isRunActive.value && liveAssistantText.value.trim()) {
         // End stage: persisted message arrived, clear live bubble first to avoid a visual flash.
         clearLiveAssistantView()
       }
@@ -650,10 +679,15 @@ const mapHistoryMessages = (history: ChatMessage[]) => {
   })
 }
 
-const isForgetBeforeCurrentToolMessage = (msg: ChatMessage) => {
+const isConversationEditToolMessage = (msg: ChatMessage) => {
   return String(msg.tags || '') === 'mcp_tool_call'
-    && String(msg.content || '').includes('工具: conversation.forget_before_current')
+    && String(msg.content || '').includes('工具: conversation.edit')
     && String(msg.content || '').includes('状态: 成功')
+}
+
+const isConversationClearToolMessage = (msg: ChatMessage) => {
+  return isConversationEditToolMessage(msg)
+    && String(msg.content || '').includes('"action": "clear"')
 }
 
 const reloadCurrentHistorySnapshot = async () => {
@@ -705,8 +739,10 @@ const fetchRunHistoryIncrementalOnce = async () => {
   } catch {
     return
   }
-  const shouldReloadSnapshot = Array.isArray(incremental) && incremental.some(isForgetBeforeCurrentToolMessage)
+  const hasConversationEdit = Array.isArray(incremental) && incremental.some(isConversationEditToolMessage)
+  const shouldReloadSnapshot = Array.isArray(incremental) && incremental.some(isConversationClearToolMessage)
   await upsertHistoryMessages(incremental)
+  if (hasConversationEdit) await loadSessions()
   if (shouldReloadSnapshot) {
     await reloadCurrentHistorySnapshot()
   }

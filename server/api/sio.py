@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import threading
 from typing import Optional, Tuple
 
 import socketio
@@ -35,16 +37,23 @@ class _RemoteSio:
     def __init__(self, gateway_url: str) -> None:
         self._gateway_url = (gateway_url or "").rstrip("/")
         self._client = None
+        self._client_lock = threading.Lock()
 
-    async def _ensure_client(self):
+    def _ensure_client(self):
         if self._client is None:
-            import httpx  # local import — only needed in split mode
-            from .runtime.internal_http import internal_headers
-            self._client = httpx.AsyncClient(
-                base_url=self._gateway_url,
-                headers=internal_headers(),
-                timeout=10.0,
-            )
+            with self._client_lock:
+                if self._client is None:
+                    import httpx  # local import — only needed in split mode
+                    from .runtime.internal_http import internal_headers
+                    # Live updates are often emitted from synchronous worker
+                    # threads via a fresh ``asyncio.run`` call. A cached
+                    # AsyncClient becomes bound to the first short-lived event
+                    # loop and fails on later updates after that loop closes.
+                    self._client = httpx.Client(
+                        base_url=self._gateway_url,
+                        headers=internal_headers(),
+                        timeout=10.0,
+                    )
         return self._client
 
     async def emit(self, event, data=None, to=None, room=None, namespace=None, **_):
@@ -53,8 +62,9 @@ class _RemoteSio:
             # rather than crash the worker over a UI nicety.
             return
         try:
-            client = await self._ensure_client()
-            await client.post(
+            client = self._ensure_client()
+            response = await asyncio.to_thread(
+                client.post,
                 "/internal/socket/emit",
                 json={
                     "event": event,
@@ -64,6 +74,7 @@ class _RemoteSio:
                     "namespace": namespace,
                 },
             )
+            response.raise_for_status()
         except RuntimeError as exc:
             if "Event loop is closed" in str(exc):
                 return

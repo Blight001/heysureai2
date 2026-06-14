@@ -6,7 +6,7 @@ import type { ModelPreset } from '@/types'
 import type { ConnectedDevice } from '@/composables/dashboard/useDashboardData'
 import DeviceMcpScopeEditor from './DeviceMcpScopeEditor.vue'
 
-type SettingsSection = 'mcp' | 'auto' | 'bot'
+type SettingsSection = 'mcp' | 'bot'
 
 interface Props {
   show: boolean
@@ -32,7 +32,6 @@ const promptDetailOpen = ref(false)
 const settingsSectionTitle: Record<SettingsSection, string> = {
   mcp: 'MCP 工具权限',
   bot: '机器人配置',
-  auto: '系统自动控制',
 }
 
 const openSettingsSection = (section: SettingsSection) => {
@@ -276,17 +275,6 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                 {{ selectedBotName }}，{{ selectedBotEnabled ? '已启用' : '未启用' }}
               </span>
             </button>
-            <button
-              v-if="form.ai_role_group === 'digital_member'"
-              type="button"
-              class="text-left px-3 py-2.5 rounded-lg border border-zinc-200 bg-zinc-50/70 hover:border-indigo-300 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800/40 dark:hover:border-indigo-500/50 dark:hover:bg-zinc-800"
-              @click="openSettingsSection('auto')"
-            >
-              <span class="block text-xs font-medium text-zinc-700 dark:text-zinc-200">系统自动控制</span>
-              <span class="mt-1 block text-[11px] text-zinc-500 dark:text-zinc-400">
-                {{ form.system_auto_control.enabled ? '已启用' : '未启用' }}
-              </span>
-            </button>
           </div>
         </div>
 
@@ -326,7 +314,7 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
 
       <Transition name="fade">
         <div
-          v-if="settingsSection && (settingsSection !== 'auto' || form.ai_role_group === 'digital_member')"
+          v-if="settingsSection"
           class="fixed inset-0 z-[105] bg-black/35 flex items-center justify-center p-4"
           @click.stop="closeSettingsSection"
         >
@@ -579,19 +567,6 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                 </template>
               </div>
 
-              <div v-else-if="settingsSection === 'auto'" class="space-y-3">
-                <label class="flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-300">
-                  <span>启用系统自动控制</span>
-                  <input type="checkbox" v-model="form.system_auto_control.enabled" />
-                </label>
-                <div class="rounded border border-indigo-100 bg-indigo-50 px-3 py-2 text-[11px] text-indigo-700 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-300">
-                  任务启动、恢复、监督与传承 Prompt 已改为统一控制，请在“固有思路 → 统一任务提示词”中编辑。
-                </div>
-
-                <div class="pt-1 border-t border-zinc-200 dark:border-zinc-700 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  任务列表已迁移到 AI 卡片下方，点击“任务列表”按钮可查看按优先级排序和执行状态。
-                </div>
-              </div>
             </div>
           </div>
         </div>

@@ -10,7 +10,7 @@ import {
   type AiConfigUpsertPayload,
 } from '@/api/ai'
 
-type SettingsSection = 'mcp' | 'auto' | 'bot'
+type SettingsSection = 'mcp' | 'bot'
 
 interface UseAiConfigManagementOptions {
   defaultMcpTools: string[]

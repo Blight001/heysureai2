@@ -389,6 +389,17 @@ async def update_profile(
         else:
             update_data["mcp_namespace_hints"] = DEFAULT_MCP_NAMESPACE_HINTS
     
+    # System prompts no longer belong to the User table. Keep them out of the
+    # ORM update and persist them to KnowledgeBase/system after the DB commit.
+    from api.services import kb_store
+
+    file_keys = {key for key, _kind in kb_store.SYSTEM_PROMPT_KEYS}
+    prompt_updates = {
+        key: update_data.pop(key)
+        for key in tuple(update_data)
+        if key in file_keys
+    }
+
     if "password" in update_data:
         password = update_data.pop("password")
         if password:
@@ -403,12 +414,8 @@ async def update_profile(
     # 文件为真相源：本次更新涉及的系统提示词写回 KnowledgeBase/system/*.md
     # （从提交值写，不依赖已删列的 getattr），随后把文件值水合回对象供序列化。
     try:
-        from api.services import kb_store
-
-        file_keys = {k for k, _kind in kb_store.SYSTEM_PROMPT_KEYS}
-        for key in update_data:
-            if key in file_keys:
-                kb_store.write_system_prompt(user.id, key, update_data.get(key) or "")
+        for key, value in prompt_updates.items():
+            kb_store.write_system_prompt(user.id, key, value or "")
     except Exception:
         pass
     return _user_payload(user)

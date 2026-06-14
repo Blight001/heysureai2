@@ -78,11 +78,11 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # Send message — outbound to the human user; every tier by default.
     "message.send_to_user": ROLE_MEMBER,
     # Conversation maintenance — every tier can manage its own scoped sessions.
-    "conversation.forget_before_current": ROLE_MEMBER,
-    "conversation.find": ROLE_MEMBER,
     "conversation.create": ROLE_MEMBER,
     "conversation.delete": ROLE_MEMBER,
     "conversation.list": ROLE_MEMBER,
+    "conversation.detail": ROLE_MEMBER,
+    "conversation.edit": ROLE_MEMBER,
     "conversation.switch": ROLE_MEMBER,
     "conversation.new": ROLE_MEMBER,
     # Admin / governance — assistant_admin only.
@@ -194,7 +194,7 @@ def clamp_tools_json(user, tier: str, mcp_tools_json: Optional[str]) -> str:
     clamped: List[str] = []
     seen: Set[str] = set()
     for tool in requested:
-        if tool.startswith("workspace.") and tool != "workspace.run_command":
+        if tool.startswith("workspace.") and tool not in {"workspace.search", "workspace.run_command"}:
             continue
         # Endpoint desktop/browser tools are governed exclusively by
         # AgentMcpPermission, not by AssistantAIConfig.mcp_tools.

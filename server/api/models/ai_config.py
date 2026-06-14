@@ -9,12 +9,12 @@ _DEFAULT_MCP_TOOLS = (
     '"task.create","task.update","task.delete","task.list",'
     '"task.inherit","task.complete",'
     '"prompt.list_targets","prompt.read_ai","prompt.write_ai","prompt.read_system",'
-    '"prompt.write_system","message.send_to_user","conversation.forget_before_current",'
-    '"conversation.find","conversation.create","conversation.delete","message.send_to_ai"]'
+    '"prompt.write_system","message.send_to_user","conversation.list","conversation.detail",'
+    '"conversation.create","conversation.delete","conversation.edit","message.send_to_ai"]'
 )
 
 _DEFAULT_SYSTEM_AUTO_CONTROL = (
-    '{"enabled":false,'
+    '{"enabled":true,'
     '"tasks":[]}'
 )
 

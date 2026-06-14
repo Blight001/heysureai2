@@ -146,7 +146,7 @@ class BotAdapter(ABC):
         Default empty — most bots don't change the allowlist. Override per
         bot when the channel needs a tool that a stripped-down user config
         would otherwise omit (e.g. Feishu sessions always get
-        ``conversation.forget_before_current``).
+        ``conversation.edit``).
         """
         return set()
 

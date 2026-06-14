@@ -697,7 +697,7 @@ def _load_current_user_content(
     return fallback_text
 
 
-def _reset_convo_after_forget(
+def _reset_convo_after_clear(
     convo: List[Dict],
     *,
     system_prompt: str,
@@ -707,7 +707,7 @@ def _reset_convo_after_forget(
     result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else tool_result
     follow_up = (
         "[MCP执行确认]\n"
-        "系统已执行工具：conversation.forget_before_current\n"
+        "系统已执行工具：conversation.edit（clear）\n"
         "执行状态：成功\n\n"
         "[工具执行结果]\n"
         f"{_safe_json(result_payload)}\n\n"
@@ -731,6 +731,67 @@ _SCREENSHOT_MODEL_TOOLS = {
     "vision.capture",
     "vision.capture_mouse",
 }
+
+
+def _is_image_input_unsupported_error(error_text: str) -> bool:
+    text = str(error_text or "").lower()
+    image_markers = (
+        "image_url",
+        "image input",
+        "image content",
+        "images are",
+        "multimodal",
+        "vision input",
+    )
+    incompatibility_markers = (
+        "unknown variant",
+        "expected text",
+        "not support",
+        "unsupported",
+        "only supports text",
+        "text-only",
+        "invalid content type",
+        "failed to deserialize",
+    )
+    return any(marker in text for marker in image_markers) and any(
+        marker in text for marker in incompatibility_markers
+    )
+
+
+def _degrade_image_messages_to_text(convo: List[Dict]) -> int:
+    removed = 0
+    for message in convo:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        kept = []
+        message_removed = 0
+        for block in content:
+            block_type = str(block.get("type") or "").lower() if isinstance(block, dict) else ""
+            if block_type in {"image", "image_url"}:
+                removed += 1
+                message_removed += 1
+                continue
+            kept.append(block)
+        if message_removed:
+            kept.append({
+                "type": "text",
+                "text": f"[系统已省略 {message_removed} 张图片：当前模型不支持图片输入。]",
+            })
+            message["content"] = kept
+    return removed
+
+
+def _image_input_degraded_feedback(error_text: str, removed_images: int) -> str:
+    return "\n".join([
+        "[运行时图片输入错误]",
+        f"上游模型拒绝了图片输入，系统已从模型上下文中移除 {removed_images} 张图片。",
+        "你无法查看这些图片。请基于已有文字、工具返回的非图片信息继续执行；",
+        "如果任务必须依赖视觉内容，请明确说明该限制或改用不需要视觉输入的工具，不要假装已经看过图片。",
+        "",
+        "[上游错误]",
+        str(error_text or "").strip(),
+    ])
 
 
 def _find_image_payload(value: object, depth: int = 0) -> Dict[str, str]:
@@ -987,14 +1048,25 @@ def _deliver_screenshot_to_bot(bg: Session, message: ChatMessage, *, tool_result
     return {"delivered": True, "mode": "default_target", "channel": active_bot.channel, "result": sent}
 
 
-def _model_visible_tool_result(tool: str, tool_result: Dict[str, object]) -> object:
+def _model_visible_tool_result(
+    tool: str,
+    tool_result: Dict[str, object],
+    *,
+    image_attached: bool = True,
+) -> object:
     result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else tool_result
     if tool not in _SCREENSHOT_MODEL_TOOLS or not isinstance(result_payload, dict):
         return result_payload
     cleaned = _omit_image_fields(_sanitize_large_media(result_payload))
     if not isinstance(cleaned, dict):
         cleaned = {}
-    cleaned["screenshot_attached_to_model"] = True
+    cleaned["screenshot_attached_to_model"] = image_attached
+    if not image_attached:
+        cleaned["instruction"] = (
+            "The screenshot could not be attached because the current model does not support image input. "
+            "Continue from non-image tool data, use a non-visual tool, or explain the limitation."
+        )
+        return cleaned
     if tool == "mouse.click":
         cleaned["instruction"] = (
             "The pre-click confirmation image is attached in the next user message. "
@@ -1290,6 +1362,7 @@ def _run_worker_impl(
             last_rejected_tool_sig = ""
             rejected_repeat = 0
             consecutive_ai_errors = 0
+            image_input_disabled = False
 
             # Native tool schemas are exposed progressively. Keep the full
             # allowlist as the execution boundary, but initially show only MCP
@@ -1380,6 +1453,16 @@ def _run_worker_impl(
                     convo,
                     "Synthetic tool result inserted before request because the previous tool call did not receive a tool response.",
                 )
+                if image_input_disabled:
+                    removed_images = _degrade_image_messages_to_text(convo)
+                    if removed_images:
+                        convo.append({
+                            "role": "user",
+                            "content": _image_input_degraded_feedback(
+                                "The current model previously rejected image input in this run.",
+                                removed_images,
+                            ),
+                        })
                 if mcp_active:
                     current_exposed_tools = set(exposed_tool_allowlist) & set(effective_tool_allowlist)
                     current_exposed_tools.update(set(MCP_INTROSPECTION_TOOLS) & set(effective_tool_allowlist))
@@ -1473,6 +1556,39 @@ def _run_worker_impl(
                         )
                         _set_run_live_phase(run_id, "generating")
                         continue
+                    if _is_image_input_unsupported_error(error_text):
+                        removed_images = _degrade_image_messages_to_text(convo)
+                        if removed_images:
+                            image_input_disabled = True
+                            consecutive_ai_errors = 0
+                            convo.append({
+                                "role": "user",
+                                "content": _image_input_degraded_feedback(error_text, removed_images),
+                            })
+                            notice = "\n".join([
+                                "[AI 对话出错]",
+                                error_text,
+                                "",
+                                f"检测到当前模型不支持图片输入；系统已移除 {removed_images} 张图片。",
+                                "该错误已作为运行时消息发送给 AI，对话将继续执行。",
+                            ])
+                            _save_message(
+                                bg,
+                                user_id,
+                                ChatMessageCreate(
+                                    role="system",
+                                    content=notice,
+                                    tags="system_notice_ai_error",
+                                    ai_config_id=ai_config_id,
+                                    ai_kind=ai_kind,
+                                    session_id=session_id,
+                                    session_name=session_name,
+                                    model=model,
+                                    total_tokens=0,
+                                ),
+                            )
+                            _set_run_live_phase(run_id, "generating")
+                            continue
                     notice_lines = [
                         "[AI 对话出错]",
                         error_text,
@@ -1912,6 +2028,18 @@ def _run_worker_impl(
                     tool_error = _extract_mcp_error(mcp_exc)
                     tool_result = {"result": {"success": False, "error": tool_error}}
                     result_text = _build_mcp_display_result(tool, tool_result, ok=False, error_message=tool_error)
+                result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
+                if (
+                    (not tool_failed)
+                    and tool == "conversation.edit"
+                    and isinstance(result_payload, dict)
+                    and result_payload.get("action") == "rename"
+                    and str(result_payload.get("session_id") or "") == str(session_id)
+                ):
+                    renamed_session = str(result_payload.get("name") or "").strip()
+                    if renamed_session:
+                        session_name = renamed_session
+                        saved.session_name = renamed_session
                 saved.tags = _append_mcp_state_to_tags(saved.tags, tool, arguments, result_text)
                 bg.add(saved)
                 bg.commit()
@@ -1950,7 +2078,13 @@ def _run_worker_impl(
                         if described_tool and described_tool in effective_tool_allowlist:
                             exposed_tool_allowlist.add(described_tool)
 
-                if (not tool_failed) and tool == "conversation.forget_before_current":
+                if (
+                    (not tool_failed)
+                    and tool == "conversation.edit"
+                    and isinstance(result_payload, dict)
+                    and result_payload.get("action") == "clear"
+                    and str(result_payload.get("session_id") or "") == str(session_id)
+                ):
                     current_user_content = _load_current_user_content(
                         bg,
                         user_id=user_id,
@@ -1960,7 +2094,7 @@ def _run_worker_impl(
                         current_user_message_id=current_user_message_id,
                         fallback=model_user_content,
                     )
-                    _reset_convo_after_forget(
+                    _reset_convo_after_clear(
                         convo,
                         system_prompt=system_prompt,
                         current_user_content=current_user_content,
@@ -2145,14 +2279,19 @@ def _run_worker_impl(
                     return
                 else:
                     screenshot_message = _browser_screenshot_image_message(tool, tool_result)
+                    attach_screenshot = bool(screenshot_message) and not image_input_disabled
                     if _has_native_tc:
                         # Native path: use tool role so model sees structured result.
                         convo.append({
                             "role": "tool",
                             "tool_call_id": _tc_id or "call_0",
-                            "content": _safe_json(_model_visible_tool_result(tool, tool_result)),
+                            "content": _safe_json(_model_visible_tool_result(
+                                tool,
+                                tool_result,
+                                image_attached=attach_screenshot,
+                            )),
                         })
-                        if screenshot_message:
+                        if attach_screenshot:
                             convo.append(screenshot_message)
                     else:
                         follow_up_text = (
@@ -2162,10 +2301,10 @@ def _run_worker_impl(
                             "[工具参数]\n"
                             f"{_safe_json(arguments)}\n\n"
                             "[工具执行结果]\n"
-                            f"{_safe_json(_model_visible_tool_result(tool, tool_result))}\n\n"
+                            f"{_safe_json(_model_visible_tool_result(tool, tool_result, image_attached=attach_screenshot))}\n\n"
                             "请基于以上结果继续完成任务。"
                         )
-                        if screenshot_message:
+                        if attach_screenshot:
                             convo.append({
                                 "role": "user",
                                 "content": [

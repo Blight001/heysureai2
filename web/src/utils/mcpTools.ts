@@ -51,18 +51,18 @@ const normalizeMcpSchemaType = (rawType: unknown) => {
 const MCP_TOOL_TAG_ORDER = [
   // 服务端 · 系统管理
   '概览',
-  '任务',
   'Prompt',
-  '工作区',
   'MCP',
+  // 服务端 · 基础能力
+  '任务',
+  '工作区',
   '通用',
+  '发消息',
+  '会话管理',
   // 服务端 · 知识与进化
   '归档',
   '知识总结',
   '进化',
-  // 服务端 · 通信
-  '发消息',
-  '会话管理',
   // 桌面端 · 系统操作
   '终端',
   '进程',
@@ -220,16 +220,16 @@ export const groupMcpToolsByZhTag = (tools: string[]): McpToolGroup[] => {
 const TAG_PARENT: Record<string, string> = {
   // 服务端
   '概览': '系统管理',
-  '任务': '系统管理',
   'Prompt': '系统管理',
-  '工作区': '系统管理',
   'MCP': '系统管理',
-  '通用': '系统管理',
+  '任务': '基础能力',
+  '工作区': '基础能力',
+  '通用': '基础能力',
+  '发消息': '基础能力',
+  '会话管理': '基础能力',
   '归档': '知识与进化',
   '知识总结': '知识与进化',
   '进化': '知识与进化',
-  '发消息': '通信',
-  '会话管理': '通信',
   // 桌面端
   '终端': '系统操作',
   '进程': '系统操作',
@@ -242,7 +242,7 @@ const TAG_PARENT: Record<string, string> = {
   '桌面能力': '图形交互',
 }
 
-const PARENT_ORDER = ['系统管理', '知识与进化', '通信', '系统操作', '图形交互']
+const PARENT_ORDER = ['基础能力', '系统管理', '知识与进化', '系统操作', '图形交互']
 
 const getMcpToolGroupParent = (tag: string) => TAG_PARENT[tag] || ''
 

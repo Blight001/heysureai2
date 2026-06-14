@@ -1000,11 +1000,19 @@ def _migrate_assistantaiconfig_prune_unknown_mcp_tools() -> None:
             next_tools = []
             seen = set()
             changed = False
+            had_legacy_find = False
             for item in parsed:
                 tool = str(item or "").strip() if isinstance(item, str) else ""
                 if not tool:
                     changed = True
                     continue
+                if tool == "conversation.forget_before_current":
+                    tool = "conversation.edit"
+                    changed = True
+                elif tool == "conversation.find":
+                    tool = "conversation.list"
+                    had_legacy_find = True
+                    changed = True
                 # Endpoint tools are governed by per-agent scope, not stored here.
                 if is_endpoint_tool_config_name(tool):
                     changed = True
@@ -1017,6 +1025,9 @@ def _migrate_assistantaiconfig_prune_unknown_mcp_tools() -> None:
                     continue
                 next_tools.append(tool)
                 seen.add(tool)
+            if had_legacy_find and "conversation.detail" in valid and "conversation.detail" not in seen:
+                next_tools.append("conversation.detail")
+                changed = True
             if not changed:
                 continue
             conn.execute(
@@ -1246,19 +1257,29 @@ def _migrate_user(
         "workspace.run_command",
         ["web.search"],
     )
-    _append_role_permission_tool_items_after_anchor(
-        cursor,
-        "conversation.forget_before_current",
-        ["conversation.find", "conversation.create", "conversation.delete"],
-    )
+    _rename_role_permission_tool_item(cursor, "conversation.forget_before_current", "conversation.edit")
+    _rename_role_permission_tool_item(cursor, "conversation.find", "conversation.list")
+    _append_role_permission_tool_items_after_anchor(cursor, "conversation.list", ["conversation.detail"])
     _append_role_permission_tool_items_after_anchor(
         cursor,
         "user.send_message",
         [
-            "conversation.forget_before_current",
-            "conversation.find",
+            "conversation.list",
+            "conversation.detail",
             "conversation.create",
             "conversation.delete",
+            "conversation.edit",
+        ],
+    )
+    _append_role_permission_tool_items_after_anchor(
+        cursor,
+        "message.send_to_user",
+        [
+            "conversation.list",
+            "conversation.detail",
+            "conversation.create",
+            "conversation.delete",
+            "conversation.edit",
         ],
     )
     _remove_role_permission_tool_item(cursor, "task.get_current")
@@ -1318,7 +1339,7 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
 
     if "system_auto_control" not in existing:
         default_auto = (
-            '{"enabled":false,'
+            '{"enabled":true,'
             '"tasks":[]}'
         )
         cursor.execute(
@@ -1376,12 +1397,14 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
         "workspace.run_command",
         ["web.search"],
     )
+    _collapse_json_array_items(
+        cursor, "assistantaiconfig", "mcp_tools", ["conversation.forget_before_current"], "conversation.edit"
+    )
+    _collapse_json_array_items(
+        cursor, "assistantaiconfig", "mcp_tools", ["conversation.find"], "conversation.list"
+    )
     _append_json_array_items_after_anchor(
-        cursor,
-        "assistantaiconfig",
-        "mcp_tools",
-        "conversation.forget_before_current",
-        ["conversation.find", "conversation.create", "conversation.delete"],
+        cursor, "assistantaiconfig", "mcp_tools", "conversation.list", ["conversation.detail"]
     )
     _append_json_array_items_after_anchor(
         cursor,
@@ -1389,10 +1412,24 @@ def _migrate_assistantaiconfig(cursor: sqlite3.Cursor) -> None:
         "mcp_tools",
         "user.send_message",
         [
-            "conversation.forget_before_current",
-            "conversation.find",
+            "conversation.list",
+            "conversation.detail",
             "conversation.create",
             "conversation.delete",
+            "conversation.edit",
+        ],
+    )
+    _append_json_array_items_after_anchor(
+        cursor,
+        "assistantaiconfig",
+        "mcp_tools",
+        "message.send_to_user",
+        [
+            "conversation.list",
+            "conversation.detail",
+            "conversation.create",
+            "conversation.delete",
+            "conversation.edit",
         ],
     )
     # Rename the send-message tools out of the ambiguous user./ai. prefixes into

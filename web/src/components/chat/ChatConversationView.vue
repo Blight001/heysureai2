@@ -451,7 +451,29 @@ const typingThinkingText = computed(() => {
 const renderMessages = computed<ConversationMessage[]>(() => {
   const base = [...normalizedMessages.value]
   if (frontPromptMessage.value) base.unshift(frontPromptMessage.value)
-  if (liveAssistantMessage.value) base.push(liveAssistantMessage.value)
+  const liveMessage = liveAssistantMessage.value
+  if (liveMessage) {
+    const liveText = String(liveMessage.display_text || liveMessage.content || '').trim()
+    let latestUserIndex = -1
+    for (let i = base.length - 1; i >= 0; i -= 1) {
+      if (base[i].role === 'user') {
+        latestUserIndex = i
+        break
+      }
+    }
+    for (let i = base.length - 1; i > latestUserIndex; i -= 1) {
+      if (base[i].role !== 'assistant') continue
+      const persistedText = stripMcpCallFormatText(
+        base[i].display_text || base[i].content,
+      ).trim()
+      const sameReply = persistedText === liveText
+        || (Math.min(persistedText.length, liveText.length) >= 12
+          && (persistedText.startsWith(liveText) || liveText.startsWith(persistedText)))
+      if (sameReply) base.splice(i, 1)
+      break
+    }
+    base.push(liveMessage)
+  }
   return base
 })
 
