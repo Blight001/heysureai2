@@ -811,39 +811,6 @@ export class Drawer {
     })
   }
 
-  openValhalla(snap: WorldSnapshot, portrait?: PortraitSpec | null) {
-    this.openPanel({
-      title: '英灵殿',
-      subtitle: `${snap.valhallaCount} 位逝者`,
-      portrait,
-      tabs: [
-        {
-          name: '名册',
-          build: host => {
-            if (!snap.valhallaItems.length) {
-              host.innerHTML = `<div class="d-dim">名册为空——还没有成员走完一生</div>`
-              return
-            }
-            const kindLabel: Record<string, string> = { inherit: '传承', complete: '功成', aborted: '中断' }
-            const cols = document.createElement('div')
-            cols.className = 'gp-cols'
-            for (const e of snap.valhallaItems.slice(0, 40)) {
-              const date = e.created_at ? new Date(e.created_at * 1000).toLocaleDateString() : ''
-              const item = document.createElement('div')
-              item.className = 'd-item'
-              item.innerHTML =
-                `<div>${esc(e.ai_name || `AI-${e.ai_config_id}`)} · 第 ${e.generation} 代 · ${kindLabel[e.kind] || e.kind}</div>` +
-                `<div class="d-dim">${esc(e.job_title || '')} ${esc(date)}</div>` +
-                (e.summary_excerpt ? `<div class="d-dim">${esc(e.summary_excerpt.slice(0, 80))}</div>` : '')
-              cols.appendChild(item)
-            }
-            host.appendChild(cols)
-          },
-        },
-      ],
-    })
-  }
-
   openSpawn(snap: WorldSnapshot, portrait?: PortraitSpec | null) {
     const idle = snap.members.filter(
       m => m.lifecycle !== 'dead' && (!m.projectId || m.lifecycle === 'learning') &&

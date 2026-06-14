@@ -11,7 +11,6 @@ from .tools.tasks import (
     _task_complete,
     _task_create,
     _task_delete,
-    _task_inherit,
     _task_list,
     _task_update,
 )
@@ -263,20 +262,6 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
             "required": ["job_id"],
         },
         handler=_task_delete,
-        destructive=True,
-    ))
-    registry.register(MCPTool(
-        name="task.inherit",
-        description="Submit inheritance summary before rotating to next task generation.",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "job_id": {"type": "string"},
-                "summary": {"type": "string"},
-            },
-            "required": ["summary"],
-        },
-        handler=_task_inherit,
         destructive=True,
     ))
     registry.register(MCPTool(
@@ -618,7 +603,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
                         "default_start_task_prompt",
                         "default_resume_task_prompt",
                         "default_supervision_prompt",
-                        "default_inheritance_notice",
+                        "default_compression_prompt",
                     ],
                     "description": "System prompt key. Omit to read all.",
                 },
@@ -647,7 +632,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
                         "default_start_task_prompt",
                         "default_resume_task_prompt",
                         "default_supervision_prompt",
-                        "default_inheritance_notice",
+                        "default_compression_prompt",
                     ],
                     "description": "System prompt key to update.",
                 },

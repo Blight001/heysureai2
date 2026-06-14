@@ -212,7 +212,10 @@ Rules:
   const defaultResumeTaskPrompt = ref('请继续执行刚才被暂停的任务，先简要回顾当前进度，再继续推进直到可交付。')
   const defaultSupervisionPrompt = ref('系统监督提醒：请确认当前任务是否已完成。若已完成请调用 task.complete 标记；若未完成请给出剩余步骤并继续执行。')
   const defaultSupervisionIdleSeconds = ref(25)
-  const defaultInheritanceNotice = ref('当前思考量已达到阈值（{session_tokens}/{threshold}），建议立即开启传承流程，沉淀本轮结论与关键上下文。')
+  const defaultCompressionPrompt = ref(`你正在把一段较长的对话历史压缩成摘要，以便在不超出上下文上限的情况下继续同一段对话。请阅读下面的对话历史，输出一段简洁但信息完整的中文摘要，必须保留：用户的核心目标与约束、已完成的工作与关键产出、尚未完成的事项与已知风险、重要的事实/数据/结论，以及接下来应继续推进的下一步。请省略寒暄与重复内容，只输出摘要正文，不要添加额外说明或前后缀。
+
+[待压缩的对话历史]
+{history}`)
   const promptAiMessageNotify = ref(`[系统通知 · AI 间通信]
 你收到一条来自其它 AI 的通知消息。发送方不会在原工具调用中阻塞等待，但你仍然可以主动回复。
 
@@ -284,7 +287,7 @@ Rules:
     start_task_prompt: defaultStartTaskPrompt.value,
     resume_task_prompt: defaultResumeTaskPrompt.value,
     supervision_prompt: defaultSupervisionPrompt.value,
-    inheritance_notice: defaultInheritanceNotice.value,
+    compression_prompt: defaultCompressionPrompt.value,
   })
 
   const normalizeSystemAutoControl = (raw: unknown) =>
@@ -310,7 +313,7 @@ Rules:
         default_resume_task_prompt: defaultResumeTaskPrompt.value,
         default_supervision_prompt: defaultSupervisionPrompt.value,
         default_supervision_idle_seconds: clampIdleSeconds(defaultSupervisionIdleSeconds.value),
-        default_inheritance_notice: defaultInheritanceNotice.value,
+        default_compression_prompt: defaultCompressionPrompt.value,
         prompt_ai_message_notify: promptAiMessageNotify.value,
         prompt_ai_message_inquiry: promptAiMessageInquiry.value,
         ai_message_inquiry_reminder_seconds: clampReminderSeconds(aiMessageInquiryReminderSeconds.value),
@@ -441,8 +444,8 @@ Rules:
       if (Object.prototype.hasOwnProperty.call(rawUser, 'default_supervision_idle_seconds')) {
         defaultSupervisionIdleSeconds.value = clampIdleSeconds(rawUser.default_supervision_idle_seconds)
       }
-      if (Object.prototype.hasOwnProperty.call(rawUser, 'default_inheritance_notice')) {
-        defaultInheritanceNotice.value = String(rawUser.default_inheritance_notice ?? '')
+      if (Object.prototype.hasOwnProperty.call(rawUser, 'default_compression_prompt')) {
+        defaultCompressionPrompt.value = String(rawUser.default_compression_prompt ?? '')
       }
       if (Object.prototype.hasOwnProperty.call(rawUser, 'prompt_ai_message_notify')) {
         promptAiMessageNotify.value = String(rawUser.prompt_ai_message_notify ?? '')
@@ -505,7 +508,7 @@ Rules:
     defaultResumeTaskPrompt,
     defaultSupervisionPrompt,
     defaultSupervisionIdleSeconds,
-    defaultInheritanceNotice,
+    defaultCompressionPrompt,
     promptAiMessageNotify,
     promptAiMessageInquiry,
     aiMessageInquiryReminderSeconds,

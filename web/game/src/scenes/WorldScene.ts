@@ -407,8 +407,7 @@ export class WorldScene extends Phaser.Scene {
         this.playSfx('bell', 0.45)
         break
       case 'member_completed': {
-        const valhalla = this.buildings.get('valhalla')
-        if (valhalla) this.burstSparkle(valhalla.x, valhalla.y + 30)
+        if (actor) this.burstSparkle(actor.x, actor.y - 24)
         this.playSfx('bell', 0.35)
         break
       }
@@ -585,16 +584,6 @@ export class WorldScene extends Phaser.Scene {
         this.waterTiles.push({ x, y })
       }
     }
-    // 英灵殿山丘：暗草丘体 + 零星碎石，体现"高地"
-    for (let y = 3; y <= 11; y++) {
-      for (let x = 43; x <= 54; x++) {
-        const dx = (x - 48.5) / 6
-        const dy = (y - 7) / 4.5
-        if (dx * dx + dy * dy <= 1) {
-          grid[y][x] = rnd() > 0.85 ? TILES.stone : TILES.grassDark
-        }
-      }
-    }
     const path = (x0: number, y0: number, x1: number, y1: number) => {
       for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) {
         for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) {
@@ -606,7 +595,6 @@ export class WorldScene extends Phaser.Scene {
     path(4, 21, 53, 22) // 主路（东西）
     path(8, 19, 9, 21) // 出生地支路
     path(26, 17, 27, 21) // 图书馆支路
-    path(47, 10, 48, 21) // 英灵殿山道
     path(5, 32, 53, 33) // 作坊街
     path(29, 22, 30, 32) // 主路 → 作坊街
     // 图书馆前广场，也是核心管理员的活动区域。
@@ -642,7 +630,6 @@ export class WorldScene extends Phaser.Scene {
     const blocked: Rect[] = [
       { x: 100, y: 480, w: 400, h: 320 }, // 出生地一带
       { x: 700, y: 250, w: 650, h: 420 }, // 图书馆与广场
-      { x: 1330, y: 40, w: 460, h: 360 }, // 英灵殿山丘
       { x: 100, y: 920, w: 1750, h: 250 }, // 作坊街
       { x: 60, y: 90, w: 360, h: 300 }, // 池塘
     ]
@@ -695,7 +682,6 @@ export class WorldScene extends Phaser.Scene {
     this.addStreetLampGlow(streetLamp)
     // 建筑灯火与泉水的夜光
     this.addNightGlow(880, 438, 0xffb866, 6, 0.35) // 图书馆窗火
-    this.addNightGlow(1540, 250, 0xffa040, 4.2, 0.45) // 英灵殿长明火
     this.addNightGlow(290, 640, 0x7fd8ff, 3.2, 0.4) // 出生地泉水
     // 萤火虫：夜间出没（白天 alpha=0），缓慢游移 + 呼吸闪烁
     const frnd = mulberry32(123)
@@ -786,7 +772,6 @@ export class WorldScene extends Phaser.Scene {
       this.buildings.set(def.key, sprite)
     }
     this.buildings.get('spawn')?.play('building_spawn.png:loop')
-    this.buildings.get('valhalla')?.play('building_valhalla.png:loop')
   }
 
   private createCamera() {
@@ -1017,7 +1002,6 @@ export class WorldScene extends Phaser.Scene {
         }
         const key = obj.getData?.('buildingKey') as string | undefined
         if (key === 'library') this.drawer.openLibrary(this.snap, this.portraitForBuilding('building_library.png'))
-        else if (key === 'valhalla') this.drawer.openValhalla(this.snap, this.portraitForBuilding('building_valhalla.png'))
         else if (key === 'spawn') this.drawer.openSpawn(this.snap, this.portraitForBuilding('building_spawn.png'))
       },
     )
@@ -1137,7 +1121,7 @@ export class WorldScene extends Phaser.Scene {
       }
       this.playTransitions(m, actor)
     }
-    // 配置被删除的成员：同走灵魂演出
+    // 配置被删除的成员：同走移除演出
     for (const [id, actor] of this.actors) {
       if (!seen.has(id) && !actor.isDying) actor.die(() => this.actors.delete(id))
     }
@@ -1379,8 +1363,6 @@ export class WorldScene extends Phaser.Scene {
       if (key === 'library') {
         rows.push({ label: '知识', value: `${snap.knowledgeActive} 条生效` })
         rows.push({ label: '待审批', value: snap.knowledgePending > 0 ? `${snap.knowledgePending} 条沉淀申请` : '无' })
-      } else if (key === 'valhalla') {
-        rows.push({ label: '名册', value: `${snap.valhallaCount} 位逝者` })
       } else if (key === 'spawn') {
         const idle = snap.members.filter(
           m => m.lifecycle !== 'dead' && (!m.projectId || m.lifecycle === 'learning'),
@@ -1403,7 +1385,7 @@ export class WorldScene extends Phaser.Scene {
     const running = snap.members.filter(m => m.runtimeStatus === 'running' || m.taskStatus === 'running').length
     this.overlay.setHud(
       `<div>存活成员 <b>${alive}</b> · 在线作坊 <b>${online}</b> · 干活中 <b>${running}</b></div>` +
-      `<div>英灵殿 <b>${snap.valhallaCount}</b> · 知识 <b>${snap.knowledgeActive}</b>` +
+      `<div>知识 <b>${snap.knowledgeActive}</b>` +
       (snap.knowledgePending > 0 ? ` · <span class="h-err">待审批 ${snap.knowledgePending}</span>` : '') +
       `</div>` +
       `<div class="h-dim">🕐 ${this.clockLabel()}</div>`,

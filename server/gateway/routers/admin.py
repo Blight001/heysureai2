@@ -53,7 +53,6 @@ from api.models import (
     Memory,
     TokenUsageSnapshot,
     User,
-    ValhallaEntry,
 )
 from api.runtime.internal_http import InternalClient
 from gateway.routers.auth import ensure_user_workspace, get_current_user
@@ -1146,8 +1145,6 @@ _CLEANUP_CATEGORIES: dict[str, tuple] = {
     "knowledge": (KnowledgeEntry, Memory, EvolutionInput),
     # 协作项目
     "projects": (EvolutionProject,),
-    # 遗言 / 英灵殿
-    "valhalla": (ValhallaEntry,),
 }
 
 

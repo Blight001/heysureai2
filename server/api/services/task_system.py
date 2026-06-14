@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 from sqlmodel import Session, select
 
 from ..models import (
-    DEFAULT_INHERITANCE_NOTICE,
+    DEFAULT_COMPRESSION_PROMPT,
     DEFAULT_RESUME_TASK_PROMPT,
     DEFAULT_START_TASK_PROMPT,
     DEFAULT_SUPERVISION_PROMPT,
@@ -21,19 +21,18 @@ DEFAULT_SYSTEM_AUTO_CONTROL: Dict[str, Any] = {
     "start_task_prompt": DEFAULT_START_TASK_PROMPT,
     "resume_task_prompt": DEFAULT_RESUME_TASK_PROMPT,
     "supervision_prompt": DEFAULT_SUPERVISION_PROMPT,
-    "inheritance_notice": DEFAULT_INHERITANCE_NOTICE,
+    "compression_prompt": DEFAULT_COMPRESSION_PROMPT,
     "tasks": [],
 }
 TASK_FLOW_PROMPT_KEYS = (
     "start_task_prompt",
     "resume_task_prompt",
     "supervision_prompt",
-    "inheritance_notice",
+    "compression_prompt",
 )
 
 TASK_RUNTIME_REQUIRED_TOOLS = {
     "task.complete",
-    "task.inherit",
     "task.list",
     "message.send_to_ai",
 }
@@ -87,7 +86,7 @@ def normalize_system_auto_control(raw: Optional[str]) -> Dict[str, Any]:
     cfg["start_task_prompt"] = str(cfg.get("start_task_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["start_task_prompt"]).strip()
     cfg["resume_task_prompt"] = str(cfg.get("resume_task_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["resume_task_prompt"]).strip()
     cfg["supervision_prompt"] = str(cfg.get("supervision_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["supervision_prompt"]).strip()
-    cfg["inheritance_notice"] = str(cfg.get("inheritance_notice") or DEFAULT_SYSTEM_AUTO_CONTROL["inheritance_notice"]).strip()
+    cfg["compression_prompt"] = str(cfg.get("compression_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["compression_prompt"]).strip()
     raw_tasks = cfg.get("tasks")
     if not isinstance(raw_tasks, list):
         raw_tasks = []

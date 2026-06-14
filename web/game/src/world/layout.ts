@@ -22,7 +22,7 @@ export interface Point {
 }
 
 export interface FixedBuildingDef {
-  key: 'spawn' | 'library' | 'valhalla'
+  key: 'spawn' | 'library'
   sheet: string
   label: string
   /** 建筑中心（世界像素） */
@@ -34,14 +34,10 @@ export interface FixedBuildingDef {
 export const FIXED_BUILDINGS: FixedBuildingDef[] = [
   { key: 'spawn', sheet: 'building_spawn.png', label: '出生地', pos: { x: 290, y: 640 }, scale: 1.7 },
   { key: 'library', sheet: 'building_library.png', label: '传承知识库（图书馆）', pos: { x: 880, y: 430 }, scale: 1.55 },
-  { key: 'valhalla', sheet: 'building_valhalla.png', label: '英灵殿', pos: { x: 1540, y: 210 }, scale: 1.55 },
 ]
 
 /** 动态作坊（机械坊 / 瞭望塔 / 知识工坊）的世界显示放大倍数 */
 export const WORKSHOP_SCALE = 1.45
-
-/** 灵魂飞行目的地（英灵殿门口） */
-export const VALHALLA_DOOR: Point = { x: 1540, y: 280 }
 
 /** 角色锚区（成员在矩形内游荡） */
 export const ZONES: Record<string, Rect> = {

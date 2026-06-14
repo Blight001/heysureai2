@@ -23,7 +23,7 @@ SYSTEM_PROMPT_FIELDS = {
     "default_start_task_prompt": "默认任务启动 prompt",
     "default_resume_task_prompt": "默认任务恢复 prompt",
     "default_supervision_prompt": "默认监督 prompt",
-    "default_inheritance_notice": "默认传承提示 prompt",
+    "default_compression_prompt": "默认对话压缩 prompt",
 }
 
 SYSTEM_PROMPT_USAGE = {
@@ -40,7 +40,7 @@ SYSTEM_PROMPT_USAGE = {
     "default_start_task_prompt": "任务首次启动时的默认注入提示，不是 AI 基础人格 prompt。",
     "default_resume_task_prompt": "任务传承/恢复时的默认注入提示，不是 AI 基础人格 prompt。",
     "default_supervision_prompt": "任务空闲监督时的默认追问提示，不是 AI 基础人格 prompt。",
-    "default_inheritance_notice": "token 生命周期达到阈值时的传承提醒模板，不是 AI 基础人格 prompt。",
+    "default_compression_prompt": "数字成员会话 token 达到阈值时，用于把较早的对话历史压缩成摘要的模板，不是 AI 基础人格 prompt。",
 }
 
 

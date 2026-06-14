@@ -160,7 +160,6 @@ const TASK_TOOL_ORDER = [
   'task.update',
   'task.delete',
   'task.list',
-  'task.inherit',
   'task.complete',
 ]
 

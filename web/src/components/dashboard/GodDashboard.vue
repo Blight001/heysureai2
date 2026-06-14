@@ -25,7 +25,6 @@ import { resolveAvatarUrl } from '@/utils/avatar'
 const SystemSettingsPanel = defineAsyncComponent(() => import('./panels/SystemSettingsPanel.vue'))
 const LeftSidebarPanel = defineAsyncComponent(() => import('./panels/LeftSidebarPanel.vue'))
 const WorldArenaPanel = defineAsyncComponent(() => import('./panels/WorldArenaPanel.vue'))
-const ValhallaPanel = defineAsyncComponent(() => import('./panels/ValhallaPanel.vue'))
 const ChatInterface = defineAsyncComponent(() => import('@/components/chat/ChatInterface.vue'))
 const McpToolsModal = defineAsyncComponent(() => import('./modals/McpToolsModal.vue'))
 const TaskManagementModal = defineAsyncComponent(() => import('./modals/TaskManagementModal.vue'))
@@ -81,7 +80,7 @@ const {
   defaultResumeTaskPrompt,
   defaultSupervisionPrompt,
   defaultSupervisionIdleSeconds,
-  defaultInheritanceNotice,
+  defaultCompressionPrompt,
   promptAiMessageNotify,
   promptAiMessageInquiry,
   aiMessageInquiryReminderSeconds,
@@ -119,9 +118,6 @@ const {
   syncChatTokensToAgents,
   loadProjectContext,
   loadAIAgents,
-  loadValhallaEntries,
-  valhallaEntries,
-  librarianPending,
   toggleAiRunByConfigId,
   addKnowledge,
   createSeedData,
@@ -139,9 +135,6 @@ const {
   guidanceDialog,
   settingsOpen,
   leftCollapsed,
-  rightCollapsed,
-  knowledgeFilterOpen,
-  knowledgeFilter,
   userMenuOpen,
   openContextMenu,
   closeContextMenu,
@@ -154,7 +147,6 @@ const {
   adminAgents,
   sidebarMemberAgents,
   activeAgents,
-  filteredKnowledgeBase,
 } = useDashboardUi({
   unassignedProjectId: UNASSIGNED_PROJECT_ID,
   agents,
@@ -479,7 +471,7 @@ onUnmounted(() => {
     </header>
 
     <!-- 主体内容区域 -->
-    <main class="flex-1 overflow-y-auto lg:overflow-hidden p-6 flex flex-col lg:flex-row" :class="leftCollapsed || rightCollapsed ? 'gap-4' : 'gap-6'">
+    <main class="flex-1 overflow-y-auto lg:overflow-hidden p-6 flex flex-col lg:flex-row" :class="leftCollapsed ? 'gap-4' : 'gap-6'">
 
       <!-- 左侧：数字社会核心管理员 (管理员 + 知识库) -->
       <section class="flex flex-col gap-6 transition-all duration-300 relative shrink-0" :class="leftCollapsed ? 'lg:w-10 lg:min-w-[40px] w-full' : 'lg:w-[20%] lg:min-w-[280px] w-full'">
@@ -513,33 +505,6 @@ onUnmounted(() => {
         :chat-ai-config-id="chatModalOpen ? chatTarget?.aiConfigId : null"
         @open-chat="onWorldOpenChat"
       />
-
-      <!-- 右侧：英灵殿 (Logs / Dead Agents) -->
-      <section class="transition-all duration-300 relative shrink-0" :class="rightCollapsed ? 'lg:w-10 lg:min-w-[40px] w-full' : 'lg:w-[16.6667%] lg:min-w-[200px] w-full'">
-        <button class="hidden lg:block absolute -left-3 top-4 w-6 h-6 rounded-full border border-zinc-200 bg-white text-zinc-500 text-xs shadow hover:text-indigo-600 hover:border-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300 z-10 transition-transform hover:scale-110" @click="rightCollapsed = !rightCollapsed">
-          {{ rightCollapsed ? '⟨' : '⟩' }}
-        </button>
-        <div v-if="rightCollapsed" class="hidden lg:flex h-full items-center justify-center text-zinc-400 text-xs dark:text-zinc-500">
-          英灵殿
-        </div>
-        <div v-else class="flex flex-col gap-4 h-auto lg:h-full">
-          <ValhallaPanel
-            :entries="valhallaEntries"
-            :active-agents="activeAgents"
-            :connected-devices="connectedDevices"
-            :knowledge-items="filteredKnowledgeBase"
-            :knowledge-total-count="filteredKnowledgeBase.length"
-            :librarian-pending-count="librarianPending.length"
-            :knowledge-filter-open="knowledgeFilterOpen"
-            :knowledge-filter-value="knowledgeFilter"
-            @refresh="loadValhallaEntries"
-            @update:knowledge-filter-open="knowledgeFilterOpen = $event"
-            @update:knowledge-filter-value="knowledgeFilter = $event"
-            @open-proposal-review="proposalReviewOpen = true; closeContextMenu()"
-            @refresh-user="emit('refreshUser', $event)"
-          />
-        </div>
-      </section>
 
     </main>
 
@@ -645,7 +610,7 @@ onUnmounted(() => {
       v-model:defaultResumeTaskPrompt="defaultResumeTaskPrompt"
       v-model:defaultSupervisionPrompt="defaultSupervisionPrompt"
       v-model:defaultSupervisionIdleSeconds="defaultSupervisionIdleSeconds"
-      v-model:defaultInheritanceNotice="defaultInheritanceNotice"
+      v-model:defaultCompressionPrompt="defaultCompressionPrompt"
       v-model:promptAiMessageNotify="promptAiMessageNotify"
       v-model:promptAiMessageInquiry="promptAiMessageInquiry"
       v-model:aiMessageInquiryReminderSeconds="aiMessageInquiryReminderSeconds"

@@ -9,7 +9,6 @@ import type {
   McpStatusPayload,
   ProjectItem,
 } from '@/types'
-import { listValhallaEntries, type ValhallaEntry } from '@/api/valhalla'
 import { listEntries, listProposals, type KnowledgeEntryItem } from '@/api/librarian'
 import { listAiCards, toggleAiRun } from '@/api/ai'
 import {
@@ -66,7 +65,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
   const allFiles = ref<string[]>([])
   const totalChatTokens = ref(0)
   const dashboardSocketConnected = ref(false)
-  const valhallaEntries = ref<ValhallaEntry[]>([])
   const librarianPending = ref<KnowledgeEntryItem[]>([])
 
   let dashboardRefreshing = false
@@ -482,17 +480,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     })
   }
 
-  const loadValhallaEntries = async () => {
-    const token = getAuthToken()
-    if (!token) return
-    try {
-      const data = await listValhallaEntries(token, { limit: 200 })
-      valhallaEntries.value = data.items || []
-    } catch {
-      // best-effort：英灵殿加载失败不阻塞主面板
-    }
-  }
-
   const loadLibrarianPending = async () => {
     const token = getAuthToken()
     if (!token) return
@@ -555,7 +542,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
       await Promise.all([
         loadAIAgents(),
         loadConnectedDevices(),
-        loadValhallaEntries(),
         loadLibrarianPending(),
         loadKnowledgeEntries(),
         onRefreshOpenTaskPanel(),
@@ -570,7 +556,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     await Promise.all([
       loadAIAgents(),
       loadConnectedDevices(),
-      loadValhallaEntries(),
       loadLibrarianPending(),
       loadKnowledgeEntries(),
     ])
@@ -608,8 +593,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     loadProjectContext,
     loadProjects,
     loadAIAgents,
-    loadValhallaEntries,
-    valhallaEntries,
     loadLibrarianPending,
     librarianPending,
     loadKnowledgeEntries,

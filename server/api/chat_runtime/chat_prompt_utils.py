@@ -414,20 +414,6 @@ def _merge_global_mcp_method(
         return f"{base}\n\n[全局MCP调用方法]\n{method}"
     return f"[全局MCP调用方法]\n{method}"
 
-def _render_inheritance_notice(template: str, cfg: AssistantAIConfig, session_tokens: int, threshold: int) -> str:
-    text = template or DEFAULT_SYSTEM_AUTO_CONTROL["inheritance_notice"]
-    try:
-        return text.format(
-            session_tokens=session_tokens,
-            threshold=threshold,
-            ai_name=cfg.name,
-        )
-    except Exception:
-        return (
-            f"当前思考量已达到阈值（{session_tokens}/{threshold}），"
-            f"建议 {cfg.name} 在本轮结束后立即开启传承流程，沉淀关键结论。"
-        )
-
 def _render_mcp_warning_text(template: str, details: List[str], values: Dict[str, Any]) -> str:
     details_bullets = "\n".join(f"- {line}" for line in details if str(line).strip())
     if not details_bullets:

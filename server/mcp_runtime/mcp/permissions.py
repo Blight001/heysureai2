@@ -49,7 +49,6 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "workspace.run_command": ROLE_MANAGER,
     # Task — members run their own task; orchestration is manager+.
     "task.complete": ROLE_MEMBER,
-    "task.inherit": ROLE_MEMBER,
     "task.list": ROLE_MEMBER,
     "task.create": ROLE_MANAGER,
     "task.update": ROLE_MANAGER,

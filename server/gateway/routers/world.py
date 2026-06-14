@@ -79,7 +79,7 @@ async def world_snapshot(
     """
     user = get_current_user(authorization, session)
 
-    from api.services import librarian_service, valhalla_service
+    from api.services import librarian_service
     from .ai_misc_routes import list_ai_cards
     from .devices import list_connected_devices
 
@@ -123,10 +123,6 @@ async def world_snapshot(
     except Exception:
         pass
     try:
-        valhalla_items = valhalla_service.list_entries(user_id=user.id, limit=200)
-    except Exception:
-        valhalla_items = []
-    try:
         knowledge_topics = librarian_service.list_topics(user_id=user.id, status="active")
         knowledge_items = []
         for item in knowledge_topics:
@@ -160,7 +156,6 @@ async def world_snapshot(
     return {
         "cards": cards,
         "agents": agents,
-        "valhalla_items": valhalla_items,
         "knowledge_active": knowledge_active,
         "knowledge_items": knowledge_items,
         "proposals": proposals,

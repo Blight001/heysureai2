@@ -12,7 +12,7 @@ Sub-modules:
 - ai_config    — AssistantAIConfig (per-AI configuration)
 - ai_runtime   — AITaskJob / AIRuntimeStatus / TokenUsageSnapshot
 - project      — EvolutionProject (multi-AI collaboration containers)
-- knowledge    — Memory / KnowledgeEntry / ValhallaEntry / EvolutionInput
+- knowledge    — Memory / KnowledgeEntry / EvolutionInput
 - communication — AIMessage
 """
 
@@ -40,7 +40,7 @@ from .defaults import (
     DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE,
     DEFAULT_AI_MESSAGE_REPLY_SUCCESS,
     DEFAULT_AI_MESSAGE_REPLY_TEMPLATE,
-    DEFAULT_INHERITANCE_NOTICE,
+    DEFAULT_COMPRESSION_PROMPT,
     DEFAULT_MCP_CALL_METHOD,
     DEFAULT_MCP_FORMAT_ERROR_HINT,
     DEFAULT_MCP_NAMESPACE_HINTS,
@@ -57,7 +57,7 @@ from .device_mcp_permission import DeviceTypeMcpPermission
 from .device_presence import DevicePresence
 from .bot_session_route import BotSessionRoute, BotUserCursor
 from .workshop_binding import WorkshopAiBinding
-from .knowledge import EvolutionInput, KnowledgeEntry, Memory, ValhallaEntry
+from .knowledge import EvolutionInput, KnowledgeEntry, Memory
 from .project import EvolutionProject, EvolutionProjectCreate, EvolutionProjectUpdate
 from .system import EmailVerificationCode, SystemSetting
 from .user import Token, User, UserCreate, UserLogin, UserRead, UserUpdate
@@ -72,7 +72,7 @@ __all__ = [
     "DEFAULT_AI_MESSAGE_NOTIFY_TEMPLATE",
     "DEFAULT_AI_MESSAGE_REPLY_SUCCESS",
     "DEFAULT_AI_MESSAGE_REPLY_TEMPLATE",
-    "DEFAULT_INHERITANCE_NOTICE",
+    "DEFAULT_COMPRESSION_PROMPT",
     "DEFAULT_MCP_CALL_METHOD",
     "DEFAULT_MCP_FORMAT_ERROR_HINT",
     "DEFAULT_MCP_NAMESPACE_HINTS",
@@ -123,7 +123,6 @@ __all__ = [
     "EvolutionInput",
     "KnowledgeEntry",
     "Memory",
-    "ValhallaEntry",
     "WorldActorMeta",
     # communication
     "AIMessage",

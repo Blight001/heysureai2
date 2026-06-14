@@ -8,14 +8,12 @@
   tree.png                    16x24@1x -> 32x48
   building_spawn.png          32x32@1x -> 64x64   x4 帧（出生地泉水）
   building_library.png        48x48@1x -> 96x96   x2 帧（传承知识库/图书馆）
-  building_valhalla.png       48x56@1x -> 96x112  x4 帧（英灵殿）
   building_workshop_desktop.png 32x32@1x -> 64x64 x4 帧（桌面 agent 作坊·机械坊）
   building_workshop_browser.png 32x40@1x -> 64x80 x4 帧（浏览器 agent 作坊·瞭望塔）
   building_workshop_knowledge.png 32x40@1x -> 64x80 x4 帧（知识工坊·学者书斋，悬浮魔典脉冲）
   char_*.png                  16x24@1x -> 32x48，4 列 x 5 行：
                               行 0-3 = 走路 下/左/右/上（第 0 帧兼站立），
                               行 4 = [闭眼 idle, 坐下, 跪倒, 躺倒]
-  soul.png                    12x12@1x -> 24x24   x4 帧（灵魂出鞘）
   emotes.png                  16x16 直绘 x8：沙漏/灯泡/对勾/感叹号/放大镜/Zzz/卷轴/骷髅
   effect_smoke.png            8x8@1x  -> 16x16   x4 帧
   effect_sparkle.png          8x8@1x  -> 16x16   x4 帧
@@ -376,52 +374,6 @@ def gen_library():
     save_strip(frames, "building_library.png")
 
 
-def gen_valhalla():
-    """英灵殿：山丘石殿 + 门内长明火 4 帧摇曳。"""
-    flame_h = [8, 11, 9, 13]
-    frames = []
-    for f in range(4):
-        c = C(48, 56)
-        # 台阶
-        c.rect(8, 50, 32, 2, STONE)
-        c.rect(5, 52, 38, 2, STONE_D)
-        c.rect(2, 54, 44, 2, STONE)
-        # 基座 + 背墙
-        c.rect(6, 46, 36, 4, STONE_D)
-        c.rect(7, 24, 34, 22, (96, 96, 106, 255))
-        # 门洞
-        c.rect(19, 28, 10, 18, (40, 38, 52, 255))
-        # 长明火
-        h = flame_h[f]
-        base_y = 45
-        c.rect(22, base_y - h + 3, 4, h - 3, FLAME_O)
-        c.rect(23, base_y - h + 1, 2, h - 1, FLAME_Y)
-        c.px(23 + (f % 2), base_y - h, FLAME_W)
-        c.px(24, base_y - 1, FLAME_W)
-        # 立柱 x4
-        for cx in (7, 13, 31, 37):
-            c.rect(cx, 24, 4, 22, STONE_L)
-            c.vline(cx + 3, 24, 22, STONE_D)
-        # 檐部 + 金饰带
-        c.rect(5, 20, 38, 4, STONE)
-        c.hline(5, 22, 38, GOLD_D)
-        # 山花（三角顶）
-        for i, y in enumerate(range(8, 20)):
-            half = 1 + i * 1.8
-            c.hline(24 - half, y, half * 2, STONE if y < 18 else STONE_D)
-        c.hline(5, 19, 38, GOLD_D)
-        # 顶部金徽
-        c.rect(23, 12, 2, 3, GOLD)
-        c.px(23, 11, GOLD)
-        # 火光映到门边柱（亮帧）
-        if f in (1, 3):
-            c.vline(18, 36, 8, (255, 220, 140, 120))
-            c.vline(29, 36, 8, (255, 220, 140, 120))
-        c.add_silhouette_outline()
-        frames.append(c)
-    save_strip(frames, "building_valhalla.png")
-
-
 def gen_workshop_desktop():
     """桌面 agent 作坊（机械坊）：墙面大齿轮 4 帧旋转 + 火花。"""
     frames = []
@@ -714,31 +666,7 @@ def gen_characters():
         print(f"  {name}.png  {FW * SCALE}x{FH * SCALE} x20帧（4 向行走 + 4 姿态）")
 
 
-# ================================================================ 灵魂 / 表情 / 特效
-def gen_soul():
-    body = (212, 232, 255, 215)
-    body_sh = (170, 200, 240, 200)
-    frames = []
-    for f in range(4):
-        c = C(12, 12)
-        c.disc(6, 5, 4, body)
-        c.rect(2, 5, 9, 4, body)
-        # 底部波浪尾
-        for x in range(2, 11):
-            if (x + f) % 2 == 0:
-                c.px(x, 9, body)
-            else:
-                c.px(x, 9, body_sh)
-                c.px(x, 10, body_sh)
-        c.px(4, 4, (52, 70, 120, 255))
-        c.px(8, 4, (52, 70, 120, 255))
-        # 头顶微光
-        if f in (1, 2):
-            c.px(6, 0, (240, 250, 255, 180))
-        frames.append(c)
-    save_strip(frames, "soul.png")
-
-
+# ================================================================ 表情 / 特效
 def gen_emotes():
     """16x16 直绘（UI 气泡用，不再放大）。顺序见 manifest。"""
     icons = []
@@ -1023,12 +951,10 @@ def main():
     gen_tree()
     gen_spawn()
     gen_library()
-    gen_valhalla()
     gen_workshop_desktop()
     gen_workshop_browser()
     gen_workshop_knowledge()
     gen_characters()
-    gen_soul()
     gen_emotes()
     gen_envelope()
     gen_lamp()

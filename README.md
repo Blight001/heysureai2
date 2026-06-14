@@ -64,7 +64,7 @@ HeySure AI 2.0 uses a digital-society metaphor:
 | --- | --- |
 | EvolutionArena | Tracks active AI members, tasks, status, and growth. |
 | KnowledgeBase | Stores reusable experience distilled from real work. |
-| Valhalla | Archives retired AI members, final reports, unfinished tasks, and handoff notes. |
+| Auto-compression | When a digital member's session reaches its token threshold, the older part of the conversation is automatically summarized into a compact summary so the same session can keep going — no generation handoff, no agent retirement. |
 | Archivist | A server-side core administrator that observes, records, summarizes, and preserves continuity. |
 
 ## Design Principles

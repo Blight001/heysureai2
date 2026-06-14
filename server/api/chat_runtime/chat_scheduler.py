@@ -1,6 +1,6 @@
-"""Automated task scheduler: start and supervise task-driven chat runs, inherit
-unfinished work across generations, and periodically dispatch due scheduled jobs
-from each config's ``system_auto_control``."""
+"""Automated task scheduler: start and supervise task-driven chat runs, and
+periodically dispatch due scheduled jobs from each config's
+``system_auto_control``."""
 
 IS_ROUTER_ENTRY = False
 
@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 
 from api.database import engine
-from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, ChatSession, User
+from api.models import AITaskJob, AssistantAIConfig, ChatMessageCreate, ChatRun, ChatSession, User
 from api.services import librarian_service
 from api.services.task_system import DEFAULT_SYSTEM_AUTO_CONTROL, normalize_system_auto_control, parse_generation_from_session_id
 from .run_state import MAX_AUTO_SUPERVISION_ROUNDS, _RUN_THREADS
@@ -25,35 +25,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def _load_previous_unfinished_block(user_id: int, ai_config_id: int, job_id: str, generation: int) -> str:
-    """读取上代（``generation - 1``）的未完成清单（来自 ValhallaEntry），
-    拼成结构化 prompt 块；无则返回空串。"""
-    if generation <= 1 or not job_id:
-        return ""
-    try:
-        from api.services import valhalla_service
-        items = valhalla_service.load_previous_unfinished(
-            user_id=user_id,
-            ai_config_id=ai_config_id,
-            job_id=job_id,
-            generation=generation,
-        )
-        if not items:
-            return ""
-        lines = ["[上代未完成清单]"] + [f"{i + 1}. {it}" for i, it in enumerate(items)] + [""]
-        return "\n".join(lines) + "\n"
-    except Exception as exc:
-        logger.exception(f"_load_previous_unfinished_block failed: {exc}")
-        return ""
-
-
 def _start_task_run(
     session: Session,
     cfg: AssistantAIConfig,
     job: AITaskJob,
     task_prompt: str,
     trigger_type: str,
-    previous_summary_override: Optional[str] = None,
 ) -> Optional[str]:
     session_prefix = f"session_task_{job.job_id}"
     run_history = session.exec(
@@ -104,21 +81,6 @@ def _start_task_run(
         session.add(chat_session)
         session.commit()
 
-    previous_summary = str(previous_summary_override or "").strip()
-    if not previous_summary and generation > 1:
-        prev_session_id = f"{session_prefix}_g{generation - 1}"
-        prev_msg = session.exec(
-            select(ChatMessage).where(
-                ChatMessage.user_id == cfg.user_id,
-                ChatMessage.ai_config_id == cfg.id,
-                ChatMessage.ai_kind == "core",
-                ChatMessage.session_id == prev_session_id,
-                ChatMessage.role == "assistant",
-            ).order_by(ChatMessage.created_at.desc())
-        ).first()
-        if prev_msg and prev_msg.content:
-            previous_summary = str(prev_msg.content)[-1200:]
-
     payload = {}
     try:
         payload = json.loads(job.task_payload) if job.task_payload else {}
@@ -165,9 +127,6 @@ def _start_task_run(
     except Exception as _bex:
         logger.exception(f"librarian.brief failed: {_bex}")
 
-    # 上代未完成事项（从 Valhalla 文件读，结构化注入）
-    unfinished_block = _load_previous_unfinished_block(cfg.user_id, cfg.id, job.job_id, generation)
-
     content = (
         f"[系统提示]\n{task_prompt}\n\n"
         f"[任务系统下发]\n"
@@ -178,8 +137,6 @@ def _start_task_run(
         f"- 要求: {job.instruction}\n\n"
         + payload_block
         + briefing_block
-        + (f"[上代关键上下文]\n{previous_summary}\n\n" if previous_summary else "")
-        + unfinished_block
         + f"执行完成后请调用 MCP 工具 `task.complete`（参数包含 `job_id={job.job_id}` 和非空 `summary`）标记任务完成。"
     )
     user_msg = _save_message(

@@ -15,7 +15,7 @@ interface Props {
   defaultResumeTaskPrompt: string
   defaultSupervisionPrompt: string
   defaultSupervisionIdleSeconds: number
-  defaultInheritanceNotice: string
+  defaultCompressionPrompt: string
   promptAiMessageNotify: string
   promptAiMessageInquiry: string
   aiMessageInquiryReminderSeconds: number
@@ -53,7 +53,7 @@ const emit = defineEmits<{
   (e: 'update:defaultResumeTaskPrompt', value: string): void
   (e: 'update:defaultSupervisionPrompt', value: string): void
   (e: 'update:defaultSupervisionIdleSeconds', value: number): void
-  (e: 'update:defaultInheritanceNotice', value: string): void
+  (e: 'update:defaultCompressionPrompt', value: string): void
   (e: 'update:promptAiMessageNotify', value: string): void
   (e: 'update:promptAiMessageInquiry', value: string): void
   (e: 'update:aiMessageInquiryReminderSeconds', value: number): void
@@ -259,9 +259,9 @@ const defaultSupervisionIdleSecondsValue = computed({
   set: value => emit('update:defaultSupervisionIdleSeconds', Number(value) || 25)
 })
 
-const defaultInheritanceNoticeValue = computed({
-  get: () => props.defaultInheritanceNotice,
-  set: value => emit('update:defaultInheritanceNotice', value)
+const defaultCompressionPromptValue = computed({
+  get: () => props.defaultCompressionPrompt,
+  set: value => emit('update:defaultCompressionPrompt', value)
 })
 
 const promptAiMessageNotifyValue = computed({
@@ -729,8 +729,8 @@ watch(() => props.show, visible => {
                     <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">当任务 run 停止后，超过该时长且未调用 task.complete，系统会自动发起监督追问。</p>
                   </div>
                   <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">传承提示文案（阈值默认使用上方 Token 上限）</div>
-                    <textarea v-model="defaultInheritanceNoticeValue" rows="3" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"></textarea>
+                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">对话压缩 Prompt（会话 Token 达到上限时自动总结压缩历史，占位符 {history}）</div>
+                    <textarea v-model="defaultCompressionPromptValue" rows="4" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"></textarea>
                   </div>
                 </section>
 
