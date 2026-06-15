@@ -30,12 +30,16 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: process.env.SERVER_URL || 'http://localhost:3000',
-        changeOrigin: true
+        // Keep the browser-facing Host. Auth responses use it to tell desktop
+        // and extension agents where their public Socket.IO endpoint lives.
+        changeOrigin: false,
+        xfwd: true,
       },
       '/socket.io': {
         target: process.env.SERVER_URL || 'http://localhost:3000',
         ws: true,
-        changeOrigin: true
+        changeOrigin: false,
+        xfwd: true,
       },
       '/uploads': {
         target: process.env.SERVER_URL || 'http://localhost:3000',

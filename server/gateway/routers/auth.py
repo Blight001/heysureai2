@@ -75,6 +75,24 @@ def _normalize_public_url(raw: str) -> str:
     return value.rstrip("/")
 
 
+def _first_forwarded_value(request: Request, header: str) -> str:
+    return str(request.headers.get(header) or "").split(",", 1)[0].strip()
+
+
+def _forwarded_public_url(request: Request) -> str:
+    host = _first_forwarded_value(request, "x-forwarded-host")
+    if not host:
+        return ""
+    # Reject path/control-character injection while still allowing host:port
+    # and bracketed IPv6 literals.
+    if any(char.isspace() or char in "/\\" for char in host):
+        return ""
+    scheme = _first_forwarded_value(request, "x-forwarded-proto").lower()
+    if scheme not in {"http", "https"}:
+        scheme = request.url.scheme if request.url.scheme in {"http", "https"} else "http"
+    return f"{scheme}://{host}"
+
+
 def _agent_socket_url(request: Request) -> str:
     configured = _normalize_public_url(settings.agent_socket_url)
     if configured:
@@ -82,6 +100,9 @@ def _agent_socket_url(request: Request) -> str:
     public_base = _normalize_public_url(settings.public_base_url)
     if public_base:
         return public_base
+    forwarded = _forwarded_public_url(request)
+    if forwarded:
+        return forwarded
     return str(request.base_url).rstrip("/")
 
 def ensure_user_workspace(user_id: int) -> None:
