@@ -259,11 +259,22 @@ def _delete_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optio
 
 def _edit_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     """Rename a conversation or clear its messages while keeping the session."""
-    scope = _conversation_scope(args, ai_config_id)
-    session_id = scope["session_id"]
-    action = str(args.get("action") or args.get("operation") or "").strip().lower()
+    action = str(args.get("action") or args.get("operation") or "clear").strip().lower()
     if action not in {"rename", "clear"}:
         raise HTTPException(status_code=400, detail="action must be rename or clear")
+
+    scope_args = args
+    run_ctx = get_run_session_context() or {}
+    if action == "clear" and str(run_ctx.get("session_id") or "").strip():
+        # Clearing is normally about the conversation executing this tool. A
+        # model may hallucinate channel identities or stale AI scope values;
+        # never let those override the authoritative run context.
+        scope_args = dict(args)
+        for key in ("session_id", "ai_config_id", "ai_kind"):
+            scope_args.pop(key, None)
+
+    scope = _conversation_scope(scope_args, ai_config_id)
+    session_id = scope["session_id"]
 
     with Session(engine) as session:
         session_row = session.exec(

@@ -1,6 +1,7 @@
 import json
 import base64
 import re
+import threading
 import time
 from typing import Any, Dict, Optional
 
@@ -17,6 +18,17 @@ QQ_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
 QQ_API_BASE = "https://api.sgroup.qq.com"
 QQ_SANDBOX_API_BASE = "https://sandbox.api.sgroup.qq.com"
 _TOKEN_CACHE: Dict[int, Dict[str, Any]] = {}
+_HTTP_LOCAL = threading.local()
+
+
+def _qq_http_session() -> requests.Session:
+    """Return a per-thread client that does not inherit desktop proxy vars."""
+    session = getattr(_HTTP_LOCAL, "session", None)
+    if session is None:
+        session = requests.Session()
+        session.trust_env = False
+        _HTTP_LOCAL.session = session
+    return session
 
 
 def normalize_qq_text(text: str) -> str:
@@ -90,7 +102,7 @@ def get_qq_access_token(user_id: int, ai_config_id: Optional[int]) -> str:
     if cache and cache.get("token") and float(cache.get("expires_at") or 0) > now + 120:
         return str(cache["token"])
 
-    res = requests.post(
+    res = _qq_http_session().post(
         QQ_TOKEN_URL,
         headers={"Content-Type": "application/json"},
         json={"appId": str(bot_cfg.get("app_id") or ""), "clientSecret": str(bot_cfg.get("app_secret") or "")},
@@ -132,7 +144,7 @@ def _qq_headers(cfg: AssistantAIConfig, token: str) -> Dict[str, str]:
 
 def _post_qq_message(cfg: AssistantAIConfig, *, endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     token = get_qq_access_token(cfg.user_id, cfg.id)
-    res = requests.post(
+    res = _qq_http_session().post(
         endpoint,
         headers=_qq_headers(cfg, token),
         json=payload,
@@ -178,7 +190,7 @@ def upload_qq_media_file_info(
         with open(source.path, "rb") as fh:
             payload["file_data"] = base64.b64encode(fh.read()).decode("ascii")
     token = get_qq_access_token(user_id, ai_config_id)
-    res = requests.post(
+    res = _qq_http_session().post(
         _qq_media_file_endpoint(cfg, final_target_type, target_id),
         headers=_qq_headers(cfg, token),
         json=payload,
@@ -255,6 +267,11 @@ def _prepare_markdown_text(text: str) -> str:
     body = body.replace("\r\n", "\n").replace("\r", "\n")
     body = re.sub(r"\n{3,}", "\n\n", body)
     return body.strip()
+
+
+def _prepare_stream_markdown_text(text: str) -> str:
+    """Normalize line endings without stripping incremental whitespace."""
+    return str(text or "").replace("\r\n", "\n").replace("\r", "\n")
 
 
 def _qq_markdown_field(content: str, markdown_mode: str, template_id: str) -> Dict[str, Any]:
@@ -390,8 +407,8 @@ def post_qq_stream_packet(
 
         stream = {
             "state": 1,   # 1 = 生成中 (first/intermediate packet), 10 = 完成 (final)
-            "id":    "",  # stream id; empty on the first packet, reused after
-            "index": 1,   # packet sequence, 1-based and strictly increasing
+            "id":    "",  # omitted on the first packet, then QQ's returned id
+            "index": 0,   # first packet is 0, then strictly increases
             "reset": False,  # True replaces the whole message body
         }
 
@@ -401,16 +418,24 @@ def post_qq_stream_packet(
     """
     cfg = _load_qq_config(user_id, ai_config_id)
     final_target_type = _normalize_target_type(target_type or "c2c")
-    content = _prepare_markdown_text(text)
+    content = _prepare_stream_markdown_text(text)
+    if stream_state == 10 and content and not content.endswith("\n"):
+        content += "\n"
+    if not content:
+        raise HTTPException(status_code=400, detail="QQ stream text is required")
+    stream_payload: Dict[str, Any] = {
+        "state": int(stream_state),
+        "index": int(stream_index),
+        "reset": bool(reset),
+    }
+    # The first packet has no stream id. QQ returns the id that subsequent
+    # packets must reuse.
+    if stream_id:
+        stream_payload["id"] = str(stream_id)
     payload: Dict[str, Any] = {
         "msg_type": 2,
         "markdown": _qq_markdown_field(content, markdown_mode, template_id),
-        "stream": {
-            "state": int(stream_state),
-            "id": str(stream_id or ""),
-            "index": int(stream_index),
-            "reset": bool(reset),
-        },
+        "stream": stream_payload,
     }
     if msg_id:
         payload["msg_id"] = str(msg_id)

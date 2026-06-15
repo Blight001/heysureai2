@@ -403,12 +403,17 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         name="conversation.edit",
         description=(
             "在不删除会话的前提下编辑对话：action=rename 改名，action=clear 清空消息。"
-            "清空当前激活会话时，默认保留当前这条用户请求，好让本轮还能正常完成。"
+            "不传参数（arguments={}）时，默认清空当前运行所在会话，并保留当前这条用户请求。"
+            "清理当前上下文时不要传 session_id、ai_config_id 或 ai_kind，运行上下文会自动补齐。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["rename", "clear"], "description": "要执行的编辑动作。"},
+                "action": {
+                    "type": "string",
+                    "enum": ["rename", "clear"],
+                    "description": "可选；默认 clear。rename 用于改名，clear 用于清空消息。",
+                },
                 "session_id": {"type": "string", "description": "可选，会话 id；默认当前运行所在会话。"},
                 "name": {"type": "string", "description": "action=rename 时必填，新的会话名。"},
                 "session_name": {"type": "string", "description": "与 name 等价的别名。"},
@@ -419,7 +424,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
                 "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
                 "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则跟随当前运行。"},
             },
-            "required": ["action"],
+            "required": [],
         },
         handler=_edit_conversation,
         destructive=True,

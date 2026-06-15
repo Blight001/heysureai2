@@ -588,6 +588,16 @@ def _extract_mcp_error(exc: Exception) -> str:
         if detail_text:
             return detail_text
         return f"HTTP {getattr(exc, 'status_code', 500)}"
+    response = getattr(exc, "response", None)
+    if response is not None:
+        try:
+            payload = response.json()
+            if isinstance(payload, dict) and payload.get("detail"):
+                return str(payload["detail"])
+        except Exception:
+            response_text = str(getattr(response, "text", "") or "").strip()
+            if response_text:
+                return response_text
     text = str(exc or "").strip()
     return text or exc.__class__.__name__
 

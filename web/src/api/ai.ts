@@ -30,6 +30,9 @@ export interface QqBotConfig {
   sandbox?: boolean
   default_target_id?: string
   default_target_type?: string
+  markdown_mode?: 'native' | 'template' | 'off'
+  markdown_template_id?: string
+  stream_enabled?: boolean
 }
 
 export interface BotConfigsPayload {

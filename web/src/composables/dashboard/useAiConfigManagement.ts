@@ -48,6 +48,9 @@ const BOT_CONFIG_DEFAULTS: Record<string, Record<string, any>> = {
     sandbox: false,
     default_target_id: '',
     default_target_type: 'c2c',
+    markdown_mode: 'native',
+    markdown_template_id: '',
+    stream_enabled: true,
   },
 }
 
@@ -211,6 +214,9 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
         sandbox: false,
         default_target_id: '',
         default_target_type: 'c2c',
+        markdown_mode: 'native',
+        markdown_template_id: '',
+        stream_enabled: true,
       },
     } as Record<string, Record<string, any>>,
     system_auto_control: normalizeSystemAutoControl({}),

@@ -560,9 +560,25 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                     <label class="block text-[11px] text-zinc-500 mb-1">主动发送目标 ID（可选）</label>
                     <input v-model="form.bot_configs.qq.default_target_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="openid / group_openid / channel_id" />
                   </div>
+                  <div>
+                    <label class="block text-[11px] text-zinc-500 mb-1">Markdown 模式</label>
+                    <select v-model="form.bot_configs.qq.markdown_mode" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs">
+                      <option value="native">原生 Markdown</option>
+                      <option value="template">审核模板</option>
+                      <option value="off">关闭（纯文本）</option>
+                    </select>
+                  </div>
+                  <div v-if="form.bot_configs.qq.markdown_mode === 'template'" class="md:col-span-2">
+                    <label class="block text-[11px] text-zinc-500 mb-1">Markdown 模板 ID</label>
+                    <input v-model="form.bot_configs.qq.markdown_template_id" class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 text-xs" placeholder="QQ 开放平台审核通过的模板 ID" />
+                  </div>
+                  <label class="md:col-span-2 flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-300 px-2 py-2 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60">
+                    <span>私聊启用流式输出</span>
+                    <input type="checkbox" v-model="form.bot_configs.qq.stream_enabled" :disabled="form.bot_configs.qq.markdown_mode === 'off'" />
+                  </label>
                 </div>
                 <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
-                  QQ 入站现在由服务端的 botpy 长连接托管，不需要单独配置回调地址。如果未连接，请先确认 App ID / Secret 和机器人权限配置正确。
+                  QQ 入站由服务端 botpy 长连接托管。原生 Markdown 和私聊流式输出需要 QQ 开放平台权限；未获权限时服务端会自动回退为纯文本。
                 </div>
                 </template>
               </div>

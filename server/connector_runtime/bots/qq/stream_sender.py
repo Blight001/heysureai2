@@ -22,7 +22,6 @@ from __future__ import annotations
 import logging
 import re
 import threading
-import uuid
 from typing import Optional, Set
 
 from sqlmodel import Session, select
@@ -30,7 +29,7 @@ from sqlmodel import Session, select
 from api.chat_runtime.mcp_parser import MCP_CALL_BLOCK_RE
 from api.chat_runtime.run_state import pop_run_stream, register_run_stream
 from api.database import engine
-from api.models import AssistantAIConfig, BotSessionRoute
+from api.models import AssistantAIConfig, BotSessionRoute, ChatMessage
 from ._config import read_qq_config
 from .service import post_qq_stream_packet, send_qq_markdown_message
 
@@ -89,6 +88,27 @@ def _mark_inactive(session_id: str) -> None:
         _ACTIVE_SESSIONS.discard(str(session_id or "").strip())
 
 
+def _load_assistant_prefix(
+    *, user_id: int, ai_config_id: int, ai_kind: str, session_id: str
+) -> str:
+    """Build the same thinking/MCP prefix used by normal bot delivery."""
+    from connector_runtime.bots.notify import _assistant_prefix
+
+    with Session(engine) as session:
+        message = session.exec(
+            select(ChatMessage).where(
+                ChatMessage.user_id == int(user_id),
+                ChatMessage.ai_config_id == int(ai_config_id),
+                ChatMessage.ai_kind == str(ai_kind or "core"),
+                ChatMessage.session_id == str(session_id or ""),
+                ChatMessage.role == "assistant",
+            ).order_by(ChatMessage.id.desc())
+        ).first()
+        if message is None:
+            return ""
+        return _assistant_prefix(session, message)
+
+
 class QQStreamSession:
     """Accumulates live answer text and flushes it as QQ stream packets."""
 
@@ -97,6 +117,7 @@ class QQStreamSession:
         *,
         user_id: int,
         ai_config_id: int,
+        ai_kind: str,
         session_id: str,
         target_id: str,
         target_type: str,
@@ -108,6 +129,7 @@ class QQStreamSession:
     ) -> None:
         self.user_id = int(user_id)
         self.ai_config_id = int(ai_config_id)
+        self.ai_kind = str(ai_kind or "core")
         self.session_id = str(session_id)
         self.target_id = str(target_id)
         self.target_type = str(target_type or "c2c")
@@ -120,7 +142,7 @@ class QQStreamSession:
         self._close_evt = threading.Event()
         self._seq = max(1, int(start_seq or 1))
         self._index = 0
-        self._stream_id = uuid.uuid4().hex
+        self._stream_id = ""
         self._started = False
         self._failed = False
         self._finished = False
@@ -176,6 +198,21 @@ class QQStreamSession:
         try:
             if not text:
                 return
+            try:
+                prefix = _load_assistant_prefix(
+                    user_id=self.user_id,
+                    ai_config_id=self.ai_config_id,
+                    ai_kind=self.ai_kind,
+                    session_id=self.session_id,
+                )
+            except Exception:
+                logger.debug(
+                    f"qq stream prefix lookup failed session={self.session_id}",
+                    exc_info=True,
+                )
+                prefix = ""
+            if prefix:
+                text = f"{prefix}{text}"
             if self._started and not self._failed:
                 # Happy path: close the live stream with a 完成 packet.
                 self._send_packet(text, final=True, force=(text == self._last_sent_text))
@@ -190,20 +227,32 @@ class QQStreamSession:
     def _send_packet(self, text: str, *, final: bool, force: bool = False) -> None:
         if self._failed and not force:
             return
-        self._index += 1
+        reset = False
+        if text.startswith(self._last_sent_text):
+            packet_text = text[len(self._last_sent_text):]
+        else:
+            packet_text = text
+            reset = self._started
+        if not packet_text and final:
+            # A final packet still needs non-empty markdown. Replace the live
+            # body with the complete answer instead of appending it again.
+            packet_text = text
+            reset = self._started
+        if not packet_text:
+            return
         seq = self._seq
-        self._seq += 1
         state = _STREAM_STATE_FINISHED if final else _STREAM_STATE_GENERATING
         try:
             data = post_qq_stream_packet(
                 self.user_id,
                 self.ai_config_id,
-                text=text,
+                text=packet_text,
                 target_id=self.target_id,
                 target_type=self.target_type,
                 stream_id=self._stream_id,
                 stream_index=self._index,
                 stream_state=state,
+                reset=reset,
                 msg_id=self.msg_id,
                 event_id=self.event_id,
                 msg_seq=seq if self.msg_id else None,
@@ -216,6 +265,8 @@ class QQStreamSession:
                 if assigned:
                     self._stream_id = assigned
             self._started = True
+            self._index += 1
+            self._seq += 1
             self._last_sent_text = text
         except Exception as exc:
             self._failed = True
@@ -300,12 +351,16 @@ def maybe_start_qq_stream(
             target_id = str(target.get("target_id") or "").strip()
             if not target_id:
                 return None
+            target_type = str(target.get("target_type") or "c2c").strip().lower()
+            if target_type != "c2c":
+                return None
             stream = QQStreamSession(
                 user_id=int(user_id),
                 ai_config_id=int(ai_config_id),
+                ai_kind=str(ai_kind or "core"),
                 session_id=str(session_id),
                 target_id=target_id,
-                target_type=str(target.get("target_type") or "c2c"),
+                target_type=target_type,
                 msg_id=str(row.source_message_id or ""),
                 event_id=str(row.source_event_id or ""),
                 start_seq=int(row.next_msg_seq or 1),
