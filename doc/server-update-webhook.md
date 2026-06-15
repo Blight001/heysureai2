@@ -11,6 +11,7 @@
 set -euo pipefail
 cd /opt/heysure
 git pull --ff-only
+python3 server/scripts/write_deploy_version.py
 docker compose up -d --build
 ```
 
@@ -67,3 +68,9 @@ docker compose up -d --build
 ```
 
 此后管理员后台的“版本更新”页面会显示“已连接服务器更新器”，可设置更新开关、间隔，或立即触发更新。计划触发时间保存在数据库中，网关重启不会导致连续重复部署。
+
+`update-heysure.sh` 必须在 `docker compose up` 之前执行以下命令，网页才能在容器没有 `.git` 时显示分支和提交版本：
+
+```bash
+python3 server/scripts/write_deploy_version.py
+```

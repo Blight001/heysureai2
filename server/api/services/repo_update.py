@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
 import subprocess
 import threading
@@ -32,7 +33,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from sqlmodel import Session
 
-from api.core.settings import REPOSITORY_DIR, settings
+from api.core.settings import DATA_DIR, REPOSITORY_DIR, settings
 from api.database import engine
 from api.services.auth_settings import get_setting, set_setting
 
@@ -56,6 +57,7 @@ LAST_UPDATE_FROM_KEY = "repo_update.last_update_from"
 DEFAULT_INTERVAL_SECONDS = 1800
 MIN_INTERVAL_SECONDS = 60
 MAX_INTERVAL_SECONDS = 86400
+DEPLOYED_VERSION_FILE = os.path.join(DATA_DIR, "deployed-version.json")
 
 
 def get_config(session: Session) -> Dict[str, Any]:
@@ -242,6 +244,18 @@ def _commit_info(ref: str = "HEAD") -> Optional[Dict[str, Any]]:
 def collect_version_info() -> Dict[str, Any]:
     """当前工作区版本快照（无需联网），用于进入栏目时展示。"""
     if not git_available():
+        try:
+            with open(DEPLOYED_VERSION_FILE, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            current = payload.get("current")
+            if isinstance(payload, dict) and isinstance(current, dict):
+                return {
+                    "git_available": False,
+                    "branch": str(payload.get("branch") or ""),
+                    "current": current,
+                }
+        except (OSError, ValueError, TypeError):
+            pass
         return {"git_available": False, "branch": "", "current": None}
     return {
         "git_available": True,
