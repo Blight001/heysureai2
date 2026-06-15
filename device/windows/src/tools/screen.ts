@@ -122,26 +122,9 @@ export async function screenCapture(args: any = {}) {
     dataUrl: pngDataUrl(outBuf),
     width,
     height,
-    original_width: scaled.originalWidth,
-    original_height: scaled.originalHeight,
-    vision_resize: {
-      resized: scaled.resized,
-      max_width: VISION_MAX_WIDTH,
-      max_height: VISION_MAX_HEIGHT,
-      scale_x: scaled.scaleX,
-      scale_y: scaled.scaleY,
-      note: scaled.resized
-        ? '截图内容已缩放到 1920x1080 以内发送给 AI；mouse.* 输入该缩放截图坐标时会自动换算到真实屏幕坐标。'
-        : '截图内容未缩放；mouse.* 输入截图坐标时会按当前屏幕标定换算。',
-    },
-    bytes: outBuf.length,
-    original_bytes: buf.length,
-    display: displayIndex,
-    calibration: {
-      display: displayGeometry,
-      scale_x: width > 0 ? displayGeometry.bounds.width / width : 1,
-      scale_y: height > 0 ? displayGeometry.bounds.height / height : 1,
-    },
+    note: scaled.resized
+      ? '截图已缩放到 1920x1080 以内；mouse.* 直接使用本截图坐标即可，系统会自动换算到真实屏幕坐标。'
+      : 'mouse.* 直接使用本截图坐标即可，系统会按当前屏幕标定自动换算。',
   }
 }
 
@@ -157,24 +140,9 @@ export async function screenCaptureRegion(args: any) {
     save_to_server: wantsServerSave(args),
     send_to_user: wantsSendToUser(args),
     dataUrl: pngDataUrl(outBuf),
-    x,
-    y,
     width: scaled.width,
     height: scaled.height,
-    original_width: scaled.originalWidth,
-    original_height: scaled.originalHeight,
-    vision_resize: {
-      resized: scaled.resized,
-      max_width: VISION_MAX_WIDTH,
-      max_height: VISION_MAX_HEIGHT,
-      scale_x: scaled.scaleX,
-      scale_y: scaled.scaleY,
-      note: scaled.resized
-        ? '局部截图内容已缩放到 1920x1080 以内发送给 AI。'
-        : '局部截图内容未缩放。',
-    },
-    bytes: outBuf.length,
-    original_bytes: buf.length,
+    ...(scaled.resized ? { note: '局部截图已缩放到 1920x1080 以内。' } : {}),
   }
 }
 
