@@ -29,6 +29,7 @@ import subprocess
 import threading
 import time
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 from sqlmodel import Session
@@ -135,6 +136,14 @@ def _fresh_webhook_steps() -> List[Dict[str, str]]:
     ]
 
 
+def _webhook_steps(*, pull: str, restart: str) -> List[Dict[str, str]]:
+    steps = _fresh_webhook_steps()
+    steps[0]["status"] = "skipped"
+    steps[1]["status"] = pull
+    steps[2]["status"] = restart
+    return steps
+
+
 _state: Dict[str, Any] = {
     "phase": "idle",
     "message": "",
@@ -148,6 +157,7 @@ _state: Dict[str, Any] = {
     "remote": None,  # 远程 commit 信息
     "last_check_at": None,
     "last_error": "",
+    "logs": [],
     "updated_at": time.time(),
 }
 
@@ -176,6 +186,7 @@ def get_state() -> Dict[str, Any]:
         # 深拷贝 steps，避免调用方拿到内部可变引用。
         snapshot = dict(_state)
         snapshot["steps"] = [dict(s) for s in _state["steps"]]
+        snapshot["logs"] = list(_state.get("logs") or [])
         return snapshot
 
 
@@ -277,24 +288,78 @@ def updater_available() -> bool:
     return update_mode() != "unavailable"
 
 
+def _webhook_headers() -> Dict[str, str]:
+    token = settings.repo_update_webhook_token.strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def _webhook_status_url() -> str:
+    parts = urlsplit(settings.repo_update_webhook_url.strip())
+    return urlunsplit((parts.scheme, parts.netloc, "/status", "", ""))
+
+
 def _trigger_deployment_webhook() -> None:
     url = settings.repo_update_webhook_url.strip()
     if not url:
         raise RepoUpdateError("未配置服务器更新 Webhook")
-    headers = {}
-    token = settings.repo_update_webhook_token.strip()
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
     try:
         response = httpx.post(
             url,
-            headers=headers,
+            headers=_webhook_headers(),
             json={"source": "heysure-admin", "requested_at": time.time()},
             timeout=float(settings.repo_update_webhook_timeout_seconds),
         )
         response.raise_for_status()
     except httpx.HTTPError as exc:
         raise RepoUpdateError(f"服务器更新 Webhook 调用失败：{exc}") from exc
+
+
+def refresh_webhook_state() -> None:
+    """Pull the host updater's latest execution state and captured output."""
+    if update_mode() != "webhook":
+        return
+    try:
+        response = httpx.get(
+            _webhook_status_url(),
+            headers=_webhook_headers(),
+            timeout=3.0,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except (httpx.HTTPError, ValueError):
+        return
+
+    status = payload.get("status")
+    logs = [str(line) for line in (payload.get("logs") or [])][-300:]
+    if status == "running":
+        _set_state(
+            phase="pulling",
+            running=True,
+            message="服务器更新脚本正在执行…",
+            steps=_webhook_steps(pull="active", restart="pending"),
+            logs=logs,
+        )
+        return
+    if status == "success":
+        _set_state(
+            phase="up_to_date",
+            running=False,
+            message="服务器更新脚本执行完成",
+            last_error="",
+            steps=_webhook_steps(pull="done", restart="done"),
+            logs=logs,
+        )
+        return
+    if status == "error":
+        exit_code = payload.get("exit_code")
+        _set_state(
+            phase="error",
+            running=False,
+            message="服务器更新脚本执行失败",
+            last_error=f"更新脚本退出码：{exit_code}",
+            steps=_webhook_steps(pull="error", restart="skipped"),
+            logs=logs,
+        )
 
 
 def _run_webhook_update(*, trigger: str) -> Dict[str, Any]:
@@ -304,6 +369,7 @@ def _run_webhook_update(*, trigger: str) -> Dict[str, Any]:
         trigger=trigger,
         steps=_fresh_webhook_steps(),
         last_error="",
+        logs=[],
         message="正在通知服务器执行部署更新…",
         last_check_at=time.time(),
     )
@@ -311,12 +377,10 @@ def _run_webhook_update(*, trigger: str) -> Dict[str, Any]:
     _set_step(_STEP_PULL, "active")
     _trigger_deployment_webhook()
     _record_last_update(from_sha="", to_sha="")
-    _set_step(_STEP_PULL, "done")
-    _set_step(_STEP_RESTART, "active")
     _set_state(
-        phase="restarting",
+        phase="pulling",
         running=True,
-        message="服务器已接受更新任务，正在重新部署…",
+        message="服务器已接受更新任务，正在执行脚本…",
     )
     return {"ok": True, "updated": True, "restarting": True, "state": get_state()}
 

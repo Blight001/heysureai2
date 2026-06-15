@@ -50,6 +50,12 @@ systemctl status heysure-update-webhook
 journalctl -u heysure-update-webhook -f
 ```
 
+新版桥接器会保留最近 300 行更新脚本输出，管理员后台会每 2.5 秒刷新并展示拉取、构建及部署日志。更新桥接器代码后需重启常驻服务：
+
+```bash
+systemctl restart heysure-update-webhook
+```
+
 如果服务器原来通过 cron 或宝塔计划任务定时执行 `update-heysure.sh`，请停用该任务。保留本服务常驻，并只在网页中配置更新时间。
 
 ## 3. 配置应用

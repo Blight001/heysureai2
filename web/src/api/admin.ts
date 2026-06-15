@@ -433,6 +433,7 @@ export interface RepoUpdateState {
   remote: RepoCommitInfo | null
   last_check_at: number | null
   last_error: string
+  logs: string[]
   updated_at: number
 }
 

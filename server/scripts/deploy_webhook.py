@@ -8,6 +8,7 @@ import json
 import subprocess
 import threading
 import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -25,14 +26,68 @@ def main() -> None:
         parser.error("--script must point to a file")
 
     run_lock = threading.Lock()
+    state_lock = threading.Lock()
+    state = {
+        "running": False,
+        "status": "idle",
+        "started_at": None,
+        "finished_at": None,
+        "exit_code": None,
+        "logs": deque(maxlen=300),
+    }
 
     def run_script() -> None:
         try:
-            subprocess.run([str(script)], cwd=str(script.parent), check=False)
+            with state_lock:
+                state.update(
+                    running=True,
+                    status="running",
+                    started_at=time.time(),
+                    finished_at=None,
+                    exit_code=None,
+                )
+                state["logs"].clear()
+            process = subprocess.Popen(
+                [str(script)],
+                cwd=str(script.parent),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+            )
+            assert process.stdout is not None
+            for raw_line in process.stdout:
+                line = raw_line.rstrip("\r\n")
+                with state_lock:
+                    state["logs"].append(line)
+                print(f"deploy-update: {line}", flush=True)
+            exit_code = process.wait()
+            with state_lock:
+                state.update(
+                    running=False,
+                    status="success" if exit_code == 0 else "error",
+                    finished_at=time.time(),
+                    exit_code=exit_code,
+                )
+        except Exception as exc:
+            with state_lock:
+                state["logs"].append(f"Webhook runner error: {exc}")
+                state.update(
+                    running=False,
+                    status="error",
+                    finished_at=time.time(),
+                    exit_code=-1,
+                )
         finally:
             run_lock.release()
 
     class Handler(BaseHTTPRequestHandler):
+        def _authorized(self) -> bool:
+            expected = f"Bearer {args.token}"
+            return hmac.compare_digest(self.headers.get("Authorization", ""), expected)
+
         def _json(self, status: int, payload: dict) -> None:
             body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
@@ -41,12 +96,23 @@ def main() -> None:
             self.end_headers()
             self.wfile.write(body)
 
+        def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+            if self.path != "/status":
+                self._json(404, {"ok": False, "error": "not found"})
+                return
+            if not self._authorized():
+                self._json(401, {"ok": False, "error": "unauthorized"})
+                return
+            with state_lock:
+                payload = {key: value for key, value in state.items() if key != "logs"}
+                payload["logs"] = list(state["logs"])
+            self._json(200, {"ok": True, **payload})
+
         def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
             if self.path != "/update":
                 self._json(404, {"ok": False, "error": "not found"})
                 return
-            expected = f"Bearer {args.token}"
-            if not hmac.compare_digest(self.headers.get("Authorization", ""), expected):
+            if not self._authorized():
                 self._json(401, {"ok": False, "error": "unauthorized"})
                 return
             if not run_lock.acquire(blocking=False):

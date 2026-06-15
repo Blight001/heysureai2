@@ -2273,6 +2273,10 @@ const avatarFor = (u: AdminUser) =>
                 <p v-if="repoStatus.state.phase === 'error' && repoStatus.state.last_error" class="text-xs text-red-600 dark:text-red-400 break-all">
                   ✕ {{ repoStatus.state.last_error }}
                 </p>
+                <div v-if="repoStatus.update_mode === 'webhook' && repoStatus.state.logs?.length" class="space-y-1">
+                  <div class="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">服务器更新输出</div>
+                  <pre class="max-h-64 overflow-auto rounded-lg bg-zinc-950 p-3 text-[11px] leading-5 text-zinc-200 whitespace-pre-wrap break-all">{{ repoStatus.state.logs.join('\n') }}</pre>
+                </div>
               </section>
             </template>
           </div>
