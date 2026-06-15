@@ -992,7 +992,7 @@ const runModelTest = async () => {
   }
 }
 
-const mcpToolNames = ref<string[]>([])
+const mcpTools = ref<any[]>([])
 const mcpToolsLoaded = ref(false)
 const selectedMcpTool = ref('')
 const mcpArgsText = ref('{}')
@@ -1002,15 +1002,63 @@ const mcpResult = ref<{ ok: boolean; text: string } | null>(null)
 const loadMcpToolNames = async () => {
   try {
     const res = await listMcpTools()
-    mcpToolNames.value = (res.tools || [])
-      .map((t: any) => String(t?.name || '').trim())
-      .filter(Boolean)
-      .sort()
+    mcpTools.value = (res.tools || [])
+      .filter((t: any) => String(t?.name || '').trim())
+      .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
     mcpToolsLoaded.value = true
   } catch (err) {
     await alert({ message: (err as Error).message, type: 'error' })
   }
 }
+
+interface McpParamRow { name: string; type: string; required: boolean; description: string }
+
+const selectedToolInfo = computed(() => mcpTools.value.find((t: any) => t.name === selectedMcpTool.value) || null)
+
+const selectedToolParams = computed<McpParamRow[]>(() => {
+  const schema = selectedToolInfo.value?.inputSchema
+  const props = schema && typeof schema === 'object' ? schema.properties : null
+  if (!props || typeof props !== 'object') return []
+  const required: string[] = Array.isArray(schema.required) ? schema.required : []
+  return Object.entries(props).map(([name, cfg]: [string, any]) => {
+    const rawType = cfg?.type
+    const type = Array.isArray(rawType) ? rawType.join(' | ') : String(rawType || 'any')
+    return {
+      name,
+      type,
+      required: required.includes(name),
+      description: String(cfg?.description || ''),
+    }
+  })
+})
+
+const sampleForType = (type: string): unknown => {
+  if (type.includes('integer') || type.includes('number')) return 0
+  if (type.includes('boolean')) return false
+  if (type.includes('array')) return []
+  if (type.includes('object')) return {}
+  return ''
+}
+
+const fillMcpArgsTemplate = (requiredOnly = false) => {
+  const rows = selectedToolParams.value
+  const skeleton: Record<string, unknown> = {}
+  for (const p of rows) {
+    if (requiredOnly && !p.required) continue
+    skeleton[p.name] = sampleForType(p.type)
+  }
+  mcpArgsText.value = JSON.stringify(skeleton, null, 2)
+}
+
+// 切换工具时，自动用「必填参数」骨架预填，省去手敲 JSON。
+watch(selectedMcpTool, (name) => {
+  mcpResult.value = null
+  if (!name) {
+    mcpArgsText.value = '{}'
+    return
+  }
+  fillMcpArgsTemplate(true)
+})
 
 const runMcpTest = async () => {
   if (!selectedMcpTool.value) {
@@ -1921,7 +1969,7 @@ const avatarFor = (u: AdminUser) =>
                   class="sm:w-64 border border-zinc-200 rounded-lg px-3 py-2 text-sm dark:bg-zinc-800 dark:border-zinc-700"
                 >
                   <option value="">选择工具…</option>
-                  <option v-for="name in mcpToolNames" :key="name" :value="name">{{ name }}</option>
+                  <option v-for="t in mcpTools" :key="t.name" :value="t.name">{{ t.name }}</option>
                 </select>
                 <button
                   class="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap"
@@ -1929,9 +1977,34 @@ const avatarFor = (u: AdminUser) =>
                   @click="runMcpTest"
                 >{{ mcpBusy ? '执行中…' : '执行工具' }}</button>
               </div>
+
+              <!-- 选中工具的说明与参数表 -->
+              <div v-if="selectedToolInfo" class="mt-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/50 p-3">
+                <div v-if="selectedToolInfo.description" class="text-xs text-zinc-600 dark:text-zinc-300 mb-2">{{ selectedToolInfo.description }}</div>
+                <div v-if="selectedToolParams.length" class="space-y-1">
+                  <div class="text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">参数</div>
+                  <div
+                    v-for="p in selectedToolParams"
+                    :key="p.name"
+                    class="text-xs flex flex-wrap items-baseline gap-x-2"
+                  >
+                    <code class="text-indigo-600 dark:text-indigo-300">{{ p.name }}</code>
+                    <span class="text-zinc-400">{{ p.type }}</span>
+                    <span v-if="p.required" class="text-red-500">必填</span>
+                    <span v-else class="text-zinc-400">可选</span>
+                    <span class="text-zinc-500 dark:text-zinc-400 w-full sm:w-auto">{{ p.description }}</span>
+                  </div>
+                </div>
+                <div v-else class="text-xs text-zinc-400">该工具无参数，可直接执行。</div>
+                <div v-if="selectedToolParams.length" class="mt-2 flex gap-2">
+                  <button class="px-2 py-1 text-[11px] rounded border border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-700" @click="fillMcpArgsTemplate(true)">填必填模板</button>
+                  <button class="px-2 py-1 text-[11px] rounded border border-zinc-200 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-700" @click="fillMcpArgsTemplate(false)">填全部参数</button>
+                </div>
+              </div>
+
               <textarea
                 v-model="mcpArgsText"
-                rows="3"
+                rows="4"
                 class="mt-2 w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm font-mono dark:bg-zinc-800 dark:border-zinc-700"
                 placeholder='{"query": "示例参数"}'
               ></textarea>
