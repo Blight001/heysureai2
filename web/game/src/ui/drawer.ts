@@ -71,6 +71,7 @@ export class Drawer {
   private portraitFrame: HTMLDivElement
   private portraitName: HTMLDivElement
   private portraitSub: HTMLDivElement
+  private portraitInfo: HTMLDivElement
   private tabsEl: HTMLDivElement
   private bodyEl: HTMLDivElement
   private actions: DrawerActions
@@ -87,8 +88,9 @@ export class Drawer {
       }
       .gw-panel.open { display: flex; }
       .gw-panel .gp-portrait {
-        flex: none; width: 124px; padding: 12px 10px; border-right: 1px solid #3a3f4c;
+        flex: none; width: 210px; padding: 12px 12px; border-right: 1px solid #3a3f4c;
         display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px;
+        overflow-y: auto;
       }
       .gw-panel .gp-port-frame {
         width: 84px; height: 84px; flex: none; border: 2px solid #4a4f5e; border-radius: 6px;
@@ -97,6 +99,10 @@ export class Drawer {
       .gw-panel .gp-port-frame canvas { image-rendering: pixelated; }
       .gw-panel .gp-port-name { color: #f0c060; font-weight: bold; font-size: 13px; word-break: break-all; }
       .gw-panel .gp-port-sub { color: #9fc6ff; font-size: 11px; }
+      .gw-panel .gp-port-info { width: 100%; margin-top: 2px; text-align: left; }
+      .gw-panel .gp-port-info .d-row { gap: 6px; font-size: 11px; line-height: 1.45; }
+      .gw-panel .gp-port-info .d-row .k { min-width: 32px; }
+      .gw-panel .gp-port-info .d-bar { margin: 4px 0 6px; }
       .gw-panel .gp-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
       .gw-panel .gp-tabbar {
         display: flex; align-items: center; gap: 4px; padding: 8px 10px 0; border-bottom: 1px solid #3a3f4c;
@@ -182,6 +188,7 @@ export class Drawer {
         <div class="gp-port-frame"></div>
         <div class="gp-port-name"></div>
         <div class="gp-port-sub"></div>
+        <div class="gp-port-info"></div>
       </div>
       <div class="gp-main">
         <div class="gp-tabbar">
@@ -195,6 +202,7 @@ export class Drawer {
     this.portraitFrame = this.el.querySelector('.gp-port-frame') as HTMLDivElement
     this.portraitName = this.el.querySelector('.gp-port-name') as HTMLDivElement
     this.portraitSub = this.el.querySelector('.gp-port-sub') as HTMLDivElement
+    this.portraitInfo = this.el.querySelector('.gp-port-info') as HTMLDivElement
     this.tabsEl = this.el.querySelector('.gp-tabs') as HTMLDivElement
     this.bodyEl = this.el.querySelector('.gp-body') as HTMLDivElement
     this.host = this.bodyEl
@@ -206,6 +214,7 @@ export class Drawer {
     this.el.classList.remove('open')
     this.bodyEl.innerHTML = ''
     this.tabsEl.innerHTML = ''
+    this.portraitInfo.innerHTML = ''
   }
 
   get isOpen(): boolean {
@@ -218,6 +227,7 @@ export class Drawer {
     this.portraitName.textContent = opts.title
     this.portraitSub.textContent = opts.subtitle || ''
     this.portraitFrame.innerHTML = ''
+    this.portraitInfo.innerHTML = ''
     if (opts.portrait) this.portraitFrame.appendChild(renderPortrait(opts.portrait))
 
     this.tabsEl.innerHTML = ''
@@ -305,18 +315,19 @@ export class Drawer {
       subtitle: `${roleLabel[m.role]} · 第 ${m.generation} 代`,
       portrait,
       tabs: [
-        { name: '信息', build: () => this.memberInfoTab(m) },
+        { name: '派任务', build: () => this.memberTaskTab(m) },
         { name: '操作', build: () => this.memberOpsTab(m) },
         { name: '端侧绑定', build: () => this.memberBindTab(m, snap) },
-        { name: '派任务', build: () => this.memberTaskTab(m) },
         { name: '外观', build: () => this.appearanceSection(m) },
       ],
     })
+    this.renderMemberInfo(m)
     this.activeMemberId = m.id
   }
 
-  private memberInfoTab(m: WorldMember) {
-    const info = this.section('')
+  private renderMemberInfo(m: WorldMember) {
+    const info = this.portraitInfo
+    info.innerHTML = ''
     if (m.tokenLimit > 0) {
       const pct = Math.min(1, m.tokensUsed / m.tokenLimit)
       const color = pct >= 0.95 ? '#e05a5a' : pct >= 0.8 ? '#e0a23c' : '#5aa9e0'
