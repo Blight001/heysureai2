@@ -249,7 +249,30 @@ def _commit_info(ref: str = "HEAD") -> Optional[Dict[str, Any]]:
         committed_at = float(ts)
     except (TypeError, ValueError):
         committed_at = None
-    return {"sha": sha, "short": short, "author": author, "committed_at": committed_at, "subject": subject}
+    body_proc = _run_git(["show", "-s", "--format=%B", ref], timeout=15)
+    body = body_proc.stdout.strip() if body_proc.returncode == 0 else subject
+    files: List[Dict[str, Any]] = []
+    stat_proc = _run_git(["show", "--format=", "--numstat", ref], timeout=30)
+    if stat_proc.returncode == 0:
+        for line in stat_proc.stdout.splitlines()[:200]:
+            parts = line.split("\t", 2)
+            if len(parts) != 3:
+                continue
+            added, deleted, path = parts
+            files.append({
+                "path": path,
+                "added": None if added == "-" else int(added),
+                "deleted": None if deleted == "-" else int(deleted),
+            })
+    return {
+        "sha": sha,
+        "short": short,
+        "author": author,
+        "committed_at": committed_at,
+        "subject": subject,
+        "body": body,
+        "files": files,
+    }
 
 
 def collect_version_info() -> Dict[str, Any]:

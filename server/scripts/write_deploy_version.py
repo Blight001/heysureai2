@@ -36,6 +36,13 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
 
     sha = git(repo, "rev-parse", "HEAD")
+    files = []
+    for line in git(repo, "show", "--format=", "--numstat", "HEAD").splitlines()[:200]:
+        parts = line.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        added, deleted, path = parts
+        files.append({"path": path, "added": None if added == "-" else int(added), "deleted": None if deleted == "-" else int(deleted)})
     payload = {
         "branch": git(repo, "rev-parse", "--abbrev-ref", "HEAD"),
         "current": {
@@ -44,6 +51,8 @@ def main() -> None:
             "author": git(repo, "show", "-s", "--format=%an", "HEAD"),
             "committed_at": float(git(repo, "show", "-s", "--format=%ct", "HEAD")),
             "subject": git(repo, "show", "-s", "--format=%s", "HEAD"),
+            "body": git(repo, "show", "-s", "--format=%B", "HEAD"),
+            "files": files,
         },
         "generated_at": time.time(),
     }

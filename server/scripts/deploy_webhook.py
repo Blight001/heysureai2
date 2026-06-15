@@ -58,12 +58,20 @@ def main() -> None:
 
     def commit_info(ref: str) -> dict:
         values = git("log", "-1", "--format=%H%n%h%n%an%n%ct%n%s", ref).split("\n", 4)
+        body = git("show", "-s", "--format=%B", ref)
+        files = []
+        for line in git("show", "--format=", "--numstat", ref).splitlines()[:200]:
+            added, deleted, path = (line.split("\t", 2) + ["", "", ""])[:3]
+            if path:
+                files.append({"path": path, "added": None if added == "-" else int(added), "deleted": None if deleted == "-" else int(deleted)})
         return {
             "sha": values[0],
             "short": values[1],
             "author": values[2],
             "committed_at": float(values[3]),
             "subject": values[4],
+            "body": body,
+            "files": files,
         }
 
     def read_version(*, fetch: bool) -> dict:

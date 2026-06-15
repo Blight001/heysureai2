@@ -401,6 +401,8 @@ export interface RepoCommitInfo {
   author: string
   committed_at: number | null
   subject: string
+  body?: string
+  files?: Array<{ path: string; added: number | null; deleted: number | null }>
 }
 
 export type RepoUpdatePhase =

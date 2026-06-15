@@ -4,7 +4,7 @@ import { useMessage } from '@/composables/useMessage'
 import * as adminApi from '@/api/admin'
 import type {
   AdminTask, AdminUser, AuditEntry, DbCleanupCategory, DbCleanupResult, DbColumn, DbTableMeta, DbValue,
-  DiagnosticGroup, ModelProbe, FileEntry, LogLine, ServiceInfo, RepoUpdateStatus,
+  DiagnosticGroup, ModelProbe, FileEntry, LogLine, ServiceInfo, RepoCommitInfo, RepoUpdateStatus,
 } from '@/api/admin'
 import { listMcpTools, callMcpTool } from '@/api/mcp'
 import type { User, UserRole } from '@/types'
@@ -1119,6 +1119,7 @@ const repoBusy = ref(false)
 const repoSavingConfig = ref(false)
 const repoUnreachable = ref(false)
 const repoForm = ref<{ auto_enabled: boolean; interval_minutes: number }>({ auto_enabled: false, interval_minutes: 30 })
+const repoCommitDetail = ref<RepoCommitInfo | null>(null)
 let repoPollTimer: number | null = null
 
 const REPO_PHASE_META: Record<string, { label: string; cls: string }> = {
@@ -1138,6 +1139,22 @@ const REPO_STEP_ICON: Record<string, string> = {
 const repoActive = computed(() => {
   const p = repoStatus.value?.state.phase
   return p === 'checking' || p === 'pulling' || p === 'restarting'
+})
+
+const repoDeployProgress = computed(() => {
+  const state = repoStatus.value?.state
+  if (!state) return { percent: 0, label: '等待开始' }
+  if (state.phase === 'error') return { percent: 100, label: '更新失败' }
+  if (state.phase === 'up_to_date' && state.logs?.length) return { percent: 100, label: '更新完成' }
+
+  const output = (state.logs || []).join('\n').toLowerCase()
+  if (/deploy finished|update complete|successfully built|启动完成/.test(output)) return { percent: 100, label: '更新完成' }
+  if (/container .* (started|running|healthy)|creating|recreating|starting/.test(output)) return { percent: 88, label: '正在启动服务' }
+  if (/docker compose|building|buildkit|exporting|writing image|naming to/.test(output)) return { percent: 58, label: '正在构建镜像' }
+  if (/update found|git pull|reset --hard|fast-forward|updating [0-9a-f]/.test(output)) return { percent: 32, label: '正在拉取代码' }
+  if (/checking updates|fetch_head|from https?:|git fetch/.test(output) || state.phase === 'checking') return { percent: 15, label: '正在检查版本' }
+  if (state.phase === 'pulling') return { percent: 8, label: '正在启动更新脚本' }
+  return { percent: 0, label: state.message || '等待开始' }
 })
 
 const fmtCommitTime = (ts: number | null | undefined) => {
@@ -2181,6 +2198,10 @@ const avatarFor = (u: AdminUser) =>
                       <span class="font-mono text-indigo-600 dark:text-indigo-400">{{ repoStatus.version.current.short }}</span>
                       <span class="text-zinc-500 dark:text-zinc-400"> · {{ repoStatus.version.current.subject }}</span>
                       <span class="block text-zinc-400 mt-0.5">{{ repoStatus.version.current.author }} · {{ fmtCommitTime(repoStatus.version.current.committed_at) }}</span>
+                      <button
+                        class="mt-1 text-[11px] text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+                        @click="repoCommitDetail = repoStatus.version.current"
+                      >查看详情</button>
                     </span>
                   </div>
                   <div v-if="repoStatus.last_update.at" class="flex items-center gap-2 pt-1">
@@ -2277,12 +2298,66 @@ const avatarFor = (u: AdminUser) =>
                 <p v-if="repoStatus.state.phase === 'error' && repoStatus.state.last_error" class="text-xs text-red-600 dark:text-red-400 break-all">
                   ✕ {{ repoStatus.state.last_error }}
                 </p>
-                <div v-if="repoStatus.update_mode === 'webhook' && repoStatus.state.logs?.length" class="space-y-1">
-                  <div class="text-[11px] font-medium text-zinc-500 dark:text-zinc-400">服务器更新输出</div>
-                  <pre class="max-h-64 overflow-auto rounded-lg bg-zinc-950 p-3 text-[11px] leading-5 text-zinc-200 whitespace-pre-wrap break-all">{{ repoStatus.state.logs.join('\n') }}</pre>
+                <div v-if="repoStatus.update_mode === 'webhook' && (repoActive || repoStatus.state.logs?.length)" class="space-y-2">
+                  <div class="flex items-center justify-between text-xs">
+                    <span class="font-medium text-zinc-600 dark:text-zinc-300">{{ repoDeployProgress.label }}</span>
+                    <span class="font-mono text-zinc-400">{{ repoDeployProgress.percent }}%</span>
+                  </div>
+                  <div class="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+                    <div
+                      class="h-full rounded-full transition-all duration-500"
+                      :class="repoStatus.state.phase === 'error' ? 'bg-red-500' : 'bg-indigo-500'"
+                      :style="{ width: `${repoDeployProgress.percent}%` }"
+                    ></div>
+                  </div>
+                  <details v-if="repoStatus.state.logs?.length" class="text-[11px] text-zinc-400">
+                    <summary class="cursor-pointer select-none hover:text-zinc-600 dark:hover:text-zinc-300">查看原始日志</summary>
+                    <pre class="mt-2 max-h-64 overflow-auto rounded-lg bg-zinc-950 p-3 leading-5 text-zinc-200 whitespace-pre-wrap break-all">{{ repoStatus.state.logs.join('\n') }}</pre>
+                  </details>
                 </div>
               </section>
             </template>
+          </div>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+
+  <Teleport to="body">
+    <Transition name="fade">
+      <div
+        v-if="repoCommitDetail"
+        class="fixed inset-0 z-[90] bg-black/50 flex items-center justify-center backdrop-blur-sm p-4"
+        @click="repoCommitDetail = null"
+      >
+        <div
+          class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden dark:bg-zinc-900 dark:border dark:border-zinc-800"
+          @click.stop
+        >
+          <div class="flex items-center justify-between px-5 py-3 border-b border-zinc-200 dark:border-zinc-800">
+            <h3 class="text-sm font-bold text-zinc-800 dark:text-zinc-100">提交详情</h3>
+            <button class="w-7 h-7 rounded-full text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800" @click="repoCommitDetail = null">✕</button>
+          </div>
+          <div class="flex-1 overflow-y-auto p-5 space-y-4 text-sm">
+            <div>
+              <div class="font-semibold text-zinc-800 dark:text-zinc-100">{{ repoCommitDetail.subject }}</div>
+              <div class="mt-1 text-xs text-zinc-400">{{ repoCommitDetail.author }} · {{ fmtCommitTime(repoCommitDetail.committed_at) }}</div>
+              <code class="mt-2 block text-xs text-indigo-600 dark:text-indigo-400 break-all">{{ repoCommitDetail.sha }}</code>
+            </div>
+            <pre v-if="repoCommitDetail.body && repoCommitDetail.body !== repoCommitDetail.subject" class="rounded-lg bg-zinc-50 dark:bg-zinc-800 p-3 text-xs text-zinc-700 dark:text-zinc-200 whitespace-pre-wrap">{{ repoCommitDetail.body }}</pre>
+            <div>
+              <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">变更文件（{{ repoCommitDetail.files?.length || 0 }}）</div>
+              <div v-if="repoCommitDetail.files?.length" class="rounded-lg border border-zinc-200 dark:border-zinc-800 divide-y divide-zinc-100 dark:divide-zinc-800">
+                <div v-for="file in repoCommitDetail.files" :key="file.path" class="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+                  <code class="text-zinc-700 dark:text-zinc-200 break-all">{{ file.path }}</code>
+                  <span class="shrink-0 font-mono">
+                    <span class="text-emerald-600">+{{ file.added ?? 'bin' }}</span>
+                    <span class="ml-2 text-red-500">-{{ file.deleted ?? 'bin' }}</span>
+                  </span>
+                </div>
+              </div>
+              <div v-else class="text-xs text-zinc-400">当前版本来源尚未提供文件变更详情，更新 Webhook 后即可显示。</div>
+            </div>
           </div>
         </div>
       </div>
