@@ -319,20 +319,68 @@ def _probe_model(name: str, model: str, base_url: str, api_key: str, prompt: str
         return {"name": name, "model": model, "ok": False, "detail": "配置不完整（缺少 API Key / Base URL / 模型名）"}
     started = time.perf_counter()
     try:
+        # 与真实聊天完全一致的流式请求：很多「端口代理 / 中转」对非流式支持不一致，
+        # 用流式探测才能真实反映聊天能否跑通。
         resp = ai_http_post(
             base_url,
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
-            json={"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False, "max_tokens": 16},
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            },
+            stream=True,
             timeout=30,
         )
-        latency = round((time.perf_counter() - started) * 1000, 1)
         if resp.status_code != 200:
-            return {"name": name, "model": model, "base_url": base_url, "ok": False, "latency_ms": latency, "detail": f"HTTP {resp.status_code}：{(resp.text or '')[:200]}"}
-        data = resp.json()
-        reply = str(((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
-        return {"name": name, "model": model, "base_url": base_url, "ok": True, "latency_ms": latency, "reply": reply[:120], "detail": "响应正常"}
+            body = ""
+            try:
+                body = (resp.text or "")[:200]
+            except Exception:
+                pass
+            return {"name": name, "model": model, "base_url": base_url, "ok": False,
+                    "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+                    "detail": f"HTTP {resp.status_code}：{body}"}
+        reply = ""
+        lines_read = 0
+        for raw in resp.iter_lines():
+            lines_read += 1
+            if lines_read > 300:
+                break
+            if not raw:
+                continue
+            line = raw.decode("utf-8", "ignore") if isinstance(raw, bytes) else str(raw)
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            try:
+                obj = json.loads(data)
+            except Exception:
+                continue
+            choices = obj.get("choices") or []
+            if choices:
+                piece = str((choices[0].get("delta") or {}).get("content") or "")
+                if piece:
+                    reply += piece
+                    if len(reply) >= 8:
+                        break
+        try:
+            resp.close()
+        except Exception:
+            pass
+        latency = round((time.perf_counter() - started) * 1000, 1)
+        if reply:
+            return {"name": name, "model": model, "base_url": base_url, "ok": True,
+                    "latency_ms": latency, "reply": reply[:120], "detail": "流式响应正常"}
+        return {"name": name, "model": model, "base_url": base_url, "ok": True,
+                "latency_ms": latency, "detail": "连接已建立（流式返回成功，但未取到文本片段）"}
     except Exception as exc:
-        return {"name": name, "model": model, "base_url": base_url, "ok": False, "latency_ms": round((time.perf_counter() - started) * 1000, 1), "detail": f"请求失败：{exc}"}
+        return {"name": name, "model": model, "base_url": base_url, "ok": False,
+                "latency_ms": round((time.perf_counter() - started) * 1000, 1),
+                "detail": f"请求失败：{exc}"}
 
 
 @router.post("/models")
