@@ -90,7 +90,6 @@ def _describe_one_tool(name: str, endpoint_defs: Dict[str, Any], user_id: int = 
                 },
                 "note": "Call inspect to locate/read the underlying source and obtain a starter_definition before editing.",
             },
-            "call_format": {"tool": name, "arguments": {}},
         }
     tool = registry.get(name)
     description = str(tool.description or "").strip()
@@ -109,7 +108,6 @@ def _describe_one_tool(name: str, endpoint_defs: Dict[str, Any], user_id: int = 
         "description": description,
         "inputSchema": input_schema,
         "destructive": tool.destructive,
-        "call_format": {"tool": tool.name, "arguments": {}},
     }
 
 

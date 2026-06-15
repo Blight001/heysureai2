@@ -141,15 +141,10 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
             output += f"\nError:\n{exc.stderr}"
         output += f"\nError:\nCommand timed out after {timeout} seconds"
         return {
-            "command": command,
             "success": False,
             "exit_code": None,
             "output": output,
             "cwd": command_cwd,
-            "workspace_root": project_root,
-            "sandboxed": sandbox_env or strict_workspace,
-            "strict_workspace": strict_workspace,
-            "sandbox_env": sandbox_env,
         }
 
     output = result.stdout
@@ -157,15 +152,10 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
         output += f"\nError:\n{result.stderr}"
 
     return {
-        "command": command,
         "success": result.returncode == 0,
         "exit_code": result.returncode,
         "output": output,
         "cwd": command_cwd,
-        "workspace_root": project_root,
-        "sandboxed": sandbox_env or strict_workspace,
-        "strict_workspace": strict_workspace,
-        "sandbox_env": sandbox_env,
     }
 
 def _parse_int(value: Any) -> Optional[int]:
@@ -194,11 +184,15 @@ def _list_connected_socket_agents(
         if expected_ai_config_id and bound_ai_config_id != expected_ai_config_id:
             continue
 
-        row["aiConfigId"] = bound_ai_config_id
-        row["ai_config_id"] = bound_ai_config_id
-        row["source"] = "socket"
-        row["dispatchable"] = bound_ai_config_id is not None
-        out.append(row)
+        # 只暴露 AI 需要的字段，避免把整包 socket 元数据塞进工具结果。
+        out.append({
+            "id": device_id,
+            "name": row.get("name") or row.get("deviceName") or device_id,
+            "platform": row.get("platform") or row.get("os") or "",
+            "ai_config_id": bound_ai_config_id,
+            "source": "socket",
+            "dispatchable": bound_ai_config_id is not None,
+        })
     return out
 
 def _list_managed_ai_agents(user_id: int) -> List[Dict[str, Any]]:
@@ -237,17 +231,12 @@ def _list_managed_ai_agents(user_id: int) -> List[Dict[str, Any]]:
     return out
 
 def _list_agents(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    connected_agents = _list_connected_socket_agents(user_id, ai_config_id)
-    managed_agents = _list_managed_ai_agents(user_id)
-    all_agents = connected_agents + managed_agents
+    # 端侧 agent（source=socket，dispatchable=true 可调度）与受管 AI 配置
+    # （source=ai_config）合成一份列表，每条用 source/dispatchable 区分，无需再分三份。
+    all_agents = _list_connected_socket_agents(user_id, ai_config_id) + _list_managed_ai_agents(user_id)
     return {
         "agents": all_agents,
         "agent_count": len(all_agents),
-        "connected_agents": connected_agents,
-        "connected_agent_count": len(connected_agents),
-        "managed_agents": managed_agents,
-        "managed_agent_count": len(managed_agents),
-        "note": "connected_agents are socket-registered and dispatchable; managed_agents are AI configs for visibility.",
     }
 
 def _get_overview(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
@@ -263,16 +252,12 @@ def _get_overview(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int
             ).first()
             if cfg:
                 cfg_db_uri = cfg.database_uri
-    connected_agents = _list_connected_socket_agents(user_id, ai_config_id)
-    managed_agents = _list_managed_ai_agents(user_id)
-    all_agents = connected_agents + managed_agents
+    all_agents = _list_connected_socket_agents(user_id, ai_config_id) + _list_managed_ai_agents(user_id)
     return {
         "workspace_root": project_root,
         "workspace_tree": generate_file_tree(project_root),
         "database_uri": cfg_db_uri,
         "agent_count": len(all_agents),
         "agents": all_agents,
-        "connected_agent_count": len(connected_agents),
-        "managed_agent_count": len(managed_agents),
     }
 

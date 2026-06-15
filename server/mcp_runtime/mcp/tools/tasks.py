@@ -2,7 +2,7 @@ import json
 import os
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
@@ -176,16 +176,6 @@ def _enforce_task_schedule_mode(
     schedule["run_immediately"] = bool(enabled and loop_enabled and run_immediately)
     task_payload["schedule"] = finalize_schedule(schedule)
 
-def _task_create_type_from_payload(task_payload: Dict[str, Any]) -> str:
-    schedule = task_payload.get("schedule")
-    if not isinstance(schedule, dict):
-        return "immediate"
-    if not bool(schedule.get("enabled")):
-        return "immediate"
-    if bool(schedule.get("loop_enabled")):
-        return "recurring"
-    return "scheduled"
-
 def _task_create_impl(
     user_id: int,
     args: Dict[str, Any],
@@ -334,7 +324,6 @@ def _task_create_impl(
         )
         schedule_enabled = True
 
-    task_create_type = _task_create_type_from_payload(task_payload)
     run_ctx = get_run_session_context() or {}
     created_by_session_id = str(run_ctx.get("session_id") or "").strip() or None
 
@@ -399,26 +388,16 @@ def _task_create_impl(
         session.add(row)
         session.commit()
         session.refresh(row)
-        schedule_meta = _build_task_schedule_meta(task_payload, row.trigger_type)
-        created_ts = _safe_timestamp(row.created_at)
         return {
             "created": True,
             "job_id": row.job_id,
             "title": row.title,
-            "instruction": row.instruction,
             "priority": row.priority,
-            "trigger_type": row.trigger_type,
-            "task_create_type": task_create_type,
-            "create_tool": source_tool,
-            "task_payload": task_payload,
+            "status": row.status,
             "owner_ai_config_id": owner_cfg.id,
             "owner_ai_name": owner_cfg.name,
-            "requested_ai_config_id": ai_config_id,
-            "created_by_session_id": created_by_session_id,
-            "created_at_unix": created_ts,
-            "created_at_local": _format_ts_local(created_ts),
-            "created_at_utc": _format_ts_utc(created_ts),
-            "schedule": schedule_meta,
+            "created_at": _format_ts_local(_safe_timestamp(row.created_at)),
+            "schedule": _build_task_schedule_meta(task_payload),
         }
 
 def _safe_decode_task_payload(raw: Optional[str]) -> Dict[str, Any]:
@@ -444,52 +423,51 @@ def _format_ts_local(ts: Optional[float]) -> str:
         return ""
     return datetime.fromtimestamp(float(ts)).isoformat(sep=" ", timespec="seconds")
 
-def _format_ts_utc(ts: Optional[float]) -> str:
-    if ts is None:
-        return ""
-    return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat(timespec="seconds")
+def _build_task_schedule_meta(task_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """精简的调度说明：只暴露 AI 真正需要的字段。
 
-def _build_task_schedule_meta(task_payload: Dict[str, Any], trigger_type: str) -> Dict[str, Any]:
+    非定时任务返回 ``{"enabled": False}``；定时任务给一句人读摘要、下次执行时间，
+    以及后续可用来改写调度的参数。不再返回 unix/utc 等冗余时间格式。
+    """
     raw = task_payload.get("schedule") if isinstance(task_payload, dict) else {}
     schedule = normalize_schedule(raw)
-    schedule_at = _safe_timestamp(schedule.get("schedule_at"))
-    end_at = _safe_timestamp(schedule.get("end_at"))
-    return {
-        "trigger_type": str(trigger_type or "").strip(),
-        "schedule_enabled": schedule["enabled"],
-        "schedule_at_unix": schedule_at,
-        "schedule_at_local": _format_ts_local(schedule_at),
-        "schedule_at_utc": _format_ts_utc(schedule_at),
-        "schedule_duration_minutes": schedule["duration_minutes"] if schedule["enabled"] else 0,
-        "schedule_loop_enabled": schedule["loop_enabled"],
-        "schedule_loop_mode": schedule["loop_mode"] if schedule["loop_enabled"] else "",
-        "schedule_daily_time": schedule["daily_time"],
-        "schedule_weekly_days": schedule["weekly_days"],
-        "schedule_max_runs": schedule["max_runs"],
-        "schedule_runs_done": schedule["runs_done"],
-        "schedule_end_at_unix": end_at,
-        "schedule_end_at_local": _format_ts_local(end_at),
-        "schedule_run_immediately": schedule["run_immediately"],
-        "schedule_summary": describe_schedule(schedule),
+    if not schedule["enabled"]:
+        return {"enabled": False}
+    meta: Dict[str, Any] = {
+        "enabled": True,
+        "summary": describe_schedule(schedule),
+        "next_run_at": _format_ts_local(_safe_timestamp(schedule.get("schedule_at"))),
+        "loop_enabled": schedule["loop_enabled"],
     }
+    if schedule["loop_enabled"]:
+        loop_mode = schedule["loop_mode"]
+        meta["loop_mode"] = loop_mode
+        if loop_mode == "interval":
+            meta["interval_minutes"] = schedule["duration_minutes"]
+        if loop_mode in {"daily", "weekly"}:
+            meta["daily_time"] = schedule["daily_time"]
+        if loop_mode == "weekly":
+            meta["weekly_days"] = schedule["weekly_days"]
+        if schedule["max_runs"]:
+            meta["max_runs"] = schedule["max_runs"]
+            meta["runs_done"] = schedule["runs_done"]
+        end_at = _safe_timestamp(schedule.get("end_at"))
+        if end_at:
+            meta["end_at"] = _format_ts_local(end_at)
+    return meta
 
 def _task_job_payload(row: AITaskJob) -> Dict[str, Any]:
     payload = _safe_decode_task_payload(row.task_payload)
-    created_ts = _safe_timestamp(row.created_at)
     return {
         "job_id": row.job_id,
         "title": row.title,
         "instruction": row.instruction,
-        "task_payload": payload,
         "priority": row.priority,
         "status": row.status,
         "trigger_type": row.trigger_type,
         "session_id": row.session_id,
-        "template_id": row.template_id,
-        "created_at_unix": created_ts,
-        "created_at_local": _format_ts_local(created_ts),
-        "created_at_utc": _format_ts_utc(created_ts),
-        "schedule": _build_task_schedule_meta(payload, row.trigger_type),
+        "created_at": _format_ts_local(_safe_timestamp(row.created_at)),
+        "schedule": _build_task_schedule_meta(payload),
     }
 
 def _resolve_task_runtime_owner(
@@ -730,10 +708,9 @@ def _task_update(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
         return {
             "updated": True,
             "previous_status": previous_status,
-            "owner_ai_config_id": owner_cfg.id,
             "owner_ai_name": owner_cfg.name,
             "task": _task_job_payload(row),
-            "runtime_note": "If the task is already running, title/instruction edits affect persisted metadata but not the active prompt.",
+            "runtime_note": "若任务正在运行，标题/说明的修改只影响持久化元数据，不会改写当前运行中的提示。",
         }
 
 def _delete_task_job_records(session: Session, user_id: int, config_id: int, job: AITaskJob) -> int:
@@ -801,7 +778,6 @@ def _task_delete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
             "job_id": job_id,
             "previous_status": previous_status,
             "deleted_messages": deleted_messages,
-            "owner_ai_config_id": owner_cfg.id,
             "owner_ai_name": owner_cfg.name,
         }
 
@@ -838,29 +814,14 @@ def _parse_task_list_limit(value: Any, default: int) -> int:
 
 def _task_row_to_dict(row: AITaskJob) -> Dict[str, Any]:
     payload = _safe_decode_task_payload(row.task_payload)
-    created_ts = _safe_timestamp(row.created_at)
-    started_ts = _safe_timestamp(row.started_at)
-    finished_ts = _safe_timestamp(row.finished_at)
-    return {
-        "job_id": row.job_id,
-        "title": row.title,
-        "instruction": row.instruction,
-        "task_payload": payload,
-        "priority": row.priority,
-        "status": row.status,
-        "session_id": row.session_id,
-        "template_id": row.template_id,
-        "created_at_unix": created_ts,
-        "created_at_local": _format_ts_local(created_ts),
-        "created_at_utc": _format_ts_utc(created_ts),
-        "started_at_unix": started_ts,
-        "started_at_local": _format_ts_local(started_ts),
-        "started_at_utc": _format_ts_utc(started_ts),
-        "finished_at_unix": finished_ts,
-        "finished_at_local": _format_ts_local(finished_ts),
-        "finished_at_utc": _format_ts_utc(finished_ts),
-        "schedule": _build_task_schedule_meta(payload, row.trigger_type),
-    }
+    out = _task_job_payload(row)
+    started = _format_ts_local(_safe_timestamp(row.started_at))
+    finished = _format_ts_local(_safe_timestamp(row.finished_at))
+    if started:
+        out["started_at"] = started
+    if finished:
+        out["finished_at"] = finished
+    return out
 
 def _task_list(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     job_id = str(args.get("job_id") or "").strip()
@@ -909,13 +870,7 @@ def _task_list(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) 
         return {
             "owner_ai_config_id": owner_cfg.id,
             "owner_ai_name": owner_cfg.name,
-            "requested_ai_config_id": ai_config_id,
-            "requested_job_id": job_id or None,
-            "current_only": bool(current_only),
-            "include_history": bool(include_history),
-            "history_only": bool(history_only),
-            "statuses": requested_statuses or None,
-            "limit": limit,
+            "count": len(tasks),
             "task": task if (current_only or job_id) else None,
             "tasks": tasks,
         }
@@ -979,8 +934,6 @@ def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[in
             "completed": True,
             "job_id": row.job_id,
             "title": row.title,
-            "summary": summary,
-            "task_archive_path": archive_path,
-            "completion_notification": notification,
+            "notified_user": bool(isinstance(notification, dict) and notification.get("delivered")),
             "next_step_hint": "任务已完成，可继续处理后续事项。",
         }
