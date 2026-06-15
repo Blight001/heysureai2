@@ -43,6 +43,7 @@ from .run_state import (
     _RUN_STATE_LOCK,
     _TASK_CREATE_TOOL_NAMES,
     _TASK_RUNTIME_SECTION_TITLES,
+    get_run_stream,
 )
 from api.sio import sio
 
@@ -633,6 +634,14 @@ def _set_run_live_text(run_id: str, text: str):
         }
         _RUN_LIVE_META[run_id] = meta
     _emit_run_live_update(run_id)
+    # Mirror the growing answer to any external streaming observer (e.g. a QQ
+    # streaming message). Best-effort: the hook self-throttles and never raises.
+    hook = get_run_stream(run_id)
+    if hook is not None:
+        try:
+            hook.update(text)
+        except Exception:
+            pass
 
 def _set_run_live_reasoning(run_id: str, reasoning: str):
     with _RUN_STATE_LOCK:

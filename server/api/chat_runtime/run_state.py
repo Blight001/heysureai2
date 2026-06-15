@@ -26,6 +26,11 @@ STATE_PREFIX = "__HS_MCP_STATE__="
 _RUN_THREADS: Dict[str, threading.Thread] = {}
 _RUN_LIVE_STATE: Dict[str, Dict[str, object]] = {}
 _RUN_LIVE_META: Dict[str, Dict[str, object]] = {}
+# Optional per-run "live text observer" used to mirror streaming tokens to an
+# external channel (e.g. a QQ streaming message). The value is an opaque object
+# exposing ``update(text: str)`` — stored here so the shared chat-runtime layer
+# can invoke it without importing any bot/connector code.
+_RUN_STREAM_HOOKS: Dict[str, Any] = {}
 _RUN_STATE_LOCK = threading.Lock()
 MAX_AUTO_SUPERVISION_ROUNDS = 2
 _AUTO_RUNTIME_SECTION_TITLES: tuple[str, ...] = (
@@ -44,6 +49,27 @@ _TASK_RUNTIME_SECTION_TITLES: tuple[str, ...] = (
 _TASK_CREATE_TOOL_NAMES: set[str] = {
     "task.create",
 }
+
+
+def register_run_stream(run_id: str, hook: Any) -> None:
+    """Attach a live-text observer to ``run_id`` (see ``_RUN_STREAM_HOOKS``)."""
+    run_id = str(run_id or "").strip()
+    if not run_id or hook is None:
+        return
+    with _RUN_STATE_LOCK:
+        _RUN_STREAM_HOOKS[run_id] = hook
+
+
+def get_run_stream(run_id: str) -> Any:
+    """Return the live-text observer registered for ``run_id``, or ``None``."""
+    with _RUN_STATE_LOCK:
+        return _RUN_STREAM_HOOKS.get(str(run_id or "").strip())
+
+
+def pop_run_stream(run_id: str) -> Any:
+    """Detach and return the live-text observer for ``run_id`` (or ``None``)."""
+    with _RUN_STATE_LOCK:
+        return _RUN_STREAM_HOOKS.pop(str(run_id or "").strip(), None)
 
 
 def apply_relayed_run_live_state(payload: Any) -> bool:

@@ -242,6 +242,186 @@ def send_qq_text_message(
     }
 
 
+def _prepare_markdown_text(text: str) -> str:
+    """Light cleanup that *keeps* markdown syntax (unlike ``normalize_qq_text``).
+
+    QQ native markdown renders the body as-is, so we only normalize line
+    endings and collapse runs of blank lines — headings, lists, links, code
+    fences, emphasis, etc. are preserved.
+    """
+    body = str(text or "")
+    if not body:
+        return ""
+    body = body.replace("\r\n", "\n").replace("\r", "\n")
+    body = re.sub(r"\n{3,}", "\n\n", body)
+    return body.strip()
+
+
+def _qq_markdown_field(content: str, markdown_mode: str, template_id: str) -> Dict[str, Any]:
+    """Build the ``markdown`` object for a ``msg_type=2`` message.
+
+    Two mutually exclusive shapes (per QQ open-platform spec):
+      - native:   ``{"content": "<raw markdown>"}``
+      - template: ``{"custom_template_id": "<id>", "params": [{key, values}]}``
+
+    Template mode assumes the approved template exposes a single ``content``
+    placeholder; bots with multi-field templates should send via the explicit
+    MCP tool instead.
+    """
+    mode = str(markdown_mode or "native").strip().lower()
+    tpl = str(template_id or "").strip()
+    if mode == "template" and tpl:
+        return {
+            "custom_template_id": tpl,
+            "params": [{"key": "content", "values": [content]}],
+        }
+    return {"content": content}
+
+
+def send_qq_markdown_message(
+    user_id: int,
+    ai_config_id: Optional[int],
+    *,
+    text: str,
+    target_id: str = "",
+    target_type: str = "",
+    msg_id: str = "",
+    event_id: str = "",
+    msg_seq: Optional[int] = None,
+    markdown_mode: str = "native",
+    template_id: str = "",
+    fallback_plain: bool = True,
+) -> Dict[str, Any]:
+    """Send a ``msg_type=2`` markdown reply, auto-falling back to plain text.
+
+    Markdown is a whitelist feature; when the gateway rejects the markdown
+    payload (and ``fallback_plain`` is set) we transparently resend the same
+    body as a normal ``msg_type=0`` text message so delivery never silently
+    fails.
+    """
+    cfg = _load_qq_config(user_id, ai_config_id)
+    bot_cfg = read_qq_config(cfg)
+    content = _prepare_markdown_text(text)
+    if not content:
+        raise HTTPException(status_code=400, detail="QQ message text is required")
+    final_target_id = str(target_id or bot_cfg.get("default_target_id") or "").strip()
+    final_target_type = _normalize_target_type(target_type or bot_cfg.get("default_target_type") or "c2c")
+    if not final_target_id:
+        raise HTTPException(status_code=400, detail="QQ target_id is required")
+
+    payload: Dict[str, Any] = {
+        "msg_type": 2,
+        "markdown": _qq_markdown_field(content, markdown_mode, template_id),
+    }
+    if msg_id:
+        payload["msg_id"] = str(msg_id)
+        if msg_seq is not None:
+            payload["msg_seq"] = int(msg_seq)
+    if event_id and not msg_id:
+        payload["event_id"] = str(event_id)
+
+    endpoint = _message_endpoint(cfg, final_target_type, final_target_id)
+    try:
+        data = _post_qq_message(cfg, endpoint=endpoint, payload=payload)
+    except HTTPException:
+        # Stale passive ids are the most common rejection; retry as an
+        # active markdown message before giving up on markdown entirely.
+        if "msg_id" in payload or "event_id" in payload:
+            retry_payload = dict(payload)
+            retry_payload.pop("msg_id", None)
+            retry_payload.pop("msg_seq", None)
+            retry_payload.pop("event_id", None)
+            try:
+                data = _post_qq_message(cfg, endpoint=endpoint, payload=retry_payload)
+                return {
+                    "success": True,
+                    "target_id": final_target_id,
+                    "target_type": final_target_type,
+                    "message_id": data.get("id") if isinstance(data, dict) else None,
+                    "raw": data,
+                }
+            except HTTPException:
+                pass
+        if not fallback_plain:
+            raise
+        # Markdown not available for this bot — degrade to plain text.
+        return send_qq_text_message(
+            user_id,
+            ai_config_id,
+            text=text,
+            target_id=final_target_id,
+            target_type=final_target_type,
+            msg_id=msg_id,
+            event_id=event_id,
+            msg_seq=msg_seq,
+        )
+    return {
+        "success": True,
+        "target_id": final_target_id,
+        "target_type": final_target_type,
+        "message_id": data.get("id") if isinstance(data, dict) else None,
+        "raw": data,
+    }
+
+
+def post_qq_stream_packet(
+    user_id: int,
+    ai_config_id: Optional[int],
+    *,
+    text: str,
+    target_id: str,
+    target_type: str,
+    stream_id: str,
+    stream_index: int,
+    stream_state: int,
+    reset: bool = False,
+    msg_id: str = "",
+    event_id: str = "",
+    msg_seq: Optional[int] = None,
+    markdown_mode: str = "native",
+    template_id: str = "",
+) -> Dict[str, Any]:
+    """POST one packet of a streaming markdown message.
+
+    NOTE — streaming is a QQ 灰度 capability and the ``stream`` object shape is
+    documented only on the (access-restricted) official ``send.html`` page.
+    The fields below match the published spec; verify the ``state`` enum
+    against your console before relying on it:
+
+        stream = {
+            "state": 1,   # 1 = 生成中 (first/intermediate packet), 10 = 完成 (final)
+            "id":    "",  # stream id; empty on the first packet, reused after
+            "index": 1,   # packet sequence, 1-based and strictly increasing
+            "reset": False,  # True replaces the whole message body
+        }
+
+    Returns the raw response so the caller can capture a server-assigned
+    stream ``id`` from the first packet. Raises ``HTTPException`` on rejection
+    so the caller can fall back to a normal send.
+    """
+    cfg = _load_qq_config(user_id, ai_config_id)
+    final_target_type = _normalize_target_type(target_type or "c2c")
+    content = _prepare_markdown_text(text)
+    payload: Dict[str, Any] = {
+        "msg_type": 2,
+        "markdown": _qq_markdown_field(content, markdown_mode, template_id),
+        "stream": {
+            "state": int(stream_state),
+            "id": str(stream_id or ""),
+            "index": int(stream_index),
+            "reset": bool(reset),
+        },
+    }
+    if msg_id:
+        payload["msg_id"] = str(msg_id)
+        if msg_seq is not None:
+            payload["msg_seq"] = int(msg_seq)
+    if event_id and not msg_id:
+        payload["event_id"] = str(event_id)
+    endpoint = _message_endpoint(cfg, final_target_type, str(target_id or "").strip())
+    return _post_qq_message(cfg, endpoint=endpoint, payload=payload)
+
+
 def diagnose_qq_config(user_id: int, ai_config_id: Optional[int]) -> Dict[str, Any]:
     cfg = _load_qq_config(user_id, ai_config_id)
     bot_cfg = read_qq_config(cfg)

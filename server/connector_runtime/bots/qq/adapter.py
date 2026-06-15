@@ -136,22 +136,51 @@ class QQBot(BotAdapter):
         rendered_content: str,
         route: Any,
     ) -> None:
-        from .service import send_qq_text_message
+        from api.models import AssistantAIConfig
+
+        from .service import send_qq_markdown_message, send_qq_text_message
+        from .stream_sender import is_stream_active
+
+        # When a streaming session owns delivery for this conversation, the
+        # final message arrives via the stream's 完成 packet — skip the
+        # duplicate full send for assistant messages (system/error notices
+        # still go through so failures are never swallowed).
+        if message.role == "assistant" and is_stream_active(str(message.session_id or "")):
+            return
+
+        cfg = session.get(AssistantAIConfig, int(message.ai_config_id or 0))
+        qq_cfg = self.read_config(cfg) if cfg else {}
+        markdown_mode = str(qq_cfg.get("markdown_mode") or "native").strip().lower()
 
         # ``route`` is a QQRouteHandle (see routes_store). Its ``.row`` is the
         # live BotSessionRoute we mutate to bump msg_seq atomically.
         msg_seq = max(1, int(route.next_msg_seq or 1))
         try:
-            send_qq_text_message(
-                int(message.user_id),
-                int(message.ai_config_id or 0),
-                text=rendered_content,
-                target_id=route.target_id,
-                target_type=route.target_type or "c2c",
-                msg_id=route.source_message_id,
-                event_id=route.source_event_id,
-                msg_seq=msg_seq if route.source_message_id else None,
-            )
+            if markdown_mode != "off":
+                send_qq_markdown_message(
+                    int(message.user_id),
+                    int(message.ai_config_id or 0),
+                    text=rendered_content,
+                    target_id=route.target_id,
+                    target_type=route.target_type or "c2c",
+                    msg_id=route.source_message_id,
+                    event_id=route.source_event_id,
+                    msg_seq=msg_seq if route.source_message_id else None,
+                    markdown_mode=markdown_mode,
+                    template_id=str(qq_cfg.get("markdown_template_id") or ""),
+                    fallback_plain=True,
+                )
+            else:
+                send_qq_text_message(
+                    int(message.user_id),
+                    int(message.ai_config_id or 0),
+                    text=rendered_content,
+                    target_id=route.target_id,
+                    target_type=route.target_type or "c2c",
+                    msg_id=route.source_message_id,
+                    event_id=route.source_event_id,
+                    msg_seq=msg_seq if route.source_message_id else None,
+                )
             # Bump the per-conversation sequence so the next reply lands
             # in order even when QQ enforces strict msg_seq ordering.
             route.row.next_msg_seq = msg_seq + 1

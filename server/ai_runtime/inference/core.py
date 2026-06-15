@@ -1177,6 +1177,22 @@ def _run_worker(
 
     _hb_thread = _threading.Thread(target=_tick_loop, name=f"hb-{run_id}", daemon=True)
     _hb_thread.start()
+
+    # Mirror the live answer to a QQ streaming message when applicable. The
+    # session (if any) owns final delivery for this run, so we finalize it in
+    # the finally block regardless of how the run ends.
+    try:
+        from connector_runtime.bots.qq.stream_sender import maybe_start_qq_stream
+        maybe_start_qq_stream(
+            run_id=run_id,
+            user_id=user_id,
+            ai_config_id=ai_config_id,
+            ai_kind=ai_kind,
+            session_id=session_id,
+        )
+    except Exception:
+        pass
+
     try:
         _run_worker_impl(
             run_id=run_id,
@@ -1191,6 +1207,11 @@ def _run_worker(
             current_user_message_id=current_user_message_id,
         )
     finally:
+        try:
+            from connector_runtime.bots.qq.stream_sender import finish_qq_stream
+            finish_qq_stream(run_id, session_id=session_id)
+        except Exception:
+            pass
         _stop_hb.set()
         _hb_thread.join(timeout=1.0)
 
