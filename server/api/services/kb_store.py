@@ -211,12 +211,6 @@ def seed_system_prompts(user_id: int, user: User) -> None:
         write_system_prompt(user_id, key, value)
 
 
-def sync_system_prompts_to_db(user_id: int, *, session: Optional[Session] = None) -> bool:
-    """Compatibility no-op; system prompt columns no longer exist in User."""
-    _ = (user_id, session)
-    return False
-
-
 # ============================================================
 # 2) 固有人格（AI prompt）—— personas/<id>-<名>.md
 # ============================================================
@@ -278,11 +272,6 @@ def seed_persona_raw(user_id: int, cfg_id: Any, name: str, role: str, prompt: st
         _write_text(path, _render_persona_fields(cfg_id, name, role, prompt or ""))
 
 
-def hydrate_ai_prompt(cfg: AssistantAIConfig) -> AssistantAIConfig:
-    """Compatibility no-op; serialize ``effective_ai_prompt`` explicitly."""
-    return cfg
-
-
 def user_prompt_dict(user: User) -> Dict[str, str]:
     """返回该用户 16 个文本系统提示的有效值（文件优先），用于拼装 API 响应，
     不依赖在 ORM 实例上设置瞬态属性。"""
@@ -294,11 +283,6 @@ def user_prompt_dict(user: User) -> Dict[str, str]:
         except Exception:
             out[key] = _SYSTEM_PROMPT_DEFAULTS.get(key, "")
     return out
-
-
-def hydrate_user_prompts(user: User) -> User:
-    """Compatibility no-op; merge ``user_prompt_dict`` into responses."""
-    return user
 
 
 def _prune_stale_personas(user_id: int, cfg_id: int, keep: str) -> None:
@@ -377,16 +361,13 @@ def seed_personas(user_id: int, session: Optional[Session] = None) -> None:
             sess.close()
 
 
-def sync_personas_to_db(user_id: int, *, session: Optional[Session] = None) -> bool:
-    """Compatibility no-op; persona text is file-only after column removal."""
-    _ = (user_id, session)
-    return False
-
-
-# ---------- 直接读文件的运行时访问器（方案 A：文件优先、DB 兜底） ----------
+# ---------- 直接读文件的运行时访问器（文件优先，缺失时回退内置默认） ----------
 
 def effective_ai_prompt(user_id: int, cfg: Any) -> str:
-    """AI 人格 Prompt：直接读 personas/*.md；旧对象可回退 prompt 属性。"""
+    """AI 人格 Prompt：直接读 personas/*.md；文件缺失时回退空串。
+
+    ``cfg.prompt`` 列已物理删除，这里的 ``getattr`` 仅为兼容仍带瞬态
+    ``prompt`` 属性的旧对象，正常运行时恒为空。"""
     if user_id and cfg is not None and getattr(cfg, "id", None) is not None:
         raw = _read_text(_persona_path(int(user_id), cfg.id, cfg.name))
         if raw is not None:
@@ -864,9 +845,3 @@ def ensure_user_kb(user_id: int, *, session: Optional[Session] = None) -> None:
                 sess.close()
     except Exception as exc:  # pragma: no cover - defensive
         logger.info(f"kb_store ensure_user_kb user={user_id} failed: {exc}")
-
-
-def sync_from_files(user_id: int, *, session: Optional[Session] = None) -> None:
-    """已弃用：人格 / 系统提示对应的数据库列已物理删除，运行时直接读文件，
-    不再需要文件→数据库回写。保留空实现仅为兼容历史调用。"""
-    return None
