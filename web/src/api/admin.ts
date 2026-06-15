@@ -380,3 +380,10 @@ export const runModelTests = (payload: { prompt?: string; ai_config_id?: number 
   post<{ ok: boolean; models: ModelProbe[]; detail?: string }>('/api/diagnostics/models', payload, {
     fallbackError: '模型连通性测试失败',
   })
+
+export const reseedMcpDocs = () =>
+  post<{ ok: boolean; regenerated: number; failed: string[]; detail: string }>(
+    '/api/diagnostics/reseed-mcp-docs',
+    {},
+    { fallbackError: '重新生成工具说明失败' },
+  )

@@ -1045,6 +1045,24 @@ const runMcpTest = async () => {
   }
 }
 
+const reseedBusy = ref(false)
+const runReseedMcpDocs = async () => {
+  const yes = await confirm({
+    message: '将用系统内置（中文）说明覆盖重写当前用户的 MCP 工具说明文件，会覆盖对这些说明做过的手动修改。确定继续？',
+    type: 'warning',
+  })
+  if (!yes) return
+  reseedBusy.value = true
+  try {
+    const res = await adminApi.reseedMcpDocs()
+    await alert({ message: res.detail || `已重新生成 ${res.regenerated} 个工具说明`, type: res.ok ? 'success' : 'warning' })
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    reseedBusy.value = false
+  }
+}
+
 const switchTab = (next: Tab) => {
   tab.value = next
   if (next === 'users' && !users.value.length) void loadUsers()
@@ -1887,7 +1905,15 @@ const avatarFor = (u: AdminUser) =>
 
             <!-- MCP 工具测试 -->
             <section class="border border-zinc-200 rounded-xl p-4 dark:border-zinc-800">
-              <div class="text-sm font-bold text-zinc-700 dark:text-zinc-200 mb-1">MCP 工具测试</div>
+              <div class="flex items-center justify-between gap-2 mb-1">
+                <div class="text-sm font-bold text-zinc-700 dark:text-zinc-200">MCP 工具测试</div>
+                <button
+                  class="px-2.5 py-1 text-xs rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800 whitespace-nowrap"
+                  :disabled="reseedBusy"
+                  title="用系统内置中文说明覆盖重写本用户的 MCP 工具说明文件"
+                  @click="runReseedMcpDocs"
+                >{{ reseedBusy ? '生成中…' : '重新生成中文说明' }}</button>
+              </div>
               <div class="text-xs text-zinc-400 mb-3">选择一个工具、填入 JSON 参数并执行，直接查看返回结果（使用与 AI 相同的执行通道）。</div>
               <div class="flex flex-col gap-2 sm:flex-row">
                 <select

@@ -7,6 +7,7 @@ MCP 单工具的手动测试仍复用既有的 ``/api/mcp/tools`` 与 ``/api/mcp
 所有接口仅限房主/管理员调用。
 """
 
+import json
 import os
 import time
 from typing import Any, Callable, Dict, List, Optional
@@ -197,6 +198,43 @@ async def _mcp_checks(user_id: int) -> List[Dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# 连接器（端侧 Agent / 机器人）
+# ---------------------------------------------------------------------------
+
+def _connector_checks(user_id: int) -> List[Dict[str, Any]]:
+    def agents() -> Dict[str, Any]:
+        from api.device_presence import online_tool_defs_for_user
+        defs = online_tool_defs_for_user(user_id) or {}
+        n = len(defs)
+        return {"ok": True, "detail": f"在线端侧工具 {n} 个" if n else "当前无在线端侧 Agent"}
+
+    def bots() -> Dict[str, Any]:
+        enabled: List[str] = []
+        with Session(engine) as session:
+            rows = session.exec(
+                select(AssistantAIConfig).where(AssistantAIConfig.user_id == user_id)
+            ).all()
+        for cfg in rows:
+            try:
+                configs = json.loads(cfg.bot_configs or "{}")
+            except Exception:
+                configs = {}
+            if not isinstance(configs, dict):
+                continue
+            for channel, conf in configs.items():
+                if isinstance(conf, dict) and conf.get("enabled"):
+                    enabled.append(f"{cfg.name}/{channel}")
+        if not enabled:
+            return {"ok": True, "skipped": True, "detail": "未配置已启用的机器人渠道"}
+        return {"ok": True, "detail": f"已启用机器人 {len(enabled)} 个：{'、'.join(enabled[:6])}"}
+
+    return [
+        _check("connector_agents", "在线端侧 Agent", agents),
+        _check("connector_bots", "机器人渠道配置", bots),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # 文件存储（KnowledgeBase）
 # ---------------------------------------------------------------------------
 
@@ -244,6 +282,7 @@ async def diagnostics_selftest(user: User = Depends(require_admin_user)) -> Dict
         {"module": "process", "label": "进程", "checks": _process_checks()},
         {"module": "database", "label": "数据库", "checks": _database_checks()},
         {"module": "mcp", "label": "MCP", "checks": await _mcp_checks(user.id)},
+        {"module": "connector", "label": "连接器（端侧 / 机器人）", "checks": _connector_checks(user.id)},
         {"module": "storage", "label": "文件存储 (KnowledgeBase)", "checks": _storage_checks(user.id)},
     ]
     total = 0
@@ -328,3 +367,46 @@ def diagnostics_models(req: ModelsTestRequest, user: User = Depends(require_admi
                 results.append(_probe_model("主脑模型", getattr(fresh_user, "admin_model", ""), getattr(fresh_user, "admin_base_url", ""), getattr(fresh_user, "admin_api_key", ""), prompt))
 
     return {"ok": all(r["ok"] for r in results) if results else False, "models": results}
+
+
+# ---------------------------------------------------------------------------
+# 维护操作：用注册表（中文）重新生成当前用户的 MCP 工具说明文件
+# ---------------------------------------------------------------------------
+
+@router.post("/reseed-mcp-docs")
+def diagnostics_reseed_mcp_docs(user: User = Depends(require_admin_user)) -> Dict[str, Any]:
+    """用注册表里的中文说明覆盖重写当前用户的 KnowledgeBase/mcp/*.md。
+
+    工具说明的运行时真相源是每用户的 md 文件，由注册表首次播种、之后不再覆盖。
+    当注册表里的内置说明更新（如改为中文）后，老用户的文件仍是旧内容；调用本接口
+    可强制按当前注册表重新生成。注意：会覆盖对这些工具说明做过的手动修改。
+    """
+    from mcp_runtime.mcp import registry
+    from api.services import kb_store
+    from api.services.librarian_service import _mcp_schema_parameter_rows
+
+    count = 0
+    failed: List[str] = []
+    for tool in registry.list_tools():
+        name = str(tool.get("name") or "").strip()
+        if not name:
+            continue
+        schema = tool.get("inputSchema") if isinstance(tool.get("inputSchema"), dict) else {}
+        try:
+            params = _mcp_schema_parameter_rows(name, schema, None)
+            kb_store.write_mcp_tool(
+                user.id,
+                name,
+                str(tool.get("description") or "").strip(),
+                params or [],
+                bool(tool.get("destructive")),
+            )
+            count += 1
+        except Exception:
+            failed.append(name)
+    return {
+        "ok": not failed,
+        "regenerated": count,
+        "failed": failed,
+        "detail": f"已重新生成 {count} 个工具说明" + (f"，{len(failed)} 个失败" if failed else ""),
+    }
