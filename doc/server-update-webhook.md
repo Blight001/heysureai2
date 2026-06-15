@@ -34,6 +34,23 @@ python3 server/scripts/deploy_webhook.py \
 
 生产环境建议将它注册为 systemd 服务，并用防火墙限制 `8765` 端口只能由本机或 Docker 网段访问。
 
+也可以使用项目内的一键安装脚本，将 Webhook 注册为开机自启的 systemd 服务：
+
+```bash
+cd /www/server/panel/data/compose/heysureai2
+WEBHOOK_TOKEN='替换为足够长的随机密钥' \
+  bash server/scripts/install_deploy_webhook_service.sh
+```
+
+安装后可关闭 SSH。查看状态和日志：
+
+```bash
+systemctl status heysure-update-webhook
+journalctl -u heysure-update-webhook -f
+```
+
+如果服务器原来通过 cron 或宝塔计划任务定时执行 `update-heysure.sh`，请停用该任务。保留本服务常驻，并只在网页中配置更新时间。
+
 ## 3. 配置应用
 
 在项目 `.env` 中加入：
