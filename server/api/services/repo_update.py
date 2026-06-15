@@ -130,7 +130,7 @@ def _fresh_steps() -> List[Dict[str, str]]:
 
 def _fresh_webhook_steps() -> List[Dict[str, str]]:
     return [
-        {"key": _STEP_CHECK, "label": "跳过容器内版本检测", "status": "pending"},
+        {"key": _STEP_CHECK, "label": "通过宿主机检查远程版本", "status": "pending"},
         {"key": _STEP_PULL, "label": "触发服务器更新脚本", "status": "pending"},
         {"key": _STEP_RESTART, "label": "重新部署服务", "status": "pending"},
     ]

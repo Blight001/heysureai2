@@ -1151,8 +1151,8 @@ const loadRepoStatus = async (silent = false) => {
     const res = await adminApi.getRepoUpdateStatus()
     repoStatus.value = res
     repoUnreachable.value = false
-    // 仅在非进行中时同步表单，避免覆盖用户正在编辑的输入。
-    if (!repoBusy.value && !repoActive.value) {
+    // 后台轮询只更新版本与进度，不能覆盖用户尚未保存的表单输入。
+    if (!silent) {
       repoForm.value = {
         auto_enabled: res.config.auto_enabled,
         interval_minutes: Math.max(1, Math.round(res.config.interval_seconds / 60)),
@@ -1194,6 +1194,10 @@ const saveRepoConfig = async () => {
       interval_seconds: Math.max(1, Math.round(repoForm.value.interval_minutes)) * 60,
     })
     repoStatus.value = res
+    repoForm.value = {
+      auto_enabled: res.config.auto_enabled,
+      interval_minutes: Math.max(1, Math.round(res.config.interval_seconds / 60)),
+    }
     await alert({ message: '已保存自动更新设置', type: 'success' })
   } catch (err) {
     await alert({ message: (err as Error).message, type: 'error' })
