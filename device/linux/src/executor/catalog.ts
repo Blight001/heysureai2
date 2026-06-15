@@ -175,12 +175,9 @@ registerTools([
     inputSchema: OBJ({
       top: { type: 'number', description: '矩形框左上角 Y 坐标（像素）。' },
       left: { type: 'number', description: '矩形框左上角 X 坐标（像素）。' },
-      x: { type: 'number', description: 'left 的别名。' },
-      y: { type: 'number', description: 'top 的别名。' },
       width: { type: 'number', description: '矩形框宽度（像素）。' },
       height: { type: 'number', description: '矩形框高度（像素）。' },
       duration: { type: 'number', description: '显示持续时间（毫秒）。默认 1000。' },
-      duration_ms: { type: 'number', description: 'duration 的别名。' },
       color: { type: 'string', description: '主框颜色。默认 red。' },
       label: { type: 'string', description: '可选标签，会显示在框左上方。' },
       sub_boxes: { type: 'array', description: '子框列表。可传 BoxDisplay.py 风格的四点数组，坐标相对主框；也可传 {left, top, width, height, color}。' },
@@ -200,7 +197,6 @@ registerTools([
     description: '对某个桌面显示器整屏截图。默认服务器会把图片存到用户的 Screenshots 工作区目录。用途：让 AI 看见整个屏幕。场景：核对桌面状态、保存当前画面。',
     inputSchema: OBJ({
       display: { type: 'number', description: '要截图的显示器序号。默认 0。' },
-      screen: { type: 'number', description: 'display 的别名。' },
       upload_to_server: { type: 'boolean', description: '默认 true：存到服务器并返回其工作区路径。' },
     }),
     handler: ({ args }) => screenCapture(args),

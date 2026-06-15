@@ -74,22 +74,15 @@ def _message_filter(stmt, user_id: int, ai_kind: str, ai_config_id: Optional[int
 def _session_summary(row: ChatSession, messages: list[ChatMessage]) -> Dict[str, Any]:
     last_message = max(messages, key=lambda msg: msg.created_at, default=None)
     return {
-        "id": row.session_id,
         "session_id": row.session_id,
         "name": row.session_name,
-        "session_name": row.session_name,
-        "ai_kind": row.ai_kind,
-        "ai_config_id": row.ai_config_id,
-        "created_at": row.created_at,
         "updated_at": row.updated_at,
         "message_count": len(messages),
-        "total_tokens": sum(int(msg.total_tokens or 0) for msg in messages),
         "last_message": (
             {
                 "id": last_message.id,
                 "role": last_message.role,
                 "content": (last_message.content or "")[:500],
-                "created_at": last_message.created_at,
             }
             if last_message
             else None
@@ -98,18 +91,11 @@ def _session_summary(row: ChatSession, messages: list[ChatMessage]) -> Dict[str,
 
 
 def _message_detail(row: ChatMessage) -> Dict[str, Any]:
+    # 只回吐 AI 读历史真正需要的字段；模型/token/延迟等遥测数据省略。
     return {
         "id": row.id,
         "role": row.role,
         "content": row.content,
-        "think": row.think,
-        "tags": row.tags,
-        "model": row.model,
-        "prompt_tokens": row.prompt_tokens,
-        "completion_tokens": row.completion_tokens,
-        "total_tokens": row.total_tokens,
-        "finish_reason": row.finish_reason,
-        "latency": row.latency,
         "created_at": row.created_at,
     }
 
@@ -159,10 +145,8 @@ def _conversation_detail(user_id: int, args: Dict[str, Any], ai_config_id: Optio
 
     session_summary = _session_summary(session_row, [latest_message] if latest_message else [])
     session_summary["message_count"] = message_count
-    session_summary["total_tokens"] = int(total_tokens or 0)
 
     return {
-        "success": True,
         "session": session_summary,
         "messages": [_message_detail(message) for message in messages],
         "offset": offset,
@@ -202,15 +186,8 @@ def _create_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optio
         session.refresh(row)
 
     return {
-        "success": True,
-        "id": row.session_id,
         "session_id": row.session_id,
         "name": row.session_name,
-        "session_name": row.session_name,
-        "ai_kind": row.ai_kind,
-        "ai_config_id": row.ai_config_id,
-        "created_at": row.created_at,
-        "updated_at": row.updated_at,
         "note": "已新建空白对话。",
     }
 
@@ -247,12 +224,8 @@ def _delete_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optio
         _rebuild_usage_snapshots(session, user_id, scope["ai_kind"], scope["ai_config_id"])
 
     return {
-        "success": True,
         "session_id": session_id,
-        "ai_kind": scope["ai_kind"],
-        "ai_config_id": scope["ai_config_id"],
         "deleted_messages": len(messages),
-        "deleted_sessions": len(sessions),
         "note": "已删除该对话及其消息。",
     }
 
@@ -308,13 +281,9 @@ def _edit_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
                 session.add(message)
             session.commit()
             return {
-                "success": True,
                 "action": "rename",
                 "session_id": session_id,
                 "name": session_name,
-                "updated_messages": len(messages),
-                "ai_kind": scope["ai_kind"],
-                "ai_config_id": scope["ai_config_id"],
                 "note": "已重命名对话。",
             }
 
@@ -343,13 +312,10 @@ def _edit_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
         _rebuild_usage_snapshots(session, user_id, scope["ai_kind"], scope["ai_config_id"])
 
     return {
-        "success": True,
         "action": "clear",
         "session_id": session_id,
         "deleted_messages": len(messages),
         "kept_from_message_id": current_message_id if preserves_current else None,
-        "ai_kind": scope["ai_kind"],
-        "ai_config_id": scope["ai_config_id"],
         "note": "已清空此前对话内容并保留当前消息。" if preserves_current else "已清空对话内容并保留会话。",
     }
 
@@ -422,16 +388,11 @@ def _compress_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Opt
 
     if rebuilt:
         return {
-            "success": True,
             "compressed": True,
-            "session_id": session_id,
-            "keep_recent": keep_recent,
             "note": "已将较早的对话历史折叠为摘要，将在下一轮对话生效。",
         }
     return {
-        "success": True,
         "compressed": False,
-        "session_id": session_id,
         "note": "对话历史较短，暂无需压缩。",
     }
 
@@ -520,12 +481,9 @@ def _list_conversations(user_id: int, args: Dict[str, Any], ai_config_id: Option
             row.update(stats.get(str(row.get("session_id") or ""), {"message_count": 0, "total_tokens": 0}))
 
     return {
-        "success": True,
         "count": len(rows),
         "active_session_id": active,
         "sessions": rows,
-        "ai_kind": scope["ai_kind"],
-        "ai_config_id": scope["ai_config_id"],
         "note": "这是该 AI 的全部对话（网页 + 各机器人渠道，共享同一对话区）。",
     }
 
@@ -593,11 +551,8 @@ def _switch_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optio
         }
 
     return {
-        "success": True,
         "session_id": target_snapshot["session_id"],
         "name": target_snapshot["name"],
-        "ai_kind": scope["ai_kind"],
-        "ai_config_id": scope["ai_config_id"],
         "note": "已切换；将在你的下一条消息生效，本条回复仍发回当前对话。",
     }
 
@@ -717,12 +672,9 @@ def _new_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optional
             switched = True
 
     return {
-        "success": True,
         "session_id": row_snapshot["session_id"],
         "name": row_snapshot["session_name"],
         "switched": switched,
-        "ai_kind": scope["ai_kind"],
-        "ai_config_id": scope["ai_config_id"],
         "note": (
             "已新建对话并切换；将在你的下一条消息生效，本条回复仍发回当前对话。"
             if switched

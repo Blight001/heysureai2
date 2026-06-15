@@ -205,10 +205,7 @@ def _prompt_list_targets(user_id: int, args: dict, ai_config_id: Optional[int] =
             "name": row.name,
             "ai_role": row.ai_role,
             "digital_member_role": row.digital_member_role,
-            "prompt_source": "KnowledgeBase/personas/*.md",
-            "used_by_current_runtime": True,
             "prompt_length": len(str(effective_prompt or "")),
-            "updated_at": row.updated_at,
         })
     return {
         "ai_prompts": ai_prompts,
@@ -217,13 +214,12 @@ def _prompt_list_targets(user_id: int, args: dict, ai_config_id: Optional[int] =
                 "key": key,
                 "label": label,
                 "usage": SYSTEM_PROMPT_USAGE.get(key, ""),
-                "is_current_ai_base_prompt": False,
             }
             for key, label in SYSTEM_PROMPT_FIELDS.items()
         ],
         "note": (
-            "当前按 AI 配置运行的聊天/飞书/任务，基础 prompt 来源是 "
-            "KnowledgeBase/personas/*.md。system_prompts 多数是全局注入模板、纠错模板或旧版兜底字段。"
+            "AI 基础人格 prompt 用 prompt.read_ai 读取（来源 KnowledgeBase/personas/*.md）；"
+            "system_prompts 多为全局注入模板或旧版兜底字段。"
         ),
     }
 
@@ -242,22 +238,9 @@ def _prompt_read_ai(user_id: int, args: dict, ai_config_id: Optional[int] = None
             "name": cfg.name,
             "ai_role": cfg.ai_role,
             "digital_member_role": cfg.digital_member_role,
-            "prompt_source": "KnowledgeBase/personas/*.md",
-            "used_by_current_runtime": True,
             "prompt": effective_prompt,
             "prompt_length": len(str(effective_prompt or "")),
-            "runtime_injected_sections": [
-                "AI 工作目录",
-                "AI 数据库连接（当该 AI 配置了 database_uri 时）",
-                "可用MCP工具目录（一次性列出全部可调用工具名称+简介）与 MCP native tools schema（初始仅暴露 mcp.describe_tool，按需动态增加目标工具）",
-                "任务运行时附加提示（仅任务运行场景）",
-                "飞书通知前置模板（仅飞书事件场景）",
-            ],
-            "note": (
-                "这是当前 AI 实际基础 prompt。运行时还会追加/合并 runtime_injected_sections 中的动态段；"
-                "这些动态段不会直接写回此字段。"
-            ),
-            "updated_at": cfg.updated_at,
+            "line_count": len(str(effective_prompt or "").splitlines()),
         }
 
 
@@ -311,7 +294,6 @@ def _prompt_read_system(user_id: int, args: dict, ai_config_id: Optional[int] = 
                 "key": key,
                 "label": SYSTEM_PROMPT_FIELDS[key],
                 "usage": SYSTEM_PROMPT_USAGE.get(key, ""),
-                "is_current_ai_base_prompt": False,
                 "prompt": value,
                 "prompt_length": len(value),
             }
@@ -321,15 +303,13 @@ def _prompt_read_system(user_id: int, args: dict, ai_config_id: Optional[int] = 
                     "key": field,
                     "label": label,
                     "usage": SYSTEM_PROMPT_USAGE.get(field, ""),
-                    "is_current_ai_base_prompt": False,
                     "prompt": kb_store.effective_system_value(user_id, field, getattr(user, field, "")),
-                    "prompt_length": len(kb_store.effective_system_value(user_id, field, getattr(user, field, ""))),
                 }
                 for field, label in SYSTEM_PROMPT_FIELDS.items()
             ],
             "note": (
-                "这些不是每个 AI 卡片当前运行的基础 prompt。当前 AI 基础 prompt 请用 prompt.read_ai 读取；"
-                "其中 mcp_call_method 是旧版文本 MCP 模板，当前默认不再合并进有效运行 prompt；任务/监督/传承字段只在对应任务流程中注入。"
+                "这些不是 AI 卡片当前运行的基础 prompt（基础 prompt 请用 prompt.read_ai 读取），"
+                "多为全局注入模板或旧版兜底字段。"
             ),
         }
 

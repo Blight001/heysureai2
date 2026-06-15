@@ -149,12 +149,19 @@ def _user_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
         except Exception:
             notice = notice_template
 
-    return {
+    out: Dict[str, Any] = {
         "delivered": True,
         "channel": channel,
-        "result": result,
-        "notice": notice,
     }
+    # 底层机器人返回里若带消息 id，保留一个轻量引用即可，不回吐整包响应。
+    if isinstance(result, dict):
+        data = result.get("data") if isinstance(result.get("data"), dict) else {}
+        sent_id = result.get("message_id") or result.get("msg_id") or data.get("message_id")
+        if sent_id:
+            out["message_id"] = sent_id
+    if notice:
+        out["notice"] = notice
+    return out
 
 
 # ---------- AI 间通信 ----------
@@ -183,19 +190,12 @@ def _reply_result(
     return_session_id: str,
 ) -> Dict[str, Any]:
     _emit_ai_message_event(user_id, ai_config_id, to_id, "reply")
-    target_session_id = str(completed_reply.get("from_session_id") or return_session_id or "").strip()
     return {
         "message_id": completed_reply.get("message_id"),
-        "queued": False,
         "replied": True,
         "status": "replied",
-        "from_ai_config_id": ai_config_id,
         "to_ai_config_id": to_id,
-        "target_session_id": target_session_id,
-        "return_to_session_id": target_session_id or None,
         "reply_to_message_id": completed_reply.get("reply_to_message_id") or completed_reply.get("message_id"),
-        "reply_content": completed_reply.get("reply_content"),
-        "waiter_resolved": bool(completed_reply.get("waiter_resolved")),
         "note": "已作为上一封 AI 消息的回信送达原会话。",
     }
 
@@ -350,18 +350,10 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
     base_out: Dict[str, Any] = {
         "message_id": msg.message_id,
         "queued": True,
-        "target_active_run": target_active,
-        "from_ai_config_id": ai_config_id,
         "to_ai_config_id": to_id,
-        "target_session_id": msg.target_session_id,
-        "return_to_session_id": return_session_id or None,
-        "current_session_id": from_session_id or None,
-        "require_reply": require_reply,
-        "timeout_seconds": timeout_seconds,
         "message_type": message_type,
-        "cascade_depth": cascade_depth,
+        "require_reply": require_reply,
     }
-    base_out["target_wakeup"] = wakeup
 
     if not require_reply:
         # Fire-and-forget 路径：不阻塞。
@@ -397,7 +389,6 @@ async def _ai_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Opt
         "status": final.get("status"),
         "reply_content": final.get("reply_content"),
         "failure_reason": final.get("failure_reason"),
-        "replied_at": final.get("replied_at"),
     })
     if final.get("status") == "replied":
         base_out["note"] = "目标 AI 已回复，见 reply_content。"
