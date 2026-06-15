@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -31,6 +33,8 @@ def _status_payload(session: Session) -> dict:
         "version": repo_svc.collect_version_info(),
         "last_update": repo_svc.get_last_update(session),
         "git_available": repo_svc.git_available(),
+        "updater_available": repo_svc.updater_available(),
+        "update_mode": repo_svc.update_mode(),
         "limits": {
             "min_interval": repo_svc.MIN_INTERVAL_SECONDS,
             "max_interval": repo_svc.MAX_INTERVAL_SECONDS,
@@ -77,7 +81,7 @@ class CheckRequest(BaseModel):
 
 @router.post("/check")
 def check_now(
-    payload: CheckRequest | None = None,
+    payload: Optional[CheckRequest] = None,
     session: Session = Depends(get_session),
     admin: User = Depends(require_admin_user),
 ) -> dict:

@@ -29,6 +29,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
+import httpx
 from sqlmodel import Session
 
 from api.core.settings import REPOSITORY_DIR, settings
@@ -45,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 AUTO_ENABLED_KEY = "repo_update.auto_enabled"
 INTERVAL_KEY = "repo_update.interval_seconds"
+LAST_AUTO_TRIGGER_AT_KEY = "repo_update.last_auto_trigger_at"
 # 最近一次成功更新的痕迹——重启会清空进程内 _state，靠这几个键在重启后仍能
 # 在控制台展示「上次已更新到 <sha>」。
 LAST_UPDATE_AT_KEY = "repo_update.last_update_at"
@@ -123,6 +125,14 @@ def _fresh_steps() -> List[Dict[str, str]]:
     return [{"key": k, "label": _STEP_LABELS[k], "status": "pending"} for k in (_STEP_CHECK, _STEP_PULL, _STEP_RESTART)]
 
 
+def _fresh_webhook_steps() -> List[Dict[str, str]]:
+    return [
+        {"key": _STEP_CHECK, "label": "跳过容器内版本检测", "status": "pending"},
+        {"key": _STEP_PULL, "label": "触发服务器更新脚本", "status": "pending"},
+        {"key": _STEP_RESTART, "label": "重新部署服务", "status": "pending"},
+    ]
+
+
 _state: Dict[str, Any] = {
     "phase": "idle",
     "message": "",
@@ -182,6 +192,8 @@ def _run_git(args: List[str], timeout: float = 60.0) -> subprocess.CompletedProc
         cwd=REPOSITORY_DIR,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout,
     )
 
@@ -236,6 +248,63 @@ def collect_version_info() -> Dict[str, Any]:
         "branch": _current_branch(),
         "current": _commit_info("HEAD"),
     }
+
+
+def update_mode() -> str:
+    """Return the configured deployment updater: git, webhook, or unavailable."""
+    if git_available():
+        return "git"
+    if settings.repo_update_webhook_url.strip():
+        return "webhook"
+    return "unavailable"
+
+
+def updater_available() -> bool:
+    return update_mode() != "unavailable"
+
+
+def _trigger_deployment_webhook() -> None:
+    url = settings.repo_update_webhook_url.strip()
+    if not url:
+        raise RepoUpdateError("未配置服务器更新 Webhook")
+    headers = {}
+    token = settings.repo_update_webhook_token.strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = httpx.post(
+            url,
+            headers=headers,
+            json={"source": "heysure-admin", "requested_at": time.time()},
+            timeout=float(settings.repo_update_webhook_timeout_seconds),
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise RepoUpdateError(f"服务器更新 Webhook 调用失败：{exc}") from exc
+
+
+def _run_webhook_update(*, trigger: str) -> Dict[str, Any]:
+    _set_state(
+        phase="pulling",
+        running=True,
+        trigger=trigger,
+        steps=_fresh_webhook_steps(),
+        last_error="",
+        message="正在通知服务器执行部署更新…",
+        last_check_at=time.time(),
+    )
+    _set_step(_STEP_CHECK, "skipped")
+    _set_step(_STEP_PULL, "active")
+    _trigger_deployment_webhook()
+    _record_last_update(from_sha="", to_sha="")
+    _set_step(_STEP_PULL, "done")
+    _set_step(_STEP_RESTART, "active")
+    _set_state(
+        phase="restarting",
+        running=True,
+        message="服务器已接受更新任务，正在重新部署…",
+    )
+    return {"ok": True, "updated": True, "restarting": True, "state": get_state()}
 
 
 def _fetch_and_compare() -> Dict[str, Any]:
@@ -330,7 +399,8 @@ def run_check_and_maybe_update(*, trigger: str, auto_apply: bool) -> Dict[str, A
     返回本次结果摘要；详细进度通过 :func:`get_state` 暴露给前端轮询。
     并发保护：已有流程在跑时直接返回当前状态（不重复触发）。
     """
-    if not git_available():
+    mode = update_mode()
+    if mode == "unavailable":
         _set_state(phase="error", running=False, last_error="当前部署不是可用的 git 工作区，无法自动更新", message="git 不可用")
         return {"ok": False, "error": "git 不可用", "state": get_state()}
 
@@ -338,6 +408,18 @@ def run_check_and_maybe_update(*, trigger: str, auto_apply: bool) -> Dict[str, A
         return {"ok": False, "busy": True, "state": get_state()}
 
     try:
+        if mode == "webhook":
+            if not auto_apply:
+                _set_state(
+                    phase="update_available",
+                    running=False,
+                    trigger=trigger,
+                    message="外部更新器已配置，可执行服务器更新",
+                    last_check_at=time.time(),
+                )
+                return {"ok": True, "updated": False, "update_available": True, "state": get_state()}
+            return _run_webhook_update(trigger=trigger)
+
         _set_state(
             phase="checking",
             running=True,
@@ -428,21 +510,34 @@ def maybe_auto_check() -> None:
     不会阻塞事件循环。
     """
     global _last_auto_check_at
-    if not git_available():
+    if not updater_available():
         return
     if _state.get("running"):
         return
     try:
         with Session(engine) as session:
             cfg = get_config(session)
+            raw_last_trigger = get_setting(session, LAST_AUTO_TRIGGER_AT_KEY, "")
+            try:
+                persisted_last_trigger = float(raw_last_trigger) if raw_last_trigger else 0.0
+            except (TypeError, ValueError):
+                persisted_last_trigger = 0.0
     except Exception:
         logger.exception("repo-update: failed to read config")
         return
     if not cfg["auto_enabled"]:
         return
     now = time.time()
+    _last_auto_check_at = max(_last_auto_check_at, persisted_last_trigger)
     if now - _last_auto_check_at < cfg["interval_seconds"]:
         return
     _last_auto_check_at = now
+    try:
+        with Session(engine) as session:
+            set_setting(session, LAST_AUTO_TRIGGER_AT_KEY, str(now))
+            session.commit()
+    except Exception:
+        logger.exception("repo-update: failed to persist auto trigger time")
+        return
     logger.info("repo-update: auto check fired (interval=%ss)", cfg["interval_seconds"])
     trigger_async(trigger="auto", auto_apply=True)

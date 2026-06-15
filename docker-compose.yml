@@ -29,6 +29,8 @@ services:
 
   api-gateway:
     build: ./server
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "3000:3000"
     volumes:
@@ -43,6 +45,8 @@ services:
       - AI_RUNTIME_URL=http://ai-runtime:3003
       - AI_DISPATCH_MODE=remote
       - HEYSURE_DB_AUTO_MIGRATE=0
+      - HEYSURE_REPO_UPDATE_WEBHOOK_URL=${HEYSURE_REPO_UPDATE_WEBHOOK_URL:-}
+      - HEYSURE_REPO_UPDATE_WEBHOOK_TOKEN=${HEYSURE_REPO_UPDATE_WEBHOOK_TOKEN:-}
     command: ["uvicorn", "gateway.app:sio_app", "--host", "0.0.0.0", "--port", "3000"]
     depends_on:
       db:

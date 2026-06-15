@@ -1205,7 +1205,9 @@ const saveRepoConfig = async () => {
 const triggerRepoCheck = async (apply: boolean) => {
   if (apply) {
     const yes = await confirm({
-      message: '将检测远程是否有新版本；若发现更新会自动拉取最新代码并重启全部服务（重启期间控制台会短暂不可用）。确定继续？',
+      message: repoStatus.value?.update_mode === 'webhook'
+        ? '将通知服务器更新器立即执行宿主机更新脚本，服务可能短暂不可用。确定继续？'
+        : '将检测远程是否有新版本；若发现更新会自动拉取最新代码并重启全部服务（重启期间控制台会短暂不可用）。确定继续？',
       type: 'warning',
     })
     if (!yes) return
@@ -2147,10 +2149,17 @@ const avatarFor = (u: AdminUser) =>
             </div>
 
             <div
-              v-if="repoStatus && !repoStatus.git_available"
+              v-if="repoStatus && repoStatus.update_mode === 'unavailable'"
               class="rounded-xl border border-amber-200 bg-amber-50/60 dark:border-amber-700/40 dark:bg-amber-900/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-300"
             >
-              当前部署不是可用的 git 工作区（或镜像未包含 .git），无法自动检测/拉取仓库更新。该功能适用于「同一份 git 工作区 + 多进程」的部署方式。
+              当前部署没有 Git 工作区，也未配置服务器更新 Webhook。请为网关设置 <code>HEYSURE_REPO_UPDATE_WEBHOOK_URL</code>，即可从本页控制宿主机更新脚本。
+            </div>
+
+            <div
+              v-if="repoStatus && repoStatus.update_mode === 'webhook'"
+              class="rounded-xl border border-indigo-200 bg-indigo-50/60 dark:border-indigo-700/40 dark:bg-indigo-900/10 px-4 py-3 text-xs text-indigo-700 dark:text-indigo-300"
+            >
+              已连接服务器更新器。本页的定时设置和“立即更新”会调用预配置 Webhook，由宿主机脚本拉取代码并重新部署服务。
             </div>
 
             <template v-if="repoStatus">
@@ -2183,8 +2192,8 @@ const avatarFor = (u: AdminUser) =>
               <section class="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4 space-y-3">
                 <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">自动检测设置</h4>
                 <label class="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200 cursor-pointer select-none">
-                  <input type="checkbox" v-model="repoForm.auto_enabled" class="accent-indigo-600" :disabled="!repoStatus.git_available" />
-                  开启定时自动检测（检测到新版本将自动拉取并重启）
+                  <input type="checkbox" v-model="repoForm.auto_enabled" class="accent-indigo-600" :disabled="!repoStatus.updater_available" />
+                  {{ repoStatus.update_mode === 'webhook' ? '开启定时服务器更新' : '开启定时自动检测（检测到新版本将自动拉取并重启）' }}
                 </label>
                 <div class="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
                   <span class="text-zinc-500 dark:text-zinc-400">检测间隔</span>
@@ -2193,7 +2202,7 @@ const avatarFor = (u: AdminUser) =>
                     type="number"
                     :min="Math.max(1, Math.round(repoStatus.limits.min_interval / 60))"
                     :max="Math.round(repoStatus.limits.max_interval / 60)"
-                    :disabled="!repoStatus.git_available"
+                    :disabled="!repoStatus.updater_available"
                     class="w-24 text-sm border border-zinc-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100 disabled:opacity-60"
                   />
                   <span class="text-zinc-500 dark:text-zinc-400">分钟</span>
@@ -2202,7 +2211,7 @@ const avatarFor = (u: AdminUser) =>
                 <div class="flex justify-end">
                   <button
                     class="text-xs px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-                    :disabled="repoSavingConfig || !repoStatus.git_available"
+                    :disabled="repoSavingConfig || !repoStatus.updater_available"
                     @click="saveRepoConfig"
                   >{{ repoSavingConfig ? '保存中…' : '保存设置' }}</button>
                 </div>
@@ -2220,9 +2229,9 @@ const avatarFor = (u: AdminUser) =>
                   </div>
                   <button
                     class="text-xs px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-                    :disabled="repoBusy || repoActive || !repoStatus.git_available"
+                    :disabled="repoBusy || repoActive || !repoStatus.updater_available"
                     @click="triggerRepoCheck(true)"
-                  >{{ repoBusy || repoActive ? '执行中…' : '立即检测并更新' }}</button>
+                  >{{ repoBusy || repoActive ? '执行中…' : (repoStatus.update_mode === 'webhook' ? '立即更新服务器' : '立即检测并更新') }}</button>
                 </div>
 
                 <!-- 阶段步骤 -->

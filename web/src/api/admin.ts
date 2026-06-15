@@ -454,6 +454,8 @@ export interface RepoUpdateStatus {
   version: RepoVersionInfo
   last_update: RepoLastUpdate
   git_available: boolean
+  updater_available: boolean
+  update_mode: 'git' | 'webhook' | 'unavailable'
   limits: { min_interval: number; max_interval: number }
 }
 
