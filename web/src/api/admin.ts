@@ -340,28 +340,43 @@ export const deleteUser = (userId: number) =>
 // ---- 系统测试 / 诊断 ----
 
 export interface DiagnosticCheck {
-  module: string
+  id: string
   label: string
   ok: boolean
-  latency_ms: number
   detail: string
+  latency_ms?: number
+  skipped?: boolean
 }
 
-export const runDiagnosticsHealth = () =>
-  get<{ ok: boolean; checks: DiagnosticCheck[] }>('/api/diagnostics/health', {
-    fallbackError: '健康检查失败',
+export interface DiagnosticGroup {
+  module: string
+  label: string
+  checks: DiagnosticCheck[]
+}
+
+export interface SelfTestResult {
+  ok: boolean
+  summary: { total: number; passed: number; failed: number }
+  groups: DiagnosticGroup[]
+  ran_at: number
+}
+
+export const runSelfTest = () =>
+  get<SelfTestResult>('/api/diagnostics/selftest', {
+    fallbackError: '系统自检失败',
   })
 
-export interface DiagnosticLlmResult {
-  ok: boolean
-  model?: string
+export interface ModelProbe {
+  name: string
+  model: string
   base_url?: string
+  ok: boolean
   latency_ms?: number
   reply?: string
   detail?: string
 }
 
-export const runDiagnosticsLlm = (payload: { ai_config_id?: number; prompt?: string }) =>
-  post<DiagnosticLlmResult>('/api/diagnostics/llm', payload, {
-    fallbackError: 'LLM 连通性测试失败',
+export const runModelTests = (payload: { prompt?: string; ai_config_id?: number } = {}) =>
+  post<{ ok: boolean; models: ModelProbe[]; detail?: string }>('/api/diagnostics/models', payload, {
+    fallbackError: '模型连通性测试失败',
   })

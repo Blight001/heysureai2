@@ -4,7 +4,7 @@ import { useMessage } from '@/composables/useMessage'
 import * as adminApi from '@/api/admin'
 import type {
   AdminTask, AdminUser, AuditEntry, DbCleanupCategory, DbCleanupResult, DbColumn, DbTableMeta, DbValue,
-  DiagnosticCheck, DiagnosticLlmResult, FileEntry, LogLine, ServiceInfo,
+  DiagnosticGroup, ModelProbe, FileEntry, LogLine, ServiceInfo,
 } from '@/api/admin'
 import { listMcpTools, callMcpTool } from '@/api/mcp'
 import type { User, UserRole } from '@/types'
@@ -954,34 +954,39 @@ watch(autoRefresh, () => startAutoRefresh())
 watch(logLevel, () => { if (props.show) void loadLogs(selectedServiceKey.value, true) })
 
 // ---- 系统测试 / 诊断 ----
-const healthChecks = ref<DiagnosticCheck[]>([])
-const healthBusy = ref(false)
-const healthLoaded = ref(false)
+const selfTestGroups = ref<DiagnosticGroup[]>([])
+const selfTestSummary = ref<{ total: number; passed: number; failed: number } | null>(null)
+const selfTestBusy = ref(false)
+const selfTestLoaded = ref(false)
 
-const runHealthCheck = async () => {
-  healthBusy.value = true
+const runSelfTest = async () => {
+  selfTestBusy.value = true
   try {
-    const res = await adminApi.runDiagnosticsHealth()
-    healthChecks.value = res.checks || []
-    healthLoaded.value = true
+    const res = await adminApi.runSelfTest()
+    selfTestGroups.value = res.groups || []
+    selfTestSummary.value = res.summary || null
+    selfTestLoaded.value = true
   } catch (err) {
     await alert({ message: (err as Error).message, type: 'error' })
   } finally {
-    healthBusy.value = false
+    selfTestBusy.value = false
   }
 }
 
 const llmPrompt = ref('回复一个字：好')
 const llmBusy = ref(false)
-const llmResult = ref<DiagnosticLlmResult | null>(null)
+const modelResults = ref<ModelProbe[]>([])
+const modelsTested = ref(false)
 
-const runLlmTest = async () => {
+const runModelTest = async () => {
   llmBusy.value = true
-  llmResult.value = null
+  modelsTested.value = false
   try {
-    llmResult.value = await adminApi.runDiagnosticsLlm({ prompt: llmPrompt.value })
+    const res = await adminApi.runModelTests({ prompt: llmPrompt.value })
+    modelResults.value = res.models || []
+    modelsTested.value = true
   } catch (err) {
-    llmResult.value = { ok: false, detail: (err as Error).message }
+    await alert({ message: (err as Error).message, type: 'error' })
   } finally {
     llmBusy.value = false
   }
@@ -1048,7 +1053,7 @@ const switchTab = (next: Tab) => {
   if (next === 'database' && !dbTables.value.length) void loadDbTables()
   if (next === 'audit') void loadAudit()
   if (next === 'diagnostics') {
-    if (!healthLoaded.value) void runHealthCheck()
+    if (!selfTestLoaded.value) void runSelfTest()
     if (!mcpToolsLoaded.value) void loadMcpToolNames()
   }
 }
@@ -1801,43 +1806,55 @@ const avatarFor = (u: AdminUser) =>
 
           <!-- ============ Diagnostics tab ============ -->
           <div v-show="tab === 'diagnostics'" class="flex-1 overflow-y-auto p-5 space-y-5">
-            <!-- 健康检查 -->
+            <!-- 一键自检 -->
             <section class="border border-zinc-200 rounded-xl p-4 dark:border-zinc-800">
               <div class="flex items-center justify-between mb-3">
                 <div>
-                  <div class="text-sm font-bold text-zinc-700 dark:text-zinc-200">运行时与数据库健康</div>
-                  <div class="text-xs text-zinc-400 mt-0.5">逐个检查网关、数据库、MCP / 连接器 / AI 运行时是否正常。</div>
+                  <div class="text-sm font-bold text-zinc-700 dark:text-zinc-200 flex items-center gap-2">
+                    一键自检
+                    <span v-if="selfTestSummary" class="text-xs font-normal" :class="selfTestSummary.failed ? 'text-red-500' : 'text-emerald-600'">
+                      {{ selfTestSummary.passed }}/{{ selfTestSummary.total }} 通过<span v-if="selfTestSummary.failed">，{{ selfTestSummary.failed }} 项异常</span>
+                    </span>
+                  </div>
+                  <div class="text-xs text-zinc-400 mt-0.5">逐项检查进程、数据库、MCP 与文件存储。</div>
                 </div>
                 <button
-                  class="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-                  :disabled="healthBusy"
-                  @click="runHealthCheck"
-                >{{ healthBusy ? '检查中…' : '重新检查' }}</button>
+                  class="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap"
+                  :disabled="selfTestBusy"
+                  @click="runSelfTest"
+                >{{ selfTestBusy ? '检查中…' : '重新自检' }}</button>
               </div>
-              <div v-if="!healthChecks.length && !healthBusy" class="text-xs text-zinc-400">尚未检查。</div>
-              <ul class="space-y-2">
-                <li
-                  v-for="c in healthChecks"
-                  :key="c.module"
-                  class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/50"
-                >
-                  <span class="flex items-center gap-2 min-w-0">
-                    <span
-                      class="w-2 h-2 rounded-full shrink-0"
-                      :class="c.ok ? 'bg-emerald-500' : 'bg-red-500'"
-                    ></span>
-                    <span class="text-sm text-zinc-700 dark:text-zinc-200 shrink-0">{{ c.label }}</span>
-                    <span class="text-xs text-zinc-400 truncate">{{ c.detail }}</span>
-                  </span>
-                  <span class="text-xs text-zinc-400 whitespace-nowrap">{{ c.latency_ms }} ms</span>
-                </li>
-              </ul>
+              <div v-if="!selfTestGroups.length && !selfTestBusy" class="text-xs text-zinc-400">尚未运行自检。</div>
+              <div class="space-y-3">
+                <div v-for="g in selfTestGroups" :key="g.module">
+                  <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">{{ g.label }}</div>
+                  <ul class="space-y-1.5">
+                    <li
+                      v-for="c in g.checks"
+                      :key="c.id"
+                      class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/50"
+                    >
+                      <span class="flex items-center gap-2 min-w-0">
+                        <span
+                          class="w-2 h-2 rounded-full shrink-0"
+                          :class="c.skipped ? 'bg-zinc-300 dark:bg-zinc-600' : (c.ok ? 'bg-emerald-500' : 'bg-red-500')"
+                        ></span>
+                        <span class="text-sm text-zinc-700 dark:text-zinc-200 shrink-0">{{ c.label }}</span>
+                        <span class="text-xs truncate" :class="c.skipped ? 'text-zinc-400' : (c.ok ? 'text-zinc-400' : 'text-red-500')">
+                          {{ c.skipped ? '已跳过' : '' }}{{ c.detail }}
+                        </span>
+                      </span>
+                      <span v-if="c.latency_ms != null && !c.skipped" class="text-xs text-zinc-400 whitespace-nowrap">{{ c.latency_ms }} ms</span>
+                    </li>
+                  </ul>
+                </div>
+              </div>
             </section>
 
-            <!-- 模型连通性 -->
+            <!-- 模型连通性（逐个测试已配置模型） -->
             <section class="border border-zinc-200 rounded-xl p-4 dark:border-zinc-800">
               <div class="text-sm font-bold text-zinc-700 dark:text-zinc-200 mb-1">模型（LLM）连通性</div>
-              <div class="text-xs text-zinc-400 mb-3">用当前用户的主脑模型发一次极小的补全请求，确认 API Key / Base URL / 模型可用。</div>
+              <div class="text-xs text-zinc-400 mb-3">对主脑模型与每个已配置的模型 Preset 各发一次极小补全请求，逐个确认可用。</div>
               <div class="flex gap-2">
                 <input
                   v-model="llmPrompt"
@@ -1847,14 +1864,25 @@ const avatarFor = (u: AdminUser) =>
                 <button
                   class="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap"
                   :disabled="llmBusy"
-                  @click="runLlmTest"
-                >{{ llmBusy ? '测试中…' : '测试模型' }}</button>
+                  @click="runModelTest"
+                >{{ llmBusy ? '测试中…' : '测试全部模型' }}</button>
               </div>
-              <div v-if="llmResult" class="mt-3 text-xs rounded-lg p-3" :class="llmResult.ok ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'">
-                <div class="font-medium">{{ llmResult.ok ? '连通正常' : '连通失败' }}<span v-if="llmResult.model"> · {{ llmResult.model }}</span><span v-if="llmResult.latency_ms != null"> · {{ llmResult.latency_ms }} ms</span></div>
-                <div v-if="llmResult.reply" class="mt-1 text-zinc-600 dark:text-zinc-300">回复：{{ llmResult.reply }}</div>
-                <div v-if="llmResult.detail && !llmResult.ok" class="mt-1 whitespace-pre-wrap">{{ llmResult.detail }}</div>
-              </div>
+              <div v-if="modelsTested && !modelResults.length" class="mt-3 text-xs text-zinc-400">未发现已配置的模型。</div>
+              <ul class="mt-3 space-y-2">
+                <li
+                  v-for="(m, i) in modelResults"
+                  :key="m.model + '_' + i"
+                  class="text-xs rounded-lg p-3"
+                  :class="m.ok ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'"
+                >
+                  <div class="font-medium flex items-center justify-between gap-2">
+                    <span>{{ m.name }}<span v-if="m.model && m.model !== m.name" class="text-zinc-400"> · {{ m.model }}</span></span>
+                    <span class="whitespace-nowrap">{{ m.ok ? '连通' : '失败' }}<span v-if="m.latency_ms != null"> · {{ m.latency_ms }} ms</span></span>
+                  </div>
+                  <div v-if="m.reply" class="mt-1 text-zinc-600 dark:text-zinc-300">回复：{{ m.reply }}</div>
+                  <div v-if="m.detail && !m.ok" class="mt-1 whitespace-pre-wrap">{{ m.detail }}</div>
+                </li>
+              </ul>
             </section>
 
             <!-- MCP 工具测试 -->
