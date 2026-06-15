@@ -213,6 +213,11 @@ async def call_mcp_tool(
             ),
         }
 
+    # Search is a direct outbound API call and must not depend on the internal
+    # MCP runtime port being reachable.
+    if req.tool == "workspace.search":
+        return await registry.call(req.tool, user.id, req.arguments, req.ai_config_id)
+
     # In split deployments, route via mcp-runtime so the user-facing test
     # path uses the same registry version the AI worker uses. Without this,
     # admins who reload mcp-runtime would still see stale tool behavior in

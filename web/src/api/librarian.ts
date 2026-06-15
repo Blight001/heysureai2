@@ -224,7 +224,7 @@ export const saveIntrinsicProperties = (
   post<KnowledgeEntryItem>(
     '/api/librarian/intrinsic-properties',
     { tools },
-    { token, fallbackError: '固有技能保存失败' },
+    { token, fallbackError: '固有属性保存失败' },
   )
 
 export const saveSystemPrompts = (
@@ -234,7 +234,7 @@ export const saveSystemPrompts = (
   post<KnowledgeEntryItem>(
     '/api/librarian/system-prompts',
     { prompts },
-    { token, fallbackError: '固有思路保存失败' },
+    { token, fallbackError: '固有思想保存失败' },
   )
 
 export const searchClawHubSkills = (token: string, q: string, limit = 20) =>

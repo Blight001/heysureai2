@@ -780,7 +780,7 @@ const taskStateFilterButtonClass = (state: JobStateFilter) => {
             <div v-else class="space-y-3">
               <div class="text-xs text-zinc-500 dark:text-zinc-400">
                 {{ selectedGenerationDetail.label }} · run: {{ selectedGenerationDetail.run_id }} · {{ formatTs(selectedGenerationDetail.started_at) }}
-                <span v-if="selectedGenerationDetail.live.text"> · 实时思考中 ({{ selectedGenerationDetail.live.phase }}){{ selectedGenerationDetail.live.current_tool ? ` · 工具: ${selectedGenerationDetail.live.current_tool}` : '' }}</span>
+                <span v-if="selectedGenerationDetail.live.text || selectedGenerationDetail.live.reasoning"> · 实时运行中 ({{ selectedGenerationDetail.live.phase }}){{ selectedGenerationDetail.live.current_tool ? ` · 工具: ${selectedGenerationDetail.live.current_tool}` : '' }}</span>
               </div>
               <ChatConversationView
                 :baseMessages="selectedGenerationMessages"
@@ -788,6 +788,9 @@ const taskStateFilterButtonClass = (state: JobStateFilter) => {
                 :frontPromptText="selectedGenerationDetail.system_prompt || ''"
                 :aiConfigId="props.target?.aiConfigId"
                 :liveText="selectedGenerationDetail.live.text || ''"
+                :liveThinking="selectedGenerationDetail.live.reasoning || ''"
+                :livePhase="selectedGenerationDetail.live.phase || 'idle'"
+                :collapseLiveThinking="true"
                 :showFrontPrompt="true"
                 :showFrontPromptPlaceholder="true"
                 :recoverActionStateFromTags="true"
@@ -795,7 +798,7 @@ const taskStateFilterButtonClass = (state: JobStateFilter) => {
                 :appliedSignatures="[]"
                 :actionResults="{}"
                 :actionResultsBySignature="{}"
-                :isTyping="false"
+                :isTyping="['queued', 'running'].includes(String(selectedGenerationDetail.status || '').toLowerCase())"
                 :readonly="true"
                 @delete="() => {}"
                 @recall="() => {}"

@@ -352,7 +352,7 @@ Rules:
       options.onRefreshUser(updatedUser)
     } catch (err) {
       console.error('Failed to save brain view mode:', err)
-      void options.alert({ message: '智囊团查看方式保存失败', type: 'error' })
+      void options.alert({ message: '数字生命查看方式保存失败', type: 'error' })
     }
   }
 

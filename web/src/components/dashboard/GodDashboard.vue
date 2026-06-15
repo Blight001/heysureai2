@@ -112,6 +112,7 @@ const {
   agents,
   connectedDevices,
   knowledgeBase,
+  librarianPending,
   globalGeneration,
   allFiles,
   dashboardSocketConnected,
@@ -135,6 +136,8 @@ const {
   guidanceDialog,
   settingsOpen,
   leftCollapsed,
+  knowledgeFilterOpen,
+  knowledgeFilter,
   userMenuOpen,
   openContextMenu,
   closeContextMenu,
@@ -147,6 +150,7 @@ const {
   adminAgents,
   sidebarMemberAgents,
   activeAgents,
+  filteredKnowledgeBase,
 } = useDashboardUi({
   unassignedProjectId: UNASSIGNED_PROJECT_ID,
   agents,
@@ -473,13 +477,13 @@ onUnmounted(() => {
     <!-- 主体内容区域 -->
     <main class="flex-1 overflow-y-auto lg:overflow-hidden p-6 flex flex-col lg:flex-row" :class="leftCollapsed ? 'gap-4' : 'gap-6'">
 
-      <!-- 左侧：数字社会核心管理员 (管理员 + 知识库) -->
+      <!-- 左侧：数字生命、知识库与作坊 -->
       <section class="flex flex-col gap-6 transition-all duration-300 relative shrink-0" :class="leftCollapsed ? 'lg:w-10 lg:min-w-[40px] w-full' : 'lg:w-[20%] lg:min-w-[280px] w-full'">
         <button class="hidden lg:block absolute -right-3 top-4 w-6 h-6 rounded-full border border-zinc-200 bg-white text-zinc-500 text-xs shadow hover:text-indigo-600 hover:border-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300 z-10 transition-transform hover:scale-110" @click="leftCollapsed = !leftCollapsed">
           {{ leftCollapsed ? '⟩' : '⟨' }}
         </button>
         <div v-if="leftCollapsed" class="hidden lg:flex flex-1 items-center justify-center text-zinc-400 text-xs dark:text-zinc-500">
-          数字社会核心管理员
+          数字生命
         </div>
         <div v-else class="h-auto lg:h-full">
           <LeftSidebarPanel
@@ -487,6 +491,11 @@ onUnmounted(() => {
             :member-agents="sidebarMemberAgents"
             :active-agents="activeAgents"
             :connected-devices="connectedDevices"
+            :knowledge-items="filteredKnowledgeBase"
+            :knowledge-total-count="knowledgeBase.length"
+            :librarian-pending-count="librarianPending.length"
+            :knowledge-filter-open="knowledgeFilterOpen"
+            :knowledge-filter="knowledgeFilter"
             :brain-view-mode="brainViewMode"
             @context="openContextMenu"
             @update:brain-view-mode="saveBrainViewMode"
@@ -495,6 +504,10 @@ onUnmounted(() => {
             @chat="openAgentChat"
             @settings="openAgentSettings"
             @create-ai="openCreateAiConfig('worker')"
+            @update:knowledge-filter-open="knowledgeFilterOpen = $event"
+            @update:knowledge-filter="knowledgeFilter = $event"
+            @open-proposal-review="proposalReviewOpen = true"
+            @refresh-user="emit('refreshUser', $event)"
           />
         </div>
       </section>

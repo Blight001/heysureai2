@@ -18,6 +18,7 @@ from connector_runtime.dispatch.device_dispatch import (
     handle_task_progress,
     handle_task_result,
     purge_stale_dispatches,
+    resume_device_dispatch_queue,
 )
 
 
@@ -232,6 +233,10 @@ def register_agent_socket_events():
         # Include the server-side bound AI so the device can show whether an AI
         # is assigned yet (status indicator: green = bound, yellow = none).
         await sio.emit('device:registered', {'id': device_id, 'aiConfigId': claimed_ai}, to=sid)
+        try:
+            await resume_device_dispatch_queue(device_id)
+        except Exception:
+            logger.exception('Failed to resume endpoint MCP queue: %s', device_id)
         if owner_user_id is not None:
             await emit_agent_list_for_user(owner_user_id)
 

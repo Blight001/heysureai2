@@ -53,7 +53,8 @@ export interface AITaskGenerationItem {
   messages: AITaskGenerationMessage[]
   live: {
     text: string
-    phase: string
+    reasoning: string
+    phase: 'idle' | 'generating' | 'waiting_mcp'
     current_tool: string
     updated_at?: number
   }

@@ -134,9 +134,6 @@ const lifeColorClass = computed(() => {
 })
 
 const statusDisplay = computed(() => {
-  const taskSuffix = props.agent.currentTaskTitle
-    ? ` · 任务: ${props.agent.currentTaskTitle}`
-    : ''
   const runtimeSuffix = !props.agent.enabled
     ? ' · 已停止'
     : props.agent.runtimeStatus === 'running' && props.agent.runtimeTool
@@ -156,8 +153,8 @@ const statusDisplay = computed(() => {
     case 'learning': return { text: `学习中 (下载记忆)${runtimeSuffix}`, class: 'text-blue-600 bg-blue-50 border-blue-200 dark:text-blue-300 dark:bg-blue-500/10 dark:border-blue-500/30' }
     case 'working':
       if (isUserChatActive) return { text: `与用户沟通中${runtimeSuffix}`, class: 'text-cyan-700 bg-cyan-50 border-cyan-200 dark:text-cyan-300 dark:bg-cyan-500/10 dark:border-cyan-500/30' }
-      if (isTaskRunning) return { text: `工作中${taskSuffix}${runtimeSuffix}`, class: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-500/10 dark:border-emerald-500/30' }
-      if (isTaskWaiting) return { text: `等待中${taskSuffix}${runtimeSuffix}`, class: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-500/10 dark:border-amber-500/30' }
+      if (isTaskRunning) return { text: `工作中${runtimeSuffix}`, class: 'text-emerald-600 bg-emerald-50 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-500/10 dark:border-emerald-500/30' }
+      if (isTaskWaiting) return { text: `等待中${runtimeSuffix}`, class: 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-500/10 dark:border-amber-500/30' }
       return { text: `空闲中${runtimeSuffix}`, class: 'text-zinc-600 bg-zinc-100 border-zinc-200 dark:text-zinc-300 dark:bg-zinc-800/80 dark:border-zinc-700' }
     case 'reproducing': return { text: '传宗接代 (总结任务)', class: 'text-purple-600 bg-purple-50 border-purple-200 animate-pulse dark:text-purple-300 dark:bg-purple-500/10 dark:border-purple-500/30' }
     case 'dead': return { text: '已枯竭', class: 'text-zinc-500 bg-zinc-100 border-zinc-200 dark:text-zinc-400 dark:bg-zinc-800 dark:border-zinc-700' }

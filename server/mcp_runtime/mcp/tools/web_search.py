@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional
 
+import httpx
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
@@ -44,15 +45,16 @@ async def _web_search(user_id: int, args: Dict[str, Any], ai_config_id: Optional
             payload[name] = bool(args.get(name))
 
     try:
-        from tavily import TavilyClient
+        async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
+            response = await client.post(
+                settings.tavily_api_url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json=payload,
+            )
+            response.raise_for_status()
+            result = response.json()
+            if not isinstance(result, dict):
+                raise ValueError("search API returned a non-object response")
+            return result
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail="tavily-python is not installed. Run `pip install tavily-python` in the server environment.",
-        ) from exc
-
-    try:
-        client = TavilyClient(api_key)
-        return client.search(**payload)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Tavily search failed: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"Search API request failed: {exc}") from exc

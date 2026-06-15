@@ -6,19 +6,15 @@ Markdown 文件，并让文件成为运行时的真相源：
     KnowledgeBase/
     ├── personas/<id>-<名>.md      固有人格：每个 AI 一个人格 Prompt
     ├── mcp/<namespace>/<tool>.md  固有技能：每个 MCP 工具的介绍与参数
-    ├── system/<key>.md            固有思路：User 表里每个系统提示字段一个 md
+    ├── system/<key>.md            固有思路：每个系统提示一个 md
     ├── skills/                    传承技能（沿用 inheritance_thoughts 落盘，目录占位）
     └── topics/<slug>.md           传承知识（KnowledgeEntry，已是 md）
 
 设计原则（安全优先）：
 
-* **文件优先、DB 兜底**：文件缺失时一律回退到现有 DB 字段 / 注册表描述，
-  因此在执行迁移导出之前，系统行为与改造前完全一致。
-* **运行时同步**：为避免改动十余处分散的运行时读取点，``sync_from_files``
-  在每次对话 / 任务启动时把 ``personas/`` 与 ``system/`` 的内容刷回数据库，
-  现有读取链路无需改动即可读到文件内容（文件赢）。
-* **保存双写**：上层保存接口在写库的同时调用本模块写文件，二者保持一致。
-* **全程 best-effort**：任何解析 / IO 失败都吞掉并回退，绝不影响主链路。
+* **Prompt 文件是真相源**：``personas/`` 和 ``system/`` 运行时直接读文件。
+* **数据库保存结构化数据**：AI 元数据、数值设置、Memory 和 EvolutionInput 仍按需入库。
+* **Prompt 写入可验证**：上层接口写入文件后应回读确认，不应吞掉 IO 失败。
 """
 
 from __future__ import annotations
@@ -72,9 +68,8 @@ TOPICS_DIR = "topics"
 MEMORIES_DIR = "memories"
 EVOLUTION_DIR = "evolution"
 
-# system/ 下每个文件对应 User 表的一个字段。``number`` 字段以纯文本存储，
-# 同步回库时再转成 int。键集合与 librarian_service._SYSTEM_PROMPT_SECTIONS 对齐。
-# 仅文本类系统提示文件化（真相源 = system/<key>.md）。数值设置项
+# system/ 下每个文件对应一个文本类系统提示。键集合与
+# librarian_service._SYSTEM_PROMPT_SECTIONS 的文本项对齐。数值设置项
 # （default_supervision_idle_seconds / ai_message_inquiry_reminder_seconds /
 # mcp_max_steps 等）是配置而非提示词，仍留在数据库，不在此列。
 SYSTEM_PROMPT_KEYS: Tuple[Tuple[str, str], ...] = (
@@ -216,46 +211,10 @@ def seed_system_prompts(user_id: int, user: User) -> None:
         write_system_prompt(user_id, key, value)
 
 
-def _coerce_number(key: str, raw: str) -> int:
-    try:
-        value = int(str(raw).strip() or 0)
-    except Exception:
-        value = 0
-    if key == "default_supervision_idle_seconds":
-        return max(5, min(3600, value or 25))
-    if key == "ai_message_inquiry_reminder_seconds":
-        return max(0, min(3600, value))
-    return value
-
-
 def sync_system_prompts_to_db(user_id: int, *, session: Optional[Session] = None) -> bool:
-    """把 system/*.md 的内容刷回 User 表（文件赢）。返回是否有改动。"""
-    own = session is None
-    sess = session or Session(engine)
-    changed = False
-    try:
-        user = sess.get(User, int(user_id))
-        if not user:
-            return False
-        for key, kind in SYSTEM_PROMPT_KEYS:
-            body = read_system_prompt(user_id, key)
-            if body is None:
-                continue
-            value: Any = _coerce_number(key, body) if kind == "number" else body
-            if getattr(user, key, None) != value:
-                setattr(user, key, value)
-                changed = True
-        if changed:
-            sess.add(user)
-            if own:
-                sess.commit()
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.info(f"kb_store sync_system_prompts user={user_id} failed: {exc}")
-        return False
-    finally:
-        if own:
-            sess.close()
-    return changed
+    """Compatibility no-op; system prompt columns no longer exist in User."""
+    _ = (user_id, session)
+    return False
 
 
 # ============================================================
@@ -320,11 +279,7 @@ def seed_persona_raw(user_id: int, cfg_id: Any, name: str, role: str, prompt: st
 
 
 def hydrate_ai_prompt(cfg: AssistantAIConfig) -> AssistantAIConfig:
-    """把文件里的人格 Prompt 覆盖到 cfg 实例（瞬态属性，不入库），供响应序列化。"""
-    try:
-        setattr(cfg, "prompt", effective_ai_prompt(getattr(cfg, "user_id", 0), cfg))
-    except Exception:
-        pass
+    """Compatibility no-op; serialize ``effective_ai_prompt`` explicitly."""
     return cfg
 
 
@@ -342,12 +297,7 @@ def user_prompt_dict(user: User) -> Dict[str, str]:
 
 
 def hydrate_user_prompts(user: User) -> User:
-    """（兼容保留）把文件值写到 user 实例的瞬态属性上。新代码请用 user_prompt_dict。"""
-    try:
-        for key, value in user_prompt_dict(user).items():
-            setattr(user, key, value)
-    except Exception:
-        pass
+    """Compatibility no-op; merge ``user_prompt_dict`` into responses."""
     return user
 
 
@@ -428,58 +378,15 @@ def seed_personas(user_id: int, session: Optional[Session] = None) -> None:
 
 
 def sync_personas_to_db(user_id: int, *, session: Optional[Session] = None) -> bool:
-    """把 personas/*.md 刷回 AssistantAIConfig（文件赢）。返回是否有改动。"""
-    own = session is None
-    sess = session or Session(engine)
-    changed = False
-    try:
-        root = os.path.join(_kb_root(user_id), PERSONAS_DIR)
-        if not os.path.isdir(root):
-            return False
-        # 预载该用户全部 AI，按 id 建索引。
-        rows = sess.exec(
-            select(AssistantAIConfig).where(AssistantAIConfig.user_id == int(user_id))
-        ).all()
-        by_id = {int(c.id): c for c in rows if c.id is not None}
-        # 按 mtime 升序处理：万一存在同一 id 的多个文件（历史遗留），最新的最后
-        # 处理、覆盖较旧的，保证"最新文件赢"。
-        names = [f for f in os.listdir(root) if f.endswith(".md")]
-        names.sort(key=lambda f: os.path.getmtime(os.path.join(root, f)))
-        for fname in names:
-            raw = _read_text(os.path.join(root, fname))
-            if raw is None:
-                continue
-            meta, sections = _parse_persona(raw)
-            try:
-                cfg_id = int(meta.get("id") or 0)
-            except Exception:
-                cfg_id = 0
-            cfg = by_id.get(cfg_id)
-            if not cfg:
-                continue
-            cfg_changed = False
-            new_prompt = sections.get("prompt")
-            if new_prompt is not None and str(cfg.prompt or "") != new_prompt:
-                cfg.prompt = new_prompt
-                cfg_changed = True
-            if cfg_changed:
-                sess.add(cfg)
-                changed = True
-        if changed and own:
-            sess.commit()
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.info(f"kb_store sync_personas user={user_id} failed: {exc}")
-        return False
-    finally:
-        if own:
-            sess.close()
-    return changed
+    """Compatibility no-op; persona text is file-only after column removal."""
+    _ = (user_id, session)
+    return False
 
 
 # ---------- 直接读文件的运行时访问器（方案 A：文件优先、DB 兜底） ----------
 
 def effective_ai_prompt(user_id: int, cfg: Any) -> str:
-    """AI 人格 Prompt：直接读 personas/*.md；文件缺失回退 cfg.prompt。"""
+    """AI 人格 Prompt：直接读 personas/*.md；旧对象可回退 prompt 属性。"""
     if user_id and cfg is not None and getattr(cfg, "id", None) is not None:
         raw = _read_text(_persona_path(int(user_id), cfg.id, cfg.name))
         if raw is not None:
@@ -507,8 +414,7 @@ def effective_auto_control_json(user_id: int, cfg: Any) -> str:
 
 
 def effective_system_value(user_id: int, key: str, fallback: Any = None) -> str:
-    """系统提示（文本）：直接读 system/<key>.md；文件缺失回退传入的 DB 值；
-    再缺失（列已删）回退内置默认。"""
+    """系统提示：读 system/<key>.md；文件缺失时回退传入值或内置默认。"""
     if user_id:
         body = read_system_prompt(int(user_id), key)
         if body is not None:

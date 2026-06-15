@@ -19,6 +19,7 @@ import contextvars
 import asyncio
 import json
 import logging
+import threading
 import time
 import uuid
 from typing import Any, Dict, List, Optional
@@ -41,6 +42,7 @@ from api.services.chat_persistence import _save_message
 
 
 logger = logging.getLogger(__name__)
+_DISPATCH_QUEUE_LOCK = threading.Lock()
 
 
 def _persist_dispatch(
@@ -54,6 +56,9 @@ def _persist_dispatch(
     device_id: str,
     tool: str,
     instruction: str,
+    args: Optional[Dict[str, Any]] = None,
+    suppress_session_message: bool = False,
+    status: str = "pending",
 ) -> None:
     """Insert a ``pending`` row so connector-runtime restarts can still
     deliver the eventual result to whoever is polling by ``task_id``."""
@@ -69,13 +74,61 @@ def _persist_dispatch(
                 device_id=device_id,
                 tool=tool or "",
                 instruction=instruction or "",
-                status="pending",
+                args_json=json.dumps(args or {}, ensure_ascii=False, default=str),
+                suppress_session_message=bool(suppress_session_message),
+                status=status,
             ))
             session.commit()
     except Exception as exc:
         # Persistence failure is non-fatal for the in-memory dispatch path,
         # but it does defeat the restart-resilience guarantee. Log loudly.
         logger.exception(f"persist failed task={task_id}: {exc}")
+
+
+def _enqueue_dispatch_row(
+    *,
+    task_id: str,
+    user_id: int,
+    ai_config_id: Optional[int],
+    ai_kind: str,
+    session_id: str,
+    session_name: Optional[str],
+    device_id: str,
+    tool: str,
+    instruction: str,
+    args: Optional[Dict[str, Any]],
+    suppress_session_message: bool,
+) -> str:
+    """Atomically choose ``pending`` or ``queued`` for one device.
+
+    The gateway owns endpoint sockets, so this process lock closes the race
+    between concurrent chat workers checking and inserting dispatch rows.
+    """
+    with _DISPATCH_QUEUE_LOCK:
+        with Session(engine) as session:
+            ahead = session.exec(
+                select(AgentDispatchTask).where(
+                    AgentDispatchTask.device_id == device_id,
+                    AgentDispatchTask.status.in_(["pending", "queued"]),
+                )
+            ).first()
+            status = "queued" if ahead else "pending"
+            session.add(AgentDispatchTask(
+                task_id=task_id,
+                user_id=user_id,
+                ai_config_id=ai_config_id,
+                ai_kind=ai_kind or "assistant",
+                session_id=session_id,
+                session_name=session_name,
+                device_id=device_id,
+                tool=tool or "",
+                instruction=instruction or "",
+                args_json=json.dumps(args or {}, ensure_ascii=False, default=str),
+                suppress_session_message=bool(suppress_session_message),
+                status=status,
+            ))
+            session.commit()
+            return status
 
 
 def _finalize_dispatch_row(
@@ -218,6 +271,85 @@ def _device_kind_label(device_id: str) -> str:
     return "端侧Agent"
 
 
+def _context_from_dispatch_row(row: AgentDispatchTask) -> Dict[str, Any]:
+    try:
+        args = json.loads(row.args_json or "{}")
+    except Exception:
+        args = {}
+    return {
+        "device_id": row.device_id,
+        "user_id": row.user_id,
+        "ai_config_id": row.ai_config_id,
+        "ai_kind": row.ai_kind or "assistant",
+        "session_id": row.session_id or "",
+        "session_name": row.session_name,
+        "model": None,
+        "instruction": row.instruction or "",
+        "tool": row.tool or "",
+        "args": args if isinstance(args, dict) else {},
+        "created_at": row.created_at,
+        "suppress_session_message": bool(row.suppress_session_message),
+    }
+
+
+async def resume_device_dispatch_queue(device_id: str) -> Optional[str]:
+    """Dispatch the oldest queued task when ``device_id`` has no active task."""
+    target_sid = _find_agent_sid(device_id)
+    if not target_sid:
+        return None
+
+    with _DISPATCH_QUEUE_LOCK:
+        with Session(engine) as session:
+            active = session.exec(
+                select(AgentDispatchTask).where(
+                    AgentDispatchTask.device_id == device_id,
+                    AgentDispatchTask.status == "pending",
+                )
+            ).first()
+            if active:
+                return None
+            row = session.exec(
+                select(AgentDispatchTask).where(
+                    AgentDispatchTask.device_id == device_id,
+                    AgentDispatchTask.status == "queued",
+                ).order_by(AgentDispatchTask.created_at, AgentDispatchTask.id)
+            ).first()
+            if not row:
+                return None
+            row.status = "pending"
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            ctx = _context_from_dispatch_row(row)
+
+    task_id = str(row.task_id)
+    _PENDING_DISPATCHES[task_id] = ctx
+    payload = {
+        "taskId": task_id,
+        "userId": ctx["user_id"],
+        "aiConfigId": ctx["ai_config_id"],
+        "sessionId": ctx["session_id"],
+        "instruction": ctx["instruction"],
+        "tool": ctx["tool"],
+        "args": ctx["args"],
+        "allowedTools": [ctx["tool"]] if ctx["tool"] else [],
+    }
+    try:
+        await sio.emit("task:dispatch", payload, to=target_sid)
+    except Exception:
+        _PENDING_DISPATCHES.pop(task_id, None)
+        with Session(engine) as session:
+            failed = session.exec(
+                select(AgentDispatchTask).where(AgentDispatchTask.task_id == task_id)
+            ).first()
+            if failed and failed.status == "pending":
+                failed.status = "queued"
+                session.add(failed)
+                session.commit()
+        raise
+    return task_id
+
+
 async def dispatch_task_to_agent(
     *,
     device_id: str,
@@ -251,7 +383,7 @@ async def dispatch_task_to_agent(
         "args": args or {},
         "allowedTools": allowed_tools or [],
     }
-    _PENDING_DISPATCHES[task_id] = {
+    dispatch_ctx = {
         "device_id": device_id,
         "user_id": user_id,
         "ai_config_id": ai_config_id,
@@ -265,9 +397,7 @@ async def dispatch_task_to_agent(
         "created_at": time.time(),
         "suppress_session_message": bool(suppress_session_message),
     }
-    # Persist before emit so a crash between emit and the result handler
-    # still leaves a recoverable trail for the chat_worker poll path.
-    _persist_dispatch(
+    dispatch_status = _enqueue_dispatch_row(
         task_id=task_id,
         user_id=user_id,
         ai_config_id=ai_config_id,
@@ -277,13 +407,27 @@ async def dispatch_task_to_agent(
         device_id=device_id,
         tool=tool or "",
         instruction=instruction or "",
+        args=args or {},
+        suppress_session_message=suppress_session_message,
     )
+    _PENDING_DISPATCHES[task_id] = dispatch_ctx
     waiter = None
     if wait_for_result:
         loop = asyncio.get_running_loop()
         waiter = {"loop": loop, "future": loop.create_future()}
         _PENDING_DISPATCH_WAITERS[task_id] = waiter
-    await sio.emit("task:dispatch", payload, to=target_sid)
+    if dispatch_status == "pending":
+        try:
+            await sio.emit("task:dispatch", payload, to=target_sid)
+        except Exception as exc:
+            _PENDING_DISPATCHES.pop(task_id, None)
+            _finalize_dispatch_row(task_id, status="error", success=False, error=str(exc))
+            await resume_device_dispatch_queue(device_id)
+            raise
+    else:
+        promoted_task_id = await resume_device_dispatch_queue(device_id)
+        if promoted_task_id == task_id:
+            dispatch_status = "pending"
     if wait_for_result and waiter:
         future = waiter["future"]
         try:
@@ -303,7 +447,12 @@ async def dispatch_task_to_agent(
         "success": True,
         "taskId": task_id,
         "deviceId": device_id,
-        "note": f"Task dispatched to {_device_kind_label(device_id)}. Result will arrive asynchronously and be appended to this session.",
+        "status": dispatch_status,
+        "note": (
+            f"Task dispatched to {_device_kind_label(device_id)}."
+            if dispatch_status == "pending"
+            else f"Task queued for {_device_kind_label(device_id)}; it will run after the current task."
+        ),
     }
 
 
@@ -490,6 +639,7 @@ async def handle_task_result(data: Dict[str, Any]) -> None:
         "updatedAt": time.time(),
     })
     _PENDING_DISPATCHES.pop(task_id, None)
+    await resume_device_dispatch_queue(device_id)
 
 
 async def handle_task_error(data: Dict[str, Any]) -> None:
@@ -533,6 +683,7 @@ async def handle_task_error(data: Dict[str, Any]) -> None:
         "updatedAt": time.time(),
     })
     _PENDING_DISPATCHES.pop(task_id, None)
+    await resume_device_dispatch_queue(device_id)
 
 
 def _safe_dump(value: Any) -> str:

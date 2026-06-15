@@ -101,7 +101,7 @@ const g = (color: string) => `url(#${uid}-${color})`
       <path d="M16.4 8.2L20.2 12l-3.8 3.8-1.55-1.55L16.1 13H9.5v-2h6.6l-1.25-1.25z" :fill="g('rose')" />
     </template>
 
-    <!-- 智核芯片（主脑 / 智囊团） -->
+    <!-- 智核芯片（数字生命核心） -->
     <template v-else-if="name === 'brain'">
       <g :fill="g('violet')" opacity="0.5">
         <rect x="7" y="1.6" width="1.7" height="3" rx="0.85" />

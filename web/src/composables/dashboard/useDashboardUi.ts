@@ -124,7 +124,7 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
       return knowledgeBase.value.filter(item => item.tags.includes('传承'))
     }
     if (knowledgeFilter.value === 'intrinsic') {
-      return knowledgeBase.value.filter(item => item.tags.includes('固有技能'))
+      return knowledgeBase.value.filter(item => item.tags.includes('固有属性'))
     }
     if (knowledgeFilter.value === 'personas') {
       return knowledgeBase.value.filter(item => item.tags.includes('固有人格'))
@@ -136,7 +136,7 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
       return knowledgeBase.value.filter(item => item.tags.includes('传承思想'))
     }
     if (knowledgeFilter.value === 'system') {
-      return knowledgeBase.value.filter(item => item.tags.includes('系统'))
+      return knowledgeBase.value.filter(item => item.tags.includes('固有思想'))
     }
     if (knowledgeFilter.value === 'business') {
       return knowledgeBase.value.filter(item => item.tags.includes('业务'))

@@ -49,7 +49,14 @@ async def device_dispatch(req: DeviceDispatchRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=f"dispatch failed: {exc}")
     if not task_id:
         raise HTTPException(status_code=503, detail="no agent connected for this tool")
-    return {"ok": True, "task_id": task_id, "status": "pending"}
+    from sqlmodel import Session, select
+    from api.database import engine
+    from api.models import AgentDispatchTask
+    with Session(engine) as session:
+        row = session.exec(
+            select(AgentDispatchTask).where(AgentDispatchTask.task_id == task_id)
+        ).first()
+    return {"ok": True, "task_id": task_id, "status": row.status if row else "pending"}
 
 
 @router.get("/dispatch/result/{task_id}")

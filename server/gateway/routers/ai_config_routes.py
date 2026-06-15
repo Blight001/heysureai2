@@ -180,15 +180,14 @@ def _write_persona_file(
 ) -> None:
     """文件为真相源：写入 AI 人格文件。
 
-    ``prompt`` 为本次请求显式提交的人格文本；不传时由 write_persona 保留文件
-    既有内容。best-effort——失败不影响配置保存。
+    ``prompt`` 为本次请求显式提交的人格文本；不传时保留文件既有内容。
     """
-    try:
-        from api.services import kb_store
+    from api.services import kb_store
 
-        kb_store.write_persona(user_id, cfg, prompt=prompt)
-    except Exception:
-        pass
+    expected = prompt if prompt is not None else kb_store.effective_ai_prompt(user_id, cfg)
+    kb_store.write_persona(user_id, cfg, prompt=expected)
+    if kb_store.effective_ai_prompt(user_id, cfg) != str(expected or "").strip():
+        raise HTTPException(status_code=500, detail=f"Failed to persist AI prompt: {cfg.id}")
 
 
 def _cfg_response(cfg: AssistantAIConfig, user_id: int):

@@ -2,8 +2,10 @@
 import { ref } from 'vue'
 import AppIcon from '@/components/common/AppIcon.vue'
 import BrainCorePanel from './BrainCorePanel.vue'
+import KnowledgeBasePanel from './KnowledgeBasePanel.vue'
 import WorkshopPanel from './WorkshopPanel.vue'
 import type { ConnectedDevice } from '@/composables/dashboard/useDashboardData'
+import type { KnowledgeItem, User } from '@/types'
 
 interface Agent {
   id: string
@@ -38,6 +40,11 @@ interface Props {
   memberAgents: Agent[]
   activeAgents: Agent[]
   connectedDevices: ConnectedDevice[]
+  knowledgeItems: KnowledgeItem[]
+  knowledgeTotalCount: number
+  librarianPendingCount: number
+  knowledgeFilterOpen: boolean
+  knowledgeFilter: 'all' | 'intrinsic' | 'personas' | 'skills' | 'tools' | 'inheritance' | 'system' | 'business'
   brainViewMode: 'sections' | 'all'
 }
 
@@ -50,9 +57,13 @@ const emit = defineEmits<{
   (e: 'chat', agent: Agent): void
   (e: 'settings', agent: Agent): void
   (e: 'create-ai'): void
+  (e: 'update:knowledge-filter-open', value: boolean): void
+  (e: 'update:knowledge-filter', value: Props['knowledgeFilter']): void
+  (e: 'open-proposal-review'): void
+  (e: 'refresh-user', user: User): void
 }>()
 
-const activeTab = ref<'brain' | 'knowledge'>('brain')
+const activeTab = ref<'brain' | 'knowledge' | 'workshop'>('brain')
 </script>
 
 <template>
@@ -67,13 +78,22 @@ const activeTab = ref<'brain' | 'knowledge'>('brain')
             ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-400' 
             : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
         >
-          <AppIcon name="brain" class="w-4 h-4" /> 智囊团核心
+          <AppIcon name="brain" class="w-4 h-4" /> 数字生命
         </button>
         <button 
           @click="activeTab = 'knowledge'"
           class="flex-1 px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 flex items-center justify-center gap-2"
           :class="activeTab === 'knowledge' 
             ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-400' 
+            : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
+        >
+          <AppIcon name="book" class="w-4 h-4" /> 知识库
+        </button>
+        <button
+          @click="activeTab = 'workshop'"
+          class="flex-1 px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 flex items-center justify-center gap-2"
+          :class="activeTab === 'workshop'
+            ? 'bg-white text-indigo-600 shadow-sm dark:bg-zinc-700 dark:text-indigo-400'
             : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200'"
         >
           <AppIcon name="workshop" class="w-4 h-4" /> 作坊
@@ -97,6 +117,20 @@ const activeTab = ref<'brain' | 'knowledge'>('brain')
           @chat="emit('chat', $event)"
           @settings="emit('settings', $event)"
           @create-ai="emit('create-ai')"
+        />
+        <KnowledgeBasePanel
+          v-else-if="activeTab === 'knowledge'"
+          class="flex-1"
+          no-glass
+          :items="knowledgeItems"
+          :total-count="knowledgeTotalCount"
+          :librarian-pending-count="librarianPendingCount"
+          :filter-open="knowledgeFilterOpen"
+          :filter-value="knowledgeFilter"
+          @update:filter-open="emit('update:knowledge-filter-open', $event)"
+          @update:filter-value="emit('update:knowledge-filter', $event)"
+          @open-proposal-review="emit('open-proposal-review')"
+          @refresh-user="emit('refresh-user', $event)"
         />
         <WorkshopPanel
           v-else

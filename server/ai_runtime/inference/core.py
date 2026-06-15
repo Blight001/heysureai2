@@ -19,6 +19,7 @@ import requests
 from sqlmodel import Session, select
 
 from api.database import engine
+from api.http_client import ai_http_post
 from mcp_runtime.mcp import get_project_root, registry
 from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, User
@@ -438,7 +439,7 @@ async def _dispatch_endpoint_via_runtime(
                 # Transient HTTP failure: keep polling until the deadline.
                 row = {"status": "pending", "error": f"poll error: {exc}"}
             status = str(row.get("status") or "pending")
-            if status != "pending":
+            if status not in {"pending", "queued"}:
                 return {
                     "success": bool(row.get("success", status == "completed")),
                     "taskId": task_id,
@@ -498,6 +499,12 @@ async def _call_mcp_or_endpoint_tool(
                 args=arguments,
             ),
         }
+    # Web search is a direct outbound API call. Keep it in-process so an
+    # unavailable split MCP runtime cannot turn a healthy search API into a
+    # 127.0.0.1:3001 proxy failure.
+    if tool == "workspace.search":
+        return await registry.call(tool, user_id, arguments, ai_config_id)
+
     runtime_url = settings.mcp_runtime_url
     if runtime_url:
         return await _call_mcp_via_runtime(runtime_url, tool, user_id, arguments, ai_config_id)
@@ -1508,7 +1515,7 @@ def _run_worker_impl(
                             # unless every call id is answered. Ask the model
                             # for sequential calls at the protocol level too.
                             oa_payload["parallel_tool_calls"] = False
-                        response = requests.post(base_url, headers=headers, json=oa_payload, timeout=300, stream=True)
+                        response = ai_http_post(base_url, headers=headers, json=oa_payload, timeout=300, stream=True)
                         if not response.ok and "parallel_tool_calls" in oa_payload:
                             unsupported_hint = str(response.text or "").lower()
                             if "parallel_tool_calls" in unsupported_hint and (
@@ -1519,7 +1526,7 @@ def _run_worker_impl(
                             ):
                                 oa_payload.pop("parallel_tool_calls", None)
                                 response.close()
-                                response = requests.post(base_url, headers=headers, json=oa_payload, timeout=300, stream=True)
+                                response = ai_http_post(base_url, headers=headers, json=oa_payload, timeout=300, stream=True)
                         _raise_for_upstream_error(response)
                         sr = stream_turn_openai_compat(
                             run_id=run_id,

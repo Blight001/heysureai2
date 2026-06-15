@@ -61,8 +61,8 @@ _VALID_STATUSES = {"pending", "active", "archived", "rejected"}
 _BUILTIN_UPDATED_AT = 1893456000.0  # 2030-01-01, keeps built-in categories at the top.
 _BUILTIN_ENTRIES = {
     "builtin.intrinsic_properties": {
-        "title": "固有技能",
-        "triggers": ["固有技能", "固定MCP", "MCP工具"],
+        "title": "固有属性",
+        "triggers": ["固有属性", "固定MCP", "MCP工具"],
         "summary": "系统固定 MCP 工具清单及其描述。",
     },
     "builtin.intrinsic_personas": {
@@ -71,8 +71,8 @@ _BUILTIN_ENTRIES = {
         "summary": "当前所有 AI 的人格 prompt 内容。",
     },
     "builtin.system_prompts": {
-        "title": "固有思路",
-        "triggers": ["固有思路", "提示词配置", "Prompt"],
+        "title": "固有思想",
+        "triggers": ["固有思想", "提示词配置", "Prompt"],
         "summary": "所有 AI 统一使用的 MCP、任务和通信提示词配置。",
     },
     "builtin.inheritance_skills": {
@@ -1338,7 +1338,7 @@ def save_intrinsic_properties_overrides(*, user_id: int, tools: List[Dict[str, A
 def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None) -> str:
     data = payload or _intrinsic_properties_payload()
     lines = [
-        "# 固有技能",
+        "# 固有属性",
         "",
         str(data.get("description") or ""),
         "",
@@ -1531,7 +1531,7 @@ def save_intrinsic_persona(
 ) -> Dict[str, Any]:
     """更新一个 AI 的固有人格 Prompt。
 
-    只更新显式给出的字段；文件为真相源，写入 personas/*.md 并刷回 DB。"""
+    只更新显式给出的字段；文件为真相源，写入 personas/*.md。"""
     with Session(engine) as session:
         cfg = session.exec(
             select(AssistantAIConfig).where(
@@ -1542,21 +1542,15 @@ def save_intrinsic_persona(
         if not cfg:
             raise ValueError("AI config not found")
 
-        # 人格 Prompt：未显式给出则保留当前有效值（文件优先）。
-        if prompt is not None:
-            cfg.prompt = str(prompt)
-        else:
-            cfg.prompt = kb_store.effective_ai_prompt(int(user_id), cfg)
-
+        effective_prompt = (
+            str(prompt) if prompt is not None
+            else kb_store.effective_ai_prompt(int(user_id), cfg)
+        )
+        kb_store.write_persona(int(user_id), cfg, prompt=effective_prompt)
+        cfg.updated_at = time.time()
         session.add(cfg)
         session.commit()
         session.refresh(cfg)
-
-        # 文件为真相源：写入 personas/<id>-<名>.md（权威）。
-        try:
-            kb_store.write_persona(int(user_id), cfg, prompt=cfg.prompt)
-        except Exception as exc:
-            logger.info(f"write_persona {ai_config_id} failed: {exc}")
 
     return _builtin_entry("builtin.intrinsic_personas", user_id=user_id, with_body=True) or {}
 
@@ -1689,16 +1683,15 @@ def save_system_prompts(*, user_id: int, prompts: List[Dict[str, Any]]) -> Dict[
         session.commit()
     # 文件为真相源：文本提示词写入 system/<key>.md（权威）。
     for key, value in applied_text.items():
-        try:
-            kb_store.write_system_prompt(int(user_id), key, value)
-        except Exception as exc:
-            logger.info(f"write_system_prompt {key} failed: {exc}")
+        kb_store.write_system_prompt(int(user_id), key, value)
+        if kb_store.read_system_prompt(int(user_id), key) != value.strip():
+            raise RuntimeError(f"failed to persist system prompt: {key}")
     return _builtin_entry("builtin.system_prompts", user_id=user_id, with_body=True) or {}
 
 
 def _render_system_prompts_body(payload: Dict[str, Any]) -> str:
     lines = [
-        "# 固有思路",
+        "# 固有思想",
         "",
         str(payload.get("description") or ""),
         "",

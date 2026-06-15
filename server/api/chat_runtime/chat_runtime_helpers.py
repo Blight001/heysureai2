@@ -61,7 +61,7 @@ def _resolve_ai_runtime(session: Session, user: User, ai_kind: str, ai_config_id
     else:
         api_key, base_url, model = resolve_model_preset(user, None)
         system_prompt = _strip_runtime_injected_sections(
-            kb_store.effective_system_value(user.id, "admin_prompt", user.admin_prompt)
+            kb_store.effective_system_value(user.id, "admin_prompt")
         )
     if not api_key:
         raise HTTPException(status_code=400, detail="Admin API key not configured")

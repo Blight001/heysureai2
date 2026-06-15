@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, select
 
+from api.http_client import ai_http_post
 from ..models import ChatMessage, ChatMessageCreate
 from ..models.defaults import DEFAULT_COMPRESSION_PROMPT
 from .chat_persistence import _save_message
@@ -51,7 +52,6 @@ def compress_session(
     Returns a new ``convo`` list on success, or ``None`` when compression is not
     worth doing or fails (so the caller can avoid retry-looping forever).
     """
-    import requests
 
     # Load persisted user/assistant messages for this session, excluding ones
     # already folded into a previous summary. Mirrors the runtime history filter.
@@ -96,7 +96,7 @@ def compress_session(
 
     # Single non-streaming chat completion.
     try:
-        resp = requests.post(
+        resp = ai_http_post(
             base_url,
             headers={
                 "Content-Type": "application/json",

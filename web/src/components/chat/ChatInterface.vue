@@ -1259,6 +1259,7 @@ onBeforeUnmount(() => {
         :aiConfigId="props.aiConfigId"
         :liveText="liveAssistantText"
         :liveThinking="liveThinkingText"
+        :livePhase="currentRunPhase"
         :appliedEdits="appliedEditsArray"
         :appliedSignatures="appliedSignaturesArray"
         :actionResults="actionResults"

@@ -13,6 +13,7 @@ SYSTEM_PROMPT_FIELDS = {
     "admin_prompt": "旧版/兜底管理员 prompt",
     "mcp_call_method": "全局 MCP 调用方法 prompt",
     "mcp_namespace_hints": "MCP namespace 说明配置",
+    "mcp_dynamic_rule": "MCP 动态工具暴露规则",
     "mcp_format_error_hint": "MCP 格式错误提示 prompt",
     "prompt_ai_message_notify": "AI 间消息·通知模板（notify / 单向通知）",
     "prompt_ai_message_inquiry": "AI 间消息·询问模板（inquiry）",
@@ -20,6 +21,7 @@ SYSTEM_PROMPT_FIELDS = {
     "prompt_ai_message_reply": "AI 间消息·回复模板（reply）",
     "prompt_ai_message_chitchat": "AI 间消息·闲聊模板（chitchat）",
     "prompt_ai_message_reply_success": "AI 间消息回复成功提示 prompt",
+    "prompt_user_message_notice": "用户消息发送提示 prompt",
     "default_start_task_prompt": "默认任务启动 prompt",
     "default_resume_task_prompt": "默认任务恢复 prompt",
     "default_supervision_prompt": "默认监督 prompt",
@@ -30,6 +32,7 @@ SYSTEM_PROMPT_USAGE = {
     "admin_prompt": "仅用于没有指定 AI 配置的旧版管理员运行路径；当前 AI 卡片/飞书/任务运行通常不直接使用它。",
     "mcp_call_method": "旧版文本 MCP 调用模板；当前默认不再注入运行 prompt，工具通过 native schema 动态暴露。",
     "mcp_namespace_hints": "JSON 对象，配置 {MCP} 占位符渲染第一层 namespace 时的说明文本。",
+    "mcp_dynamic_rule": "MCP 工具 schema 如何按需动态暴露给模型的全局规则。",
     "mcp_format_error_hint": "当模型输出的 MCP 调用格式无效时，作为系统纠错提示模板使用。",
     "prompt_ai_message_notify": "message_type=\"notify\" 时注入。系统会自动签收，模板应明确告知 AI 不要回应。",
     "prompt_ai_message_inquiry": "message_type=\"inquiry\" 时注入。模板可提示对方用 message.send_to_ai(message_type=\"reply\") 答复。",
@@ -37,6 +40,7 @@ SYSTEM_PROMPT_USAGE = {
     "prompt_ai_message_reply": "message_type=\"reply\" 时注入。模板用于展示对方回复内容。",
     "prompt_ai_message_chitchat": "message_type=\"chitchat\" 时注入。用于展示闲聊内容。",
     "prompt_ai_message_reply_success": "AI 间消息被自动签收后，恢复原工作流的提示。",
+    "prompt_user_message_notice": "message.send_to_user 成功后返回的用户消息送达提示。",
     "default_start_task_prompt": "任务首次启动时的默认注入提示，不是 AI 基础人格 prompt。",
     "default_resume_task_prompt": "任务传承/恢复时的默认注入提示，不是 AI 基础人格 prompt。",
     "default_supervision_prompt": "任务空闲监督时的默认追问提示，不是 AI 基础人格 prompt。",
@@ -185,26 +189,29 @@ def _apply_prompt_line_edits(current: str, args: Dict[str, Any]) -> tuple[str, i
 
 
 def _prompt_list_targets(user_id: int, args: dict, ai_config_id: Optional[int] = None):
+    from api.services import kb_store
+
     with Session(engine) as session:
         ai_rows = session.exec(
             select(AssistantAIConfig)
             .where(AssistantAIConfig.user_id == user_id)
             .order_by(AssistantAIConfig.sort_order.asc(), AssistantAIConfig.created_at.asc())
         ).all()
+    ai_prompts = []
+    for row in ai_rows:
+        effective_prompt = kb_store.effective_ai_prompt(user_id, row)
+        ai_prompts.append({
+            "ai_config_id": int(row.id or 0),
+            "name": row.name,
+            "ai_role": row.ai_role,
+            "digital_member_role": row.digital_member_role,
+            "prompt_source": "KnowledgeBase/personas/*.md",
+            "used_by_current_runtime": True,
+            "prompt_length": len(str(effective_prompt or "")),
+            "updated_at": row.updated_at,
+        })
     return {
-        "ai_prompts": [
-            {
-                "ai_config_id": int(row.id or 0),
-                "name": row.name,
-                "ai_role": row.ai_role,
-                "digital_member_role": row.digital_member_role,
-                "prompt_source": "assistantaiconfig.prompt",
-                "used_by_current_runtime": True,
-                "prompt_length": len(str(row.prompt or "")),
-                "updated_at": row.updated_at,
-            }
-            for row in ai_rows
-        ],
+        "ai_prompts": ai_prompts,
         "system_prompts": [
             {
                 "key": key,
@@ -215,8 +222,8 @@ def _prompt_list_targets(user_id: int, args: dict, ai_config_id: Optional[int] =
             for key, label in SYSTEM_PROMPT_FIELDS.items()
         ],
         "note": (
-            "当前按 AI 配置运行的聊天/飞书/任务，基础 prompt 来源是 ai_prompts[*].prompt_source "
-            "(assistantaiconfig.prompt)。system_prompts 多数是全局注入模板、纠错模板或旧版兜底字段。"
+            "当前按 AI 配置运行的聊天/飞书/任务，基础 prompt 来源是 "
+            "KnowledgeBase/personas/*.md。system_prompts 多数是全局注入模板、纠错模板或旧版兜底字段。"
         ),
     }
 
@@ -265,20 +272,19 @@ def _prompt_write_ai(user_id: int, args: dict, ai_config_id: Optional[int] = Non
             denial = assert_can_manage_or_legacy(session, user_id, caller, cfg)
             if denial:
                 raise HTTPException(status_code=403, detail=denial)
-        # 行编辑基于文件真相源（缺失回退 DB），避免在旧 DB 值上误编辑。
+        # 行编辑基于文件真相源（缺失时为空人格）。
         from api.services import kb_store
 
         old_prompt = kb_store.effective_ai_prompt(user_id, cfg)
         old_length = len(str(old_prompt or ""))
         new_prompt, edit_count = _apply_prompt_line_edits(old_prompt, args)
-        # 人格 Prompt 列已物理删除：只更新时间戳，正文写入 personas 文件。
+        kb_store.write_persona(user_id, cfg, prompt=new_prompt)
+        saved_prompt = kb_store.effective_ai_prompt(user_id, cfg)
+        if saved_prompt != new_prompt.strip():
+            raise HTTPException(status_code=500, detail=f"Failed to persist AI prompt: {cfg.id}")
         cfg.updated_at = time.time()
         session.add(cfg)
         session.commit()
-        try:
-            kb_store.write_persona(user_id, cfg, prompt=new_prompt)
-        except Exception:
-            pass
         return {
             "success": True,
             "ai_config_id": int(cfg.id or 0),
@@ -334,22 +340,19 @@ def _prompt_write_system(user_id: int, args: dict, ai_config_id: Optional[int] =
         raise HTTPException(status_code=400, detail=f"Unsupported system prompt key: {key}")
     with Session(engine) as session:
         user = _get_user(session, user_id)
-        # 行编辑基于文件真相源（缺失回退 DB）。
         from api.services import kb_store
 
+        # These prompt columns have been removed from User. Read and write the
+        # KnowledgeBase file directly instead of assigning a non-model field.
         old_prompt = kb_store.effective_system_value(user_id, key, getattr(user, key, ""))
         old_length = len(old_prompt)
         new_prompt, edit_count = _apply_prompt_line_edits(old_prompt, args)
-        setattr(user, key, new_prompt)
-        session.add(user)
-        session.commit()
-        # 文件为真相源：同步写回 system/<key>.md，避免被文件同步覆盖。
-        try:
-            from api.services import kb_store
-
-            kb_store.write_system_prompt(user_id, key, new_prompt)
-        except Exception:
-            pass
+        if key not in dict(kb_store.SYSTEM_PROMPT_KEYS):
+            raise HTTPException(status_code=400, detail=f"System prompt is not file-backed: {key}")
+        kb_store.write_system_prompt(user_id, key, new_prompt)
+        saved_prompt = kb_store.read_system_prompt(user_id, key)
+        if saved_prompt != new_prompt.strip():
+            raise HTTPException(status_code=500, detail=f"Failed to persist system prompt: {key}")
         return {
             "success": True,
             "key": key,

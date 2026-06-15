@@ -11,12 +11,12 @@ import time
 import uuid
 from typing import List, Optional
 
-import requests
 from fastapi import Depends, Header, HTTPException, Response
 from fastapi.responses import StreamingResponse  # 用于 /stream 端点的 SSE 流式响应
 from sqlmodel import Session, select
 
 from api.database import get_session
+from api.http_client import ai_http_post
 from mcp_runtime.mcp import get_project_root, registry
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatMessageUpdate, ChatRun
 from .auth import get_current_user
@@ -581,7 +581,7 @@ async def stream_chat(
     else:
         api_key, base_url, model = resolve_model_preset(user, None)
         system_prompt = _strip_runtime_injected_sections(
-            kb_store.effective_system_value(user.id, "admin_prompt", user.admin_prompt)
+            kb_store.effective_system_value(user.id, "admin_prompt")
         )
     if not api_key:
         raise HTTPException(status_code=400, detail="Admin API key not configured")
@@ -613,11 +613,13 @@ async def stream_chat(
         "stream": True,
         "stream_options": {"include_usage": True} # 请求包含 usage 信息
     }
-    warning_template = str(getattr(user, "mcp_format_error_hint", "") or "").strip()
+    warning_template = kb_store.effective_system_value(
+        user.id, "mcp_format_error_hint"
+    ).strip()
 
     def generate():
         try:
-            response = requests.post(base_url, headers=headers, json=payload, stream=True)
+            response = ai_http_post(base_url, headers=headers, json=payload, stream=True)
             _raise_for_upstream_error(response)
             assistant_text = ""
             for line in response.iter_lines():

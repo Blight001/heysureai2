@@ -36,7 +36,7 @@ class Settings(BaseSettings):
 
     Fields without an ``HEYSURE_`` prefix in the env (``DATABASE_URL``,
     ``AGENT_TOKEN``, ``MCP_RUNTIME_URL``, ``CONNECTOR_RUNTIME_URL``,
-    ``AI_DISPATCH_MODE``, ``TAVILY_API_KEY``) keep their historical names
+    ``AI_DISPATCH_MODE``, ``TAVILY_API_KEY``, ``TAVILY_API_URL``) keep their historical names
     via ``alias=`` so the .env files we already ship don't need editing.
     """
 
@@ -181,6 +181,11 @@ class Settings(BaseSettings):
         alias="TAVILY_API_KEY",
         description="Tavily web-search API key (used by the workspace.search MCP tool).",
     )
+    tavily_api_url: str = Field(
+        default="https://api.tavily.com/search",
+        alias="TAVILY_API_URL",
+        description="Direct Tavily-compatible search endpoint used by workspace.search.",
+    )
     clawhub_registry_url: str = Field(
         default="https://clawhub.ai",
         alias="CLAWHUB_REGISTRY_URL",
@@ -235,6 +240,7 @@ class Settings(BaseSettings):
         "smtp_password",
         "smtp_from",
         "tavily_api_key",
+        "tavily_api_url",
         "clawhub_registry_url",
         "clawhub_api_token",
         "public_base_url",

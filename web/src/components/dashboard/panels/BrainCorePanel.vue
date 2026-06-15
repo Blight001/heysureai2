@@ -64,10 +64,10 @@ const toggleViewMode = () => {
   ]">
     <div class="flex items-center justify-between border-b border-zinc-100 pb-2 dark:border-zinc-800 flex-shrink-0">
       <h2 v-if="!noGlass" class="font-bold text-zinc-800 flex items-center gap-2 dark:text-zinc-100">
-        <AppIcon name="brain" class="w-[18px] h-[18px]" /> 智囊团核心
+        <AppIcon name="brain" class="w-[18px] h-[18px]" /> 数字生命
       </h2>
       <div v-else class="flex items-center gap-2">
-        <span class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">智囊团核心</span>
+        <span class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">数字生命</span>
       </div>
       <div class="flex items-center gap-2">
         <button class="text-xs px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700" @click="toggleViewMode">

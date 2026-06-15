@@ -411,13 +411,12 @@ async def update_profile(
     session.add(user)
     session.commit()
     session.refresh(user)
-    # 文件为真相源：本次更新涉及的系统提示词写回 KnowledgeBase/system/*.md
-    # （从提交值写，不依赖已删列的 getattr），随后把文件值水合回对象供序列化。
-    try:
-        for key, value in prompt_updates.items():
-            kb_store.write_system_prompt(user.id, key, value or "")
-    except Exception:
-        pass
+    # 文件为真相源：写入后回读确认，响应由 _user_payload 合并文件值。
+    for key, value in prompt_updates.items():
+        text = str(value or "")
+        kb_store.write_system_prompt(user.id, key, text)
+        if kb_store.read_system_prompt(user.id, key) != text.strip():
+            raise HTTPException(status_code=500, detail=f"Failed to persist system prompt: {key}")
     return _user_payload(user)
 
 @router.get("/me", response_model=UserRead)

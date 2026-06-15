@@ -11,7 +11,7 @@ Usage in chat_worker.py:
         sr = stream_turn_anthropic(run_id, base_url, api_key, model, convo,
                                    step_tools, native_tool_name_map)
     else:
-        response = requests.post(...)
+        response = ai_http_post(...)
         _raise_for_upstream_error(response)
         sr = stream_turn_openai_compat(run_id, response, native_tool_name_map)
 """
@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+from api.http_client import ai_http_post
 from .chat_prompt_utils import (
     _extract_delta_text,
     _extract_first_complete_mcp_call,
@@ -390,7 +391,7 @@ def stream_turn_anthropic(
         "anthropic-beta": "prompt-caching-2024-07-31",
     }
 
-    response = requests.post(endpoint, headers=headers, json=payload, timeout=300, stream=True)
+    response = ai_http_post(endpoint, headers=headers, json=payload, timeout=300, stream=True)
     if not response.ok:
         body = str(response.text or "")[:500]
         raise RuntimeError(f"Anthropic API error: HTTP {response.status_code} — {body}")

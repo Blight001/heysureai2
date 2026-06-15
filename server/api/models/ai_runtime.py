@@ -43,10 +43,12 @@ class AgentDispatchTask(SQLModel, table=True):
     ai_kind: str = Field(default="assistant")
     session_id: Optional[str] = Field(default=None)
     session_name: Optional[str] = None
-    device_id: str = Field(default="")
+    device_id: str = Field(default="", index=True)
     tool: str = Field(default="")
     instruction: str = Field(default="")
-    status: str = Field(default="pending", index=True)  # pending/completed/error/timeout
+    args_json: Optional[str] = None
+    suppress_session_message: bool = Field(default=False)
+    status: str = Field(default="pending", index=True)  # queued/pending/completed/error/timeout
     success: Optional[bool] = None
     summary: Optional[str] = None
     result_json: Optional[str] = None  # JSON-encoded payload from agent

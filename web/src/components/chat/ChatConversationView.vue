@@ -40,6 +40,8 @@ const props = withDefaults(defineProps<{
   aiConfigId?: number
   liveText?: string
   liveThinking?: string
+  livePhase?: 'idle' | 'generating' | 'waiting_mcp'
+  collapseLiveThinking?: boolean
   isTyping?: boolean
   stripMarkdownSymbols?: boolean
   readonly?: boolean
@@ -61,6 +63,8 @@ const props = withDefaults(defineProps<{
   mcpDynamicRule: DEFAULT_MCP_DYNAMIC_RULE,
   liveText: '',
   liveThinking: '',
+  livePhase: 'idle',
+  collapseLiveThinking: false,
   isTyping: false,
   stripMarkdownSymbols: false,
   readonly: false,
@@ -445,6 +449,7 @@ const liveAssistantMessage = computed<ConversationMessage | null>(() => {
 })
 
 const typingThinkingText = computed(() => {
+  if (props.livePhase !== 'generating') return ''
   return String(props.liveText || '').trim() ? '' : props.liveThinking
 })
 
@@ -503,6 +508,7 @@ const onRevert = (msgIdx: number, blockIdx: number) => {
     :actionResultsBySignature="mergedActionResultsBySignature"
     :isTyping="isTyping"
     :thinkingText="typingThinkingText"
+    :collapseThinking="collapseLiveThinking"
     :stripMarkdownSymbols="stripMarkdownSymbols"
     :isEmpty="renderMessages.length === 0"
     :readonly="readonly"

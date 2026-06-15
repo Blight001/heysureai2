@@ -562,10 +562,10 @@ const closeDetail = () => {
   ]">
     <div class="flex justify-between items-center border-b border-zinc-100 pb-2 mb-2 dark:border-zinc-800">
       <h2 v-if="!noGlass" class="font-bold text-zinc-800 flex items-center gap-2 dark:text-zinc-100">
-        <AppIcon name="book" class="w-[18px] h-[18px]" /> 传承知识库
+        <AppIcon name="book" class="w-[18px] h-[18px]" /> 知识库
       </h2>
       <div v-else class="flex items-center gap-2">
-        <span class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">传承知识库</span>
+        <span class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">知识库</span>
       </div>
       <div class="flex items-center gap-2 relative">
         <button
@@ -589,10 +589,13 @@ const closeDetail = () => {
               全部
             </button>
             <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" :class="filterValue === 'intrinsic' ? 'text-indigo-600 dark:text-indigo-300' : ''" @click="applyFilter('intrinsic')">
-              固有技能
+              固有属性
             </button>
             <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" :class="filterValue === 'personas' ? 'text-indigo-600 dark:text-indigo-300' : ''" @click="applyFilter('personas')">
               固有人格
+            </button>
+            <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" :class="filterValue === 'system' ? 'text-indigo-600 dark:text-indigo-300' : ''" @click="applyFilter('system')">
+              固有思想
             </button>
             <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" :class="filterValue === 'skills' ? 'text-indigo-600 dark:text-indigo-300' : ''" @click="applyFilter('skills')">
               传承技能

@@ -15,6 +15,7 @@ from .tools.tasks import (
     _task_update,
 )
 from .tools.prompts import (
+    SYSTEM_PROMPT_FIELDS,
     _prompt_list_targets,
     _prompt_read_ai,
     _prompt_read_system,
@@ -535,7 +536,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
 
     registry.register(MCPTool(
         name="prompt.list_targets",
-        description="List current AI prompt targets and global/system prompt keys. Current AI base prompts live in AI config prompt, not user.admin_prompt.",
+        description="List current AI prompt targets and global/system prompt keys. Prompt text lives in KnowledgeBase files.",
         input_schema={"type": "object", "properties": {}},
         handler=_prompt_list_targets,
     ))
@@ -595,16 +596,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
             "properties": {
                 "key": {
                     "type": "string",
-                    "enum": [
-                        "admin_prompt",
-                        "mcp_call_method",
-                        "mcp_namespace_hints",
-                        "mcp_format_error_hint",
-                        "default_start_task_prompt",
-                        "default_resume_task_prompt",
-                        "default_supervision_prompt",
-                        "default_compression_prompt",
-                    ],
+                    "enum": list(SYSTEM_PROMPT_FIELDS),
                     "description": "System prompt key. Omit to read all.",
                 },
             },
@@ -624,16 +616,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
             "properties": {
                 "key": {
                     "type": "string",
-                    "enum": [
-                        "admin_prompt",
-                        "mcp_call_method",
-                        "mcp_namespace_hints",
-                        "mcp_format_error_hint",
-                        "default_start_task_prompt",
-                        "default_resume_task_prompt",
-                        "default_supervision_prompt",
-                        "default_compression_prompt",
-                    ],
+                    "enum": list(SYSTEM_PROMPT_FIELDS),
                     "description": "System prompt key to update.",
                 },
                 "mode": {
