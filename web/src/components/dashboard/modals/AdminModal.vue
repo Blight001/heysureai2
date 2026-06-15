@@ -4,8 +4,9 @@ import { useMessage } from '@/composables/useMessage'
 import * as adminApi from '@/api/admin'
 import type {
   AdminTask, AdminUser, AuditEntry, DbCleanupCategory, DbCleanupResult, DbColumn, DbTableMeta, DbValue,
-  FileEntry, LogLine, ServiceInfo,
+  DiagnosticCheck, DiagnosticLlmResult, FileEntry, LogLine, ServiceInfo,
 } from '@/api/admin'
+import { listMcpTools, callMcpTool } from '@/api/mcp'
 import type { User, UserRole } from '@/types'
 import { resolveAvatarUrl } from '@/utils/avatar'
 
@@ -20,7 +21,7 @@ const emit = defineEmits<{
 
 const { alert, confirm, prompt } = useMessage()
 
-type Tab = 'services' | 'users' | 'auth' | 'files' | 'database' | 'audit'
+type Tab = 'services' | 'users' | 'auth' | 'files' | 'database' | 'audit' | 'diagnostics'
 const tab = ref<Tab>('services')
 const TAB_LABELS: Record<Tab, string> = {
   services: '服务监控',
@@ -29,6 +30,7 @@ const TAB_LABELS: Record<Tab, string> = {
   files: '文件管理',
   database: '数据库',
   audit: '操作审计',
+  diagnostics: '系统测试',
 }
 
 // ---- Services + tasks ----
@@ -951,6 +953,93 @@ const stopAutoRefresh = () => {
 watch(autoRefresh, () => startAutoRefresh())
 watch(logLevel, () => { if (props.show) void loadLogs(selectedServiceKey.value, true) })
 
+// ---- 系统测试 / 诊断 ----
+const healthChecks = ref<DiagnosticCheck[]>([])
+const healthBusy = ref(false)
+const healthLoaded = ref(false)
+
+const runHealthCheck = async () => {
+  healthBusy.value = true
+  try {
+    const res = await adminApi.runDiagnosticsHealth()
+    healthChecks.value = res.checks || []
+    healthLoaded.value = true
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    healthBusy.value = false
+  }
+}
+
+const llmPrompt = ref('回复一个字：好')
+const llmBusy = ref(false)
+const llmResult = ref<DiagnosticLlmResult | null>(null)
+
+const runLlmTest = async () => {
+  llmBusy.value = true
+  llmResult.value = null
+  try {
+    llmResult.value = await adminApi.runDiagnosticsLlm({ prompt: llmPrompt.value })
+  } catch (err) {
+    llmResult.value = { ok: false, detail: (err as Error).message }
+  } finally {
+    llmBusy.value = false
+  }
+}
+
+const mcpToolNames = ref<string[]>([])
+const mcpToolsLoaded = ref(false)
+const selectedMcpTool = ref('')
+const mcpArgsText = ref('{}')
+const mcpBusy = ref(false)
+const mcpResult = ref<{ ok: boolean; text: string } | null>(null)
+
+const loadMcpToolNames = async () => {
+  try {
+    const res = await listMcpTools()
+    mcpToolNames.value = (res.tools || [])
+      .map((t: any) => String(t?.name || '').trim())
+      .filter(Boolean)
+      .sort()
+    mcpToolsLoaded.value = true
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  }
+}
+
+const runMcpTest = async () => {
+  if (!selectedMcpTool.value) {
+    await alert({ message: '请先选择一个 MCP 工具', type: 'warning' })
+    return
+  }
+  let args: Record<string, unknown> = {}
+  const raw = mcpArgsText.value.trim()
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        args = parsed as Record<string, unknown>
+      } else {
+        await alert({ message: '参数必须是 JSON 对象，例如 {"query":"天气"}', type: 'warning' })
+        return
+      }
+    } catch {
+      await alert({ message: '参数不是合法的 JSON', type: 'warning' })
+      return
+    }
+  }
+  mcpBusy.value = true
+  mcpResult.value = null
+  try {
+    const res = await callMcpTool({ tool: selectedMcpTool.value, arguments: args })
+    mcpResult.value = { ok: true, text: JSON.stringify(res, null, 2) }
+  } catch (err) {
+    mcpResult.value = { ok: false, text: (err as Error).message }
+  } finally {
+    mcpBusy.value = false
+  }
+}
+
 const switchTab = (next: Tab) => {
   tab.value = next
   if (next === 'users' && !users.value.length) void loadUsers()
@@ -958,6 +1047,10 @@ const switchTab = (next: Tab) => {
   if (next === 'files' && !fileEntries.value.length && editingFile.value === null) void loadFiles(filePath.value || DEFAULT_FILE_PATH)
   if (next === 'database' && !dbTables.value.length) void loadDbTables()
   if (next === 'audit') void loadAudit()
+  if (next === 'diagnostics') {
+    if (!healthLoaded.value) void runHealthCheck()
+    if (!mcpToolsLoaded.value) void loadMcpToolNames()
+  }
 }
 
 watch(
@@ -1025,7 +1118,7 @@ const avatarFor = (u: AdminUser) =>
           <!-- Tabs -->
           <div class="flex gap-1 px-5 pt-3 border-b border-zinc-200 dark:border-zinc-800">
             <button
-              v-for="t in (['services','users','auth','files','database','audit'] as Tab[])"
+              v-for="t in (['services','users','auth','files','database','audit','diagnostics'] as Tab[])"
               :key="t"
               class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors"
               :class="tab === t
@@ -1704,6 +1797,96 @@ const avatarFor = (u: AdminUser) =>
                 </tbody>
               </table>
             </div>
+          </div>
+
+          <!-- ============ Diagnostics tab ============ -->
+          <div v-show="tab === 'diagnostics'" class="flex-1 overflow-y-auto p-5 space-y-5">
+            <!-- 健康检查 -->
+            <section class="border border-zinc-200 rounded-xl p-4 dark:border-zinc-800">
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <div class="text-sm font-bold text-zinc-700 dark:text-zinc-200">运行时与数据库健康</div>
+                  <div class="text-xs text-zinc-400 mt-0.5">逐个检查网关、数据库、MCP / 连接器 / AI 运行时是否正常。</div>
+                </div>
+                <button
+                  class="px-3 py-1.5 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                  :disabled="healthBusy"
+                  @click="runHealthCheck"
+                >{{ healthBusy ? '检查中…' : '重新检查' }}</button>
+              </div>
+              <div v-if="!healthChecks.length && !healthBusy" class="text-xs text-zinc-400">尚未检查。</div>
+              <ul class="space-y-2">
+                <li
+                  v-for="c in healthChecks"
+                  :key="c.module"
+                  class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/50"
+                >
+                  <span class="flex items-center gap-2 min-w-0">
+                    <span
+                      class="w-2 h-2 rounded-full shrink-0"
+                      :class="c.ok ? 'bg-emerald-500' : 'bg-red-500'"
+                    ></span>
+                    <span class="text-sm text-zinc-700 dark:text-zinc-200 shrink-0">{{ c.label }}</span>
+                    <span class="text-xs text-zinc-400 truncate">{{ c.detail }}</span>
+                  </span>
+                  <span class="text-xs text-zinc-400 whitespace-nowrap">{{ c.latency_ms }} ms</span>
+                </li>
+              </ul>
+            </section>
+
+            <!-- 模型连通性 -->
+            <section class="border border-zinc-200 rounded-xl p-4 dark:border-zinc-800">
+              <div class="text-sm font-bold text-zinc-700 dark:text-zinc-200 mb-1">模型（LLM）连通性</div>
+              <div class="text-xs text-zinc-400 mb-3">用当前用户的主脑模型发一次极小的补全请求，确认 API Key / Base URL / 模型可用。</div>
+              <div class="flex gap-2">
+                <input
+                  v-model="llmPrompt"
+                  class="flex-1 border border-zinc-200 rounded-lg px-3 py-2 text-sm dark:bg-zinc-800 dark:border-zinc-700"
+                  placeholder="测试提示词"
+                />
+                <button
+                  class="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap"
+                  :disabled="llmBusy"
+                  @click="runLlmTest"
+                >{{ llmBusy ? '测试中…' : '测试模型' }}</button>
+              </div>
+              <div v-if="llmResult" class="mt-3 text-xs rounded-lg p-3" :class="llmResult.ok ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'">
+                <div class="font-medium">{{ llmResult.ok ? '连通正常' : '连通失败' }}<span v-if="llmResult.model"> · {{ llmResult.model }}</span><span v-if="llmResult.latency_ms != null"> · {{ llmResult.latency_ms }} ms</span></div>
+                <div v-if="llmResult.reply" class="mt-1 text-zinc-600 dark:text-zinc-300">回复：{{ llmResult.reply }}</div>
+                <div v-if="llmResult.detail && !llmResult.ok" class="mt-1 whitespace-pre-wrap">{{ llmResult.detail }}</div>
+              </div>
+            </section>
+
+            <!-- MCP 工具测试 -->
+            <section class="border border-zinc-200 rounded-xl p-4 dark:border-zinc-800">
+              <div class="text-sm font-bold text-zinc-700 dark:text-zinc-200 mb-1">MCP 工具测试</div>
+              <div class="text-xs text-zinc-400 mb-3">选择一个工具、填入 JSON 参数并执行，直接查看返回结果（使用与 AI 相同的执行通道）。</div>
+              <div class="flex flex-col gap-2 sm:flex-row">
+                <select
+                  v-model="selectedMcpTool"
+                  class="sm:w-64 border border-zinc-200 rounded-lg px-3 py-2 text-sm dark:bg-zinc-800 dark:border-zinc-700"
+                >
+                  <option value="">选择工具…</option>
+                  <option v-for="name in mcpToolNames" :key="name" :value="name">{{ name }}</option>
+                </select>
+                <button
+                  class="px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 whitespace-nowrap"
+                  :disabled="mcpBusy"
+                  @click="runMcpTest"
+                >{{ mcpBusy ? '执行中…' : '执行工具' }}</button>
+              </div>
+              <textarea
+                v-model="mcpArgsText"
+                rows="3"
+                class="mt-2 w-full border border-zinc-200 rounded-lg px-3 py-2 text-sm font-mono dark:bg-zinc-800 dark:border-zinc-700"
+                placeholder='{"query": "示例参数"}'
+              ></textarea>
+              <pre
+                v-if="mcpResult"
+                class="mt-2 text-xs rounded-lg p-3 overflow-x-auto max-h-72 whitespace-pre-wrap"
+                :class="mcpResult.ok ? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'"
+              >{{ mcpResult.text }}</pre>
+            </section>
           </div>
         </div>
       </div>

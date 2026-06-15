@@ -336,3 +336,32 @@ export const deleteUser = (userId: number) =>
   del<{ ok: boolean; user_id: number }>(`/api/admin/users/${userId}`, {
     fallbackError: '删除用户失败',
   })
+
+// ---- 系统测试 / 诊断 ----
+
+export interface DiagnosticCheck {
+  module: string
+  label: string
+  ok: boolean
+  latency_ms: number
+  detail: string
+}
+
+export const runDiagnosticsHealth = () =>
+  get<{ ok: boolean; checks: DiagnosticCheck[] }>('/api/diagnostics/health', {
+    fallbackError: '健康检查失败',
+  })
+
+export interface DiagnosticLlmResult {
+  ok: boolean
+  model?: string
+  base_url?: string
+  latency_ms?: number
+  reply?: string
+  detail?: string
+}
+
+export const runDiagnosticsLlm = (payload: { ai_config_id?: number; prompt?: string }) =>
+  post<DiagnosticLlmResult>('/api/diagnostics/llm', payload, {
+    fallbackError: 'LLM 连通性测试失败',
+  })
