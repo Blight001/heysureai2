@@ -96,6 +96,7 @@ _INTRINSIC_TOOL_DESCRIPTIONS_ZH = {
     "conversation.list": "读取当前 AI 作用域内的对话列表及消息数量、Token 用量等摘要。",
     "conversation.detail": "读取当前 AI 作用域内指定对话的详情和分页消息内容。",
     "conversation.edit": "编辑指定对话，支持重命名或清空消息但保留会话。",
+    "conversation.compress": "压缩当前对话上下文：把较早的历史总结成一条摘要、保留最近几条原文，用于对话变长时主动腾出 Token 空间继续工作。",
     "mcp.describe_tool": "按工具名（支持 tools 批量或 query 关键词搜索）读取已允许 MCP 工具的完整说明和参数 schema。",
     "prompt.list_targets": "列出当前 AI prompt 目标和全局/系统 prompt 键；当前 AI 基础 prompt 位于 AI 配置中。",
     "prompt.read_ai": "读取一个 AI 配置实际使用的基础 prompt；未指定目标时读取当前 AI。",

@@ -336,3 +336,54 @@ export const deleteUser = (userId: number) =>
   del<{ ok: boolean; user_id: number }>(`/api/admin/users/${userId}`, {
     fallbackError: '删除用户失败',
   })
+
+// ---- 系统测试 / 诊断 ----
+
+export interface DiagnosticCheck {
+  id: string
+  label: string
+  ok: boolean
+  detail: string
+  latency_ms?: number
+  skipped?: boolean
+}
+
+export interface DiagnosticGroup {
+  module: string
+  label: string
+  checks: DiagnosticCheck[]
+}
+
+export interface SelfTestResult {
+  ok: boolean
+  summary: { total: number; passed: number; failed: number }
+  groups: DiagnosticGroup[]
+  ran_at: number
+}
+
+export const runSelfTest = () =>
+  get<SelfTestResult>('/api/diagnostics/selftest', {
+    fallbackError: '系统自检失败',
+  })
+
+export interface ModelProbe {
+  name: string
+  model: string
+  base_url?: string
+  ok: boolean
+  latency_ms?: number
+  reply?: string
+  detail?: string
+}
+
+export const runModelTests = (payload: { prompt?: string; ai_config_id?: number } = {}) =>
+  post<{ ok: boolean; models: ModelProbe[]; detail?: string }>('/api/diagnostics/models', payload, {
+    fallbackError: '模型连通性测试失败',
+  })
+
+export const reseedMcpDocs = () =>
+  post<{ ok: boolean; regenerated: number; failed: string[]; detail: string }>(
+    '/api/diagnostics/reseed-mcp-docs',
+    {},
+    { fallbackError: '重新生成工具说明失败' },
+  )

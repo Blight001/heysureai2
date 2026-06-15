@@ -27,6 +27,7 @@ from .tools.communication import (
     _user_send_message,
 )
 from .tools.conversation import (
+    _compress_conversation,
     _conversation_detail,
     _create_conversation,
     _delete_conversation,
@@ -47,21 +48,20 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="mcp.describe_tool",
         description=(
-            "Load the full description and input schema for allowed MCP tools, then call them. "
-            "Pass tool for one tool, tools (array) to load several at once, or query to keyword-search "
-            "by name/description. Loaded tools become directly callable."
+            "读取已允许 MCP 工具的完整说明和参数 schema，读取后即可直接调用这些工具。"
+            "用 tool 查单个工具；用 tools（数组）一次查多个；用 query 按名称/描述做关键词搜索。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "tool": {"type": "string", "description": "Exact MCP tool name to inspect."},
-                "name": {"type": "string", "description": "Alias of tool."},
+                "tool": {"type": "string", "description": "要查看的 MCP 工具的完整名称。"},
+                "name": {"type": "string", "description": "与 tool 等价的别名。"},
                 "tools": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Several exact tool names to load in one call.",
+                    "description": "一次查看多个工具的完整名称列表。",
                 },
-                "query": {"type": "string", "description": "Keyword to search across tool names and descriptions."},
+                "query": {"type": "string", "description": "关键词，在工具名称和描述中搜索匹配的工具。"},
             },
         },
         handler=_mcp_describe_tool,
@@ -69,20 +69,20 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
 
     registry.register(MCPTool(
         name="workspace.search",
-        description="Search the public web using Tavily. Use for current or external information that is not available in the conversation or workspace.",
+        description="联网搜索（基于 Tavily）。当需要对话和工作区里没有的实时或外部信息时使用。",
         input_schema={
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Search query."},
+                "query": {"type": "string", "description": "搜索关键词。"},
                 "search_depth": {
                     "type": "string",
                     "enum": ["basic", "advanced"],
-                    "description": "Tavily search depth. Defaults to advanced.",
+                    "description": "搜索深度：basic=快速，advanced=更深入。默认 advanced。",
                 },
-                "max_results": {"type": "integer", "description": "Maximum results to return, 1-20. Defaults to 5."},
-                "include_answer": {"type": "boolean", "description": "Whether Tavily should include a generated answer."},
-                "include_raw_content": {"type": "boolean", "description": "Whether to include raw page content when available."},
-                "include_images": {"type": "boolean", "description": "Whether to include image results when available."},
+                "max_results": {"type": "integer", "description": "返回结果数量，1-20，默认 5。"},
+                "include_answer": {"type": "boolean", "description": "是否让 Tavily 附带一段生成的概要答案。"},
+                "include_raw_content": {"type": "boolean", "description": "是否在可用时附带网页原始正文。"},
+                "include_images": {"type": "boolean", "description": "是否在可用时附带图片结果。"},
             },
             "required": ["query"],
         },
@@ -92,37 +92,36 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="workspace.run_command",
         description=(
-            "Run a shell command for development or workspace inspection. Defaults to the current user's "
-            "workspace directory with the normal process environment; absolute paths and environment variables "
-            "are allowed. Set strict_workspace or sandbox_env when an isolated workspace-only run is needed."
+            "执行 shell 命令，用于开发或检查工作区。默认在当前用户的工作区目录、使用正常进程环境运行，"
+            "允许绝对路径和环境变量。需要隔离、只在工作区内运行时，设置 strict_workspace 或 sandbox_env。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "command": {"type": "string", "description": "Command to run."},
+                "command": {"type": "string", "description": "要执行的命令。"},
                 "cwd": {
                     "type": "string",
-                    "description": "Optional working directory. Relative paths resolve inside the workspace; absolute paths are allowed.",
+                    "description": "可选，工作目录。相对路径相对工作区解析；也允许绝对路径。",
                 },
                 "timeout": {
                     "type": "integer",
-                    "description": "Optional timeout in seconds, capped at 600. Defaults to 120.",
+                    "description": "可选，超时时间（秒），上限 600，默认 120。",
                 },
                 "strict_workspace": {
                     "type": "boolean",
-                    "description": "When true, reject an absolute cwd outside the workspace. Defaults to false.",
+                    "description": "为 true 时，拒绝工作区之外的绝对 cwd。默认 false。",
                 },
                 "workspace_only": {
                     "type": "boolean",
-                    "description": "Alias of strict_workspace.",
+                    "description": "与 strict_workspace 等价的别名。",
                 },
                 "sandbox_env": {
                     "type": "boolean",
-                    "description": "When true, use isolated HOME/TEMP folders inside the workspace. Defaults to false.",
+                    "description": "为 true 时，使用工作区内隔离的 HOME/TEMP 目录。默认 false。",
                 },
                 "isolated_env": {
                     "type": "boolean",
-                    "description": "Alias of sandbox_env.",
+                    "description": "与 sandbox_env 等价的别名。",
                 },
             },
             "required": ["command"],
@@ -132,29 +131,27 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     ))
     registry.register(MCPTool(
         name="admin.list_agents",
-        description="List connected socket agents and managed AI configs for current user.",
+        description="列出当前用户已连接的端侧 Agent，以及受管的 AI 配置。",
         input_schema={"type": "object", "properties": {}},
         handler=_list_agents,
     ))
     registry.register(MCPTool(
         name="admin.get_overview",
-        description="Get admin overview of workspace state plus connected socket agents and managed AI configs.",
+        description="获取系统总览：工作区状态，以及已连接的端侧 Agent 和受管的 AI 配置。",
         input_schema={"type": "object", "properties": {}},
         handler=_get_overview,
     ))
     registry.register(MCPTool(
         name="task.create",
         description=(
-            "Create a task. mode defaults to immediate when no scheduling fields are provided, and is "
-            "inferred as scheduled/recurring from schedule fields for backward compatibility. "
-            "mode=immediate runs as soon as the scheduler picks it; "
-            "mode=scheduled creates a one-time scheduled task using schedule_at or schedule_duration_minutes; "
-            "mode=recurring creates a loop task. Loop styles via schedule_loop_mode: "
-            "interval (every schedule_duration_minutes after completion), "
-            "daily (every day at schedule_daily_time), "
-            "weekly (on schedule_weekly_days at schedule_daily_time). "
-            "Loops can be bounded by schedule_max_runs and/or schedule_end_at. "
-            "schedule_at/schedule_end_at must be Unix seconds or timezone-aware ISO-8601."
+            "创建任务。不提供任何调度字段时 mode 默认为 immediate；为兼容旧用法，给了调度字段会自动推断为 scheduled/recurring。\n"
+            "- immediate：被调度器选中后立即执行。\n"
+            "- scheduled：一次性定时任务，用 schedule_at 或 schedule_duration_minutes 指定时间。\n"
+            "- recurring：循环任务，循环方式由 schedule_loop_mode 决定——"
+            "interval（每轮完成后隔 schedule_duration_minutes 分钟）、daily（每天 schedule_daily_time）、"
+            "weekly（每周 schedule_weekly_days 的 schedule_daily_time）。\n"
+            "循环可用 schedule_max_runs 和/或 schedule_end_at 限定结束。"
+            "schedule_at/schedule_end_at 需为 Unix 秒或带时区的 ISO-8601。"
         ),
         input_schema={
             "type": "object",
@@ -194,29 +191,29 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="task.list",
         description=(
-            "List task jobs. By default returns active queued/running/paused tasks. "
-            "Set current_only=true to return the current task (running first, then queued, then paused). "
-            "Set include_history=true to include completed/cancelled/stopped/error history, or history_only=true "
-            "to return only historical finished tasks. assistant_admin can proxy to digital_member "
-            "(auto or target_ai_config_id)."
+            "列出任务。默认返回进行中的任务（排队/运行中/暂停）。"
+            "current_only=true 只返回当前任务（优先运行中，其次排队，再次暂停）；"
+            "include_history=true 额外包含已完成/已取消/已停止/出错的历史任务；"
+            "history_only=true 只返回已结束的历史任务。"
+            "assistant_admin 可代理到数字成员（自动或用 target_ai_config_id 指定）。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "current_only": {"type": "boolean", "description": "Return only the current task as task and tasks[0]."},
-                "current": {"type": "boolean", "description": "Alias of current_only."},
-                "include_history": {"type": "boolean", "description": "Include finished historical tasks in addition to active tasks."},
-                "history": {"type": "boolean", "description": "Alias of include_history."},
-                "history_only": {"type": "boolean", "description": "Return only finished historical tasks."},
+                "current_only": {"type": "boolean", "description": "只返回当前任务（作为 task 和 tasks[0]）。"},
+                "current": {"type": "boolean", "description": "与 current_only 等价的别名。"},
+                "include_history": {"type": "boolean", "description": "在进行中任务之外，附带已结束的历史任务。"},
+                "history": {"type": "boolean", "description": "与 include_history 等价的别名。"},
+                "history_only": {"type": "boolean", "description": "只返回已结束的历史任务。"},
                 "status": {
-                    "description": "Optional status or comma-separated statuses to filter.",
+                    "description": "可选，按状态过滤，可填单个或逗号分隔的多个状态。",
                     "oneOf": [
                         {"type": "string"},
                         {"type": "array", "items": {"type": "string"}},
                     ],
                 },
-                "limit": {"type": "integer", "description": "Max rows when history/status filtering is used. 1-500, default 100."},
-                "job_id": {"type": "string", "description": "Optional task job id to fetch through task.list."},
+                "limit": {"type": "integer", "description": "使用历史/状态过滤时的最大返回条数，1-500，默认 100。"},
+                "job_id": {"type": "string", "description": "可选，通过 task.list 获取指定任务的 job id。"},
                 "target_ai_config_id": {"type": "integer"},
                 "target_config_id": {"type": "integer"},
             },
@@ -226,22 +223,22 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="task.update",
         description=(
-            "Admin/manager takeover tool: update an existing task job's title, instruction, priority, status, "
-            "or schedule metadata. status is limited to queued/paused; running task prompt text is not rewritten."
+            "管理员/主管接管工具：更新已有任务的标题、说明、优先级、状态或调度信息。"
+            "status 仅支持 queued/paused；运行中的任务正文不会被改写。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "job_id": {"type": "string", "description": "Task job id to update."},
-                "title": {"type": "string", "description": "New task title."},
-                "instruction": {"type": "string", "description": "New task instruction."},
-                "priority": {"type": "integer", "description": "Priority 1-10."},
-                "status": {"type": "string", "enum": ["queued", "paused"], "description": "Optional takeover state."},
-                "mode": {"type": "string", "enum": ["immediate", "scheduled", "recurring"], "description": "Optional schedule mode update."},
-                "schedule_at": {"type": ["number", "string"], "description": "For mode=scheduled. Unix seconds or timezone-aware ISO-8601."},
-                "schedule_duration_minutes": {"type": "integer", "description": "For scheduled/recurring."},
-                "schedule_run_immediately": {"type": "boolean", "description": "For mode=recurring first run."},
-                "target_ai_config_id": {"type": "integer", "description": "assistant_admin/manager proxy target AI config id."},
+                "job_id": {"type": "string", "description": "要更新的任务 job id。"},
+                "title": {"type": "string", "description": "新的任务标题。"},
+                "instruction": {"type": "string", "description": "新的任务说明。"},
+                "priority": {"type": "integer", "description": "优先级 1-10。"},
+                "status": {"type": "string", "enum": ["queued", "paused"], "description": "可选，接管后的状态。"},
+                "mode": {"type": "string", "enum": ["immediate", "scheduled", "recurring"], "description": "可选，更新调度类型。"},
+                "schedule_at": {"type": ["number", "string"], "description": "用于 mode=scheduled。Unix 秒或带时区的 ISO-8601。"},
+                "schedule_duration_minutes": {"type": "integer", "description": "用于 scheduled/recurring。"},
+                "schedule_run_immediately": {"type": "boolean", "description": "用于 mode=recurring 是否首轮立即执行。"},
+                "target_ai_config_id": {"type": "integer", "description": "assistant_admin/主管代理的目标 AI 配置 id。"},
             },
             "required": ["job_id"],
         },
@@ -251,14 +248,14 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="task.delete",
         description=(
-            "Admin/manager takeover tool: hard delete a task job. Active runs are stopped and related task "
-            "conversation messages/sessions are removed."
+            "管理员/主管接管工具：彻底删除一个任务。运行中的任务会被停止，"
+            "相关的任务会话消息/会话也会一并删除。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "job_id": {"type": "string", "description": "Task job id to hard delete."},
-                "target_ai_config_id": {"type": "integer", "description": "assistant_admin/manager proxy target AI config id."},
+                "job_id": {"type": "string", "description": "要彻底删除的任务 job id。"},
+                "target_ai_config_id": {"type": "integer", "description": "assistant_admin/主管代理的目标 AI 配置 id。"},
             },
             "required": ["job_id"],
         },
@@ -268,17 +265,17 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="task.complete",
         description=(
-            "Mark the current task as completed with a required completion summary. "
-            "On success, the current date and summary are appended to task.md in this AI's workspace."
+            "把当前任务标记为已完成，必须附带一段完成总结。"
+            "成功后，当前日期和总结会追加写入该 AI 工作区的 task.md。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "job_id": {"type": "string"},
+                "job_id": {"type": "string", "description": "可选，要完成的任务 job id；省略则取当前任务。"},
                 "summary": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "Non-empty completion summary.",
+                    "description": "非空的完成总结。",
                 },
             },
             "required": ["summary"],
@@ -291,38 +288,37 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="message.send_to_user",
         description=(
-            "Send a text message to the human user via the bound bot channel (Feishu or QQ). "
-            "Use this for proactive notifications, status updates, or asking the user to take action "
-            "asynchronously."
+            "通过绑定的机器人渠道（飞书或 QQ）给真人用户发文本消息。"
+            "用于主动通知、状态更新，或异步请用户去做某事。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "text": {"type": "string", "description": "Message text to send to the user. Optional when sending media."},
+                "text": {"type": "string", "description": "发给用户的文本；只发媒体时可省略。"},
                 "channel": {
                     "type": "string",
                     "enum": ["feishu", "qq"],
-                    "description": "Delivery channel. Defaults to the AI config bot channel.",
+                    "description": "发送渠道；默认用该 AI 配置的机器人渠道。",
                 },
-                "receive_id": {"type": "string", "description": "Optional receiver id; defaults to AI config default."},
+                "receive_id": {"type": "string", "description": "可选，接收者 id；默认用 AI 配置里的默认接收者。"},
                 "receive_id_type": {
                     "type": "string",
                     "enum": ["chat_id", "open_id", "user_id", "union_id", "email", "c2c", "group", "channel", "dm"],
-                    "description": "Receiver id type; for QQ use c2c/group/channel/dm.",
+                    "description": "接收者 id 类型；QQ 用 c2c/group/channel/dm。",
                 },
-                "chat_id": {"type": "string", "description": "Alias of receive_id."},
-                "open_id": {"type": "string", "description": "Alias of receive_id."},
-                "target_id": {"type": "string", "description": "QQ target id alias."},
-                "target_type": {"type": "string", "enum": ["c2c", "group", "channel", "dm"], "description": "QQ target type."},
-                "media_url": {"type": "string", "description": "HTTP(S) URL of an image or video for the server to fetch and send."},
-                "media_path": {"type": "string", "description": "Server-local image or video path to send."},
-                "media_type": {"type": "string", "enum": ["image", "video"], "description": "Optional explicit media type."},
-                "image_url": {"type": "string", "description": "Alias of media_url with media_type=image."},
-                "video_url": {"type": "string", "description": "Alias of media_url with media_type=video."},
-                "image_path": {"type": "string", "description": "Alias of media_path with media_type=image."},
-                "video_path": {"type": "string", "description": "Alias of media_path with media_type=video."},
-                "file_name": {"type": "string", "description": "Optional filename to use when uploading media."},
-                "duration": {"type": "integer", "description": "Optional media duration in milliseconds for Feishu video upload."},
+                "chat_id": {"type": "string", "description": "与 receive_id 等价的别名。"},
+                "open_id": {"type": "string", "description": "与 receive_id 等价的别名。"},
+                "target_id": {"type": "string", "description": "QQ 目标 id 的别名。"},
+                "target_type": {"type": "string", "enum": ["c2c", "group", "channel", "dm"], "description": "QQ 目标类型。"},
+                "media_url": {"type": "string", "description": "图片或视频的 HTTP(S) 链接，服务端拉取后发送。"},
+                "media_path": {"type": "string", "description": "服务端本地的图片或视频路径。"},
+                "media_type": {"type": "string", "enum": ["image", "video"], "description": "可选，显式指定媒体类型。"},
+                "image_url": {"type": "string", "description": "media_url 的别名，并设 media_type=image。"},
+                "video_url": {"type": "string", "description": "media_url 的别名，并设 media_type=video。"},
+                "image_path": {"type": "string", "description": "media_path 的别名，并设 media_type=image。"},
+                "video_path": {"type": "string", "description": "media_path 的别名，并设 media_type=video。"},
+                "file_name": {"type": "string", "description": "可选，上传媒体时使用的文件名。"},
+                "duration": {"type": "integer", "description": "可选，飞书视频上传时的时长（毫秒）。"},
             },
             "required": [],
         },
@@ -332,15 +328,15 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
 
     registry.register(MCPTool(
         name="conversation.create",
-        description="Create a new empty chat session for the current AI scope.",
+        description="在当前 AI 作用域内新建一个空的聊天会话。",
         input_schema={
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Session name. Defaults to 未命名会话."},
-                "session_name": {"type": "string", "description": "Alias of name."},
-                "session_id": {"type": "string", "description": "Optional explicit session id. Usually omit this."},
-                "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
-                "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run or assistant."},
+                "name": {"type": "string", "description": "会话名称；默认「未命名会话」。"},
+                "session_name": {"type": "string", "description": "与 name 等价的别名。"},
+                "session_id": {"type": "string", "description": "可选，显式指定会话 id；一般省略。"},
+                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
+                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则使用当前运行或 assistant。"},
             },
             "required": [],
         },
@@ -350,13 +346,13 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
 
     registry.register(MCPTool(
         name="conversation.delete",
-        description="Delete a chat session and all messages in it for the current AI scope.",
+        description="删除当前 AI 作用域内的一个聊天会话及其全部消息。",
         input_schema={
             "type": "object",
             "properties": {
-                "session_id": {"type": "string", "description": "Session id to delete. Defaults to active run session when available."},
-                "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
-                "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run or assistant."},
+                "session_id": {"type": "string", "description": "要删除的会话 id；有则默认当前运行所在会话。"},
+                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
+                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则使用当前运行或 assistant。"},
             },
             "required": [],
         },
@@ -367,17 +363,16 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="conversation.list",
         description=(
-            "List all conversations in this AI's shared pool (the unified 机器人对话区), "
-            "covering the web UI and every bot channel. Returns each session's id, name, "
-            "source channel, last-update time, and whether it is the active one for you. "
-            "Use when the user asks to see / list their conversations or wants to pick one to switch to."
+            "列出该 AI 共享对话池（统一的「机器人对话区」）里的所有会话，覆盖 Web 控制台和各机器人渠道。"
+            "返回每个会话的 id、名称、来源渠道、最后更新时间，以及它是否是你当前激活的会话。"
+            "当用户想查看/列出对话、或想挑一个切换时使用。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "limit": {"type": "integer", "description": "Max sessions to return, 1-200. Defaults to 50."},
-                "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
-                "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run."},
+                "limit": {"type": "integer", "description": "最多返回多少个会话，1-200，默认 50。"},
+                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
+                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则跟随当前运行。"},
             },
             "required": [],
         },
@@ -387,17 +382,17 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="conversation.detail",
         description=(
-            "Read one conversation and its messages for the current AI scope. "
-            "Defaults to the active conversation and supports offset/limit pagination."
+            "读取当前 AI 作用域内某个会话及其消息内容。"
+            "默认读当前激活的会话，支持 offset/limit 分页。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "session_id": {"type": "string", "description": "Optional session id. Defaults to the active run session."},
-                "offset": {"type": "integer", "description": "Zero-based message offset. Defaults to 0."},
-                "limit": {"type": "integer", "description": "Messages to return, 1-500. Defaults to 100."},
-                "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
-                "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run."},
+                "session_id": {"type": "string", "description": "可选，会话 id；默认当前运行所在会话。"},
+                "offset": {"type": "integer", "description": "消息偏移量（从 0 开始），默认 0。"},
+                "limit": {"type": "integer", "description": "返回的消息条数，1-500，默认 100。"},
+                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
+                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则跟随当前运行。"},
             },
             "required": [],
         },
@@ -407,23 +402,22 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="conversation.edit",
         description=(
-            "Edit a conversation without deleting the session. Use action=rename to change its name, "
-            "or action=clear to clear its messages. Clearing the active conversation preserves the "
-            "current user request by default so this run can still finish."
+            "在不删除会话的前提下编辑对话：action=rename 改名，action=clear 清空消息。"
+            "清空当前激活会话时，默认保留当前这条用户请求，好让本轮还能正常完成。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["rename", "clear"], "description": "Edit action to perform."},
-                "session_id": {"type": "string", "description": "Optional session id. Defaults to the active run session."},
-                "name": {"type": "string", "description": "Required when action=rename."},
-                "session_name": {"type": "string", "description": "Alias of name."},
+                "action": {"type": "string", "enum": ["rename", "clear"], "description": "要执行的编辑动作。"},
+                "session_id": {"type": "string", "description": "可选，会话 id；默认当前运行所在会话。"},
+                "name": {"type": "string", "description": "action=rename 时必填，新的会话名。"},
+                "session_name": {"type": "string", "description": "与 name 等价的别名。"},
                 "keep_current_message": {
                     "type": "boolean",
-                    "description": "For action=clear, preserve the current user message when editing the active conversation. Defaults to true.",
+                    "description": "action=clear 且编辑当前激活会话时，是否保留当前这条用户消息。默认 true。",
                 },
-                "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
-                "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run."},
+                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
+                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则跟随当前运行。"},
             },
             "required": ["action"],
         },
@@ -432,22 +426,45 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     ))
 
     registry.register(MCPTool(
-        name="conversation.switch",
+        name="conversation.compress",
         description=(
-            "Switch the active conversation for the current user/identity to another session "
-            "in this AI's shared pool. Provide session_id, or name/query to match by title. "
-            "Takes effect from the user's NEXT message; the current reply still goes to the "
-            "current conversation. Use when the user says 'switch conversation / go back to that chat / "
-            "换个对话 / 切回刚才那个'."
+            "压缩当前对话的上下文：把较早的对话历史总结成一条摘要，只保留最近的几条原文，"
+            "用来在对话变长、接近 token 上限时主动腾出空间继续工作。"
+            "在标准 AI 运行内调用会立即对本轮对话生效；摘要也会写入历史。"
+            "当你发现上下文过长、或被提示接近上限时，可主动调用本工具。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "session_id": {"type": "string", "description": "Target session id to switch to."},
-                "name": {"type": "string", "description": "Match a target session by name/title when session_id is omitted."},
-                "query": {"type": "string", "description": "Alias of name."},
-                "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
-                "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run."},
+                "keep_recent": {
+                    "type": "integer",
+                    "description": "保留最近多少条原始对话不被压缩（其余折叠为摘要）。默认 4，范围 0-20。",
+                },
+                "session_id": {"type": "string", "description": "可选，目标会话 id。默认当前运行所在会话。"},
+                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id。默认当前 AI。"},
+                "ai_kind": {"type": "string", "description": "可选，AI 类型。默认当前运行。"},
+            },
+            "required": [],
+        },
+        handler=_compress_conversation,
+    ))
+
+    registry.register(MCPTool(
+        name="conversation.switch",
+        description=(
+            "把当前用户/身份的激活会话切换到该 AI 共享池里的另一个会话。"
+            "可传 session_id，或用 name/query 按标题匹配。"
+            "从用户的下一条消息起生效；本轮回复仍发到当前会话。"
+            "当用户说「换个对话 / 切回刚才那个」时使用。"
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "要切换到的目标会话 id。"},
+                "name": {"type": "string", "description": "省略 session_id 时，按名称/标题匹配目标会话。"},
+                "query": {"type": "string", "description": "与 name 等价的别名。"},
+                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
+                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则跟随当前运行。"},
             },
             "required": [],
         },
@@ -458,18 +475,17 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="conversation.new",
         description=(
-            "Create a new conversation in this AI's shared pool and switch the current "
-            "user/identity to it. Takes effect from the user's NEXT message; the current reply "
-            "still goes to the current conversation. Use when the user says 'start a new chat / "
-            "新开一个对话'."
+            "在该 AI 共享池里新建一个对话，并把当前用户/身份切换过去。"
+            "从用户的下一条消息起生效；本轮回复仍发到当前会话。"
+            "当用户说「新开一个对话」时使用。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "name": {"type": "string", "description": "Name for the new conversation. Defaults to 新对话."},
-                "session_name": {"type": "string", "description": "Alias of name."},
-                "ai_config_id": {"type": "integer", "description": "Optional target AI config id. Defaults to current AI."},
-                "ai_kind": {"type": "string", "description": "Optional AI kind. Defaults to current run."},
+                "name": {"type": "string", "description": "新对话的名称；默认「新对话」。"},
+                "session_name": {"type": "string", "description": "与 name 等价的别名。"},
+                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
+                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则跟随当前运行。"},
             },
             "required": [],
         },
@@ -481,51 +497,46 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="message.send_to_ai",
         description=(
-            "Send a message to another AI in the same digital society. The message is delivered "
-            "as a forced system prompt. If the target AI is already running, its current run is "
-            "interrupted and a new run is started with this message injected first. "
-            "`message_type` is required; pick it deliberately.\n"
-            "- inquiry  : 询问。你在向对方提问、请求状态或请求结果，通常期望对方答复。\n"
-            "- reply    : 回复。你在答复对方先前发来的 inquiry；应带 reply_to_message_id。\n"
-            "- notify   : 通知。单向状态、结果或提醒，不期待对方回复。\n"
-            "- chitchat : 闲聊，可双向多轮。\n"
-            "By default this call returns after queueing; set require_reply=true only when the caller must wait."
+            "给同一数字社会中的另一个 AI 发消息。消息会作为强制系统提示送达；"
+            "若目标 AI 正在运行，会中断它当前的运行，并以这条消息打头开启新一轮。"
+            "必须指定 message_type，请按语义谨慎选择：\n"
+            "- inquiry  ：询问。你在向对方提问、要状态或要结果，通常期望对方答复。\n"
+            "- reply    ：回复。你在答复对方先前发来的 inquiry；应带 reply_to_message_id。\n"
+            "- notify   ：通知。单向状态、结果或提醒，不期待对方回复。\n"
+            "- chitchat ：闲聊，可双向多轮。\n"
+            "默认排队后即返回；只有调用方确实需要同步等待答复时才设 require_reply=true。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "to_ai_config_id": {"type": "integer", "description": "Target AI's ai_config_id."},
-                "content": {"type": "string", "description": "Message body."},
+                "to_ai_config_id": {"type": "integer", "description": "目标 AI 的 ai_config_id。"},
+                "content": {"type": "string", "description": "消息正文。"},
                 "message_type": {
                     "type": "string",
                     "enum": ["inquiry", "reply", "chitchat", "notify"],
                     "description": (
-                        "Required. Semantic type shown in the forced prompt: inquiry=询问/需要答复, "
-                        "reply=回复上一条 inquiry, notify=单向通知/不期待回复, chitchat=闲聊."
+                        "必填，决定送达提示里的语义：inquiry=询问/需要答复，"
+                        "reply=回复上一条 inquiry，notify=单向通知/不期待回复，chitchat=闲聊。"
                     ),
                 },
                 "require_reply": {
                     "type": "boolean",
                     "description": (
-                        "Default false. Controls whether this tool call waits synchronously; it does not "
-                        "replace the required message_type. Keep false for normal AI-to-AI collaboration "
-                        "so replies arrive as new message.send_to_ai calls."
+                        "默认 false，仅控制本次调用是否同步等待，不能替代必填的 message_type。"
+                        "常规 AI 协作请保持 false，对方的答复会作为新的 message.send_to_ai 调用回来。"
                     ),
                 },
                 "timeout_seconds": {
                     "type": "integer",
-                    "description": "Optional max seconds to wait when require_reply=true. Omit for the default long wait (86400 / 24h); set a larger value only when the caller intentionally wants to keep waiting longer.",
+                    "description": "可选，require_reply=true 时的最长等待秒数。省略则用默认长等待（86400 秒/24 小时）；确实想等更久才调大。",
                 },
                 "reply_to_message_id": {
                     "type": "string",
-                    "description": (
-                        "Optional original AI message id (mai_...) when this send is a reply. "
-                        "Pass it so the server can keep message-thread context."
-                    ),
+                    "description": "可选，当本次是回复时，传入对方原消息 id（mai_...），便于服务端维持消息线程上下文。",
                 },
                 "current_session_id": {
                     "type": "string",
-                    "description": "Optional current conversation/session id; the runtime supplies it automatically when omitted.",
+                    "description": "可选，当前对话/会话 id；省略时运行时会自动补上。",
                 },
             },
             "required": ["to_ai_config_id", "content", "message_type"],
@@ -536,18 +547,18 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
 
     registry.register(MCPTool(
         name="prompt.list_targets",
-        description="List current AI prompt targets and global/system prompt keys. Prompt text lives in KnowledgeBase files.",
+        description="列出可改写的 AI 人格 prompt 目标，以及全局/系统 prompt 的键。prompt 正文都存放在 KnowledgeBase 的 md 文件里。",
         input_schema={"type": "object", "properties": {}},
         handler=_prompt_list_targets,
     ))
     registry.register(MCPTool(
         name="prompt.read_ai",
-        description="Read the actual base prompt used by one AI config. Defaults to the current AI when target_ai_config_id is omitted.",
+        description="读取某个 AI 配置实际使用的基础人格 prompt。省略 target_ai_config_id 时读当前 AI。",
         input_schema={
             "type": "object",
             "properties": {
-                "target_ai_config_id": {"type": "integer", "description": "Target AI config id. Defaults to current AI config."},
-                "ai_config_id": {"type": "integer", "description": "Alias of target_ai_config_id."},
+                "target_ai_config_id": {"type": "integer", "description": "目标 AI 配置 id；省略则使用当前 AI 配置。"},
+                "ai_config_id": {"type": "integer", "description": "与 target_ai_config_id 等价的别名。"},
             },
             "required": [],
         },
@@ -556,30 +567,30 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="prompt.write_ai",
         description=(
-            "Edit one AI config prompt by line. Defaults to the current AI when target_ai_config_id is omitted. "
-            "Use mode replace_line/insert_before/insert_after/delete_line/append/prepend with line/text; "
-            "only use mode=replace_all for explicit full overwrite."
+            "按行编辑某个 AI 配置的人格 prompt。省略 target_ai_config_id 时编辑当前 AI。"
+            "用 mode=replace_line/insert_before/insert_after/delete_line/append/prepend 配合 line/text 做局部编辑；"
+            "只有要整篇覆盖时才用 mode=replace_all。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "target_ai_config_id": {"type": "integer", "description": "Target AI config id. Defaults to current AI config."},
-                "ai_config_id": {"type": "integer", "description": "Alias of target_ai_config_id."},
+                "target_ai_config_id": {"type": "integer", "description": "目标 AI 配置 id；省略则使用当前 AI 配置。"},
+                "ai_config_id": {"type": "integer", "description": "与 target_ai_config_id 等价的别名。"},
                 "mode": {
                     "type": "string",
                     "enum": ["replace_line", "insert_before", "insert_after", "delete_line", "append", "prepend", "replace_all"],
-                    "description": "Line edit mode. Full overwrite requires explicit replace_all.",
+                    "description": "按行编辑方式；整篇覆盖必须显式用 replace_all。",
                 },
-                "line": {"type": "integer", "description": "1-based target line number."},
-                "line_number": {"type": "integer", "description": "Alias of line."},
-                "start_line": {"type": "integer", "description": "1-based range start for replace/delete."},
-                "end_line": {"type": "integer", "description": "1-based range end for replace/delete."},
-                "text": {"type": "string", "description": "Line edit text. May contain multiple lines."},
-                "content": {"type": "string", "description": "Alias of text."},
-                "prompt": {"type": "string", "description": "Alias of text; used as full prompt only with mode=replace_all."},
+                "line": {"type": "integer", "description": "目标行号（从 1 开始）。"},
+                "line_number": {"type": "integer", "description": "与 line 等价的别名。"},
+                "start_line": {"type": "integer", "description": "替换/删除的起始行号（从 1 开始）。"},
+                "end_line": {"type": "integer", "description": "替换/删除的结束行号（从 1 开始）。"},
+                "text": {"type": "string", "description": "要写入的文本，可包含多行。"},
+                "content": {"type": "string", "description": "与 text 等价的别名。"},
+                "prompt": {"type": "string", "description": "与 text 等价的别名；仅在 mode=replace_all 时作为整篇内容。"},
                 "edits": {
                     "type": "array",
-                    "description": "Batch line edits. Each item supports mode,line,start_line,end_line,text/content/prompt.",
+                    "description": "批量按行编辑；每项支持 mode、line、start_line、end_line、text/content/prompt。",
                     "items": {"type": "object"},
                 },
             },
@@ -590,14 +601,14 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     ))
     registry.register(MCPTool(
         name="prompt.read_system",
-        description="Read global/system prompt templates for current user. These are mostly runtime injection templates or legacy fallbacks; use prompt.read_ai for current AI base prompt.",
+        description="读取当前用户的全局/系统 prompt 模板。它们多为运行时注入模板或旧版兜底字段；当前 AI 的基础人格 prompt 请用 prompt.read_ai 读。",
         input_schema={
             "type": "object",
             "properties": {
                 "key": {
                     "type": "string",
                     "enum": list(SYSTEM_PROMPT_FIELDS),
-                    "description": "System prompt key. Omit to read all.",
+                    "description": "系统 prompt 的键；省略则返回全部。",
                 },
             },
             "required": [],
@@ -607,9 +618,9 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="prompt.write_system",
         description=(
-            "Edit one global/system prompt template by line. These are mostly runtime injection templates or legacy fallbacks, "
-            "not the current AI base prompt. Use mode replace_line/insert_before/insert_after/delete_line/append/prepend "
-            "with line/text; only use mode=replace_all for explicit full overwrite."
+            "按行编辑某个全局/系统 prompt 模板。它们多为运行时注入模板或旧版兜底字段，不是当前 AI 的基础人格 prompt。"
+            "用 mode=replace_line/insert_before/insert_after/delete_line/append/prepend 配合 line/text 做局部编辑；"
+            "只有要整篇覆盖时才用 mode=replace_all。"
         ),
         input_schema={
             "type": "object",
@@ -617,23 +628,23 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
                 "key": {
                     "type": "string",
                     "enum": list(SYSTEM_PROMPT_FIELDS),
-                    "description": "System prompt key to update.",
+                    "description": "要更新的系统 prompt 键。",
                 },
                 "mode": {
                     "type": "string",
                     "enum": ["replace_line", "insert_before", "insert_after", "delete_line", "append", "prepend", "replace_all"],
-                    "description": "Line edit mode. Full overwrite requires explicit replace_all.",
+                    "description": "按行编辑方式；整篇覆盖必须显式用 replace_all。",
                 },
-                "line": {"type": "integer", "description": "1-based target line number."},
-                "line_number": {"type": "integer", "description": "Alias of line."},
-                "start_line": {"type": "integer", "description": "1-based range start for replace/delete."},
-                "end_line": {"type": "integer", "description": "1-based range end for replace/delete."},
-                "text": {"type": "string", "description": "Line edit text. May contain multiple lines."},
-                "content": {"type": "string", "description": "Alias of text."},
-                "prompt": {"type": "string", "description": "Alias of text; used as full prompt only with mode=replace_all."},
+                "line": {"type": "integer", "description": "目标行号（从 1 开始）。"},
+                "line_number": {"type": "integer", "description": "与 line 等价的别名。"},
+                "start_line": {"type": "integer", "description": "替换/删除的起始行号（从 1 开始）。"},
+                "end_line": {"type": "integer", "description": "替换/删除的结束行号（从 1 开始）。"},
+                "text": {"type": "string", "description": "要写入的文本，可包含多行。"},
+                "content": {"type": "string", "description": "与 text 等价的别名。"},
+                "prompt": {"type": "string", "description": "与 text 等价的别名；仅在 mode=replace_all 时作为整篇内容。"},
                 "edits": {
                     "type": "array",
-                    "description": "Batch line edits. Each item supports mode,line,start_line,end_line,text/content/prompt.",
+                    "description": "批量按行编辑；每项支持 mode、line、start_line、end_line、text/content/prompt。",
                     "items": {"type": "object"},
                 },
             },
