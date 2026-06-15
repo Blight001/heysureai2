@@ -113,6 +113,7 @@ class QQBot(BotAdapter):
         # MCP allowlist predates them.
         return {
             "conversation.edit",
+            "conversation.compress",
             "conversation.list",
             "conversation.detail",
             "conversation.switch",

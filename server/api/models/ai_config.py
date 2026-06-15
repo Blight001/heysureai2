@@ -10,7 +10,8 @@ _DEFAULT_MCP_TOOLS = (
     '"task.complete",'
     '"prompt.list_targets","prompt.read_ai","prompt.write_ai","prompt.read_system",'
     '"prompt.write_system","message.send_to_user","conversation.list","conversation.detail",'
-    '"conversation.create","conversation.delete","conversation.edit","message.send_to_ai"]'
+    '"conversation.create","conversation.delete","conversation.edit","conversation.compress",'
+    '"message.send_to_ai"]'
 )
 
 _DEFAULT_SYSTEM_AUTO_CONTROL = (

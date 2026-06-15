@@ -9,7 +9,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from api.database import engine
-from api.models import BotSessionRoute, ChatMessage, ChatSession
+from api.models import AssistantAIConfig, BotSessionRoute, ChatMessage, ChatSession, User
 from api.services.chat_media import delete_message_media
 from api.services.chat_persistence import _rebuild_usage_snapshots
 from connector_runtime.dispatch.device_dispatch import get_run_session_context
@@ -340,6 +340,88 @@ def _edit_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
         "ai_kind": scope["ai_kind"],
         "ai_config_id": scope["ai_config_id"],
         "note": "已清空此前对话内容并保留当前消息。" if preserves_current else "已清空对话内容并保留会话。",
+    }
+
+
+def _compress_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    """压缩一个会话较早的历史为摘要（默认压缩当前运行所在会话）。
+
+    供 AI 在对话过长时主动调用，把较早的对话折叠成一条摘要、保留最近若干条原文。
+    在标准 AI 运行内，运行时会拦截本工具并对内存中的对话立即生效；这里的实现用于
+    运行时之外（核心管理员、直连调用等）的兜底：落库后于下一轮对话生效。
+    """
+    from api.services import conversation_compress, kb_store
+    from api.services.model_presets import resolve_model_preset
+
+    scope = _conversation_base_scope(args, ai_config_id)
+    session_id = str(args.get("session_id") or scope.get("session_id") or "").strip()
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+    try:
+        keep_recent = int(args.get("keep_recent", 4))
+    except Exception:
+        keep_recent = 4
+    keep_recent = max(0, min(keep_recent, 20))
+
+    with Session(engine) as session:
+        user = session.get(User, user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        cfg = None
+        if scope["ai_config_id"] is not None:
+            cfg = session.get(AssistantAIConfig, scope["ai_config_id"])
+            if not cfg or cfg.user_id != user_id:
+                raise HTTPException(status_code=404, detail="AI config not found")
+        api_key, base_url, model = resolve_model_preset(user, cfg)
+        if not (api_key and base_url and model):
+            raise HTTPException(status_code=400, detail="模型未配置，无法压缩对话")
+        system_prompt = (
+            kb_store.effective_ai_prompt(user_id, cfg)
+            if cfg
+            else kb_store.effective_system_value(user_id, "admin_prompt")
+        )
+        compression_prompt = kb_store.effective_system_value(user_id, "default_compression_prompt")
+        session_row = session.exec(
+            _session_filter(
+                select(ChatSession).where(ChatSession.session_id == session_id),
+                user_id,
+                scope["ai_kind"],
+                scope["ai_config_id"],
+            )
+        ).first()
+        session_name = session_row.session_name if session_row else None
+
+        rebuilt = conversation_compress.compress_session(
+            session,
+            convo=[],
+            user_id=user_id,
+            ai_config_id=scope["ai_config_id"],
+            ai_kind=scope["ai_kind"],
+            session_id=session_id,
+            session_name=session_name,
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            system_prompt=system_prompt,
+            compression_prompt=compression_prompt,
+            session_tokens=0,
+            threshold=0,
+            keep_recent=keep_recent,
+        )
+
+    if rebuilt:
+        return {
+            "success": True,
+            "compressed": True,
+            "session_id": session_id,
+            "keep_recent": keep_recent,
+            "note": "已将较早的对话历史折叠为摘要，将在下一轮对话生效。",
+        }
+    return {
+        "success": True,
+        "compressed": False,
+        "session_id": session_id,
+        "note": "对话历史较短，暂无需压缩。",
     }
 
 

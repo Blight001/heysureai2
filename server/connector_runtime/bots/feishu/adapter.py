@@ -221,6 +221,7 @@ class FeishuBot(BotAdapter):
         # saved MCP allowlist predates them.
         return {
             "conversation.edit",
+            "conversation.compress",
             "conversation.list",
             "conversation.detail",
             "conversation.switch",

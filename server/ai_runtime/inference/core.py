@@ -1717,6 +1717,74 @@ def _run_worker_impl(
                 if payload_call and payload_tool in native_tool_name_map:
                     payload_tool = native_tool_name_map[payload_tool]
                     payload_call["tool"] = payload_tool
+                # AI 主动压缩上下文：复用自动压缩机制，但不看 token 阈值，立即把
+                # 较早的对话历史折叠成摘要并重建当前会话，让本轮就用上压缩结果。
+                if payload_tool == "conversation.compress":
+                    _compress_args = (payload_call or {}).get("arguments", {}) or {}
+                    try:
+                        _keep_recent = int(_compress_args.get("keep_recent", 4))
+                    except Exception:
+                        _keep_recent = 4
+                    _keep_recent = max(0, min(_keep_recent, 20))
+                    rebuilt_convo = None
+                    try:
+                        rebuilt_convo = conversation_compress.compress_session(
+                            bg,
+                            convo=convo,
+                            user_id=user_id,
+                            ai_config_id=ai_config_id,
+                            ai_kind=ai_kind,
+                            session_id=session_id,
+                            session_name=session_name,
+                            model=model,
+                            api_key=api_key,
+                            base_url=base_url,
+                            system_prompt=system_prompt,
+                            compression_prompt=str(auto_ctl.get("compression_prompt") or ""),
+                            session_tokens=0,
+                            threshold=0,
+                            keep_recent=_keep_recent,
+                        )
+                    except Exception:
+                        logger.exception("conversation.compress (manual) failed")
+                        rebuilt_convo = None
+                    if rebuilt_convo:
+                        _compress_note = (
+                            "已压缩上下文：较早的对话历史已折叠为摘要，最近若干条原样保留，"
+                            "请基于压缩后的上下文继续。"
+                        )
+                        _save_message(
+                            bg,
+                            user_id,
+                            ChatMessageCreate(
+                                role="user",
+                                content=_compress_note,
+                                tags="system_notice_compress",
+                                ai_config_id=ai_config_id,
+                                ai_kind=ai_kind,
+                                session_id=session_id,
+                                session_name=session_name,
+                                model=model,
+                                total_tokens=0,
+                            ),
+                        )
+                        convo = rebuilt_convo
+                        convo.append({"role": "user", "content": _compress_note})
+                        _set_run_live_usage(run_id, 0, 0, 0)
+                    else:
+                        _compress_note = "当前对话历史较短，暂无需压缩，请直接继续。"
+                        if _has_native_tc:
+                            convo.append({
+                                "role": "tool",
+                                "tool_call_id": _tc_id or "call_0",
+                                "content": _safe_json(
+                                    {"success": True, "compressed": False, "note": _compress_note}
+                                ),
+                            })
+                        else:
+                            convo.append({"role": "user", "content": _compress_note})
+                    _set_run_live_phase(run_id, "generating")
+                    continue
                 joined_native_tools = (
                     _split_concatenated_native_tool_name(payload_tool, native_tool_name_map)
                     if payload_call

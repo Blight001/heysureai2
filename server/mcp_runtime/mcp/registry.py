@@ -27,6 +27,7 @@ from .tools.communication import (
     _user_send_message,
 )
 from .tools.conversation import (
+    _compress_conversation,
     _conversation_detail,
     _create_conversation,
     _delete_conversation,
@@ -429,6 +430,30 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         },
         handler=_edit_conversation,
         destructive=True,
+    ))
+
+    registry.register(MCPTool(
+        name="conversation.compress",
+        description=(
+            "压缩当前对话的上下文：把较早的对话历史总结成一条摘要，只保留最近的几条原文，"
+            "用来在对话变长、接近 token 上限时主动腾出空间继续工作。"
+            "在标准 AI 运行内调用会立即对本轮对话生效；摘要也会写入历史。"
+            "当你发现上下文过长、或被提示接近上限时，可主动调用本工具。"
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "keep_recent": {
+                    "type": "integer",
+                    "description": "保留最近多少条原始对话不被压缩（其余折叠为摘要）。默认 4，范围 0-20。",
+                },
+                "session_id": {"type": "string", "description": "可选，目标会话 id。默认当前运行所在会话。"},
+                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id。默认当前 AI。"},
+                "ai_kind": {"type": "string", "description": "可选，AI 类型。默认当前运行。"},
+            },
+            "required": [],
+        },
+        handler=_compress_conversation,
     ))
 
     registry.register(MCPTool(

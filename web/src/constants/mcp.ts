@@ -27,4 +27,5 @@ export const DEFAULT_MCP_TOOLS = [
   'conversation.create',
   'conversation.delete',
   'conversation.edit',
+  'conversation.compress',
 ] as const
