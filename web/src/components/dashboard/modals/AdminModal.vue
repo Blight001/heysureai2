@@ -4,7 +4,7 @@ import { useMessage } from '@/composables/useMessage'
 import * as adminApi from '@/api/admin'
 import type {
   AdminTask, AdminUser, AuditEntry, DbCleanupCategory, DbCleanupResult, DbColumn, DbTableMeta, DbValue,
-  DiagnosticGroup, ModelProbe, FileEntry, LogLine, ServiceInfo,
+  DiagnosticGroup, ModelProbe, FileEntry, LogLine, ServiceInfo, RepoUpdateStatus,
 } from '@/api/admin'
 import { listMcpTools, callMcpTool } from '@/api/mcp'
 import type { User, UserRole } from '@/types'
@@ -21,7 +21,7 @@ const emit = defineEmits<{
 
 const { alert, confirm, prompt } = useMessage()
 
-type Tab = 'services' | 'users' | 'auth' | 'files' | 'database' | 'audit' | 'diagnostics'
+type Tab = 'services' | 'users' | 'auth' | 'files' | 'database' | 'audit' | 'diagnostics' | 'update'
 const tab = ref<Tab>('services')
 const TAB_LABELS: Record<Tab, string> = {
   services: '服务监控',
@@ -31,6 +31,7 @@ const TAB_LABELS: Record<Tab, string> = {
   database: '数据库',
   audit: '操作审计',
   diagnostics: '系统测试',
+  update: '版本更新',
 }
 
 // ---- Services + tasks ----
@@ -1111,6 +1112,116 @@ const runReseedMcpDocs = async () => {
   }
 }
 
+// ---- 版本 / 仓库自动更新 ----
+const repoStatus = ref<RepoUpdateStatus | null>(null)
+const repoLoading = ref(false)
+const repoBusy = ref(false)
+const repoSavingConfig = ref(false)
+const repoUnreachable = ref(false)
+const repoForm = ref<{ auto_enabled: boolean; interval_minutes: number }>({ auto_enabled: false, interval_minutes: 30 })
+let repoPollTimer: number | null = null
+
+const REPO_PHASE_META: Record<string, { label: string; cls: string }> = {
+  idle: { label: '空闲', cls: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400' },
+  checking: { label: '检测中', cls: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
+  up_to_date: { label: '已是最新', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
+  update_available: { label: '发现新版本', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+  pulling: { label: '拉取中', cls: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
+  restarting: { label: '重启中', cls: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
+  error: { label: '失败', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
+}
+
+const REPO_STEP_ICON: Record<string, string> = {
+  pending: '○', active: '◔', done: '✓', error: '✕', skipped: '–',
+}
+
+const repoActive = computed(() => {
+  const p = repoStatus.value?.state.phase
+  return p === 'checking' || p === 'pulling' || p === 'restarting'
+})
+
+const fmtCommitTime = (ts: number | null | undefined) => {
+  if (!ts) return ''
+  return new Date(ts * 1000).toLocaleString()
+}
+
+const loadRepoStatus = async (silent = false) => {
+  if (!silent) repoLoading.value = true
+  try {
+    const res = await adminApi.getRepoUpdateStatus()
+    repoStatus.value = res
+    repoUnreachable.value = false
+    // 仅在非进行中时同步表单，避免覆盖用户正在编辑的输入。
+    if (!repoBusy.value && !repoActive.value) {
+      repoForm.value = {
+        auto_enabled: res.config.auto_enabled,
+        interval_minutes: Math.max(1, Math.round(res.config.interval_seconds / 60)),
+      }
+    }
+  } catch (err) {
+    // 重启阶段网关不可达属预期：标记为「重启中」而非报错。
+    if (repoStatus.value?.state.phase === 'restarting' || repoActive.value) {
+      repoUnreachable.value = true
+    } else if (!silent) {
+      await alert({ message: (err as Error).message, type: 'error' })
+    }
+  } finally {
+    if (!silent) repoLoading.value = false
+  }
+}
+
+const startRepoPoll = () => {
+  stopRepoPoll()
+  repoPollTimer = window.setInterval(() => {
+    // 进行中或刚不可达（重启窗口）时勤刷，其余按更慢的节奏。
+    if (tab.value !== 'update') return
+    void loadRepoStatus(true)
+  }, 2500)
+}
+
+const stopRepoPoll = () => {
+  if (repoPollTimer !== null) {
+    clearInterval(repoPollTimer)
+    repoPollTimer = null
+  }
+}
+
+const saveRepoConfig = async () => {
+  repoSavingConfig.value = true
+  try {
+    const res = await adminApi.updateRepoUpdateConfig({
+      auto_enabled: repoForm.value.auto_enabled,
+      interval_seconds: Math.max(1, Math.round(repoForm.value.interval_minutes)) * 60,
+    })
+    repoStatus.value = res
+    await alert({ message: '已保存自动更新设置', type: 'success' })
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    repoSavingConfig.value = false
+  }
+}
+
+const triggerRepoCheck = async (apply: boolean) => {
+  if (apply) {
+    const yes = await confirm({
+      message: '将检测远程是否有新版本；若发现更新会自动拉取最新代码并重启全部服务（重启期间控制台会短暂不可用）。确定继续？',
+      type: 'warning',
+    })
+    if (!yes) return
+  }
+  repoBusy.value = true
+  try {
+    await adminApi.checkRepoUpdate(apply)
+    // 立即拉一次状态，随后由轮询接管进度刷新。
+    await loadRepoStatus(true)
+  } catch (err) {
+    await alert({ message: (err as Error).message, type: 'error' })
+  } finally {
+    repoBusy.value = false
+  }
+}
+
 const switchTab = (next: Tab) => {
   tab.value = next
   if (next === 'users' && !users.value.length) void loadUsers()
@@ -1122,6 +1233,12 @@ const switchTab = (next: Tab) => {
     if (!selfTestLoaded.value) void runSelfTest()
     if (!mcpToolsLoaded.value) void loadMcpToolNames()
   }
+  if (next === 'update') {
+    void loadRepoStatus()
+    startRepoPoll()
+  } else {
+    stopRepoPoll()
+  }
 }
 
 watch(
@@ -1129,6 +1246,7 @@ watch(
   (open) => {
     if (!open) {
       stopAutoRefresh()
+      stopRepoPoll()
       return
     }
     tab.value = 'services'
@@ -1149,6 +1267,7 @@ watch(
 
 onUnmounted(() => {
   stopAutoRefresh()
+  stopRepoPoll()
   if (fileImageUrl.value) URL.revokeObjectURL(fileImageUrl.value)
 })
 
@@ -1189,7 +1308,7 @@ const avatarFor = (u: AdminUser) =>
           <!-- Tabs -->
           <div class="flex gap-1 px-5 pt-3 border-b border-zinc-200 dark:border-zinc-800">
             <button
-              v-for="t in (['services','users','auth','files','database','audit','diagnostics'] as Tab[])"
+              v-for="t in (['services','users','auth','files','database','audit','diagnostics','update'] as Tab[])"
               :key="t"
               class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors"
               :class="tab === t
@@ -2014,6 +2133,139 @@ const avatarFor = (u: AdminUser) =>
                 :class="mcpResult.ok ? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200' : 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'"
               >{{ mcpResult.text }}</pre>
             </section>
+          </div>
+
+          <!-- ============ Repo auto-update / 版本更新 tab ============ -->
+          <div v-show="tab === 'update'" class="flex-1 overflow-y-auto p-5 space-y-5">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-400">版本与自动更新</h3>
+              <button
+                class="text-xs px-2 py-1 rounded-lg border border-zinc-200 text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 dark:border-zinc-700 dark:text-zinc-400"
+                :disabled="repoLoading"
+                @click="loadRepoStatus()"
+              >{{ repoLoading ? '刷新中…' : '↻ 刷新' }}</button>
+            </div>
+
+            <div
+              v-if="repoStatus && !repoStatus.git_available"
+              class="rounded-xl border border-amber-200 bg-amber-50/60 dark:border-amber-700/40 dark:bg-amber-900/10 px-4 py-3 text-xs text-amber-700 dark:text-amber-300"
+            >
+              当前部署不是可用的 git 工作区（或镜像未包含 .git），无法自动检测/拉取仓库更新。该功能适用于「同一份 git 工作区 + 多进程」的部署方式。
+            </div>
+
+            <template v-if="repoStatus">
+              <!-- 当前版本 -->
+              <section class="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4">
+                <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100 mb-3">当前版本</h4>
+                <div class="space-y-1.5 text-xs text-zinc-600 dark:text-zinc-300">
+                  <div class="flex items-center gap-2">
+                    <span class="text-zinc-400 w-16 shrink-0">分支</span>
+                    <span class="font-mono">{{ repoStatus.version.branch || '（未知）' }}</span>
+                  </div>
+                  <div v-if="repoStatus.version.current" class="flex items-start gap-2">
+                    <span class="text-zinc-400 w-16 shrink-0">提交</span>
+                    <span class="min-w-0">
+                      <span class="font-mono text-indigo-600 dark:text-indigo-400">{{ repoStatus.version.current.short }}</span>
+                      <span class="text-zinc-500 dark:text-zinc-400"> · {{ repoStatus.version.current.subject }}</span>
+                      <span class="block text-zinc-400 mt-0.5">{{ repoStatus.version.current.author }} · {{ fmtCommitTime(repoStatus.version.current.committed_at) }}</span>
+                    </span>
+                  </div>
+                  <div v-if="repoStatus.last_update.at" class="flex items-center gap-2 pt-1">
+                    <span class="text-zinc-400 w-16 shrink-0">上次更新</span>
+                    <span>{{ fmtCommitTime(repoStatus.last_update.at) }}
+                      <span v-if="repoStatus.last_update.commit" class="font-mono text-zinc-400"> → {{ repoStatus.last_update.commit.slice(0, 7) }}</span>
+                    </span>
+                  </div>
+                </div>
+              </section>
+
+              <!-- 自动检测设置 -->
+              <section class="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4 space-y-3">
+                <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">自动检测设置</h4>
+                <label class="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200 cursor-pointer select-none">
+                  <input type="checkbox" v-model="repoForm.auto_enabled" class="accent-indigo-600" :disabled="!repoStatus.git_available" />
+                  开启定时自动检测（检测到新版本将自动拉取并重启）
+                </label>
+                <div class="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+                  <span class="text-zinc-500 dark:text-zinc-400">检测间隔</span>
+                  <input
+                    v-model.number="repoForm.interval_minutes"
+                    type="number"
+                    :min="Math.max(1, Math.round(repoStatus.limits.min_interval / 60))"
+                    :max="Math.round(repoStatus.limits.max_interval / 60)"
+                    :disabled="!repoStatus.git_available"
+                    class="w-24 text-sm border border-zinc-200 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100 disabled:opacity-60"
+                  />
+                  <span class="text-zinc-500 dark:text-zinc-400">分钟</span>
+                  <span class="text-[11px] text-zinc-400">（{{ Math.max(1, Math.round(repoStatus.limits.min_interval / 60)) }}–{{ Math.round(repoStatus.limits.max_interval / 60) }} 分钟）</span>
+                </div>
+                <div class="flex justify-end">
+                  <button
+                    class="text-xs px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                    :disabled="repoSavingConfig || !repoStatus.git_available"
+                    @click="saveRepoConfig"
+                  >{{ repoSavingConfig ? '保存中…' : '保存设置' }}</button>
+                </div>
+              </section>
+
+              <!-- 手动检测 + 进度 -->
+              <section class="rounded-xl border border-zinc-200 dark:border-zinc-800 p-4 space-y-4">
+                <div class="flex items-center justify-between gap-3">
+                  <div class="flex items-center gap-2">
+                    <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">检测与更新进度</h4>
+                    <span
+                      class="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                      :class="(REPO_PHASE_META[repoUnreachable ? 'restarting' : repoStatus.state.phase] || REPO_PHASE_META.idle).cls"
+                    >{{ (REPO_PHASE_META[repoUnreachable ? 'restarting' : repoStatus.state.phase] || { label: repoStatus.state.phase }).label }}</span>
+                  </div>
+                  <button
+                    class="text-xs px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                    :disabled="repoBusy || repoActive || !repoStatus.git_available"
+                    @click="triggerRepoCheck(true)"
+                  >{{ repoBusy || repoActive ? '执行中…' : '立即检测并更新' }}</button>
+                </div>
+
+                <!-- 阶段步骤 -->
+                <div class="flex flex-col gap-2">
+                  <div
+                    v-for="step in repoStatus.state.steps"
+                    :key="step.key"
+                    class="flex items-center gap-2.5 text-sm"
+                  >
+                    <span
+                      class="w-5 h-5 inline-flex items-center justify-center rounded-full text-[11px] font-bold shrink-0"
+                      :class="{
+                        'bg-zinc-100 text-zinc-400 dark:bg-zinc-800': step.status === 'pending' || step.status === 'skipped',
+                        'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-300 animate-pulse': step.status === 'active',
+                        'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-300': step.status === 'done',
+                        'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300': step.status === 'error',
+                      }"
+                    >{{ REPO_STEP_ICON[step.status] || '○' }}</span>
+                    <span
+                      :class="step.status === 'pending' || step.status === 'skipped'
+                        ? 'text-zinc-400'
+                        : 'text-zinc-700 dark:text-zinc-200'"
+                    >{{ step.label }}</span>
+                    <span v-if="step.status === 'skipped'" class="text-[11px] text-zinc-400">（跳过）</span>
+                  </div>
+                </div>
+
+                <!-- 信息提示 -->
+                <p v-if="repoUnreachable" class="text-xs text-purple-600 dark:text-purple-400">
+                  服务正在重启，控制台暂时不可用，请稍候…恢复后将显示最新版本。
+                </p>
+                <p v-else-if="repoStatus.state.behind > 0 && repoStatus.state.phase === 'update_available'" class="text-xs text-amber-600 dark:text-amber-400">
+                  发现 {{ repoStatus.state.behind }} 个新提交待应用。
+                </p>
+                <p v-else-if="repoStatus.state.message" class="text-xs text-zinc-500 dark:text-zinc-400">
+                  {{ repoStatus.state.message }}
+                  <span v-if="repoStatus.state.last_check_at"> · 上次检测 {{ fmtCommitTime(repoStatus.state.last_check_at) }}</span>
+                </p>
+                <p v-if="repoStatus.state.phase === 'error' && repoStatus.state.last_error" class="text-xs text-red-600 dark:text-red-400 break-all">
+                  ✕ {{ repoStatus.state.last_error }}
+                </p>
+              </section>
+            </template>
           </div>
         </div>
       </div>
