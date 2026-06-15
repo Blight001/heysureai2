@@ -48,7 +48,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=$PROJECT_DIR
 EnvironmentFile=$ENV_FILE
-ExecStart=/usr/bin/python3 $PROJECT_DIR/server/scripts/deploy_webhook.py --host $WEBHOOK_HOST --port $WEBHOOK_PORT --token \${WEBHOOK_TOKEN} --script $UPDATE_SCRIPT
+ExecStart=/usr/bin/python3 $PROJECT_DIR/server/scripts/deploy_webhook.py --host $WEBHOOK_HOST --port $WEBHOOK_PORT --token \${WEBHOOK_TOKEN} --repo $PROJECT_DIR --script $UPDATE_SCRIPT
 Restart=always
 RestartSec=5
 

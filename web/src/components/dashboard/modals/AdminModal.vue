@@ -2159,7 +2159,7 @@ const avatarFor = (u: AdminUser) =>
               v-if="repoStatus && repoStatus.update_mode === 'webhook'"
               class="rounded-xl border border-indigo-200 bg-indigo-50/60 dark:border-indigo-700/40 dark:bg-indigo-900/10 px-4 py-3 text-xs text-indigo-700 dark:text-indigo-300"
             >
-              已连接服务器更新器。本页的定时设置和“立即更新”会调用预配置 Webhook，由宿主机脚本拉取代码并重新部署服务。
+              已连接服务器更新器。本页会先通过宿主机 Git 检查版本，仅在发现新提交时调用更新脚本并重新部署服务。
             </div>
 
             <template v-if="repoStatus">
@@ -2193,7 +2193,7 @@ const avatarFor = (u: AdminUser) =>
                 <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">自动检测设置</h4>
                 <label class="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200 cursor-pointer select-none">
                   <input type="checkbox" v-model="repoForm.auto_enabled" class="accent-indigo-600" :disabled="!repoStatus.updater_available" />
-                  {{ repoStatus.update_mode === 'webhook' ? '开启定时服务器更新' : '开启定时自动检测（检测到新版本将自动拉取并重启）' }}
+                  开启定时自动检测（检测到新版本将自动更新）
                 </label>
                 <div class="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
                   <span class="text-zinc-500 dark:text-zinc-400">检测间隔</span>

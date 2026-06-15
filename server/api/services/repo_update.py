@@ -136,9 +136,9 @@ def _fresh_webhook_steps() -> List[Dict[str, str]]:
     ]
 
 
-def _webhook_steps(*, pull: str, restart: str) -> List[Dict[str, str]]:
+def _webhook_steps(*, check: str = "done", pull: str, restart: str) -> List[Dict[str, str]]:
     steps = _fresh_webhook_steps()
-    steps[0]["status"] = "skipped"
+    steps[0]["status"] = check
     steps[1]["status"] = pull
     steps[2]["status"] = restart
     return steps
@@ -255,6 +255,16 @@ def _commit_info(ref: str = "HEAD") -> Optional[Dict[str, Any]]:
 def collect_version_info() -> Dict[str, Any]:
     """当前工作区版本快照（无需联网），用于进入栏目时展示。"""
     if not git_available():
+        if settings.repo_update_webhook_url.strip():
+            try:
+                payload = _request_webhook_version("GET", "/version", timeout=3.0)
+                return {
+                    "git_available": False,
+                    "branch": str(payload.get("branch") or ""),
+                    "current": payload.get("current"),
+                }
+            except RepoUpdateError:
+                pass
         try:
             with open(DEPLOYED_VERSION_FILE, "r", encoding="utf-8") as handle:
                 payload = json.load(handle)
@@ -296,6 +306,27 @@ def _webhook_headers() -> Dict[str, str]:
 def _webhook_status_url() -> str:
     parts = urlsplit(settings.repo_update_webhook_url.strip())
     return urlunsplit((parts.scheme, parts.netloc, "/status", "", ""))
+
+
+def _webhook_url(path: str) -> str:
+    parts = urlsplit(settings.repo_update_webhook_url.strip())
+    return urlunsplit((parts.scheme, parts.netloc, path, "", ""))
+
+
+def _request_webhook_version(method: str, path: str, *, timeout: float) -> Dict[str, Any]:
+    try:
+        response = httpx.request(method, _webhook_url(path), headers=_webhook_headers(), timeout=timeout)
+        response.raise_for_status()
+        payload = response.json()
+        if not payload.get("ok"):
+            raise RepoUpdateError(str(payload.get("error") or "服务器版本接口失败"))
+        return payload
+    except (httpx.HTTPError, ValueError) as exc:
+        raise RepoUpdateError(f"服务器版本接口调用失败：{exc}") from exc
+
+
+def _check_deployment_webhook() -> Dict[str, Any]:
+    return _request_webhook_version("POST", "/check", timeout=180.0)
 
 
 def _trigger_deployment_webhook() -> None:
@@ -367,14 +398,12 @@ def _run_webhook_update(*, trigger: str) -> Dict[str, Any]:
         phase="pulling",
         running=True,
         trigger=trigger,
-        steps=_fresh_webhook_steps(),
+        steps=_webhook_steps(pull="active", restart="pending"),
         last_error="",
         logs=[],
         message="正在通知服务器执行部署更新…",
         last_check_at=time.time(),
     )
-    _set_step(_STEP_CHECK, "skipped")
-    _set_step(_STEP_PULL, "active")
     _trigger_deployment_webhook()
     _record_last_update(from_sha="", to_sha="")
     _set_state(
@@ -487,12 +516,38 @@ def run_check_and_maybe_update(*, trigger: str, auto_apply: bool) -> Dict[str, A
 
     try:
         if mode == "webhook":
+            _set_state(
+                phase="checking",
+                running=True,
+                trigger=trigger,
+                steps=_fresh_webhook_steps(),
+                last_error="",
+                message="正在通过服务器更新器检查远程版本…",
+            )
+            _set_step(_STEP_CHECK, "active")
+            info = _check_deployment_webhook()
+            behind = int(info.get("behind") or 0)
+            ahead = int(info.get("ahead") or 0)
+            _set_step(_STEP_CHECK, "done")
+            _set_state(
+                branch=str(info.get("branch") or ""),
+                ahead=ahead,
+                behind=behind,
+                current=info.get("current"),
+                remote=info.get("remote"),
+                last_check_at=time.time(),
+            )
+            if behind <= 0:
+                _set_state(phase="up_to_date", running=False, message="已是最新版本")
+                _set_step(_STEP_PULL, "skipped")
+                _set_step(_STEP_RESTART, "skipped")
+                return {"ok": True, "updated": False, "update_available": False, "state": get_state()}
             if not auto_apply:
                 _set_state(
                     phase="update_available",
                     running=False,
                     trigger=trigger,
-                    message="外部更新器已配置，可执行服务器更新",
+                    message=f"发现 {behind} 个新提交，待更新",
                     last_check_at=time.time(),
                 )
                 return {"ok": True, "updated": False, "update_available": True, "state": get_state()}

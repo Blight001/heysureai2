@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hmac
 import json
+import os
 import subprocess
 import threading
 import time
@@ -16,6 +17,7 @@ from pathlib import Path
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--script", required=True, help="Absolute path to the fixed update script")
+    parser.add_argument("--repo", help="Git repository directory; defaults to the script directory")
     parser.add_argument("--token", required=True, help="Bearer token required from callers")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
@@ -24,6 +26,9 @@ def main() -> None:
     script = Path(args.script).expanduser().resolve(strict=True)
     if not script.is_file():
         parser.error("--script must point to a file")
+    repo = Path(args.repo).expanduser().resolve(strict=True) if args.repo else script.parent
+    if not (repo / ".git").exists():
+        parser.error("--repo must point to a Git working tree")
 
     run_lock = threading.Lock()
     state_lock = threading.Lock()
@@ -35,8 +40,59 @@ def main() -> None:
         "exit_code": None,
         "logs": deque(maxlen=300),
     }
+    version_lock = threading.Lock()
+    version_state = {"branch": "", "ahead": 0, "behind": 0, "current": None, "remote": None}
+
+    def git(*git_args: str, timeout: float = 60.0) -> str:
+        result = subprocess.run(
+            ["git", *git_args],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+        return result.stdout.strip()
+
+    def commit_info(ref: str) -> dict:
+        values = git("log", "-1", "--format=%H%n%h%n%an%n%ct%n%s", ref).split("\n", 4)
+        return {
+            "sha": values[0],
+            "short": values[1],
+            "author": values[2],
+            "committed_at": float(values[3]),
+            "subject": values[4],
+        }
+
+    def read_version(*, fetch: bool) -> dict:
+        branch = git("rev-parse", "--abbrev-ref", "HEAD")
+        if fetch:
+            git("fetch", "--quiet", "origin", branch, timeout=180.0)
+        upstream = f"origin/{branch}"
+        current = commit_info("HEAD")
+        remote = commit_info(upstream)
+        counts = git("rev-list", "--left-right", "--count", f"HEAD...{upstream}").split()
+        payload = {
+            "branch": branch,
+            "ahead": int(counts[0]),
+            "behind": int(counts[1]),
+            "current": current,
+            "remote": remote,
+            "checked_at": time.time(),
+        }
+        with version_lock:
+            version_state.update(payload)
+        return payload
+
+    try:
+        read_version(fetch=False)
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        pass
 
     def run_script() -> None:
+        exit_code = -1
         try:
             with state_lock:
                 state.update(
@@ -82,6 +138,10 @@ def main() -> None:
                 )
         finally:
             run_lock.release()
+            if exit_code == 0:
+                # The deployment may have replaced this file. Let systemd's
+                # Restart=always launch a fresh process with the new code.
+                threading.Timer(2.0, lambda: os._exit(0)).start()
 
     class Handler(BaseHTTPRequestHandler):
         def _authorized(self) -> bool:
@@ -97,11 +157,19 @@ def main() -> None:
             self.wfile.write(body)
 
         def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
-            if self.path != "/status":
+            if self.path not in ("/status", "/version"):
                 self._json(404, {"ok": False, "error": "not found"})
                 return
             if not self._authorized():
                 self._json(401, {"ok": False, "error": "unauthorized"})
+                return
+            if self.path == "/version":
+                try:
+                    payload = read_version(fetch=False)
+                except (OSError, subprocess.SubprocessError, ValueError, IndexError) as exc:
+                    self._json(500, {"ok": False, "error": str(exc)})
+                    return
+                self._json(200, {"ok": True, **payload})
                 return
             with state_lock:
                 payload = {key: value for key, value in state.items() if key != "logs"}
@@ -109,11 +177,22 @@ def main() -> None:
             self._json(200, {"ok": True, **payload})
 
         def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
-            if self.path != "/update":
+            if self.path not in ("/check", "/update"):
                 self._json(404, {"ok": False, "error": "not found"})
                 return
             if not self._authorized():
                 self._json(401, {"ok": False, "error": "unauthorized"})
+                return
+            if self.path == "/check":
+                if run_lock.locked():
+                    self._json(409, {"ok": False, "error": "update already running"})
+                    return
+                try:
+                    payload = read_version(fetch=True)
+                except (OSError, subprocess.SubprocessError, ValueError, IndexError) as exc:
+                    self._json(500, {"ok": False, "error": str(exc)})
+                    return
+                self._json(200, {"ok": True, **payload})
                 return
             if not run_lock.acquire(blocking=False):
                 self._json(409, {"ok": False, "error": "update already running"})

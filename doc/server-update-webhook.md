@@ -56,6 +56,10 @@ journalctl -u heysure-update-webhook -f
 systemctl restart heysure-update-webhook
 ```
 
+systemd 服务首次安装完成后，无需在每次升级时重新执行安装脚本。更新脚本成功结束后，Webhook 会自动退出，并由 systemd 使用新代码重新启动；之后的检查、更新和定时设置均可在网页完成。
+
+桥接器提供三个固定接口：`POST /check` 在宿主机执行 Git 检查，`POST /update` 启动更新脚本，`GET /status` 返回进度和日志。网页会先检查版本，只有远程存在新提交时才启动更新，因此无需再依赖独立的定时 shell 任务。
+
 如果服务器原来通过 cron 或宝塔计划任务定时执行 `update-heysure.sh`，请停用该任务。保留本服务常驻，并只在网页中配置更新时间。
 
 ## 3. 配置应用
