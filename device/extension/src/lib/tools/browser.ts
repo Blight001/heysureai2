@@ -1113,21 +1113,44 @@ async function toolPressKey(args: any): Promise<any> {
 }
 
 // ── Action-dispatching handlers ───────────────────────────────────────────
-// State-management ops (tab / cookie / storage / session / profile / history)
-// were previously one tool per verb. They're now a single tool that switches on
-// an `action` param. Each branch just delegates to the original impl above, so
-// behaviour is unchanged — only the tool surface is smaller.
+// Several formerly-separate tools are now single tools that switch on an
+// `action` param; each branch delegates to the original impl above, so
+// behaviour is unchanged — only the tool surface is smaller:
+//   · browser_tab    — list / open / close + navigate / back / forward (page-level navigation).
+//   · browser_action — click / double_click / right_click / scroll / type / press_key (page interaction).
+//   · browser_cookie / browser_storage / browser_session / browser_profile — state ops.
 function badAction(tool: string, action: any, allowed: string[]): never {
   const got = action === undefined || action === '' ? '(空)' : String(action)
   throw new Error(`${tool}: 未知 action「${got}」，可选 ${allowed.join(' / ')}`)
 }
 
+// browser_tab now also covers page-level navigation: navigate (跳转 URL) and
+// back/forward (前进后退), on top of list/open/close. The standalone
+// browser_navigate / browser_history tools were folded in here.
 function toolTab(args: any): Promise<any> {
   switch (args?.action) {
-    case 'list':  return toolTabList()
-    case 'open':  return toolTabOpen(args)
-    case 'close': return toolTabClose(args)
-    default:      return badAction('browser_tab', args?.action, ['list', 'open', 'close'])
+    case 'list':     return toolTabList()
+    case 'open':     return toolTabOpen(args)
+    case 'close':    return toolTabClose(args)
+    case 'navigate': return toolNavigate(args)
+    case 'back':     return toolHistoryBack()
+    case 'forward':  return toolHistoryForward()
+    default:         return badAction('browser_tab', args?.action, ['list', 'open', 'close', 'navigate', 'back', 'forward'])
+  }
+}
+
+// browser_action aggregates the page-interaction verbs (click / double_click /
+// right_click / scroll / type / press_key) behind a single action param. Each
+// branch delegates to the original impl, so behaviour is unchanged.
+function toolAction(args: any): Promise<any> {
+  switch (args?.action) {
+    case 'click':        return toolClick(args)
+    case 'double_click': return toolDoubleClick(args)
+    case 'right_click':  return toolRightClick(args)
+    case 'scroll':       return toolScroll(args)
+    case 'type':         return toolType(args)
+    case 'press_key':    return toolPressKey(args)
+    default:             return badAction('browser_action', args?.action, ['click', 'double_click', 'right_click', 'scroll', 'type', 'press_key'])
   }
 }
 
@@ -1184,8 +1207,8 @@ function toolProfile(args: any): Promise<any> {
 type ToolHandler = (args: any) => Promise<any>
 
 const HANDLERS: Record<string, ToolHandler> = {
-  // Navigation & search
-  browser_navigate:      toolNavigate,
+  // Navigation & search — navigate/back/forward are folded into browser_tab;
+  // browser_history stays here (hidden) so legacy back/forward calls keep working.
   browser_search:        toolSearch,
   browser_history:       toolHistory,
   // Page observation
@@ -1199,14 +1222,10 @@ const HANDLERS: Record<string, ToolHandler> = {
   browser_performance:   () => toolPerformance(),
   browser_network_log:   toolNetworkLog,
   browser_iframe_list:   () => toolIframeList(),
-  // Interaction
-  browser_click:         toolClick,
-  browser_double_click:  toolDoubleClick,
-  browser_right_click:   toolRightClick,
-  browser_type:          toolType,
-  browser_press_key:     toolPressKey,
+  // Interaction — click/double_click/right_click/scroll/type/press_key merged
+  // into browser_action (action param). The rest stay as their own tools.
+  browser_action:        toolAction,
   browser_hover:         toolHover,
-  browser_scroll:        toolScroll,
   browser_wait:          toolWait,
   browser_drag:          toolDrag,
   browser_fill_form:     toolFillForm,
@@ -1228,9 +1247,21 @@ const HANDLERS: Record<string, ToolHandler> = {
 
 // Legacy per-verb names → { tool, action } injected into the merged handler.
 const LEGACY_ALIASES: Record<string, { tool: string; action: string }> = {
+  // Page-interaction verbs merged into browser_action.
+  browser_click:          { tool: 'browser_action', action: 'click' },
+  browser_double_click:   { tool: 'browser_action', action: 'double_click' },
+  browser_right_click:    { tool: 'browser_action', action: 'right_click' },
+  browser_scroll:         { tool: 'browser_action', action: 'scroll' },
+  browser_type:           { tool: 'browser_action', action: 'type' },
+  browser_press_key:      { tool: 'browser_action', action: 'press_key' },
+  // Page-level navigation merged into browser_tab.
+  browser_navigate:       { tool: 'browser_tab',     action: 'navigate' },
   browser_tab_list:       { tool: 'browser_tab',     action: 'list' },
   browser_tab_open:       { tool: 'browser_tab',     action: 'open' },
   browser_tab_close:      { tool: 'browser_tab',     action: 'close' },
+  browser_tab_navigate:   { tool: 'browser_tab',     action: 'navigate' },
+  browser_tab_back:       { tool: 'browser_tab',     action: 'back' },
+  browser_tab_forward:    { tool: 'browser_tab',     action: 'forward' },
   browser_history_back:   { tool: 'browser_history', action: 'back' },
   browser_history_forward:{ tool: 'browser_history', action: 'forward' },
   browser_cookie_list:    { tool: 'browser_cookie',  action: 'list' },
