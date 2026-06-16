@@ -14,8 +14,18 @@ type DynamicInstruction = { op: 'call' | 'set' | 'return'; tool?: string; args?:
 
 const MANAGER_TOOL = 'mcp.manage_dynamic_tool'
 const NAME_RE = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$/
+// Merged set (local + server) used at runtime for child-tool resolution.
 let definitions: DynamicMcpDefinition[] = []
+// Locally-authored tools (via mcp.manage_dynamic_tool). The manager edits these
+// and persists them to ``filePath``; they are the manager's source of truth.
+let localDefinitions: DynamicMcpDefinition[] = []
+// Web-authored tools pushed from the server (device:tool-config), scoped by
+// device type. Stored in ``serverFilePath`` as an offline cache and merged on
+// reload. The server is their source of truth — the manager never edits them.
+let serverDefinitions: DynamicMcpDefinition[] = []
+let appliedServerRevision = ''
 let filePath = ''
+let serverFilePath = ''
 let watcher: FSWatcher | null = null
 let changeListener: (() => void) | null = null
 let reloadTimer: NodeJS.Timeout | null = null
@@ -84,6 +94,22 @@ async function runProgram(def: DynamicMcpDefinition, workspaceRoot: string, args
   return context.last
 }
 
+function ensurePaths(): void {
+  if (!filePath) filePath = path.join(app.getPath('userData'), 'dynamic-mcp-tools.json')
+  if (!serverFilePath) serverFilePath = path.join(app.getPath('userData'), 'dynamic-mcp-tools.server.json')
+}
+
+function readToolsFile(target: string): DynamicMcpDefinition[] {
+  if (!target || !fs.existsSync(target)) return []
+  const raw = JSON.parse(fs.readFileSync(target, 'utf8'))
+  const list = Array.isArray(raw) ? raw : raw?.tools
+  if (list == null) return []
+  if (!Array.isArray(list)) throw new Error(`${path.basename(target)} must contain a tools array`)
+  const next = list.map(validate)
+  if (new Set(next.map(item => item.name)).size !== next.length) throw new Error('Duplicate dynamic MCP name')
+  return next
+}
+
 function persist(next: DynamicMcpDefinition[]): void {
   const temp = `${filePath}.tmp`
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
@@ -91,21 +117,49 @@ function persist(next: DynamicMcpDefinition[]): void {
   fs.renameSync(temp, filePath)
 }
 
-export function reloadDynamicMcp(): { tools: number; revision: string; file: string } {
-  if (!filePath) filePath = path.join(app.getPath('userData'), 'dynamic-mcp-tools.json')
-  let raw: any = { tools: [] }
-  if (fs.existsSync(filePath)) raw = JSON.parse(fs.readFileSync(filePath, 'utf8'))
-  const list = Array.isArray(raw) ? raw : raw?.tools
-  if (!Array.isArray(list)) throw new Error('dynamic-mcp-tools.json must contain a tools array')
-  const next = list.map(validate)
-  if (new Set(next.map(item => item.name)).size !== next.length) throw new Error('Duplicate dynamic MCP name')
+export function reloadDynamicMcp(): { tools: number; local: number; server: number; revision: string; file: string } {
+  ensurePaths()
+  localDefinitions = readToolsFile(filePath)
+  serverDefinitions = readToolsFile(serverFilePath)
+  // Merge: server-authored (web) tools win over a locally-authored tool of the
+  // same name, so an operator's edit is authoritative for that device type.
+  const merged = new Map<string, DynamicMcpDefinition>()
+  for (const def of localDefinitions) merged.set(def.name, def)
+  for (const def of serverDefinitions) merged.set(def.name, def)
+  const next = Array.from(merged.values())
   replaceDynamicTools(next.map(def => ({
     id: def.name, platform: 'all', description: def.description, inputSchema: def.input_schema,
-    implementation: { kind: 'dynamic', definition: def, code: def.code, storage_file: filePath, editable_via: MANAGER_TOOL },
+    implementation: {
+      kind: 'dynamic', definition: def, code: def.code,
+      storage_file: serverDefinitions.some(s => s.name === def.name) ? serverFilePath : filePath,
+      source: serverDefinitions.some(s => s.name === def.name) ? 'server' : 'local',
+      editable_via: MANAGER_TOOL,
+    },
     handler: ({ workspaceRoot, args }) => runProgram(def, workspaceRoot, args || {}),
   })))
   definitions = next
-  return { tools: next.length, revision: revision(next), file: filePath }
+  appliedServerRevision = revision(serverDefinitions)
+  return { tools: next.length, local: localDefinitions.length, server: serverDefinitions.length, revision: revision(next), file: filePath }
+}
+
+// Apply a server-pushed dynamic MCP set (device:tool-config) for this device
+// type. Returns ``applied:false`` without touching disk when the incoming set
+// matches what we already loaded — this guard stops the register→push→apply
+// loop, since applying re-registers and the server re-pushes the same set.
+export function applyServerDynamicMcp(payload: any): { applied: boolean; revision: string; tools: number } {
+  ensurePaths()
+  const list = Array.isArray(payload) ? payload : payload?.tools
+  const tools = Array.isArray(list) ? list.map(validate) : []
+  if (new Set(tools.map(item => item.name)).size !== tools.length) throw new Error('Duplicate dynamic MCP name')
+  const rev = revision(tools)
+  if (rev === appliedServerRevision) return { applied: false, revision: rev, tools: tools.length }
+  const temp = `${serverFilePath}.tmp`
+  fs.mkdirSync(path.dirname(serverFilePath), { recursive: true })
+  fs.writeFileSync(temp, JSON.stringify({ version: 1, tools }, null, 2), 'utf8')
+  fs.renameSync(temp, serverFilePath)
+  reloadDynamicMcp()
+  changeListener?.()
+  return { applied: true, revision: rev, tools: tools.length }
 }
 
 function scheduleReload(): void {
@@ -233,7 +287,7 @@ function inspectTool(name: string, includeSource = true): Record<string, any> {
 export async function manageDynamicMcp(args: Record<string, any>): Promise<any> {
   const action = String(args?.action || 'list').trim().toLowerCase()
   if (action === 'reload') return { ok: true, ...reloadDynamicMcp() }
-  if (action === 'list') return { ok: true, file: filePath, revision: revision(definitions), tools: definitions.map(item => ({ name: item.name, description: item.description, revision: revision(item) })) }
+  if (action === 'list') return { ok: true, file: filePath, revision: revision(localDefinitions), tools: localDefinitions.map(item => ({ name: item.name, description: item.description, revision: revision(item) })) }
   const name = String(args?.name || args?.definition?.name || '').trim()
   if (action === 'get_source') {
     const requested = String(args?.source_path || '').trim()
@@ -263,7 +317,9 @@ export async function manageDynamicMcp(args: Record<string, any>): Promise<any> 
   }
   if (!name) throw new Error('name is required')
   if (action === 'inspect') return inspectTool(name, args?.include_source !== false)
-  const current = definitions.find(item => item.name === name)
+  // The manager edits only locally-authored tools. Server-pushed tools for this
+  // device type are managed from the web console, never here.
+  const current = localDefinitions.find(item => item.name === name)
   if (action === 'get') {
     if (!current) throw new Error(`Dynamic MCP not found: ${name}`)
     return { ok: true, definition: current, revision: revision(current), file: filePath }
@@ -271,10 +327,11 @@ export async function manageDynamicMcp(args: Record<string, any>): Promise<any> 
   if (args?.expected_revision && current && args.expected_revision !== revision(current)) throw new Error(`Dynamic MCP changed since it was read: ${name}`)
   if (action === 'delete') {
     if (!current) throw new Error(`Dynamic MCP not found: ${name}`)
-    persist(definitions.filter(item => item.name !== name))
+    persist(localDefinitions.filter(item => item.name !== name))
   } else if (action === 'upsert') {
+    if (serverDefinitions.some(item => item.name === name)) throw new Error(`${name} is managed from the web console for this device type`)
     const nextDef = validate({ ...(args.definition || {}), name })
-    persist([...definitions.filter(item => item.name !== name), nextDef].sort((a, b) => a.name.localeCompare(b.name)))
+    persist([...localDefinitions.filter(item => item.name !== name), nextDef].sort((a, b) => a.name.localeCompare(b.name)))
   } else throw new Error(`Unsupported action: ${action}`)
   const status = reloadDynamicMcp()
   changeListener?.()

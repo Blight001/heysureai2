@@ -2,6 +2,7 @@ import { io, Socket } from 'socket.io-client'
 import os from 'os'
 import path from 'path'
 import { executeTask, getAvailableTools, getToolDefs, DispatchedTask } from './executor'
+import { applyServerDynamicMcp } from './executor/dynamic'
 import { getPlatformInfo } from './platform'
 import { AgentSettings } from './store'
 import { normalizeServerUrl } from './server-url'
@@ -153,6 +154,19 @@ export class HeySureAgent {
 
     this.socket.on('task:dispatch', (task: DispatchedTask) => {
       void this.handleTask(task)
+    })
+
+    // Web-authored dynamic MCP tools for this device type, pushed by the server
+    // on register and whenever an operator edits them. Applying merges them into
+    // the local dynamic interpreter and (when the set actually changed) triggers
+    // a re-register so the new tool catalog is reported back up.
+    this.socket.on('device:tool-config', (payload: any) => {
+      try {
+        const status = applyServerDynamicMcp(payload)
+        if (status.applied) this.log('info', `已应用服务器下发的 MCP 工具：${status.tools} 个`)
+      } catch (err: any) {
+        this.log('error', `应用服务器 MCP 工具失败: ${err?.message || err}`)
+      }
     })
   }
 

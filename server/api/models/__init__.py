@@ -55,6 +55,7 @@ from .admin_audit import AdminAuditLog
 from .device_binding import DeviceAiBinding
 from .device_mcp_permission import DeviceTypeMcpPermission
 from .device_presence import DevicePresence
+from .device_dynamic_tool import DeviceDynamicTool
 from .bot_session_route import BotSessionRoute, BotUserCursor
 from .workshop_binding import WorkshopAiBinding
 from .knowledge import EvolutionInput, KnowledgeEntry, Memory
@@ -98,6 +99,7 @@ __all__ = [
     "DeviceAiBinding",
     "DeviceTypeMcpPermission",
     "DevicePresence",
+    "DeviceDynamicTool",
     "WorkshopAiBinding",
     # chat
     "ChatMessage",

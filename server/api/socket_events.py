@@ -233,6 +233,32 @@ def register_agent_socket_events():
         # Include the server-side bound AI so the device can show whether an AI
         # is assigned yet (status indicator: green = bound, yellow = none).
         await sio.emit('device:registered', {'id': device_id, 'aiConfigId': claimed_ai}, to=sid)
+        # Push web-authored dynamic MCP tools for this device's type so a device
+        # that was offline during an edit picks up the latest set on reconnect.
+        # The device skips re-applying an unchanged revision, so this never loops
+        # with the register it may trigger.
+        try:
+            from connector_runtime.dispatch.desktop_device_tools import (
+                device_type_of,
+                agent_endpoint_tool_defs,
+            )
+            from api.device_live import push_device_dynamic_tools_to_sid
+            from api.services import device_dynamic_tools as _dyn
+
+            push_type = device_type_of(agents[sid])
+            if owner_user_id is not None and push_type in ('desktop', 'browser'):
+                # Auto-seed: mirror the device's reported native catalog into the
+                # DB once (idempotent) so the whole tool surface is web-editable,
+                # then push the (seeded + operator-edited) set back down.
+                try:
+                    _dyn.seed_from_tool_defs(
+                        owner_user_id, push_type, agent_endpoint_tool_defs(agents[sid])
+                    )
+                except Exception:
+                    logger.exception('Failed to seed dynamic MCP tools: %s', device_id)
+                await push_device_dynamic_tools_to_sid(owner_user_id, push_type, sid)
+        except Exception:
+            logger.exception('Failed to push dynamic MCP tools to device: %s', device_id)
         try:
             await resume_device_dispatch_queue(device_id)
         except Exception:
