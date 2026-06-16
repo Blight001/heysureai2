@@ -387,18 +387,52 @@ def workshop_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int
     return tools
 
 
+def _config_selected_tool_names(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
+    """Tool names explicitly selected in an AI config's ``mcp_tools`` allow-list,
+    returned verbatim. Empty when MCP is disabled for the config or on any read
+    error. Lets the AI-config checkbox grant endpoint tools directly."""
+    config_id = _parse_int(ai_config_id)
+    if not config_id:
+        return set()
+    try:
+        import json
+        from sqlmodel import Session, select
+        from api.database import engine
+        from api.models import AssistantAIConfig
+
+        with Session(engine) as session:
+            query = select(AssistantAIConfig).where(AssistantAIConfig.id == config_id)
+            uid = _parse_int(user_id)
+            if uid:
+                query = query.where(AssistantAIConfig.user_id == uid)
+            cfg = session.exec(query).first()
+        if not cfg or not getattr(cfg, "mcp_enabled", False):
+            return set()
+        parsed = json.loads(cfg.mcp_tools or "[]")
+        if not isinstance(parsed, list):
+            return set()
+        return {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
+    except Exception:
+        return set()
+
+
 def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
-    """Endpoint MCP tools available to an AI right now: the union of what its
-    online endpoint agents (Linux / desktop / browser) advertise, each narrowed
-    by that individual agent's saved per-agent permission scope. No saved scope
-    row → no endpoint tools are allowed.
+    """Endpoint MCP tools available to an AI right now.
+
+    Two grant sources are unioned, each narrowed to what online endpoint agents
+    actually advertise — a disconnected agent contributes nothing:
+
+    1. Each agent's saved per-agent permission scope (``DeviceTypeMcpPermission``).
+       No saved scope row → that agent is closed.
+    2. The AI config's own ``mcp_tools`` allow-list: an endpoint tool ticked in
+       the AI config is granted as soon as some online endpoint agent advertises
+       it. This keeps the AI-config checkbox and the per-agent scope consistent,
+       so a tool the model sees listed in its catalog is the same tool it may
+       describe and call.
 
     Resolved from the shared DB presence snapshot (``api.device_presence``) so
     every process — gateway, ai-runtime, mcp-runtime, connector — gets the same
-    answer without the in-memory agent registry. Endpoint tools are
-    intentionally decoupled from ``cfg.mcp_tools`` (which governs server-side
-    MCP tools). A disconnected agent contributes nothing, so its tools disappear
-    from the AI's reach until it returns."""
+    answer without the in-memory agent registry."""
     config_id = _parse_int(ai_config_id)
     if not config_id:
         return set()
@@ -406,12 +440,20 @@ def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int
     from api.device_mcp_permissions import get_scope
 
     tools: Set[str] = set()
-    for device_id, _device_type, caps in online_devices_for_config(user_id, config_id):
+    live_caps: Set[str] = set()
+    for device_id, device_type, caps in online_devices_for_config(user_id, config_id):
+        # Workshop tools keep their binding-only gate, so they never count toward
+        # the AI-config selection grant below.
+        if str(device_type or "").strip() != "workshop":
+            live_caps |= caps
         # Each individual agent has its own MCP scope. No saved row → closed.
         scope = get_scope(user_id, device_id) if device_id else None
         if scope is None:
             continue
         tools |= caps & scope
+    # AI 配置勾选即生效：配置 mcp_tools 里选中的端侧工具，只要某个在线 agent
+    # 当前提供该能力即放行（与 per-agent scope 取并集），避免"能看到却不能用"。
+    tools |= _config_selected_tool_names(config_id, user_id) & live_caps
     # 知识与进化工坊走 AI 侧绑定（WorkshopAiBinding），与设备 1:1 绑定并集。
     tools |= workshop_tools_for_config(config_id, user_id)
     return tools
