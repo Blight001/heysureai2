@@ -91,6 +91,9 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # Admin / governance — assistant_admin only.
     "admin.list_agents": ROLE_ASSISTANT_ADMIN,
     "admin.get_overview": ROLE_ASSISTANT_ADMIN,
+    # Self-iterate device MCP tools — writes code that runs on devices with
+    # native access, so it sits at the assistant_admin tier.
+    "device_mcp.manage": ROLE_ASSISTANT_ADMIN,
 }
 
 

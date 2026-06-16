@@ -247,6 +247,10 @@ def register_agent_socket_events():
 
             push_type = device_type_of(agents[sid])
             if owner_user_id is not None and push_type in ('desktop', 'browser'):
+                # Join the device room so future edits (from any process) can push
+                # via the socket relay, not just the gateway-local agents map.
+                from api.device_live import device_tool_room
+                await sio.enter_room(sid, device_tool_room(owner_user_id, push_type))
                 # Auto-seed: mirror the device's reported native catalog into the
                 # DB once (idempotent) so the whole tool surface is web-editable,
                 # then push the (seeded + operator-edited) set back down.
