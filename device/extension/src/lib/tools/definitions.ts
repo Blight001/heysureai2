@@ -10,7 +10,14 @@
 // 这是分组的唯一来源——popup、服务器、Web 端都应按它归类，不要再各写一份名单。
 //
 // 状态管理类（tab/cookie/storage/session/profile/history）此前按「资源 × 动作」拆成
-// 一堆同质工具，现在收敛为「单工具 + action 参数」，把 47 个收敛到 34 个。
+// 一堆同质工具，现在收敛为「单工具 + action 参数」。在此基础上进一步聚合：
+//   · browser_action —— 把点击/双击/右键/滚动/输入文本/键盘按键这些「页面交互」
+//     动作合并为单工具 + action 参数（click/double_click/right_click/scroll/type/press_key）。
+//   · browser_tab    —— 把「页面级操作」并入标签页管理：在原 list/open/close 之外
+//     新增 navigate（跳转 URL）、back/forward（前进后退），即「获取已开页面 + 跳转 +
+//     前进后退」一站式。
+// 旧的独立工具名（browser_click / browser_navigate / browser_history …）仍可被调用，
+// 经 browser.ts 的 LEGACY_ALIASES 翻译到合并后的「工具 + action」形式，行为不变。
 //
 // 感知精简：新增 browser_observe 作为「点击前的主感知」——只返回用户当前能看到、未被
 // 遮挡的可交互元素（带编号 id + 中心坐标），配合 browser_screenshot 形成「看图按编号点」
@@ -39,18 +46,8 @@ export const SEARCH_ENGINES: Record<string, string> = {
 // 顺序即展示顺序，已按分类编排（见文件底部 BROWSER_TOOL_CATEGORIES）。
 export const BROWSER_TOOLS: AIToolDef[] = [
   // ───── 导航与搜索 ─────────────────────────────────────────────────────
-  {
-    name: 'browser_navigate',
-    description: '在当前浏览器标签页打开指定 URL，页面加载完成后返回。用途：跳转到目标网址开始一段浏览任务。场景：进入登录页、打开文章、跳转到后台管理页等。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        url:     { type: 'string',  description: '要打开的绝对 URL（需包含 http(s)://）。' },
-        new_tab: { type: 'boolean', description: '为 true 时在新标签页打开，而不是替换当前页。' },
-      },
-      required: ['url'],
-    },
-  },
+  // 注意：跳转 URL（navigate）、前进/后退（back/forward）、列出已打开标签（list）等
+  // 「页面级操作」已并入 browser_tab（见文件下方「浏览器状态/标签页」）。
   {
     name: 'browser_search',
     description: '用主流搜索引擎检索网络。用途：在浏览器内发起一次站点搜索。场景：用 Google/Bing/百度等查资料；注意这会真正打开搜索结果页（与服务器端 workspace.search 的纯数据检索不同）。',
@@ -65,17 +62,6 @@ export const BROWSER_TOOLS: AIToolDef[] = [
         },
       },
       required: ['query'],
-    },
-  },
-  {
-    name: 'browser_history',
-    description: '在当前标签的浏览历史中后退或前进一步。用途：在已访问过的页面间回退/前进。场景：误入详情页后退回列表（back）、后退后又想回到刚才的页面（forward）。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        action: { type: 'string', enum: ['back', 'forward'], description: '历史动作：back 后退一步、forward 前进一步。' },
-      },
-      required: ['action'],
     },
   },
 
@@ -172,74 +158,39 @@ export const BROWSER_TOOLS: AIToolDef[] = [
 
   // ───── 页面交互 ───────────────────────────────────────────────────────
   {
-    name: 'browser_click',
-    description: '点击 click 页面元素，会派发完整的指针+鼠标事件序列（pointerdown/mousedown/…/click），兼容自定义组件。定位优先级：ref（browser_observe 的编号，最稳）> selector > 可见文本 > 坐标。非坐标点击会先做遮挡检测：若目标被弹窗/遮罩/广告盖住，返回 occluded 诊断而不是误点背景元素（需穿透点击可传 force:true）。用途：触发按钮、链接、勾选框等交互。场景：先 browser_observe 再用 ref 点「登录」「下一步」、展开菜单、打开条目。',
+    name: 'browser_action',
+    description: '页面交互聚合工具：用 action 指定要做的动作——点击 click（单击）、双击 double_click、右键 right_click、滚动 scroll、输入文本 type、键盘按键 press_key。各动作的参数与原 browser_click/double_click/right_click/scroll/type/press_key 一致，按 action 取用对应字段即可。\n' +
+      '· click：派发完整指针+鼠标事件序列，兼容自定义组件；定位优先级 ref（browser_observe 编号，最稳）> selector > text > 坐标；非坐标点击会先做遮挡检测，被弹窗/遮罩盖住时返回 occluded 诊断（需穿透点击传 force:true）。\n' +
+      '· double_click / right_click：双击、右键（上下文菜单），用 selector / text / 坐标定位。\n' +
+      '· scroll：滚动页面，返回滚动后的位置、移动像素数与进入视野的小节/标题。\n' +
+      '· type：向 input/textarea 输入文本（单字段；多字段用 browser_fill_form）。\n' +
+      '· press_key：在焦点元素或指定 selector 上按键，可带 Ctrl/Shift/Alt/Meta 修饰键。\n' +
+      '用途：统一的点击/滚动/输入/键盘入口。场景：先 browser_observe 拿到编号，再 browser_action {action:"click", ref:id} 点击；输入用 {action:"type"}；快捷键用 {action:"press_key"}。',
     input_schema: {
       type: 'object',
       properties: {
-        ref:      { type: 'number', description: 'browser_observe 返回的元素编号 id。最稳的定位方式，优先使用。' },
-        selector: { type: 'string', description: '目标元素的 CSS selector。' },
-        text:     { type: 'string', description: '要点击元素的可见文本。' },
-        x:        { type: 'number', description: 'X 坐标（像素，视口坐标）。会点击该点最顶层的元素。' },
-        y:        { type: 'number', description: 'Y 坐标（像素，视口坐标）。' },
-        force:    { type: 'boolean', description: '为 true 时即使目标被遮挡也强制点击。默认 false：被遮挡时返回 occluded 诊断，提示先关闭遮挡层。' },
+        action:      { type: 'string', enum: ['click', 'double_click', 'right_click', 'scroll', 'type', 'press_key'], description: '要执行的交互动作。' },
+        // 通用定位（click/double_click/right_click 用；type/press_key 可用 selector 聚焦）
+        ref:         { type: 'number',  description: 'action=click 时 browser_observe 返回的元素编号 id，最稳的定位方式，优先使用。' },
+        selector:    { type: 'string',  description: '目标元素的 CSS selector（click/double_click/right_click 定位；type 指定输入框；press_key 指定先聚焦的元素；scroll 可指定滚动进视口的元素）。' },
+        text:        { type: 'string',  description: 'action=click/double_click/right_click 时用可见文本定位元素；action=type 时为「要输入的文本」。' },
+        x:           { type: 'number',  description: 'click/double_click/right_click 的 X 坐标（像素，视口坐标）。' },
+        y:           { type: 'number',  description: 'click/double_click/right_click 的 Y 坐标（像素，视口坐标）。' },
+        force:       { type: 'boolean', description: 'action=click 时为 true 即使被遮挡也强制点击；默认 false：被遮挡返回 occluded 诊断。' },
+        // scroll
+        direction:   { type: 'string',  enum: ['up', 'down', 'top', 'bottom'], description: 'action=scroll 的方向：up 上、down 下、top 到顶、bottom 到底。' },
+        amount:      { type: 'number',  description: 'action=scroll 的滚动像素数。默认 400。' },
+        // type
+        clear_first: { type: 'boolean', description: 'action=type 时输入前先清空字段。默认 true。' },
+        submit:      { type: 'boolean', description: 'action=type 时输入后按回车提交。' },
+        // press_key
+        key:         { type: 'string',  description: 'action=press_key 的键名，如 "Enter"、"Escape"、"Tab"、"ArrowDown"、"a"。' },
+        ctrl:        { type: 'boolean', description: 'action=press_key 时按住 Ctrl。' },
+        shift:       { type: 'boolean', description: 'action=press_key 时按住 Shift。' },
+        alt:         { type: 'boolean', description: 'action=press_key 时按住 Alt。' },
+        meta:        { type: 'boolean', description: 'action=press_key 时按住 Meta/Cmd。' },
       },
-    },
-  },
-  {
-    name: 'browser_double_click',
-    description: '双击 double-click 元素，可用 CSS selector、可见文本或坐标定位（如选中一个词或打开某项）。用途：需要双击才生效的交互。场景：双击选词、双击打开文件项。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        selector: { type: 'string', description: '目标元素的 CSS selector。' },
-        text:     { type: 'string', description: '元素的可见文本。' },
-        x:        { type: 'number', description: 'X 坐标（像素）。' },
-        y:        { type: 'number', description: 'Y 坐标（像素）。' },
-      },
-    },
-  },
-  {
-    name: 'browser_right_click',
-    description: '在元素上右键 right-click（打开上下文菜单），可用 CSS selector、可见文本或坐标定位。用途：触发右键菜单。场景：打开「在新标签打开」「检查」等上下文操作。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        selector: { type: 'string', description: '目标元素的 CSS selector。' },
-        text:     { type: 'string', description: '元素的可见文本。' },
-        x:        { type: 'number', description: 'X 坐标（像素）。' },
-        y:        { type: 'number', description: 'Y 坐标（像素）。' },
-      },
-    },
-  },
-  {
-    name: 'browser_type',
-    description: '向输入框 input 或文本域 textarea 输入文本。用途：填写单个字段。场景：输入用户名、搜索词、表单单项（多项请用 browser_fill_form）。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        selector:    { type: 'string',  description: '目标输入框的 CSS selector。' },
-        text:        { type: 'string',  description: '要输入的文本。' },
-        clear_first: { type: 'boolean', description: '输入前先清空字段。默认 true。' },
-        submit:      { type: 'boolean', description: '输入后按回车提交。' },
-      },
-      required: ['text'],
-    },
-  },
-  {
-    name: 'browser_press_key',
-    description: '在焦点元素或指定 selector 上按下某个键（可带修饰键）。用途：键盘交互。场景：按 Enter 提交、Escape 关闭、Tab 切换、方向键、Ctrl+A 等快捷键。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        key:      { type: 'string', description: '键名，如 "Enter"、"Escape"、"Tab"、"ArrowDown"、"a"。' },
-        selector: { type: 'string', description: '可选：按键前先聚焦的 CSS selector。' },
-        ctrl:     { type: 'boolean', description: '按住 Ctrl。' },
-        shift:    { type: 'boolean', description: '按住 Shift。' },
-        alt:      { type: 'boolean', description: '按住 Alt。' },
-        meta:     { type: 'boolean', description: '按住 Meta/Cmd。' },
-      },
-      required: ['key'],
+      required: ['action'],
     },
   },
   {
@@ -249,19 +200,6 @@ export const BROWSER_TOOLS: AIToolDef[] = [
       type: 'object',
       properties: { selector: { type: 'string', description: '要悬停元素的 CSS selector。' } },
       required: ['selector'],
-    },
-  },
-  {
-    name: 'browser_scroll',
-    description: '滚动当前页面，返回滚动后的位置（scrollY、百分比、是否到顶/到底）、实际移动的像素数，以及当前进入视野的小节/标题——让你知道滚到了哪、变化了什么。用途：浏览长页面。场景：逐屏阅读、加载懒加载内容、滚到页尾。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        direction: { type: 'string', enum: ['up', 'down', 'top', 'bottom'], description: '滚动方向：up 上、down 下、top 到顶、bottom 到底。' },
-        amount:    { type: 'number', description: '滚动像素数。默认 400。' },
-        selector:  { type: 'string', description: '可选：把该元素滚动进视口，替代按 amount 滚动。' },
-      },
-      required: ['direction'],
     },
   },
   {
@@ -426,13 +364,14 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   // ───── 浏览器状态（资源 + action）────────────────────────────────────
   {
     name: 'browser_tab',
-    description: '管理浏览器标签页：列出、新开或关闭。用途：在多标签间组织工作。场景：查看有哪些标签（list）、并行打开网址（open）、完成后关闭标签（close）。',
+    description: '浏览器标签页与页面级导航聚合工具：列出已打开页面、新开/关闭标签，以及在当前标签内跳转 URL、前进、后退。用途：组织多标签并完成页面跳转。场景：查看有哪些标签（list）、并行打开网址（open）、完成后关闭标签（close）、跳到目标网址开始任务（navigate）、在浏览历史里回退/前进（back/forward）。',
     input_schema: {
       type: 'object',
       properties: {
-        action: { type: 'string', enum: ['list', 'open', 'close'], description: '动作：list 列出所有标签、open 用 url 新开标签、close 关闭 tab_id（不传则当前标签）。' },
-        url:    { type: 'string', description: 'action=open 时要打开的 URL。' },
-        tab_id: { type: 'number', description: 'action=close 时要关闭的标签 ID；不传则关闭当前活动标签。' },
+        action:  { type: 'string', enum: ['list', 'open', 'close', 'navigate', 'back', 'forward'], description: '动作：list 列出所有标签、open 用 url 新开标签、close 关闭 tab_id（不传则当前标签）、navigate 在当前标签打开 url（new_tab:true 则新开）、back 后退一步、forward 前进一步。' },
+        url:     { type: 'string',  description: 'action=open / navigate 时要打开的 URL（navigate 需为绝对地址，缺协议时按 https 补全）。' },
+        new_tab: { type: 'boolean', description: 'action=navigate 时为 true 在新标签页打开，而不是替换当前页。' },
+        tab_id:  { type: 'number',  description: 'action=close 时要关闭的标签 ID；不传则关闭当前活动标签。' },
       },
       required: ['action'],
     },
@@ -517,7 +456,8 @@ export const BROWSER_TOOL_CATEGORIES: BrowserToolCategory[] = [
   {
     title: '导航与搜索',
     kind: 'basic',
-    tools: ['browser_navigate', 'browser_search', 'browser_history'],
+    // browser_tab 现已涵盖跳转 URL / 前进后退 / 列出标签等页面级导航，归入此类。
+    tools: ['browser_tab', 'browser_search'],
   },
   {
     title: '页面观察',
@@ -530,10 +470,9 @@ export const BROWSER_TOOL_CATEGORIES: BrowserToolCategory[] = [
   {
     title: '页面交互',
     kind: 'basic',
+    // browser_action 聚合了点击/双击/右键/滚动/输入/键盘按键。
     tools: [
-      'browser_click', 'browser_double_click', 'browser_right_click',
-      'browser_type', 'browser_press_key', 'browser_hover',
-      'browser_scroll', 'browser_wait', 'browser_drag',
+      'browser_action', 'browser_hover', 'browser_wait', 'browser_drag',
       'browser_fill_form', 'browser_select', 'browser_close_popup',
     ],
   },
@@ -548,7 +487,7 @@ export const BROWSER_TOOL_CATEGORIES: BrowserToolCategory[] = [
   {
     title: '浏览器状态',
     kind: 'special',
-    tools: ['browser_tab', 'browser_cookie', 'browser_storage', 'browser_session'],
+    tools: ['browser_cookie', 'browser_storage', 'browser_session'],
   },
 ]
 

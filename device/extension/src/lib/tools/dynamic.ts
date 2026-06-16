@@ -225,7 +225,7 @@ export const DYNAMIC_MCP_MANAGER_DEF: AIToolDef = {
     type: 'object',
     properties: {
       action: { type: 'string', enum: ['list', 'get', 'inspect', 'get_source', 'upsert', 'delete', 'reload'], description: '管理动作。inspect 默认返回实现源码；get_source 可按工具名读取全部相关源码。' },
-      name: { type: 'string', description: 'MCP 名称，如 browser_click 或 custom.collect_page。get_source 只传名称即可读取源码。' },
+      name: { type: 'string', description: 'MCP 名称，如 browser_action 或 custom.collect_page。get_source 只传名称即可读取源码。' },
       source_path: { type: 'string', description: '可选相对源码路径；读取失败但提供 name 时会自动按工具名查找。' },
       include_source: { type: 'boolean', description: 'inspect 是否附带完整源码，默认 true。' },
       expected_revision: { type: 'string', description: 'get 返回的修订哈希；更新/删除时用于防止覆盖并发修改。' },

@@ -56,24 +56,25 @@ const dirty = computed(() => {
   return false
 })
 
-// 分类与扩展端 BROWSER_TOOL_CATEGORIES 保持一致。状态管理类工具已合并为
-// browser_tab / browser_cookie / browser_storage / browser_session /
-// browser_profile（带 action 参数），下面同时兼容历史的按动词拆分旧名。
+// 分类与扩展端 BROWSER_TOOL_CATEGORIES 保持一致。页面交互类已合并为 browser_action
+// （点击/双击/右键/滚动/输入/按键），页面级导航（跳转 URL/前进后退/列出标签）并入
+// browser_tab，状态管理类合并为 browser_cookie / browser_storage / browser_session /
+// browser_profile（均带 action 参数）。下面同时兼容历史的按动词拆分旧名。
 const browserIntro = (tool: string) => {
-  if (['browser_navigate', 'browser_search', 'browser_history'].includes(tool) || tool.startsWith('browser_history_')) {
-    return '浏览器导航类工具，用于打开页面、搜索、前进或后退。'
+  if (['browser_tab', 'browser_search', 'browser_navigate', 'browser_history'].includes(tool) || tool.startsWith('browser_history_') || tool.startsWith('browser_tab_')) {
+    return '浏览器导航类工具，用于管理标签页、打开页面、搜索、跳转 URL、前进或后退。'
   }
   if (['browser_screenshot', 'browser_get_content', 'browser_dom_snapshot', 'browser_page_info', 'browser_find_text', 'browser_find_popups', 'browser_performance', 'browser_network_log', 'browser_iframe_list'].includes(tool)) {
     return '浏览器观察类工具，用于截图、读取页面内容、查看页面结构与状态。'
   }
-  if (['browser_click', 'browser_double_click', 'browser_right_click', 'browser_type', 'browser_press_key', 'browser_hover', 'browser_scroll', 'browser_wait', 'browser_drag', 'browser_fill_form', 'browser_select', 'browser_close_popup'].includes(tool)) {
-    return '浏览器交互类工具，用于点击、输入、滚动、选择、拖拽与关闭弹窗。'
+  if (['browser_action', 'browser_click', 'browser_double_click', 'browser_right_click', 'browser_type', 'browser_press_key', 'browser_hover', 'browser_scroll', 'browser_wait', 'browser_drag', 'browser_fill_form', 'browser_select', 'browser_close_popup'].includes(tool)) {
+    return '浏览器交互类工具，用于点击、双击、右键、输入、滚动、按键、选择、拖拽与关闭弹窗。'
   }
   if (['browser_evaluate', 'browser_extract', 'browser_clipboard_write', 'browser_file_upload', 'browser_download'].includes(tool)) {
     return '浏览器数据类工具，用于执行脚本、提取数据、读写剪贴板、上传或下载文件。'
   }
-  if (['browser_tab', 'browser_cookie', 'browser_storage', 'browser_session', 'browser_profile'].includes(tool) || /^browser_(tab|cookie|storage|session|profile)_/.test(tool)) {
-    return '浏览器状态类工具，用于管理标签页、Cookie、本地存储、会话快照与逻辑 profile。'
+  if (['browser_cookie', 'browser_storage', 'browser_session', 'browser_profile'].includes(tool) || /^browser_(cookie|storage|session|profile)_/.test(tool)) {
+    return '浏览器状态类工具，用于管理 Cookie、本地存储、会话快照与逻辑 profile。'
   }
   return '浏览器能力工具，用于当前页面或标签页相关的自动化操作。'
 }

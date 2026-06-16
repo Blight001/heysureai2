@@ -97,18 +97,21 @@ const getEndpointCapabilityTag = (name: string) => {
 
   // 浏览器工具分类与扩展端 BROWSER_TOOL_CATEGORIES 保持一致（单一来源在
   // device/extension/.../definitions.ts；Web 端无法直接 import 扩展代码，故镜像于此）。
-  // 兼容旧的按动词拆分的工具名（browser_cookie_get 等），它们已被合并为
-  // browser_cookie 等带 action 的工具，但历史 scope 里可能仍存有旧名。
+  // 兼容旧的按动词拆分的工具名（browser_cookie_get、browser_click 等），它们已被合并为
+  // 带 action 的工具（browser_tab / browser_action / browser_cookie 等），但历史 scope
+  // 里可能仍存有旧名。
   // 浏览器端来源本身已是「浏览器 MCP」，故标签去掉冗余的「浏览器」前缀，
   // 直接作为来源下的二级分组（导航 / 观察 / 交互 / 数据 / 状态 / 卡片）。
-  if (['browser_navigate', 'browser_search', 'browser_history', 'browser_history_back', 'browser_history_forward'].includes(name)) return '导航'
+  // browser_tab 现已涵盖跳转 URL / 前进后退 / 列出标签等页面级导航，归入「导航」。
+  if (['browser_tab', 'browser_search', 'browser_navigate', 'browser_history', 'browser_history_back', 'browser_history_forward', 'browser_tab_list', 'browser_tab_open', 'browser_tab_close', 'browser_tab_navigate', 'browser_tab_back', 'browser_tab_forward'].includes(name)) return '导航'
   if (['browser_screenshot', 'browser_get_content', 'browser_dom_snapshot', 'browser_page_info', 'browser_find_text', 'browser_find_popups', 'browser_performance', 'browser_network_log', 'browser_iframe_list'].includes(name)) return '观察'
-  if (['browser_click', 'browser_double_click', 'browser_right_click', 'browser_type', 'browser_press_key', 'browser_hover', 'browser_scroll', 'browser_wait', 'browser_drag', 'browser_fill_form', 'browser_select', 'browser_close_popup'].includes(name)) return '交互'
+  // browser_action 聚合了点击/双击/右键/滚动/输入/键盘按键。
+  if (['browser_action', 'browser_click', 'browser_double_click', 'browser_right_click', 'browser_type', 'browser_press_key', 'browser_hover', 'browser_scroll', 'browser_wait', 'browser_drag', 'browser_fill_form', 'browser_select', 'browser_close_popup'].includes(name)) return '交互'
   if (['browser_evaluate', 'browser_extract', 'browser_clipboard_write', 'browser_file_upload', 'browser_download'].includes(name)) return '数据'
-  if (['browser_tab', 'browser_cookie', 'browser_storage', 'browser_session', 'browser_profile'].includes(name)) return '状态'
+  if (['browser_cookie', 'browser_storage', 'browser_session', 'browser_profile'].includes(name)) return '状态'
   if (hasMcpPrefix(name, 'card')) return '卡片'
   // 旧的按动词拆分工具名一律归到「状态」。
-  if (/^browser_(tab|cookie|storage|session|profile)_/.test(name)) return '状态'
+  if (/^browser_(cookie|storage|session|profile)_/.test(name)) return '状态'
   if (hasMcpPrefix(name, 'browser')) return '观察'
 
   return ''
