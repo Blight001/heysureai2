@@ -13,6 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'close'): void
+  (e: 'manage-device-tools'): void
 }>()
 
 const sections = computed(() => {
@@ -148,7 +149,16 @@ watch(() => props.show, (show) => {
   <Transition name="fade">
     <div v-if="props.show" class="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center" @click="emit('close')">
       <div class="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700 w-[560px] max-h-[75vh] p-4 overflow-auto" @click.stop>
-        <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-100 mb-3">{{ props.title }} 的 MCP 工具说明</div>
+        <div class="mb-3 flex items-center justify-between gap-2">
+          <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{{ props.title }} 的 MCP 工具说明</div>
+          <button
+            type="button"
+            class="shrink-0 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+            @click="emit('manage-device-tools')"
+          >
+            管理设备动态 MCP
+          </button>
+        </div>
         <div class="mb-3 rounded-lg border border-indigo-200/80 bg-indigo-50/70 px-3 py-2.5 dark:border-indigo-900/60 dark:bg-indigo-950/20">
           <div class="mb-2 flex items-center justify-between gap-2">
             <div class="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">基础 MCP 介绍</div>
