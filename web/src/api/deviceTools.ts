@@ -90,3 +90,35 @@ export const restoreDeviceToolVersion = (deviceType: DeviceToolType, versionId: 
     { device_type: deviceType, version_id: versionId },
     { fallbackError: '回滚失败' },
   )
+
+export interface DeviceToolStat {
+  tool: string
+  total: number
+  failures: number
+  failure_rate: number
+  last_called_at: number
+  last_failure_at: number
+  last_error: string
+}
+
+export interface DeviceToolFailure {
+  tool: string
+  error: string
+  ai_config_id: number | null
+  session_id: string
+  run_id: string
+  message_id: number | null
+  created_at: number
+}
+
+export const listDeviceToolStats = (deviceType: DeviceToolType) =>
+  get<{ deviceType: DeviceToolType; stats: DeviceToolStat[] }>(
+    '/api/device-tools/stats',
+    { query: { device_type: deviceType }, fallbackError: '调用统计加载失败' },
+  )
+
+export const listDeviceToolFailures = (name: string) =>
+  get<{ name: string; failures: DeviceToolFailure[] }>(
+    '/api/device-tools/failures',
+    { query: { name }, fallbackError: '失败记录加载失败' },
+  )

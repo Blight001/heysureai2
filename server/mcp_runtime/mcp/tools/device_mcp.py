@@ -56,6 +56,15 @@ async def _device_mcp_manage(user_id: int, args: Dict[str, Any], ai_config_id: O
         if not tool:
             return {"ok": False, "error": f"tool not found: {name}"}
         return {"ok": True, "tool": tool}
+    if action == "stats":
+        from api.services import mcp_stats
+
+        tool_names = [t["name"] for t in dyn.list_tools(user_id, device_type)]
+        return {"ok": True, "deviceType": device_type, "stats": mcp_stats.tool_stats(user_id, tool_names)}
+    if action == "failures":
+        from api.services import mcp_stats
+
+        return {"ok": True, "name": name, "failures": mcp_stats.recent_failures(user_id, name)}
     if action == "history":
         return {"ok": True, "name": name, "versions": dyn.list_versions(user_id, device_type, name)}
     if action == "get_version":
@@ -99,10 +108,11 @@ DEVICE_MCP_MANAGE_SCHEMA: Dict[str, Any] = {
     "properties": {
         "action": {
             "type": "string",
-            "enum": ["list", "get", "capabilities", "upsert", "delete", "history", "get_version", "restore"],
+            "enum": ["list", "get", "capabilities", "upsert", "delete", "history", "get_version", "restore", "stats", "failures"],
             "description": (
                 "list 列出工具；get 读单个；capabilities 列出该设备类型可调用的原生能力；upsert 创建/修改；delete 删除；"
-                "history 查某工具的历史版本；get_version 读某版本完整内容；restore 回滚到指定版本（改坏了用它）。"
+                "history 查某工具的历史版本；get_version 读某版本完整内容；restore 回滚到指定版本（改坏了用它）；"
+                "stats 查各工具调用次数与失败率；failures 查某工具最近失败（含出错的对话 session/run/message 位置），用于追踪并调整。"
             ),
         },
         "device_type": {"type": "string", "enum": ["desktop", "browser"], "description": "目标设备类型。"},

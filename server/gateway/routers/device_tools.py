@@ -108,6 +108,35 @@ async def toggle_device_tool(
     return {"tool": tool, "pushedToDevices": reached}
 
 
+@router.get("/stats")
+async def device_tool_stats(
+    device_type: str = Query(...),
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    from api.services import mcp_stats
+
+    try:
+        dtype = dyn.normalize_device_type(device_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    tool_names = [t["name"] for t in dyn.list_tools(user.id, dtype)]
+    return {"deviceType": dtype, "stats": mcp_stats.tool_stats(user.id, tool_names)}
+
+
+@router.get("/failures")
+async def device_tool_failures(
+    name: str = Query(...),
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    from api.services import mcp_stats
+
+    return {"name": name, "failures": mcp_stats.recent_failures(user.id, name)}
+
+
 @router.get("/versions")
 async def list_device_tool_versions(
     device_type: str = Query(...),

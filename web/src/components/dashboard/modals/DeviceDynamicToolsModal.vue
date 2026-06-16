@@ -7,9 +7,13 @@ import {
   deleteDeviceTool,
   listDeviceToolVersions,
   restoreDeviceToolVersion,
+  listDeviceToolStats,
+  listDeviceToolFailures,
   type DeviceToolType,
   type DeviceDynamicTool,
   type DeviceToolVersion,
+  type DeviceToolStat,
+  type DeviceToolFailure,
   type DynamicToolStep,
 } from '@/api/deviceTools'
 
@@ -25,6 +29,7 @@ const NAME_RE = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$/
 const deviceType = ref<DeviceToolType>('desktop')
 const tools = ref<DeviceDynamicTool[]>([])
 const availableTools = ref<{ name: string; description: string }[]>([])
+const statsByTool = ref<Record<string, DeviceToolStat>>({})
 const loading = ref(false)
 const error = ref('')
 const notice = ref('')
@@ -68,12 +73,42 @@ const load = async () => {
     const data = await listDeviceTools(deviceType.value)
     tools.value = data.tools || []
     availableTools.value = data.availableTools || []
+    try {
+      const s = await listDeviceToolStats(deviceType.value)
+      statsByTool.value = Object.fromEntries((s.stats || []).map(st => [st.tool, st]))
+    } catch {
+      statsByTool.value = {}
+    }
   } catch (err: any) {
     error.value = err?.message || '加载失败'
   } finally {
     loading.value = false
   }
 }
+
+const failures = ref<DeviceToolFailure[]>([])
+const failuresOpen = ref(false)
+const failuresLoading = ref(false)
+
+const loadFailures = async () => {
+  if (!draft.value?.original) { failures.value = []; return }
+  failuresLoading.value = true
+  try {
+    const data = await listDeviceToolFailures(draft.value.original)
+    failures.value = data.failures || []
+  } catch (err: any) {
+    error.value = err?.message || '失败记录加载失败'
+  } finally {
+    failuresLoading.value = false
+  }
+}
+
+const toggleFailures = () => {
+  failuresOpen.value = !failuresOpen.value
+  if (failuresOpen.value && !failures.value.length) loadFailures()
+}
+
+const ratePct = (s?: DeviceToolStat) => (s ? Math.round((s.failure_rate || 0) * 100) : 0)
 
 watch(() => props.show, value => { if (value) { draft.value = null; notice.value = ''; load() } }, { immediate: true })
 watch(deviceType, () => { draft.value = null; notice.value = ''; load() })
@@ -102,6 +137,8 @@ const newTool = () => {
   }
   versions.value = []
   versionsOpen.value = false
+  failures.value = []
+  failuresOpen.value = false
   notice.value = ''
   error.value = ''
 }
@@ -133,6 +170,8 @@ const editTool = (tool: DeviceDynamicTool) => {
   if (isJsMode.value && !draft.value.js.trim()) draft.value.js = JS_TEMPLATE
   versions.value = []
   versionsOpen.value = false
+  failures.value = []
+  failuresOpen.value = false
   notice.value = ''
   error.value = ''
 }
@@ -324,6 +363,14 @@ const addParam = () => draft.value?.params.push({ name: '', type: 'string', desc
                   <div class="font-mono text-[11px] font-semibold text-zinc-800 dark:text-zinc-100 truncate">{{ tool.name }}</div>
                   <div class="text-[10px] text-zinc-500 dark:text-zinc-400 truncate">{{ tool.description }}</div>
                 </div>
+                <span
+                  v-if="statsByTool[tool.name]?.total"
+                  class="shrink-0 text-[10px] px-1.5 py-0.5 rounded"
+                  :class="(statsByTool[tool.name].failures || 0) > 0
+                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+                    : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'"
+                  :title="`调用 ${statsByTool[tool.name].total} 次，失败 ${statsByTool[tool.name].failures} 次`"
+                >失败 {{ statsByTool[tool.name].failures }}/{{ statsByTool[tool.name].total }}（{{ ratePct(statsByTool[tool.name]) }}%）</span>
                 <label class="flex items-center gap-1 text-[10px] text-zinc-500 cursor-pointer shrink-0">
                   <input type="checkbox" class="h-3.5 w-3.5 accent-indigo-500" :checked="tool.enabled" @change="toggle(tool)" />
                   启用
@@ -473,6 +520,35 @@ const addParam = () => draft.value?.params.push({ name: '', type: 'string', desc
                   <span class="text-[10px] text-zinc-500">{{ v.actor === 'ai' ? 'AI' : '网页' }}</span>
                   <span class="text-[10px] text-zinc-400 flex-1 truncate">{{ fmtTime(v.created_at) }} · {{ v.revision.slice(0, 8) }}</span>
                   <button type="button" class="text-[10px] text-indigo-600 dark:text-indigo-300 hover:underline shrink-0" @click="restore(v.version_id)">还原</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- failure trail (existing tools only): locate each failure in chat -->
+            <div v-if="draft.original" class="rounded-lg border border-zinc-200 dark:border-zinc-700">
+              <button type="button" class="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300" @click="toggleFailures">
+                <span>
+                  失败记录
+                  <span v-if="statsByTool[draft.original]?.total" class="text-zinc-400">
+                    （{{ statsByTool[draft.original].failures }}/{{ statsByTool[draft.original].total }} · {{ ratePct(statsByTool[draft.original]) }}%）
+                  </span>
+                </span>
+                <span class="text-zinc-400">{{ failuresOpen ? '收起' : '展开' }}</span>
+              </button>
+              <div v-if="failuresOpen" class="border-t border-zinc-200 dark:border-zinc-700 p-2 space-y-1 max-h-44 overflow-auto">
+                <div v-if="failuresLoading" class="text-[10px] text-zinc-400 py-2 text-center">加载中…</div>
+                <div v-else-if="!failures.length" class="text-[10px] text-zinc-400 py-2 text-center">暂无失败记录</div>
+                <div
+                  v-for="(f, i) in failures"
+                  :key="i"
+                  class="rounded border border-zinc-100 dark:border-zinc-800 px-2 py-1"
+                >
+                  <div class="text-[10px] text-rose-600 dark:text-rose-300 break-words">{{ f.error || '失败' }}</div>
+                  <div class="mt-0.5 text-[10px] text-zinc-400">
+                    {{ fmtTime(f.created_at) }} · 会话 <span class="font-mono">{{ f.session_id || '—' }}</span>
+                    <span v-if="f.message_id"> · 消息 #{{ f.message_id }}</span>
+                    <span v-if="f.ai_config_id"> · AI #{{ f.ai_config_id }}</span>
+                  </div>
                 </div>
               </div>
             </div>
