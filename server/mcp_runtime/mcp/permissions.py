@@ -45,7 +45,11 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "mcp.describe_tool": ROLE_MEMBER,
     # Web search — external read-only lookup, available to every tier by default.
     "workspace.search": ROLE_MEMBER,
-    # Workspace access is command-only. AI should use shell commands for file operations.
+    # Workspace file access is safer than shell for routine reads/edits.
+    "workspace.read_file": ROLE_MEMBER,
+    "workspace.write_file": ROLE_MANAGER,
+    "workspace.edit_file": ROLE_MANAGER,
+    # Shell command execution is powerful; keep it manager+.
     "workspace.run_command": ROLE_MANAGER,
     # Task — members run their own task; orchestration is manager+.
     "task.complete": ROLE_MEMBER,
@@ -193,7 +197,13 @@ def clamp_tools_json(user, tier: str, mcp_tools_json: Optional[str]) -> str:
     clamped: List[str] = []
     seen: Set[str] = set()
     for tool in requested:
-        if tool.startswith("workspace.") and tool not in {"workspace.search", "workspace.run_command"}:
+        if tool.startswith("workspace.") and tool not in {
+            "workspace.search",
+            "workspace.run_command",
+            "workspace.read_file",
+            "workspace.write_file",
+            "workspace.edit_file",
+        }:
             continue
         # Endpoint desktop/browser tools are governed exclusively by
         # AgentMcpPermission, not by AssistantAIConfig.mcp_tools.

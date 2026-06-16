@@ -14,14 +14,10 @@ DEFAULT_COMPRESSION_PROMPT = """你正在把一段较长的对话历史压缩成
 DEFAULT_UI_THEME_MODE = "dark"
 DEFAULT_UI_FONT_SIZE = "md"
 DEFAULT_UI_BRAIN_VIEW_MODE = "sections"
-DEFAULT_UI_THINKING_ICON = "🤔"
-DEFAULT_UI_MCP_ICON = "🧰"
-DEFAULT_UI_MCP_SUCCESS_ICON = "🧰"
-DEFAULT_UI_MCP_ERROR_ICON = "❌"
 
 DEFAULT_MODEL_PRESETS = """[{"id":"deepseek-chat","name":"DeepSeek Chat","api_key":"sk-cb40bc0b0b894934919907913e337927","base_url":"https://api.deepseek.com/chat/completions","model":"deepseek-chat"}]"""
 
-DEFAULT_MCP_NAMESPACE_HINTS = """{"mcp":"MCP 自省入口。可调用工具已在系统提示的[可用MCP工具]目录中列出；用 mcp.describe_tool（支持 tools 批量或 query 搜索）取参数 schema 后即可调用。","task":"任务系统。用于查看、创建、更新、删除、传承和完成任务。","workspace":"工作区与命令执行。用于检查文件、运行只读诊断命令或执行用户明确要求的工作区操作。","admin":"系统总览。用于查看在线智能体、运行状态和系统概况。","prompt":"Prompt 管理。用于读取或按权限修改 AI / 系统 prompt。","conversation":"会话管理。用于读取列表与详情、新建、删除、切换或编辑会话。","ai":"AI 间通信。用于向其他 AI 发送询问、回复、通知或协作消息。","user":"用户通知。用于向用户发送异步消息。","web":"联网搜索。用于查询外部或实时信息。","memory":"长期记忆。用于写入、检索、更新和归档结构化记忆。","project":"项目管理。用于查看或维护项目记录。"}"""
+DEFAULT_MCP_NAMESPACE_HINTS = """{"mcp":"MCP 自省入口。可调用工具已在系统提示的[可用MCP工具]目录中列出；用 mcp.describe_tool（支持 tools 批量或 query 搜索）取参数 schema 后即可调用。","task":"任务系统。用于查看、创建、更新、删除、传承和完成任务。","workspace":"工作区、文件读写编辑与命令执行。文件操作优先用 workspace.read_file / write_file / edit_file；只有需要运行程序或诊断命令时才用 run_command。","admin":"系统总览。用于查看在线智能体、运行状态和系统概况。","prompt":"Prompt 管理。用于读取或按权限修改 AI / 系统 prompt。","conversation":"会话管理。用于读取列表与详情、新建、删除、切换或编辑会话。","ai":"AI 间通信。用于向其他 AI 发送询问、回复、通知或协作消息。","user":"用户通知。用于向用户发送异步消息。","web":"联网搜索。用于查询外部或实时信息。","memory":"长期记忆。用于写入、检索、更新和归档结构化记忆。","project":"项目管理。用于查看或维护项目记录。"}"""
 
 DEFAULT_MCP_DYNAMIC_RULE = "系统提示的[可用MCP工具]目录会一次性列出全部可调用工具的名称与简介，模型据此直接定位。需要参数时用 mcp.describe_tool（支持 tool 单个、tools 批量或 query 关键词搜索）取 schema；被加载的目标工具会在随后轮次直接可调用。"
 
@@ -36,7 +32,7 @@ DEFAULT_MCP_CALL_METHOD = """When you want to call a tool, output one or more bl
 Rules:
 - Explain your intent in normal text first when helpful, then emit the MCP call block.
 - Do not assume tool arguments. The [可用MCP工具] catalog already lists every callable tool; use mcp.describe_tool (tool / tools / query) to load the schema for the ones you need, then call them.
-- Use workspace.run_command for workspace inspection, file reads, file writes, edits, deletion, and command execution.
+- Use workspace.read_file / workspace.write_file / workspace.edit_file for file reads, writes, block replacement, deletion, append, and prepend. Use workspace.run_command only for command execution or diagnostics.
 - Use admin.* tools when managing connected agents.
 - Only fall back to legacy File/Create File/Delete File/Run Command formats if MCP is unavailable."""
 

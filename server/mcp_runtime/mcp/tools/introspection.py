@@ -9,6 +9,9 @@ from api.device_presence import online_tool_defs_for_user
 from ..core import MCP_INTROSPECTION_TOOLS
 
 
+_TOOL_NAME_STOP_CHARS = (":", "：", "!", "！")
+
+
 def _tool_namespace(name: str) -> str:
     if "." in name:
         return name.split(".", 1)[0]
@@ -54,19 +57,73 @@ def _allowed_tool_names(user_id: int, ai_config_id: Optional[int]) -> set[str]:
     return allowed
 
 
-def _resolve_tool_alias(name: str, allowed: set[str]) -> str:
+def _describable_tool_names(endpoint_defs: Dict[str, Any]) -> set[str]:
+    from ..registry import registry
+
+    names = {str(item.get("name") or "").strip() for item in registry.list_tools() if item.get("name")}
+    names.update(str(name or "").strip() for name in endpoint_defs.keys() if str(name or "").strip())
+    return names
+
+
+def _resolve_tool_alias(name: str, available: set[str]) -> str:
     raw = str(name or "").strip()
-    if raw in allowed:
+    if raw in available:
         return raw
+
+    # Models sometimes copy a full catalog line back into describe_tool, e.g.
+    # "browser/browser_screenshot !: 对当前标签页截图...". Be forgiving and
+    # recover the concrete tool name before checking permissions.
+    candidates: list[str] = []
+    text = raw.lstrip("-*• \t`").strip()
+    if text:
+        candidates.append(text)
+        for stop in _TOOL_NAME_STOP_CHARS:
+            idx = text.find(stop)
+            if idx > 0:
+                candidates.append(text[:idx].strip())
+        head = text.split(None, 1)[0].strip()
+        if head:
+            candidates.append(head)
+
+    for candidate in candidates:
+        clean = candidate.strip().strip("`'\"，,;；")
+        if clean in available:
+            return clean
+        if "/" in clean:
+            suffix = clean.rsplit("/", 1)[-1].strip()
+            if suffix in available:
+                return suffix
+        if "." in clean:
+            suffix = clean.split(".", 1)[-1].strip()
+            if suffix in available:
+                return suffix
+            underscored = clean.replace(".", "_")
+            if underscored in available:
+                return underscored
+        if "__" in clean:
+            dotted = clean.replace("__", ".")
+            if dotted in available:
+                return dotted
+            underscored = clean.replace("__", "_")
+            if underscored in available:
+                return underscored
+
     # Native tool schemas replace characters outside [a-zA-Z0-9_-] with "__".
     # Accept that form here so models can pass the visible native name back to
     # mcp.describe_tool, e.g. workspace__search -> workspace.search.
     if "__" in raw:
         dotted = raw.replace("__", ".")
-        if dotted in allowed:
+        if dotted in available:
             return dotted
         underscored = raw.replace("__", "_")
-        if underscored in allowed:
+        if underscored in available:
+            return underscored
+    if "." in raw:
+        suffix = raw.split(".", 1)[-1].strip()
+        if suffix in available:
+            return suffix
+        underscored = raw.replace(".", "_")
+        if underscored in available:
             return underscored
     return raw
 
@@ -75,7 +132,7 @@ def _describe_one_tool(name: str, endpoint_defs: Dict[str, Any], user_id: int = 
     from ..registry import registry
     from connector_runtime.dispatch.desktop_device_tools import is_endpoint_agent_tool
 
-    if is_endpoint_agent_tool(name):
+    if name in endpoint_defs or is_endpoint_agent_tool(name):
         spec = endpoint_defs.get(name) or {}
         return {
             "name": name,
@@ -122,7 +179,7 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
     """
 
     endpoint_defs = online_tool_defs_for_user(user_id)
-    allowed = _allowed_tool_names(user_id, ai_config_id)
+    available = _describable_tool_names(endpoint_defs)
 
     requested: list[str] = []
     single = str(args.get("tool") or args.get("name") or "").strip()
@@ -137,11 +194,13 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
     query = str(args.get("query") or "").strip()
     is_batch = bool(raw_tools) or (len(requested) > 1)
 
-    # Keyword search mode: return schemas for every allowed tool that matches.
+    # Keyword search mode: return schemas for every known tool that matches.
+    # describe_tool is an introspection helper, so it does not apply the
+    # execution allow-list; actual tool execution still checks permissions.
     if query and not requested:
         needle = query.lower()
         matches: list[Dict[str, Any]] = []
-        for name in sorted(allowed):
+        for name in sorted(available):
             described = _describe_one_tool(name, endpoint_defs, user_id)
             haystack = f"{name} {described.get('description') or ''}".lower()
             if needle in haystack:
@@ -155,11 +214,19 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
 
     results: list[Dict[str, Any]] = []
     errors: list[Dict[str, str]] = []
+    seen_results: set[str] = set()
+    seen_errors: set[str] = set()
     for raw in requested:
-        resolved = _resolve_tool_alias(raw, allowed)
-        if resolved not in allowed:
-            errors.append({"requested_name": raw, "error": "Tool is not allowed for this AI"})
+        resolved = _resolve_tool_alias(raw, available)
+        if resolved not in available:
+            if raw in seen_errors:
+                continue
+            seen_errors.add(raw)
+            errors.append({"requested_name": raw, "error": "Unknown MCP tool"})
             continue
+        if resolved in seen_results:
+            continue
+        seen_results.add(resolved)
         described = _describe_one_tool(resolved, endpoint_defs, user_id)
         described["requested_name"] = raw
         results.append(described)
@@ -168,6 +235,6 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
     if not is_batch:
         if results:
             return results[0]
-        raise HTTPException(status_code=403, detail=f"Tool is not allowed for this AI: {requested[0]}")
+        raise HTTPException(status_code=404, detail=f"Unknown MCP tool: {requested[0]}")
 
     return {"count": len(results), "tools": results, "errors": errors}

@@ -10,17 +10,11 @@ from sqlmodel import Session, select
 
 from api.database import engine
 from api.integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
-from api.models import AssistantAIConfig, User
+from api.models import AssistantAIConfig
 from ._config import read_feishu_config
 
 FEISHU_OPEN_API_BASE = "https://open.feishu.cn/open-apis"
 _TOKEN_CACHE: Dict[int, Dict[str, Any]] = {}
-
-
-def _should_strip_markdown(user_id: int) -> bool:
-    with Session(engine) as session:
-        user = session.get(User, user_id)
-    return bool(getattr(user, "ui_plain_text_output_enabled", False))
 
 
 def normalize_feishu_text(text: str, *, strip_markdown: bool = True) -> str:
@@ -132,7 +126,7 @@ def send_feishu_text_message(
 ) -> Dict[str, Any]:
     cfg = _load_feishu_config(user_id, ai_config_id)
     bot_cfg = read_feishu_config(cfg)
-    text = normalize_feishu_text(text, strip_markdown=_should_strip_markdown(user_id))
+    text = normalize_feishu_text(text, strip_markdown=False)
     target_id = str(receive_id or bot_cfg.get("default_receive_id") or "").strip()
     target_type = str(receive_id_type or bot_cfg.get("default_receive_id_type") or "chat_id").strip()
     can_send_to_target = bool(target_id and bot_cfg.get("app_id") and bot_cfg.get("app_secret"))

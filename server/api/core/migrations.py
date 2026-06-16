@@ -495,7 +495,6 @@ def _migrate_rename_device_tables() -> None:
 
 def run_pending_migrations() -> None:
     _migrate_assistantaiconfig_strip_markdown_symbols()
-    _migrate_user_ui_plain_text_output_enabled()
     _migrate_user_email()
     _migrate_user_role()
     _migrate_endpointagentpresence_tool_defs()
@@ -529,11 +528,7 @@ def run_pending_migrations() -> None:
         DEFAULT_SUPERVISION_PROMPT,
         DEFAULT_UI_BRAIN_VIEW_MODE,
         DEFAULT_UI_FONT_SIZE,
-        DEFAULT_UI_MCP_ERROR_ICON,
-        DEFAULT_UI_MCP_ICON,
-        DEFAULT_UI_MCP_SUCCESS_ICON,
         DEFAULT_UI_THEME_MODE,
-        DEFAULT_UI_THINKING_ICON,
         DEFAULT_USER_MESSAGE_NOTICE,
     )
 
@@ -563,10 +558,6 @@ def run_pending_migrations() -> None:
             ui_theme_mode=DEFAULT_UI_THEME_MODE,
             ui_font_size=DEFAULT_UI_FONT_SIZE,
             ui_brain_view_mode=DEFAULT_UI_BRAIN_VIEW_MODE,
-            ui_thinking_icon=DEFAULT_UI_THINKING_ICON,
-            ui_mcp_icon=DEFAULT_UI_MCP_ICON,
-            ui_mcp_success_icon=DEFAULT_UI_MCP_SUCCESS_ICON,
-            ui_mcp_error_icon=DEFAULT_UI_MCP_ERROR_ICON,
             model_presets=DEFAULT_MODEL_PRESETS,
         )
         _migrate_assistantaiconfig(cursor)
@@ -630,34 +621,6 @@ def _migrate_chatmessagemedia_message_cascade() -> None:
             "ALTER TABLE chatmessagemedia "
             "ADD CONSTRAINT chatmessagemedia_message_id_fkey "
             "FOREIGN KEY (message_id) REFERENCES chatmessage(id) ON DELETE CASCADE"
-        )
-
-
-def _migrate_user_ui_plain_text_output_enabled() -> None:
-    from ..database import engine
-
-    if database_dialect() == "sqlite":
-        with engine.begin() as conn:
-            result = conn.exec_driver_sql("PRAGMA table_info(user)")
-            existing = {row[1] for row in result.fetchall()}
-            if "ui_plain_text_output_enabled" not in existing:
-                conn.exec_driver_sql(
-                    "ALTER TABLE user ADD COLUMN ui_plain_text_output_enabled BOOLEAN DEFAULT 0"
-                )
-            conn.exec_driver_sql(
-                "UPDATE user SET ui_plain_text_output_enabled = 0 "
-                "WHERE ui_plain_text_output_enabled IS NULL"
-            )
-        return
-
-    with engine.begin() as conn:
-        conn.exec_driver_sql(
-            'ALTER TABLE "user" '
-            "ADD COLUMN IF NOT EXISTS ui_plain_text_output_enabled BOOLEAN DEFAULT FALSE"
-        )
-        conn.exec_driver_sql(
-            'UPDATE "user" SET ui_plain_text_output_enabled = FALSE '
-            "WHERE ui_plain_text_output_enabled IS NULL"
         )
 
 
@@ -1047,10 +1010,6 @@ def _migrate_user(
     ui_theme_mode: str,
     ui_font_size: str,
     ui_brain_view_mode: str,
-    ui_thinking_icon: str,
-    ui_mcp_icon: str,
-    ui_mcp_success_icon: str,
-    ui_mcp_error_icon: str,
     model_presets: str,
 ) -> None:
     existing = _existing_columns(cursor, "user")
@@ -1078,13 +1037,6 @@ def _migrate_user(
     _add_column(cursor, "user", "ui_theme_mode", f"TEXT DEFAULT '{ui_theme_mode}'", existing)
     _add_column(cursor, "user", "ui_font_size", f"TEXT DEFAULT '{ui_font_size}'", existing)
     _add_column(cursor, "user", "ui_brain_view_mode", f"TEXT DEFAULT '{ui_brain_view_mode}'", existing)
-    _add_column(cursor, "user", "ui_thinking_icon", f"TEXT DEFAULT '{_quote(ui_thinking_icon)}'", existing)
-    _add_column(cursor, "user", "ui_mcp_icon", f"TEXT DEFAULT '{_quote(ui_mcp_icon)}'", existing)
-    _add_column(cursor, "user", "ui_mcp_success_icon", f"TEXT DEFAULT '{_quote(ui_mcp_success_icon)}'", existing)
-    _add_column(cursor, "user", "ui_mcp_error_icon", f"TEXT DEFAULT '{_quote(ui_mcp_error_icon)}'", existing)
-    _add_column(cursor, "user", "ui_thinking_icon_enabled", "BOOLEAN DEFAULT 1", existing)
-    _add_column(cursor, "user", "ui_mcp_success_icon_enabled", "BOOLEAN DEFAULT 1", existing)
-    _add_column(cursor, "user", "ui_mcp_error_icon_enabled", "BOOLEAN DEFAULT 1", existing)
 
     cursor.execute(
         f"UPDATE user SET ui_theme_mode = '{ui_theme_mode}' "

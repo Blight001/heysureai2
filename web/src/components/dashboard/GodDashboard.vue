@@ -62,13 +62,6 @@ const {
   themeMode,
   fontSize,
   brainViewMode,
-  plainTextOutputEnabled,
-  thinkingIcon,
-  mcpSuccessIcon,
-  mcpErrorIcon,
-  thinkingIconEnabled,
-  mcpSuccessIconEnabled,
-  mcpErrorIconEnabled,
   tavilyApiKey,
   modelPresets,
   mcpMaxSteps,
@@ -102,10 +95,6 @@ const {
   onRefreshUser: user => emit('refreshUser', user),
   mcpRoleMeta,
 })
-
-const effectiveThinkingIcon = computed(() => thinkingIconEnabled.value ? thinkingIcon.value : '')
-const effectiveMcpSuccessIcon = computed(() => mcpSuccessIconEnabled.value ? mcpSuccessIcon.value : '')
-const effectiveMcpErrorIcon = computed(() => mcpErrorIconEnabled.value ? mcpErrorIcon.value : '')
 
 let resolveMcpAutoApprove = (_configId?: number) => false
 const {
@@ -579,10 +568,6 @@ onUnmounted(() => {
               :aiConfigId="chatTarget.aiConfigId"
               :aiKind="chatTargetAiKind"
               :mcpAutoApprove="!!chatTarget.mcpAutoApprove"
-              :thinkingIcon="effectiveThinkingIcon"
-              :mcpIcon="effectiveMcpSuccessIcon"
-              :mcpSuccessIcon="effectiveMcpSuccessIcon"
-              :mcpErrorIcon="effectiveMcpErrorIcon"
               :mcpDynamicRule="mcpDynamicRule"
             :selectedFiles="selectedFiles"
             :allFiles="allFiles"
@@ -634,13 +619,6 @@ onUnmounted(() => {
       v-model:promptUserMessageNotice="promptUserMessageNotice"
       v-model:themeMode="themeMode"
       v-model:fontSize="fontSize"
-      v-model:thinkingIcon="thinkingIcon"
-      v-model:mcpSuccessIcon="mcpSuccessIcon"
-      v-model:mcpErrorIcon="mcpErrorIcon"
-      v-model:thinkingIconEnabled="thinkingIconEnabled"
-      v-model:mcpSuccessIconEnabled="mcpSuccessIconEnabled"
-      v-model:mcpErrorIconEnabled="mcpErrorIconEnabled"
-      v-model:plainTextOutputEnabled="plainTextOutputEnabled"
       v-model:tavilyApiKey="tavilyApiKey"
       v-model:modelPresets="modelPresets"
       v-model:mcpMaxSteps="mcpMaxSteps"

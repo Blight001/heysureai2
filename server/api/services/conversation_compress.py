@@ -10,9 +10,11 @@ tagged ``compressed_away`` so the runtime excludes them from the model context o
 subsequent turns, while the most recent few messages are kept verbatim.
 """
 
+import json
 import logging
 from typing import Any, Dict, List, Optional
 
+import requests
 from sqlmodel import Session, select
 
 from api.http_client import ai_http_post
@@ -27,6 +29,73 @@ logger = logging.getLogger(__name__)
 _MAX_MSG_CHARS = 4000
 
 _ROLE_LABELS = {"user": "用户", "assistant": "助手"}
+
+
+def _response_debug(resp: requests.Response, *, max_body: int = 1200) -> str:
+    status = f"HTTP {getattr(resp, 'status_code', '?')}"
+    reason = str(getattr(resp, "reason", "") or "").strip()
+    if reason:
+        status = f"{status} {reason}"
+    content_type = str(getattr(resp, "headers", {}).get("content-type", "") or "").strip()
+    body = str(getattr(resp, "text", "") or "").strip()
+    if len(body) > max_body:
+        body = body[:max_body] + "...<truncated>"
+    return f"{status}; content-type={content_type or '-'}; body={body or '<empty>'}"
+
+
+def _extract_sse_summary(text: str) -> str:
+    parts: List[str] = []
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        if not line.startswith("data:"):
+            continue
+        payload = line[5:].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            item = json.loads(payload)
+        except Exception:
+            continue
+        if not isinstance(item, dict):
+            continue
+        choices = item.get("choices")
+        if not isinstance(choices, list):
+            continue
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta") if isinstance(choice.get("delta"), dict) else {}
+            message = choice.get("message") if isinstance(choice.get("message"), dict) else {}
+            content = delta.get("content")
+            if content is None:
+                content = message.get("content")
+            if content:
+                parts.append(str(content))
+    return "".join(parts).strip()
+
+
+def _extract_summary_response(resp: requests.Response) -> str:
+    try:
+        resp.raise_for_status()
+    except Exception as exc:
+        raise RuntimeError(f"summary request HTTP failure: {_response_debug(resp)}") from exc
+    content_type = str(getattr(resp, "headers", {}).get("content-type", "") or "").lower()
+    if "text/event-stream" in content_type:
+        return _extract_sse_summary(str(getattr(resp, "text", "") or ""))
+    try:
+        data = resp.json()
+    except Exception as exc:
+        raise RuntimeError(f"summary request returned non-JSON response: {_response_debug(resp)}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"summary request returned unexpected JSON type: {type(data).__name__}")
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise RuntimeError(f"summary request returned no choices: {_response_debug(resp)}")
+    first = choices[0] if isinstance(choices[0], dict) else {}
+    message = first.get("message") if isinstance(first, dict) else {}
+    if not isinstance(message, dict):
+        raise RuntimeError("summary request first choice has no message object")
+    return str(message.get("content") or "").strip()
 
 
 def compress_session(
@@ -109,14 +178,16 @@ def compress_session(
             },
             timeout=120,
         )
-        resp.raise_for_status()
-        data = resp.json()
-        summary = str(((data.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
-    except Exception:
-        logger.exception("conversation_compress: summary request failed")
+        summary = _extract_summary_response(resp)
+    except RuntimeError as exc:
+        logger.warning("conversation_compress: summary request failed: %s", exc)
+        return None
+    except Exception as exc:
+        logger.exception("conversation_compress: summary request failed unexpectedly: %s", exc)
         return None
 
     if not summary:
+        logger.warning("conversation_compress: summary request returned empty content")
         return None
 
     summary_content = "[对话历史摘要]\n" + summary

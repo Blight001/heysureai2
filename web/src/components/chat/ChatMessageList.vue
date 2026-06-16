@@ -26,10 +26,7 @@ defineProps<{
   stripMarkdownSymbols?: boolean
   isEmpty: boolean
   readonly?: boolean
-  thinkingIcon?: string
   mcpIcon?: string
-  mcpSuccessIcon?: string
-  mcpErrorIcon?: string
 }>()
 
 const emit = defineEmits<{
@@ -59,10 +56,7 @@ const emit = defineEmits<{
         :idx="idx"
         :readonly="readonly"
         :plainTextMode="stripMarkdownSymbols"
-        :thinkingIcon="thinkingIcon"
         :mcpIcon="mcpIcon"
-        :mcpSuccessIcon="mcpSuccessIcon"
-        :mcpErrorIcon="mcpErrorIcon"
         @delete="(i) => emit('delete', i)"
         @recall="(i) => emit('recall', i)"
         @apply="(msgIdx, blockIdx) => emit('apply', msgIdx, blockIdx)"

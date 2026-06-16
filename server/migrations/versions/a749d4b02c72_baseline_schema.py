@@ -104,14 +104,6 @@ def upgrade() -> None:
     sa.Column('ui_theme_mode', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('ui_font_size', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
     sa.Column('ui_brain_view_mode', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('ui_plain_text_output_enabled', sa.Boolean(), nullable=False),
-    sa.Column('ui_thinking_icon', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('ui_mcp_icon', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('ui_mcp_success_icon', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('ui_mcp_error_icon', sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-    sa.Column('ui_thinking_icon_enabled', sa.Boolean(), nullable=False),
-    sa.Column('ui_mcp_success_icon_enabled', sa.Boolean(), nullable=False),
-    sa.Column('ui_mcp_error_icon_enabled', sa.Boolean(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('user', schema=None) as batch_op:

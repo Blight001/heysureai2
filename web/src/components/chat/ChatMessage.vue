@@ -28,10 +28,7 @@ const props = defineProps<{
   idx: number
   readonly?: boolean
   plainTextMode?: boolean
-  thinkingIcon?: string
   mcpIcon?: string
-  mcpSuccessIcon?: string
-  mcpErrorIcon?: string
 }>()
 
 const isFrontPromptMessage = computed(() => {
@@ -89,9 +86,7 @@ const mcpToolDetails = computed(() => {
 })
 
 const mcpToolIcon = computed(() => {
-  if (mcpToolSummary.value.status === '失败') return props.mcpErrorIcon ?? props.mcpIcon ?? '🧰'
-  if (mcpToolSummary.value.status === '成功') return props.mcpSuccessIcon ?? props.mcpIcon ?? '🧰'
-  return props.mcpSuccessIcon ?? props.mcpIcon ?? '🧰'
+  return props.mcpIcon ?? ''
 })
 
 const copiedTarget = ref('')
@@ -163,7 +158,7 @@ const renderedThinkText = computed(() => {
       <div v-if="renderedThinkText" class="mb-0.5">
         <details class="transition-all">
           <summary class="py-0.5 text-[11px] leading-4 text-zinc-500 font-medium cursor-pointer hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-300 transition-colors select-none">
-            {{ props.thinkingIcon ? `${props.thinkingIcon} ` : '' }}深度思考
+            深度思考
           </summary>
           <div class="pt-0.5 text-[11px] text-zinc-500 leading-snug italic dark:text-zinc-400 whitespace-pre-wrap">
             {{ renderedThinkText }}
@@ -300,8 +295,6 @@ const renderedThinkText = computed(() => {
             <InlineContent 
               :content="normalizedInlineContent"
               :mcpIcon="props.mcpIcon"
-              :mcpSuccessIcon="props.mcpSuccessIcon"
-              :mcpErrorIcon="props.mcpErrorIcon"
               :appliedEdits="props.appliedEdits"
               :appliedSignatures="props.appliedSignatures"
               :actionResults="props.actionResults"

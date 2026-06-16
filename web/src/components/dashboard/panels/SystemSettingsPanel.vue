@@ -26,13 +26,6 @@ interface Props {
   promptUserMessageNotice: string
   themeMode: 'light' | 'dark'
   fontSize: 'sm' | 'md' | 'lg'
-  thinkingIcon: string
-  mcpSuccessIcon: string
-  mcpErrorIcon: string
-  thinkingIconEnabled: boolean
-  mcpSuccessIconEnabled: boolean
-  mcpErrorIconEnabled: boolean
-  plainTextOutputEnabled: boolean
   tavilyApiKey: string
   modelPresets: ModelPreset[]
   mcpMaxSteps: number
@@ -64,13 +57,6 @@ const emit = defineEmits<{
   (e: 'update:promptUserMessageNotice', value: string): void
   (e: 'update:themeMode', value: 'light' | 'dark'): void
   (e: 'update:fontSize', value: 'sm' | 'md' | 'lg'): void
-  (e: 'update:thinkingIcon', value: string): void
-  (e: 'update:mcpSuccessIcon', value: string): void
-  (e: 'update:mcpErrorIcon', value: string): void
-  (e: 'update:thinkingIconEnabled', value: boolean): void
-  (e: 'update:mcpSuccessIconEnabled', value: boolean): void
-  (e: 'update:mcpErrorIconEnabled', value: boolean): void
-  (e: 'update:plainTextOutputEnabled', value: boolean): void
   (e: 'update:tavilyApiKey', value: string): void
   (e: 'update:modelPresets', value: ModelPreset[]): void
   (e: 'update:mcpMaxSteps', value: number): void
@@ -119,37 +105,6 @@ const themeModeValue = computed({
 const fontSizeValue = computed({
   get: () => props.fontSize,
   set: value => emit('update:fontSize', value)
-})
-
-const thinkingIconValue = computed({
-  get: () => props.thinkingIcon,
-  set: value => emit('update:thinkingIcon', value)
-})
-const thinkingIconEnabledValue = computed({
-  get: () => props.thinkingIconEnabled,
-  set: value => emit('update:thinkingIconEnabled', value)
-})
-
-const mcpSuccessIconValue = computed({
-  get: () => props.mcpSuccessIcon,
-  set: value => emit('update:mcpSuccessIcon', value)
-})
-const mcpSuccessIconEnabledValue = computed({
-  get: () => props.mcpSuccessIconEnabled,
-  set: value => emit('update:mcpSuccessIconEnabled', value)
-})
-const mcpErrorIconValue = computed({
-  get: () => props.mcpErrorIcon,
-  set: value => emit('update:mcpErrorIcon', value)
-})
-const mcpErrorIconEnabledValue = computed({
-  get: () => props.mcpErrorIconEnabled,
-  set: value => emit('update:mcpErrorIconEnabled', value)
-})
-
-const plainTextOutputEnabledValue = computed({
-  get: () => props.plainTextOutputEnabled,
-  set: value => emit('update:plainTextOutputEnabled', value)
 })
 
 const tavilyApiKeyValue = computed({
@@ -427,63 +382,6 @@ watch(() => props.show, visible => {
                 class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
               />
               <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">范围 1-999。连续调用 MCP 工具时，每次模型生成和工具返回后的继续执行都会消耗一步。</p>
-              </div>
-              <label class="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 text-xs text-zinc-600 dark:text-zinc-300">
-                <span>
-                  <span class="block font-medium text-zinc-700 dark:text-zinc-200">飞书 / QQ 输出纯文本</span>
-                  <span class="block mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">开启后，仅飞书和 QQ 的机器人消息会过滤 Markdown 符号；网页聊天不受影响。</span>
-                </span>
-                <input v-model="plainTextOutputEnabledValue" type="checkbox" />
-              </label>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-700">
-              <div>
-                <label class="mb-1 flex items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-                  <span>深度思考图标</span>
-                  <span class="flex items-center gap-1 text-[11px]">
-                    <input v-model="thinkingIconEnabledValue" type="checkbox" />
-                    <span>开启</span>
-                  </span>
-                </label>
-                <input
-                  v-model="thinkingIconValue"
-                  maxlength="8"
-                  class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
-                  placeholder="🤔"
-                  :disabled="!thinkingIconEnabledValue"
-                />
-              </div>
-              <div>
-                <label class="mb-1 flex items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-                  <span>MCP 成功图标</span>
-                  <span class="flex items-center gap-1 text-[11px]">
-                    <input v-model="mcpSuccessIconEnabledValue" type="checkbox" />
-                    <span>开启</span>
-                  </span>
-                </label>
-                <input
-                  v-model="mcpSuccessIconValue"
-                  maxlength="8"
-                  class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
-                  placeholder="🧰"
-                  :disabled="!mcpSuccessIconEnabledValue"
-                />
-              </div>
-              <div>
-                <label class="mb-1 flex items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-                  <span>MCP 失败图标</span>
-                  <span class="flex items-center gap-1 text-[11px]">
-                    <input v-model="mcpErrorIconEnabledValue" type="checkbox" />
-                    <span>开启</span>
-                  </span>
-                </label>
-                <input
-                  v-model="mcpErrorIconValue"
-                  maxlength="8"
-                  class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"
-                  placeholder="❌"
-                  :disabled="!mcpErrorIconEnabledValue"
-                />
               </div>
             </div>
           </div>

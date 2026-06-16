@@ -4,7 +4,8 @@ from typing import Any, Dict, Optional
 from sqlmodel import Field, SQLModel
 
 _DEFAULT_MCP_TOOLS = (
-    '["mcp.describe_tool","workspace.search","workspace.run_command",'
+    '["mcp.describe_tool","workspace.search","workspace.read_file","workspace.write_file",'
+    '"workspace.edit_file","workspace.run_command",'
     '"admin.list_agents","admin.get_overview",'
     '"task.create","task.update","task.delete","task.list",'
     '"task.complete",'

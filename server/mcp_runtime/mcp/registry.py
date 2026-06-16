@@ -4,8 +4,11 @@ from .tools.introspection import (
 )
 from .tools.workspace import (
     _get_overview,
+    _edit_file,
     _list_agents,
+    _read_file,
     _run_command,
+    _write_file,
 )
 from .tools.tasks import (
     _task_complete,
@@ -92,12 +95,23 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         name="workspace.run_command",
         description=(
             "执行 shell 命令，用于开发或检查工作区。默认在当前用户的工作区目录、使用正常进程环境运行，"
-            "允许绝对路径和环境变量。需要隔离、只在工作区内运行时，设置 strict_workspace 或 sandbox_env。"
+            "允许绝对路径和环境变量。支持显式 shell=cmd/powershell/pwsh，或用 argv + shell=none 绕过 shell 转义。"
+            "需要隔离、只在工作区内运行时，设置 strict_workspace 或 sandbox_env。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "command": {"type": "string", "description": "要执行的命令。"},
+                "command": {"type": "string", "description": "要执行的命令字符串。默认 shell=auto；Windows 上复杂 PowerShell 请显式 shell=powershell。"},
+                "argv": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "参数化执行，不经过 shell，例如 [\"python\",\"-c\",\"print(1)\"]。传 argv 时可省略 command，shell 固定为 none。",
+                },
+                "shell": {
+                    "type": "string",
+                    "enum": ["auto", "cmd", "powershell", "pwsh", "none"],
+                    "description": "命令解释器。auto=系统默认 shell；cmd/powershell/pwsh=显式选择；none=仅配合 argv，避免 shell 转义问题。",
+                },
                 "cwd": {
                     "type": "string",
                     "description": "可选，工作目录。相对路径相对工作区解析；也允许绝对路径。",
@@ -114,10 +128,80 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
                     "type": "boolean",
                     "description": "为 true 时，使用工作区内隔离的 HOME/TEMP 目录。默认 false。",
                 },
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "为 true 时只返回解析后的 cwd/shell/命令，不真正执行。适合删除、覆盖、长命令执行前预检。",
+                },
             },
-            "required": ["command"],
+            "required": [],
         },
         handler=_run_command,
+        destructive=True,
+    ))
+    registry.register(MCPTool(
+        name="workspace.read_file",
+        description="读取当前 AI 工作区内的文本文件。用于查看 task.md、代码、文档等内容；路径必须位于工作区内。",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "要读取的文件路径。相对路径相对当前 AI 工作区；绝对路径必须位于工作区内。"},
+                "target": {
+                    "type": "object",
+                    "description": "兼容对象写法：{\"path\":\"...\"}。",
+                },
+                "max_bytes": {"type": "integer", "description": "最多读取字节数，默认 1000000。"},
+            },
+            "required": ["path"],
+        },
+        handler=_read_file,
+    ))
+    registry.register(MCPTool(
+        name="workspace.write_file",
+        description="安全写入当前 AI 工作区内的文本文件。支持创建或覆盖；路径必须位于工作区内。",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "要写入的文件路径。相对路径相对当前 AI 工作区；绝对路径必须位于工作区内。"},
+                "target": {"type": "object", "description": "兼容对象写法：{\"path\":\"...\"}。"},
+                "text": {"type": "string", "description": "要写入的完整文本。"},
+                "content": {"type": "object", "description": "兼容对象写法：{\"text\":\"...\"}。"},
+                "create": {"type": "boolean", "description": "文件不存在时是否创建。"},
+                "overwrite": {"type": "boolean", "description": "文件已存在时是否允许覆盖。"},
+                "create_dirs": {"type": "boolean", "description": "是否自动创建父目录。"},
+                "options": {"type": "object", "description": "兼容对象写法，可包含 create/overwrite/create_dirs。"},
+            },
+            "required": ["path", "text"],
+        },
+        handler=_write_file,
+        destructive=True,
+    ))
+    registry.register(MCPTool(
+        name="workspace.edit_file",
+        description=(
+            "安全编辑当前 AI 工作区内的文本文件。支持按文本块 replace/delete，以及 append/prepend；"
+            "默认要求 search 只匹配一次，避免误改多处。适合删除 task.md 中某条失败记录。"
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "要编辑的文件路径。相对路径相对当前 AI 工作区；绝对路径必须位于工作区内。"},
+                "target": {"type": "object", "description": "兼容对象写法：{\"path\":\"...\"}。"},
+                "edits": {
+                    "type": "array",
+                    "items": {"type": "object"},
+                    "description": "编辑列表。每项支持 op=replace/delete/append/prepend；replace/delete 需 search；replace 可传 replace/text；多处匹配需 replace_all=true。",
+                },
+                "op": {"type": "string", "enum": ["replace", "delete", "append", "prepend"], "description": "单条编辑写法的操作类型。"},
+                "search": {"type": "string", "description": "replace/delete 要查找的原文块。默认必须唯一匹配。"},
+                "replace": {"type": "string", "description": "replace 的替换文本。"},
+                "text": {"type": "string", "description": "append/prepend 文本，或 replace 的替换文本。"},
+                "replace_all": {"type": "boolean", "description": "是否替换/删除所有匹配。默认 false；多处匹配时不传会报错。"},
+                "create_if_missing": {"type": "boolean", "description": "文件不存在时是否先按空文件创建。"},
+                "options": {"type": "object", "description": "兼容对象写法，可包含 create_if_missing。"},
+            },
+            "required": ["path"],
+        },
+        handler=_edit_file,
         destructive=True,
     ))
     registry.register(MCPTool(

@@ -29,7 +29,7 @@ from sqlmodel import Session, select
 from api.chat_runtime.mcp_parser import MCP_CALL_BLOCK_RE
 from api.chat_runtime.run_state import pop_run_stream, register_run_stream
 from api.database import engine
-from api.models import AssistantAIConfig, BotSessionRoute, ChatMessage
+from api.models import AssistantAIConfig, BotSessionRoute
 from ._config import read_qq_config
 from .service import post_qq_stream_packet, send_qq_markdown_message
 
@@ -88,27 +88,6 @@ def _mark_inactive(session_id: str) -> None:
         _ACTIVE_SESSIONS.discard(str(session_id or "").strip())
 
 
-def _load_assistant_prefix(
-    *, user_id: int, ai_config_id: int, ai_kind: str, session_id: str
-) -> str:
-    """Build the same thinking/MCP prefix used by normal bot delivery."""
-    from connector_runtime.bots.notify import _assistant_prefix
-
-    with Session(engine) as session:
-        message = session.exec(
-            select(ChatMessage).where(
-                ChatMessage.user_id == int(user_id),
-                ChatMessage.ai_config_id == int(ai_config_id),
-                ChatMessage.ai_kind == str(ai_kind or "core"),
-                ChatMessage.session_id == str(session_id or ""),
-                ChatMessage.role == "assistant",
-            ).order_by(ChatMessage.id.desc())
-        ).first()
-        if message is None:
-            return ""
-        return _assistant_prefix(session, message)
-
-
 class QQStreamSession:
     """Accumulates live answer text and flushes it as QQ stream packets."""
 
@@ -147,7 +126,7 @@ class QQStreamSession:
         self._failed = False
         self._finished = False
         self._last_text = ""        # latest answer text (set by ``update``)
-        self._last_sent_text = ""   # last text we successfully pushed
+        self._last_sent_text = ""   # last full text we successfully pushed
 
         # Packets are flushed on a dedicated thread so the inference loop's
         # ``_set_run_live_text`` call (the source of ``update``) is never blocked
@@ -198,21 +177,6 @@ class QQStreamSession:
         try:
             if not text:
                 return
-            try:
-                prefix = _load_assistant_prefix(
-                    user_id=self.user_id,
-                    ai_config_id=self.ai_config_id,
-                    ai_kind=self.ai_kind,
-                    session_id=self.session_id,
-                )
-            except Exception:
-                logger.debug(
-                    f"qq stream prefix lookup failed session={self.session_id}",
-                    exc_info=True,
-                )
-                prefix = ""
-            if prefix:
-                text = f"{prefix}{text}"
             if self._started and not self._failed:
                 # Happy path: close the live stream with a 完成 packet.
                 self._send_packet(text, final=True, force=(text == self._last_sent_text))
@@ -227,19 +191,14 @@ class QQStreamSession:
     def _send_packet(self, text: str, *, final: bool, force: bool = False) -> None:
         if self._failed and not force:
             return
-        reset = False
-        if text.startswith(self._last_sent_text):
-            packet_text = text[len(self._last_sent_text):]
-        else:
-            packet_text = text
-            reset = self._started
-        if not packet_text and final:
-            # A final packet still needs non-empty markdown. Replace the live
-            # body with the complete answer instead of appending it again.
-            packet_text = text
-            reset = self._started
+        packet_text = str(text or "")
         if not packet_text:
             return
+        # QQ stream packets are safer as full snapshots: packet ``index`` gives
+        # ordering and ``reset`` replaces the in-flight markdown body. Sending
+        # only deltas can look like the answer jumps from the first fragment to
+        # the final packet on bots where intermediate appends are dropped.
+        reset = self._started
         seq = self._seq
         state = _STREAM_STATE_FINISHED if final else _STREAM_STATE_GENERATING
         try:
@@ -266,13 +225,18 @@ class QQStreamSession:
                     self._stream_id = assigned
             self._started = True
             self._index += 1
-            self._seq += 1
             self._last_sent_text = text
+            if final:
+                self._bump_route_sequence(seq + 1)
         except Exception as exc:
             self._failed = True
             logger.info(f"qq stream packet failed session={self.session_id}: {exc}")
 
     def _fallback_full_send(self, text: str) -> None:
+        # If a stream packet already opened a passive reply, use the following
+        # msg_seq for the fallback full message. If streaming was rejected on
+        # the first packet, the original sequence is still available.
+        seq = self._seq + 1 if self._started else self._seq
         try:
             send_qq_markdown_message(
                 self.user_id,
@@ -282,13 +246,37 @@ class QQStreamSession:
                 target_type=self.target_type,
                 msg_id=self.msg_id,
                 event_id=self.event_id,
-                msg_seq=self._seq if self.msg_id else None,
+                msg_seq=seq if self.msg_id else None,
                 markdown_mode=self.markdown_mode,
                 template_id=self.template_id,
                 fallback_plain=True,
             )
+            self._bump_route_sequence(seq + 1)
         except Exception as exc:
             logger.warning(f"qq stream fallback send failed session={self.session_id}: {exc}")
+
+    def _bump_route_sequence(self, next_seq: int) -> None:
+        if not self.msg_id:
+            return
+        try:
+            with Session(engine) as session:
+                row = _load_route_row(
+                    session,
+                    user_id=self.user_id,
+                    ai_config_id=self.ai_config_id,
+                    ai_kind=self.ai_kind,
+                    session_id=self.session_id,
+                )
+                if row is None:
+                    return
+                row.next_msg_seq = max(int(row.next_msg_seq or 1), int(next_seq))
+                session.add(row)
+                session.commit()
+        except Exception:
+            logger.debug(
+                f"qq stream route sequence bump failed session={self.session_id}",
+                exc_info=True,
+            )
 
 
 def _load_route_row(session: Session, *, user_id: int, ai_config_id: int, ai_kind: str, session_id: str):

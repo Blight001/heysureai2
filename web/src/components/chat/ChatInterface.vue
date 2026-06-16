@@ -53,10 +53,7 @@ interface Props {
   aiConfigId?: number
   aiKind?: 'assistant' | 'core'
   mcpAutoApprove?: boolean
-  thinkingIcon?: string
   mcpIcon?: string
-  mcpSuccessIcon?: string
-  mcpErrorIcon?: string
   mcpDynamicRule?: string
   stripMarkdownSymbols?: boolean
   selectedFiles: string[]
@@ -1251,10 +1248,7 @@ onBeforeUnmount(() => {
         :baseMessages="chatMessages"
         :sessionActive="!!currentSessionId"
         :frontPromptPlaceholder="'（当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt）'"
-        :thinkingIcon="props.thinkingIcon"
         :mcpIcon="props.mcpIcon"
-        :mcpSuccessIcon="props.mcpSuccessIcon"
-        :mcpErrorIcon="props.mcpErrorIcon"
         :mcpDynamicRule="props.mcpDynamicRule"
         :aiConfigId="props.aiConfigId"
         :liveText="liveAssistantText"

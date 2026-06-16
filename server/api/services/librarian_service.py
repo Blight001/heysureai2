@@ -110,6 +110,9 @@ _INTRINSIC_TOOL_DESCRIPTIONS_ZH = {
     "task.update": "管理员或管理者接管工具：更新任务标题、说明、优先级、状态或调度信息。",
     "message.send_to_user": "通过绑定的飞书或 QQ 机器人向人类用户发送文本或媒体消息。",
     "workspace.search": "使用 Tavily 搜索公网信息，适合查询外部信息或实时信息。",
+    "workspace.read_file": "读取当前 AI 工作区内的文本文件，路径必须位于工作区内。",
+    "workspace.write_file": "安全写入当前 AI 工作区内的文本文件，支持创建或覆盖。",
+    "workspace.edit_file": "安全编辑当前 AI 工作区内的文本文件，支持按文本块替换、删除、追加和前置。",
     "workspace.run_command": "执行 shell 命令，默认在当前用户工作区运行，支持绝对路径和环境变量；需要隔离时可开启 strict_workspace 或 sandbox_env。",
 }
 

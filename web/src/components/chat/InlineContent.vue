@@ -12,14 +12,10 @@ const props = withDefaults(defineProps<{
   enableMcpTextBubble?: boolean;
   plainTextMode?: boolean;
   mcpIcon?: string;
-  mcpSuccessIcon?: string;
-  mcpErrorIcon?: string;
 }>(), {
   enableMcpTextBubble: true,
   plainTextMode: false,
-  mcpIcon: '🧰',
-  mcpSuccessIcon: '🧰',
-  mcpErrorIcon: '🧰',
+  mcpIcon: '',
 });
 
 interface TextChunk {
@@ -105,15 +101,12 @@ const blockSignature = (block: any) => {
   return `sig_${simpleHash(raw)}`;
 };
 
-const getMcpBlockIcon = (block: any) => {
-  if (!isApplied(block)) return props.mcpSuccessIcon ?? props.mcpIcon ?? '🧰';
-  return isFailed(block)
-    ? (props.mcpErrorIcon ?? props.mcpIcon ?? '🧰')
-    : (props.mcpSuccessIcon ?? props.mcpIcon ?? '🧰');
+const getMcpBlockIcon = () => {
+  return props.mcpIcon ?? '';
 };
 
 const getBlockInfo = (block: any) => {
-  if (block.type === 'mcp') return { icon: getMcpBlockIcon(block), label: 'MCP', target: block.tool };
+  if (block.type === 'mcp') return { icon: getMcpBlockIcon(), label: 'MCP', target: block.tool };
   if (block.type === 'edit') return { icon: '📝', label: '修改', target: block.filename };
   if (block.type === 'create') return { icon: '✨', label: '创建', target: block.filename };
   if (block.type === 'delete') return { icon: '🗑️', label: '删除', target: block.filename };

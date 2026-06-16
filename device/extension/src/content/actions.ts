@@ -215,6 +215,16 @@ export function doPressKey(msg: any) {
   return { success: true, key, target: (el as HTMLElement).tagName }
 }
 
+export function focusTarget(msg: any) {
+  const selector = String(msg.selector || '')
+  if (!selector) return { success: true, focused: false, reason: 'selector is empty' }
+  const el = document.querySelector(selector) as HTMLElement | null
+  if (!el) throw new Error(`Element not found: ${selector}`)
+  el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'auto' })
+  el.focus?.()
+  return { success: true, focused: document.activeElement === el, target: el.tagName }
+}
+
 // ── Type ──────────────────────────────────────────────────────────────────
 export async function doType(msg: any) {
   const selector   = msg.selector || 'input:focus, textarea:focus, [contenteditable]:focus'

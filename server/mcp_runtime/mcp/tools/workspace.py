@@ -1,7 +1,7 @@
 import os
 import re
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
@@ -16,6 +16,8 @@ from ..core import generate_file_tree, get_project_root, safe_join
 MAX_COMMAND_LENGTH = 8000
 DEFAULT_COMMAND_TIMEOUT = 120
 MAX_COMMAND_TIMEOUT = 600
+MAX_FILE_BYTES = 1_000_000
+SHELL_CHOICES = {"auto", "cmd", "powershell", "pwsh", "none"}
 BLOCKED_COMMAND_RE = re.compile(
     r'\b('
     r'format|diskpart|mountvol|bcdedit|regedit|'
@@ -78,6 +80,40 @@ def _validate_command(command: str) -> None:
         raise HTTPException(status_code=403, detail="Command is blocked by the command safety policy")
 
 
+def _coerce_shell(value: Any) -> str:
+    shell = str(value or "auto").strip().lower()
+    if shell not in SHELL_CHOICES:
+        raise HTTPException(status_code=400, detail=f"Unsupported shell: {shell}")
+    return shell
+
+
+def _validate_argv(argv: Any) -> List[str]:
+    if not isinstance(argv, list) or not argv:
+        raise HTTPException(status_code=400, detail="argv must be a non-empty array")
+    parts = [str(item) for item in argv]
+    if any(not part for part in parts):
+        raise HTTPException(status_code=400, detail="argv must not contain empty items")
+    command_text = " ".join(parts)
+    _validate_command(command_text)
+    return parts
+
+
+def _build_command_invocation(command: str, shell: str) -> Tuple[Any, bool, str, str]:
+    if shell == "none":
+        raise HTTPException(status_code=400, detail="shell=none requires argv")
+    if shell == "auto":
+        return command, True, os.environ.get("COMSPEC") if os.name == "nt" else os.environ.get("SHELL", "/bin/sh"), "auto"
+    if shell == "cmd":
+        if os.name != "nt":
+            raise HTTPException(status_code=400, detail="shell=cmd is only available on Windows")
+        comspec = os.environ.get("COMSPEC") or "cmd.exe"
+        return [comspec, "/d", "/s", "/c", command], False, comspec, "cmd"
+    if shell in {"powershell", "pwsh"}:
+        executable = "powershell.exe" if shell == "powershell" else "pwsh"
+        return [executable, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command], False, executable, shell
+    raise HTTPException(status_code=400, detail=f"Unsupported shell: {shell}")
+
+
 def _sandbox_env(project_root: str) -> Dict[str, str]:
     sandbox_home = os.path.join(project_root, ".sandbox_home")
     sandbox_tmp = os.path.join(project_root, ".sandbox_tmp")
@@ -114,19 +150,211 @@ def _coerce_timeout(value: Any) -> int:
     return max(1, min(MAX_COMMAND_TIMEOUT, seconds))
 
 
-def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    command = args.get("command")
-    _validate_command(command)
+def _resolve_workspace_file(project_root: str, args: Dict[str, Any]) -> str:
+    target = args.get("target") if isinstance(args.get("target"), dict) else {}
+    raw_path = args.get("path") or target.get("path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise HTTPException(status_code=400, detail="Missing path")
+    path_text = os.path.expanduser(os.path.expandvars(raw_path.strip()))
+    if os.path.isabs(path_text):
+        return _ensure_inside_workspace(project_root, path_text)
+    return _ensure_inside_workspace(project_root, safe_join(project_root, path_text.replace("\\", "/")))
 
+
+def _read_text_file(path: str, *, encoding: str = "utf-8", max_bytes: int = MAX_FILE_BYTES) -> Tuple[str, bool]:
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="File not found")
+    size = os.path.getsize(path)
+    if size > max_bytes:
+        raise HTTPException(status_code=413, detail=f"File too large ({size} bytes > {max_bytes})")
+    with open(path, "r", encoding=encoding, errors="replace", newline="") as fh:
+        return fh.read(), size > max_bytes
+
+
+def _atomic_write_text(path: str, text: str, *, encoding: str = "utf-8", create_dirs: bool = False) -> None:
+    parent = os.path.dirname(path)
+    if create_dirs:
+        os.makedirs(parent, exist_ok=True)
+    if not os.path.isdir(parent):
+        raise HTTPException(status_code=400, detail="Parent directory does not exist")
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding=encoding, newline="") as fh:
+        fh.write(text)
+    os.replace(tmp, path)
+
+
+def _resolve_content_text(args: Dict[str, Any]) -> str:
+    content = args.get("content")
+    if isinstance(content, dict):
+        value = content.get("text")
+    else:
+        value = args.get("text")
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail="Missing text content")
+    return value
+
+
+def _read_file(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    project_root = get_project_root(user_id, ai_config_id)
+    path = _resolve_workspace_file(project_root, args)
+    max_bytes = int(args.get("max_bytes") or MAX_FILE_BYTES)
+    text, truncated = _read_text_file(path, max_bytes=max(1, min(MAX_FILE_BYTES, max_bytes)))
+    return {
+        "success": True,
+        "path": os.path.relpath(path, project_root).replace(os.sep, "/"),
+        "abs_path": path,
+        "text": text,
+        "bytes": os.path.getsize(path),
+        "truncated": truncated,
+    }
+
+
+def _write_file(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    project_root = get_project_root(user_id, ai_config_id)
+    path = _resolve_workspace_file(project_root, args)
+    options = args.get("options") if isinstance(args.get("options"), dict) else {}
+    create = _truthy(args.get("create") or options.get("create"))
+    overwrite = _truthy(args.get("overwrite") or options.get("overwrite"))
+    create_dirs = _truthy(args.get("create_dirs") or options.get("create_dirs"))
+    exists = os.path.exists(path)
+    if exists and not overwrite:
+        raise HTTPException(status_code=409, detail="File exists; pass overwrite=true to replace it")
+    if not exists and not create:
+        raise HTTPException(status_code=404, detail="File does not exist; pass create=true to create it")
+    text = _resolve_content_text(args)
+    _atomic_write_text(path, text, create_dirs=create_dirs)
+    return {
+        "success": True,
+        "path": os.path.relpath(path, project_root).replace(os.sep, "/"),
+        "abs_path": path,
+        "bytes": os.path.getsize(path),
+        "created": not exists,
+        "overwritten": exists,
+    }
+
+
+def _apply_edit(text: str, edit: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
+    op = str(edit.get("op") or edit.get("mode") or "replace").strip().lower()
+    if op in {"replace", "delete"}:
+        search = edit.get("search")
+        if not isinstance(search, str) or search == "":
+            raise HTTPException(status_code=400, detail=f"{op} edit requires non-empty search")
+        effective_search = search
+        count = text.count(search)
+        if count == 0 and "\n" in search and "\r\n" not in search:
+            crlf_search = search.replace("\n", "\r\n")
+            crlf_count = text.count(crlf_search)
+            if crlf_count:
+                effective_search = crlf_search
+                count = crlf_count
+        if count == 0:
+            raise HTTPException(status_code=409, detail=f"Search text not found: {search[:80]}")
+        replace_all = _truthy(edit.get("replace_all"))
+        if count > 1 and not replace_all:
+            raise HTTPException(status_code=409, detail=f"Search text matched {count} times; pass replace_all=true or use a more specific block")
+        replacement = "" if op == "delete" else str(edit.get("replace") if edit.get("replace") is not None else edit.get("text") or "")
+        if effective_search != search and "\n" in replacement and "\r\n" not in replacement:
+            replacement = replacement.replace("\n", "\r\n")
+        limit = -1 if replace_all else 1
+        return text.replace(effective_search, replacement, limit), {"op": op, "matches": count, "applied": count if replace_all else 1}
+    if op in {"append", "prepend"}:
+        value = edit.get("text")
+        if not isinstance(value, str):
+            value = str(edit.get("replace") or "")
+        return (text + value if op == "append" else value + text), {"op": op, "applied": 1}
+    raise HTTPException(status_code=400, detail="Unsupported edit op; use replace, delete, append, or prepend")
+
+
+def _edit_file(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    project_root = get_project_root(user_id, ai_config_id)
+    path = _resolve_workspace_file(project_root, args)
+    options = args.get("options") if isinstance(args.get("options"), dict) else {}
+    create_if_missing = _truthy(args.get("create_if_missing") or options.get("create_if_missing"))
+    exists = os.path.exists(path)
+    if exists:
+        text, _ = _read_text_file(path)
+    elif create_if_missing:
+        text = ""
+    else:
+        raise HTTPException(status_code=404, detail="File not found; pass create_if_missing=true to create it")
+    raw_edits = args.get("edits")
+    if not isinstance(raw_edits, list):
+        raw_edits = [args]
+    edits = [item for item in raw_edits if isinstance(item, dict)]
+    if not edits:
+        raise HTTPException(status_code=400, detail="Missing edits")
+    original = text
+    applied: List[Dict[str, Any]] = []
+    for edit in edits:
+        text, info = _apply_edit(text, edit)
+        applied.append(info)
+    if text == original and exists:
+        return {
+            "success": True,
+            "changed": False,
+            "path": os.path.relpath(path, project_root).replace(os.sep, "/"),
+            "applied": applied,
+        }
+    _atomic_write_text(path, text, create_dirs=create_if_missing)
+    return {
+        "success": True,
+        "changed": True,
+        "path": os.path.relpath(path, project_root).replace(os.sep, "/"),
+        "abs_path": path,
+        "bytes": os.path.getsize(path),
+        "created": not exists,
+        "applied": applied,
+    }
+
+
+def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     project_root = get_project_root(user_id, ai_config_id)
     strict_workspace = _truthy(args.get("strict_workspace") or args.get("workspace_only"))
     sandbox_env = _truthy(args.get("sandbox_env") or args.get("isolated_env"))
     command_cwd = _resolve_command_cwd(project_root, args.get("cwd"), strict_workspace=strict_workspace)
     timeout = _coerce_timeout(args.get("timeout"))
+    shell = _coerce_shell(args.get("shell"))
+    dry_run = _truthy(args.get("dry_run") or args.get("preview"))
+    argv = args.get("argv")
+    if argv is not None:
+        run_args = _validate_argv(argv)
+        use_shell = False
+        shell_used = "none"
+        shell_executable = ""
+        command_text = " ".join(run_args)
+    else:
+        command = args.get("command")
+        _validate_command(command)
+        command_text = str(command)
+        run_args, use_shell, shell_executable, shell_used = _build_command_invocation(command_text, shell)
+
+    base_result = {
+        "cwd": command_cwd,
+        "shell": shell_used,
+        "shell_executable": shell_executable,
+        "timeout": timeout,
+        "command_length": len(command_text),
+        "dry_run": dry_run,
+    }
+    if argv is not None:
+        base_result["argv"] = run_args
+    else:
+        base_result["command"] = command_text
+    if dry_run:
+        return {
+            "success": True,
+            "failure_type": None,
+            "exit_code": None,
+            "stdout": "",
+            "stderr": "",
+            "output": "",
+            **base_result,
+        }
+
     try:
         result = subprocess.run(
-            command,
-            shell=True,
+            run_args,
+            shell=use_shell,
             cwd=command_cwd,
             env=_command_env(project_root, sandbox_env=sandbox_env),
             capture_output=True,
@@ -142,9 +370,32 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
         output += f"\nError:\nCommand timed out after {timeout} seconds"
         return {
             "success": False,
+            "failure_type": "timeout",
             "exit_code": None,
+            "stdout": exc.stdout or "",
+            "stderr": exc.stderr or "",
             "output": output,
-            "cwd": command_cwd,
+            **base_result,
+        }
+    except FileNotFoundError as exc:
+        return {
+            "success": False,
+            "failure_type": "shell_launch_failed",
+            "exit_code": None,
+            "stdout": "",
+            "stderr": str(exc),
+            "output": f"Error:\n{exc}",
+            **base_result,
+        }
+    except OSError as exc:
+        return {
+            "success": False,
+            "failure_type": "shell_launch_failed",
+            "exit_code": None,
+            "stdout": "",
+            "stderr": str(exc),
+            "output": f"Error:\n{exc}",
+            **base_result,
         }
 
     output = result.stdout
@@ -153,9 +404,12 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
 
     return {
         "success": result.returncode == 0,
+        "failure_type": None if result.returncode == 0 else "nonzero_exit",
         "exit_code": result.returncode,
         "output": output,
-        "cwd": command_cwd,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        **base_result,
     }
 
 def _parse_int(value: Any) -> Optional[int]:

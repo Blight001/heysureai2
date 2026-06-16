@@ -118,7 +118,7 @@ def test_failed_stream_packet_does_not_consume_passive_reply_sequence(monkeypatc
     assert stream._index == 0
 
 
-def test_stream_sends_deltas_and_resets_when_finishing_without_new_text(monkeypatch):
+def test_stream_sends_full_snapshots_and_reuses_passive_reply_sequence(monkeypatch):
     stream = _bare_stream_session()
     calls = []
     monkeypatch.setattr(
@@ -126,24 +126,47 @@ def test_stream_sends_deltas_and_resets_when_finishing_without_new_text(monkeypa
         "post_qq_stream_packet",
         lambda *args, **kwargs: calls.append(kwargs) or {"id": "stream-1"},
     )
+    bumped = []
+    monkeypatch.setattr(stream, "_bump_route_sequence", lambda next_seq: bumped.append(next_seq))
 
     stream._send_packet("hello", final=False)
     stream._send_packet("hello world", final=False)
     stream._send_packet("hello world", final=True, force=True)
 
-    assert [call["text"] for call in calls] == ["hello", " world", "hello world"]
+    assert [call["text"] for call in calls] == ["hello", "hello world", "hello world"]
     assert [call["stream_index"] for call in calls] == [0, 1, 2]
+    assert [call["msg_seq"] for call in calls] == [1, 1, 1]
+    assert [call["reset"] for call in calls] == [False, True, True]
     assert calls[-1]["reset"] is True
+    assert bumped == [2]
 
 
-def test_finalize_resets_stream_with_thinking_and_mcp_prefix(monkeypatch):
+def test_stream_fallback_uses_next_sequence_after_partial_stream(monkeypatch):
+    stream = _bare_stream_session()
+    stream._started = True
+    calls = []
+    bumped = []
+    monkeypatch.setattr(
+        stream_sender,
+        "send_qq_markdown_message",
+        lambda *args, **kwargs: calls.append(kwargs) or {"message_id": "fallback"},
+    )
+    monkeypatch.setattr(stream, "_bump_route_sequence", lambda next_seq: bumped.append(next_seq))
+
+    stream._fallback_full_send("complete answer")
+
+    assert calls[0]["msg_seq"] == 2
+    assert calls[0]["text"] == "complete answer"
+    assert bumped == [3]
+
+
+def test_finalize_resets_stream_without_thinking_or_mcp_prefix(monkeypatch):
     stream = _bare_stream_session()
     stream._started = True
     stream._last_text = "answer"
     stream._last_sent_text = "answer"
     stream._finished = False
     calls = []
-    monkeypatch.setattr(stream_sender, "_load_assistant_prefix", lambda **kwargs: "🤔🧰")
     monkeypatch.setattr(
         stream_sender,
         "post_qq_stream_packet",
@@ -152,6 +175,6 @@ def test_finalize_resets_stream_with_thinking_and_mcp_prefix(monkeypatch):
 
     stream._finalize()
 
-    assert calls[0]["text"] == "🤔🧰answer"
+    assert calls[0]["text"] == "answer"
     assert calls[0]["stream_state"] == stream_sender._STREAM_STATE_FINISHED
     assert calls[0]["reset"] is True

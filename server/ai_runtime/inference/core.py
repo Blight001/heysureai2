@@ -514,7 +514,19 @@ async def _call_mcp_or_endpoint_tool(
 def _tool_result_failed(tool_result: Dict[str, object]) -> tuple[bool, str]:
     result = tool_result.get("result") if isinstance(tool_result, dict) else None
     if isinstance(result, dict) and result.get("success") is False:
-        return True, str(result.get("error") or result.get("summary") or "Tool returned success=false")
+        detail = (
+            result.get("error")
+            or result.get("summary")
+            or result.get("stderr")
+            or result.get("output")
+            or result.get("failure_type")
+            or "Tool returned success=false"
+        )
+        if result.get("failure_type") and result.get("exit_code") is not None:
+            detail = f"{result.get('failure_type')} (exit_code={result.get('exit_code')}): {detail}"
+        elif result.get("failure_type"):
+            detail = f"{result.get('failure_type')}: {detail}"
+        return True, str(detail)
     return False, ""
 
 
@@ -783,6 +795,47 @@ def _degrade_image_messages_to_text(convo: List[Dict]) -> int:
             kept.append({
                 "type": "text",
                 "text": f"[系统已省略 {message_removed} 张图片：当前模型不支持图片输入。]",
+            })
+            message["content"] = kept
+    return removed
+
+
+def _prune_prior_runtime_screenshot_images(convo: List[Dict]) -> int:
+    """Keep only the latest runtime screenshot image in model context.
+
+    Chat bubbles still persist each screenshot for the user. This only removes
+    older screenshot image blocks from the live model conversation so repeated
+    screen/browser captures do not keep charging vision input over and over.
+    """
+    removed = 0
+    screenshot_markers = (
+        "工具截图已捕获",
+        "鼠标点击前确认图已捕获",
+    )
+    for message in convo:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        text = "\n".join(
+            str(block.get("text") or "")
+            for block in content
+            if isinstance(block, dict) and str(block.get("type") or "").lower() == "text"
+        )
+        if not any(marker in text for marker in screenshot_markers):
+            continue
+        kept = []
+        message_removed = 0
+        for block in content:
+            block_type = str(block.get("type") or "").lower() if isinstance(block, dict) else ""
+            if block_type in {"image", "image_url"}:
+                removed += 1
+                message_removed += 1
+                continue
+            kept.append(block)
+        if message_removed:
+            kept.append({
+                "type": "text",
+                "text": f"[系统已省略 {message_removed} 张较早截图：模型上下文只保留最新截图。]",
             })
             message["content"] = kept
     return removed
@@ -1960,8 +2013,17 @@ def _run_worker_impl(
                                 item_result = asyncio.run(_call_mcp_or_endpoint_tool(split_tool, user_id, arguments, ai_config_id))
                                 endpoint_failed, endpoint_error = _tool_result_failed(item_result)
                                 if endpoint_failed:
-                                    raise RuntimeError(endpoint_error)
-                                item_result_text = _build_mcp_display_result(split_tool, item_result, ok=True)
+                                    item_failed = True
+                                    compound_failed = True
+                                    item_error = endpoint_error
+                                    item_result_text = _build_mcp_display_result(
+                                        split_tool,
+                                        item_result,
+                                        ok=False,
+                                        error_message=item_error,
+                                    )
+                                else:
+                                    item_result_text = _build_mcp_display_result(split_tool, item_result, ok=True)
                             except Exception as mcp_exc:
                                 item_failed = True
                                 compound_failed = True
@@ -2117,8 +2179,11 @@ def _run_worker_impl(
                     tool_result = asyncio.run(_call_mcp_or_endpoint_tool(tool, user_id, arguments, ai_config_id))
                     endpoint_failed, endpoint_error = _tool_result_failed(tool_result)
                     if endpoint_failed:
-                        raise RuntimeError(endpoint_error)
-                    result_text = _build_mcp_display_result(tool, tool_result, ok=True)
+                        tool_failed = True
+                        tool_error = endpoint_error
+                        result_text = _build_mcp_display_result(tool, tool_result, ok=False, error_message=tool_error)
+                    else:
+                        result_text = _build_mcp_display_result(tool, tool_result, ok=True)
                 except Exception as mcp_exc:
                     tool_failed = True
                     tool_error = _extract_mcp_error(mcp_exc)
@@ -2277,6 +2342,8 @@ def _run_worker_impl(
                 else:
                     screenshot_message = _browser_screenshot_image_message(tool, tool_result)
                     attach_screenshot = bool(screenshot_message) and not image_input_disabled
+                    if attach_screenshot:
+                        _prune_prior_runtime_screenshot_images(convo)
                     if _has_native_tc:
                         # Native path: use tool role so model sees structured result.
                         convo.append({

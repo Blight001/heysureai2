@@ -7,11 +7,7 @@ from .defaults import (
     DEFAULT_MODEL_PRESETS,
     DEFAULT_UI_BRAIN_VIEW_MODE,
     DEFAULT_UI_FONT_SIZE,
-    DEFAULT_UI_MCP_ERROR_ICON,
-    DEFAULT_UI_MCP_ICON,
-    DEFAULT_UI_MCP_SUCCESS_ICON,
     DEFAULT_UI_THEME_MODE,
-    DEFAULT_UI_THINKING_ICON,
 )
 
 
@@ -58,14 +54,6 @@ class User(SQLModel, table=True):
     ui_theme_mode: str = Field(default=DEFAULT_UI_THEME_MODE)
     ui_font_size: str = Field(default=DEFAULT_UI_FONT_SIZE)
     ui_brain_view_mode: str = Field(default=DEFAULT_UI_BRAIN_VIEW_MODE)
-    ui_plain_text_output_enabled: bool = Field(default=False)
-    ui_thinking_icon: str = Field(default=DEFAULT_UI_THINKING_ICON)
-    ui_mcp_icon: str = Field(default=DEFAULT_UI_MCP_ICON)
-    ui_mcp_success_icon: str = Field(default=DEFAULT_UI_MCP_SUCCESS_ICON)
-    ui_mcp_error_icon: str = Field(default=DEFAULT_UI_MCP_ERROR_ICON)
-    ui_thinking_icon_enabled: bool = Field(default=True)
-    ui_mcp_success_icon_enabled: bool = Field(default=True)
-    ui_mcp_error_icon_enabled: bool = Field(default=True)
 
 
 class UserCreate(SQLModel):
@@ -118,14 +106,6 @@ class UserRead(SQLModel):
     ui_theme_mode: str
     ui_font_size: str
     ui_brain_view_mode: str
-    ui_plain_text_output_enabled: bool
-    ui_thinking_icon: str
-    ui_mcp_icon: str
-    ui_mcp_success_icon: str
-    ui_mcp_error_icon: str
-    ui_thinking_icon_enabled: bool
-    ui_mcp_success_icon_enabled: bool
-    ui_mcp_error_icon_enabled: bool
 
 
 class UserUpdate(SQLModel):
@@ -160,14 +140,6 @@ class UserUpdate(SQLModel):
     ui_theme_mode: Optional[str] = None
     ui_font_size: Optional[str] = None
     ui_brain_view_mode: Optional[str] = None
-    ui_plain_text_output_enabled: Optional[bool] = None
-    ui_thinking_icon: Optional[str] = None
-    ui_mcp_icon: Optional[str] = None
-    ui_mcp_success_icon: Optional[str] = None
-    ui_mcp_error_icon: Optional[str] = None
-    ui_thinking_icon_enabled: Optional[bool] = None
-    ui_mcp_success_icon_enabled: Optional[bool] = None
-    ui_mcp_error_icon_enabled: Optional[bool] = None
 
 
 class Token(SQLModel):

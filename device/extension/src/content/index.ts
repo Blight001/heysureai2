@@ -12,7 +12,7 @@ import {
   doType, getContent, doScroll, doWait, doEvaluate, doExtract,
   findText, fillForm, doSelect, doHover, storageGet, storageSet, storageRemove,
   storageList, domSnapshot, iframeList, performanceInfo, fileUpload,
-  screenshotTargetInfo,
+  screenshotTargetInfo, focusTarget,
 } from './actions'
 import { doFindPopups, doClosePopup } from './popups'
 import { doPageInfo } from './viewport'
@@ -38,6 +38,7 @@ async function handleAction(msg: any): Promise<any> {
     case 'right_click':  return doRightClick(msg)
     case 'drag':         return doDrag(msg)
     case 'press_key':    return doPressKey(msg)
+    case 'focus_target':  return focusTarget(msg)
     case 'find_popups':  return doFindPopups(msg)
     case 'close_popup':  return doClosePopup(msg)
     case 'page_info':    return doPageInfo()

@@ -642,7 +642,27 @@ async function toolObserve(args: any): Promise<any> {
 
 async function toolType(args: any): Promise<any> {
   const tab = await getActiveTab()
-  return contentMsg(tab.id!, { action: 'type', selector: args.selector, text: args.text, clearFirst: args.clear_first !== false, submit: !!args.submit })
+  const result = await contentMsg(tab.id!, {
+    action: 'type',
+    selector: args.selector,
+    text: args.text,
+    clearFirst: args.clear_first !== false,
+    submit: false,
+  })
+  if (!args.submit) return result
+
+  try {
+    const pressed = await debuggerPressKey(tab.id!, { key: 'Enter' })
+    return { ...result, submitted: true, submit_method: pressed.method }
+  } catch (debuggerErr: any) {
+    await contentMsg(tab.id!, { action: 'press_key', key: 'Enter' })
+    return {
+      ...result,
+      submitted: true,
+      submit_method: 'content.KeyboardEvent',
+      warning: `Native submit key dispatch failed, fell back to synthetic KeyboardEvent: ${debuggerErr?.message || String(debuggerErr)}`,
+    }
+  }
 }
 
 async function toolGetContent(args: any): Promise<any> {
@@ -707,6 +727,96 @@ async function debuggerEvaluate(tabId: number, code: string): Promise<any> {
       subtype: result?.subtype,
       executionContext: 'debugger',
     }
+  } finally {
+    if (attached) {
+      try { await chrome.debugger.detach(target) } catch { /* tab may have closed */ }
+    }
+  }
+}
+
+const SPECIAL_KEY_INFO: Record<string, { key: string; code: string; windowsVirtualKeyCode: number }> = {
+  Enter:      { key: 'Enter',      code: 'Enter',      windowsVirtualKeyCode: 13 },
+  Return:     { key: 'Enter',      code: 'Enter',      windowsVirtualKeyCode: 13 },
+  Escape:     { key: 'Escape',     code: 'Escape',     windowsVirtualKeyCode: 27 },
+  Esc:        { key: 'Escape',     code: 'Escape',     windowsVirtualKeyCode: 27 },
+  Tab:        { key: 'Tab',        code: 'Tab',        windowsVirtualKeyCode: 9 },
+  Backspace:  { key: 'Backspace',  code: 'Backspace',  windowsVirtualKeyCode: 8 },
+  Delete:     { key: 'Delete',     code: 'Delete',     windowsVirtualKeyCode: 46 },
+  Insert:     { key: 'Insert',     code: 'Insert',     windowsVirtualKeyCode: 45 },
+  Home:       { key: 'Home',       code: 'Home',       windowsVirtualKeyCode: 36 },
+  End:        { key: 'End',        code: 'End',        windowsVirtualKeyCode: 35 },
+  PageUp:     { key: 'PageUp',     code: 'PageUp',     windowsVirtualKeyCode: 33 },
+  PageDown:   { key: 'PageDown',   code: 'PageDown',   windowsVirtualKeyCode: 34 },
+  ArrowLeft:  { key: 'ArrowLeft',  code: 'ArrowLeft',  windowsVirtualKeyCode: 37 },
+  ArrowUp:    { key: 'ArrowUp',    code: 'ArrowUp',    windowsVirtualKeyCode: 38 },
+  ArrowRight: { key: 'ArrowRight', code: 'ArrowRight', windowsVirtualKeyCode: 39 },
+  ArrowDown:  { key: 'ArrowDown',  code: 'ArrowDown',  windowsVirtualKeyCode: 40 },
+  Space:      { key: ' ',          code: 'Space',      windowsVirtualKeyCode: 32 },
+  ' ':        { key: ' ',          code: 'Space',      windowsVirtualKeyCode: 32 },
+}
+
+for (let i = 1; i <= 12; i++) {
+  SPECIAL_KEY_INFO[`F${i}`] = { key: `F${i}`, code: `F${i}`, windowsVirtualKeyCode: 111 + i }
+}
+
+function modifierBits(args: any) {
+  return (args.alt ? 1 : 0) |
+    (args.ctrl ? 2 : 0) |
+    (args.meta ? 4 : 0) |
+    (args.shift ? 8 : 0)
+}
+
+function keyInfo(rawKey: any) {
+  const raw = String(rawKey || '')
+  const special = SPECIAL_KEY_INFO[raw]
+  if (special) return special
+
+  if (/^[a-z]$/i.test(raw)) {
+    const upper = raw.toUpperCase()
+    return { key: raw.length === 1 ? raw : upper, code: `Key${upper}`, windowsVirtualKeyCode: upper.charCodeAt(0) }
+  }
+
+  if (/^[0-9]$/.test(raw)) {
+    return { key: raw, code: `Digit${raw}`, windowsVirtualKeyCode: raw.charCodeAt(0) }
+  }
+
+  if (raw.length === 1) {
+    return { key: raw, code: '', windowsVirtualKeyCode: raw.toUpperCase().charCodeAt(0) }
+  }
+
+  return { key: raw, code: raw, windowsVirtualKeyCode: 0 }
+}
+
+async function debuggerPressKey(tabId: number, args: any): Promise<any> {
+  const info = keyInfo(args.key)
+  const modifiers = modifierBits(args)
+  const target = { tabId }
+  let attached = false
+
+  try {
+    await chrome.debugger.attach(target, '1.3')
+    attached = true
+
+    const printable = info.key.length === 1 && modifiers === 0 && info.key !== '\r'
+    const base: any = {
+      key: info.key,
+      code: info.code,
+      windowsVirtualKeyCode: info.windowsVirtualKeyCode,
+      nativeVirtualKeyCode: info.windowsVirtualKeyCode,
+      modifiers,
+    }
+    if (printable) base.text = info.key
+
+    await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+      ...base,
+      type: printable ? 'keyDown' : 'rawKeyDown',
+    })
+    await chrome.debugger.sendCommand(target, 'Input.dispatchKeyEvent', {
+      ...base,
+      type: 'keyUp',
+      text: undefined,
+    })
+    return { success: true, key: info.key, code: info.code, method: 'debugger.Input.dispatchKeyEvent' }
   } finally {
     if (attached) {
       try { await chrome.debugger.detach(target) } catch { /* tab may have closed */ }
@@ -981,11 +1091,25 @@ async function toolDrag(args: any): Promise<any> {
 
 async function toolPressKey(args: any): Promise<any> {
   const tab = await getActiveTab()
-  return contentMsg(tab.id!, {
+  const fallback = () => contentMsg(tab.id!, {
     action: 'press_key',
     key: args.key, selector: args.selector,
     ctrl: !!args.ctrl, shift: !!args.shift, alt: !!args.alt, meta: !!args.meta,
   })
+
+  try {
+    if (args.selector) {
+      await contentMsg(tab.id!, { action: 'focus_target', selector: args.selector })
+    }
+    return await debuggerPressKey(tab.id!, args)
+  } catch (debuggerErr: any) {
+    const result = await fallback()
+    return {
+      ...result,
+      method: 'content.KeyboardEvent',
+      warning: `Native key dispatch failed, fell back to synthetic KeyboardEvent: ${debuggerErr?.message || String(debuggerErr)}`,
+    }
+  }
 }
 
 // ── Action-dispatching handlers ───────────────────────────────────────────

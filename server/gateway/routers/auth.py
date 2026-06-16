@@ -53,21 +53,6 @@ def _user_payload(user: User) -> dict:
     return data
 
 
-def _parse_bool_setting(value, default: bool = True) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    text = str(value).strip().lower()
-    if text in {"0", "false", "off", "no"}:
-        return False
-    if text in {"1", "true", "on", "yes"}:
-        return True
-    return default
-
-
 def _normalize_public_url(raw: str) -> str:
     value = str(raw or "").strip()
     if not value:
@@ -353,26 +338,6 @@ async def update_profile(
     if "ui_brain_view_mode" in update_data:
         raw_mode = str(update_data.get("ui_brain_view_mode") or "").lower()
         update_data["ui_brain_view_mode"] = raw_mode if raw_mode in {"sections", "all"} else "sections"
-    for enabled_key in {
-        "ui_thinking_icon_enabled",
-        "ui_mcp_success_icon_enabled",
-        "ui_mcp_error_icon_enabled",
-        "ui_plain_text_output_enabled",
-    }:
-        if enabled_key in update_data:
-            update_data[enabled_key] = _parse_bool_setting(
-                update_data.get(enabled_key),
-                False if enabled_key == "ui_plain_text_output_enabled" else True,
-            )
-    for icon_key, fallback in {
-        "ui_thinking_icon": "🤔",
-        "ui_mcp_icon": "🧰",
-        "ui_mcp_success_icon": "🧰",
-        "ui_mcp_error_icon": "❌",
-    }.items():
-        if icon_key in update_data:
-            value = str(update_data.get(icon_key) or "").strip()
-            update_data[icon_key] = value[:8] if value else fallback
     if "mcp_max_steps" in update_data:
         try:
             update_data["mcp_max_steps"] = max(1, min(999, int(update_data.get("mcp_max_steps") or 48)))
