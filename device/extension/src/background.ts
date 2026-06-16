@@ -4,6 +4,7 @@ import { io, Socket } from 'socket.io-client'
 import { getSettings, saveSettings, pushActivity, getActivity, getAuth } from './lib/storage'
 import { getAgentEndpoint } from './lib/client'
 import { executeTask, executeBrowserTool, effectiveToolDefs, DYNAMIC_MCP_STORAGE_KEY } from './lib/tools'
+import { applyServerDynamicMcp, DYNAMIC_MCP_SERVER_STORAGE_KEY } from './lib/tools/dynamic'
 import { callAI } from './lib/ai'
 import { screenshotToolContent } from './lib/ai'
 import {
@@ -267,6 +268,21 @@ function attachOperationalListeners(s: Socket, agentName: string) {
   })
 
   s.on('task:dispatch', (task: DispatchedTask) => { void handleTask(task) })
+
+  // Web-authored dynamic MCP tools for this (browser) device type, pushed by the
+  // server on register and on every operator edit. Applying caches them and (when
+  // the set changed) the storage-change listener re-registers so the new catalog
+  // is reported back up.
+  s.on('device:tool-config', (payload: any) => {
+    void (async () => {
+      try {
+        const status = await applyServerDynamicMcp(payload)
+        if (status.applied) log('system', 'info', `已应用服务器下发的 MCP 工具：${status.tools} 个`)
+      } catch (err: any) {
+        log('system', 'error', `应用服务器 MCP 工具失败: ${err?.message || err}`)
+      }
+    })()
+  })
 }
 
 async function register() {
@@ -741,7 +757,7 @@ void restoreAndConnectOnStartup()
 // to register even if the one-off popup port message is missed.
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local') return
-  if (changes[DYNAMIC_MCP_STORAGE_KEY]) {
+  if (changes[DYNAMIC_MCP_STORAGE_KEY] || changes[DYNAMIC_MCP_SERVER_STORAGE_KEY]) {
     if (socket?.connected) void emitRegisterOn(socket)
     return
   }
