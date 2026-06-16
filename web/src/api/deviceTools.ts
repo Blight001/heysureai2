@@ -65,3 +65,28 @@ export const deleteDeviceTool = (deviceType: DeviceToolType, name: string) =>
     `/api/device-tools/${encodeURIComponent(name)}`,
     { query: { device_type: deviceType }, fallbackError: '删除动态 MCP 工具失败' },
   )
+
+export interface DeviceToolVersion {
+  version_id: number
+  name: string
+  revision: string
+  action: 'upsert' | 'delete' | 'restore'
+  actor: 'web' | 'ai'
+  ai_config_id: number | null
+  description: string
+  code_kind: 'js' | 'program'
+  created_at: number
+}
+
+export const listDeviceToolVersions = (deviceType: DeviceToolType, name: string) =>
+  get<{ deviceType: DeviceToolType; name: string; versions: DeviceToolVersion[] }>(
+    '/api/device-tools/versions',
+    { query: { device_type: deviceType, name }, fallbackError: '历史版本加载失败' },
+  )
+
+export const restoreDeviceToolVersion = (deviceType: DeviceToolType, versionId: number) =>
+  post<{ tool: DeviceDynamicTool; pushedToDevices: number }>(
+    '/api/device-tools/restore',
+    { device_type: deviceType, version_id: versionId },
+    { fallbackError: '回滚失败' },
+  )

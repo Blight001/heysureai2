@@ -16,7 +16,10 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 
 from api.database import engine
-from api.models import DeviceDynamicTool
+from api.models import DeviceDynamicTool, DeviceDynamicToolVersion
+
+# Keep at most this many version snapshots per (user, device_type, name).
+MAX_VERSIONS_PER_TOOL = 50
 
 
 # Mirrors NAME_RE in the device interpreters.
@@ -149,6 +152,82 @@ def _serialize(row: DeviceDynamicTool) -> Dict[str, Any]:
     }
 
 
+def _record_version(
+    session: Session,
+    *,
+    user_id: int,
+    device_type: str,
+    row: DeviceDynamicTool,
+    action: str,
+    actor: str,
+    ai_config_id: Optional[int],
+) -> None:
+    """Append a snapshot of ``row`` and prune the oldest beyond the cap.
+
+    Must be called inside ``session`` after the row's fields are set so the
+    snapshot matches what was persisted."""
+    definition = {
+        "name": row.name,
+        "description": row.description,
+        "input_schema": json.loads(row.input_schema_json or "{}"),
+        "code_kind": row.code_kind,
+        "code": json.loads(row.code_json or "[]"),
+        "js": row.js_source or "",
+    }
+    session.add(DeviceDynamicToolVersion(
+        user_id=user_id,
+        device_type=device_type,
+        name=row.name,
+        revision=_revision(definition),
+        action=action,
+        actor=actor if actor in ("web", "ai") else "web",
+        ai_config_id=ai_config_id,
+        description=row.description,
+        input_schema_json=row.input_schema_json,
+        code_kind=row.code_kind,
+        code_json=row.code_json,
+        js_source=row.js_source or "",
+        created_at=time.time(),
+    ))
+    # Prune oldest snapshots beyond the cap for this tool.
+    history = session.exec(
+        select(DeviceDynamicToolVersion)
+        .where(
+            DeviceDynamicToolVersion.user_id == user_id,
+            DeviceDynamicToolVersion.device_type == device_type,
+            DeviceDynamicToolVersion.name == row.name,
+        )
+        .order_by(DeviceDynamicToolVersion.created_at.desc(), DeviceDynamicToolVersion.id.desc())
+    ).all()
+    for stale in history[MAX_VERSIONS_PER_TOOL:]:
+        session.delete(stale)
+
+
+def _serialize_version(row: DeviceDynamicToolVersion, *, full: bool = False) -> Dict[str, Any]:
+    out: Dict[str, Any] = {
+        "version_id": row.id,
+        "name": row.name,
+        "revision": row.revision,
+        "action": row.action,
+        "actor": row.actor,
+        "ai_config_id": row.ai_config_id,
+        "description": row.description,
+        "code_kind": row.code_kind,
+        "created_at": float(row.created_at or 0),
+    }
+    if full:
+        try:
+            out["input_schema"] = json.loads(row.input_schema_json or "{}")
+        except Exception:
+            out["input_schema"] = {}
+        try:
+            out["code"] = json.loads(row.code_json or "[]")
+        except Exception:
+            out["code"] = []
+        out["js"] = row.js_source or ""
+    return out
+
+
 def list_tools(user_id: int, device_type: str) -> List[Dict[str, Any]]:
     dtype = normalize_device_type(device_type)
     with Session(engine) as session:
@@ -176,7 +255,15 @@ def get_tool(user_id: int, device_type: str, name: str) -> Optional[Dict[str, An
         return _serialize(row) if row else None
 
 
-def upsert_tool(user_id: int, device_type: str, definition: Any, enabled: bool = True) -> Dict[str, Any]:
+def upsert_tool(
+    user_id: int,
+    device_type: str,
+    definition: Any,
+    enabled: bool = True,
+    actor: str = "web",
+    ai_config_id: Optional[int] = None,
+    action: str = "upsert",
+) -> Dict[str, Any]:
     dtype = normalize_device_type(device_type)
     clean = validate_definition(definition)
     now = time.time()
@@ -200,6 +287,10 @@ def upsert_tool(user_id: int, device_type: str, definition: Any, enabled: bool =
         row.js_source = clean.get("js") or ""
         row.enabled = bool(enabled)
         row.updated_at = now
+        _record_version(
+            session, user_id=user_id, device_type=dtype, row=row,
+            action=action, actor=actor, ai_config_id=ai_config_id,
+        )
         session.commit()
         session.refresh(row)
         return _serialize(row)
@@ -224,7 +315,13 @@ def set_enabled(user_id: int, device_type: str, name: str, enabled: bool) -> Opt
         return _serialize(row)
 
 
-def delete_tool(user_id: int, device_type: str, name: str) -> bool:
+def delete_tool(
+    user_id: int,
+    device_type: str,
+    name: str,
+    actor: str = "web",
+    ai_config_id: Optional[int] = None,
+) -> bool:
     dtype = normalize_device_type(device_type)
     with Session(engine) as session:
         row = session.exec(
@@ -236,9 +333,66 @@ def delete_tool(user_id: int, device_type: str, name: str) -> bool:
         ).first()
         if not row:
             return False
+        # Snapshot the final state as a delete marker so it can still be
+        # restored after deletion.
+        _record_version(
+            session, user_id=user_id, device_type=dtype, row=row,
+            action="delete", actor=actor, ai_config_id=ai_config_id,
+        )
         session.delete(row)
         session.commit()
         return True
+
+
+def list_versions(user_id: int, device_type: str, name: str, limit: int = MAX_VERSIONS_PER_TOOL) -> List[Dict[str, Any]]:
+    dtype = normalize_device_type(device_type)
+    with Session(engine) as session:
+        rows = session.exec(
+            select(DeviceDynamicToolVersion)
+            .where(
+                DeviceDynamicToolVersion.user_id == user_id,
+                DeviceDynamicToolVersion.device_type == dtype,
+                DeviceDynamicToolVersion.name == str(name or "").strip(),
+            )
+            .order_by(DeviceDynamicToolVersion.created_at.desc(), DeviceDynamicToolVersion.id.desc())
+            .limit(max(1, min(int(limit or 1), MAX_VERSIONS_PER_TOOL)))
+        ).all()
+        return [_serialize_version(row) for row in rows]
+
+
+def get_version(user_id: int, device_type: str, version_id: int) -> Optional[Dict[str, Any]]:
+    dtype = normalize_device_type(device_type)
+    with Session(engine) as session:
+        row = session.get(DeviceDynamicToolVersion, int(version_id))
+        if not row or row.user_id != user_id or row.device_type != dtype:
+            return None
+        return _serialize_version(row, full=True)
+
+
+def restore_version(
+    user_id: int,
+    device_type: str,
+    version_id: int,
+    actor: str = "web",
+    ai_config_id: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    """Re-create a tool from a historical snapshot. Records a new 'restore'
+    version. Returns the restored tool, or None if the snapshot is missing."""
+    snapshot = get_version(user_id, device_type, version_id)
+    if not snapshot:
+        return None
+    definition = {
+        "name": snapshot["name"],
+        "description": snapshot["description"],
+        "input_schema": snapshot.get("input_schema") or {},
+        "code_kind": snapshot.get("code_kind") or "program",
+        "code": snapshot.get("code") or [],
+        "js": snapshot.get("js") or "",
+    }
+    return upsert_tool(
+        user_id, device_type, definition,
+        actor=actor, ai_config_id=ai_config_id, action="restore",
+    )
 
 
 def _passthrough_code(name: str) -> List[Dict[str, Any]]:

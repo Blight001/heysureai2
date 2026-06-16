@@ -5,8 +5,11 @@ import {
   upsertDeviceTool,
   toggleDeviceTool,
   deleteDeviceTool,
+  listDeviceToolVersions,
+  restoreDeviceToolVersion,
   type DeviceToolType,
   type DeviceDynamicTool,
+  type DeviceToolVersion,
   type DynamicToolStep,
 } from '@/api/deviceTools'
 
@@ -51,6 +54,9 @@ const isJsMode = computed(() => deviceType.value === 'desktop')
 const JS_TEMPLATE = "// 可用: args(入参) / cap(设备能力库) / ctx(workspaceRoot)\n// 例: return await cap.call('keyboard.type', { text: args.text })\nreturn await cap.call('namespace.tool', args)"
 const draft = ref<Draft | null>(null)
 const saving = ref(false)
+const versions = ref<DeviceToolVersion[]>([])
+const versionsOpen = ref(false)
+const versionsLoading = ref(false)
 
 const currentTabLabel = computed(() => TABS.find(t => t.key === deviceType.value)?.label || '')
 
@@ -94,6 +100,8 @@ const newTool = () => {
     steps: [blankStep()],
     js: isJsMode.value ? JS_TEMPLATE : '',
   }
+  versions.value = []
+  versionsOpen.value = false
   notice.value = ''
   error.value = ''
 }
@@ -123,6 +131,8 @@ const editTool = (tool: DeviceDynamicTool) => {
   }
   if (!draft.value.steps.length) draft.value.steps = [blankStep()]
   if (isJsMode.value && !draft.value.js.trim()) draft.value.js = JS_TEMPLATE
+  versions.value = []
+  versionsOpen.value = false
   notice.value = ''
   error.value = ''
 }
@@ -215,6 +225,42 @@ const remove = async (tool: DeviceDynamicTool) => {
     await load()
   } catch (err: any) {
     error.value = err?.message || '删除失败'
+  }
+}
+
+const fmtTime = (ts: number) => new Date((ts || 0) * 1000).toLocaleString()
+const actionLabel = (a: string) => ({ upsert: '修改', delete: '删除', restore: '回滚' } as Record<string, string>)[a] || a
+
+const loadVersions = async () => {
+  if (!draft.value?.original) { versions.value = []; return }
+  versionsLoading.value = true
+  try {
+    const data = await listDeviceToolVersions(deviceType.value, draft.value.original)
+    versions.value = data.versions || []
+  } catch (err: any) {
+    error.value = err?.message || '历史版本加载失败'
+  } finally {
+    versionsLoading.value = false
+  }
+}
+
+const toggleVersions = () => {
+  versionsOpen.value = !versionsOpen.value
+  if (versionsOpen.value && !versions.value.length) loadVersions()
+}
+
+const restore = async (versionId: number) => {
+  if (!window.confirm('回滚到该版本？当前内容会被覆盖（并记录为一次新版本，可再回滚）。')) return
+  error.value = ''
+  notice.value = ''
+  try {
+    const res = await restoreDeviceToolVersion(deviceType.value, versionId)
+    notice.value = `已回滚，已推送到 ${res.pushedToDevices} 台在线设备`
+    draft.value = null
+    versionsOpen.value = false
+    await load()
+  } catch (err: any) {
+    error.value = err?.message || '回滚失败'
   }
 }
 
@@ -407,6 +453,28 @@ const addParam = () => draft.value?.params.push({ name: '', type: 'string', desc
               <p class="text-[10px] text-zinc-400 leading-relaxed">
                 用 <code>builtin:工具名</code> 调用设备原生能力；模板支持 <code>${'{'}args.x{'}'}</code>、<code>${'{'}vars.x{'}'}</code>、<code>${'{'}last{'}'}</code>。
               </p>
+            </div>
+
+            <!-- version history / rollback (existing tools only) -->
+            <div v-if="draft.original" class="rounded-lg border border-zinc-200 dark:border-zinc-700">
+              <button type="button" class="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300" @click="toggleVersions">
+                <span>历史版本（改坏了可回滚）</span>
+                <span class="text-zinc-400">{{ versionsOpen ? '收起' : '展开' }}</span>
+              </button>
+              <div v-if="versionsOpen" class="border-t border-zinc-200 dark:border-zinc-700 p-2 space-y-1 max-h-44 overflow-auto">
+                <div v-if="versionsLoading" class="text-[10px] text-zinc-400 py-2 text-center">加载中…</div>
+                <div v-else-if="!versions.length" class="text-[10px] text-zinc-400 py-2 text-center">暂无历史版本</div>
+                <div
+                  v-for="v in versions"
+                  :key="v.version_id"
+                  class="flex items-center gap-2 rounded border border-zinc-100 dark:border-zinc-800 px-2 py-1"
+                >
+                  <span class="text-[10px] px-1 rounded" :class="v.action === 'delete' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'">{{ actionLabel(v.action) }}</span>
+                  <span class="text-[10px] text-zinc-500">{{ v.actor === 'ai' ? 'AI' : '网页' }}</span>
+                  <span class="text-[10px] text-zinc-400 flex-1 truncate">{{ fmtTime(v.created_at) }} · {{ v.revision.slice(0, 8) }}</span>
+                  <button type="button" class="text-[10px] text-indigo-600 dark:text-indigo-300 hover:underline shrink-0" @click="restore(v.version_id)">还原</button>
+                </div>
+              </div>
             </div>
 
             <div class="flex justify-end gap-2 pt-1">

@@ -35,6 +35,11 @@ class DynamicToolToggle(BaseModel):
     enabled: bool
 
 
+class DynamicToolRestore(BaseModel):
+    device_type: str
+    version_id: int
+
+
 def _available_call_targets(user_id: int, device_type: str) -> List[Dict[str, str]]:
     """Tool names the visual editor can offer as ``call`` targets: every tool an
     online device of this type currently advertises (built-ins included), so the
@@ -99,6 +104,57 @@ async def toggle_device_tool(
     tool = dyn.set_enabled(user.id, dtype, payload.name, payload.enabled)
     if tool is None:
         raise HTTPException(status_code=404, detail="Dynamic MCP tool not found")
+    reached = await push_device_dynamic_tools(user.id, dtype)
+    return {"tool": tool, "pushedToDevices": reached}
+
+
+@router.get("/versions")
+async def list_device_tool_versions(
+    device_type: str = Query(...),
+    name: str = Query(...),
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    try:
+        dtype = dyn.normalize_device_type(device_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"deviceType": dtype, "name": name, "versions": dyn.list_versions(user.id, dtype, name)}
+
+
+@router.get("/version")
+async def get_device_tool_version(
+    device_type: str = Query(...),
+    version_id: int = Query(...),
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    try:
+        dtype = dyn.normalize_device_type(device_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    snapshot = dyn.get_version(user.id, dtype, version_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Version not found")
+    return {"version": snapshot}
+
+
+@router.post("/restore")
+async def restore_device_tool(
+    payload: DynamicToolRestore,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    try:
+        dtype = dyn.normalize_device_type(payload.device_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    tool = dyn.restore_version(user.id, dtype, payload.version_id, actor="web")
+    if tool is None:
+        raise HTTPException(status_code=404, detail="Version not found")
     reached = await push_device_dynamic_tools(user.id, dtype)
     return {"tool": tool, "pushedToDevices": reached}
 

@@ -56,6 +56,7 @@ from .device_binding import DeviceAiBinding
 from .device_mcp_permission import DeviceTypeMcpPermission
 from .device_presence import DevicePresence
 from .device_dynamic_tool import DeviceDynamicTool
+from .device_dynamic_tool_version import DeviceDynamicToolVersion
 from .bot_session_route import BotSessionRoute, BotUserCursor
 from .workshop_binding import WorkshopAiBinding
 from .knowledge import EvolutionInput, KnowledgeEntry, Memory
@@ -100,6 +101,7 @@ __all__ = [
     "DeviceTypeMcpPermission",
     "DevicePresence",
     "DeviceDynamicTool",
+    "DeviceDynamicToolVersion",
     "WorkshopAiBinding",
     # chat
     "ChatMessage",

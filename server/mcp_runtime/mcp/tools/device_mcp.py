@@ -56,8 +56,24 @@ async def _device_mcp_manage(user_id: int, args: Dict[str, Any], ai_config_id: O
         if not tool:
             return {"ok": False, "error": f"tool not found: {name}"}
         return {"ok": True, "tool": tool}
+    if action == "history":
+        return {"ok": True, "name": name, "versions": dyn.list_versions(user_id, device_type, name)}
+    if action == "get_version":
+        snapshot = dyn.get_version(user_id, device_type, int(args.get("version_id") or 0))
+        if snapshot is None:
+            return {"ok": False, "error": "version not found"}
+        return {"ok": True, "version": snapshot}
+    if action == "restore":
+        tool = dyn.restore_version(
+            user_id, device_type, int(args.get("version_id") or 0),
+            actor="ai", ai_config_id=ai_config_id,
+        )
+        if tool is None:
+            return {"ok": False, "error": "version not found"}
+        reached = await push_device_dynamic_tools(user_id, device_type)
+        return {"ok": True, "action": "restore", "tool": tool, "pushedToDevices": reached}
     if action == "delete":
-        if not dyn.delete_tool(user_id, device_type, name):
+        if not dyn.delete_tool(user_id, device_type, name, actor="ai", ai_config_id=ai_config_id):
             return {"ok": False, "error": f"tool not found: {name}"}
         reached = await push_device_dynamic_tools(user_id, device_type)
         return {"ok": True, "action": "delete", "name": name, "pushedToDevices": reached}
@@ -66,7 +82,10 @@ async def _device_mcp_manage(user_id: int, args: Dict[str, Any], ai_config_id: O
         if not isinstance(definition, dict):
             return {"ok": False, "error": "definition object is required for upsert"}
         try:
-            tool = dyn.upsert_tool(user_id, device_type, definition, enabled=bool(args.get("enabled", True)))
+            tool = dyn.upsert_tool(
+                user_id, device_type, definition,
+                enabled=bool(args.get("enabled", True)), actor="ai", ai_config_id=ai_config_id,
+            )
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
         reached = await push_device_dynamic_tools(user_id, device_type)
@@ -80,11 +99,15 @@ DEVICE_MCP_MANAGE_SCHEMA: Dict[str, Any] = {
     "properties": {
         "action": {
             "type": "string",
-            "enum": ["list", "get", "capabilities", "upsert", "delete"],
-            "description": "list 列出工具；get 读单个；capabilities 列出该设备类型可调用的原生能力；upsert 创建/修改；delete 删除。",
+            "enum": ["list", "get", "capabilities", "upsert", "delete", "history", "get_version", "restore"],
+            "description": (
+                "list 列出工具；get 读单个；capabilities 列出该设备类型可调用的原生能力；upsert 创建/修改；delete 删除；"
+                "history 查某工具的历史版本；get_version 读某版本完整内容；restore 回滚到指定版本（改坏了用它）。"
+            ),
         },
         "device_type": {"type": "string", "enum": ["desktop", "browser"], "description": "目标设备类型。"},
-        "name": {"type": "string", "description": "工具名（get/delete 必填；upsert 也可放在 definition.name）。"},
+        "name": {"type": "string", "description": "工具名（get/delete/history 必填；upsert 也可放在 definition.name）。"},
+        "version_id": {"type": "integer", "description": "get_version / restore 的目标版本号（来自 history）。"},
         "enabled": {"type": "boolean", "description": "upsert 时是否启用（默认 true）。"},
         "definition": {
             "type": "object",
