@@ -30,6 +30,14 @@ const deviceType = ref<DeviceToolType>('desktop')
 const tools = ref<DeviceDynamicTool[]>([])
 const availableTools = ref<{ name: string; description: string }[]>([])
 const statsByTool = ref<Record<string, DeviceToolStat>>({})
+const listQuery = ref('')
+const filteredTools = computed(() => {
+  const q = listQuery.value.trim().toLowerCase()
+  if (!q) return tools.value
+  return tools.value.filter(t =>
+    [t.name, t.description].some(s => String(s || '').toLowerCase().includes(q)),
+  )
+})
 const loading = ref(false)
 const error = ref('')
 const notice = ref('')
@@ -348,14 +356,20 @@ const addParam = () => draft.value?.params.push({ name: '', type: 'string', desc
         <template v-if="!draft">
           <div v-if="loading" class="text-xs text-zinc-500 py-6 text-center">加载中…</div>
           <template v-else>
-            <div class="mb-2 flex justify-between items-center">
-              <div class="text-[11px] text-zinc-500">共 {{ tools.length }} 个动态工具</div>
-              <button type="button" class="rounded-lg bg-indigo-600 px-3 py-1 text-xs font-medium text-white hover:bg-indigo-500" @click="newTool">+ 新建工具</button>
+            <div class="mb-2 flex justify-between items-center gap-2">
+              <input
+                v-model="listQuery"
+                type="search"
+                placeholder="搜索工具…"
+                class="flex-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-transparent px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-800"
+              />
+              <button type="button" class="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500" @click="newTool">+ 新建</button>
             </div>
-            <div v-if="!tools.length" class="text-xs text-zinc-400 py-6 text-center">还没有动态工具。连接一台{{ currentTabLabel }}设备后会自动播种其内置工具，或点「新建工具」。</div>
+            <div v-if="!tools.length" class="text-xs text-zinc-400 py-6 text-center">还没有动态工具。连接一台{{ currentTabLabel }}设备后会自动播种其内置工具，或点「新建」。</div>
+            <div v-else-if="!filteredTools.length" class="text-xs text-zinc-400 py-6 text-center">没有匹配的工具</div>
             <div class="space-y-1.5">
               <div
-                v-for="tool in tools"
+                v-for="tool in filteredTools"
                 :key="tool.name"
                 class="rounded-lg border border-zinc-200 dark:border-zinc-700 px-3 py-2 flex items-center gap-3"
               >
