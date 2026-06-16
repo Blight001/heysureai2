@@ -85,10 +85,6 @@ const mcpToolDetails = computed(() => {
   return text.replace(/^\[MCP工具\]\s*/i, '').replace(SCREENSHOT_MARKER_RE, '').trim()
 })
 
-const mcpToolIcon = computed(() => {
-  return props.mcpIcon ?? ''
-})
-
 const copiedTarget = ref('')
 const frontPromptDetailsOpen = ref(false)
 
@@ -154,13 +150,14 @@ const renderedThinkText = computed(() => {
       class="group relative max-w-[95%]"
       :class="isPlainAssistantMessage ? 'sm:max-w-[92%]' : 'sm:max-w-[85%]'"
     >
-      <!-- Think Block -->
-      <div v-if="renderedThinkText" class="mb-0.5">
-        <details class="transition-all">
-          <summary class="py-0.5 text-[11px] leading-4 text-zinc-500 font-medium cursor-pointer hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-300 transition-colors select-none">
-            深度思考
+      <!-- Think Block — Codex-style: dim/italic body on a quiet left rail -->
+      <div v-if="renderedThinkText" class="mb-1">
+        <details class="group/think">
+          <summary class="flex items-center gap-1 py-0.5 text-[11px] leading-4 text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300 cursor-pointer select-none list-none transition-colors">
+            <span class="text-[8px] leading-none transition-transform group-open/think:rotate-90">▶</span>
+            <span class="font-medium tracking-wide">思考</span>
           </summary>
-          <div class="pt-0.5 text-[11px] text-zinc-500 leading-snug italic dark:text-zinc-400 whitespace-pre-wrap">
+          <div class="mt-1 ml-1 pl-2.5 border-l border-zinc-200 dark:border-zinc-700/80 text-[11px] text-zinc-400 dark:text-zinc-500 leading-relaxed italic whitespace-pre-wrap">
             {{ renderedThinkText }}
           </div>
         </details>
@@ -251,23 +248,19 @@ const renderedThinkText = computed(() => {
           >
             <img :src="mcpImageUrl" alt="截图" class="mcp-screenshot" loading="lazy" />
           </a>
-          <details class="mcp-details">
-            <summary class="flex items-center gap-1.5 whitespace-nowrap cursor-pointer select-none list-none leading-5">
-              <span class="text-[12px] font-semibold text-sky-700 dark:text-sky-300">{{ mcpToolIcon ? `${mcpToolIcon} ` : '' }}MCP 工具</span>
-              <span class="min-w-0 truncate font-mono text-[11px] text-sky-600 dark:text-sky-300">
-                {{ mcpToolSummary.tool }}
-              </span>
+          <details class="mcp-details group/mcp">
+            <summary class="flex items-center gap-2 whitespace-nowrap cursor-pointer select-none list-none leading-5">
               <span
-                class="shrink-0 text-[11px] font-medium"
-                :class="mcpToolSummary.status === '失败' ? 'text-rose-600 dark:text-rose-300' : 'text-emerald-600 dark:text-emerald-300'"
-              >
-                {{ mcpToolSummary.status || '已执行' }}
-              </span>
-              <span class="ml-auto shrink-0 text-[11px] text-zinc-500 hover:text-sky-700 dark:text-zinc-400 dark:hover:text-sky-300">详情</span>
+                class="shrink-0 h-1.5 w-1.5 rounded-full"
+                :class="mcpToolSummary.status === '失败' ? 'bg-rose-500' : 'bg-emerald-500'"
+              ></span>
+              <span class="shrink-0 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{{ mcpToolSummary.status === '失败' ? '调用失败' : '已调用' }}</span>
+              <span class="min-w-0 truncate font-mono text-[11px] text-zinc-700 dark:text-zinc-200">{{ mcpToolSummary.tool }}</span>
+              <span class="ml-auto shrink-0 text-[10px] text-zinc-400 dark:text-zinc-500 group-open/mcp:hidden">详情</span>
             </summary>
-            <div class="relative mt-1 max-h-72 overflow-y-auto rounded-lg bg-zinc-950 px-2.5 py-1.5 pr-11 font-mono text-[11px] leading-4 text-zinc-100 whitespace-pre-wrap break-words">
+            <div class="relative mt-1 ml-0.5 pl-2.5 border-l border-zinc-200 dark:border-zinc-700/80">
               <button
-                class="sticky top-0 float-right -mr-8 ml-2 w-6 h-6 rounded bg-zinc-800/90 text-zinc-200 border border-zinc-700 flex items-center justify-center hover:bg-zinc-700 hover:text-white transition-colors"
+                class="absolute right-0 top-0 w-6 h-6 rounded text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 flex items-center justify-center transition-colors"
                 :title="copiedTarget === `mcp-${props.idx}` ? '已复制' : '复制全部 MCP 信息'"
                 @click.stop.prevent="copyText(mcpToolDetails, `mcp-${props.idx}`)"
               >
@@ -279,7 +272,7 @@ const renderedThinkText = computed(() => {
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
               </button>
-              {{ mcpToolDetails }}
+              <div class="max-h-72 overflow-y-auto pr-8 font-mono text-[11px] leading-4 text-zinc-500 dark:text-zinc-400 whitespace-pre-wrap break-words">{{ mcpToolDetails }}</div>
             </div>
           </details>
         </div>
