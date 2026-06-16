@@ -16,7 +16,11 @@ export interface DynamicToolDefinition {
   name: string
   description: string
   input_schema: Record<string, unknown>
-  code: DynamicToolStep[]
+  // 'js' (desktop): server-stored JS run on the device with (args, cap, ctx).
+  // 'program' (browser): the call/set/return DSL.
+  code_kind?: 'js' | 'program'
+  code?: DynamicToolStep[]
+  js?: string
 }
 
 export interface DeviceDynamicTool extends DynamicToolDefinition {

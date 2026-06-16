@@ -43,7 +43,12 @@ interface Draft {
   description: string
   params: ParamRow[]
   steps: StepDraft[]
+  js: string // desktop: server-stored JS body run with (args, cap, ctx)
 }
+
+// Desktop tools are real JS run on the device; browser tools are the safe DSL.
+const isJsMode = computed(() => deviceType.value === 'desktop')
+const JS_TEMPLATE = "// 可用: args(入参) / cap(设备能力库) / ctx(workspaceRoot)\n// 例: return await cap.call('keyboard.type', { text: args.text })\nreturn await cap.call('namespace.tool', args)"
 const draft = ref<Draft | null>(null)
 const saving = ref(false)
 
@@ -87,6 +92,7 @@ const newTool = () => {
     description: '',
     params: [],
     steps: [blankStep()],
+    js: isJsMode.value ? JS_TEMPLATE : '',
   }
   notice.value = ''
   error.value = ''
@@ -113,8 +119,10 @@ const editTool = (tool: DeviceDynamicTool) => {
       name: String(step.name || ''),
       value: stringifyValue(step.value),
     })),
+    js: String(tool.js || ''),
   }
   if (!draft.value.steps.length) draft.value.steps = [blankStep()]
+  if (isJsMode.value && !draft.value.js.trim()) draft.value.js = JS_TEMPLATE
   notice.value = ''
   error.value = ''
 }
@@ -151,21 +159,35 @@ const save = async () => {
   const name = d.name.trim()
   if (!NAME_RE.test(name)) { error.value = '工具名不合法（小写字母/数字/点，如 custom.collect）'; return }
   if (!d.description.trim()) { error.value = '请填写工具说明'; return }
-  if (!d.steps.length) { error.value = '至少需要一条指令'; return }
-  for (const step of d.steps) {
-    if (step.op === 'call' && !step.tool.trim()) { error.value = 'call 指令需要选择目标工具'; return }
-    if (step.op === 'set' && !step.name.trim()) { error.value = 'set 指令需要变量名'; return }
+  let definition
+  if (isJsMode.value) {
+    if (!d.js.trim()) { error.value = '请填写 JS 代码'; return }
+    definition = {
+      name,
+      description: d.description.trim(),
+      input_schema: buildInputSchema(d.params),
+      code_kind: 'js' as const,
+      js: d.js,
+    }
+  } else {
+    if (!d.steps.length) { error.value = '至少需要一条指令'; return }
+    for (const step of d.steps) {
+      if (step.op === 'call' && !step.tool.trim()) { error.value = 'call 指令需要选择目标工具'; return }
+      if (step.op === 'set' && !step.name.trim()) { error.value = 'set 指令需要变量名'; return }
+    }
+    definition = {
+      name,
+      description: d.description.trim(),
+      input_schema: buildInputSchema(d.params),
+      code_kind: 'program' as const,
+      code: buildCode(d.steps),
+    }
   }
   saving.value = true
   error.value = ''
   notice.value = ''
   try {
-    const res = await upsertDeviceTool(deviceType.value, {
-      name,
-      description: d.description.trim(),
-      input_schema: buildInputSchema(d.params),
-      code: buildCode(d.steps),
-    })
+    const res = await upsertDeviceTool(deviceType.value, definition)
     notice.value = `已保存，已推送到 ${res.pushedToDevices} 台在线设备`
     draft.value = null
     await load()
@@ -304,8 +326,31 @@ const addParam = () => draft.value?.params.push({ name: '', type: 'string', desc
               </div>
             </div>
 
-            <!-- steps -->
-            <div>
+            <!-- JS editor (desktop): server-stored code run on the device -->
+            <div v-if="isJsMode">
+              <div class="mb-1 flex items-center justify-between">
+                <span class="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">实现代码（JS · 在设备上执行）</span>
+                <span class="text-[10px] text-zinc-400">服务器存储 · 改完即下发同步</span>
+              </div>
+              <textarea
+                v-model="draft.js"
+                rows="10"
+                spellcheck="false"
+                class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/60 dark:bg-zinc-950/50 px-2.5 py-2 text-[11px] font-mono leading-relaxed"
+              />
+              <p class="mt-1 text-[10px] text-zinc-400 leading-relaxed">
+                作用域内可用：<code>args</code>（入参）、<code>cap</code>（设备原生能力库，如 <code>await cap.call('keyboard.type', args)</code> 或 <code>cap.keyboard.type(args)</code>）、<code>ctx.workspaceRoot</code>。用 <code>return</code> 返回结果。
+              </p>
+              <details class="mt-1">
+                <summary class="text-[10px] text-indigo-600 dark:text-indigo-300 cursor-pointer">可用能力（{{ availableTools.length }}）</summary>
+                <div class="mt-1 flex flex-wrap gap-1">
+                  <code v-for="t in availableTools" :key="t.name" class="rounded bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 text-[10px] text-zinc-600 dark:text-zinc-300">{{ t.name }}</code>
+                </div>
+              </details>
+            </div>
+
+            <!-- steps (browser): the safe call/set/return DSL -->
+            <div v-else>
               <div class="mb-1 flex items-center justify-between">
                 <span class="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">程序步骤（顺序执行）</span>
                 <button type="button" class="text-[11px] text-indigo-600 dark:text-indigo-300 hover:underline" @click="addStep">+ 步骤</button>

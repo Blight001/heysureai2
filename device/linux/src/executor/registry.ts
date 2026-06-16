@@ -72,6 +72,13 @@ export function getBuiltinTool(id: string): ToolDefinition | undefined {
   return builtinTools.get(id)
 }
 
+// Ids of the device's native capability library. Server-authored JS tools call
+// these via the injected ``cap`` object instead of the catalog exposing them as
+// MCP tools directly.
+export function listBuiltinToolIds(): string[] {
+  return Array.from(builtinTools.keys())
+}
+
 function builtinSourceFiles(id: string): string[] {
   if (id === 'mcp.manage_dynamic_tool') {
     return ['src/executor/dynamic.ts', 'dist/executor/dynamic.js']

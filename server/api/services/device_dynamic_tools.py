@@ -41,11 +41,16 @@ def _revision(value: Any) -> str:
     ).hexdigest()
 
 
+MAX_JS_SOURCE = 64 * 1024
+
+
 def validate_definition(raw: Any) -> Dict[str, Any]:
     """Validate and normalize a dynamic tool definition.
 
-    Returns ``{name, description, input_schema, code}``. Raises ``ValueError``
-    with a human-readable message on any problem (the router maps it to 400).
+    Returns ``{name, description, input_schema, code_kind, code, js}``. ``code_kind``
+    is ``"js"`` (desktop: a JS function body run with ``(args, cap, ctx)``) or
+    ``"program"`` (browser: a call/set/return DSL). Raises ``ValueError`` with a
+    human-readable message on any problem (the router maps it to 400).
     """
     if not isinstance(raw, dict):
         raise ValueError("definition must be an object")
@@ -62,6 +67,28 @@ def validate_definition(raw: Any) -> Dict[str, Any]:
         input_schema = raw.get("inputSchema")
     if not isinstance(input_schema, dict):
         raise ValueError(f"Dynamic MCP {name} requires input_schema object")
+
+    code_kind = str(raw.get("code_kind") or raw.get("codeKind") or "").strip().lower()
+    if not code_kind:
+        # Infer: a non-empty ``js`` means a JS tool, otherwise a program.
+        code_kind = "js" if str(raw.get("js") or "").strip() else "program"
+    if code_kind not in ("js", "program"):
+        raise ValueError(f"Dynamic MCP {name} code_kind must be 'js' or 'program'")
+
+    if code_kind == "js":
+        js = raw.get("js")
+        if not isinstance(js, str) or not js.strip():
+            raise ValueError(f"Dynamic MCP {name} requires non-empty js")
+        if len(js) > MAX_JS_SOURCE:
+            raise ValueError(f"Dynamic MCP {name} js is too large")
+        return {
+            "name": name,
+            "description": description,
+            "input_schema": input_schema,
+            "code_kind": "js",
+            "code": [],
+            "js": js,
+        }
 
     code = raw.get("code")
     if isinstance(code, str):
@@ -90,7 +117,9 @@ def validate_definition(raw: Any) -> Dict[str, Any]:
         "name": name,
         "description": description,
         "input_schema": input_schema,
+        "code_kind": "program",
         "code": normalized_code,
+        "js": "",
     }
 
 
@@ -103,11 +132,14 @@ def _serialize(row: DeviceDynamicTool) -> Dict[str, Any]:
         code = json.loads(row.code_json or "[]")
     except Exception:
         code = []
+    code_kind = str(getattr(row, "code_kind", "") or "program")
     definition = {
         "name": row.name,
         "description": row.description,
         "input_schema": input_schema if isinstance(input_schema, dict) else {},
+        "code_kind": code_kind,
         "code": code if isinstance(code, list) else [],
+        "js": str(getattr(row, "js_source", "") or ""),
     }
     return {
         **definition,
@@ -163,7 +195,9 @@ def upsert_tool(user_id: int, device_type: str, definition: Any, enabled: bool =
             session.add(row)
         row.description = clean["description"]
         row.input_schema_json = json.dumps(clean["input_schema"], ensure_ascii=False)
+        row.code_kind = clean["code_kind"]
         row.code_json = json.dumps(clean["code"], ensure_ascii=False)
+        row.js_source = clean.get("js") or ""
         row.enabled = bool(enabled)
         row.updated_at = now
         session.commit()
@@ -219,13 +253,25 @@ def _passthrough_code(name: str) -> List[Dict[str, Any]]:
     ]
 
 
-def seed_from_tool_defs(user_id: int, device_type: str, tool_defs: Any) -> int:
-    """Seed missing built-in tools into the DB as editable pass-through wrappers.
+def _passthrough_js(name: str) -> str:
+    """Initial JS for a seeded desktop tool: forward to the native capability.
 
-    Called when a device registers: the device reports its hardcoded catalog in
-    ``toolDefs``; we mirror each native primitive into ``DeviceDynamicTool`` once
-    (idempotent by name) so the whole tool surface becomes web-editable while the
-    native implementation keeps running on the device via ``builtin:<name>``.
+    The desktop runtime injects ``cap`` (the device's native capability library)
+    and runs this body with ``(args, cap, ctx)``. Operators then edit the JS on
+    the web to change behavior — the whole implementation lives on the server.
+    """
+    return f"return await cap.call({json.dumps(name)}, args)"
+
+
+def seed_from_tool_defs(user_id: int, device_type: str, tool_defs: Any) -> int:
+    """Seed missing built-in tools into the DB as editable definitions.
+
+    Called when a device registers: the device reports its native capability
+    catalog in ``toolDefs``; we mirror each one into ``DeviceDynamicTool`` once
+    (idempotent by name) so the whole tool surface becomes web-editable. Desktop
+    tools are seeded as JS (``cap.call(<name>, args)``) so the implementation
+    lives on the server; browser tools are seeded as a pass-through program
+    (MV3 forbids running server JS in the extension).
 
     Only genuine built-ins are seeded — tools the device already reports as
     ``dynamic`` (locally- or server-authored) and reserved manager tools are
@@ -262,13 +308,16 @@ def seed_from_tool_defs(user_id: int, device_type: str, tool_defs: Any) -> int:
             schema = spec.get("input_schema")
             if not isinstance(schema, dict):
                 schema = {"type": "object", "properties": {}, "additionalProperties": True}
+            is_js = dtype == "desktop"
             row = DeviceDynamicTool(
                 user_id=user_id,
                 device_type=dtype,
                 name=tool_name,
                 description=str(spec.get("description") or "").strip() or f"设备原生工具 {tool_name}",
                 input_schema_json=json.dumps(schema, ensure_ascii=False),
-                code_json=json.dumps(_passthrough_code(tool_name), ensure_ascii=False),
+                code_kind="js" if is_js else "program",
+                code_json=json.dumps([] if is_js else _passthrough_code(tool_name), ensure_ascii=False),
+                js_source=_passthrough_js(tool_name) if is_js else "",
                 enabled=True,
                 created_at=now,
                 updated_at=now,
@@ -294,7 +343,9 @@ def device_payload(user_id: int, device_type: str) -> Dict[str, Any]:
             "name": tool["name"],
             "description": tool["description"],
             "input_schema": tool["input_schema"],
+            "code_kind": tool.get("code_kind") or "program",
             "code": tool["code"],
+            "js": tool.get("js") or "",
         }
         for tool in list_tools(user_id, device_type)
         if tool.get("enabled")

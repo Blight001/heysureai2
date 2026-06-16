@@ -2,13 +2,17 @@ import crypto from 'crypto'
 import fs, { FSWatcher } from 'fs'
 import path from 'path'
 import { app } from 'electron'
-import { getBuiltinTool, getTool, replaceDynamicTools, ToolDefinition } from './registry'
+import { getBuiltinTool, getTool, listBuiltinToolIds, replaceDynamicTools, ToolDefinition } from './registry'
 
 export interface DynamicMcpDefinition {
   name: string
   description: string
   input_schema: Record<string, any>
+  // 'program' → run the call/set/return DSL in ``code``.
+  // 'js'      → run ``js`` (a function body) with (args, cap, ctx) in scope.
+  code_kind?: 'program' | 'js'
   code: DynamicInstruction[]
+  js?: string
 }
 type DynamicInstruction = { op: 'call' | 'set' | 'return'; tool?: string; args?: any; name?: string; value?: any; save_as?: string }
 
@@ -40,6 +44,12 @@ function validate(raw: any): DynamicMcpDefinition {
   if (!description) throw new Error(`Dynamic MCP ${name} requires description`)
   const inputSchema = raw?.input_schema ?? raw?.inputSchema
   if (!inputSchema || typeof inputSchema !== 'object' || Array.isArray(inputSchema)) throw new Error(`Dynamic MCP ${name} requires input_schema`)
+  const kind = String(raw?.code_kind || raw?.codeKind || (String(raw?.js || '').trim() ? 'js' : 'program'))
+  if (kind === 'js') {
+    const js = String(raw?.js || '')
+    if (!js.trim()) throw new Error(`Dynamic MCP ${name} requires non-empty js`)
+    return { name, description, input_schema: inputSchema, code_kind: 'js', code: [], js }
+  }
   const code = typeof raw?.code === 'string' ? JSON.parse(raw.code) : raw?.code
   if (!Array.isArray(code) || !code.length || code.length > 32) throw new Error(`Dynamic MCP ${name} code must contain 1-32 instructions`)
   for (const step of code) {
@@ -47,7 +57,42 @@ function validate(raw: any): DynamicMcpDefinition {
     if (step.op === 'call' && !String(step.tool || '').trim()) throw new Error(`call instruction in ${name} requires tool`)
     if (step.op === 'set' && !String(step.name || '').trim()) throw new Error(`set instruction in ${name} requires name`)
   }
-  return { name, description, input_schema: inputSchema, code }
+  return { name, description, input_schema: inputSchema, code_kind: 'program', code }
+}
+
+// The native capability library injected into server-authored JS tools. Each
+// device built-in is reachable via ``cap.call(id, args)`` and an ergonomic
+// ``cap.<namespace>.<fn>(args)`` shape. This is what lets the hardcoded catalog
+// stop being MCP tools while their native code keeps running on the device.
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as
+  new (...args: string[]) => (...a: any[]) => Promise<any>
+
+function buildCap(workspaceRoot: string): Record<string, any> {
+  const call = (id: string, args?: any) => {
+    const builtin = getBuiltinTool(String(id || '').trim())
+    if (!builtin) throw new Error(`Capability not found: ${id}`)
+    return builtin.handler({ workspaceRoot, args: args || {} })
+  }
+  const cap: Record<string, any> = { call }
+  for (const id of listBuiltinToolIds()) {
+    const dot = id.indexOf('.')
+    if (dot > 0) {
+      const ns = id.slice(0, dot)
+      const fn = id.slice(dot + 1)
+      cap[ns] = cap[ns] || {}
+      if (typeof cap[ns] === 'object') cap[ns][fn] = (args?: any) => call(id, args)
+    } else {
+      cap[id] = (args?: any) => call(id, args)
+    }
+  }
+  return cap
+}
+
+async function runJs(def: DynamicMcpDefinition, workspaceRoot: string, args: Record<string, any>): Promise<any> {
+  const cap = buildCap(workspaceRoot)
+  const ctx = { workspaceRoot }
+  const fn = new AsyncFunction('args', 'cap', 'ctx', String(def.js || ''))
+  return fn(args || {}, cap, ctx)
 }
 
 function lookup(root: any, dotted: string): any {
@@ -130,12 +175,13 @@ export function reloadDynamicMcp(): { tools: number; local: number; server: numb
   replaceDynamicTools(next.map(def => ({
     id: def.name, platform: 'all', description: def.description, inputSchema: def.input_schema,
     implementation: {
-      kind: 'dynamic', definition: def, code: def.code,
+      kind: 'dynamic', definition: def, code_kind: def.code_kind || 'program', code: def.code,
       storage_file: serverDefinitions.some(s => s.name === def.name) ? serverFilePath : filePath,
       source: serverDefinitions.some(s => s.name === def.name) ? 'server' : 'local',
       editable_via: MANAGER_TOOL,
     },
-    handler: ({ workspaceRoot, args }) => runProgram(def, workspaceRoot, args || {}),
+    handler: ({ workspaceRoot, args }) =>
+      def.code_kind === 'js' ? runJs(def, workspaceRoot, args || {}) : runProgram(def, workspaceRoot, args || {}),
   })))
   definitions = next
   appliedServerRevision = revision(serverDefinitions)

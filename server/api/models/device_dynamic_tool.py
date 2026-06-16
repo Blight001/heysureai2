@@ -36,8 +36,16 @@ class DeviceDynamicTool(SQLModel, table=True):
     description: str = Field(default="")
     # JSON object: the tool's input JSON Schema.
     input_schema_json: str = Field(default="{}")
-    # JSON array: the call/set/return program (1-32 instructions).
+    # "program" → code_json holds a call/set/return program (browser / safe DSL).
+    # "js"      → js_source holds a JS function body run by the desktop runtime
+    #             with (args, cap, ctx) in scope. Desktop tools default to "js"
+    #             so the whole implementation lives on the server.
+    code_kind: str = Field(default="program")
+    # JSON array: the call/set/return program (1-32 instructions). Used when
+    # code_kind == "program".
     code_json: str = Field(default="[]")
+    # JS function body. Used when code_kind == "js".
+    js_source: str = Field(default="")
     # Disabled tools are kept for editing but never shipped to devices.
     enabled: bool = Field(default=True)
     created_at: float = Field(default_factory=time.time)
