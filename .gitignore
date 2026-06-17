@@ -105,6 +105,7 @@ device/windows/src/runtime/permission-guard.ts
 device/windows/src/runtime/powershell-runner.ts
 device/windows/src/runtime/process-guard.ts
 device/windows/src/runtime/python-runner.ts
+device/windows/src/runtime/runtime-probe.ts
 device/windows/src/runtime/runtime-tool.ts
 device/windows/src/runtime/shell-runner.ts
 device/windows/src/server-url.ts
@@ -114,10 +115,8 @@ device/windows/src/services/avatar-cache.ts
 device/windows/src/services/device-runtime.ts
 device/windows/src/services/reauth.ts
 device/windows/src/services/server-client.ts
-device/windows/src/tools/clipboard.ts
 device/windows/src/tools/display.ts
 device/windows/src/tools/filesystem.ts
-device/windows/src/tools/keyboard.ts
 device/windows/src/tools/shared/robot.ts
 device/windows/src/tools/shell.ts
 device/windows/src/tools/vision.ts
@@ -136,6 +135,7 @@ device/linux/src/runtime/permission-guard.ts
 device/linux/src/runtime/powershell-runner.ts
 device/linux/src/runtime/process-guard.ts
 device/linux/src/runtime/python-runner.ts
+device/linux/src/runtime/runtime-probe.ts
 device/linux/src/runtime/runtime-tool.ts
 device/linux/src/runtime/shell-runner.ts
 device/linux/src/server-url.ts
@@ -145,10 +145,8 @@ device/linux/src/services/avatar-cache.ts
 device/linux/src/services/device-runtime.ts
 device/linux/src/services/reauth.ts
 device/linux/src/services/server-client.ts
-device/linux/src/tools/clipboard.ts
 device/linux/src/tools/display.ts
 device/linux/src/tools/filesystem.ts
-device/linux/src/tools/keyboard.ts
 device/linux/src/tools/shared/robot.ts
 device/linux/src/tools/shell.ts
 device/linux/src/tools/vision.ts

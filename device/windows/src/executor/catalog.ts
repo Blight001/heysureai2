@@ -6,13 +6,10 @@
 // 的 toolDefs 上报给服务器，是 AI 在 mcp.list_tools / mcp.describe_tool 中看到的
 // 权威说明——服务器不再硬编码桌面工具的描述与 schema。新增工具只需在此追加一条。
 
+// keyboard / mouse / clipboard / process moved to server-owned python tools
+// (设备端MCP代码下放长期方案 阶段四). The device now runs them via python-runner.
 import { runCommand } from '../tools/shell'
-import { keyboardType, keyboardPress } from '../tools/keyboard'
-import {
-  mouseMove, mouseClick, mouseDoubleClick, mouseRightClick, mouseScroll, mouseDrag,
-} from '../tools/mouse'
 import { displayBox, displayClear } from '../tools/display'
-import { clipboardGet, clipboardSet } from '../tools/clipboard'
 import { textInput } from '../tools/text-input'
 import { windowList, windowFocus, windowClose } from '../tools/window'
 import { mouthSpeak } from '../tools/mouth'
@@ -42,96 +39,6 @@ registerTools([
       timeout_ms: { type: 'number', description: '硬超时（毫秒）。' },
     }, ['command']),
     handler: ({ workspaceRoot, args }) => runCommand(workspaceRoot, args),
-  },
-
-  // Keyboard (windows-only via robotjs)
-  {
-    id: 'keyboard.type', platform: 'windows',
-    description: '在桌面当前焦点处输入文本（模拟真实键盘）。用途：向任意应用输入文字。场景：在记事本、聊天框、表单等当前光标处打字。',
-    inputSchema: OBJ({
-      text: { type: 'string', description: '要输入的文本。' },
-      delay_ms: { type: 'number', description: '每个字符之间的间隔（毫秒）。' },
-    }, ['text']),
-    handler: ({ args }) => keyboardType(args),
-  },
-  {
-    id: 'keyboard.press', platform: 'windows',
-    description: '按下单个按键或组合键（如 "ctrl+c"、"enter"）。用途：触发快捷键或控制键。场景：复制粘贴、保存、回车确认、Alt+Tab 切换。',
-    inputSchema: OBJ({ keys: { type: 'string', description: '按键或用 "+" 连接的组合键，如 "ctrl+shift+esc"。' } }, ['keys']),
-    handler: ({ args }) => keyboardPress(args),
-  },
-
-  // Mouse (windows-only via robotjs)
-  {
-    id: 'mouse.move', platform: 'windows',
-    description: '把鼠标光标移动到屏幕坐标。用途：定位光标。场景：移动到某个位置后再点击或悬停。若坐标来自 vision.capture 的截图，直接传截图标注的坐标；高分辨率截图若被缩放到 1920x1080 以内，本工具会自动换算到真实屏幕坐标。',
-    inputSchema: OBJ({
-      x: { type: 'number', description: '目标 X 坐标（像素）。' },
-      y: { type: 'number', description: '目标 Y 坐标（像素）。' },
-      smooth: { type: 'boolean', description: '是否平滑移动。默认 true。' },
-      speed: { type: 'number', description: '平滑移动速度，表示每步大约移动的像素数；越大越快。默认 100。' },
-      interval_ms: { type: 'number', description: '平滑移动每步间隔毫秒数；越小越快。默认 3。' },
-      jitter: { type: 'boolean', description: '是否加入轻微拟人抖动。默认 true。' },
-    }, ['x', 'y']),
-    handler: ({ args }) => mouseMove(args),
-  },
-  {
-    id: 'mouse.click', platform: 'windows',
-    description: '点击鼠标，可先移动到指定坐标并立即执行点击。用途：在桌面任意位置点击。场景：点桌面图标、应用按钮、任务栏。若坐标来自 vision.capture 的截图，直接传截图标注的坐标；高分辨率截图若被缩放到 1920x1080 以内，本工具会自动换算到真实屏幕坐标。',
-    inputSchema: OBJ({
-      x: { type: 'number', description: '点击前移动到的 X 坐标（像素）。' },
-      y: { type: 'number', description: '点击前移动到的 Y 坐标（像素）。' },
-      button: { type: 'string', description: '鼠标键：left、right 或 middle。默认 left。' },
-      speed: { type: 'number', description: '移动到点击点的平滑速度；越大越快。默认 100。' },
-      interval_ms: { type: 'number', description: '移动到点击点时每步间隔毫秒数。默认 3。' },
-    }),
-    handler: ({ args }) => mouseClick(args),
-  },
-  {
-    id: 'mouse.double_click', platform: 'windows',
-    description: '双击鼠标，可先移动到指定坐标。用途：需要双击才生效的操作。场景：双击打开文件/图标、双击选词。若坐标来自 vision.capture 的截图，直接传截图标注的坐标；高分辨率截图若被缩放到 1920x1080 以内，本工具会自动换算到真实屏幕坐标。',
-    inputSchema: OBJ({
-      x: { type: 'number', description: '双击前移动到的 X 坐标（像素）。' },
-      y: { type: 'number', description: '双击前移动到的 Y 坐标（像素）。' },
-      speed: { type: 'number', description: '移动到双击点的平滑速度；越大越快。默认 100。' },
-      interval_ms: { type: 'number', description: '移动到双击点时每步间隔毫秒数。默认 3。' },
-    }),
-    handler: ({ args }) => mouseDoubleClick(args),
-  },
-  {
-    id: 'mouse.right_click', platform: 'windows',
-    description: '右键单击鼠标，可先移动到指定坐标。用途：打开右键菜单。场景：在桌面或应用中调出上下文菜单。若坐标来自 vision.capture 的截图，直接传截图标注的坐标；高分辨率截图若被缩放到 1920x1080 以内，本工具会自动换算到真实屏幕坐标。',
-    inputSchema: OBJ({
-      x: { type: 'number', description: '右键前移动到的 X 坐标（像素）。' },
-      y: { type: 'number', description: '右键前移动到的 Y 坐标（像素）。' },
-      speed: { type: 'number', description: '移动到右键点的平滑速度；越大越快。默认 100。' },
-      interval_ms: { type: 'number', description: '移动到右键点时每步间隔毫秒数。默认 3。' },
-    }),
-    handler: ({ args }) => mouseRightClick(args),
-  },
-  {
-    id: 'mouse.scroll', platform: 'windows',
-    description: '在当前或指定位置滚动鼠标滚轮。用途：滚动桌面应用内容。场景：在不支持页面滚动工具的原生应用里上下滚动。若坐标来自 vision.capture 的截图，直接传截图标注的坐标；高分辨率截图若被缩放到 1920x1080 以内，本工具会自动换算到真实屏幕坐标。',
-    inputSchema: OBJ({
-      x: { type: 'number', description: '滚动前移动到的 X 坐标（像素）。' },
-      y: { type: 'number', description: '滚动前移动到的 Y 坐标（像素）。' },
-      amount: { type: 'number', description: '滚动步数。默认 3。' },
-      direction: { type: 'string', description: '滚动方向：up 或 down。默认 down。' },
-    }),
-    handler: ({ args }) => mouseScroll(args),
-  },
-  {
-    id: 'mouse.drag', platform: 'windows',
-    description: '在一点按下、拖到另一点再松开。用途：桌面拖放。场景：拖动文件、拖动窗口、拖动滑块。若坐标来自 vision.capture 的截图，直接传截图标注的坐标；高分辨率截图若被缩放到 1920x1080 以内，本工具会自动换算到真实屏幕坐标。',
-    inputSchema: OBJ({
-      from_x: { type: 'number', description: '起点 X 坐标（像素）。' },
-      from_y: { type: 'number', description: '起点 Y 坐标（像素）。' },
-      to_x: { type: 'number', description: '终点 X 坐标（像素）。' },
-      to_y: { type: 'number', description: '终点 Y 坐标（像素）。' },
-      speed: { type: 'number', description: '平滑拖动速度，表示每步大约移动的像素数；越大越快。默认 100。' },
-      interval_ms: { type: 'number', description: '平滑拖动每步间隔毫秒数；越小越快。默认 3。' },
-    }, ['from_x', 'from_y', 'to_x', 'to_y']),
-    handler: ({ args }) => mouseDrag(args),
   },
 
   // UI Automation — read the desktop accessibility tree (类似桌面版 DOM) and act on
@@ -187,19 +94,6 @@ registerTools([
     handler: ({ args }) => displayClear(args),
   },
 
-  // Clipboard (Electron clipboard is cross-platform but our app is Windows-targeted)
-  {
-    id: 'clipboard.get', platform: 'windows',
-    description: '读取系统剪贴板。用途：获取用户/程序刚复制的内容。场景：读取剪贴板里的文本或 HTML 再处理。',
-    inputSchema: OBJ({ format: { type: 'string', description: '读取格式：text 或 html。默认 text。' } }),
-    handler: ({ args }) => clipboardGet(args),
-  },
-  {
-    id: 'clipboard.set', platform: 'windows',
-    description: '把文本写入系统剪贴板。用途：供其他应用粘贴。场景：把生成结果放进剪贴板让用户直接 Ctrl+V。',
-    inputSchema: OBJ({ text: { type: 'string', description: '要放入剪贴板的文本。' } }, ['text']),
-    handler: ({ args }) => clipboardSet(args),
-  },
   {
     id: 'text.input', platform: 'windows',
     description: '向当前焦点输入框一次性输入大段文本：先把 text 写入剪贴板，再触发粘贴，避免 keyboard.type 逐字符模拟键盘导致慢、漏字或不支持长文本。用途：让 AI 直接提交多段说明、文章、JSON、代码、表单内容。场景：先点击或聚焦目标文本框，再调用本工具。默认粘贴后恢复原剪贴板；若只想写入剪贴板不粘贴，传 paste:false。',

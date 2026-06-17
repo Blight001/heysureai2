@@ -6,18 +6,14 @@
 // 的 toolDefs 上报给服务器，是 AI 在 mcp.list_tools / mcp.describe_tool 中看到的
 // 权威说明——服务器不再硬编码桌面工具的描述与 schema。新增工具只需在此追加一条。
 
+// keyboard / mouse / clipboard / process moved to server-owned python tools
+// (设备端MCP代码下放长期方案 阶段四). The device now runs them via python-runner.
 import { listFiles, readFile, writeFile } from '../tools/filesystem'
 import { runCommand } from '../tools/shell'
 import { gitDiff } from '../tools/git'
-import { keyboardType, keyboardPress } from '../tools/keyboard'
-import {
-  mouseMove, mouseClick, mouseDoubleClick, mouseRightClick, mouseScroll, mouseDrag,
-} from '../tools/mouse'
 import { screenCapture, screenCaptureRegion, screenInfo } from '../tools/screen'
 import { displayBox, displayClear } from '../tools/display'
-import { clipboardGet, clipboardSet } from '../tools/clipboard'
 import { windowList, windowFocus, windowClose } from '../tools/window'
-import { processList, processKill } from '../tools/process'
 import { mouthSpeak } from '../tools/mouth'
 import { visionCaptureGlobal, visionCaptureMouse } from '../tools/vision'
 import { handsStart, handsStop, handsSnapshot, handsEvents, handsMouse } from '../tools/hands'
@@ -78,96 +74,6 @@ registerTools([
     handler: ({ workspaceRoot, args }) => gitDiff(workspaceRoot, args),
   },
 
-  // Keyboard (linux/X11 via robotjs)
-  {
-    id: 'keyboard.type', platform: 'linux',
-    description: '在桌面当前焦点处输入文本（模拟真实键盘）。用途：向任意应用输入文字。场景：在记事本、聊天框、表单等当前光标处打字。',
-    inputSchema: OBJ({
-      text: { type: 'string', description: '要输入的文本。' },
-      delay_ms: { type: 'number', description: '每个字符之间的间隔（毫秒）。' },
-    }, ['text']),
-    handler: ({ args }) => keyboardType(args),
-  },
-  {
-    id: 'keyboard.press', platform: 'linux',
-    description: '按下单个按键或组合键（如 "ctrl+c"、"enter"）。用途：触发快捷键或控制键。场景：复制粘贴、保存、回车确认、Alt+Tab 切换。',
-    inputSchema: OBJ({ keys: { type: 'string', description: '按键或用 "+" 连接的组合键，如 "ctrl+alt+t"；super 表示 Super/Win 键。' } }, ['keys']),
-    handler: ({ args }) => keyboardPress(args),
-  },
-
-  // Mouse (linux/X11 via robotjs)
-  {
-    id: 'mouse.move', platform: 'linux',
-    description: '把鼠标光标移动到屏幕坐标。用途：定位光标。场景：移动到某个位置后再点击或悬停。',
-    inputSchema: OBJ({
-      x: { type: 'number', description: '目标 X 坐标（像素）。' },
-      y: { type: 'number', description: '目标 Y 坐标（像素）。' },
-      smooth: { type: 'boolean', description: '是否平滑移动。默认 true。' },
-      speed: { type: 'number', description: '平滑移动速度，表示每步大约移动的像素数；越大越快。默认 100。' },
-      interval_ms: { type: 'number', description: '平滑移动每步间隔毫秒数；越小越快。默认 3。' },
-      jitter: { type: 'boolean', description: '是否加入轻微拟人抖动。默认 true。' },
-    }, ['x', 'y']),
-    handler: ({ args }) => mouseMove(args),
-  },
-  {
-    id: 'mouse.click', platform: 'linux',
-    description: '点击鼠标，可先移动到指定坐标。用途：在桌面任意位置点击。场景：点桌面图标、应用按钮、任务栏。',
-    inputSchema: OBJ({
-      x: { type: 'number', description: '点击前移动到的 X 坐标（像素）。' },
-      y: { type: 'number', description: '点击前移动到的 Y 坐标（像素）。' },
-      button: { type: 'string', description: '鼠标键：left、right 或 middle。默认 left。' },
-      speed: { type: 'number', description: '移动到点击点的平滑速度；越大越快。默认 100。' },
-      interval_ms: { type: 'number', description: '移动到点击点时每步间隔毫秒数。默认 3。' },
-    }),
-    handler: ({ args }) => mouseClick(args),
-  },
-  {
-    id: 'mouse.double_click', platform: 'linux',
-    description: '双击鼠标，可先移动到指定坐标。用途：需要双击才生效的操作。场景：双击打开文件/图标、双击选词。',
-    inputSchema: OBJ({
-      x: { type: 'number', description: '双击前移动到的 X 坐标（像素）。' },
-      y: { type: 'number', description: '双击前移动到的 Y 坐标（像素）。' },
-      speed: { type: 'number', description: '移动到双击点的平滑速度；越大越快。默认 100。' },
-      interval_ms: { type: 'number', description: '移动到双击点时每步间隔毫秒数。默认 3。' },
-    }),
-    handler: ({ args }) => mouseDoubleClick(args),
-  },
-  {
-    id: 'mouse.right_click', platform: 'linux',
-    description: '右键单击鼠标，可先移动到指定坐标。用途：打开右键菜单。场景：在桌面或应用中调出上下文菜单。',
-    inputSchema: OBJ({
-      x: { type: 'number', description: '右键前移动到的 X 坐标（像素）。' },
-      y: { type: 'number', description: '右键前移动到的 Y 坐标（像素）。' },
-      speed: { type: 'number', description: '移动到右键点的平滑速度；越大越快。默认 100。' },
-      interval_ms: { type: 'number', description: '移动到右键点时每步间隔毫秒数。默认 3。' },
-    }),
-    handler: ({ args }) => mouseRightClick(args),
-  },
-  {
-    id: 'mouse.scroll', platform: 'linux',
-    description: '在当前或指定位置滚动鼠标滚轮。用途：滚动桌面应用内容。场景：在不支持页面滚动工具的原生应用里上下滚动。',
-    inputSchema: OBJ({
-      x: { type: 'number', description: '滚动前移动到的 X 坐标（像素）。' },
-      y: { type: 'number', description: '滚动前移动到的 Y 坐标（像素）。' },
-      amount: { type: 'number', description: '滚动步数。默认 3。' },
-      direction: { type: 'string', description: '滚动方向：up 或 down。默认 down。' },
-    }),
-    handler: ({ args }) => mouseScroll(args),
-  },
-  {
-    id: 'mouse.drag', platform: 'linux',
-    description: '在一点按下、拖到另一点再松开。用途：桌面拖放。场景：拖动文件、拖动窗口、拖动滑块。',
-    inputSchema: OBJ({
-      from_x: { type: 'number', description: '起点 X 坐标（像素）。' },
-      from_y: { type: 'number', description: '起点 Y 坐标（像素）。' },
-      to_x: { type: 'number', description: '终点 X 坐标（像素）。' },
-      to_y: { type: 'number', description: '终点 Y 坐标（像素）。' },
-      speed: { type: 'number', description: '平滑拖动速度，表示每步大约移动的像素数；越大越快。默认 100。' },
-      interval_ms: { type: 'number', description: '平滑拖动每步间隔毫秒数；越小越快。默认 3。' },
-    }, ['from_x', 'from_y', 'to_x', 'to_y']),
-    handler: ({ args }) => mouseDrag(args),
-  },
-
   // Display overlay (Electron transparent BrowserWindow; needs a compositor for transparency)
   {
     id: 'display.box', platform: 'linux',
@@ -220,20 +126,6 @@ registerTools([
     handler: ({ args }) => screenInfo(args),
   },
 
-  // Clipboard (Electron clipboard; on Linux requires a running X11/Wayland session)
-  {
-    id: 'clipboard.get', platform: 'linux',
-    description: '读取系统剪贴板。用途：获取用户/程序刚复制的内容。场景：读取剪贴板里的文本或 HTML 再处理。',
-    inputSchema: OBJ({ format: { type: 'string', description: '读取格式：text 或 html。默认 text。' } }),
-    handler: ({ args }) => clipboardGet(args),
-  },
-  {
-    id: 'clipboard.set', platform: 'linux',
-    description: '把文本写入系统剪贴板。用途：供其他应用粘贴。场景：把生成结果放进剪贴板让用户直接 Ctrl+V。',
-    inputSchema: OBJ({ text: { type: 'string', description: '要放入剪贴板的文本。' } }, ['text']),
-    handler: ({ args }) => clipboardSet(args),
-  },
-
   // Window management (linux — uses wmctrl / xdotool)
   {
     id: 'window.list', platform: 'linux',
@@ -255,23 +147,6 @@ registerTools([
       pid: { type: 'number', description: '要关闭其窗口的进程 id。' },
     }),
     handler: ({ workspaceRoot, args }) => windowClose(workspaceRoot, args),
-  },
-
-  // Process management (linux — uses ps / kill / pkill)
-  {
-    id: 'process.list', platform: 'linux',
-    description: '列出正在运行的进程，可按名称过滤。用途：查看进程状态。场景：确认某程序是否在运行、找到要结束的进程。',
-    inputSchema: OBJ({ filter: { type: 'string', description: '按进程名子串过滤。' } }),
-    handler: ({ workspaceRoot, args }) => processList(workspaceRoot, args),
-  },
-  {
-    id: 'process.kill', platform: 'linux',
-    description: '按名称或进程 id 结束一个进程。用途：终止程序（属高风险操作）。场景：关闭卡死或多余的进程。',
-    inputSchema: OBJ({
-      name: { type: 'string', description: '要结束的进程名。' },
-      pid: { type: 'number', description: '要结束的进程 id。' },
-    }),
-    handler: ({ workspaceRoot, args }) => processKill(workspaceRoot, args),
   },
 
   // AI voice / vision / hands / ear helpers (linux)

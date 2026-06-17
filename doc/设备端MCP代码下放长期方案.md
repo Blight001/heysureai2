@@ -384,12 +384,18 @@ Windows 端最终仍应保留：
 - [ ] AI 可见 MCP 目录完全来自服务器 DB（仍沿用"设备上报能力 ∩ scope"，此项为有风险的真相源切换，需灰度）；
 - [ ] 旧 `toolDefs` 上报变成兼容字段或调试字段。
 
-### 阶段四：逐步删除 TypeScript 固定工具
+### 阶段四：删除 TypeScript 固定工具（已执行）
 
-- [ ] 对每个 `device/windows/src/tools/*.ts` 工具找到服务器端替代定义；
-- [ ] 灰度：同名服务器工具优先，失败可回退旧 TS 工具；
-- [ ] 连续稳定后删除或移入 legacy；
-- [ ] 浏览器插件同理迁移固定工具到服务器定义。
+- [x] keyboard / mouse / clipboard / process 已**物理删除** TS 实现（shared 的 keyboard/clipboard、
+      win+linux 的 mouse/process），改由服务器下发 `runtime=python` 工具（pyautogui/pyperclip/psutil）
+      执行；注册时 `seed_default_desktop_runtime_tools` 播种/迁移（旧 JS cap.call 包装自动替换为 python）；
+- [x] catalog.ts 不再注册这四类，设备不再上报它们为内置工具；
+- [~] 其余原生桥（screen/window/display/vision/hands/mouth/uia/ear/git/text-input/capture-bridge、
+      `tools/shared/*`）**保留**为本地能力承载层——TTS/STT/UIA/electron 截图/交互式监听无通用运行时可稳定覆盖；
+- [ ] 浏览器插件固定工具迁移（另议，MV3 无 python/shell）。
+
+> 注：python 替代依赖目标机器 `npm run setup:python` 安装的 venv + X11 会话（pyautogui）。
+> 这是一次**未经设备实跑验证**的迁移（按用户明确要求执行），首次上线请重点验证键鼠/剪贴板/进程。
 
 ### 阶段五：AI 自主进化进入闭环（基本落地）
 

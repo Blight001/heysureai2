@@ -21,8 +21,8 @@
 ## 当前共享内容
 
 - 完全相同：`constants.ts`、`server-url.ts`、`ipc/device.ts`、`services/*`（activity-log/
-  auth-state/avatar-cache/reauth/server-client）、`tools/*`（clipboard/display/filesystem/
-  keyboard/vision）、`tools/shared/robot.ts`。
+  auth-state/avatar-cache/reauth/server-client）、`tools/*`（display/filesystem/vision）、
+  `tools/shared/robot.ts`。（keyboard/clipboard 已随阶段四删除，改由服务器 python 工具替代。）
 - 仅平台常量不同（经 `platformProfile` 参数化）：`executor/registry.ts`、`executor/index.ts`、
   `ipc/ai-config.ts`、`services/device-runtime.ts`、`windows/main-window.ts`、`windows/tray.ts`。
 - 受控执行器底座 `runtime/`（设备端MCP代码下放长期方案 §3.2/§5/§7）：

@@ -258,6 +258,12 @@ def register_agent_socket_events():
                     _dyn.seed_from_tool_defs(
                         owner_user_id, push_type, agent_endpoint_tool_defs(agents[sid])
                     )
+                    # keyboard/mouse/clipboard/process moved off the device into
+                    # server-owned python tools (phase 4). Seed/migrate them so
+                    # desktop devices keep those capabilities via python-runner.
+                    if push_type == 'desktop':
+                        from api.services.device_runtime_seed import seed_default_desktop_runtime_tools
+                        seed_default_desktop_runtime_tools(owner_user_id)
                 except Exception:
                     logger.exception('Failed to seed dynamic MCP tools: %s', device_id)
                 await push_device_dynamic_tools_to_sid(owner_user_id, push_type, sid)

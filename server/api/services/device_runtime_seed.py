@@ -1,0 +1,208 @@
+"""Default desktop runtime (Python) tool definitions — phase 4 of the
+设备端MCP代码下放长期方案.
+
+The device no longer ships fixed TypeScript implementations for keyboard /
+mouse / clipboard / process. Those are deleted on the device; the server is now
+the source of their code, shipped as ``runtime=python`` tools that the device's
+python-runner executes (pyautogui / pyperclip / psutil).
+
+Seeded as ``status='active'`` (operator-trusted system migration, §7.3) with no
+declared permission tags so behaviour matches the previously-ungated native
+tools; operators can tighten via the permission policy editor afterwards.
+"""
+
+import json
+import time
+from typing import Any, Dict, List
+
+from sqlmodel import Session, select
+
+from api.database import engine
+from api.models import DeviceDynamicTool
+
+_OBJ = {"type": "object"}
+
+
+def _schema(props: Dict[str, Any], required: List[str]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {"type": "object", "properties": props}
+    if required:
+        out["required"] = required
+    return out
+
+
+# name -> definition. Python bodies read ``args`` (dict) and assign ``result``.
+DEFAULT_DESKTOP_RUNTIME_TOOLS: List[Dict[str, Any]] = [
+    {
+        "name": "keyboard.type",
+        "description": "在当前焦点处输入文本（Python/pyautogui）。",
+        "input_schema": _schema({"text": {"type": "string", "description": "要输入的文本"}}, ["text"]),
+        "source": "import pyautogui\npyautogui.write(str(args.get('text', '')), interval=0.01)\nresult = {'ok': True}",
+    },
+    {
+        "name": "keyboard.press",
+        "description": "按下组合键，如 ctrl+c（Python/pyautogui）。keys 可为字符串或数组。",
+        "input_schema": _schema({"keys": {"description": "如 'ctrl+c' 或 ['ctrl','c']"}}, ["keys"]),
+        "source": (
+            "import pyautogui\n"
+            "keys = args.get('keys')\n"
+            "if isinstance(keys, str):\n"
+            "    keys = [k.strip() for k in keys.replace('+', ' ').split() if k.strip()]\n"
+            "if not isinstance(keys, list) or not keys:\n"
+            "    raise ValueError('keys is required')\n"
+            "pyautogui.hotkey(*keys) if len(keys) > 1 else pyautogui.press(keys[0])\n"
+            "result = {'ok': True, 'keys': keys}"
+        ),
+    },
+    {
+        "name": "mouse.move",
+        "description": "移动鼠标到 (x, y)（Python/pyautogui）。",
+        "input_schema": _schema({"x": {"type": "number"}, "y": {"type": "number"}}, ["x", "y"]),
+        "source": "import pyautogui\npyautogui.moveTo(args['x'], args['y'])\nresult = {'ok': True}",
+    },
+    {
+        "name": "mouse.click",
+        "description": "在 (x, y) 单击（缺省在当前位置）。button: left/right/middle。",
+        "input_schema": _schema({"x": {"type": "number"}, "y": {"type": "number"}, "button": {"type": "string"}}, []),
+        "source": (
+            "import pyautogui\n"
+            "kw = {'button': args.get('button', 'left')}\n"
+            "if args.get('x') is not None and args.get('y') is not None:\n"
+            "    kw['x'] = args['x']; kw['y'] = args['y']\n"
+            "pyautogui.click(**kw)\nresult = {'ok': True}"
+        ),
+    },
+    {
+        "name": "mouse.double_click",
+        "description": "在 (x, y) 双击（缺省在当前位置）。",
+        "input_schema": _schema({"x": {"type": "number"}, "y": {"type": "number"}}, []),
+        "source": (
+            "import pyautogui\n"
+            "kw = {}\n"
+            "if args.get('x') is not None and args.get('y') is not None:\n"
+            "    kw['x'] = args['x']; kw['y'] = args['y']\n"
+            "pyautogui.doubleClick(**kw)\nresult = {'ok': True}"
+        ),
+    },
+    {
+        "name": "mouse.right_click",
+        "description": "在 (x, y) 右键单击（缺省在当前位置）。",
+        "input_schema": _schema({"x": {"type": "number"}, "y": {"type": "number"}}, []),
+        "source": (
+            "import pyautogui\n"
+            "kw = {'button': 'right'}\n"
+            "if args.get('x') is not None and args.get('y') is not None:\n"
+            "    kw['x'] = args['x']; kw['y'] = args['y']\n"
+            "pyautogui.click(**kw)\nresult = {'ok': True}"
+        ),
+    },
+    {
+        "name": "mouse.scroll",
+        "description": "滚动鼠标滚轮，amount 正为上、负为下（Python/pyautogui）。",
+        "input_schema": _schema({"amount": {"type": "number"}}, ["amount"]),
+        "source": "import pyautogui\npyautogui.scroll(int(args.get('amount', 0)))\nresult = {'ok': True}",
+    },
+    {
+        "name": "mouse.drag",
+        "description": "从 (x1,y1) 拖拽到 (x2,y2)（Python/pyautogui）。",
+        "input_schema": _schema({"x1": {"type": "number"}, "y1": {"type": "number"}, "x2": {"type": "number"}, "y2": {"type": "number"}}, ["x1", "y1", "x2", "y2"]),
+        "source": (
+            "import pyautogui\n"
+            "pyautogui.moveTo(args['x1'], args['y1'])\n"
+            "pyautogui.dragTo(args['x2'], args['y2'], duration=0.2, button='left')\n"
+            "result = {'ok': True}"
+        ),
+    },
+    {
+        "name": "clipboard.get",
+        "description": "读取剪贴板文本（Python/pyperclip）。",
+        "input_schema": _OBJ,
+        "source": "import pyperclip\nresult = {'text': pyperclip.paste()}",
+    },
+    {
+        "name": "clipboard.set",
+        "description": "写入剪贴板文本（Python/pyperclip）。",
+        "input_schema": _schema({"text": {"type": "string"}}, ["text"]),
+        "source": "import pyperclip\npyperclip.copy(str(args.get('text', '')))\nresult = {'ok': True}",
+    },
+    {
+        "name": "process.list",
+        "description": "列出进程（pid/name/cpu/mem，Python/psutil）。",
+        "input_schema": _schema({"name_contains": {"type": "string", "description": "可选：按名称子串过滤"}}, []),
+        "source": (
+            "import psutil\n"
+            "needle = str(args.get('name_contains') or '').lower()\n"
+            "rows = []\n"
+            "for p in psutil.process_iter(['pid', 'name']):\n"
+            "    name = p.info.get('name') or ''\n"
+            "    if needle and needle not in name.lower():\n"
+            "        continue\n"
+            "    rows.append({'pid': p.info['pid'], 'name': name})\n"
+            "result = {'processes': rows[:500], 'count': len(rows)}"
+        ),
+    },
+    {
+        "name": "process.kill",
+        "description": "结束指定 pid 的进程（Python/psutil）。",
+        "input_schema": _schema({"pid": {"type": "number"}}, ["pid"]),
+        "source": (
+            "import psutil\n"
+            "p = psutil.Process(int(args['pid']))\n"
+            "p.terminate()\n"
+            "result = {'ok': True, 'pid': int(args['pid'])}"
+        ),
+    },
+]
+
+_DEFAULT_NAMES = {t["name"] for t in DEFAULT_DESKTOP_RUNTIME_TOOLS}
+
+
+def _is_legacy_wrapper(row: DeviceDynamicTool) -> bool:
+    """True if this row is the old auto-seeded JS wrapper (return cap.call(...)).
+
+    Those wrap a native builtin that no longer exists on the device, so they are
+    safe to migrate to the python definition. A row an operator has customized
+    (anything else) is left untouched."""
+    return (getattr(row, "code_kind", "") or "") == "js" and "cap.call(" in (getattr(row, "js_source", "") or "")
+
+
+def seed_default_desktop_runtime_tools(user_id: int) -> int:
+    """Insert the default python tools for a user's desktop (idempotent), and
+    migrate any legacy JS cap.call wrappers of the same name to python. Returns
+    how many rows were created or migrated."""
+    now = time.time()
+    changed = 0
+    with Session(engine) as session:
+        existing = {
+            row.name: row
+            for row in session.exec(
+                select(DeviceDynamicTool).where(
+                    DeviceDynamicTool.user_id == user_id,
+                    DeviceDynamicTool.device_type == "desktop",
+                    DeviceDynamicTool.name.in_(_DEFAULT_NAMES),  # type: ignore[attr-defined]
+                )
+            ).all()
+        }
+        for spec in DEFAULT_DESKTOP_RUNTIME_TOOLS:
+            row = existing.get(spec["name"])
+            if row is not None and not _is_legacy_wrapper(row):
+                continue  # operator-authored or already python — never clobber
+            if row is None:
+                row = DeviceDynamicTool(
+                    user_id=user_id, device_type="desktop", name=spec["name"], created_at=now
+                )
+                session.add(row)
+            row.description = spec["description"]
+            row.input_schema_json = json.dumps(spec["input_schema"], ensure_ascii=False)
+            row.code_kind = "runtime"
+            row.code_json = "[]"
+            row.js_source = ""
+            row.runtime = "python"
+            row.source = spec["source"]
+            row.permissions_json = "[]"
+            row.enabled = True
+            row.status = "active"
+            row.updated_at = now
+            changed += 1
+        if changed:
+            session.commit()
+    return changed
