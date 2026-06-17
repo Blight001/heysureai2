@@ -243,7 +243,7 @@ def register_agent_socket_events():
                 agent_endpoint_tool_defs,
             )
             from api.device_live import push_device_dynamic_tools_to_sid
-            from api.services import device_dynamic_tools as _dyn
+            from api.services import device_workspace_tools as _dyn
 
             push_type = device_type_of(agents[sid])
             if owner_user_id is not None and push_type in ('desktop', 'browser'):
@@ -251,19 +251,12 @@ def register_agent_socket_events():
                 # via the socket relay, not just the gateway-local agents map.
                 from api.device_live import device_tool_room
                 await sio.enter_room(sid, device_tool_room(owner_user_id, push_type))
-                # Auto-seed: mirror the device's reported native catalog into the
-                # DB once (idempotent) so the whole tool surface is web-editable,
-                # then push the (seeded + operator-edited) set back down.
+                # Tools live as files in the user's workspace (not the DB). Seed the
+                # factory-default desktop python tools on first connect (idempotent;
+                # migrates any legacy DB rows to files once), then push the set down.
                 try:
-                    _dyn.seed_from_tool_defs(
-                        owner_user_id, push_type, agent_endpoint_tool_defs(agents[sid])
-                    )
-                    # keyboard/mouse/clipboard/process moved off the device into
-                    # server-owned python tools (phase 4). Seed/migrate them so
-                    # desktop devices keep those capabilities via python-runner.
                     if push_type == 'desktop':
-                        from api.services.device_runtime_seed import seed_default_desktop_runtime_tools
-                        seed_default_desktop_runtime_tools(owner_user_id)
+                        _dyn.seed_defaults(owner_user_id)
                 except Exception:
                     logger.exception('Failed to seed dynamic MCP tools: %s', device_id)
                 await push_device_dynamic_tools_to_sid(owner_user_id, push_type, sid)

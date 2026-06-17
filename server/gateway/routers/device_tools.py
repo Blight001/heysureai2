@@ -16,7 +16,7 @@ from sqlmodel import Session
 from api.database import get_session
 from api.device_live import push_device_dynamic_tools
 from api.device_presence import online_tool_catalog_for_user
-from api.services import device_dynamic_tools as dyn
+from api.services import device_workspace_tools as dyn
 from .auth import get_current_user
 
 router = APIRouter()

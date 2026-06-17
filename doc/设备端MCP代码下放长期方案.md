@@ -384,6 +384,20 @@ Windows 端最终仍应保留：
 - [ ] AI 可见 MCP 目录完全来自服务器 DB（仍沿用"设备上报能力 ∩ scope"，此项为有风险的真相源切换，需灰度）；
 - [ ] 旧 `toolDefs` 上报变成兼容字段或调试字段。
 
+### 工具存储：DB → 用户工作区文件（已切换）
+
+设备工具的真相源从数据库改为**用户工作区文件**（按用户要求弃用 DB 存储）：
+
+- 路径：`<workspace>/<user_id>/device_tools/<device_type>/`，每个工具 = `<name>.py`（runtime
+  python 体，AI 可经工作区 MCP 直接读写）/ `<name>.js`（js 体）+ `<name>.json`（元数据：
+  description/input_schema/code_kind/runtime/permissions/enabled/status；program 的 code 也在 json）；
+  历史快照在 `.history/<name>/<id>.json`，供回滚（替代 DB 版本表）。
+- 服务 `api/services/device_workspace_tools.py` 接口与旧 `device_dynamic_tools` 同名，
+  REST / AI 管理器（device_mcp.manage）/ 下发只换 import；旧 DB 行首次连接时一次性迁到文件。
+- 出厂默认 python 工具在 `api/services/device_runtime_tools/`（独立 `bodies/*.py` + `definitions.json`），
+  首次连接播种到用户工作区。`DeviceDynamicTool`/版本表保留但不再写入。
+- 权限策略仍在 DB（`DevicePermissionPolicy`，非工具代码）。
+
 ### 阶段四：删除全部 TypeScript 固定工具（已执行 · 全删）
 
 设备端 `executor/catalog.ts` 现在只注册两项：`mcp.manage_dynamic_tool`（动态工具管理器）

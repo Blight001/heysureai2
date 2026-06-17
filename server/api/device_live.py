@@ -80,7 +80,7 @@ async def push_device_dynamic_tools(user_id: int, device_type: str) -> int:
     this type (via the device room). Returns the online device count. The device
     merges the set into its runtime and re-reports its catalog, so the rest of
     the endpoint pipeline keeps working unchanged."""
-    from api.services import device_dynamic_tools as dyn
+    from api.services import device_workspace_tools as dyn
 
     try:
         dtype = dyn.normalize_device_type(device_type)
@@ -97,7 +97,7 @@ async def push_device_dynamic_tools(user_id: int, device_type: str) -> int:
 async def push_device_dynamic_tools_to_sid(user_id: int, device_type: str, sid: str) -> None:
     """Push the dynamic MCP set to one freshly-registered socket so it picks up
     edits made while it was offline."""
-    from api.services import device_dynamic_tools as dyn
+    from api.services import device_workspace_tools as dyn
 
     try:
         dtype = dyn.normalize_device_type(device_type)
