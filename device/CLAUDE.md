@@ -11,7 +11,7 @@
 | `linux/` | Electron 桌面应用 | 同上（X11；shell 默认 bash） |
 | `extension/` | Chrome MV3 扩展 | 浏览器自动化与轻量客户端（仍为固定工具目录） |
 
-桌面端壳内部结构（win/linux 一致）：`src/main.ts` 管 Electron 生命周期，`services/agent-runtime` 接 socket，`executor/` 工具调度（`catalog.ts` 现仅注册 `mcp.manage_dynamic_tool` + `shell.run`），`runtime/` 受控执行底座（共享，见 `device/shared/`），`ipc/` 主进程↔渲染进程通信，`renderer/` UI，`windows/` 窗口与托盘。`tools/` 现仅剩 `shell.ts` 与少量支持代码（`shared/robot`、`shared/coordinates`）。
+桌面端壳内部结构（win/linux 一致）：`src/main.ts` 管 Electron 生命周期，`services/agent-runtime` 接 socket，`executor/` 工具调度（`catalog.ts` **现仅注册 `mcp.manage_dynamic_tool` 一个内置——动态工具的引导器，无法自身动态化；连 `shell.run` 都已是服务器下发的 runtime 工具**），`runtime/` 受控执行底座（共享，见 `device/shared/`），`ipc/` 主进程↔渲染进程通信，`renderer/` UI，`windows/` 窗口与托盘。`tools/` 现仅剩少量支持代码（`shared/robot`、win 的 `shared/coordinates`），不再有写死的 MCP 工具实现。
 
 ## win/linux 共享代码（`device/shared/`）
 

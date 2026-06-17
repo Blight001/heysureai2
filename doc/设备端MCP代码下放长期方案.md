@@ -400,8 +400,13 @@ Windows 端最终仍应保留：
 
 ### 阶段四：删除全部 TypeScript 固定工具（已执行 · 全删）
 
-设备端 `executor/catalog.ts` 现在只注册两项：`mcp.manage_dynamic_tool`（动态工具管理器）
-与 `shell.run`（shell 运行时入口）。其余原生 MCP 工具实现全部物理删除，设备退化为纯受控运行器。
+设备端 `executor/catalog.ts` 现在**只注册一项**：`mcp.manage_dynamic_tool`（动态工具管理器/引导器，
+加载服务器下发工具，无法自身动态化）。其余原生 MCP 工具实现全部物理删除，**连 `shell.run` 也已迁为
+服务器下发的 `runtime=shell` 工具**，设备退化为纯受控运行器。审计结论：桌面端除引导器外无任何写死 MCP。
+
+> 浏览器扩展（MV3）仍保留 23 个 `browser_*` 内置作为能力底座：MV3 禁止运行远程 JS，服务器只能下发
+> program（call/set/return）工具来**组合**这些底座（`builtin:browser_*`），因此这些底座等价于桌面的
+> runtime 运行器，属不可消除的本地能力层，非"可迁的写死业务 MCP"。
 
 - [x] 删除并迁为服务器 `runtime=python`（`seed_default_desktop_runtime_tools` 播种 active，
       旧 JS cap.call 包装自动迁移）：

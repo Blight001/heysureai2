@@ -1,5 +1,36 @@
 [
   {
+    "name": "shell.run",
+    "file": "shell.run.sh",
+    "runtime": "shell",
+    "description": "执行一条 shell 命令并返回输出（设备 shell 运行时）。默认在工作区运行；cwd 可传工作区内相对或绝对路径。",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "要执行的命令行。"
+        },
+        "cwd": {
+          "type": "string",
+          "description": "工作目录；相对路径按工作区解析。"
+        },
+        "shell": {
+          "type": "string",
+          "description": "Windows 下解释器：cmd/powershell/pwsh，默认 cmd。"
+        },
+        "timeout_ms": {
+          "type": "number",
+          "description": "硬超时（毫秒）。"
+        }
+      },
+      "required": [
+        "command"
+      ]
+    },
+    "permissions": []
+  },
+  {
     "name": "keyboard.type",
     "file": "keyboard.type.py",
     "description": "在当前焦点处输入文本（Python/pyautogui）。",

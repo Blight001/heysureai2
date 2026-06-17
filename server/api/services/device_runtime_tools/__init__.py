@@ -30,7 +30,7 @@ def load_default_tools() -> List[Dict[str, Any]]:
             "description": d["description"],
             "input_schema": d["input_schema"],
             "code_kind": "runtime",
-            "runtime": "python",
+            "runtime": d.get("runtime", "python"),
             "source": source,
             "code": [],
             "js": "",

@@ -58,7 +58,12 @@ export async function runRuntimeTool(
     case 'powershell':
       return runPowerShell(renderTemplate(source, args), { cwd: workspaceRoot, timeoutMs: spec.timeoutMs })
     case 'shell':
-      return runShell(workspaceRoot, { command: renderTemplate(source, args), timeoutMs: spec.timeoutMs })
+      return runShell(workspaceRoot, {
+        command: renderTemplate(source, args),
+        cwd: args.cwd,
+        shell: args.shell ?? args.shell_type,
+        timeoutMs: spec.timeoutMs ?? (Number(args.timeout_ms || args.timeoutMs) || undefined),
+      })
     default:
       throw new Error(`Unsupported runtime: ${(spec as any).runtime}`)
   }

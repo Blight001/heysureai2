@@ -45,8 +45,12 @@ def _tools_dir(user_id: int, device_type: str) -> str:
     return os.path.join(user_workspace_dir(int(user_id)), "device_tools", normalize_device_type(device_type))
 
 
-def _body_ext(code_kind: str) -> Optional[str]:
-    return {"runtime": ".py", "js": ".js"}.get(code_kind)
+def _body_ext(code_kind: str, runtime: str = "") -> Optional[str]:
+    if code_kind == "js":
+        return ".js"
+    if code_kind == "runtime":
+        return {"shell": ".sh", "powershell": ".ps1"}.get(runtime, ".py")
+    return None
 
 
 def _meta_path(d: str, name: str) -> str:
@@ -85,7 +89,7 @@ def _write_files(d: str, clean: Dict[str, Any], enabled: bool, status: str) -> N
     if clean["code_kind"] == "program":
         meta["code"] = clean.get("code") or []
     _atomic_write(_meta_path(d, name), json.dumps(meta, ensure_ascii=False, indent=2))
-    ext = _body_ext(clean["code_kind"])
+    ext = _body_ext(clean["code_kind"], clean.get("runtime") or "")
     if ext:
         body = clean.get("source") if clean["code_kind"] == "runtime" else clean.get("js")
         _atomic_write(os.path.join(d, f"{name}{ext}"), str(body or ""))
@@ -109,7 +113,7 @@ def _read_tool(d: str, name: str) -> Optional[Dict[str, Any]]:
     code_kind = str(meta.get("code_kind") or "program")
     source = ""
     js = ""
-    ext = _body_ext(code_kind)
+    ext = _body_ext(code_kind, str(meta.get("runtime") or ""))
     if ext:
         body_path = os.path.join(d, f"{name}{ext}")
         body = open(body_path, encoding="utf-8").read() if os.path.isfile(body_path) else ""

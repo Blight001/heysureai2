@@ -116,7 +116,6 @@ device/windows/src/services/device-runtime.ts
 device/windows/src/services/reauth.ts
 device/windows/src/services/server-client.ts
 device/windows/src/tools/shared/robot.ts
-device/windows/src/tools/shell.ts
 device/windows/src/windows/main-window.ts
 device/windows/src/windows/tray.ts
 # device/linux (synced from device/shared/src)
@@ -143,6 +142,5 @@ device/linux/src/services/device-runtime.ts
 device/linux/src/services/reauth.ts
 device/linux/src/services/server-client.ts
 device/linux/src/tools/shared/robot.ts
-device/linux/src/tools/shell.ts
 device/linux/src/windows/main-window.ts
 device/linux/src/windows/tray.ts
