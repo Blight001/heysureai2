@@ -375,11 +375,13 @@ Windows 端最终仍应保留：
 - [ ] 服务器工具定义可覆盖旧内置工具；
 - [ ] MCP 目录由服务器生成，而不是设备上报决定。
 
-### 阶段三：设备上报 capability，不再上报 MCP
+### 阶段三：设备上报 capability，不再上报 MCP（增量起步）
 
-- [ ] 设备注册时只上报运行能力：`python`、`powershell`、`browser_js`、依赖版本、系统信息；
-- [ ] Server 根据 capability 下发匹配工具；
-- [ ] AI 可见 MCP 目录完全来自服务器 DB；
+- [x] 设备注册时**附带**上报运行能力：`python` / `powershell` / `shell` 是否可用 + 版本
+      （`runtime-probe` 实测后随 `device:register` 上报；服务器经 `online_runtimes` 感知，
+      网页创作 runtime 工具时给「无在线设备支持」提示）；
+- [~] Server 据 capability 提示/匹配（已做提示；按能力过滤下发待做）；
+- [ ] AI 可见 MCP 目录完全来自服务器 DB（仍沿用"设备上报能力 ∩ scope"，此项为有风险的真相源切换，需灰度）；
 - [ ] 旧 `toolDefs` 上报变成兼容字段或调试字段。
 
 ### 阶段四：逐步删除 TypeScript 固定工具

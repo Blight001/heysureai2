@@ -150,6 +150,13 @@ export const getPermissionPolicy = (deviceType: DeviceToolType) =>
     { query: { device_type: deviceType }, fallbackError: '权限策略加载失败' },
   )
 
+// Which runtimes the user's online devices of this type can actually run.
+export const getDeviceRuntimes = (deviceType: DeviceToolType) =>
+  get<{ deviceType: DeviceToolType; runtimes: Record<ToolRuntime, boolean> }>(
+    '/api/device-tools/runtimes',
+    { query: { device_type: deviceType }, fallbackError: '运行时能力加载失败' },
+  )
+
 export const setPermissionPolicy = (deviceType: DeviceToolType, policy: Record<string, PermissionDecision>) =>
   post<{ deviceType: DeviceToolType; policy: Record<string, PermissionDecision>; pushedToDevices: number }>(
     '/api/device-tools/permission-policy',

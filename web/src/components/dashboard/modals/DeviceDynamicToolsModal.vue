@@ -12,6 +12,7 @@ import {
   listDeviceToolFailures,
   getPermissionPolicy,
   setPermissionPolicy,
+  getDeviceRuntimes,
   type PermissionDecision,
   type DeviceToolType,
   type DeviceDynamicTool,
@@ -113,6 +114,14 @@ const load = async () => {
     } catch {
       statsByTool.value = {}
     }
+    if (deviceType.value === 'desktop') {
+      try {
+        const r = await getDeviceRuntimes('desktop')
+        onlineRuntimes.value = r.runtimes || { python: false, powershell: false, shell: false }
+      } catch {
+        onlineRuntimes.value = { python: false, powershell: false, shell: false }
+      }
+    }
   } catch (err: any) {
     error.value = err?.message || '加载失败'
   } finally {
@@ -150,6 +159,14 @@ const policyOpen = ref(false)
 const policyTags = ref<string[]>([])
 const policy = ref<Record<string, PermissionDecision | ''>>({})
 const policySaving = ref(false)
+
+// Runtime availability across the user's online desktop devices — drives a
+// "no online device can run this" hint in the runtime editor.
+const onlineRuntimes = ref<Record<string, boolean>>({ python: false, powershell: false, shell: false })
+const runtimeUnavailable = computed(() =>
+  isRuntimeMode.value && draft.value != null && draft.value.desktopKind !== 'js'
+  && onlineRuntimes.value[draft.value.desktopKind] === false,
+)
 
 const loadPolicy = async () => {
   if (deviceType.value !== 'desktop') return
@@ -624,6 +641,9 @@ const onDesktopKindChange = () => {
               <div class="mb-1 flex items-center justify-between">
                 <span class="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">实现源码（{{ draft.desktopKind }} · 在设备上执行）</span>
                 <span class="text-[10px] text-zinc-400">服务器存储 · 改完即下发同步</span>
+              </div>
+              <div v-if="runtimeUnavailable" class="mb-1 text-[10px] text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 rounded px-2 py-1">
+                当前没有在线桌面设备报告支持 {{ draft.desktopKind }} 运行时（python 需 npm run setup:python 或安装解释器）。仍可保存，设备具备该运行时后即可调用。
               </div>
               <textarea
                 v-model="draft.source"

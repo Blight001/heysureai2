@@ -219,6 +219,24 @@ async def restore_device_tool(
     return {"tool": tool, "pushedToDevices": reached}
 
 
+@router.get("/runtimes")
+async def device_runtimes(
+    device_type: str = Query("desktop"),
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    """Which runtimes (python/powershell/shell) the user's online devices of this
+    type can actually execute — drives the 'no online device supports X' hint."""
+    user = get_current_user(authorization, session)
+    from connector_runtime.dispatch.desktop_device_tools import online_runtimes
+
+    try:
+        dtype = dyn.normalize_device_type(device_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"deviceType": dtype, "runtimes": online_runtimes(user.id, dtype)}
+
+
 @router.get("/permission-policy")
 async def get_permission_policy(
     device_type: str = Query(...),

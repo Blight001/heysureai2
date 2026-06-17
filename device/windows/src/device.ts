@@ -4,6 +4,7 @@ import path from 'path'
 import { executeTask, getAvailableTools, getToolDefs, DispatchedTask } from './executor'
 import { applyServerDynamicMcp } from './executor/dynamic'
 import { setPermissionPolicy } from './runtime/permission-guard'
+import { probeRuntimes, cachedRuntimes } from './runtime/runtime-probe'
 import { getPlatformInfo } from './platform'
 import { AgentSettings } from './store'
 import { normalizeServerUrl } from './server-url'
@@ -197,6 +198,9 @@ export class HeySureAgent {
 
   private startRegistrationHandshake(): void {
     this.stopRegistrationHandshake()
+    // Probe runtimes once (async); the result rides the next register in the
+    // retry loop below, so the server learns what this device can execute.
+    void probeRuntimes().catch(() => {})
     if (!this.register()) return
     // A transport connection is not enough for the server to expose this
     // device. Keep registering until the server confirms device:registered;
@@ -229,6 +233,9 @@ export class HeySureAgent {
         platform: `win32-desktop (${os.hostname()})`,
         os: getPlatformInfo(),
         capabilities: getAvailableTools(),
+        // Which device runtimes can actually execute (python/powershell/shell),
+        // so the server knows if a runtime tool has a device that can run it.
+        runtimes: cachedRuntimes() || undefined,
         // Full self-described tool schemas (with the user's local description edits
         // merged in). The server stores these and surfaces them in mcp.list_tools /
         // describe_tool instead of hardcoding desktop tool schemas, so a tool added
