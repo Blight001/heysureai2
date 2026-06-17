@@ -35,6 +35,10 @@ export interface TrayCallbacks {
   onToggleConnection: () => void
   onShowPanel: () => void
   isActive: () => boolean
+  // Pause/resume server-driven tool execution (process-guard). One-switch kill
+  // of anything in flight — 设备端MCP代码下放长期方案 §7.1.
+  onTogglePause: () => void
+  isPaused: () => boolean
 }
 
 let tray: Tray | null = null
@@ -59,6 +63,7 @@ export function updateTray(status: DeviceStatus): void {
     { label: `状态: ${STATUS_LABELS[status]}`, enabled: false },
     { type: 'separator' },
     { label: active ? '断开连接' : '连接服务器', click: callbacks.onToggleConnection },
+    { label: callbacks.isPaused() ? '恢复远程执行' : '暂停远程执行', click: callbacks.onTogglePause },
     { label: '打开面板', click: callbacks.onShowPanel },
     { type: 'separator' },
     {

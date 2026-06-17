@@ -99,6 +99,7 @@ device/windows/src/runtime/permission-guard.ts
 device/windows/src/runtime/powershell-runner.ts
 device/windows/src/runtime/process-guard.ts
 device/windows/src/runtime/python-runner.ts
+device/windows/src/runtime/runtime-tool.ts
 device/windows/src/runtime/shell-runner.ts
 device/windows/src/server-url.ts
 device/windows/src/services/activity-log.ts
@@ -129,6 +130,7 @@ device/linux/src/runtime/permission-guard.ts
 device/linux/src/runtime/powershell-runner.ts
 device/linux/src/runtime/process-guard.ts
 device/linux/src/runtime/python-runner.ts
+device/linux/src/runtime/runtime-tool.ts
 device/linux/src/runtime/shell-runner.ts
 device/linux/src/server-url.ts
 device/linux/src/services/activity-log.ts

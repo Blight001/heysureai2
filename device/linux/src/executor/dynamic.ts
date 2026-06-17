@@ -3,6 +3,7 @@ import fs, { FSWatcher } from 'fs'
 import path from 'path'
 import { app } from 'electron'
 import { getBuiltinTool, getTool, listBuiltinToolIds, replaceDynamicTools, ToolDefinition } from './registry'
+import { runRuntimeTool, isToolRuntime, type ToolRuntime } from '../runtime/runtime-tool'
 
 export interface DynamicMcpDefinition {
   name: string
@@ -10,9 +11,13 @@ export interface DynamicMcpDefinition {
   input_schema: Record<string, any>
   // 'program' → run the call/set/return DSL in ``code``.
   // 'js'      → run ``js`` (a function body) with (args, cap, ctx) in scope.
-  code_kind?: 'program' | 'js'
+  // 'runtime' → run ``source`` via a device runtime (python/powershell/shell).
+  code_kind?: 'program' | 'js' | 'runtime'
   code: DynamicInstruction[]
   js?: string
+  runtime?: ToolRuntime
+  source?: string
+  permissions?: string[]
 }
 type DynamicInstruction = { op: 'call' | 'set' | 'return'; tool?: string; args?: any; name?: string; value?: any; save_as?: string }
 
@@ -44,7 +49,16 @@ function validate(raw: any): DynamicMcpDefinition {
   if (!description) throw new Error(`Dynamic MCP ${name} requires description`)
   const inputSchema = raw?.input_schema ?? raw?.inputSchema
   if (!inputSchema || typeof inputSchema !== 'object' || Array.isArray(inputSchema)) throw new Error(`Dynamic MCP ${name} requires input_schema`)
-  const kind = String(raw?.code_kind || raw?.codeKind || (String(raw?.js || '').trim() ? 'js' : 'program'))
+  const runtime = String(raw?.runtime || '').trim().toLowerCase()
+  const kind = String(raw?.code_kind || raw?.codeKind
+    || (runtime ? 'runtime' : (String(raw?.js || '').trim() ? 'js' : 'program')))
+  if (kind === 'runtime') {
+    if (!isToolRuntime(runtime)) throw new Error(`Dynamic MCP ${name} has invalid runtime: ${runtime || '(empty)'}`)
+    const source = String(raw?.source ?? raw?.code ?? '')
+    if (!source.trim()) throw new Error(`Dynamic MCP ${name} requires non-empty source`)
+    const permissions = Array.isArray(raw?.permissions) ? raw.permissions.map((p: any) => String(p)) : []
+    return { name, description, input_schema: inputSchema, code_kind: 'runtime', code: [], runtime: runtime as ToolRuntime, source, permissions }
+  }
   if (kind === 'js') {
     const js = String(raw?.js || '')
     if (!js.trim()) throw new Error(`Dynamic MCP ${name} requires non-empty js`)
@@ -181,7 +195,11 @@ export function reloadDynamicMcp(): { tools: number; local: number; server: numb
       editable_via: MANAGER_TOOL,
     },
     handler: ({ workspaceRoot, args }) =>
-      def.code_kind === 'js' ? runJs(def, workspaceRoot, args || {}) : runProgram(def, workspaceRoot, args || {}),
+      def.code_kind === 'runtime'
+        ? runRuntimeTool(
+            { name: def.name, runtime: def.runtime as ToolRuntime, source: def.source || '', permissions: def.permissions, description: def.description },
+            workspaceRoot, args || {})
+        : def.code_kind === 'js' ? runJs(def, workspaceRoot, args || {}) : runProgram(def, workspaceRoot, args || {}),
   })))
   definitions = next
   appliedServerRevision = revision(serverDefinitions)
@@ -402,7 +420,10 @@ export const DYNAMIC_MCP_MANAGER_DEFINITION: ToolDefinition = {
           description: { type: 'string', description: '向 AI 展示的工具说明。' },
           input_schema: { type: 'object', description: 'JSON Schema 入参定义。' },
           code: { type: 'array', minItems: 1, maxItems: 32, description: 'call/set/return 指令；模板支持 ${args.x}、${vars.x}、${last.x}。', items: { type: 'object' } },
-        }, required: ['name', 'description', 'input_schema', 'code'],
+          runtime: { type: 'string', enum: ['python', 'powershell', 'shell'], description: '运行时类型；设置后改用 source 提供源码（程序/JS 工具留空）。' },
+          source: { type: 'string', description: 'runtime 工具源码：python 脚本（用 args 取参、result 返回）/ powershell 脚本 / shell 命令，支持 ${args.x} 模板。' },
+          permissions: { type: 'array', items: { type: 'string' }, description: 'runtime 工具声明的权限标签，本机按策略 allow/confirm/deny。' },
+        }, required: ['name', 'description', 'input_schema'],
       },
     },
     required: ['action'], additionalProperties: false,
