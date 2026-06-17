@@ -2,13 +2,17 @@ import crypto from 'crypto'
 import fs, { FSWatcher } from 'fs'
 import path from 'path'
 import { app } from 'electron'
-import { getBuiltinTool, getTool, replaceDynamicTools, ToolDefinition } from './registry'
+import { getBuiltinTool, getTool, listBuiltinToolIds, replaceDynamicTools, ToolDefinition } from './registry'
 
 export interface DynamicMcpDefinition {
   name: string
   description: string
   input_schema: Record<string, any>
+  // 'program' → run the call/set/return DSL in ``code``.
+  // 'js'      → run ``js`` (a function body) with (args, cap, ctx) in scope.
+  code_kind?: 'program' | 'js'
   code: DynamicInstruction[]
+  js?: string
 }
 
 type DynamicInstruction = {
@@ -22,8 +26,17 @@ type DynamicInstruction = {
 
 const MANAGER_TOOL = 'mcp.manage_dynamic_tool'
 const NAME_RE = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$/
+// Merged set (local + server) used at runtime for child-tool resolution.
 let definitions: DynamicMcpDefinition[] = []
+// Locally-authored tools (via mcp.manage_dynamic_tool); persisted to filePath.
+let localDefinitions: DynamicMcpDefinition[] = []
+// Web-authored tools pushed by the server (device:tool-config), scoped by
+// device type; cached in serverFilePath and merged on reload. The server owns
+// them — the manager never edits them.
+let serverDefinitions: DynamicMcpDefinition[] = []
+let appliedServerRevision = ''
 let filePath = ''
+let serverFilePath = ''
 let watcher: FSWatcher | null = null
 let changeListener: (() => void) | null = null
 let reloadTimer: NodeJS.Timeout | null = null
@@ -42,6 +55,12 @@ function validate(raw: any): DynamicMcpDefinition {
   if (!inputSchema || typeof inputSchema !== 'object' || Array.isArray(inputSchema)) {
     throw new Error(`Dynamic MCP ${name} requires input_schema`)
   }
+  const kind = String(raw?.code_kind || raw?.codeKind || (String(raw?.js || '').trim() ? 'js' : 'program'))
+  if (kind === 'js') {
+    const js = String(raw?.js || '')
+    if (!js.trim()) throw new Error(`Dynamic MCP ${name} requires non-empty js`)
+    return { name, description, input_schema: inputSchema, code_kind: 'js', code: [], js }
+  }
   const code = typeof raw?.code === 'string' ? JSON.parse(raw.code) : raw?.code
   if (!Array.isArray(code) || !code.length || code.length > 32) {
     throw new Error(`Dynamic MCP ${name} code must contain 1-32 instructions`)
@@ -51,7 +70,42 @@ function validate(raw: any): DynamicMcpDefinition {
     if (step.op === 'call' && !String(step.tool || '').trim()) throw new Error(`call instruction in ${name} requires tool`)
     if (step.op === 'set' && !String(step.name || '').trim()) throw new Error(`set instruction in ${name} requires name`)
   }
-  return { name, description, input_schema: inputSchema, code }
+  return { name, description, input_schema: inputSchema, code_kind: 'program', code }
+}
+
+// The native capability library injected into server-authored JS tools. Each
+// device built-in is reachable via ``cap.call(id, args)`` and an ergonomic
+// ``cap.<namespace>.<fn>(args)`` shape. This is what lets the hardcoded catalog
+// stop being MCP tools while their native code keeps running on the device.
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as
+  new (...args: string[]) => (...a: any[]) => Promise<any>
+
+function buildCap(workspaceRoot: string): Record<string, any> {
+  const call = (id: string, args?: any) => {
+    const builtin = getBuiltinTool(String(id || '').trim())
+    if (!builtin) throw new Error(`Capability not found: ${id}`)
+    return builtin.handler({ workspaceRoot, args: args || {} })
+  }
+  const cap: Record<string, any> = { call }
+  for (const id of listBuiltinToolIds()) {
+    const dot = id.indexOf('.')
+    if (dot > 0) {
+      const ns = id.slice(0, dot)
+      const fn = id.slice(dot + 1)
+      cap[ns] = cap[ns] || {}
+      if (typeof cap[ns] === 'object') cap[ns][fn] = (args?: any) => call(id, args)
+    } else {
+      cap[id] = (args?: any) => call(id, args)
+    }
+  }
+  return cap
+}
+
+async function runJs(def: DynamicMcpDefinition, workspaceRoot: string, args: Record<string, any>): Promise<any> {
+  const cap = buildCap(workspaceRoot)
+  const ctx = { workspaceRoot }
+  const fn = new AsyncFunction('args', 'cap', 'ctx', String(def.js || ''))
+  return fn(args || {}, cap, ctx)
 }
 
 function lookup(root: any, dotted: string): any {
@@ -103,7 +157,7 @@ async function runProgram(def: DynamicMcpDefinition, workspaceRoot: string, args
   return context.last
 }
 
-function asTool(def: DynamicMcpDefinition): ToolDefinition {
+function asTool(def: DynamicMcpDefinition, fromServer = false): ToolDefinition {
   return {
     id: def.name,
     platform: 'all',
@@ -112,11 +166,14 @@ function asTool(def: DynamicMcpDefinition): ToolDefinition {
     implementation: {
       kind: 'dynamic',
       definition: def,
+      code_kind: def.code_kind || 'program',
       code: def.code,
-      storage_file: filePath,
+      storage_file: fromServer ? serverFilePath : filePath,
+      source: fromServer ? 'server' : 'local',
       editable_via: MANAGER_TOOL,
     },
-    handler: ({ workspaceRoot, args }) => runProgram(def, workspaceRoot, args || {}),
+    handler: ({ workspaceRoot, args }) =>
+      def.code_kind === 'js' ? runJs(def, workspaceRoot, args || {}) : runProgram(def, workspaceRoot, args || {}),
   }
 }
 
@@ -247,6 +304,26 @@ function inspectTool(name: string, includeSource = true): Record<string, any> {
   }
 }
 
+function ensurePaths(): void {
+  if (!filePath) filePath = path.join(app.getPath('userData'), 'dynamic-mcp-tools.json')
+  if (!serverFilePath) serverFilePath = path.join(app.getPath('userData'), 'dynamic-mcp-tools.server.json')
+}
+
+function readToolsFile(target: string): DynamicMcpDefinition[] {
+  if (!target || !fs.existsSync(target)) return []
+  const raw = JSON.parse(fs.readFileSync(target, 'utf8'))
+  const list = Array.isArray(raw) ? raw : raw?.tools
+  if (list == null) return []
+  if (!Array.isArray(list)) throw new Error(`${path.basename(target)} must contain a tools array`)
+  const next = list.map(validate)
+  const names = new Set<string>()
+  for (const item of next) {
+    if (names.has(item.name)) throw new Error(`Duplicate dynamic MCP: ${item.name}`)
+    names.add(item.name)
+  }
+  return next
+}
+
 function persist(next: DynamicMcpDefinition[]): void {
   const temp = `${filePath}.tmp`
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
@@ -254,21 +331,45 @@ function persist(next: DynamicMcpDefinition[]): void {
   fs.renameSync(temp, filePath)
 }
 
-export function reloadDynamicMcp(): { tools: number; revision: string; file: string } {
-  if (!filePath) filePath = path.join(app.getPath('userData'), 'dynamic-mcp-tools.json')
-  let raw: any = { tools: [] }
-  if (fs.existsSync(filePath)) raw = JSON.parse(fs.readFileSync(filePath, 'utf8'))
-  const list = Array.isArray(raw) ? raw : raw?.tools
-  if (!Array.isArray(list)) throw new Error('dynamic-mcp-tools.json must contain a tools array')
-  const next = list.map(validate)
+export function reloadDynamicMcp(): { tools: number; local: number; server: number; revision: string; file: string } {
+  ensurePaths()
+  localDefinitions = readToolsFile(filePath)
+  serverDefinitions = readToolsFile(serverFilePath)
+  // Merge: server-authored (web) tools win over a locally-authored tool of the
+  // same name, so an operator's edit is authoritative for that device type.
+  const serverNames = new Set(serverDefinitions.map(item => item.name))
+  const merged = new Map<string, DynamicMcpDefinition>()
+  for (const def of localDefinitions) merged.set(def.name, def)
+  for (const def of serverDefinitions) merged.set(def.name, def)
+  const next = Array.from(merged.values())
+  replaceDynamicTools(next.map(def => asTool(def, serverNames.has(def.name))))
+  definitions = next
+  appliedServerRevision = revision(serverDefinitions)
+  return { tools: next.length, local: localDefinitions.length, server: serverDefinitions.length, revision: revision(next), file: filePath }
+}
+
+// Apply a server-pushed dynamic MCP set (device:tool-config). Returns
+// applied:false without touching disk when the set is unchanged — this guard
+// stops the register→push→apply loop, since applying re-registers and the
+// server re-pushes the same set.
+export function applyServerDynamicMcp(payload: any): { applied: boolean; revision: string; tools: number } {
+  ensurePaths()
+  const list = Array.isArray(payload) ? payload : payload?.tools
+  const tools = Array.isArray(list) ? list.map(validate) : []
   const names = new Set<string>()
-  for (const item of next) {
+  for (const item of tools) {
     if (names.has(item.name)) throw new Error(`Duplicate dynamic MCP: ${item.name}`)
     names.add(item.name)
   }
-  replaceDynamicTools(next.map(asTool))
-  definitions = next
-  return { tools: next.length, revision: revision(next), file: filePath }
+  const rev = revision(tools)
+  if (rev === appliedServerRevision) return { applied: false, revision: rev, tools: tools.length }
+  const temp = `${serverFilePath}.tmp`
+  fs.mkdirSync(path.dirname(serverFilePath), { recursive: true })
+  fs.writeFileSync(temp, JSON.stringify({ version: 1, tools }, null, 2), 'utf8')
+  fs.renameSync(temp, serverFilePath)
+  reloadDynamicMcp()
+  changeListener?.()
+  return { applied: true, revision: rev, tools: tools.length }
 }
 
 function scheduleReload(): void {
@@ -299,8 +400,8 @@ export async function manageDynamicMcp(args: Record<string, any>): Promise<any> 
   if (action === 'list') return {
     ok: true,
     file: filePath,
-    revision: revision(definitions),
-    tools: definitions.map(item => ({ name: item.name, description: item.description, revision: revision(item) })),
+    revision: revision(localDefinitions),
+    tools: localDefinitions.map(item => ({ name: item.name, description: item.description, revision: revision(item) })),
   }
   const name = String(args?.name || args?.definition?.name || '').trim()
   if (action === 'get_source') {
@@ -331,7 +432,9 @@ export async function manageDynamicMcp(args: Record<string, any>): Promise<any> 
   }
   if (!name) throw new Error('name is required')
   if (action === 'inspect') return inspectTool(name, args?.include_source !== false)
-  const current = definitions.find(item => item.name === name)
+  // The manager edits only locally-authored tools. Server-pushed tools for this
+  // device type are managed from the web console, never here.
+  const current = localDefinitions.find(item => item.name === name)
   if (action === 'get') {
     if (!current) throw new Error(`Dynamic MCP not found: ${name}`)
     return { ok: true, definition: current, revision: revision(current), file: filePath }
@@ -341,10 +444,13 @@ export async function manageDynamicMcp(args: Record<string, any>): Promise<any> 
   }
   if (action === 'delete') {
     if (!current) throw new Error(`Dynamic MCP not found: ${name}`)
-    persist(definitions.filter(item => item.name !== name))
+    persist(localDefinitions.filter(item => item.name !== name))
   } else if (action === 'upsert') {
+    if (serverDefinitions.some(item => item.name === name)) {
+      throw new Error(`${name} is managed from the web console for this device type`)
+    }
     const nextDef = validate({ ...(args.definition || {}), name })
-    persist([...definitions.filter(item => item.name !== name), nextDef].sort((a, b) => a.name.localeCompare(b.name)))
+    persist([...localDefinitions.filter(item => item.name !== name), nextDef].sort((a, b) => a.name.localeCompare(b.name)))
   } else {
     throw new Error(`Unsupported action: ${action}`)
   }

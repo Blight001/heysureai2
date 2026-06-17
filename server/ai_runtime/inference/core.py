@@ -511,6 +511,30 @@ async def _call_mcp_or_endpoint_tool(
     return await registry.call(tool, user_id, arguments, ai_config_id)
 
 
+def _record_mcp_call(
+    *, tool, user_id, ai_config_id, session_id, run_id, message_id, failed, error
+) -> None:
+    """Best-effort record of a tool call outcome for the failure-rate view.
+
+    Captures the conversation location (session / run / message) so a failure can
+    be traced in chat and the responsible tool iterated. Never breaks the run."""
+    try:
+        from api.services import mcp_stats
+
+        mcp_stats.record_call(
+            user_id=user_id,
+            ai_config_id=ai_config_id,
+            tool=tool,
+            success=not failed,
+            error=error or "",
+            session_id=str(session_id or ""),
+            run_id=str(run_id or ""),
+            message_id=getattr(message_id, "id", message_id) if message_id is not None else None,
+        )
+    except Exception:
+        pass
+
+
 def _tool_result_failed(tool_result: Dict[str, object]) -> tuple[bool, str]:
     result = tool_result.get("result") if isinstance(tool_result, dict) else None
     if isinstance(result, dict) and result.get("success") is False:
@@ -2035,6 +2059,11 @@ def _run_worker_impl(
                                     ok=False,
                                     error_message=item_error,
                                 )
+                        _record_mcp_call(
+                            tool=split_tool, user_id=user_id, ai_config_id=ai_config_id,
+                            session_id=session_id, run_id=run_id, message_id=getattr(saved, "id", None),
+                            failed=item_failed, error=item_error,
+                        )
                         saved.tags = _append_mcp_state_to_tags(
                             saved.tags,
                             split_tool,
@@ -2189,6 +2218,11 @@ def _run_worker_impl(
                     tool_error = _extract_mcp_error(mcp_exc)
                     tool_result = {"result": {"success": False, "error": tool_error}}
                     result_text = _build_mcp_display_result(tool, tool_result, ok=False, error_message=tool_error)
+                _record_mcp_call(
+                    tool=tool, user_id=user_id, ai_config_id=ai_config_id,
+                    session_id=session_id, run_id=run_id, message_id=getattr(saved, "id", None),
+                    failed=tool_failed, error=tool_error,
+                )
                 result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
                 if (
                     (not tool_failed)

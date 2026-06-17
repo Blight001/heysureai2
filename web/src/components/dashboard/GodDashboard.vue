@@ -27,6 +27,7 @@ const LeftSidebarPanel = defineAsyncComponent(() => import('./panels/LeftSidebar
 const WorldArenaPanel = defineAsyncComponent(() => import('./panels/WorldArenaPanel.vue'))
 const ChatInterface = defineAsyncComponent(() => import('@/components/chat/ChatInterface.vue'))
 const McpToolsModal = defineAsyncComponent(() => import('./modals/McpToolsModal.vue'))
+const DeviceDynamicToolsModal = defineAsyncComponent(() => import('./modals/DeviceDynamicToolsModal.vue'))
 const TaskManagementModal = defineAsyncComponent(() => import('./modals/TaskManagementModal.vue'))
 const AiConfigModal = defineAsyncComponent(() => import('./modals/AiConfigModal.vue'))
 const AdminModal = defineAsyncComponent(() => import('./modals/AdminModal.vue'))
@@ -153,6 +154,9 @@ const {
   toolModalItems,
   showAllServerMcpTools,
 } = useMcpAndWorkspaceModal({ mcpToolMetaByName })
+
+// Web-managed device dynamic MCP tools modal (opened from McpToolsModal).
+const deviceToolsModalOpen = ref(false)
 
 const defaultMcpTools = [...DEFAULT_MCP_TOOLS]
 
@@ -515,6 +519,12 @@ onUnmounted(() => {
       :title="toolModalTitle"
       :items="toolModalItems"
       @close="toolModalOpen = false"
+      @manage-device-tools="deviceToolsModalOpen = true"
+    />
+
+    <DeviceDynamicToolsModal
+      :show="deviceToolsModalOpen"
+      @close="deviceToolsModalOpen = false"
     />
 
     <TaskManagementModal

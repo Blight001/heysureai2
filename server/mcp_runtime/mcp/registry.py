@@ -40,6 +40,7 @@ from .tools.conversation import (
     _switch_conversation,
 )
 from .tools.web_search import _web_search
+from .tools.device_mcp import _device_mcp_manage, DEVICE_MCP_MANAGE_SCHEMA
 
 def _register_builtin_tools(registry: MCPRegistry) -> None:
     """Populate ``registry`` with all builtin tools.
@@ -708,6 +709,19 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
             "required": ["key"],
         },
         handler=_prompt_write_system,
+        destructive=True,
+    ))
+
+    registry.register(MCPTool(
+        name="device_mcp.manage",
+        description=(
+            "自主管理设备端 MCP 工具（按设备类型 desktop/browser），可用于迭代更好用的工具实现。"
+            "list/get 查看；capabilities 列出该类型设备可调用的原生能力；upsert 创建或覆盖；delete 删除。"
+            "desktop 工具是在设备上运行的 JS（作用域有 args/cap/ctx，cap 是原生能力库，如 cap.call('fs.read', args)）；"
+            "browser 工具用 call/set/return 指令。保存后立即下发到在线设备，下一轮即可调用。"
+        ),
+        input_schema=DEVICE_MCP_MANAGE_SCHEMA,
+        handler=_device_mcp_manage,
         destructive=True,
     ))
 

@@ -10,6 +10,10 @@ export interface DynamicMcpDefinition {
 type DynamicInstruction = { op: 'call' | 'set' | 'return'; tool?: string; args?: any; name?: string; value?: any; save_as?: string }
 
 export const DYNAMIC_MCP_STORAGE_KEY = '_dynamic_mcp_tools'
+// Web-authored tools pushed by the server (device:tool-config), scoped to the
+// browser device type. Cached here as the offline source and merged with the
+// locally-authored tools, with server precedence on a name conflict.
+export const DYNAMIC_MCP_SERVER_STORAGE_KEY = '_dynamic_mcp_server_tools'
 export const DYNAMIC_MCP_MANAGER_NAME = 'mcp.manage_dynamic_tool'
 export const BROWSER_DYNAMIC_MCP_MANAGER_NAME = 'browser_mcp.manage_dynamic_tool'
 const NAME_RE = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$/
@@ -58,6 +62,42 @@ export async function getDynamicMcpDefinitions(): Promise<DynamicMcpDefinition[]
 
 async function saveDynamicMcpDefinitions(tools: DynamicMcpDefinition[]): Promise<void> {
   await chrome.storage.local.set({ [DYNAMIC_MCP_STORAGE_KEY]: { version: 1, tools } })
+}
+
+export async function getServerDynamicMcpDefinitions(): Promise<DynamicMcpDefinition[]> {
+  const stored = (await chrome.storage.local.get(DYNAMIC_MCP_SERVER_STORAGE_KEY))[DYNAMIC_MCP_SERVER_STORAGE_KEY]
+  const list = Array.isArray(stored) ? stored : stored?.tools
+  if (list == null) return []
+  if (!Array.isArray(list)) throw new Error('Server dynamic MCP storage must contain a tools array')
+  const tools = list.map(validate)
+  if (new Set(tools.map(item => item.name)).size !== tools.length) throw new Error('Duplicate dynamic MCP name')
+  return tools
+}
+
+// Local + server tools merged, server winning on a name conflict. Used for both
+// advertising (dynamicMcpToolDefs) and execution (executeDynamicMcp) so the two
+// never drift.
+async function getMergedDynamicMcpDefinitions(): Promise<{ merged: DynamicMcpDefinition[]; serverNames: Set<string> }> {
+  const [local, server] = await Promise.all([getDynamicMcpDefinitions(), getServerDynamicMcpDefinitions()])
+  const serverNames = new Set(server.map(item => item.name))
+  const byName = new Map<string, DynamicMcpDefinition>()
+  for (const def of local) byName.set(def.name, def)
+  for (const def of server) byName.set(def.name, def)
+  return { merged: Array.from(byName.values()), serverNames }
+}
+
+// Apply a server-pushed dynamic MCP set (device:tool-config). Returns
+// applied:false without writing when the set is unchanged — the guard stops the
+// register→push→apply loop (applying re-registers, the server re-pushes).
+export async function applyServerDynamicMcp(payload: any): Promise<{ applied: boolean; revision: string; tools: number }> {
+  const list = Array.isArray(payload) ? payload : payload?.tools
+  const tools = Array.isArray(list) ? list.map(validate) : []
+  if (new Set(tools.map(item => item.name)).size !== tools.length) throw new Error('Duplicate dynamic MCP name')
+  const rev = revision(tools)
+  const current = await getServerDynamicMcpDefinitions().catch(() => [])
+  if (rev === revision(current)) return { applied: false, revision: rev, tools: tools.length }
+  await chrome.storage.local.set({ [DYNAMIC_MCP_SERVER_STORAGE_KEY]: { version: 1, tools } })
+  return { applied: true, revision: rev, tools: tools.length }
 }
 
 function lookup(root: any, dotted: string): any {
@@ -112,10 +152,10 @@ export async function executeDynamicMcp(
   callBuiltin: (name: string, args: any) => Promise<any>,
 ): Promise<{ handled: boolean; result?: any }> {
   if (isManagerName(name)) return { handled: true, result: await manageDynamicMcp(args) }
-  const all = await getDynamicMcpDefinitions()
-  const def = all.find(item => item.name === name)
+  const { merged } = await getMergedDynamicMcpDefinitions()
+  const def = merged.find(item => item.name === name)
   if (!def) return { handled: false }
-  return { handled: true, result: await runProgram(def, args || {}, callTool, callBuiltin, all) }
+  return { handled: true, result: await runProgram(def, args || {}, callTool, callBuiltin, merged) }
 }
 
 const BROWSER_SOURCE_FILES = ['src/lib/tools/definitions.ts', 'src/lib/tools/browser.ts', 'src/lib/tools/router.ts', 'dist/background.js']
@@ -200,6 +240,11 @@ export async function manageDynamicMcp(args: Record<string, any>): Promise<any> 
   }
   if (!name) throw new Error('name is required')
   if (action === 'inspect') return inspectTool(name, all, args?.include_source !== false)
+  if (action === 'upsert' || action === 'delete') {
+    // Server-pushed tools for this device type are managed from the web console.
+    const serverNames = new Set((await getServerDynamicMcpDefinitions().catch(() => [])).map(item => item.name))
+    if (serverNames.has(name)) throw new Error(`${name} is managed from the web console for this device type`)
+  }
   const current = all.find(item => item.name === name)
   if (action === 'get') {
     if (!current) throw new Error(`Dynamic MCP not found: ${name}`)
@@ -259,17 +304,21 @@ export const BROWSER_DYNAMIC_MCP_MANAGER_DEF: AIToolDef = {
 }
 
 export async function dynamicMcpToolDefs(): Promise<AIToolDef[]> {
-  const dynamic = await getDynamicMcpDefinitions()
-  return [BROWSER_DYNAMIC_MCP_MANAGER_DEF, ...dynamic.map(def => ({
-    name: def.name,
-    description: def.description,
-    input_schema: def.input_schema,
-    implementation: {
-      kind: 'dynamic',
-      definition: def,
-      code: def.code,
-      storage_key: DYNAMIC_MCP_STORAGE_KEY,
-      editable_via: BROWSER_DYNAMIC_MCP_MANAGER_NAME,
-    },
-  }))]
+  const { merged, serverNames } = await getMergedDynamicMcpDefinitions()
+  return [BROWSER_DYNAMIC_MCP_MANAGER_DEF, ...merged.map(def => {
+    const fromServer = serverNames.has(def.name)
+    return {
+      name: def.name,
+      description: def.description,
+      input_schema: def.input_schema,
+      implementation: {
+        kind: 'dynamic',
+        definition: def,
+        code: def.code,
+        storage_key: fromServer ? DYNAMIC_MCP_SERVER_STORAGE_KEY : DYNAMIC_MCP_STORAGE_KEY,
+        source: fromServer ? 'server' : 'local',
+        editable_via: BROWSER_DYNAMIC_MCP_MANAGER_NAME,
+      },
+    }
+  })]
 }
