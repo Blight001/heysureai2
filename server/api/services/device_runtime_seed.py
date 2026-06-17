@@ -251,6 +251,189 @@ DEFAULT_DESKTOP_RUNTIME_TOOLS: List[Dict[str, Any]] = [
         ),
     },
     {
+        "name": "screen.capture",
+        "description": "整屏截图（Python/mss）。返回 JPEG dataUrl，服务器自动存到 Screenshots 并按需发用户。",
+        "input_schema": _schema({"display": {"type": "number", "description": "显示器序号，默认 0"}}, []),
+        "source": (
+            "import mss, base64, io\n"
+            "from PIL import Image\n"
+            "disp = int(args.get('display') or 0)\n"
+            "with mss.mss() as sct:\n"
+            "    mons = sct.monitors\n"
+            "    mon = mons[disp + 1] if 0 <= disp + 1 < len(mons) else mons[0]\n"
+            "    raw = sct.grab(mon)\n"
+            "img = Image.frombytes('RGB', raw.size, raw.rgb)\n"
+            "if img.width > 1280:\n"
+            "    img = img.resize((1280, max(1, img.height * 1280 // img.width)))\n"
+            "buf = io.BytesIO(); img.save(buf, format='JPEG', quality=60)\n"
+            "result = {'dataUrl': 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode(), 'width': img.width, 'height': img.height}"
+        ),
+    },
+    {
+        "name": "screen.capture_region",
+        "description": "截取屏幕矩形区域（Python/mss）。返回 JPEG dataUrl，服务器自动存盘。",
+        "input_schema": _schema({"x": {"type": "number"}, "y": {"type": "number"}, "width": {"type": "number"}, "height": {"type": "number"}}, ["width", "height"]),
+        "source": (
+            "import mss, base64, io\n"
+            "from PIL import Image\n"
+            "box = {'left': int(args.get('x') or 0), 'top': int(args.get('y') or 0), 'width': int(args['width']), 'height': int(args['height'])}\n"
+            "with mss.mss() as sct:\n"
+            "    raw = sct.grab(box)\n"
+            "img = Image.frombytes('RGB', raw.size, raw.rgb)\n"
+            "buf = io.BytesIO(); img.save(buf, format='JPEG', quality=70)\n"
+            "result = {'dataUrl': 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode(), 'width': img.width, 'height': img.height}"
+        ),
+    },
+    {
+        "name": "screen.info",
+        "description": "列出显示器及分辨率（Python/mss）。",
+        "input_schema": _OBJ,
+        "source": (
+            "import mss\n"
+            "with mss.mss() as sct:\n"
+            "    mons = sct.monitors[1:]\n"
+            "result = {'monitors': [{'index': i, 'left': m['left'], 'top': m['top'], 'width': m['width'], 'height': m['height']} for i, m in enumerate(mons)]}"
+        ),
+    },
+    {
+        "name": "vision.capture",
+        "description": "采集整屏用于视觉理解（Python/mss）。返回 JPEG dataUrl，服务器存盘并发用户。",
+        "input_schema": _schema({"display": {"type": "number"}, "send_to_user": {"type": "boolean"}}, []),
+        "source": (
+            "import mss, base64, io\n"
+            "from PIL import Image\n"
+            "disp = int(args.get('display') or 0)\n"
+            "with mss.mss() as sct:\n"
+            "    mons = sct.monitors\n"
+            "    mon = mons[disp + 1] if 0 <= disp + 1 < len(mons) else mons[0]\n"
+            "    raw = sct.grab(mon)\n"
+            "img = Image.frombytes('RGB', raw.size, raw.rgb)\n"
+            "if img.width > 1280:\n"
+            "    img = img.resize((1280, max(1, img.height * 1280 // img.width)))\n"
+            "buf = io.BytesIO(); img.save(buf, format='JPEG', quality=60)\n"
+            "result = {'dataUrl': 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode(), 'width': img.width, 'height': img.height, 'send_to_user': args.get('send_to_user', True)}"
+        ),
+    },
+    {
+        "name": "vision.capture_mouse",
+        "description": "采集鼠标周围区域用于视觉理解（Python/mss + pyautogui）。返回 JPEG dataUrl。",
+        "input_schema": _schema({"radius": {"type": "number", "description": "半径，默认 200"}}, []),
+        "source": (
+            "import mss, base64, io, pyautogui\n"
+            "from PIL import Image\n"
+            "r = int(args.get('radius') or 200)\n"
+            "mx, my = pyautogui.position()\n"
+            "box = {'left': max(0, mx - r), 'top': max(0, my - r), 'width': r * 2, 'height': r * 2}\n"
+            "with mss.mss() as sct:\n"
+            "    raw = sct.grab(box)\n"
+            "img = Image.frombytes('RGB', raw.size, raw.rgb)\n"
+            "buf = io.BytesIO(); img.save(buf, format='JPEG', quality=70)\n"
+            "result = {'dataUrl': 'data:image/jpeg;base64,' + base64.b64encode(buf.getvalue()).decode(), 'width': img.width, 'height': img.height, 'send_to_user': args.get('send_to_user', True)}"
+        ),
+    },
+    {
+        "name": "window.list",
+        "description": "列出可见顶层窗口标题（Python；Win 用 pygetwindow，Linux 用 wmctrl）。",
+        "input_schema": _OBJ,
+        "source": (
+            "import sys\n"
+            "wins = []\n"
+            "if sys.platform == 'win32':\n"
+            "    import pygetwindow as gw\n"
+            "    wins = [t for t in gw.getAllTitles() if t and t.strip()]\n"
+            "else:\n"
+            "    import subprocess\n"
+            "    out = subprocess.run(['wmctrl', '-l'], capture_output=True, text=True).stdout\n"
+            "    wins = [' '.join(line.split()[3:]) for line in out.splitlines() if line.strip()]\n"
+            "result = {'windows': wins}"
+        ),
+    },
+    {
+        "name": "window.focus",
+        "description": "把标题匹配的窗口切到前台（Python；Win pygetwindow，Linux wmctrl -a）。",
+        "input_schema": _schema({"title": {"type": "string"}}, ["title"]),
+        "source": (
+            "import sys\n"
+            "title = str(args['title'])\n"
+            "if sys.platform == 'win32':\n"
+            "    import pygetwindow as gw\n"
+            "    ws = gw.getWindowsWithTitle(title)\n"
+            "    if not ws:\n"
+            "        raise ValueError('window not found: ' + title)\n"
+            "    ws[0].activate()\n"
+            "else:\n"
+            "    import subprocess\n"
+            "    subprocess.run(['wmctrl', '-a', title], check=False)\n"
+            "result = {'ok': True, 'title': title}"
+        ),
+    },
+    {
+        "name": "window.close",
+        "description": "按标题关闭窗口（Python；Win pygetwindow，Linux wmctrl -c）。",
+        "input_schema": _schema({"title": {"type": "string"}}, ["title"]),
+        "source": (
+            "import sys\n"
+            "title = str(args['title'])\n"
+            "if sys.platform == 'win32':\n"
+            "    import pygetwindow as gw\n"
+            "    ws = gw.getWindowsWithTitle(title)\n"
+            "    if not ws:\n"
+            "        raise ValueError('window not found: ' + title)\n"
+            "    ws[0].close()\n"
+            "else:\n"
+            "    import subprocess\n"
+            "    subprocess.run(['wmctrl', '-c', title], check=False)\n"
+            "result = {'ok': True, 'title': title}"
+        ),
+    },
+    {
+        "name": "ui.inspect",
+        "description": "读取前台窗口的 UI Automation 控件树（Python/uiautomation，仅 Windows）。返回每个控件的 name/control_type/automation_id/rect。",
+        "input_schema": _schema({"title": {"type": "string"}, "max": {"type": "number"}, "max_depth": {"type": "number"}}, []),
+        "source": (
+            "import uiautomation as auto\n"
+            "title = args.get('title')\n"
+            "root = auto.WindowControl(searchDepth=2, SubName=str(title)) if title else auto.GetForegroundControl()\n"
+            "limit = int(args.get('max') or 150)\n"
+            "depth = int(args.get('max_depth') or 8)\n"
+            "elems = []\n"
+            "for c, d in auto.WalkControl(root, maxDepth=depth):\n"
+            "    r = c.BoundingRectangle\n"
+            "    elems.append({'name': c.Name, 'control_type': c.ControlTypeName, 'automation_id': c.AutomationId, 'rect': [r.left, r.top, r.right, r.bottom]})\n"
+            "    if len(elems) >= limit:\n"
+            "        break\n"
+            "result = {'window': root.Name, 'elements': elems}"
+        ),
+    },
+    {
+        "name": "ui.click",
+        "description": "按 UI Automation 控件定位并点击（Python/uiautomation，仅 Windows）。优先 InvokePattern，不支持则真实点击控件中心。",
+        "input_schema": _schema({"title": {"type": "string"}, "name": {"type": "string"}, "automation_id": {"type": "string"}, "control_type": {"type": "string"}, "max_depth": {"type": "number"}}, []),
+        "source": (
+            "import uiautomation as auto\n"
+            "title = args.get('title')\n"
+            "root = auto.WindowControl(searchDepth=2, SubName=str(title)) if title else auto.GetForegroundControl()\n"
+            "name = args.get('name'); aid = args.get('automation_id'); ctype = args.get('control_type')\n"
+            "depth = int(args.get('max_depth') or 8)\n"
+            "target = None\n"
+            "for c, d in auto.WalkControl(root, maxDepth=depth):\n"
+            "    if aid and c.AutomationId != aid:\n"
+            "        continue\n"
+            "    if name and str(name) not in (c.Name or ''):\n"
+            "        continue\n"
+            "    if ctype and c.ControlTypeName != ctype:\n"
+            "        continue\n"
+            "    target = c; break\n"
+            "if target is None:\n"
+            "    raise ValueError('control not found')\n"
+            "try:\n"
+            "    target.GetInvokePattern().Invoke()\n"
+            "except Exception:\n"
+            "    target.Click()\n"
+            "result = {'ok': True, 'name': target.Name}"
+        ),
+    },
+    {
         "name": "speech.speak",
         "description": "文字转语音朗读（Python/pyttsx3，跨平台 SAPI/espeak）。",
         "input_schema": _schema({"text": {"type": "string"}, "rate": {"type": "number"}, "volume": {"type": "number"}}, ["text"]),

@@ -390,11 +390,17 @@ Windows 端最终仍应保留：
 与 `shell.run`（shell 运行时入口）。其余原生 MCP 工具实现全部物理删除，设备退化为纯受控运行器。
 
 - [x] 删除并迁为服务器 `runtime=python`（`seed_default_desktop_runtime_tools` 播种 active，
-      旧 JS cap.call 包装自动迁移）：keyboard/mouse/clipboard/process、text.input、git.diff、
-      fs.{list,read,write}、speech.speak（pyttsx3）、**display.box（tkinter 半透明高亮框，
-      到时自动关；Linux 需系统包 python3-tk）**；
-- [x] **直接删除、无替代**（无法做成无状态跨平台 python：常驻监听 / 截图发图管线 / 平台分歧）：
-      display.clear（box 自动消失，无需手动清）、hands.*、ear.*、screen.*、vision.*、window.*、ui.*（UIA）；
+      旧 JS cap.call 包装自动迁移）：
+  - keyboard/mouse/clipboard/process（pyautogui/pyperclip/psutil）；
+  - text.input、git.diff、fs.{list,read,write}、speech.speak（pyttsx3）；
+  - display.box（tkinter 半透明高亮框，Linux 需系统包 python3-tk）；
+  - screen.{capture,capture_region,info}、vision.{capture,capture_mouse}（mss+Pillow→JPEG dataUrl，
+    复用服务器既有 `_SCREENSHOT_TOOLS` 持久化/发图管线，按名匹配生效）；
+  - window.{list,focus,close}（`sys.platform` 分支：Win pygetwindow / Linux wmctrl）；
+  - ui.{inspect,click}（uiautomation，**仅 Windows**，linux 端会因缺库报错）；
+- [x] **仅以下无法做成无状态服务器工具，已删除且无替代**：hands.*（常驻输入事件监听）、
+      ear.*（常驻麦克风听写）——一次性 python 调用无法在多次调用间维持后台监听；
+      display.clear 也移除（box 到时自动消失，无需手动清）。
 - [x] 删除的端侧文件：shared 的 keyboard/clipboard/display/filesystem/vision；win 的 mouse/process/
       screen/window/mouth/hands/uia/text-input + shared/powershell；linux 的 mouse/process/screen/
       window/mouth/hands/ear/git + shared/command。保留 shell.ts、shared/robot、shared/coordinates
