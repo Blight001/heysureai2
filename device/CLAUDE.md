@@ -12,11 +12,19 @@
 
 桌面端壳内部结构（win/linux 一致）：`src/main.ts` 管 Electron 生命周期，`services/agent-runtime` 接 socket，`tools/` 是各工具实现，`executor/` 工具调度，`ipc/` 主进程↔渲染进程通信，`renderer/` UI，`windows/` 窗口与托盘。
 
-## ⚠️ win/linux 大量重复代码
+## win/linux 共享代码（`device/shared/`）
 
-`windows/src` 与 `linux/src` 是**同源双份**：约一半文件逐字节相同（如 `server-url.ts`、`constants.ts`、`services/auth-state.ts`、`services/server-client.ts`、`tools/shared/robot.ts`、`tools/clipboard.ts`、`tools/filesystem.ts`、`tools/keyboard.ts`、`ipc/agent.ts` 等），另一半是平台相关实现的分叉。
+`windows/src` 与 `linux/src` 曾是**同源双份**，其中"完全相同"与"仅平台常量不同"的部分
+已收敛到 **`device/shared/src/`（单一真相源）**，由各壳 `scripts/sync-shared.js` 在 `tsc`
+之前覆盖拷贝进自己的 `src/`（拷贝出的副本已 gitignore，**勿就地改**）。详见
+[`device/shared/README.md`](shared/README.md) 与 [`doc/设备端win-linux去重重构计划.md`](../doc/设备端win-linux去重重构计划.md)。
 
-**改动通用逻辑时两边都要改**，否则两端会行为不一致。若要消除重复，应抽出 `device/shared/` 共享包并让两端引用——这是较大的结构改动，需逐项 `tsc` 验证。
+- **改通用逻辑只改 `device/shared/src/`**，两端构建时自动同步，不再"改一边忘另一边"。
+- 平台差异不要写死在共享代码里：通过各壳 `src/platform.ts` 导出的 `platformProfile` 读取
+  （见 `shared/src/platform-profile.ts`）。
+- 仍有**平台分叉文件**留在各壳 `src/`（`device.ts`、`store.ts`、`platform.ts`、
+  `tools/{mouse,screen,window,...}.ts`、`renderer/*`、`executor/{catalog,dynamic}.ts` 等）——
+  改这些仍需两边都改。
 
 平台差异举例：`linux` 独有 `tools/ear.ts`(STT) `tools/git.ts` `tools/shared/command.ts`；`windows` 独有 `offline-chat`/`offline-ai` 相关文件。
 

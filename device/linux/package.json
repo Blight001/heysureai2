@@ -5,8 +5,8 @@
   "license": "Apache-2.0",
   "main": "dist/main.js",
   "scripts": {
-    "dev": "tsc && node scripts/copy-renderer.js && electron dist/main.js",
-    "build": "tsc && node scripts/copy-renderer.js",
+    "dev": "node scripts/sync-shared.js && tsc && node scripts/copy-renderer.js && electron dist/main.js",
+    "build": "node scripts/sync-shared.js && tsc && node scripts/copy-renderer.js",
     "start": "electron dist/main.js",
     "rebuild": "electron-rebuild -f -w robotjs",
     "package": "npm run build && electron-builder --linux"

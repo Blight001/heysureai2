@@ -1,0 +1,30 @@
+# device/shared — 桌面端 win/linux 共享源（单一真相源）
+
+`device/windows` 与 `device/linux` 是同源双份 Electron 壳。本目录是它们**完全相同**
+（或仅平台常量不同）那部分代码的**唯一真相源**。
+
+## 工作方式（构建期覆盖式同步）
+
+- `shared/src/` 镜像各壳 `src/` 的目录布局。
+- 每个壳的 `scripts/sync-shared.js` 在 `tsc` 之前把 `shared/src/**` 覆盖拷贝进自己的 `src/**`。
+- 拷贝出的副本在 `.gitignore` 中被忽略，**不提交**。
+- 因为保持原始相对布局，共享文件里的相对导入（如 `../store`、`./screen`）
+  在覆盖后会解析到各壳自己的平台实现，无需改写。
+
+## 铁律
+
+- **只改 `device/shared/src/` 里的文件，绝不改各壳 `src/` 下的同名副本**（那是生成物）。
+- 平台差异不要写死在共享代码里：通过各壳 `src/platform.ts` 导出的 `platformProfile`
+  读取（见 `shared/src/platform-profile.ts`）。
+- 新增共享文件后，记得在根 `.gitignore` 的 "Device shared modules" 区块补上对应路径。
+
+## 当前共享内容
+
+- 完全相同：`constants.ts`、`server-url.ts`、`ipc/device.ts`、`services/*`（activity-log/
+  auth-state/avatar-cache/reauth/server-client）、`tools/*`（clipboard/display/filesystem/
+  keyboard/vision）、`tools/shared/robot.ts`。
+- 仅平台常量不同（经 `platformProfile` 参数化）：`executor/registry.ts`、`executor/index.ts`、
+  `ipc/ai-config.ts`、`services/device-runtime.ts`、`windows/main-window.ts`、`windows/tray.ts`。
+
+平台分叉文件（`device.ts`、`store.ts`、`platform.ts`、各 `tools/{mouse,screen,window,...}.ts`、
+`renderer/*` 等）仍各自保留在两壳 `src/` 下，不在此目录。

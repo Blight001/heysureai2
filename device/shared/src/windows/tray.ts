@@ -1,9 +1,10 @@
 import { Tray, Menu, app, nativeImage } from 'electron'
 import * as path from 'path'
 import type { DeviceStatus } from '../device'
+import { platformProfile } from '../platform'
 
 const ASSET_DIR = path.join(__dirname, '../../assets')
-const APP_ICON_PATH = path.join(ASSET_DIR, 'icon.ico')
+const APP_ICON_PATH = path.join(ASSET_DIR, platformProfile.appIconFile)
 
 const TRAY_ICON_PATHS: Record<DeviceStatus, string> = {
   disconnected: path.join(ASSET_DIR, 'desktop.png'),

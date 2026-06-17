@@ -8,6 +8,7 @@ import { getMainWindow } from '../windows/main-window'
 import { sendActivityLog } from './activity-log'
 import { recoverAuthSession } from './auth-state'
 import { updateTray, STATUS_LABELS } from '../windows/tray'
+import { platformProfile } from '../platform'
 
 let agent: HeySureAgent | null = null
 
@@ -79,7 +80,7 @@ export function clearSelectedAiConfig(): void {
   store.set('selectedAiConfigProject', '')
   store.set('agentToken', '')
   store.set('deviceId', '')
-  store.set('agentName', 'Windows Agent')
+  store.set('agentName', platformProfile.agentName)
   store.set('agentGroup', '')
 }
 

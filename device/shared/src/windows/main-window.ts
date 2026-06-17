@@ -1,6 +1,7 @@
 import { BrowserWindow, app } from 'electron'
 import * as path from 'path'
 import { store } from '../store'
+import { platformProfile } from '../platform'
 
 const DEFAULT_BOUNDS = { width: 900, height: 660 }
 const THEME_WINDOW_COLORS = {
@@ -12,7 +13,7 @@ let mainWindow: BrowserWindow | null = null
 
 export function createMainWindow(): BrowserWindow {
   const bounds = (store.get('windowBounds') as any) || DEFAULT_BOUNDS
-  const iconPath = path.join(__dirname, '../../assets/desktop.png')
+  const iconPath = path.join(__dirname, '../../assets', platformProfile.appIconFile)
 
   mainWindow = new BrowserWindow({
     width: bounds.width || DEFAULT_BOUNDS.width,
