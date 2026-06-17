@@ -11,6 +11,7 @@ mss>=9.0.1               # 高性能截图
 Pillow>=10.0.0           # 图像处理
 psutil>=5.9.0            # 进程 / 系统信息
 python-xlib>=0.33        # pyautogui 在 X11 下的依赖
+pyttsx3>=2.90            # 文字转语音 (speech.speak，依赖 espeak/espeak-ng)
 
 # 视觉 / OCR（较重，按需取消注释）：
 # opencv-python>=4.9.0

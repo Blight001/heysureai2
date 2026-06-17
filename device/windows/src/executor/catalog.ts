@@ -1,21 +1,14 @@
-// Default tool catalog — registers every built-in tool with the registry.
-// Imported once for its side effects via executor/index.ts.
+// Tool catalog — the device is now a controlled runner, not a fixed-MCP source
+// (设备端MCP代码下放长期方案 阶段三/四). The hardcoded native tools (keyboard /
+// mouse / clipboard / process / screen / window / vision / …) have been removed;
+// every capability now comes from server-pushed runtime tools (python/shell),
+// managed via mcp.manage_dynamic_tool and executed by the runtime base.
 //
-// 描述规范（中文为主 + 英文术语）：每个工具的 description 说明「用途 + 典型使用
-// 场景」，每个参数的 description 说明「含义 + 取值/默认」。这些文案随 device:register
-// 的 toolDefs 上报给服务器，是 AI 在 mcp.list_tools / mcp.describe_tool 中看到的
-// 权威说明——服务器不再硬编码桌面工具的描述与 schema。新增工具只需在此追加一条。
+// Only two built-ins remain on the device:
+//   - mcp.manage_dynamic_tool: the local manager that loads server/AI tools;
+//   - shell.run: the shell runtime entry (backed by runtime/shell-runner).
 
-// keyboard / mouse / clipboard / process moved to server-owned python tools
-// (设备端MCP代码下放长期方案 阶段四). The device now runs them via python-runner.
 import { runCommand } from '../tools/shell'
-import { displayBox, displayClear } from '../tools/display'
-import { textInput } from '../tools/text-input'
-import { windowList, windowFocus, windowClose } from '../tools/window'
-import { mouthSpeak } from '../tools/mouth'
-import { visionCaptureGlobal, visionCaptureMouse } from '../tools/vision'
-import { handsStart, handsStop, handsSnapshot, handsEvents, handsMouse } from '../tools/hands'
-import { uiInspect, uiClick } from '../tools/uia'
 import { registerTools } from './registry'
 import { DYNAMIC_MCP_MANAGER_DEFINITION } from './dynamic'
 
@@ -28,7 +21,6 @@ const OBJ = (properties: Record<string, any>, required: string[] = []) => ({
 
 registerTools([
   DYNAMIC_MCP_MANAGER_DEFINITION,
-  // Shell (cross-platform)
   {
     id: 'shell.run', platform: 'all',
     description: '执行一条 shell 命令并返回输出。默认在 agent 工作区中运行；cwd 可传工作区内相对路径或绝对路径。用途：构建、测试、安装依赖、调用脚本（属高权限操作，请谨慎）。',
@@ -39,168 +31,5 @@ registerTools([
       timeout_ms: { type: 'number', description: '硬超时（毫秒）。' },
     }, ['command']),
     handler: ({ workspaceRoot, args }) => runCommand(workspaceRoot, args),
-  },
-
-  // UI Automation — read the desktop accessibility tree (类似桌面版 DOM) and act on
-  // real controls instead of guessing pixel coordinates from a screenshot.
-  {
-    id: 'ui.inspect', platform: 'windows',
-    description: '读取当前前台窗口（或按标题匹配的窗口）的 UI Automation 无障碍树，返回每个可交互控件的名称、控件类型、AutomationId、精确包围盒和可执行动作（invoke/toggle/select/expand/value）。用途：在点击前用结构化方式精确定位控件，避免靠截图猜坐标。场景：原生 Win32/WPF/UWP 程序、浏览器、office 等支持无障碍的应用；游戏/自绘 UI/远程桌面读不到时再退回 vision.capture 视觉方案。返回的元素可直接交给 ui.click 点击。',
-    inputSchema: OBJ({
-      title: { type: 'string', description: '可选：按窗口标题子串匹配目标顶层窗口；不传则使用当前前台窗口。' },
-      interactable_only: { type: 'boolean', description: '是否只返回可交互控件（按钮/菜单项/输入框等）。默认 true；传 false 返回更全的元素含静态文本。' },
-      max: { type: 'number', description: '最多返回多少个元素。默认 150。' },
-      max_depth: { type: 'number', description: '遍历树的最大深度，越大越全但越慢。默认 40。' },
-    }),
-    handler: ({ args }) => uiInspect(args),
-  },
-  {
-    id: 'ui.click', platform: 'windows',
-    description: '按 UI Automation 控件定位并点击，优先用 InvokePattern 直接触发控件（不移动真实光标、不受遮挡/坐标误差影响，最稳），不支持 Invoke 时自动回退到在控件中心做真实鼠标点击。用途：精准点击按钮/菜单项/链接/列表项等。场景：先用 ui.inspect 拿到目标控件的 name/control_type/automation_id 再调用本工具；比 mouse.click 猜坐标准确得多。右键或双击会强制走真实鼠标点击。',
-    inputSchema: OBJ({
-      title: { type: 'string', description: '可选：目标顶层窗口标题子串；不传则用当前前台窗口。需与 ui.inspect 一致。' },
-      name: { type: 'string', description: '控件名称（ui.inspect 返回的 name）。优先精确匹配，无精确匹配时按包含匹配。' },
-      automation_id: { type: 'string', description: '控件 AutomationId（ui.inspect 返回的 automation_id），最稳定的定位方式。' },
-      control_type: { type: 'string', description: '控件类型，如 Button、MenuItem、CheckBox、ListItem、Hyperlink（ui.inspect 返回的 control_type）。' },
-      index: { type: 'number', description: '当 name/control_type 匹配到多个时，选择第几个（从 0 开始）。默认 0。' },
-      method: { type: 'string', enum: ['auto', 'invoke', 'mouse'], description: '点击方式：auto（默认，能 Invoke 就 Invoke，否则真实点击）、invoke（强制走无障碍触发）、mouse（强制真实鼠标点击控件中心）。' },
-      button: { type: 'string', description: '鼠标键 left 或 right。right 会强制使用真实鼠标点击。默认 left。' },
-      double: { type: 'boolean', description: '是否双击（强制使用真实鼠标点击）。默认 false。' },
-      max_depth: { type: 'number', description: '遍历树的最大深度。默认 40。' },
-    }),
-    handler: ({ args }) => uiClick(args),
-  },
-
-  // Display overlay (windows-only via Electron transparent BrowserWindow)
-  {
-    id: 'display.box', platform: 'windows',
-    description: '在桌面最上层短暂显示矩形框。用途：高亮 AI 识别到的屏幕区域。场景：标记 OCR/视觉定位到的按钮、文字、图片区域。',
-    inputSchema: OBJ({
-      top: { type: 'number', description: '矩形框左上角 Y 坐标（像素）。' },
-      left: { type: 'number', description: '矩形框左上角 X 坐标（像素）。' },
-      width: { type: 'number', description: '矩形框宽度（像素）。' },
-      height: { type: 'number', description: '矩形框高度（像素）。' },
-      duration: { type: 'number', description: '显示持续时间（毫秒）。默认 1000。' },
-      color: { type: 'string', description: '主框颜色。默认 red。' },
-      label: { type: 'string', description: '可选标签，会显示在框左上方。' },
-      sub_boxes: { type: 'array', description: '子框列表。可传 BoxDisplay.py 风格的四点数组，坐标相对主框；也可传 {left, top, width, height, color}。' },
-    }, ['width', 'height']),
-    handler: ({ args }) => displayBox(args),
-  },
-  {
-    id: 'display.clear', platform: 'windows',
-    description: '清除当前所有桌面高亮框。用途：移除 display.box 创建的 overlay。场景：任务结束或重新标记前清屏。',
-    inputSchema: OBJ({}),
-    handler: ({ args }) => displayClear(args),
-  },
-
-  {
-    id: 'text.input', platform: 'windows',
-    description: '向当前焦点输入框一次性输入大段文本：先把 text 写入剪贴板，再触发粘贴，避免 keyboard.type 逐字符模拟键盘导致慢、漏字或不支持长文本。用途：让 AI 直接提交多段说明、文章、JSON、代码、表单内容。场景：先点击或聚焦目标文本框，再调用本工具。默认粘贴后恢复原剪贴板；若只想写入剪贴板不粘贴，传 paste:false。',
-    inputSchema: OBJ({
-      text: { type: 'string', description: '要输入/粘贴的大段文本内容，支持多行。' },
-      paste: { type: 'boolean', description: '是否立即粘贴到当前焦点输入框。默认 true；传 false 时只写入剪贴板。' },
-      restore_clipboard: { type: 'boolean', description: '粘贴完成后是否恢复原剪贴板文本。默认 true。' },
-      wait_ms: { type: 'number', description: '触发粘贴后等待多久再恢复剪贴板（毫秒）。目标应用较慢时可调大。默认 160。' },
-    }, ['text']),
-    handler: ({ args }) => textInput(args),
-  },
-
-  // Window management (windows-only — uses PowerShell)
-  {
-    id: 'window.list', platform: 'windows',
-    description: '列出可见的顶层窗口及其标题和进程 PID。用途：了解当前打开了哪些窗口。场景：切换或关闭窗口前先查标题/PID。',
-    inputSchema: OBJ({}),
-    handler: ({ workspaceRoot, args }) => windowList(workspaceRoot, args),
-  },
-  {
-    id: 'window.focus', platform: 'windows',
-    description: '把标题匹配的窗口切换到前台。用途：激活某个应用窗口。场景：在操作前先把目标窗口置顶聚焦。',
-    inputSchema: OBJ({ title: { type: 'string', description: '要匹配的窗口标题子串。' } }, ['title']),
-    handler: ({ workspaceRoot, args }) => windowFocus(workspaceRoot, args),
-  },
-  {
-    id: 'window.close', platform: 'windows',
-    description: '按标题或进程 id 关闭窗口。用途：关掉某个窗口。场景：完成任务后关闭对话框或应用窗口（属写入/变更操作）。',
-    inputSchema: OBJ({
-      title: { type: 'string', description: '要匹配的窗口标题子串。' },
-      hwnd: { type: 'number', description: '要关闭的窗口句柄。优先用于精确关闭 window.list 返回的窗口。' },
-      pid: { type: 'number', description: '要关闭其窗口的进程 id。' },
-    }),
-    handler: ({ workspaceRoot, args }) => windowClose(workspaceRoot, args),
-  },
-
-  // AI voice / vision / hands helpers (windows-only)
-  {
-    id: 'speech.speak', platform: 'windows',
-    description: '用桌面的文字转语音 TTS 把文本朗读出来。用途：语音输出。场景：语音播报提醒、与用户进行语音交互。',
-    inputSchema: OBJ({
-      text: { type: 'string', description: '要朗读的文本。' },
-      rate: { type: 'number', description: '语速，-10 到 10。' },
-      volume: { type: 'number', description: '音量 0-100。' },
-      voice: { type: 'string', description: '使用的语音名称。' },
-    }, ['text']),
-    handler: ({ args }) => mouthSpeak(args),
-  },
-  {
-    id: 'vision.capture', platform: 'windows',
-    description: '采集整屏画面用于视觉理解，默认返回 1920x1080 以内的 base64 图片 dataUrl，并保存到服务器用于发送给用户；传 send_to_user:false 可只给 AI 使用。截图内容超过 1920x1080 时会按比例缩放；后续 mouse.* 坐标直接使用这张返回截图里的坐标，工具会自动换算到真实屏幕坐标。用途：让 AI「看」屏幕做理解。场景：分析当前界面、识别画面内容。',
-    inputSchema: OBJ({
-      display: { type: 'number', description: '要截图的显示器序号。默认 0。' },
-      send_to_user: { type: 'boolean', description: '是否把截图发送给用户。默认 true；传 false 时只返回给 AI，不主动发送。' },
-      save_to_server: { type: 'boolean', description: '是否把截图保存到服务器。默认跟随 send_to_user；send_to_user:true 时会自动保存。' },
-      path: { type: 'string', description: '可选本机保存路径；传入时会在桌面端本地写入该 PNG 文件。' },
-      save_local: { type: 'boolean', description: '是否保存到桌面端本机临时目录。默认 false。' },
-    }),
-    handler: ({ args }) => visionCaptureGlobal(args),
-  },
-  {
-    id: 'vision.capture_mouse', platform: 'windows',
-    description: '采集鼠标光标周围的一块区域用于视觉理解，默认返回 1920x1080 以内的 base64 图片 dataUrl，并保存到服务器用于发送给用户；传 send_to_user:false 可只给 AI 使用。局部截图内容超过 1920x1080 时会按比例缩放。用途：聚焦看光标附近。场景：识别光标所指的小图标、局部内容。',
-    inputSchema: OBJ({
-      radius: { type: 'number', description: '采集框的半径（像素）。默认 50。' },
-      width: { type: 'number', description: '采集框宽度（像素）。' },
-      height: { type: 'number', description: '采集框高度（像素）。' },
-      send_to_user: { type: 'boolean', description: '是否把截图发送给用户。默认 true；传 false 时只返回给 AI，不主动发送。' },
-      save_to_server: { type: 'boolean', description: '是否把截图保存到服务器。默认跟随 send_to_user；send_to_user:true 时会自动保存。' },
-      path: { type: 'string', description: '可选本机保存路径；传入时会在桌面端本地写入该 PNG 文件。' },
-      save_local: { type: 'boolean', description: '是否保存到桌面端本机临时目录。默认 false。' },
-    }),
-    handler: ({ args }) => visionCaptureMouse(args),
-  },
-  {
-    id: 'hands.start', platform: 'windows',
-    description: '开始采集桌面的实时输入（鼠标/键盘）事件。用途：监听用户操作。场景：观察并学习用户的操作序列。',
-    inputSchema: OBJ({ interval_ms: { type: 'number', description: '采样间隔（毫秒）。默认 120。' } }),
-    handler: ({ args }) => handsStart(args),
-  },
-  {
-    id: 'hands.stop', platform: 'windows',
-    description: '停止采集实时输入事件。用途：结束监听。场景：采集完成后关闭以释放资源。',
-    inputSchema: OBJ({}),
-    handler: () => handsStop(),
-  },
-  {
-    id: 'hands.snapshot', platform: 'windows',
-    description: '返回当前输入状态快照（鼠标位置、按下的键）。用途：取一次即时输入状态。场景：判断此刻鼠标在哪、哪些键被按住。',
-    inputSchema: OBJ({}),
-    handler: () => handsSnapshot(),
-  },
-  {
-    id: 'hands.events', platform: 'windows',
-    description: '返回 id 大于给定值的缓冲输入事件。用途：增量拉取输入事件。场景：轮询自上次以来发生的鼠标/键盘事件。',
-    inputSchema: OBJ({ since_id: { type: 'number', description: '只返回 id 大于该值的事件。默认 0。' } }),
-    handler: ({ args }) => handsEvents(args),
-  },
-  {
-    id: 'hands.mouse', platform: 'windows',
-    description: '通过实时输入通道回放或注入一次鼠标动作。用途：以事件流方式驱动鼠标。场景：复现录制的鼠标操作。',
-    inputSchema: OBJ({
-      x: { type: 'number', description: '动作 X 坐标（像素）。' },
-      y: { type: 'number', description: '动作 Y 坐标（像素）。' },
-      button: { type: 'string', description: '鼠标键：left/right/middle。' },
-      action: { type: 'string', description: '动作类型，如 move/down/up/click。' },
-    }),
-    handler: ({ args }) => handsMouse(args),
   },
 ])

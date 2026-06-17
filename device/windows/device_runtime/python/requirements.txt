@@ -12,6 +12,7 @@ psutil>=5.9.0            # 进程 / 系统信息
 pygetwindow>=0.0.9       # 窗口枚举 / 定位
 pywinauto>=0.6.8         # Windows UI 自动化
 uiautomation>=2.0.18     # UIAutomation 控件树
+pyttsx3>=2.90            # 文字转语音 (speech.speak)
 
 # 视觉 / OCR（较重，按需取消注释）：
 # opencv-python>=4.9.0

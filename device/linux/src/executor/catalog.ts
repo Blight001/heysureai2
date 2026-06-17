@@ -1,23 +1,14 @@
-// Default tool catalog — registers every built-in tool with the registry.
-// Imported once for its side effects via executor/index.ts.
+// Tool catalog — the device is now a controlled runner, not a fixed-MCP source
+// (设备端MCP代码下放长期方案 阶段三/四). The hardcoded native tools (keyboard /
+// mouse / clipboard / process / screen / window / vision / …) have been removed;
+// every capability now comes from server-pushed runtime tools (python/shell),
+// managed via mcp.manage_dynamic_tool and executed by the runtime base.
 //
-// 描述规范（中文为主 + 英文术语）：每个工具的 description 说明「用途 + 典型使用
-// 场景」，每个参数的 description 说明「含义 + 取值/默认」。这些文案随 device:register
-// 的 toolDefs 上报给服务器，是 AI 在 mcp.list_tools / mcp.describe_tool 中看到的
-// 权威说明——服务器不再硬编码桌面工具的描述与 schema。新增工具只需在此追加一条。
+// Only two built-ins remain on the device:
+//   - mcp.manage_dynamic_tool: the local manager that loads server/AI tools;
+//   - shell.run: the shell runtime entry (backed by runtime/shell-runner).
 
-// keyboard / mouse / clipboard / process moved to server-owned python tools
-// (设备端MCP代码下放长期方案 阶段四). The device now runs them via python-runner.
-import { listFiles, readFile, writeFile } from '../tools/filesystem'
 import { runCommand } from '../tools/shell'
-import { gitDiff } from '../tools/git'
-import { screenCapture, screenCaptureRegion, screenInfo } from '../tools/screen'
-import { displayBox, displayClear } from '../tools/display'
-import { windowList, windowFocus, windowClose } from '../tools/window'
-import { mouthSpeak } from '../tools/mouth'
-import { visionCaptureGlobal, visionCaptureMouse } from '../tools/vision'
-import { handsStart, handsStop, handsSnapshot, handsEvents, handsMouse } from '../tools/hands'
-import { earStart, earStop, earLatest } from '../tools/ear'
 import { registerTools } from './registry'
 import { DYNAMIC_MCP_MANAGER_DEFINITION } from './dynamic'
 
@@ -30,33 +21,6 @@ const OBJ = (properties: Record<string, any>, required: string[] = []) => ({
 
 registerTools([
   DYNAMIC_MCP_MANAGER_DEFINITION,
-  // Filesystem (cross-platform)
-  {
-    id: 'fs.list', platform: 'all',
-    description: '列出 agent 工作区某个路径下的文件和子目录。用途：浏览工作区结构。场景：操作文件前先看目录里有什么。',
-    inputSchema: OBJ({ path: { type: 'string', description: '相对工作区根目录的目录路径。默认 "."。' } }),
-    handler: ({ workspaceRoot, args }) => listFiles(workspaceRoot, args),
-  },
-  {
-    id: 'fs.read', platform: 'all',
-    description: '读取 agent 工作区中某个文件的内容。用途：查看文件正文。场景：读取配置、日志、代码或数据文件。',
-    inputSchema: OBJ({
-      path: { type: 'string', description: '相对工作区根目录的文件路径。' },
-      maxBytes: { type: 'number', description: '截断前最多读取的字节数。' },
-    }, ['path']),
-    handler: ({ workspaceRoot, args }) => readFile(workspaceRoot, args),
-  },
-  {
-    id: 'fs.write', platform: 'all',
-    description: '在 agent 工作区中创建或覆盖一个文件。用途：写入文件内容（属写入操作）。场景：保存生成结果、写配置、落地导出数据。',
-    inputSchema: OBJ({
-      path: { type: 'string', description: '相对工作区根目录的文件路径。' },
-      content: { type: 'string', description: '要写入的完整文件内容。' },
-    }, ['path', 'content']),
-    handler: ({ workspaceRoot, args }) => writeFile(workspaceRoot, args),
-  },
-
-  // Shell & git (cross-platform)
   {
     id: 'shell.run', platform: 'all',
     description: '在 agent 工作区中执行一条 shell 命令并返回输出。用途：运行命令行工具。场景：构建、测试、安装依赖、调用脚本（属高权限操作，请谨慎）。',
@@ -66,168 +30,5 @@ registerTools([
       timeout_ms: { type: 'number', description: '硬超时（毫秒）。' },
     }, ['command']),
     handler: ({ workspaceRoot, args }) => runCommand(workspaceRoot, args),
-  },
-  {
-    id: 'git.diff', platform: 'all',
-    description: '查看工作区（或某个子目录）当前的 git diff。用途：了解代码改动。场景：提交前检查改了什么、向用户汇报变更。',
-    inputSchema: OBJ({ cwd: { type: 'string', description: '相对工作区根目录的仓库目录。' } }),
-    handler: ({ workspaceRoot, args }) => gitDiff(workspaceRoot, args),
-  },
-
-  // Display overlay (Electron transparent BrowserWindow; needs a compositor for transparency)
-  {
-    id: 'display.box', platform: 'linux',
-    description: '在桌面最上层短暂显示矩形框。用途：高亮 AI 识别到的屏幕区域。场景：标记 OCR/视觉定位到的按钮、文字、图片区域。',
-    inputSchema: OBJ({
-      top: { type: 'number', description: '矩形框左上角 Y 坐标（像素）。' },
-      left: { type: 'number', description: '矩形框左上角 X 坐标（像素）。' },
-      width: { type: 'number', description: '矩形框宽度（像素）。' },
-      height: { type: 'number', description: '矩形框高度（像素）。' },
-      duration: { type: 'number', description: '显示持续时间（毫秒）。默认 1000。' },
-      color: { type: 'string', description: '主框颜色。默认 red。' },
-      label: { type: 'string', description: '可选标签，会显示在框左上方。' },
-      sub_boxes: { type: 'array', description: '子框列表。可传 BoxDisplay.py 风格的四点数组，坐标相对主框；也可传 {left, top, width, height, color}。' },
-    }, ['width', 'height']),
-    handler: ({ args }) => displayBox(args),
-  },
-  {
-    id: 'display.clear', platform: 'linux',
-    description: '清除当前所有桌面高亮框。用途：移除 display.box 创建的 overlay。场景：任务结束或重新标记前清屏。',
-    inputSchema: OBJ({}),
-    handler: ({ args }) => displayClear(args),
-  },
-
-  // Screen (Electron desktopCapturer + robotjs; X11 recommended)
-  {
-    id: 'screen.capture', platform: 'linux',
-    description: '对某个桌面显示器整屏截图。默认服务器会把图片存到用户的 Screenshots 工作区目录。用途：让 AI 看见整个屏幕。场景：核对桌面状态、保存当前画面。',
-    inputSchema: OBJ({
-      display: { type: 'number', description: '要截图的显示器序号。默认 0。' },
-      upload_to_server: { type: 'boolean', description: '默认 true：存到服务器并返回其工作区路径。' },
-    }),
-    handler: ({ args }) => screenCapture(args),
-  },
-  {
-    id: 'screen.capture_region', platform: 'linux',
-    description: '截取桌面上的一块矩形区域。用途：只看屏幕的某一部分。场景：截取某个窗口区域、某块状态信息。',
-    inputSchema: OBJ({
-      x: { type: 'number', description: '区域左上角 X 坐标（像素）。' },
-      y: { type: 'number', description: '区域左上角 Y 坐标（像素）。' },
-      width: { type: 'number', description: '区域宽度（像素）。' },
-      height: { type: 'number', description: '区域高度（像素）。' },
-      upload_to_server: { type: 'boolean', description: '默认 true：存到服务器并返回其工作区路径。' },
-    }, ['width', 'height']),
-    handler: ({ args }) => screenCaptureRegion(args),
-  },
-  {
-    id: 'screen.info', platform: 'linux',
-    description: '列出桌面的显示器及其分辨率。用途：了解屏幕布局。场景：多屏环境下确定要操作哪块屏、换算坐标。',
-    inputSchema: OBJ({}),
-    handler: ({ args }) => screenInfo(args),
-  },
-
-  // Window management (linux — uses wmctrl / xdotool)
-  {
-    id: 'window.list', platform: 'linux',
-    description: '列出可见的顶层窗口及其标题和进程 PID。用途：了解当前打开了哪些窗口。场景：切换或关闭窗口前先查标题/PID。',
-    inputSchema: OBJ({}),
-    handler: ({ workspaceRoot, args }) => windowList(workspaceRoot, args),
-  },
-  {
-    id: 'window.focus', platform: 'linux',
-    description: '把标题匹配的窗口切换到前台。用途：激活某个应用窗口。场景：在操作前先把目标窗口置顶聚焦。',
-    inputSchema: OBJ({ title: { type: 'string', description: '要匹配的窗口标题子串。' } }, ['title']),
-    handler: ({ workspaceRoot, args }) => windowFocus(workspaceRoot, args),
-  },
-  {
-    id: 'window.close', platform: 'linux',
-    description: '按标题或进程 id 关闭窗口。用途：关掉某个窗口。场景：完成任务后关闭对话框或应用窗口（属写入/变更操作）。',
-    inputSchema: OBJ({
-      title: { type: 'string', description: '要匹配的窗口标题子串。' },
-      pid: { type: 'number', description: '要关闭其窗口的进程 id。' },
-    }),
-    handler: ({ workspaceRoot, args }) => windowClose(workspaceRoot, args),
-  },
-
-  // AI voice / vision / hands / ear helpers (linux)
-  {
-    id: 'speech.speak', platform: 'linux',
-    description: '用桌面的文字转语音 TTS 把文本朗读出来。用途：语音输出。场景：语音播报提醒、与用户进行语音交互。',
-    inputSchema: OBJ({
-      text: { type: 'string', description: '要朗读的文本。' },
-      rate: { type: 'number', description: '语速，-10 到 10。' },
-      volume: { type: 'number', description: '音量 0-100。' },
-      voice: { type: 'string', description: '使用的语音名称。' },
-    }, ['text']),
-    handler: ({ args }) => mouthSpeak(args),
-  },
-  {
-    id: 'vision.capture', platform: 'linux',
-    description: '采集整屏画面用于视觉理解。用途：让 AI「看」屏幕做理解。场景：分析当前界面、识别画面内容。',
-    inputSchema: OBJ({}),
-    handler: ({ args }) => visionCaptureGlobal(args),
-  },
-  {
-    id: 'vision.capture_mouse', platform: 'linux',
-    description: '采集鼠标光标周围的一块区域用于视觉理解。用途：聚焦看光标附近。场景：识别光标所指的小图标、局部内容。',
-    inputSchema: OBJ({
-      radius: { type: 'number', description: '采集框的半径（像素）。默认 50。' },
-      width: { type: 'number', description: '采集框宽度（像素）。' },
-      height: { type: 'number', description: '采集框高度（像素）。' },
-    }),
-    handler: ({ args }) => visionCaptureMouse(args),
-  },
-  {
-    id: 'hands.start', platform: 'linux',
-    description: '开始采集桌面的实时输入（鼠标/键盘）事件。用途：监听用户操作。场景：观察并学习用户的操作序列。',
-    inputSchema: OBJ({ interval_ms: { type: 'number', description: '采样间隔（毫秒）。默认 120。' } }),
-    handler: ({ args }) => handsStart(args),
-  },
-  {
-    id: 'hands.stop', platform: 'linux',
-    description: '停止采集实时输入事件。用途：结束监听。场景：采集完成后关闭以释放资源。',
-    inputSchema: OBJ({}),
-    handler: () => handsStop(),
-  },
-  {
-    id: 'hands.snapshot', platform: 'linux',
-    description: '返回当前输入状态快照（鼠标位置、按下的键）。用途：取一次即时输入状态。场景：判断此刻鼠标在哪、哪些键被按住。',
-    inputSchema: OBJ({}),
-    handler: () => handsSnapshot(),
-  },
-  {
-    id: 'hands.events', platform: 'linux',
-    description: '返回 id 大于给定值的缓冲输入事件。用途：增量拉取输入事件。场景：轮询自上次以来发生的鼠标/键盘事件。',
-    inputSchema: OBJ({ since_id: { type: 'number', description: '只返回 id 大于该值的事件。默认 0。' } }),
-    handler: ({ args }) => handsEvents(args),
-  },
-  {
-    id: 'hands.mouse', platform: 'linux',
-    description: '通过实时输入通道回放或注入一次鼠标动作。用途：以事件流方式驱动鼠标。场景：复现录制的鼠标操作。',
-    inputSchema: OBJ({
-      x: { type: 'number', description: '动作 X 坐标（像素）。' },
-      y: { type: 'number', description: '动作 Y 坐标（像素）。' },
-      button: { type: 'string', description: '鼠标键：left/right/middle。' },
-      action: { type: 'string', description: '动作类型，如 move/down/up/click。' },
-    }),
-    handler: ({ args }) => handsMouse(args),
-  },
-  {
-    id: 'ear.start', platform: 'linux',
-    description: '开始监听麦克风进行语音识别。用途：开启听觉输入。场景：等待并转写用户的语音指令。',
-    inputSchema: OBJ({}),
-    handler: () => earStart(),
-  },
-  {
-    id: 'ear.stop', platform: 'linux',
-    description: '停止监听麦克风。用途：结束听觉输入。场景：语音交互结束后关闭麦克风。',
-    inputSchema: OBJ({}),
-    handler: () => earStop(),
-  },
-  {
-    id: 'ear.latest', platform: 'linux',
-    description: '返回最近一次识别到的语音转写结果。用途：取最新听到的内容。场景：读取用户刚说的话再做处理。',
-    inputSchema: OBJ({}),
-    handler: () => earLatest(),
   },
 ])

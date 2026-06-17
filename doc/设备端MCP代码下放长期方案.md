@@ -384,18 +384,27 @@ Windows 端最终仍应保留：
 - [ ] AI 可见 MCP 目录完全来自服务器 DB（仍沿用"设备上报能力 ∩ scope"，此项为有风险的真相源切换，需灰度）；
 - [ ] 旧 `toolDefs` 上报变成兼容字段或调试字段。
 
-### 阶段四：删除 TypeScript 固定工具（已执行）
+### 阶段四：删除全部 TypeScript 固定工具（已执行 · 全删）
 
-- [x] keyboard / mouse / clipboard / process 已**物理删除** TS 实现（shared 的 keyboard/clipboard、
-      win+linux 的 mouse/process），改由服务器下发 `runtime=python` 工具（pyautogui/pyperclip/psutil）
-      执行；注册时 `seed_default_desktop_runtime_tools` 播种/迁移（旧 JS cap.call 包装自动替换为 python）；
-- [x] catalog.ts 不再注册这四类，设备不再上报它们为内置工具；
-- [~] 其余原生桥（screen/window/display/vision/hands/mouth/uia/ear/git/text-input/capture-bridge、
-      `tools/shared/*`）**保留**为本地能力承载层——TTS/STT/UIA/electron 截图/交互式监听无通用运行时可稳定覆盖；
+设备端 `executor/catalog.ts` 现在只注册两项：`mcp.manage_dynamic_tool`（动态工具管理器）
+与 `shell.run`（shell 运行时入口）。其余原生 MCP 工具实现全部物理删除，设备退化为纯受控运行器。
+
+- [x] 删除并迁为服务器 `runtime=python`（`seed_default_desktop_runtime_tools` 播种 active，
+      旧 JS cap.call 包装自动迁移）：keyboard/mouse/clipboard/process、text.input、git.diff、
+      fs.{list,read,write}、speech.speak（pyttsx3）；
+- [x] **直接删除、无替代**（无法做成无状态跨平台 python：Electron 悬浮窗 / 常驻监听 / 截图发图管线 /
+      平台分歧）：display.*、hands.*、ear.*、screen.*、vision.*、window.*、ui.*（UIA）；
+- [x] 删除的端侧文件：shared 的 keyboard/clipboard/display/filesystem/vision；win 的 mouse/process/
+      screen/window/mouth/hands/uia/text-input + shared/powershell；linux 的 mouse/process/screen/
+      window/mouth/hands/ear/git + shared/command。保留 shell.ts、shared/robot、shared/coordinates
+      与 capture-bridge（仍被 main / 设置 IPC 引用，非 MCP 工具）；
+- [x] 服务器对已存在的、指向已删原生工具的旧 JS cap.call 包装自动 `status=archived`（停止下发）；
 - [ ] 浏览器插件固定工具迁移（另议，MV3 无 python/shell）。
 
-> 注：python 替代依赖目标机器 `npm run setup:python` 安装的 venv + X11 会话（pyautogui）。
-> 这是一次**未经设备实跑验证**的迁移（按用户明确要求执行），首次上线请重点验证键鼠/剪贴板/进程。
+> ⚠️ 这是按用户明确要求执行的**激进全删 + 未经设备实跑验证**的迁移。代价：截图/视觉、窗口管理、
+> UIA、桌面悬浮框、输入监听、语音听写等能力被移除或仅以 python 形态存在（截图经 stdout 会被
+> process-guard 输出上限截断，基本不可用——视为已移除）。python 工具依赖目标机 `npm run setup:python`
+> 的 venv + X11。首次上线务必整体回归；如需恢复原生能力，`git revert` 本阶段提交即可。
 
 ### 阶段五：AI 自主进化进入闭环（基本落地）
 

@@ -151,18 +151,95 @@ DEFAULT_DESKTOP_RUNTIME_TOOLS: List[Dict[str, Any]] = [
             "result = {'ok': True, 'pid': int(args['pid'])}"
         ),
     },
+    {
+        "name": "text.input",
+        "description": "向当前焦点处一次性粘贴大段文本（剪贴板 + Ctrl+V，Python）。",
+        "input_schema": _schema({"text": {"type": "string"}, "paste": {"type": "boolean"}}, ["text"]),
+        "source": (
+            "import pyperclip, pyautogui\n"
+            "pyperclip.copy(str(args.get('text', '')))\n"
+            "if args.get('paste', True):\n"
+            "    pyautogui.hotkey('ctrl', 'v')\n"
+            "result = {'ok': True}"
+        ),
+    },
+    {
+        "name": "fs.list",
+        "description": "列出工作区某路径下的文件/子目录（Python）。",
+        "input_schema": _schema({"path": {"type": "string", "description": "相对工作区路径，默认 '.'"}}, []),
+        "source": (
+            "import os\n"
+            "base = os.path.join(os.getcwd(), str(args.get('path') or '.'))\n"
+            "result = {'path': base, 'entries': sorted(os.listdir(base))}"
+        ),
+    },
+    {
+        "name": "fs.read",
+        "description": "读取工作区中某文件内容（Python，默认上限 200KB）。",
+        "input_schema": _schema({"path": {"type": "string"}, "maxBytes": {"type": "number"}}, ["path"]),
+        "source": (
+            "import os\n"
+            "p = os.path.join(os.getcwd(), str(args['path']))\n"
+            "cap = int(args.get('maxBytes') or 200000)\n"
+            "with open(p, 'r', encoding='utf-8', errors='replace') as f:\n"
+            "    data = f.read(cap + 1)\n"
+            "result = {'path': p, 'content': data[:cap], 'truncated': len(data) > cap}"
+        ),
+    },
+    {
+        "name": "fs.write",
+        "description": "在工作区中创建/覆盖一个文件（Python，属写入操作）。",
+        "input_schema": _schema({"path": {"type": "string"}, "content": {"type": "string"}}, ["path", "content"]),
+        "source": (
+            "import os\n"
+            "p = os.path.join(os.getcwd(), str(args['path']))\n"
+            "os.makedirs(os.path.dirname(p) or '.', exist_ok=True)\n"
+            "with open(p, 'w', encoding='utf-8') as f:\n"
+            "    f.write(str(args.get('content', '')))\n"
+            "result = {'ok': True, 'path': p}"
+        ),
+    },
+    {
+        "name": "git.diff",
+        "description": "查看工作区（或子目录）当前的 git diff（Python/subprocess）。",
+        "input_schema": _schema({"cwd": {"type": "string", "description": "相对工作区的仓库目录"}}, []),
+        "source": (
+            "import os, subprocess\n"
+            "cwd = os.path.join(os.getcwd(), str(args.get('cwd') or '.'))\n"
+            "r = subprocess.run(['git', '-C', cwd, 'diff'], capture_output=True, text=True)\n"
+            "result = {'stdout': r.stdout[:100000], 'stderr': r.stderr[:4000], 'exitCode': r.returncode}"
+        ),
+    },
+    {
+        "name": "speech.speak",
+        "description": "文字转语音朗读（Python/pyttsx3，跨平台 SAPI/espeak）。",
+        "input_schema": _schema({"text": {"type": "string"}, "rate": {"type": "number"}, "volume": {"type": "number"}}, ["text"]),
+        "source": (
+            "import pyttsx3\n"
+            "engine = pyttsx3.init()\n"
+            "if args.get('rate') is not None:\n"
+            "    engine.setProperty('rate', int(args['rate']))\n"
+            "if args.get('volume') is not None:\n"
+            "    engine.setProperty('volume', float(args['volume']) / 100.0)\n"
+            "engine.say(str(args.get('text', '')))\n"
+            "engine.runAndWait()\n"
+            "result = {'ok': True}"
+        ),
+    },
 ]
 
 _DEFAULT_NAMES = {t["name"] for t in DEFAULT_DESKTOP_RUNTIME_TOOLS}
 
 
 def _is_legacy_wrapper(row: DeviceDynamicTool) -> bool:
-    """True if this row is the old auto-seeded JS wrapper (return cap.call(...)).
-
-    Those wrap a native builtin that no longer exists on the device, so they are
-    safe to migrate to the python definition. A row an operator has customized
-    (anything else) is left untouched."""
-    return (getattr(row, "code_kind", "") or "") == "js" and "cap.call(" in (getattr(row, "js_source", "") or "")
+    """True if this row is an auto-seeded JS passthrough (``return await
+    cap.call("<name>", args)``). The device no longer exposes any ``cap``
+    builtins, so these are dead and safe to migrate/archive. Operator-authored
+    multi-step JS (which doesn't match the passthrough shape) is left untouched."""
+    if (getattr(row, "code_kind", "") or "") != "js":
+        return False
+    js = (getattr(row, "js_source", "") or "").strip()
+    return js.startswith("return await cap.call(") and js.endswith("args)")
 
 
 def seed_default_desktop_runtime_tools(user_id: int) -> int:
@@ -203,6 +280,26 @@ def seed_default_desktop_runtime_tools(user_id: int) -> int:
             row.status = "active"
             row.updated_at = now
             changed += 1
+
+        # Archive orphaned auto-seeded wrappers: native builtins were removed from
+        # the device (phase 4), so any leftover cap.call passthrough that we did
+        # NOT migrate to python above (screen/vision/window/display/hands/ear/…)
+        # can no longer run. Shelve them so they stop shipping; history is kept.
+        orphans = session.exec(
+            select(DeviceDynamicTool).where(
+                DeviceDynamicTool.user_id == user_id,
+                DeviceDynamicTool.device_type == "desktop",
+                DeviceDynamicTool.status == "active",
+            )
+        ).all()
+        for row in orphans:
+            if row.name in _DEFAULT_NAMES:
+                continue
+            if _is_legacy_wrapper(row):
+                row.status = "archived"
+                row.updated_at = now
+                changed += 1
+
         if changed:
             session.commit()
     return changed

@@ -1,16 +1,17 @@
 # CLAUDE.md — device/ 端侧执行器（壳）
 
 三个端侧客户端（**只是运行在不同端的壳，本身不具备 agent 能力**），连接后端、
-注册为 endpoint，对外暴露 AI 可调用的本机工具；实际编排/推理在服务端。
+注册为 endpoint；**桌面端已退化为受控运行器**：不再内置固定原生 MCP 工具，能力来自
+服务器下发的 runtime 工具（python/shell，见 `device/shared/src/runtime/`），由服务端编排/推理。
 知识工坊由服务端内置为虚拟 Agent，保留专用绑定链路；当前不携带知识/进化 MCP。
 
 | 子目录 | 形态 | 作用 |
 | --- | --- | --- |
-| `windows/` | Electron 桌面应用 | Windows 本机自动化（窗口/屏幕/鼠标/键盘/剪贴板/shell/文件系统） |
-| `linux/` | Electron 桌面应用 | Linux 等价能力（robotjs/X11、wmctrl/xdotool、espeak 等） |
-| `extension/` | Chrome MV3 扩展 | 浏览器自动化与轻量客户端 |
+| `windows/` | Electron 桌面应用 | 受控运行器：python/powershell/shell runner + 本机原生桥（截图/机器人等支持代码） |
+| `linux/` | Electron 桌面应用 | 同上（X11；shell 默认 bash） |
+| `extension/` | Chrome MV3 扩展 | 浏览器自动化与轻量客户端（仍为固定工具目录） |
 
-桌面端壳内部结构（win/linux 一致）：`src/main.ts` 管 Electron 生命周期，`services/agent-runtime` 接 socket，`tools/` 是各工具实现，`executor/` 工具调度，`ipc/` 主进程↔渲染进程通信，`renderer/` UI，`windows/` 窗口与托盘。
+桌面端壳内部结构（win/linux 一致）：`src/main.ts` 管 Electron 生命周期，`services/agent-runtime` 接 socket，`executor/` 工具调度（`catalog.ts` 现仅注册 `mcp.manage_dynamic_tool` + `shell.run`），`runtime/` 受控执行底座（共享，见 `device/shared/`），`ipc/` 主进程↔渲染进程通信，`renderer/` UI，`windows/` 窗口与托盘。`tools/` 现仅剩 `shell.ts` 与少量支持代码（`shared/robot`、`shared/coordinates`）。
 
 ## win/linux 共享代码（`device/shared/`）
 
