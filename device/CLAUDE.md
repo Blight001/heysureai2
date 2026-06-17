@@ -41,6 +41,10 @@ npm run build         # → dist/ (gitignored)
 cd device/extension
 npm install
 npm run build         # 然后 Chrome 加载未打包扩展，指向该目录
+
+# 桌面端 Python 运行时（供服务器下发的 runtime=python 工具用，按需）
+cd device/linux       # 或 device/windows
+npm run setup:python  # 在 device_runtime/python/.venv 安装 requirements.txt
 ```
 
 ## 注意点（重要）

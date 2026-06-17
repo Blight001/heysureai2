@@ -38,11 +38,17 @@ export interface PythonRunResult extends ProcessRunResult {
 let cachedPython: string | null | undefined
 
 function venvCandidates(): string[] {
-  // device_runtime/python/.venv next to the app, per the long-term plan.
-  const root = path.resolve(__dirname, '..', '..', 'device_runtime', 'python', '.venv')
-  return process.platform === 'win32'
-    ? [path.join(root, 'Scripts', 'python.exe')]
-    : [path.join(root, 'bin', 'python')]
+  // device_runtime/python/.venv created by scripts/setup-python.js. Resolved
+  // against a few roots so it works in dev (dist/ alongside the app) and when
+  // packaged (process.resourcesPath / cwd).
+  const roots = [
+    path.resolve(__dirname, "..", "..", "device_runtime"),
+    path.resolve(process.cwd(), "device_runtime"),
+  ]
+  const resourcesPath = (process as any).resourcesPath
+  if (resourcesPath) roots.push(path.join(resourcesPath, "device_runtime"))
+  const sub = process.platform === "win32" ? ["Scripts", "python.exe"] : ["bin", "python"]
+  return roots.map((root) => path.join(root, "python", ".venv", ...sub))
 }
 
 function pathCandidates(): string[] {

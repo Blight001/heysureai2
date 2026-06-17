@@ -59,6 +59,12 @@ device/linux/dist/
 device/linux/release/
 device/linux/tsconfig.tsbuildinfo
 
+# Device Python runtime venv (created per-machine by scripts/setup-python.js)
+device/windows/device_runtime/python/.venv/
+device/linux/device_runtime/python/.venv/
+device/*/device_runtime/python/__pycache__/
+device/**/__pycache__/
+
 # Browser extension build output
 device/extension/dist/
 

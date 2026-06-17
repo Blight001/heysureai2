@@ -29,7 +29,9 @@
   - `process-guard.ts`：统一 spawn——超时(SIGTERM→SIGKILL)、并发上限、输出截断、一键暂停/中止；
   - `shell-runner.ts`：按 OS + `shell` 提示选解释器（win cmd/powershell/pwsh，其余 bash），走 guard；
   - `powershell-runner.ts`：自包含编码 + 解释器解析（win 优先 powershell.exe，其余 pwsh）；
-  - `python-runner.ts`：解析解释器（含 `HEYSURE_PYTHON`/内置 venv），注入 `args`、回收 `result`；
+  - `python-runner.ts`：解析解释器（`HEYSURE_PYTHON` → `device_runtime/python/.venv` → PATH），
+    注入 `args`、回收 `result`。venv 由各壳 `npm run setup:python` 在目标机器创建
+    （依赖见 `device/<壳>/device_runtime/python/requirements.txt`，`.venv` 已 gitignore）；
   - `permission-guard.ts`：权限标签 → allow/confirm/deny，confirm 经宿主弹窗回调，无回调则 fail-safe 拒绝；
   - `artifact-bridge.ts`：受控 artifacts 目录、大小上限、保存/读取（mime + sha256）。
   - 这些模块**不依赖 electron**，宿主通过 `initArtifactBridge` / `registerConfirmHandler` 注入。
