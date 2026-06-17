@@ -389,12 +389,13 @@ Windows 端最终仍应保留：
 - [ ] 连续稳定后删除或移入 legacy；
 - [ ] 浏览器插件同理迁移固定工具到服务器定义。
 
-### 阶段五：AI 自主进化进入闭环（部分落地）
+### 阶段五：AI 自主进化进入闭环（基本落地）
 
-- [ ] AI 只能提交工具 draft；
+- [x] AI 只能提交工具 draft（`device_mcp.manage` 的 AI upsert 落 `status=draft`，不下发）；
 - [x] Server 静态检查：runtime=python 工具上架时做语法 `compile()` 校验，权限标签按已知集校验；（回放测试待做）
-- [ ] 用户审批后 active；
-- [ ] 工具成功率低自动降权或提示修复；
+- [x] 用户审批后 active（网页设备工具弹窗「待批准/批准」+ `POST /api/device-tools/status`，
+      `DeviceDynamicTool.status` 生命周期，仅 active+enabled 下发）；
+- [ ] 工具成功率低自动降权或提示修复（需后台调度，失败率信号已在 UI 展示）；
 - [ ] 可从失败记录一键生成修复草案。
 
 ## 9. 关键取舍

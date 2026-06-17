@@ -35,6 +35,12 @@ class DynamicToolToggle(BaseModel):
     enabled: bool
 
 
+class DynamicToolStatus(BaseModel):
+    device_type: str
+    name: str
+    status: str = Field(..., description="active | draft | disabled | archived")
+
+
 class DynamicToolRestore(BaseModel):
     device_type: str
     version_id: int
@@ -107,6 +113,26 @@ async def toggle_device_tool(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     tool = dyn.set_enabled(user.id, dtype, payload.name, payload.enabled)
+    if tool is None:
+        raise HTTPException(status_code=404, detail="Dynamic MCP tool not found")
+    reached = await push_device_dynamic_tools(user.id, dtype)
+    return {"tool": tool, "pushedToDevices": reached}
+
+
+@router.post("/status")
+async def set_device_tool_status(
+    payload: DynamicToolStatus,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    """Approve (active) or shelve (draft/disabled/archived) a tool. AI-authored
+    tools land as draft; this is how an operator promotes them."""
+    user = get_current_user(authorization, session)
+    try:
+        dtype = dyn.normalize_device_type(payload.device_type)
+        tool = dyn.set_status(user.id, dtype, payload.name, payload.status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     if tool is None:
         raise HTTPException(status_code=404, detail="Dynamic MCP tool not found")
     reached = await push_device_dynamic_tools(user.id, dtype)

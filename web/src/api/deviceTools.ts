@@ -29,8 +29,11 @@ export interface DynamicToolDefinition {
   permissions?: string[]
 }
 
+export type ToolStatus = 'active' | 'draft' | 'disabled' | 'archived'
+
 export interface DeviceDynamicTool extends DynamicToolDefinition {
   enabled: boolean
+  status: ToolStatus
   revision: string
   updated_at: number
 }
@@ -64,6 +67,14 @@ export const toggleDeviceTool = (deviceType: DeviceToolType, name: string, enabl
     '/api/device-tools/toggle',
     { device_type: deviceType, name, enabled },
     { fallbackError: '切换动态 MCP 工具失败' },
+  )
+
+// Approve a draft (status='active') or shelve a tool (draft/disabled/archived).
+export const setDeviceToolStatus = (deviceType: DeviceToolType, name: string, status: ToolStatus) =>
+  post<{ tool: DeviceDynamicTool; pushedToDevices: number }>(
+    '/api/device-tools/status',
+    { device_type: deviceType, name, status },
+    { fallbackError: '更新工具状态失败' },
   )
 
 export const deleteDeviceTool = (deviceType: DeviceToolType, name: string) =>

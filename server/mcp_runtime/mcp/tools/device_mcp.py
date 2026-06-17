@@ -45,7 +45,7 @@ async def _device_mcp_manage(user_id: int, args: Dict[str, Any], ai_config_id: O
             "ok": True,
             "deviceType": device_type,
             "tools": [
-                {"name": t["name"], "description": t["description"], "code_kind": t["code_kind"], "enabled": t["enabled"]}
+                {"name": t["name"], "description": t["description"], "code_kind": t["code_kind"], "enabled": t["enabled"], "status": t.get("status", "active")}
                 for t in tools
             ],
         }
@@ -98,7 +98,10 @@ async def _device_mcp_manage(user_id: int, args: Dict[str, Any], ai_config_id: O
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
         reached = await push_device_dynamic_tools(user_id, device_type)
-        return {"ok": True, "action": "upsert", "tool": tool, "pushedToDevices": reached}
+        note = None
+        if tool.get("status") == "draft":
+            note = "工具已保存为 draft（草稿），需用户在网页端批准为 active 后才会下发到设备并可调用。"
+        return {"ok": True, "action": "upsert", "tool": tool, "pushedToDevices": reached, "note": note}
 
     return {"ok": False, "error": f"unsupported action: {action}"}
 

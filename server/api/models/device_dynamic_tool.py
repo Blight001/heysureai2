@@ -58,5 +58,10 @@ class DeviceDynamicTool(SQLModel, table=True):
     permissions_json: str = Field(default="[]")
     # Disabled tools are kept for editing but never shipped to devices.
     enabled: bool = Field(default=True)
+    # Approval lifecycle (设备端MCP代码下放长期方案 §7.3 / 阶段五):
+    # "active" (approved, shippable) | "draft" (AI-submitted, awaiting human
+    # approval) | "disabled" | "archived". AI-authored upserts land as "draft";
+    # an operator approves them to "active". Only active+enabled tools ship.
+    status: str = Field(default="active", index=True)
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)

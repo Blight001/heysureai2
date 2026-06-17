@@ -4,6 +4,7 @@ import {
   listDeviceTools,
   upsertDeviceTool,
   toggleDeviceTool,
+  setDeviceToolStatus,
   deleteDeviceTool,
   listDeviceToolVersions,
   restoreDeviceToolVersion,
@@ -345,6 +346,18 @@ const toggle = async (tool: DeviceDynamicTool) => {
   }
 }
 
+const approve = async (tool: DeviceDynamicTool) => {
+  error.value = ''
+  notice.value = ''
+  try {
+    const res = await setDeviceToolStatus(deviceType.value, tool.name, 'active')
+    notice.value = `已批准 ${tool.name}，已下发到 ${res.pushedToDevices} 台在线设备`
+    await load()
+  } catch (err: any) {
+    error.value = err?.message || '批准失败'
+  }
+}
+
 const remove = async (tool: DeviceDynamicTool) => {
   if (!window.confirm(`删除动态工具 ${tool.name}？设备将恢复内置实现。`)) return
   try {
@@ -480,6 +493,17 @@ const onDesktopKindChange = () => {
                     : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'"
                   :title="`调用 ${statsByTool[tool.name].total} 次，失败 ${statsByTool[tool.name].failures} 次`"
                 >失败 {{ statsByTool[tool.name].failures }}/{{ statsByTool[tool.name].total }}（{{ ratePct(statsByTool[tool.name]) }}%）</span>
+                <span
+                  v-if="tool.status === 'draft'"
+                  class="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                  title="AI 提交的草稿，批准后才会下发到设备"
+                >待批准</span>
+                <button
+                  v-if="tool.status === 'draft'"
+                  type="button"
+                  class="text-[11px] text-emerald-600 dark:text-emerald-300 hover:underline shrink-0"
+                  @click="approve(tool)"
+                >批准</button>
                 <label class="flex items-center gap-1 text-[10px] text-zinc-500 cursor-pointer shrink-0">
                   <input type="checkbox" class="h-3.5 w-3.5 accent-indigo-500" :checked="tool.enabled" @change="toggle(tool)" />
                   启用

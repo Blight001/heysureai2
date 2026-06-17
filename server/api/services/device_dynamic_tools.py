@@ -218,6 +218,7 @@ def _serialize(row: DeviceDynamicTool) -> Dict[str, Any]:
     return {
         **definition,
         "enabled": bool(row.enabled),
+        "status": str(getattr(row, "status", "") or "active"),
         "revision": _revision(definition),
         "updated_at": float(row.updated_at or 0),
     }
@@ -376,6 +377,8 @@ def upsert_tool(
         row.source = clean.get("source") or ""
         row.permissions_json = json.dumps(clean.get("permissions") or [], ensure_ascii=False)
         row.enabled = bool(enabled)
+        # AI 只能提交 draft，人审后才 active；网页/操作者编辑直接 active。
+        row.status = "draft" if actor == "ai" else "active"
         row.updated_at = now
         _record_version(
             session, user_id=user_id, device_type=dtype, row=row,
@@ -399,6 +402,33 @@ def set_enabled(user_id: int, device_type: str, name: str, enabled: bool) -> Opt
         if not row:
             return None
         row.enabled = bool(enabled)
+        row.updated_at = time.time()
+        session.commit()
+        session.refresh(row)
+        return _serialize(row)
+
+
+VALID_STATUSES = ("active", "draft", "disabled", "archived")
+
+
+def set_status(user_id: int, device_type: str, name: str, status: str) -> Optional[Dict[str, Any]]:
+    """Approve / shelve a tool. ``active`` makes it shippable; ``draft`` /
+    ``disabled`` / ``archived`` hold it back. Used by the web approval action."""
+    dtype = normalize_device_type(device_type)
+    new_status = str(status or "").strip().lower()
+    if new_status not in VALID_STATUSES:
+        raise ValueError(f"status must be one of {VALID_STATUSES}")
+    with Session(engine) as session:
+        row = session.exec(
+            select(DeviceDynamicTool).where(
+                DeviceDynamicTool.user_id == user_id,
+                DeviceDynamicTool.device_type == dtype,
+                DeviceDynamicTool.name == str(name or "").strip(),
+            )
+        ).first()
+        if not row:
+            return None
+        row.status = new_status
         row.updated_at = time.time()
         session.commit()
         session.refresh(row)
@@ -598,7 +628,7 @@ def device_payload(user_id: int, device_type: str) -> Dict[str, Any]:
             "permissions": tool.get("permissions") or [],
         }
         for tool in list_tools(user_id, device_type)
-        if tool.get("enabled")
+        if tool.get("enabled") and tool.get("status", "active") == "active"
     ]
     # Permission policy rides along so the device guard applies it on push. It
     # is intentionally outside ``revision`` (which gates tool re-apply): the
