@@ -13,7 +13,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'close'): void
-  (e: 'manage-device-tools'): void
 }>()
 
 const query = ref('')
@@ -182,8 +181,9 @@ watch(() => props.show, (show) => {
 </script>
 
 <template>
-  <Transition name="fade">
-    <div v-if="props.show" class="fixed inset-0 z-[80] bg-black/40 flex items-center justify-center" @click="emit('close')">
+  <Teleport to="body">
+    <Transition name="fade">
+      <div v-if="props.show" class="fixed inset-0 z-[600] bg-black/40 flex items-center justify-center" @click="emit('close')">
       <div class="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700 w-[560px] max-h-[75vh] p-4 overflow-auto" @click.stop>
         <div class="mb-3 flex items-center justify-between gap-2">
           <div class="flex items-center gap-1.5 min-w-0">
@@ -195,13 +195,6 @@ watch(() => props.show, (show) => {
               @click="showIntro = !showIntro"
             >?</button>
           </div>
-          <button
-            type="button"
-            class="shrink-0 rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
-            @click="emit('manage-device-tools')"
-          >
-            管理设备动态 MCP
-          </button>
         </div>
 
         <!-- collapsed by default; the "?" toggles it -->
@@ -336,6 +329,7 @@ watch(() => props.show, (show) => {
           <div v-if="visibleCount === 0" class="text-xs text-zinc-500 py-6 text-center">没有匹配的工具</div>
         </div>
       </div>
-    </div>
-  </Transition>
+      </div>
+    </Transition>
+  </Teleport>
 </template>

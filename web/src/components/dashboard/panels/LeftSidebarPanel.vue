@@ -61,6 +61,8 @@ const emit = defineEmits<{
   (e: 'update:knowledge-filter', value: Props['knowledgeFilter']): void
   (e: 'open-proposal-review'): void
   (e: 'refresh-user', user: User): void
+  (e: 'view-all-mcp'): void
+  (e: 'manage-device-tools'): void
 }>()
 
 const activeTab = ref<'brain' | 'knowledge' | 'workshop'>('brain')
@@ -131,6 +133,8 @@ const activeTab = ref<'brain' | 'knowledge' | 'workshop'>('brain')
           @update:filter-value="emit('update:knowledge-filter', $event)"
           @open-proposal-review="emit('open-proposal-review')"
           @refresh-user="emit('refresh-user', $event)"
+          @view-all-mcp="emit('view-all-mcp')"
+          @manage-device-tools="emit('manage-device-tools')"
         />
         <WorkshopPanel
           v-else

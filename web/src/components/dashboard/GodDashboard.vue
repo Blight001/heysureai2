@@ -501,6 +501,8 @@ onUnmounted(() => {
             @update:knowledge-filter="knowledgeFilter = $event"
             @open-proposal-review="proposalReviewOpen = true"
             @refresh-user="emit('refreshUser', $event)"
+            @view-all-mcp="openAllMcpToolsFromSystemSettings"
+            @manage-device-tools="deviceToolsModalOpen = true"
           />
         </div>
       </section>
@@ -519,7 +521,6 @@ onUnmounted(() => {
       :title="toolModalTitle"
       :items="toolModalItems"
       @close="toolModalOpen = false"
-      @manage-device-tools="deviceToolsModalOpen = true"
     />
 
     <DeviceDynamicToolsModal
@@ -634,7 +635,6 @@ onUnmounted(() => {
       v-model:mcpMaxSteps="mcpMaxSteps"
       :mcp-role-meta="mcpRoleMeta"
       :role-mcp-permissions="roleMcpPermissions"
-      @view-all-mcp="openAllMcpToolsFromSystemSettings"
       @toggle-role-tool="payload => toggleRoleTool(payload.role, payload.tool, payload.checked)"
       @set-role-all-tools="payload => setRoleAllTools(payload.role, payload.checked)"
       @reset-role-mcp-permissions="resetRoleMcpPermissions"

@@ -60,7 +60,6 @@ const emit = defineEmits<{
   (e: 'update:tavilyApiKey', value: string): void
   (e: 'update:modelPresets', value: ModelPreset[]): void
   (e: 'update:mcpMaxSteps', value: number): void
-  (e: 'viewAllMcp'): void
   (e: 'toggleRoleTool', payload: { role: string; tool: string; checked: boolean }): void
   (e: 'setRoleAllTools', payload: { role: string; checked: boolean }): void
   (e: 'resetRoleMcpPermissions'): void
@@ -174,92 +173,7 @@ const mcpMaxStepsValue = computed({
   set: value => emit('update:mcpMaxSteps', Math.max(1, Math.min(999, Math.floor(Number(value) || 48))))
 })
 
-const globalMcpCallMethodValue = computed({
-  get: () => props.globalMcpCallMethod,
-  set: value => emit('update:globalMcpCallMethod', value)
-})
-
-const mcpNamespaceHintsValue = computed({
-  get: () => props.mcpNamespaceHints,
-  set: value => emit('update:mcpNamespaceHints', value)
-})
-
-const mcpDynamicRuleValue = computed({
-  get: () => props.mcpDynamicRule,
-  set: value => emit('update:mcpDynamicRule', value)
-})
-
-const globalMcpFormatErrorHintValue = computed({
-  get: () => props.globalMcpFormatErrorHint,
-  set: value => emit('update:globalMcpFormatErrorHint', value)
-})
-
-const defaultStartTaskPromptValue = computed({
-  get: () => props.defaultStartTaskPrompt,
-  set: value => emit('update:defaultStartTaskPrompt', value)
-})
-
-const defaultResumeTaskPromptValue = computed({
-  get: () => props.defaultResumeTaskPrompt,
-  set: value => emit('update:defaultResumeTaskPrompt', value)
-})
-
-const defaultSupervisionPromptValue = computed({
-  get: () => props.defaultSupervisionPrompt,
-  set: value => emit('update:defaultSupervisionPrompt', value)
-})
-
-const defaultSupervisionIdleSecondsValue = computed({
-  get: () => Number(props.defaultSupervisionIdleSeconds || 25),
-  set: value => emit('update:defaultSupervisionIdleSeconds', Number(value) || 25)
-})
-
-const defaultCompressionPromptValue = computed({
-  get: () => props.defaultCompressionPrompt,
-  set: value => emit('update:defaultCompressionPrompt', value)
-})
-
-const promptAiMessageNotifyValue = computed({
-  get: () => props.promptAiMessageNotify,
-  set: value => emit('update:promptAiMessageNotify', value)
-})
-
-const promptAiMessageInquiryValue = computed({
-  get: () => props.promptAiMessageInquiry,
-  set: value => emit('update:promptAiMessageInquiry', value)
-})
-
-const aiMessageInquiryReminderSecondsValue = computed({
-  get: () => Number(props.aiMessageInquiryReminderSeconds || 3),
-  set: value => emit('update:aiMessageInquiryReminderSeconds', Math.max(0, Math.min(3600, Math.floor(Number(value) || 0))))
-})
-
-const promptAiMessageInquiryReminderValue = computed({
-  get: () => props.promptAiMessageInquiryReminder,
-  set: value => emit('update:promptAiMessageInquiryReminder', value)
-})
-
-const promptAiMessageReplyValue = computed({
-  get: () => props.promptAiMessageReply,
-  set: value => emit('update:promptAiMessageReply', value)
-})
-
-const promptAiMessageChitchatValue = computed({
-  get: () => props.promptAiMessageChitchat,
-  set: value => emit('update:promptAiMessageChitchat', value)
-})
-
-const promptAiMessageReplySuccessValue = computed({
-  get: () => props.promptAiMessageReplySuccess,
-  set: value => emit('update:promptAiMessageReplySuccess', value)
-})
-
-const promptUserMessageNoticeValue = computed({
-  get: () => props.promptUserMessageNotice,
-  set: value => emit('update:promptUserMessageNotice', value)
-})
-
-type SettingsDialog = '' | 'models' | 'roles' | 'prompts'
+type SettingsDialog = '' | 'models' | 'roles'
 
 const settingsDialog = ref<SettingsDialog>('')
 const selectedRole = ref('')
@@ -281,7 +195,6 @@ const openRoleDialog = (role: string) => {
 const settingsDialogTitles: Record<Exclude<SettingsDialog, ''>, string> = {
   models: '服务器模型',
   roles: 'MCP 角色权限',
-  prompts: '提示词配置',
 }
 
 const settingsDialogTitle = computed(() => {
@@ -404,16 +317,6 @@ watch(() => props.show, visible => {
               <span>
                 <span class="settings-entry-title inline-flex items-center gap-1.5"><AppIcon name="shield" class="w-3.5 h-3.5" />MCP 角色权限</span>
                 <span class="settings-entry-desc">工作区栏目中的 MCP 工具授权，包含联网搜索</span>
-              </span>
-              <span class="settings-entry-arrow">›</span>
-            </button>
-            <button
-              class="settings-entry"
-              @click="openSettingsDialog('prompts')"
-            >
-              <span>
-                <span class="settings-entry-title inline-flex items-center gap-1.5"><AppIcon name="compass" class="w-3.5 h-3.5" />提示词配置</span>
-                <span class="settings-entry-desc">编辑 MCP 调用规范、任务提示、AI 通信与用户消息回执提示</span>
               </span>
               <span class="settings-entry-arrow">›</span>
             </button>
@@ -558,139 +461,6 @@ watch(() => props.show, visible => {
                 </div>
               </div>
 
-              <div v-else-if="settingsDialog === 'prompts'" class="space-y-5">
-                <section class="space-y-3">
-                  <div class="flex items-center justify-between gap-3">
-                    <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">MCP 提示词</h4>
-                    <button
-                      class="px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-600 bg-indigo-50 text-xs font-medium hover:bg-indigo-100 dark:border-indigo-500/40 dark:text-indigo-300 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20"
-                      @click="emit('viewAllMcp')"
-                    >
-                      查看当前全部MCP
-                    </button>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">全局 MCP 调用规范</div>
-                    <textarea
-                      v-model="globalMcpCallMethodValue"
-                      rows="14"
-                      class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs leading-relaxed font-mono"
-                      placeholder="粘贴全局 MCP 调用方法模板，例如包含 <mcp-call> ... </mcp-call>、Available MCP tools include: {MCP} 和 Rules"
-                    ></textarea>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">MCP namespace 说明（JSON）</div>
-                    <textarea
-                      v-model="mcpNamespaceHintsValue"
-                      rows="8"
-                      class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs leading-relaxed font-mono"
-                      placeholder='{"task":"任务系统。用于查看、创建、更新、删除、传承和完成任务。"}'
-                    ></textarea>
-                    <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">用于渲染 {MCP} 的第一层 namespace 说明；key 是 namespace，value 是说明文本。</p>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">MCP 动态工具暴露规则</div>
-                    <textarea
-                      v-model="mcpDynamicRuleValue"
-                      rows="3"
-                      class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs leading-relaxed"
-                    ></textarea>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">MCP 格式错误提示</div>
-                    <textarea
-                      v-model="globalMcpFormatErrorHintValue"
-                      rows="10"
-                      class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs leading-relaxed"
-                      placeholder="当检测到 AI 试图调用 MCP 但格式错误时，自动回注的系统提示文案。可使用 {details}、{format_error_count} 等占位符。"
-                    ></textarea>
-                  </div>
-                </section>
-
-                <section class="space-y-3">
-                  <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">默认任务提示词</h4>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">启动执行任务提示词</div>
-                    <textarea v-model="defaultStartTaskPromptValue" rows="3" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"></textarea>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">继续被暂停任务提示词</div>
-                    <textarea v-model="defaultResumeTaskPromptValue" rows="3" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"></textarea>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">任务监督提示词（AI 未标记完成时自动追问）</div>
-                    <textarea v-model="defaultSupervisionPromptValue" rows="3" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"></textarea>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">AI 停止思考超过多久后提醒（秒）</div>
-                    <input v-model.number="defaultSupervisionIdleSecondsValue" type="number" min="5" max="3600" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs" />
-                    <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">当任务 run 停止后，超过该时长且未调用 task.complete，系统会自动发起监督追问。</p>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">对话压缩 Prompt（会话 Token 达到上限时自动总结压缩历史，占位符 {history}）</div>
-                    <textarea v-model="defaultCompressionPromptValue" rows="4" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"></textarea>
-                  </div>
-                </section>
-
-                <section class="space-y-3 pt-5 border-t border-zinc-100 dark:border-zinc-800">
-                  <h4 class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">AI 通信提示词</h4>
-                  <p class="text-[11px] text-zinc-500 dark:text-zinc-400">
-                    通用占位符：<code>{target_ai_name}</code>、<code>{target_ai_config_id}</code>、<code>{from_ai_name}</code>、<code>{from_ai_config_id}</code>、<code>{message_id}</code>、<code>{current_session_id}</code>、<code>{content}</code>。未回复提醒额外支持 <code>{elapsed_seconds}</code>。
-                  </p>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
-                      message_type="notify" 单向通知模板（系统会自动签收，无需回信。占位符同上）
-                    </div>
-                    <textarea v-model="promptAiMessageNotifyValue" rows="6" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
-                    <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                      建议明确告诉 AI"无需调用任何工具回应"，避免乒乓球式互相回复。
-                    </p>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
-                      message_type="inquiry" 询问模板（期望对方明确答复一次。占位符同上）
-                    </div>
-                    <textarea v-model="promptAiMessageInquiryValue" rows="7" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
-                    <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                      接收方可用 message_type="reply" 答复；系统不限制后续继续沟通。
-                    </p>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">inquiry 对方停止运行且未回复多久后提醒（秒，0 表示关闭）</div>
-                    <input v-model.number="aiMessageInquiryReminderSecondsValue" type="number" min="0" max="3600" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs" />
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
-                      inquiry 停止运行后未回复提醒模板（注入乙方原会话，要求其回复原消息）
-                    </div>
-                    <textarea v-model="promptAiMessageInquiryReminderValue" rows="7" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
-                      message_type="reply" 回复模板（展示对方答复。占位符同上）
-                    </div>
-                    <textarea v-model="promptAiMessageReplyValue" rows="6" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
-                      message_type="chitchat" 闲聊模板（占位符同上）
-                    </div>
-                    <textarea v-model="promptAiMessageChitchatValue" rows="7" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs font-mono"></textarea>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
-                      AI 成功回复消息后的恢复提示（占位符：<code>{message_id}</code>）
-                    </div>
-                    <textarea v-model="promptAiMessageReplySuccessValue" rows="3" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"></textarea>
-                  </div>
-                  <div>
-                    <div class="text-xs text-zinc-500 mb-1 dark:text-zinc-400">
-                      AI 调用 message.send_to_user 后的回执提示（占位符：<code>{channel}</code>）
-                    </div>
-                    <textarea v-model="promptUserMessageNoticeValue" rows="4" class="w-full px-3 py-2 rounded-xl border border-zinc-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-950 dark:border-zinc-700 dark:text-zinc-100 transition-all text-xs"></textarea>
-                  </div>
-                </section>
-              </div>
             </div>
 
             <div class="px-5 py-4 border-t border-zinc-100 dark:border-zinc-800 flex justify-end">

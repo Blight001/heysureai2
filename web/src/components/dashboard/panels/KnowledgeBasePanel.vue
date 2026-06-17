@@ -50,6 +50,8 @@ const emit = defineEmits<{
   (e: 'update:filterValue', value: Props['filterValue']): void
   (e: 'open-proposal-review'): void
   (e: 'refresh-user', user: User): void
+  (e: 'view-all-mcp'): void
+  (e: 'manage-device-tools'): void
 }>()
 
 const attrs = useAttrs()
@@ -745,6 +747,21 @@ const closeDetail = () => {
 
             <template v-if="intrinsicProperties">
               <div class="space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+                  <div class="min-w-0">
+                    <div class="text-xs font-semibold text-indigo-700 dark:text-indigo-300">服务器 MCP 接口</div>
+                    <div class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      查看当前服务器固定注册的 MCP 工具集合
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    class="shrink-0 rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-zinc-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+                    @click.stop.prevent="emit('view-all-mcp')"
+                  >
+                    查看当前全部MCP
+                  </button>
+                </div>
                 <div v-if="propertyEditNotice" class="text-xs text-emerald-600 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 rounded-lg px-3 py-2">
                   {{ propertyEditNotice }}
                 </div>
@@ -1008,6 +1025,21 @@ const closeDetail = () => {
             </template>
             <template v-else-if="inheritanceSkills">
               <div class="space-y-3">
+                <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+                  <div class="min-w-0">
+                    <div class="text-xs font-semibold text-indigo-700 dark:text-indigo-300">传承技能 MCP</div>
+                    <div class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      管理网页下发到桌面端与浏览器端的动态 MCP 工具
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    class="shrink-0 rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-zinc-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
+                    @click.stop.prevent="emit('manage-device-tools')"
+                  >
+                    管理设备动态 MCP
+                  </button>
+                </div>
                 <div
                   v-if="!inheritanceSkills.devices.length"
                   class="rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-4 py-10 text-center text-xs text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/40 dark:text-zinc-500"
