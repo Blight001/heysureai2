@@ -40,6 +40,11 @@ class DynamicToolRestore(BaseModel):
     version_id: int
 
 
+class PermissionPolicyUpdate(BaseModel):
+    device_type: str
+    policy: Dict[str, str] = Field(default_factory=dict, description="{permission_tag: allow|confirm|deny}")
+
+
 def _available_call_targets(user_id: int, device_type: str) -> List[Dict[str, str]]:
     """Tool names the visual editor can offer as ``call`` targets: every tool an
     online device of this type currently advertises (built-ins included), so the
@@ -186,6 +191,46 @@ async def restore_device_tool(
         raise HTTPException(status_code=404, detail="Version not found")
     reached = await push_device_dynamic_tools(user.id, dtype)
     return {"tool": tool, "pushedToDevices": reached}
+
+
+@router.get("/permission-policy")
+async def get_permission_policy(
+    device_type: str = Query(...),
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    from api.services import device_permission_policy as policy_svc
+
+    try:
+        dtype = dyn.normalize_device_type(device_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {
+        "deviceType": dtype,
+        "policy": policy_svc.get_policy(user.id, dtype),
+        "knownTags": policy_svc.known_tags(),
+    }
+
+
+@router.post("/permission-policy")
+async def set_permission_policy(
+    payload: PermissionPolicyUpdate,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    from api.services import device_permission_policy as policy_svc
+
+    try:
+        dtype = dyn.normalize_device_type(payload.device_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    policy = policy_svc.set_policy(user.id, dtype, payload.policy)
+    # Push so online devices apply the new policy immediately (it rides in the
+    # device:tool-config payload).
+    reached = await push_device_dynamic_tools(user.id, dtype)
+    return {"deviceType": dtype, "policy": policy, "pushedToDevices": reached}
 
 
 @router.delete("/{name}")

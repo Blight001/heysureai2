@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { executeTask, getAvailableTools, getToolDefs, DispatchedTask } from './executor'
 import { applyServerDynamicMcp } from './executor/dynamic'
+import { setPermissionPolicy } from './runtime/permission-guard'
 import { getPlatformInfo } from './platform'
 import { AgentSettings } from './store'
 import { normalizeServerUrl } from './server-url'
@@ -162,6 +163,9 @@ export class HeySureAgent {
     // a re-register so the new tool catalog is reported back up.
     this.socket.on('device:tool-config', (payload: any) => {
       try {
+        // Apply the permission policy every push (it sits outside the tool
+        // revision guard, so a policy-only change still takes effect).
+        if (payload && payload.permissionPolicy) setPermissionPolicy(payload.permissionPolicy)
         const status = applyServerDynamicMcp(payload)
         if (status.applied) this.log('info', `已应用服务器下发的 MCP 工具：${status.tools} 个`)
       } catch (err: any) {

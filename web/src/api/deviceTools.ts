@@ -128,3 +128,20 @@ export const listDeviceToolFailures = (name: string) =>
     '/api/device-tools/failures',
     { query: { name }, fallbackError: '失败记录加载失败' },
   )
+
+// Server-governed permission policy for runtime tools: maps a permission tag to
+// allow / confirm / deny. Shipped to devices in the tool-config push.
+export type PermissionDecision = 'allow' | 'confirm' | 'deny'
+
+export const getPermissionPolicy = (deviceType: DeviceToolType) =>
+  get<{ deviceType: DeviceToolType; policy: Record<string, PermissionDecision>; knownTags: string[] }>(
+    '/api/device-tools/permission-policy',
+    { query: { device_type: deviceType }, fallbackError: '权限策略加载失败' },
+  )
+
+export const setPermissionPolicy = (deviceType: DeviceToolType, policy: Record<string, PermissionDecision>) =>
+  post<{ deviceType: DeviceToolType; policy: Record<string, PermissionDecision>; pushedToDevices: number }>(
+    '/api/device-tools/permission-policy',
+    { device_type: deviceType, policy },
+    { fallbackError: '保存权限策略失败' },
+  )

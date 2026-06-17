@@ -9,6 +9,9 @@ import {
   restoreDeviceToolVersion,
   listDeviceToolStats,
   listDeviceToolFailures,
+  getPermissionPolicy,
+  setPermissionPolicy,
+  type PermissionDecision,
   type DeviceToolType,
   type DeviceDynamicTool,
   type DeviceToolVersion,
@@ -139,6 +142,45 @@ const toggleFailures = () => {
 }
 
 const ratePct = (s?: DeviceToolStat) => (s ? Math.round((s.failure_rate || 0) * 100) : 0)
+
+// Permission policy editor (desktop only): per-tag allow/confirm/deny override
+// of the device's built-in defaults. '' means "use the device default".
+const policyOpen = ref(false)
+const policyTags = ref<string[]>([])
+const policy = ref<Record<string, PermissionDecision | ''>>({})
+const policySaving = ref(false)
+
+const loadPolicy = async () => {
+  if (deviceType.value !== 'desktop') return
+  try {
+    const data = await getPermissionPolicy('desktop')
+    policyTags.value = data.knownTags || []
+    const next: Record<string, PermissionDecision | ''> = {}
+    for (const t of policyTags.value) next[t] = (data.policy && data.policy[t]) || ''
+    policy.value = next
+  } catch { /* policy is optional; stay silent */ }
+}
+
+const togglePolicy = () => {
+  policyOpen.value = !policyOpen.value
+  if (policyOpen.value && !policyTags.value.length) loadPolicy()
+}
+
+const savePolicy = async () => {
+  policySaving.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    const out: Record<string, PermissionDecision> = {}
+    for (const [tag, dec] of Object.entries(policy.value)) if (dec) out[tag] = dec as PermissionDecision
+    const res = await setPermissionPolicy('desktop', out)
+    notice.value = `权限策略已保存，已推送到 ${res.pushedToDevices} 台在线设备`
+  } catch (err: any) {
+    error.value = err?.message || '保存权限策略失败'
+  } finally {
+    policySaving.value = false
+  }
+}
 
 watch(() => props.show, value => { if (value) { draft.value = null; notice.value = ''; load() } }, { immediate: true })
 watch(deviceType, () => { draft.value = null; notice.value = ''; load() })
@@ -444,6 +486,33 @@ const onDesktopKindChange = () => {
                 </label>
                 <button type="button" class="text-[11px] text-indigo-600 dark:text-indigo-300 hover:underline shrink-0" @click="editTool(tool)">编辑</button>
                 <button type="button" class="text-[11px] text-rose-600 dark:text-rose-300 hover:underline shrink-0" @click="remove(tool)">删除</button>
+              </div>
+            </div>
+
+            <!-- permission policy (desktop only): per-tag allow/confirm/deny override -->
+            <div v-if="deviceType === 'desktop'" class="mt-3 rounded-lg border border-zinc-200 dark:border-zinc-700">
+              <button type="button" class="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300" @click="togglePolicy">
+                <span>权限策略（runtime 工具的 allow / confirm / deny）</span>
+                <span class="text-zinc-400">{{ policyOpen ? '收起' : '展开' }}</span>
+              </button>
+              <div v-if="policyOpen" class="border-t border-zinc-200 dark:border-zinc-700 p-2">
+                <p class="mb-2 text-[10px] text-zinc-400 leading-relaxed">
+                  覆盖设备内置默认值；「默认」表示沿用设备默认（只读多为允许、写入/输入多需确认、删除/提权拒绝）。改动保存后立即下发到在线设备。
+                </p>
+                <div class="grid grid-cols-2 gap-x-3 gap-y-1">
+                  <label v-for="tag in policyTags" :key="tag" class="flex items-center gap-1.5">
+                    <span class="flex-1 font-mono text-[10px] text-zinc-600 dark:text-zinc-300 truncate" :title="tag">{{ tag }}</span>
+                    <select v-model="policy[tag]" class="rounded border border-zinc-200 dark:border-zinc-700 bg-transparent px-1 py-0.5 text-[10px]">
+                      <option value="">默认</option>
+                      <option value="allow">允许</option>
+                      <option value="confirm">确认</option>
+                      <option value="deny">拒绝</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="mt-2 flex justify-end">
+                  <button type="button" class="rounded-lg bg-indigo-600 px-3 py-1 text-[11px] text-white hover:bg-indigo-500 disabled:opacity-60" :disabled="policySaving" @click="savePolicy">{{ policySaving ? '保存中…' : '保存策略并下发' }}</button>
+                </div>
               </div>
             </div>
           </template>

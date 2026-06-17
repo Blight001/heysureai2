@@ -33,6 +33,20 @@ MAX_CODE_INSTRUCTIONS = 32
 # lockstep with ``isToolRuntime`` on the device.
 VALID_RUNTIMES = ("python", "powershell", "shell")
 MAX_SOURCE = 64 * 1024
+# Permission tags the device permission-guard understands (mirror PermissionTag
+# in device/shared/src/runtime/permission-guard.ts). Unknown tags are kept (the
+# device treats them as confirm-tier) but this drives the policy editor.
+KNOWN_PERMISSION_TAGS = (
+    "keyboard", "mouse",
+    "clipboard.read", "clipboard.write",
+    "screen.read",
+    "window.read", "window.write",
+    "filesystem.read", "filesystem.write",
+    "process.read", "process.kill",
+    "shell.read", "shell.write",
+    "network",
+    "browser.dom.read", "browser.dom.write",
+)
 
 
 def normalize_device_type(value: Any) -> str:
@@ -97,6 +111,13 @@ def validate_definition(raw: Any) -> Dict[str, Any]:
             raise ValueError(f"Dynamic MCP {name} requires non-empty source")
         if len(source) > MAX_SOURCE:
             raise ValueError(f"Dynamic MCP {name} source is too large")
+        # Static gate: python tools must at least parse, so a syntax error is
+        # caught here on the server instead of failing on every device.
+        if runtime == "python":
+            try:
+                compile(source, f"<{name}>", "exec")
+            except SyntaxError as exc:
+                raise ValueError(f"Dynamic MCP {name} python source has a syntax error: {exc.msg} (line {exc.lineno})")
         raw_permissions = raw.get("permissions")
         permissions = [
             str(p).strip()
@@ -579,9 +600,18 @@ def device_payload(user_id: int, device_type: str) -> Dict[str, Any]:
         for tool in list_tools(user_id, device_type)
         if tool.get("enabled")
     ]
+    # Permission policy rides along so the device guard applies it on push. It
+    # is intentionally outside ``revision`` (which gates tool re-apply): the
+    # device applies the policy every push regardless of whether tools changed.
+    try:
+        from api.services import device_permission_policy as policy_svc
+        permission_policy = policy_svc.get_policy(user_id, device_type)
+    except Exception:
+        permission_policy = {}
     return {
         "version": 1,
         "deviceType": normalize_device_type(device_type),
         "tools": tools,
         "revision": _revision(tools),
+        "permissionPolicy": permission_policy,
     }
