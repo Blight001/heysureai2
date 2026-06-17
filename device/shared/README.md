@@ -25,6 +25,15 @@
   keyboard/vision）、`tools/shared/robot.ts`。
 - 仅平台常量不同（经 `platformProfile` 参数化）：`executor/registry.ts`、`executor/index.ts`、
   `ipc/ai-config.ts`、`services/device-runtime.ts`、`windows/main-window.ts`、`windows/tray.ts`。
+- 受控执行器底座 `runtime/`（设备端MCP代码下放长期方案 §3.2/§5/§7）：
+  - `process-guard.ts`：统一 spawn——超时(SIGTERM→SIGKILL)、并发上限、输出截断、一键暂停/中止；
+  - `shell-runner.ts`：按 OS + `shell` 提示选解释器（win cmd/powershell/pwsh，其余 bash），走 guard；
+  - `powershell-runner.ts`：自包含编码 + 解释器解析（win 优先 powershell.exe，其余 pwsh）；
+  - `python-runner.ts`：解析解释器（含 `HEYSURE_PYTHON`/内置 venv），注入 `args`、回收 `result`；
+  - `permission-guard.ts`：权限标签 → allow/confirm/deny，confirm 经宿主弹窗回调，无回调则 fail-safe 拒绝；
+  - `artifact-bridge.ts`：受控 artifacts 目录、大小上限、保存/读取（mime + sha256）。
+  - 这些模块**不依赖 electron**，宿主通过 `initArtifactBridge` / `registerConfirmHandler` 注入。
+  - `tools/shell.ts`（`shell.run` 内置工具）已重构为 `shell-runner` 的薄封装。
 
 平台分叉文件（`device.ts`、`store.ts`、`platform.ts`、各 `tools/{mouse,screen,window,...}.ts`、
 `renderer/*` 等）仍各自保留在两壳 `src/` 下，不在此目录。

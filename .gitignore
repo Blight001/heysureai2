@@ -93,6 +93,13 @@ device/windows/src/executor/registry.ts
 device/windows/src/ipc/ai-config.ts
 device/windows/src/ipc/device.ts
 device/windows/src/platform-profile.ts
+device/windows/src/runtime/artifact-bridge.ts
+device/windows/src/runtime/index.ts
+device/windows/src/runtime/permission-guard.ts
+device/windows/src/runtime/powershell-runner.ts
+device/windows/src/runtime/process-guard.ts
+device/windows/src/runtime/python-runner.ts
+device/windows/src/runtime/shell-runner.ts
 device/windows/src/server-url.ts
 device/windows/src/services/activity-log.ts
 device/windows/src/services/auth-state.ts
@@ -105,6 +112,7 @@ device/windows/src/tools/display.ts
 device/windows/src/tools/filesystem.ts
 device/windows/src/tools/keyboard.ts
 device/windows/src/tools/shared/robot.ts
+device/windows/src/tools/shell.ts
 device/windows/src/tools/vision.ts
 device/windows/src/windows/main-window.ts
 device/windows/src/windows/tray.ts
@@ -115,6 +123,13 @@ device/linux/src/executor/registry.ts
 device/linux/src/ipc/ai-config.ts
 device/linux/src/ipc/device.ts
 device/linux/src/platform-profile.ts
+device/linux/src/runtime/artifact-bridge.ts
+device/linux/src/runtime/index.ts
+device/linux/src/runtime/permission-guard.ts
+device/linux/src/runtime/powershell-runner.ts
+device/linux/src/runtime/process-guard.ts
+device/linux/src/runtime/python-runner.ts
+device/linux/src/runtime/shell-runner.ts
 device/linux/src/server-url.ts
 device/linux/src/services/activity-log.ts
 device/linux/src/services/auth-state.ts
@@ -127,6 +142,7 @@ device/linux/src/tools/display.ts
 device/linux/src/tools/filesystem.ts
 device/linux/src/tools/keyboard.ts
 device/linux/src/tools/shared/robot.ts
+device/linux/src/tools/shell.ts
 device/linux/src/tools/vision.ts
 device/linux/src/windows/main-window.ts
 device/linux/src/windows/tray.ts
