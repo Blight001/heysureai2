@@ -6,9 +6,9 @@
 // Adding a new capability means appending one entry — no switch statement
 // to touch and no parallel arrays to keep in sync.
 
-import { IS_WINDOWS } from '../platform'
+import { platformProfile } from '../platform'
 
-export type ToolPlatform = 'all' | 'windows'
+export type ToolPlatform = 'all' | 'windows' | 'linux'
 
 export interface ToolHandlerArgs {
   workspaceRoot: string
@@ -92,18 +92,23 @@ function builtinSourceFiles(id: string): string[] {
   ]
 }
 
+function isToolAvailable(t: ToolDefinition): boolean {
+  return t.platform === 'all'
+    || (t.platform === platformProfile.platform && platformProfile.isCurrentPlatform)
+}
+
 export function listToolIds(): string[] {
   return Array.from(registry.values())
-    .filter(t => t.platform === 'all' || (t.platform === 'windows' && IS_WINDOWS))
+    .filter(isToolAvailable)
     .map(t => t.id)
 }
 
 export function listToolDefs(): ToolDef[] {
   return Array.from(registry.values())
-    .filter(t => t.platform === 'all' || (t.platform === 'windows' && IS_WINDOWS))
+    .filter(isToolAvailable)
     .map(t => ({
       name: t.id,
-      description: t.description || `Run desktop tool ${t.id} on the connected Windows agent.`,
+      description: t.description || `Run desktop tool ${t.id} on the connected ${platformProfile.agentName}.`,
       input_schema: t.inputSchema || { type: 'object', properties: {}, additionalProperties: true },
       destructive: !!t.destructive,
       implementation: t.implementation || {

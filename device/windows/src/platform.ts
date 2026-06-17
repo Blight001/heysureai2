@@ -1,8 +1,18 @@
 import * as os from 'os'
+import type { PlatformProfile } from './platform-profile'
 
 export const IS_WINDOWS = process.platform === 'win32'
 export const IS_MAC = process.platform === 'darwin'
 export const IS_LINUX = process.platform === 'linux'
+
+// Platform-specific values consumed by shared modules. See platform-profile.ts.
+export const platformProfile: PlatformProfile = {
+  platform: 'windows',
+  isCurrentPlatform: IS_WINDOWS,
+  deviceIdPrefix: 'win-desktop-',
+  agentName: 'Windows Agent',
+  appIconFile: 'icon.ico',
+}
 
 export const WINDOWS_CAPABILITIES = [
   'shell.run',

@@ -1,8 +1,18 @@
 import * as os from 'os'
+import type { PlatformProfile } from './platform-profile'
 
 export const IS_WINDOWS = process.platform === 'win32'
 export const IS_MAC = process.platform === 'darwin'
 export const IS_LINUX = process.platform === 'linux'
+
+// Platform-specific values consumed by shared modules. See platform-profile.ts.
+export const platformProfile: PlatformProfile = {
+  platform: 'linux',
+  isCurrentPlatform: IS_LINUX,
+  deviceIdPrefix: 'linux-desktop-',
+  agentName: 'Linux Agent',
+  appIconFile: 'desktop.png',
+}
 
 // Capabilities advertised by the Linux desktop agent. Desktop control tools
 // (keyboard / mouse / screen) rely on an X11 session plus robotjs; window /
