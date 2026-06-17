@@ -211,6 +211,46 @@ DEFAULT_DESKTOP_RUNTIME_TOOLS: List[Dict[str, Any]] = [
         ),
     },
     {
+        "name": "display.box",
+        "description": "在桌面最上层短暂显示一个半透明高亮框（Python/tkinter），到时自动消失。用途：标记 AI 识别到的屏幕区域。需要 tkinter（Windows 自带；Linux 需 python3-tk）。",
+        "input_schema": _schema(
+            {
+                "left": {"type": "number", "description": "左上角 X（像素）"},
+                "top": {"type": "number", "description": "左上角 Y（像素）"},
+                "width": {"type": "number"},
+                "height": {"type": "number"},
+                "duration": {"type": "number", "description": "显示毫秒数，默认 1000"},
+                "color": {"type": "string", "description": "颜色，默认 red"},
+                "label": {"type": "string", "description": "可选标签文字"},
+            },
+            ["width", "height"],
+        ),
+        "source": (
+            "import tkinter as tk\n"
+            "left = int(args.get('left') or 0)\n"
+            "top = int(args.get('top') or 0)\n"
+            "width = int(args.get('width'))\n"
+            "height = int(args.get('height'))\n"
+            "duration = int(args.get('duration') or 1000)\n"
+            "color = str(args.get('color') or 'red')\n"
+            "label = str(args.get('label') or '')\n"
+            "root = tk.Tk()\n"
+            "root.overrideredirect(True)\n"
+            "root.attributes('-topmost', True)\n"
+            "try:\n"
+            "    root.attributes('-alpha', 0.35)\n"
+            "except Exception:\n"
+            "    pass\n"
+            "root.geometry('%dx%d+%d+%d' % (width, height, left, top))\n"
+            "root.configure(bg=color)\n"
+            "if label:\n"
+            "    tk.Label(root, text=label, bg=color, fg='white').place(x=2, y=2)\n"
+            "root.after(max(1, duration), root.destroy)\n"
+            "root.mainloop()\n"
+            "result = {'ok': True}"
+        ),
+    },
+    {
         "name": "speech.speak",
         "description": "文字转语音朗读（Python/pyttsx3，跨平台 SAPI/espeak）。",
         "input_schema": _schema({"text": {"type": "string"}, "rate": {"type": "number"}, "volume": {"type": "number"}}, ["text"]),

@@ -12,6 +12,8 @@ Pillow>=10.0.0           # 图像处理
 psutil>=5.9.0            # 进程 / 系统信息
 python-xlib>=0.33        # pyautogui 在 X11 下的依赖
 pyttsx3>=2.90            # 文字转语音 (speech.speak，依赖 espeak/espeak-ng)
+# 注意：display.box 用标准库 tkinter，无法用 pip 安装；Linux 需系统包 python3-tk
+#       (sudo apt install python3-tk)。Windows 的 Python 自带 tkinter。
 
 # 视觉 / OCR（较重，按需取消注释）：
 # opencv-python>=4.9.0

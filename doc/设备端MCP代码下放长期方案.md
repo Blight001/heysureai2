@@ -391,9 +391,10 @@ Windows 端最终仍应保留：
 
 - [x] 删除并迁为服务器 `runtime=python`（`seed_default_desktop_runtime_tools` 播种 active，
       旧 JS cap.call 包装自动迁移）：keyboard/mouse/clipboard/process、text.input、git.diff、
-      fs.{list,read,write}、speech.speak（pyttsx3）；
-- [x] **直接删除、无替代**（无法做成无状态跨平台 python：Electron 悬浮窗 / 常驻监听 / 截图发图管线 /
-      平台分歧）：display.*、hands.*、ear.*、screen.*、vision.*、window.*、ui.*（UIA）；
+      fs.{list,read,write}、speech.speak（pyttsx3）、**display.box（tkinter 半透明高亮框，
+      到时自动关；Linux 需系统包 python3-tk）**；
+- [x] **直接删除、无替代**（无法做成无状态跨平台 python：常驻监听 / 截图发图管线 / 平台分歧）：
+      display.clear（box 自动消失，无需手动清）、hands.*、ear.*、screen.*、vision.*、window.*、ui.*（UIA）；
 - [x] 删除的端侧文件：shared 的 keyboard/clipboard/display/filesystem/vision；win 的 mouse/process/
       screen/window/mouth/hands/uia/text-input + shared/powershell；linux 的 mouse/process/screen/
       window/mouth/hands/ear/git + shared/command。保留 shell.ts、shared/robot、shared/coordinates
