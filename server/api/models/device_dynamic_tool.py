@@ -40,12 +40,22 @@ class DeviceDynamicTool(SQLModel, table=True):
     # "js"      → js_source holds a JS function body run by the desktop runtime
     #             with (args, cap, ctx) in scope. Desktop tools default to "js"
     #             so the whole implementation lives on the server.
+    # "runtime" → source holds a plain script run by a device runtime (python /
+    #             powershell / shell), see ``runtime`` below.
     code_kind: str = Field(default="program")
     # JSON array: the call/set/return program (1-32 instructions). Used when
     # code_kind == "program".
     code_json: str = Field(default="[]")
     # JS function body. Used when code_kind == "js".
     js_source: str = Field(default="")
+    # Device runtime for code_kind == "runtime": "python" | "powershell" | "shell".
+    runtime: str = Field(default="")
+    # The runtime tool body (python/powershell script or shell command). Used
+    # when code_kind == "runtime".
+    source: str = Field(default="")
+    # JSON array of permission tags the runtime tool declares; the device checks
+    # them locally (allow/confirm/deny) before running.
+    permissions_json: str = Field(default="[]")
     # Disabled tools are kept for editing but never shipped to devices.
     enabled: bool = Field(default=True)
     created_at: float = Field(default_factory=time.time)

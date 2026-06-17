@@ -12,15 +12,21 @@ export interface DynamicToolStep {
   save_as?: string
 }
 
+export type ToolRuntime = 'python' | 'powershell' | 'shell'
+
 export interface DynamicToolDefinition {
   name: string
   description: string
   input_schema: Record<string, unknown>
   // 'js' (desktop): server-stored JS run on the device with (args, cap, ctx).
   // 'program' (browser): the call/set/return DSL.
-  code_kind?: 'js' | 'program'
+  // 'runtime' (desktop): plain source run by a device runtime (python/powershell/shell).
+  code_kind?: 'js' | 'program' | 'runtime'
   code?: DynamicToolStep[]
   js?: string
+  runtime?: ToolRuntime
+  source?: string
+  permissions?: string[]
 }
 
 export interface DeviceDynamicTool extends DynamicToolDefinition {
@@ -74,7 +80,7 @@ export interface DeviceToolVersion {
   actor: 'web' | 'ai'
   ai_config_id: number | null
   description: string
-  code_kind: 'js' | 'program'
+  code_kind: 'js' | 'program' | 'runtime'
   created_at: number
 }
 

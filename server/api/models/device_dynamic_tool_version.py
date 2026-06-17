@@ -31,4 +31,7 @@ class DeviceDynamicToolVersion(SQLModel, table=True):
     code_kind: str = Field(default="program")
     code_json: str = Field(default="[]")
     js_source: str = Field(default="")
+    runtime: str = Field(default="")
+    source: str = Field(default="")
+    permissions_json: str = Field(default="[]")
     created_at: float = Field(default_factory=time.time, index=True)

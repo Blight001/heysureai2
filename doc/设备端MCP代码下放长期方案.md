@@ -357,14 +357,16 @@ Windows 端最终仍应保留：
 
 ## 8. 迁移路线
 
-### 阶段一：服务器成为设备动态 MCP 主入口
+### 阶段一：服务器成为设备动态 MCP 主入口  ✅（已落地）
 
-- [ ] 保留现有设备内置工具；
-- [ ] 网页端“传承技能”管理服务器保存的动态 MCP；
-- [ ] 设备继续接收 `device:tool-config` 并缓存；
-- [ ] Windows 动态工具支持 `runtime=python`；
-- [ ] 浏览器动态工具支持 `runtime=browser_js`；
-- [ ] 调用统计、失败记录、版本回滚可用。
+- [x] 保留现有设备内置工具；
+- [x] 网页端管理服务器保存的动态 MCP（`DeviceDynamicTool` + 设备工具弹窗）；
+- [x] 设备继续接收 `device:tool-config` 并缓存；
+- [x] 桌面动态工具支持 `runtime=python / powershell / shell`（端侧受控执行底座 `runtime/`，
+      服务端 `DeviceDynamicTool.runtime/source/permissions` + 下发 payload，网页/AI 均可创作）；
+- [ ] 浏览器动态工具：仍用 program/js DSL；`runtime` 受限于 desktop（MV3 无法跑 python/shell），
+      浏览器侧 `browser_js` 运行时另行评估；
+- [x] 调用统计、失败记录、版本回滚可用（含 runtime 字段快照）。
 
 ### 阶段二：内置工具一次性播种到服务器
 

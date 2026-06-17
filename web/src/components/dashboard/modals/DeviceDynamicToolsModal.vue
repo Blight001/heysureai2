@@ -15,6 +15,7 @@ import {
   type DeviceToolStat,
   type DeviceToolFailure,
   type DynamicToolStep,
+  type ToolRuntime,
 } from '@/api/deviceTools'
 
 const props = defineProps<{ show: boolean }>()
@@ -53,6 +54,9 @@ type StepDraft = {
   name: string
   value: string
 }
+// Desktop implementation kind: server-stored JS, or plain source for a device
+// runtime (python/powershell/shell). Browser is always the safe DSL (program).
+type DesktopKind = 'js' | ToolRuntime
 interface Draft {
   original: string // existing tool name being edited, '' for new
   name: string
@@ -60,11 +64,29 @@ interface Draft {
   params: ParamRow[]
   steps: StepDraft[]
   js: string // desktop: server-stored JS body run with (args, cap, ctx)
+  desktopKind: DesktopKind // desktop only: how the implementation runs
+  source: string // desktop runtime: python/powershell/shell body
+  permissions: string // desktop runtime: comma/space-separated permission tags
 }
 
-// Desktop tools are real JS run on the device; browser tools are the safe DSL.
-const isJsMode = computed(() => deviceType.value === 'desktop')
+const DESKTOP_KINDS: { key: DesktopKind; label: string }[] = [
+  { key: 'js', label: 'JS（cap 能力库）' },
+  { key: 'python', label: 'Python' },
+  { key: 'powershell', label: 'PowerShell' },
+  { key: 'shell', label: 'Shell' },
+]
+
+// Desktop tools are real JS / runtime source; browser tools are the safe DSL.
+const isDesktop = computed(() => deviceType.value === 'desktop')
+const isJsMode = computed(() => isDesktop.value && draft.value?.desktopKind === 'js')
+const isRuntimeMode = computed(() => isDesktop.value && draft.value != null && draft.value.desktopKind !== 'js')
 const JS_TEMPLATE = "// 可用: args(入参) / cap(设备能力库) / ctx(workspaceRoot)\n// 例: return await cap.call('keyboard.type', { text: args.text })\nreturn await cap.call('namespace.tool', args)"
+const SOURCE_TEMPLATES: Record<ToolRuntime, string> = {
+  python: "# 可用: args(dict 入参)。把结果赋给 result 返回；print 输出进 stdout。\n# 例: result = {'sum': args.get('a', 0) + args.get('b', 0)}\nresult = {'ok': True}",
+  powershell: "# 支持 ${args.x} 模板。\nWrite-Output \"hello ${args.name}\"",
+  shell: "# 支持 ${args.x} 模板。\necho \"hello ${args.name}\"",
+}
+const sourceTemplate = (kind: DesktopKind): string => (kind === 'js' ? '' : SOURCE_TEMPLATES[kind])
 const draft = ref<Draft | null>(null)
 const saving = ref(false)
 const versions = ref<DeviceToolVersion[]>([])
@@ -141,7 +163,10 @@ const newTool = () => {
     description: '',
     params: [],
     steps: [blankStep()],
-    js: isJsMode.value ? JS_TEMPLATE : '',
+    js: isDesktop.value ? JS_TEMPLATE : '',
+    desktopKind: 'js',
+    source: '',
+    permissions: '',
   }
   versions.value = []
   versionsOpen.value = false
@@ -173,9 +198,12 @@ const editTool = (tool: DeviceDynamicTool) => {
       value: stringifyValue(step.value),
     })),
     js: String(tool.js || ''),
+    desktopKind: tool.code_kind === 'runtime' && tool.runtime ? tool.runtime : 'js',
+    source: String(tool.source || ''),
+    permissions: (tool.permissions || []).join(', '),
   }
   if (!draft.value.steps.length) draft.value.steps = [blankStep()]
-  if (isJsMode.value && !draft.value.js.trim()) draft.value.js = JS_TEMPLATE
+  if (isDesktop.value && draft.value.desktopKind === 'js' && !draft.value.js.trim()) draft.value.js = JS_TEMPLATE
   versions.value = []
   versionsOpen.value = false
   failures.value = []
@@ -225,6 +253,17 @@ const save = async () => {
       input_schema: buildInputSchema(d.params),
       code_kind: 'js' as const,
       js: d.js,
+    }
+  } else if (isRuntimeMode.value) {
+    if (!d.source.trim()) { error.value = '请填写运行时源码'; return }
+    definition = {
+      name,
+      description: d.description.trim(),
+      input_schema: buildInputSchema(d.params),
+      code_kind: 'runtime' as const,
+      runtime: d.desktopKind as ToolRuntime,
+      source: d.source,
+      permissions: d.permissions.split(/[,\s]+/).map(s => s.trim()).filter(Boolean),
     }
   } else {
     if (!d.steps.length) { error.value = '至少需要一条指令'; return }
@@ -323,6 +362,19 @@ const moveStep = (i: number, delta: number) => {
 }
 const addArg = (step: StepDraft) => step.args.push({ key: '', value: '' })
 const addParam = () => draft.value?.params.push({ name: '', type: 'string', description: '', required: false })
+
+// Swap in the matching starter template when the desktop implementation kind
+// changes, but never clobber code the operator already typed.
+const KNOWN_TEMPLATES = [JS_TEMPLATE, ...Object.values(SOURCE_TEMPLATES)]
+const onDesktopKindChange = () => {
+  const d = draft.value
+  if (!d) return
+  if (d.desktopKind === 'js') {
+    if (!d.js.trim() || KNOWN_TEMPLATES.includes(d.source.trim())) d.js = d.js.trim() || JS_TEMPLATE
+  } else if (!d.source.trim() || KNOWN_TEMPLATES.includes(d.source.trim())) {
+    d.source = sourceTemplate(d.desktopKind)
+  }
+}
 </script>
 
 <template>
@@ -434,6 +486,23 @@ const addParam = () => draft.value?.params.push({ name: '', type: 'string', desc
               </div>
             </div>
 
+            <!-- desktop implementation kind: JS (cap) or a device runtime -->
+            <div v-if="isDesktop">
+              <span class="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">实现方式</span>
+              <div class="mt-1 flex flex-wrap gap-1">
+                <button
+                  v-for="k in DESKTOP_KINDS"
+                  :key="k.key"
+                  type="button"
+                  class="rounded-lg px-2.5 py-1 text-[11px] font-medium border"
+                  :class="draft.desktopKind === k.key
+                    ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300'
+                    : 'border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800'"
+                  @click="draft.desktopKind = k.key; onDesktopKindChange()"
+                >{{ k.label }}</button>
+              </div>
+            </div>
+
             <!-- JS editor (desktop): server-stored code run on the device -->
             <div v-if="isJsMode">
               <div class="mb-1 flex items-center justify-between">
@@ -455,6 +524,33 @@ const addParam = () => draft.value?.params.push({ name: '', type: 'string', desc
                   <code v-for="t in availableTools" :key="t.name" class="rounded bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 text-[10px] text-zinc-600 dark:text-zinc-300">{{ t.name }}</code>
                 </div>
               </details>
+            </div>
+
+            <!-- runtime editor (desktop): plain source run by python/powershell/shell -->
+            <div v-else-if="isRuntimeMode">
+              <div class="mb-1 flex items-center justify-between">
+                <span class="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">实现源码（{{ draft.desktopKind }} · 在设备上执行）</span>
+                <span class="text-[10px] text-zinc-400">服务器存储 · 改完即下发同步</span>
+              </div>
+              <textarea
+                v-model="draft.source"
+                rows="10"
+                spellcheck="false"
+                class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/60 dark:bg-zinc-950/50 px-2.5 py-2 text-[11px] font-mono leading-relaxed"
+              />
+              <p class="mt-1 text-[10px] text-zinc-400 leading-relaxed">
+                <template v-if="draft.desktopKind === 'python'">入参在 <code>args</code> 字典里；把结果赋给 <code>result</code> 返回。需要设备已装 Python（或设 <code>HEYSURE_PYTHON</code>）。</template>
+                <template v-else>命令/脚本支持 <code>${'{'}args.x{'}'}</code> 模板。</template>
+                高风险操作请在下方声明权限标签，设备会按策略弹窗确认或拒绝。
+              </p>
+              <label class="mt-2 block">
+                <span class="text-[11px] text-zinc-500">权限标签（逗号分隔，可留空）</span>
+                <input
+                  v-model="draft.permissions"
+                  placeholder="如 shell.write, filesystem.read, network"
+                  class="mt-0.5 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-transparent px-2.5 py-1.5 text-[11px] font-mono"
+                />
+              </label>
             </div>
 
             <!-- steps (browser): the safe call/set/return DSL -->
