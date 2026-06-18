@@ -115,6 +115,7 @@ const unassign = async (device: ConnectedDevice) => {
 const deviceTypeLabel = (device: ConnectedDevice) => {
   const platform = String(device.platform || '').toLowerCase()
   if (isWorkshopDevice(device)) return '知识工坊'
+  if (isAndroidDevice(device)) return '安卓端'
   if (device.isBrowserExtension || platform.includes('browser')) return '浏览器插件'
   if (device.isWindowsDesktop || platform.includes('desktop') || platform.includes('windows')) return '软件端'
   return '设备端'
@@ -131,14 +132,18 @@ const isSoftwareDevice = (device: ConnectedDevice) => {
   return !!device.isWindowsDesktop || platform.includes('desktop') || platform.includes('windows')
 }
 
+const isAndroidDevice = (device: ConnectedDevice) => {
+  const platform = String(device.platform || '').toLowerCase()
+  return !!device.isAndroid || platform.includes('android')
+}
+
 const isEndpointDevice = (device: ConnectedDevice) => {
   const platform = String(device.platform || '').toLowerCase()
-  return isSoftwareDevice(device) || !!device.isBrowserExtension || platform.includes('browser') || isWorkshopDevice(device)
+  return isSoftwareDevice(device) || isAndroidDevice(device) || !!device.isBrowserExtension || platform.includes('browser') || isWorkshopDevice(device)
 }
 
 const deviceDisplayName = (device: ConnectedDevice) => {
-  if (isSoftwareDevice(device)) return 'Windows Agent'
-  return device.name || device.id || 'Agent'
+  return device.name || device.id || deviceTypeLabel(device)
 }
 
 const lifecycleLabel = (lifecycle?: string) => {

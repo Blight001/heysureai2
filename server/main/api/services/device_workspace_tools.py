@@ -206,6 +206,8 @@ def upsert_tool(user_id: int, device_type: str, definition: Any, enabled: bool =
     clean = validate_definition(definition)
     if clean["code_kind"] == "runtime" and dtype != "desktop":
         raise ValueError("runtime tools are only supported on desktop devices")
+    if dtype == "android" and clean["code_kind"] != "program":
+        raise ValueError("android dynamic MCP tools only support program steps")
     d = _tools_dir(user_id, dtype)
     status = "draft" if actor == "ai" else "active"
     _write_files(d, clean, enabled, status)

@@ -17,7 +17,7 @@ import org.json.JSONObject
  */
 class ToolCatalog(private val capture: ScreenCaptureManager) {
 
-    private val tools: Map<String, Tool> = buildList {
+    private val builtinTools: Map<String, Tool> = buildList {
         add(tapTool())
         add(longPressTool())
         add(swipeTool())
@@ -28,10 +28,37 @@ class ToolCatalog(private val capture: ScreenCaptureManager) {
         add(screenshotTool())
         add(recordTool())
     }.associateBy { it.name }
+    private val dynamicTools = mutableMapOf<String, Tool>()
+    private var dynamicRevision = ""
+
+    private val tools: Map<String, Tool>
+        get() = builtinTools + dynamicTools
 
     fun names(): List<String> = tools.keys.sorted()
 
     fun get(name: String): Tool? = tools[name]
+
+    fun applyDynamicConfig(payload: JSONObject): Boolean {
+        val revision = payload.optString("revision")
+        if (revision.isNotBlank() && revision == dynamicRevision) return false
+        val arr = payload.optJSONArray("tools") ?: JSONArray()
+        val next = mutableMapOf<String, Tool>()
+        for (i in 0 until arr.length()) {
+            val raw = arr.optJSONObject(i) ?: continue
+            val name = raw.optString("name").trim()
+            val codeKind = raw.optString("code_kind", "program")
+            if (name.isBlank() || codeKind != "program" || builtinTools.containsKey(name)) continue
+            val description = raw.optString("description").trim().ifBlank { "Android 动态 MCP 工具：$name" }
+            val inputSchema = raw.optJSONObject("input_schema") ?: objectSchema(JSONObject())
+            val steps = raw.optJSONArray("code") ?: JSONArray()
+            if (steps.length() == 0) continue
+            next[name] = programTool(name, description, inputSchema, steps)
+        }
+        dynamicTools.clear()
+        dynamicTools.putAll(next)
+        dynamicRevision = revision
+        return true
+    }
 
     /** `toolDefs` payload for device:register, in the shape the server stores
      *  verbatim ({ name, description, input_schema, destructive }). */
@@ -51,6 +78,123 @@ class ToolCatalog(private val capture: ScreenCaptureManager) {
     }
 
     private fun gesture() = GestureAccessibilityService.require()
+
+    private fun programTool(toolName: String, desc: String, schema: JSONObject, steps: JSONArray) = object : Tool {
+        override val name = toolName
+        override val description = desc
+        override val inputSchema = schema
+
+        override suspend fun run(args: JSONObject): JSONObject {
+            val vars = JSONObject()
+            var last: Any? = JSONObject()
+            for (i in 0 until steps.length()) {
+                val step = steps.optJSONObject(i) ?: continue
+                when (step.optString("op")) {
+                    "set" -> {
+                        val key = step.optString("name").trim()
+                        if (key.isNotBlank()) vars.put(key, evalValue(step.opt("value"), args, vars, last))
+                    }
+                    "return" -> {
+                        val value = evalValue(step.opt("value"), args, vars, last)
+                        return asResultObject(value)
+                    }
+                    "call" -> {
+                        val target = evalValue(step.opt("tool"), args, vars, last).toString()
+                            .removePrefix("builtin:")
+                            .trim()
+                        if (target.isBlank()) throw IllegalArgumentException("Dynamic MCP $name has empty call target")
+                        if (target == toolName) throw IllegalArgumentException("Dynamic MCP $toolName cannot call itself")
+                        val targetTool = tools[target]
+                            ?: throw IllegalArgumentException("Unknown dynamic MCP call target: $target")
+                        val callArgs = asJsonObject(evalValue(step.opt("args") ?: JSONObject(), args, vars, last))
+                        last = targetTool.run(callArgs)
+                        val saveAs = step.optString("save_as").trim()
+                        if (saveAs.isNotBlank()) vars.put(saveAs, last)
+                    }
+                }
+            }
+            return asResultObject(last)
+        }
+    }
+
+    private fun asJsonObject(value: Any?): JSONObject {
+        return when (value) {
+            is JSONObject -> value
+            null, JSONObject.NULL -> JSONObject()
+            else -> JSONObject().put("value", value)
+        }
+    }
+
+    private fun asResultObject(value: Any?): JSONObject {
+        return when (value) {
+            is JSONObject -> value
+            null, JSONObject.NULL -> JSONObject()
+            else -> JSONObject().put("value", value)
+        }
+    }
+
+    private fun evalValue(value: Any?, args: JSONObject, vars: JSONObject, last: Any?): Any? {
+        return when (value) {
+            is JSONObject -> {
+                val out = JSONObject()
+                val keys = value.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    out.put(key, evalValue(value.opt(key), args, vars, last))
+                }
+                out
+            }
+            is JSONArray -> {
+                val out = JSONArray()
+                for (i in 0 until value.length()) out.put(evalValue(value.opt(i), args, vars, last))
+                out
+            }
+            is String -> evalString(value, args, vars, last)
+            JSONObject.NULL -> null
+            else -> value
+        }
+    }
+
+    private fun evalString(raw: String, args: JSONObject, vars: JSONObject, last: Any?): Any? {
+        val exact = Regex("^\\$\\{([^}]+)}$").matchEntire(raw)
+        if (exact != null) return resolveToken(exact.groupValues[1], args, vars, last)
+        return Regex("\\$\\{([^}]+)}").replace(raw) { match ->
+            val resolved = resolveToken(match.groupValues[1], args, vars, last)
+            when (resolved) {
+                null, JSONObject.NULL -> ""
+                is JSONObject, is JSONArray -> resolved.toString()
+                else -> resolved.toString()
+            }
+        }
+    }
+
+    private fun resolveToken(token: String, args: JSONObject, vars: JSONObject, last: Any?): Any? {
+        val path = token.trim()
+        return when {
+            path == "last" -> last
+            path.startsWith("args.") -> getPath(args, path.removePrefix("args."))
+            path.startsWith("vars.") -> getPath(vars, path.removePrefix("vars."))
+            else -> ""
+        }
+    }
+
+    private fun getPath(root: Any?, path: String): Any? {
+        var current: Any? = root
+        for (part in path.split('.').filter { it.isNotBlank() }) {
+            current = when (current) {
+                is JSONObject -> current.opt(part)
+                is JSONArray -> {
+                    val arr = current as JSONArray
+                    part.toIntOrNull()?.let { idx ->
+                        if (idx in 0 until arr.length()) arr.opt(idx) else null
+                    }
+                }
+                else -> null
+            }
+            if (current == null || current == JSONObject.NULL) return null
+        }
+        return current
+    }
 
     private fun tapTool() = object : Tool {
         override val name = "touch.tap"

@@ -70,11 +70,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        AgentService.instance?.let { svc ->
-            svc.statusListener = { status, reason -> runOnUiThread { renderStatus(status, reason) } }
-            svc.logListener = { msg -> runOnUiThread { appendLog(msg) } }
-            renderStatus(svc.lastStatus, null)
-        }
+        attachAgentServiceListeners()
     }
 
     private fun doLogin() {
@@ -100,11 +96,22 @@ class MainActivity : AppCompatActivity() {
                 settings.userName = res.userName
                 appendLog("登录成功：${res.userName}")
                 AgentService.start(this@MainActivity)
-                AgentService.instance?.reconnect()
+                binding.root.postDelayed({
+                    attachAgentServiceListeners()
+                    AgentService.instance?.reconnect()
+                }, 300)
             }.onFailure { e ->
                 appendLog("登录失败：${e.message}")
                 toast(e.message ?: "登录失败")
             }
+        }
+    }
+
+    private fun attachAgentServiceListeners() {
+        AgentService.instance?.let { svc ->
+            svc.statusListener = { status, reason -> runOnUiThread { renderStatus(status, reason) } }
+            svc.logListener = { msg -> runOnUiThread { appendLog(msg) } }
+            renderStatus(svc.lastStatus, null)
         }
     }
 

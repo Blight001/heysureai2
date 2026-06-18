@@ -246,7 +246,7 @@ def register_agent_socket_events():
             from api.services import device_workspace_tools as _dyn
 
             push_type = device_type_of(agents[sid])
-            if owner_user_id is not None and push_type in ('desktop', 'browser'):
+            if owner_user_id is not None and push_type in ('desktop', 'browser', 'android'):
                 # Join the device room so future edits (from any process) can push
                 # via the socket relay, not just the gateway-local agents map.
                 from api.device_live import device_tool_room

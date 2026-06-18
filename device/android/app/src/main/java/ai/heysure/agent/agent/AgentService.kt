@@ -80,6 +80,7 @@ class AgentService : Service() {
             executor = executor,
             toolDefs = { catalog.toolDefs() },
             capabilities = { catalog.names() },
+            onToolConfig = { payload -> catalog.applyDynamicConfig(payload) },
             onStatus = { status, reason ->
                 lastStatus = status
                 statusListener?.invoke(status, reason)
