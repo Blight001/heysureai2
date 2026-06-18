@@ -723,7 +723,7 @@ const onDesktopKindChange = () => {
                 <option v-for="t in availableTools" :key="`raw-${t.name}`" :value="t.name" />
               </datalist>
               <p class="text-[10px] text-zinc-400 leading-relaxed">
-                用 <code>builtin:工具名</code> 调用设备原生能力；模板支持 <code>${'{'}args.x{'}'}</code>、<code>${'{'}vars.x{'}'}</code>、<code>${'{'}last{'}'}</code>。
+                用 <code>builtin:工具名</code> 调用设备原生能力；目标工具名与参数均支持模板，如 <code>${'{'}args.tool{'}'}</code>、<code>${'{'}args.x{'}'}</code>、<code>${'{'}vars.x{'}'}</code>、<code>${'{'}last{'}'}</code>。
               </p>
             </div>
 

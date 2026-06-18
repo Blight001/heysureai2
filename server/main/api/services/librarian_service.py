@@ -60,11 +60,6 @@ _MAX_SUMMARY_LEN = 240
 _VALID_STATUSES = {"pending", "active", "archived", "rejected"}
 _BUILTIN_UPDATED_AT = 1893456000.0  # 2030-01-01, keeps built-in categories at the top.
 _BUILTIN_ENTRIES = {
-    "builtin.intrinsic_properties": {
-        "title": "固有属性",
-        "triggers": ["固有属性", "固定MCP", "MCP工具"],
-        "summary": "系统固定 MCP 工具清单及其描述。",
-    },
     "builtin.intrinsic_personas": {
         "title": "固有人格",
         "triggers": ["固有人格", "AI人格", "Prompt"],
@@ -77,8 +72,8 @@ _BUILTIN_ENTRIES = {
     },
     "builtin.inheritance_skills": {
         "title": "传承技能",
-        "triggers": ["传承技能", "在线MCP", "工坊工具"],
-        "summary": "当前账号在线设备实时上报的 MCP 工具与动态代码能力。",
+        "triggers": ["传承技能", "固定MCP", "在线MCP", "工坊工具", "MCP工具"],
+        "summary": "系统服务端内置 MCP 与在线设备实时上报的工具能力。",
     },
     "builtin.inheritance_tools": {
         "title": "传承思想",
@@ -1080,7 +1075,6 @@ def _builtin_entries(*, user_id: Optional[int] = None, with_body: bool = False) 
     return [
         item
         for memory_id in (
-            "builtin.intrinsic_properties",
             "builtin.intrinsic_personas",
             "builtin.system_prompts",
             "builtin.inheritance_skills",
@@ -1115,16 +1109,12 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
     }
     if with_body:
         # 文件为真相源：查看这些内置类目时，确保 KnowledgeBase 目录与文件已生成。
-        if user_id and memory_id in ("builtin.intrinsic_personas", "builtin.system_prompts", "builtin.intrinsic_properties"):
+        if user_id and memory_id in ("builtin.intrinsic_personas", "builtin.system_prompts"):
             try:
                 kb_store.ensure_user_kb(int(user_id))
             except Exception as exc:
                 logger.info(f"ensure_user_kb user={user_id} failed: {exc}")
-        if memory_id == "builtin.intrinsic_properties":
-            intrinsic = _intrinsic_properties_payload(int(user_id or 0))
-            out["intrinsic_properties"] = intrinsic
-            out["body"] = _render_intrinsic_properties_body(intrinsic)
-        elif memory_id == "builtin.intrinsic_personas":
+        if memory_id == "builtin.intrinsic_personas":
             personas = _intrinsic_personas_payload(int(user_id or 0))
             out["intrinsic_personas"] = personas
             out["body"] = _render_intrinsic_personas_body(personas)
@@ -1336,7 +1326,7 @@ def save_intrinsic_properties_overrides(*, user_id: int, tools: List[Dict[str, A
     # 旧 override JSON 继续保留作为兼容镜像。
     with open(_intrinsic_properties_overrides_path(user_id), "w", encoding="utf-8") as f:
         json.dump({"tools": current, "updated_at": time.time()}, f, ensure_ascii=False, indent=2)
-    return _builtin_entry("builtin.intrinsic_properties", user_id=user_id, with_body=True) or {}
+    return _builtin_entry("builtin.inheritance_skills", user_id=user_id, with_body=True) or {}
 
 
 def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None) -> str:
@@ -1373,19 +1363,47 @@ def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None) 
 
 
 def _inheritance_skills_payload(user_id: int = 0) -> Dict[str, Any]:
-    """传承技能 = 当前账号在线端侧实时上报的 MCP 工具信息。"""
-    devices: List[Dict[str, Any]] = []
+    """传承技能 = 服务端内置 MCP + 当前账号在线端侧实时上报的工具。"""
+    server_payload = _intrinsic_properties_payload(int(user_id or 0))
+    server_categories = server_payload.get("categories") if isinstance(server_payload.get("categories"), list) else []
+    server_tools: List[Dict[str, Any]] = []
+    for category in server_categories:
+        if not isinstance(category, dict):
+            continue
+        namespace = str(category.get("namespace") or "").strip()
+        for spec in category.get("tools") or []:
+            if not isinstance(spec, dict):
+                continue
+            name = str(spec.get("name") or "").strip()
+            if not name:
+                continue
+            server_tools.append({
+                **spec,
+                "namespace": namespace,
+                "device_id": "heysure-server",
+                "device_type": "server",
+                "source": "server",
+            })
+
+    enriched_devices: List[Dict[str, Any]] = [{
+        "device_id": "heysure-server",
+        "device_type": "server",
+        "updated_at": _BUILTIN_UPDATED_AT,
+        "tool_count": len(server_tools),
+        "tools": server_tools,
+    }]
+    tools: List[Dict[str, Any]] = list(server_tools)
+
+    online_devices: List[Dict[str, Any]] = []
     try:
         from api.device_presence import online_tool_catalog_for_user
 
-        devices = online_tool_catalog_for_user(int(user_id or 0))
+        online_devices = online_tool_catalog_for_user(int(user_id or 0))
     except Exception as exc:
         logger.info(f"inheritance skills payload failed: {exc}")
-        devices = []
+        online_devices = []
 
-    enriched_devices: List[Dict[str, Any]] = []
-    tools: List[Dict[str, Any]] = []
-    for device in devices:
+    for device in online_devices:
         device_id = str(device.get("device_id") or "")
         device_type = str(device.get("device_type") or "desktop")
         device_tools: List[Dict[str, Any]] = []
@@ -1416,11 +1434,17 @@ def _inheritance_skills_payload(user_id: int = 0) -> Dict[str, Any]:
             "tools": device_tools,
         })
     return {
-        "description": "当前账号在线设备实时上报的 MCP 工具（传承技能）如下；动态工具保存并热加载后会立即出现在这里。",
+        "description": (
+            "传承技能包含系统服务端内置 MCP 与当前账号在线设备实时上报的工具；"
+            "服务端工具说明可编辑，保存后同步 mcp.list_tools / mcp.describe_tool。"
+        ),
         "workshop": "知识工坊（内置）",
-        "online": bool(devices),
+        "online": bool(online_devices),
+        "server_total": len(server_tools),
+        "server_categories": server_categories,
         "devices": enriched_devices,
         "device_total": len(enriched_devices),
+        "endpoint_device_total": max(0, len(enriched_devices) - 1),
         "total": len(tools),
         "tools": tools,
     }
@@ -1433,8 +1457,9 @@ def _render_inheritance_skills_body(payload: Dict[str, Any]) -> str:
         str(payload.get("description") or ""),
         "",
         f"工坊：{payload.get('workshop') or ''}",
-        f"在线设备数：{int(payload.get('device_total') or 0)}",
-        f"在线 MCP 工具数：{int(payload.get('total') or 0)}",
+        f"服务端 MCP 工具数：{int(payload.get('server_total') or 0)}",
+        f"设备数：{int(payload.get('device_total') or 0)}（端侧 {int(payload.get('endpoint_device_total') or 0)}）",
+        f"传承 MCP 工具总数：{int(payload.get('total') or 0)}",
         "",
     ]
     tools = payload.get("tools") if isinstance(payload.get("tools"), list) else []

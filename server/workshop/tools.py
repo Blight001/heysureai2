@@ -178,7 +178,7 @@ TOOL_DEFS = [
     {
         "name": "librarian.read_intrinsic_skills",
         "description": (
-            "读取知识库中的「固有属性」：系统固定注册的服务端 MCP 工具清单，"
+            "读取知识库中的「传承技能」服务端部分：系统固定注册的服务端 MCP 工具清单，"
             "按 namespace 分组返回每个工具的描述与参数说明。只读，不接受参数。"
         ),
         "inputSchema": {
@@ -191,7 +191,7 @@ TOOL_DEFS = [
     {
         "name": "librarian.update_intrinsic_skills",
         "description": (
-            "修改「固有属性」：覆盖一个或多个 MCP 工具的中文描述与参数说明，"
+            "修改「传承技能」服务端部分：覆盖一个或多个 MCP 工具的中文描述与参数说明，"
             "保存后会同步 mcp.list_tools / mcp.describe_tool 的展示。"
         ),
         "inputSchema": {

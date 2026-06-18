@@ -5,6 +5,7 @@ import ChatHeader from './ChatHeader.vue'
 import ChatConversationView from './ChatConversationView.vue'
 import ChatInput from './ChatInput.vue'
 import { parseChatResponseInline, type ActionBlock, type InlineContent as InlineContentType } from '@/utils/chatParser'
+import { isSameAssistantVisibleReply, normalizeAssistantReplyText } from '@/utils/chatReplyCompare'
 import * as chatApi from '@/api/chat'
 import { callMcpTool } from '@/api/mcp'
 import { getAuthToken } from '@/api/http'
@@ -438,58 +439,40 @@ const stopSessionSyncPolling = () => {
   sessionSyncPollTimer = null
 }
 
-// The streamed live bubble holds the thinking-stripped visible answer, while a
-// persisted assistant message keeps its raw content (<think>/<mcp-call> blocks
-// included). Comparing the raw strings directly misses that they are the same
-// reply, so the live bubble is never deduped against the persisted one and both
-// render until a reload clears the live state. Normalize to the visible display
-// text before comparing.
-const normalizeAssistantVisibleText = (content: string): string => {
-  const raw = String(content || '')
-  if (!raw.trim()) return ''
-  try {
-    return String(parseChatResponseInline(raw).displayText || '').trim()
-  } catch {
-    return raw.trim()
-  }
-}
-
-const isSameStreamingAssistantText = (left: string, right: string): boolean => {
-  const a = normalizeAssistantVisibleText(left)
-  const b = normalizeAssistantVisibleText(right)
-  if (!a || !b) return false
-  if (a === b) return true
-  return Math.min(a.length, b.length) >= 12
-    && (a.startsWith(b) || b.startsWith(a))
-}
-
 const upsertHistoryMessages = async (incoming: ChatMessage[]) => {
   if (!incoming.length) return
   const existingIds = new Set(chatMessages.value.map(m => m.id).filter(Boolean))
-  const liveVisible = normalizeAssistantVisibleText(liveTargetText.value)
+  const liveVisible = normalizeAssistantReplyText(liveTargetText.value)
   for (const msg of incoming) {
     if (msg.id && existingIds.has(msg.id)) continue
-    const msgVisible = normalizeAssistantVisibleText(msg.content)
-    if (
-      liveVisible
-      && msg.role === 'assistant'
-      && isSameStreamingAssistantText(msgVisible, liveVisible)
-    ) {
-      // Keep the persisted row so its thought/tool metadata is not lost when
-      // later message IDs advance the incremental-history cursor. The view
-      // suppresses the overlapping live bubble while this row is visible.
-      if (!isRunActive.value && liveAssistantText.value.trim()) {
-        // End stage: persisted message arrived, clear live bubble first to avoid a visual flash.
-        clearLiveAssistantView()
+    const msgVisible = normalizeAssistantReplyText(msg.content)
+    if (msg.role === 'assistant' && msgVisible) {
+      const duplicateIdx = chatMessages.value.findIndex(item =>
+        item.role === 'assistant'
+        && isSameAssistantVisibleReply(item.display_text || item.content, msgVisible))
+      if (duplicateIdx >= 0) {
+        const existing = chatMessages.value[duplicateIdx]
+        if (msg.id && !existing.id) {
+          chatMessages.value.splice(duplicateIdx, 1)
+        } else {
+          if (
+            liveVisible
+            && isSameAssistantVisibleReply(msgVisible, liveVisible)
+            && !isRunActive.value
+            && liveAssistantText.value.trim()
+          ) {
+            clearLiveAssistantView()
+          }
+          continue
+        }
       }
-    }
-    if (msg.id && msg.role === 'assistant' && msgVisible) {
-      const localIdx = chatMessages.value.findIndex(item =>
-        !item.id
-        && item.role === 'assistant'
-        && normalizeAssistantVisibleText(item.content) === msgVisible)
-      if (localIdx >= 0) {
-        chatMessages.value.splice(localIdx, 1)
+      if (
+        liveVisible
+        && isSameAssistantVisibleReply(msgVisible, liveVisible)
+        && !isRunActive.value
+        && liveAssistantText.value.trim()
+      ) {
+        clearLiveAssistantView()
       }
     }
     const parsed = parseChatResponseInline(msg.content)
@@ -512,11 +495,11 @@ const getLastMessageId = () => {
 }
 
 const hasAssistantMessageWithContent = (content: string) => {
-  const normalized = normalizeAssistantVisibleText(content)
+  const normalized = normalizeAssistantReplyText(content)
   if (!normalized) return false
   return chatMessages.value.some(msg =>
     msg.role === 'assistant'
-    && normalizeAssistantVisibleText(msg.content) === normalized)
+    && isSameAssistantVisibleReply(msg.display_text || msg.content, normalized))
 }
 
 const appendLiveAssistantAsLocalMessage = async (text: string) => {
@@ -1008,11 +991,17 @@ const isMcpCallFailed = (data: any) => {
     || data?.mcp?.result?.success === false
 }
 
-const buildMcpDisplayResult = (block: ActionBlock, data: any) => {
-  const toolName = block.tool || ''
-  const status = isMcpCallFailed(data) ? '失败' : '成功'
+const buildMcpDisplayResult = (_block: ActionBlock, data: any) => {
   const result = safeJson(data?.result ?? data?.mcp?.result ?? data, 12000)
-  return [`工具: ${toolName}`, `状态: ${status}`, '', result].join('\n')
+  if (!isMcpCallFailed(data)) return result
+  const errorMessage = String(
+    data?.error
+    || data?.mcp?.error
+    || data?.result?.error
+    || data?.mcp?.result?.error
+    || '未知错误',
+  ).trim()
+  return `错误: ${errorMessage}\n\n${result}`
 }
 
 const executeAction = async (msgIdx: number, blockIdx: number) => {
@@ -1252,6 +1241,7 @@ onBeforeUnmount(() => {
         :mcpDynamicRule="props.mcpDynamicRule"
         :aiConfigId="props.aiConfigId"
         :liveText="liveAssistantText"
+        :liveTargetText="liveTargetText"
         :liveThinking="liveThinkingText"
         :livePhase="currentRunPhase"
         :appliedEdits="appliedEditsArray"

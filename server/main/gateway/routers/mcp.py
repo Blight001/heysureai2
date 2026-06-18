@@ -2,7 +2,7 @@
 with permission checks (``/call``), and reload the tool registry (internal)."""
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -26,6 +26,7 @@ from mcp_runtime.mcp.permissions import (
 from api.models import AssistantAIConfig
 from .auth import get_current_user
 from api.runtime.internal_http import require_internal_token
+from api.services.inheritance_mcp_test import run_inheritance_mcp_test
 from connector_runtime.dispatch.device_dispatch import dispatch_endpoint_tool_and_wait
 from connector_runtime.dispatch.desktop_device_tools import (
     connected_endpoint_tool_catalog,
@@ -45,6 +46,18 @@ class MCPCallRequest(BaseModel):
     tool: str = Field(..., description="Fully qualified MCP tool name")
     arguments: Optional[Dict[str, Any]] = Field(default_factory=dict)
     ai_config_id: Optional[int] = None
+
+
+class InheritanceMcpTestRequest(BaseModel):
+    model_preset_id: str = Field(..., description="Server model preset id from user.model_presets")
+    tool: str
+    device_id: str
+    device_type: str = "desktop"
+    description: str = ""
+    parameters: Optional[List[Dict[str, Any]]] = None
+    input_schema: Optional[Dict[str, Any]] = None
+    implementation: Optional[Dict[str, Any]] = None
+    user_hint: str = ""
 
 
 @router.get("/tools")
@@ -242,6 +255,31 @@ async def call_mcp_tool(
             return resp.json()
 
     return await registry.call(req.tool, user.id, req.arguments, req.ai_config_id)
+
+
+@router.post("/inheritance-test")
+async def inheritance_mcp_test(
+    req: InheritanceMcpTestRequest,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    """Let a configured model preset infer MCP args from schema text, then run on device."""
+    user = get_current_user(authorization, session)
+    try:
+        return await run_inheritance_mcp_test(
+            user=user,
+            model_preset_id=req.model_preset_id,
+            tool=req.tool,
+            device_id=req.device_id,
+            device_type=req.device_type,
+            description=req.description,
+            parameters=req.parameters,
+            input_schema=req.input_schema,
+            implementation=req.implementation,
+            user_hint=req.user_hint,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/internal/reload", dependencies=[Depends(require_internal_token)])

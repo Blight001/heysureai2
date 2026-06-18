@@ -139,7 +139,7 @@ async function runProgram(
   for (const step of def.code) {
     if (step.op === 'set') { context.vars[String(step.name)] = render(step.value, context); continue }
     if (step.op === 'return') return render(step.value, context)
-    const target = String(step.tool || '').trim()
+    const target = String(render(step.tool || '', context) || '').trim()
     if (isManagerName(target)) throw new Error('Dynamic MCP code cannot invoke the management tool')
     const builtinTarget = target.startsWith('builtin:') ? target.slice('builtin:'.length) : ''
     const childArgs = render(step.args || {}, context)

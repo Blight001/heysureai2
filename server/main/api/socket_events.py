@@ -255,8 +255,8 @@ def register_agent_socket_events():
                 # factory-default desktop python tools on first connect (idempotent;
                 # migrates any legacy DB rows to files once), then push the set down.
                 try:
-                    if push_type == 'desktop':
-                        _dyn.seed_defaults(owner_user_id)
+                    if push_type in ('desktop', 'browser'):
+                        _dyn.seed_defaults(owner_user_id, push_type)
                 except Exception:
                     logger.exception('Failed to seed dynamic MCP tools: %s', device_id)
                 await push_device_dynamic_tools_to_sid(owner_user_id, push_type, sid)

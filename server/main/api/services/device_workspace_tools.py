@@ -350,14 +350,21 @@ def device_payload(user_id: int, device_type: str) -> Dict[str, Any]:
     }
 
 
-def seed_defaults(user_id: int) -> int:
-    """Seed factory-default desktop python tools into the user's workspace
-    (idempotent: never clobbers an existing file)."""
-    from api.services.device_runtime_tools import load_default_tools
-    d = _tools_dir(user_id, "desktop")
-    _migrate_db_once(user_id, "desktop", d)
+def seed_defaults(user_id: int, device_type: str = "desktop") -> int:
+    """Seed factory-default tools into the user's workspace (idempotent: never
+    clobbers an existing file). Desktop → python/shell runtime tools; browser →
+    program wrappers + browser.run dispatcher."""
+    dtype = normalize_device_type(device_type)
+    if dtype == "desktop":
+        from api.services.device_runtime_tools import load_default_tools as _load
+    elif dtype == "browser":
+        from api.services.device_browser_runtime_tools import load_default_tools as _load
+    else:
+        return 0
+    d = _tools_dir(user_id, dtype)
+    _migrate_db_once(user_id, dtype, d)
     created = 0
-    for spec in load_default_tools():
+    for spec in _load():
         if os.path.isfile(_meta_path(d, spec["name"])):
             continue
         clean = validate_definition(spec)

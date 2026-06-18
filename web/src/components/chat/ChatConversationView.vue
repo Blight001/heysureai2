@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import ChatMessageList from './ChatMessageList.vue'
 import { parseChatResponseInline, type ActionBlock, type InlineContent as InlineContentType } from '@/utils/chatParser'
+import { isSameAssistantVisibleReply, normalizeAssistantReplyText } from '@/utils/chatReplyCompare'
 import { stripMcpCallBlocks } from '@/utils/mcpFormat'
 import { listMcpTools } from '@/api/mcp'
 
@@ -36,6 +37,7 @@ const props = withDefaults(defineProps<{
   mcpDynamicRule?: string
   aiConfigId?: number
   liveText?: string
+  liveTargetText?: string
   liveThinking?: string
   livePhase?: 'idle' | 'generating' | 'waiting_mcp'
   collapseLiveThinking?: boolean
@@ -56,6 +58,7 @@ const props = withDefaults(defineProps<{
   mcpIcon: '',
   mcpDynamicRule: DEFAULT_MCP_DYNAMIC_RULE,
   liveText: '',
+  liveTargetText: '',
   liveThinking: '',
   livePhase: 'idle',
   collapseLiveThinking: false,
@@ -452,7 +455,10 @@ const renderMessages = computed<ConversationMessage[]>(() => {
   if (frontPromptMessage.value) base.unshift(frontPromptMessage.value)
   const liveMessage = liveAssistantMessage.value
   if (liveMessage) {
-    const liveText = String(liveMessage.display_text || liveMessage.content || '').trim()
+    const liveCandidates = [
+      normalizeAssistantReplyText(liveMessage.display_text || liveMessage.content),
+      normalizeAssistantReplyText(props.liveTargetText),
+    ].filter(Boolean)
     let latestUserIndex = -1
     for (let i = base.length - 1; i >= 0; i -= 1) {
       if (base[i].role === 'user') {
@@ -462,13 +468,15 @@ const renderMessages = computed<ConversationMessage[]>(() => {
     }
     for (let i = base.length - 1; i > latestUserIndex; i -= 1) {
       if (base[i].role !== 'assistant') continue
-      const persistedText = stripMcpCallFormatText(
+      const persistedText = normalizeAssistantReplyText(
         base[i].display_text || base[i].content,
-      ).trim()
-      const sameReply = persistedText === liveText
-        || (Math.min(persistedText.length, liveText.length) >= 12
-          && (persistedText.startsWith(liveText) || liveText.startsWith(persistedText)))
-      if (sameReply) base.splice(i, 1)
+      )
+      const sameReply = liveCandidates.some((liveText) =>
+        isSameAssistantVisibleReply(persistedText, liveText))
+      if (sameReply) {
+        base.splice(i, 1)
+        continue
+      }
       break
     }
     base.push(liveMessage)

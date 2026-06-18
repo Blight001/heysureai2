@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import ChatCollapsible from './ChatCollapsible.vue'
 import InlineContent from './InlineContent.vue'
 import type { InlineContent as InlineContentType } from '@/utils/chatParser'
 import { computed, ref } from 'vue'
 import { stripMarkdownFormatting } from '@/utils/chatMarkdown'
+import { parseMcpToolBubbleDetails } from '@/utils/mcpFormat'
 
 const emit = defineEmits<{
   (e: 'delete', idx: number): void
@@ -29,6 +31,9 @@ const props = defineProps<{
   readonly?: boolean
   plainTextMode?: boolean
   mcpIcon?: string
+  embedded?: boolean
+  thinkOnly?: boolean
+  hideThink?: boolean
 }>()
 
 const isFrontPromptMessage = computed(() => {
@@ -80,9 +85,9 @@ const mcpImageUrl = computed(() => {
   return String(text.match(SCREENSHOT_MARKER_RE)?.[1] || '').trim()
 })
 
-const mcpToolDetails = computed(() => {
+const mcpToolSections = computed(() => {
   const text = String(props.message.display_text || props.message.content || '').trim()
-  return text.replace(/^\[MCP工具\]\s*/i, '').replace(SCREENSHOT_MARKER_RE, '').trim()
+  return parseMcpToolBubbleDetails(text, mcpToolSummary.value.tool)
 })
 
 const copiedTarget = ref('')
@@ -143,28 +148,32 @@ const renderedThinkText = computed(() => {
     class="flex flex-col gap-1.5"
     :class="[
       (isFrontPromptMessage || isTaskCompleteNotice) ? 'items-center' : ((props.message.role === 'user' && !isSystemNoticeMessage) ? 'items-end' : 'items-start'),
-      isMcpToolMessage ? '!mt-0.5' : ''
+      isMcpToolMessage ? '!mt-0.5' : '',
+      props.embedded ? '!gap-1' : ''
     ]"
   >
     <div
-      class="group relative max-w-[95%]"
-      :class="isPlainAssistantMessage ? 'sm:max-w-[92%]' : 'sm:max-w-[85%]'"
+      class="group relative"
+      :class="props.embedded ? 'w-full max-w-full' : (isPlainAssistantMessage ? 'max-w-[95%] sm:max-w-[92%]' : 'max-w-[95%] sm:max-w-[85%]')"
     >
       <!-- Think Block — Codex-style: dim/italic body on a quiet left rail -->
-      <div v-if="renderedThinkText" class="mb-1">
-        <details class="group/think">
-          <summary class="flex items-center gap-1 py-0.5 text-[11px] leading-4 text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300 cursor-pointer select-none list-none transition-colors">
-            <span class="text-[8px] leading-none transition-transform group-open/think:rotate-90">▶</span>
-            <span class="font-medium tracking-wide">思考</span>
-          </summary>
-          <div class="mt-1 ml-1 pl-2.5 border-l border-zinc-200 dark:border-zinc-700/80 text-[11px] text-zinc-400 dark:text-zinc-500 leading-relaxed italic whitespace-pre-wrap">
-            {{ renderedThinkText }}
-          </div>
-        </details>
+      <div v-if="renderedThinkText && !props.hideThink" class="mb-1">
+        <ChatCollapsible
+          details-class="group/think"
+          summary-class="flex items-center gap-1 py-0.5 text-[11px] leading-4 text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300 cursor-pointer select-none transition-colors"
+          body-class="mt-1 ml-1 pl-2.5 border-l border-zinc-200 dark:border-zinc-700/80 text-[11px] text-zinc-400 dark:text-zinc-500 leading-relaxed italic whitespace-pre-wrap"
+        >
+          <template #summary>
+            <span class="chat-collapsible-arrow text-[10px] leading-none">➣</span>
+            <span class="font-medium tracking-wide">深度思考</span>
+          </template>
+          {{ renderedThinkText }}
+        </ChatCollapsible>
       </div>
       
       <!-- Main Content -->
       <div
+        v-if="!props.thinkOnly"
         :class="[
           isPlainAssistantMessage
             ? 'px-0 py-1 border-0 bg-transparent text-zinc-800 shadow-none hover:shadow-none dark:text-zinc-200'
@@ -248,21 +257,23 @@ const renderedThinkText = computed(() => {
           >
             <img :src="mcpImageUrl" alt="截图" class="mcp-screenshot" loading="lazy" />
           </a>
-          <details class="mcp-details group/mcp">
-            <summary class="flex items-center gap-2 whitespace-nowrap cursor-pointer select-none list-none leading-5">
+          <ChatCollapsible
+            details-class="mcp-details group/mcp"
+            summary-class="flex items-center gap-2 whitespace-nowrap cursor-pointer select-none leading-5 py-0.5 text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300 transition-colors"
+            body-class="relative mt-1 ml-0.5 pl-2.5 border-l border-zinc-200 dark:border-zinc-700/80"
+          >
+            <template #summary>
               <span
-                class="shrink-0 h-1.5 w-1.5 rounded-full"
+                class="chat-collapsible-status-dot shrink-0 h-1.5 w-1.5 rounded-full"
                 :class="mcpToolSummary.status === '失败' ? 'bg-rose-500' : 'bg-emerald-500'"
               ></span>
-              <span class="shrink-0 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">{{ mcpToolSummary.status === '失败' ? '调用失败' : '已调用' }}</span>
-              <span class="min-w-0 truncate font-mono text-[11px] text-zinc-700 dark:text-zinc-200">{{ mcpToolSummary.tool }}</span>
-              <span class="ml-auto shrink-0 text-[10px] text-zinc-400 dark:text-zinc-500 group-open/mcp:hidden">详情</span>
-            </summary>
-            <div class="relative mt-1 ml-0.5 pl-2.5 border-l border-zinc-200 dark:border-zinc-700/80">
+              <span class="shrink-0 text-[11px] font-medium text-inherit">{{ mcpToolSummary.status === '失败' ? '调用失败' : '已调用' }}</span>
+              <span class="min-w-0 truncate font-mono text-[11px] text-inherit">{{ mcpToolSummary.tool }}</span>
+            </template>
               <button
                 class="absolute right-0 top-0 w-6 h-6 rounded text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 flex items-center justify-center transition-colors"
                 :title="copiedTarget === `mcp-${props.idx}` ? '已复制' : '复制全部 MCP 信息'"
-                @click.stop.prevent="copyText(mcpToolDetails, `mcp-${props.idx}`)"
+                @click.stop.prevent="copyText(mcpToolSections.copyText, `mcp-${props.idx}`)"
               >
                 <svg v-if="copiedTarget !== `mcp-${props.idx}`" xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 8h10v10H8z" />
@@ -272,9 +283,21 @@ const renderedThinkText = computed(() => {
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
               </button>
-              <div class="max-h-72 overflow-y-auto pr-8 font-mono text-[11px] leading-4 text-zinc-500 dark:text-zinc-400 whitespace-pre-wrap break-words">{{ mcpToolDetails }}</div>
-            </div>
-          </details>
+              <div class="mcp-detail-doc max-h-72 overflow-y-auto pr-8 font-mono text-[11px] leading-4 text-zinc-500 dark:text-zinc-400">
+                <template v-if="mcpToolSections.params">
+                  <div class="mcp-detail-line">[参数]</div>
+                  <pre class="mcp-detail-body">{{ mcpToolSections.params }}</pre>
+                </template>
+                <template v-if="mcpToolSections.result">
+                  <div class="mcp-detail-line">[结果]</div>
+                  <pre class="mcp-detail-body">{{ mcpToolSections.result }}</pre>
+                </template>
+                <template v-if="mcpToolSections.error">
+                  <div class="mcp-detail-line mcp-detail-line-error">[错误]</div>
+                  <pre class="mcp-detail-body mcp-detail-body-error">{{ mcpToolSections.error }}</pre>
+                </template>
+              </div>
+          </ChatCollapsible>
         </div>
         <div
           v-else
@@ -341,8 +364,49 @@ const renderedThinkText = computed(() => {
   min-height: 100%;
 }
 
-.mcp-details > summary::-webkit-details-marker {
-  display: none;
+.mcp-detail-doc {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mcp-detail-line {
+  margin: 0;
+  font-weight: 500;
+  color: rgb(82 82 91);
+}
+
+.mcp-detail-line-error {
+  color: rgb(190 18 60);
+}
+
+.dark .mcp-detail-line {
+  color: rgb(212 212 216);
+}
+
+.dark .mcp-detail-line-error {
+  color: rgb(251 113 133);
+}
+
+.mcp-detail-body {
+  margin: 0 0 0.35rem;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mcp-detail-body-error {
+  color: rgb(190 18 60);
+}
+
+.dark .mcp-detail-body {
+  color: rgb(161 161 170);
+}
+
+.dark .mcp-detail-body-error {
+  color: rgb(251 113 133);
 }
 
 .mcp-screenshot-link {

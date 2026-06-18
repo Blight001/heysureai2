@@ -34,3 +34,41 @@ export const listMcpTools = (options: { aiConfigId?: number } = {}) =>
 
 export const callMcpTool = <T = any>(payload: McpCallPayload) =>
   post<T>('/api/mcp/call', payload, { fallbackError: 'MCP 调用失败' })
+
+export interface InheritanceMcpTestPayload {
+  model_preset_id: string
+  tool: string
+  device_id: string
+  device_type?: string
+  description?: string
+  parameters?: Array<{
+    name: string
+    type: string
+    required: boolean
+    description: string
+  }>
+  input_schema?: Record<string, unknown>
+  implementation?: Record<string, unknown>
+  user_hint?: string
+}
+
+export interface InheritanceMcpTestResult {
+  ok: boolean
+  model_preset?: {
+    id: string
+    name: string
+    model: string
+  }
+  model_reply?: string
+  tool_call?: {
+    tool: string
+    arguments: Record<string, unknown>
+  } | null
+  tool_result?: Record<string, unknown> | null
+  detail?: string
+}
+
+export const runInheritanceMcpTest = (payload: InheritanceMcpTestPayload) =>
+  post<InheritanceMcpTestResult>('/api/mcp/inheritance-test', payload, {
+    fallbackError: 'MCP 传承测试失败',
+  })

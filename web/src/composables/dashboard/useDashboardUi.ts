@@ -31,7 +31,7 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
   const leftCollapsed = ref(false)
   const rightCollapsed = ref(false)
   const knowledgeFilterOpen = ref(false)
-  const knowledgeFilter = ref<'all' | 'intrinsic' | 'personas' | 'skills' | 'tools' | 'inheritance' | 'system' | 'business'>('all')
+  const knowledgeFilter = ref<'all' | 'personas' | 'skills' | 'tools' | 'inheritance' | 'system' | 'business'>('all')
   const userMenuOpen = ref(false)
 
   const clampContextMenuPosition = (x: number, y: number) => {
@@ -122,9 +122,6 @@ export const useDashboardUi = (options: UseDashboardUiOptions) => {
     if (knowledgeFilter.value === 'all') return knowledgeBase.value
     if (knowledgeFilter.value === 'inheritance') {
       return knowledgeBase.value.filter(item => item.tags.includes('传承'))
-    }
-    if (knowledgeFilter.value === 'intrinsic') {
-      return knowledgeBase.value.filter(item => item.tags.includes('固有属性'))
     }
     if (knowledgeFilter.value === 'personas') {
       return knowledgeBase.value.filter(item => item.tags.includes('固有人格'))

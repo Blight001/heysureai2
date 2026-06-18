@@ -139,7 +139,7 @@ def read_intrinsic_skills(
     _ = args, ai_config_id
     return librarian_service.read(
         user_id=int(user_id),
-        memory_id="builtin.intrinsic_properties",
+        memory_id="builtin.inheritance_skills",
     )
 
 

@@ -98,6 +98,25 @@ export interface KnowledgeEntryItem {
     description: string
     workshop: string
     online: boolean
+    server_total?: number
+    server_categories?: Array<{
+      namespace: string
+      count: number
+      tools: Array<{
+        name: string
+        description: string
+        inputSchema?: Record<string, any>
+        parameters?: Array<{
+          name: string
+          type: string
+          required: boolean
+          description: string
+        }>
+        destructive?: boolean
+        source?: 'server' | 'endpoint'
+      }>
+    }>
+    endpoint_device_total?: number
     device_total: number
     total: number
     devices: Array<{
@@ -224,7 +243,7 @@ export const saveIntrinsicProperties = (
   post<KnowledgeEntryItem>(
     '/api/librarian/intrinsic-properties',
     { tools },
-    { token, fallbackError: '固有属性保存失败' },
+    { token, fallbackError: '传承技能保存失败' },
   )
 
 export const saveSystemPrompts = (

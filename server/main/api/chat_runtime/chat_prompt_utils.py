@@ -603,8 +603,8 @@ def _extract_mcp_error(exc: Exception) -> str:
 def _build_mcp_display_result(tool: str, data: dict, ok: bool = True, error_message: str = "") -> str:
     result = data.get("result", data)
     if ok:
-        return f"工具: {tool}\n状态: 成功\n\n{_safe_json(result)}"
-    return f"工具: {tool}\n状态: 失败\n错误: {error_message or '未知错误'}\n\n{_safe_json(result)}"
+        return _safe_json(result)
+    return f"错误: {error_message or '未知错误'}\n\n{_safe_json(result)}"
 
 def _extract_first_mcp_call(assistant_text: str):
     payload, _ = _extract_first_complete_mcp_call(assistant_text)

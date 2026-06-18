@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import ChatActivityGroup from './ChatActivityGroup.vue'
 import ChatMessage from './ChatMessage.vue'
 import TypingIndicator from './TypingIndicator.vue'
 import type { InlineContent as InlineContentType } from '@/utils/chatParser'
+import { buildChatRenderItems } from '@/utils/chatMessageGroups'
 
 interface Message {
   role: 'user' | 'assistant' | 'system'
@@ -14,7 +17,7 @@ interface Message {
   created_at?: number
 }
 
-defineProps<{
+const props = defineProps<{
   messages: Message[]
   appliedEdits: string[]
   appliedSignatures: string[]
@@ -28,6 +31,8 @@ defineProps<{
   readonly?: boolean
   mcpIcon?: string
 }>()
+
+const renderItems = computed(() => buildChatRenderItems(props.messages))
 
 const emit = defineEmits<{
   (e: 'delete', idx: number): void
@@ -45,23 +50,43 @@ const emit = defineEmits<{
     </div>
 
     <div class="space-y-4">
-      <ChatMessage 
-        v-for="(msg, idx) in messages" 
-        :key="msg.id !== undefined ? `msg-${msg.id}` : `tmp-${idx}`" 
-        :message="msg"
-        :appliedEdits="appliedEdits"
-        :appliedSignatures="appliedSignatures"
-        :actionResults="actionResults"
-        :actionResultsBySignature="actionResultsBySignature"
-        :idx="idx"
-        :readonly="readonly"
-        :plainTextMode="stripMarkdownSymbols"
-        :mcpIcon="mcpIcon"
-        @delete="(i) => emit('delete', i)"
-        @recall="(i) => emit('recall', i)"
-        @apply="(msgIdx, blockIdx) => emit('apply', msgIdx, blockIdx)"
-        @revert="(msgIdx, blockIdx) => emit('revert', msgIdx, blockIdx)"
-      />
+      <template v-for="(item, itemIdx) in renderItems" :key="item.kind === 'message' ? (item.hideThink ? `msg-content-${item.index}` : (messages[item.index]?.id !== undefined ? `msg-${messages[item.index].id}` : `tmp-${item.index}`)) : `activity-${item.members.map((member) => `${member.kind}-${member.index}`).join('-')}-${itemIdx}`">
+        <ChatActivityGroup
+          v-if="item.kind === 'activity-group'"
+          :members="item.members"
+          :think-count="item.thinkCount"
+          :mcp-count="item.mcpCount"
+          :messages="messages"
+          :applied-edits="appliedEdits"
+          :applied-signatures="appliedSignatures"
+          :action-results="actionResults"
+          :action-results-by-signature="actionResultsBySignature"
+          :readonly="readonly"
+          :plain-text-mode="stripMarkdownSymbols"
+          :mcp-icon="mcpIcon"
+          @delete="(i) => emit('delete', i)"
+          @recall="(i) => emit('recall', i)"
+          @apply="(msgIdx, blockIdx) => emit('apply', msgIdx, blockIdx)"
+          @revert="(msgIdx, blockIdx) => emit('revert', msgIdx, blockIdx)"
+        />
+        <ChatMessage
+          v-else
+          :message="messages[item.index]"
+          :applied-edits="appliedEdits"
+          :applied-signatures="appliedSignatures"
+          :action-results="actionResults"
+          :action-results-by-signature="actionResultsBySignature"
+          :idx="item.index"
+          :readonly="readonly"
+          :plain-text-mode="stripMarkdownSymbols"
+          :mcp-icon="mcpIcon"
+          :hide-think="item.hideThink"
+          @delete="(i) => emit('delete', i)"
+          @recall="(i) => emit('recall', i)"
+          @apply="(msgIdx, blockIdx) => emit('apply', msgIdx, blockIdx)"
+          @revert="(msgIdx, blockIdx) => emit('revert', msgIdx, blockIdx)"
+        />
+      </template>
     </div>
 
     <TypingIndicator

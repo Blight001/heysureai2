@@ -44,7 +44,7 @@ interface Props {
   knowledgeTotalCount: number
   librarianPendingCount: number
   knowledgeFilterOpen: boolean
-  knowledgeFilter: 'all' | 'intrinsic' | 'personas' | 'skills' | 'tools' | 'inheritance' | 'system' | 'business'
+  knowledgeFilter: 'all' | 'personas' | 'skills' | 'tools' | 'inheritance' | 'system' | 'business'
   brainViewMode: 'sections' | 'all'
 }
 

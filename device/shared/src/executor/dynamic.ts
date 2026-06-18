@@ -150,7 +150,7 @@ async function runProgram(def: DynamicMcpDefinition, workspaceRoot: string, args
       continue
     }
     if (step.op === 'return') return render(step.value, context)
-    const target = String(step.tool || '').trim()
+    const target = String(render(step.tool || '', context) || '').trim()
     if (target === MANAGER_TOOL) throw new Error('Dynamic MCP code cannot invoke the management tool')
     const builtinTarget = target.startsWith('builtin:') ? target.slice('builtin:'.length) : ''
     const child = definitions.find(item => item.name === target)

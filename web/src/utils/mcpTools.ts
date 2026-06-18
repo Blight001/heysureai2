@@ -148,11 +148,172 @@ const getMcpToolSource = (name: string): 'server' | 'desktop' | 'browser' => {
   return 'server'
 }
 
-// UI now shows the raw MCP tool name directly. We keep the function name for
-// call-site compatibility.
+const MCP_TOOL_ZH_LABELS: Record<string, string> = {
+  'mcp.list_tools': '工具列表',
+  'mcp.describe_tool': '工具说明',
+  'workspace.search': '联网搜索',
+  'workspace.read_file': '读取文件',
+  'workspace.write_file': '写入文件',
+  'workspace.edit_file': '编辑文件',
+  'workspace.run_command': '执行命令',
+  'admin.get_overview': '工作区概览',
+  'admin.list_agents': 'Agent 列表',
+  'task.create': '创建任务',
+  'task.list': '任务列表',
+  'task.update': '更新任务',
+  'task.delete': '删除任务',
+  'task.complete': '完成任务',
+  'message.send_to_user': '发给用户',
+  'message.send_to_ai': '发给 AI',
+  'conversation.create': '创建会话',
+  'conversation.delete': '删除会话',
+  'conversation.list': '会话列表',
+  'conversation.detail': '会话详情',
+  'conversation.edit': '编辑会话',
+  'conversation.compress': '压缩会话',
+  'conversation.switch': '切换会话',
+  'conversation.new': '新建对话',
+  'prompt.list_targets': 'Prompt 目标',
+  'prompt.read_ai': '读取 AI Prompt',
+  'prompt.write_ai': '写入 AI Prompt',
+  'prompt.read_system': '读取系统 Prompt',
+  'prompt.write_system': '写入系统 Prompt',
+  'device_mcp.manage': '管理设备 MCP',
+  'mcp.manage_dynamic_tool': '管理动态 MCP',
+  'browser_mcp.manage_dynamic_tool': '管理动态 MCP',
+  browser_search: '浏览器搜索',
+  browser_observe: '页面观察',
+  browser_screenshot: '页面截图',
+  browser_get_content: '读取页面内容',
+  browser_dom_snapshot: 'DOM 快照',
+  browser_page_info: '页面位置信息',
+  browser_find_popups: '查找弹窗',
+  browser_action: '页面交互',
+  browser_hover: '鼠标悬停',
+  browser_wait: '等待页面',
+  browser_drag: '拖拽元素',
+  browser_fill_form: '填写表单',
+  browser_select: '选择选项',
+  browser_close_popup: '关闭弹窗',
+  browser_evaluate: '执行脚本',
+  browser_extract: '提取数据',
+  browser_clipboard_write: '写入剪贴板',
+  browser_file_upload: '上传文件',
+  browser_download: '下载文件',
+  browser_tab: '标签页与导航',
+  browser_cookie: '管理 Cookie',
+  browser_storage: '管理存储',
+  browser_session: '管理会话',
+  'mouse.move': '鼠标移动',
+  'mouse.click': '鼠标点击',
+  'mouse.double_click': '鼠标双击',
+  'mouse.right_click': '鼠标右键',
+  'mouse.scroll': '鼠标滚动',
+  'mouse.drag': '鼠标拖拽',
+  'keyboard.type': '键盘输入',
+  'keyboard.press': '键盘按键',
+  'text.input': '大段文本输入',
+  'speech.speak': '语音朗读',
+  'vision.capture': '屏幕采集',
+  'vision.capture_mouse': '鼠标区域采集',
+  'display.box': '屏幕高亮',
+  'display.clear': '清除高亮',
+  'clipboard.get': '读取剪贴板',
+  'clipboard.set': '写入剪贴板',
+  'shell.run': '命令执行',
+  'window.list': '窗口列表',
+  'window.focus': '窗口聚焦',
+  'window.close': '关闭窗口',
+  'hands.start': '开始输入采集',
+  'hands.stop': '停止输入采集',
+  'hands.snapshot': '输入快照',
+  'hands.events': '输入事件',
+  'hands.mouse': '鼠标输入',
+}
+
+const MCP_NAMESPACE_ZH: Record<string, string> = {
+  mcp: 'MCP',
+  workspace: '工作区',
+  admin: '管理',
+  task: '任务',
+  message: '消息',
+  conversation: '会话',
+  prompt: 'Prompt',
+  browser: '浏览器',
+  mouse: '鼠标',
+  keyboard: '键盘',
+  text: '文本',
+  speech: '语音',
+  vision: '视觉',
+  hands: '手势',
+  display: '显示',
+  clipboard: '剪贴板',
+  card: '卡片',
+  shell: '命令行',
+  window: '窗口',
+  process: '进程',
+  fs: '文件',
+  git: 'Git',
+  screen: '屏幕',
+  desktop: '桌面',
+  device: '设备',
+  custom: '自定义',
+}
+
+const MCP_ACTION_ZH: Record<string, string> = {
+  list: '列表',
+  read: '读取',
+  write: '写入',
+  edit: '编辑',
+  get: '获取',
+  set: '设置',
+  create: '创建',
+  delete: '删除',
+  update: '更新',
+  search: '搜索',
+  run: '执行',
+  capture: '采集',
+  click: '点击',
+  type: '输入',
+  press: '按键',
+  move: '移动',
+  scroll: '滚动',
+  drag: '拖拽',
+  focus: '聚焦',
+  close: '关闭',
+  start: '开始',
+  stop: '停止',
+  snapshot: '快照',
+  events: '事件',
+  manage: '管理',
+  inspect: '检查',
+  upsert: '更新',
+}
+
+const humanizeMcpToolAction = (action: string) => {
+  const parts = String(action || '').split(/[._-]+/).filter(Boolean)
+  if (!parts.length) return '操作'
+  return parts.map(part => MCP_ACTION_ZH[part.toLowerCase()] || part).join('·')
+}
+
+const formatMcpToolZhFallback = (name: string) => {
+  const normalized = String(name || '').trim()
+  if (!normalized) return '未命名工具'
+  const dotParts = normalized.split('.')
+  if (dotParts.length >= 2) {
+    const namespace = MCP_NAMESPACE_ZH[dotParts[0]] || dotParts[0]
+    return `${namespace}·${humanizeMcpToolAction(dotParts.slice(1).join('.'))}`
+  }
+  if (normalized.startsWith('browser_')) {
+    return `浏览器·${humanizeMcpToolAction(normalized.slice('browser_'.length))}`
+  }
+  return humanizeMcpToolAction(normalized)
+}
+
 export const getMcpToolZhLabel = (name: string) => {
   const normalized = String(name || '').trim()
-  return normalized || '未命名工具'
+  if (!normalized) return '未命名工具'
+  return MCP_TOOL_ZH_LABELS[normalized] || formatMcpToolZhFallback(normalized)
 }
 
 const getMcpToolZhTag = (name: string) => getMcpToolFallbackTag(name)
