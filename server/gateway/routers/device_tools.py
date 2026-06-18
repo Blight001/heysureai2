@@ -7,9 +7,9 @@ and pushes the enabled set to every online device of that type so a tool change
 ships without a new client release.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlmodel import Session
 

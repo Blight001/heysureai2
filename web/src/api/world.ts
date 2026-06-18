@@ -29,6 +29,3 @@ export const setWorldActorMeta = (aiConfigId: number, meta: Partial<WorldActorAp
     meta,
     { fallbackError: '外观保存失败' },
   )
-
-export const setWorldActorSkin = (aiConfigId: number, skin: string) =>
-  setWorldActorMeta(aiConfigId, { skin })

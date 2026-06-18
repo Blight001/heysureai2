@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import time
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from api.core.settings import settings
 from api.models import SystemSetting
