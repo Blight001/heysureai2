@@ -94,6 +94,7 @@ doc/项目升级计划.md
 # time. Edit them in device/shared/src, never the synced copies below.
 # device/windows (synced from device/shared/src)
 device/windows/src/constants.ts
+device/windows/src/executor/catalog.ts
 device/windows/src/executor/index.ts
 device/windows/src/executor/registry.ts
 device/windows/src/ipc/ai-config.ts
@@ -119,6 +120,7 @@ device/windows/src/windows/main-window.ts
 device/windows/src/windows/tray.ts
 # device/linux (synced from device/shared/src)
 device/linux/src/constants.ts
+device/linux/src/executor/catalog.ts
 device/linux/src/executor/index.ts
 device/linux/src/executor/registry.ts
 device/linux/src/ipc/ai-config.ts
