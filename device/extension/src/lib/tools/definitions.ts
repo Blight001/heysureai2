@@ -32,7 +32,7 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   // ───── 页面观察 ───────────────────────────────────────────────────────
   {
     name: 'browser_observe',
-    description: '感知当前视口里用户能看到的内容，区分普通可见文本与可交互元素：返回 items 混排列表，其中 kind=text 是页面文字（不可点击），kind=interactive 是最顶层、未被遮挡的按钮/链接/输入框/下拉/菜单项等，kind=group 是同类型大批量元素的折叠摘要（无 id）。interactive 项额外带 id、角色 role、文本和中心坐标 center；默认同 tag+role+type 且数量≥group_min 的批量元素会折叠为 kind=group，需要单独获取编号时传 expand_group 为对应 groupKey 展开。页面标记：绿色=可点击，浅蓝=同类型批量/已展开批量，红色=不可点击/被禁用/被遮挡。用途：既能读取页面文字，又能作为点击/输入前的首选观察手段，配合 browser_screenshot 形成「看图—按 id 点击」闭环。场景：先 observe 理解页面；大批量列表先读 group 摘要，再 expand_group 展开后 browser_action {action:"click", ref:id} 精确点击；页面变化后重新 observe 以刷新 id。',
+    description: '感知当前视口里用户能看到的内容，区分普通可见文本与可交互元素：返回 items 混排列表，其中 kind=text 是页面文字（不可点击），kind=frame 是页面内 iframe 边界（frames 数组与之相同；accessible=true 表示同源已扫描，子控件见 inFrame=true 的 interactive；accessible=false 为跨域不可用坐标点击），kind=interactive 是最顶层、未被遮挡的按钮/链接/输入框/下拉/菜单项等，kind=group 是同类型大批量元素的折叠摘要（无 id）。同源 iframe 内的元素会一并扫描，inFrame=true 且 center/rect 已换算为页面视口坐标，frameSelector 指向所属 iframe，点击仍用 browser_action {action:"click", ref:id}。interactive 项额外带 id、角色 role、文本和中心坐标 center；默认同 tag+role+type 且数量≥group_min 的批量元素会折叠为 kind=group，需要单独获取编号时传 expand_group 为对应 groupKey 展开。页面标记：紫色虚线=iframe 边界，绿色=可点击，浅蓝=同类型批量/已展开批量，红色=不可点击/被禁用/被遮挡。用途：既能读取页面文字，又能作为点击/输入前的首选观察手段，配合 browser_screenshot 形成「看图—按 id 点击」闭环。场景：先 observe 理解页面；大批量列表先读 group 摘要，再 expand_group 展开后 browser_action {action:"click", ref:id} 精确点击；页面变化后重新 observe 以刷新 id。勿用 Playwright 语法（如 button:has-text）；用 text 参数或 observe 返回的 ref/selector。',
     input_schema: {
       type: 'object',
       properties: {

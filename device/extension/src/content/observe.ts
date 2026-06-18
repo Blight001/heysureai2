@@ -5,16 +5,21 @@
 // click them precisely with browser_click {ref:id}; plain visible text is kept
 // separate so reading the page is not confused with clicking controls.
 //
-// When mark!==false it also paints status-colored outlines on the page so a
-// follow-up browser_screenshot shows clickable controls in green, same-type
-// batches in light blue, and blocked controls in red. Large same-type batches
-// collapse into kind=group summaries; pass expand_group to unfold one batch.
-// The overlay is
+// When mark!==false it also paints static status-colored outlines on the page
+// (border only, no fill animation) so a follow-up browser_screenshot shows
+// clickable controls in green, same-type batches in light blue, and blocked
+// controls in red. Large same-type batches collapse into kind=group summaries;
+// pass expand_group to unfold one batch. The overlay is
 // attached to <html> (not <body>), pointer-events:none, so it never pollutes
 // browser_get_content / browser_dom_snapshot (which read from <body>) and never
 // intercepts clicks or future hit-tests.
 
-import { isHittable, isTopmostAt, isVisible, cssPath, textOf, elementArea } from './dom'
+import { isHittable, isVisible, cssPath, textOf, elementArea } from './dom'
+import {
+  FrameContext, buildFramePath, elementViewportCenter, elementViewportRect,
+  getAccessibleFrames, isCenterOnMainViewport, isFrameChainVisible, isLikelyInteractableInFrame,
+  isTopmostAtViewport, isVisibleInOwnerViewport, listIframeElementsIn, scanRoot, tryFrameContext,
+} from './iframe'
 import { setMarks } from './marks'
 import { viewportContext } from './viewport'
 
@@ -68,36 +73,70 @@ function hasInteractiveSemantics(el: Element): boolean {
 }
 
 function isInsideInteractive(el: Element): boolean {
+  const stop = el.ownerDocument.body || el.ownerDocument.documentElement
   let cur: Element | null = el
-  while (cur && cur !== document.body) {
+  while (cur && cur !== stop) {
     if (hasInteractiveSemantics(cur)) return true
     cur = cur.parentElement
   }
   return false
 }
 
-function collectCandidates(): HTMLElement[] {
-  const out: HTMLElement[] = []
+interface TaggedElement {
+  el: HTMLElement
+  frame?: FrameContext
+}
+
+function enumerateScanRoots(root: ParentNode): ParentNode[] {
+  const doc = root.ownerDocument || document
+  const roots: ParentNode[] = [root]
+  const seen = new Set<ParentNode>([root])
+  const add = (node: ParentNode | null | undefined) => {
+    if (!node || seen.has(node)) return
+    seen.add(node)
+    roots.push(node)
+  }
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_ELEMENT)
+  while (walker.nextNode()) {
+    const el = walker.currentNode as HTMLElement
+    add(el.shadowRoot)
+  }
+  return roots
+}
+
+function collectCandidatesIn(root: ParentNode, frame?: FrameContext): TaggedElement[] {
+  const out: TaggedElement[] = []
   const seen = new Set<Element>()
   const add = (el: Element | null) => {
     if (!(el instanceof HTMLElement) || seen.has(el)) return
     seen.add(el)
-    if (hasInteractiveSemantics(el) && isVisible(el)) out.push(el)
+    if (hasInteractiveSemantics(el) && isVisible(el)) out.push({ el, frame })
   }
 
-  document.querySelectorAll(INTERACTIVE).forEach(add)
-
-  // Many React/Vue component libraries bind click handlers in JS without
-  // leaving onclick/role/tabindex attributes. `cursor:pointer` is the most
-  // reliable DOM-observable signal for those controls.
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT)
-  let scanned = 0
-  while (walker.nextNode() && scanned < 6000) {
-    scanned += 1
-    add(walker.currentNode as Element)
+  for (const scanRoot of enumerateScanRoots(root)) {
+    scanRoot.querySelectorAll(INTERACTIVE).forEach(add)
+    const walker = (scanRoot.ownerDocument || document).createTreeWalker(scanRoot, NodeFilter.SHOW_ELEMENT)
+    let scanned = 0
+    while (walker.nextNode() && scanned < 6000) {
+      scanned += 1
+      add(walker.currentNode as Element)
+    }
   }
 
   return out
+}
+
+function accessibleFrameSet(): Set<HTMLIFrameElement> {
+  return new Set(getAccessibleFrames(cssPath).map(f => f.frameEl))
+}
+
+function collectCandidates(): TaggedElement[] {
+  const accessibleFrames = accessibleFrameSet()
+  const all = collectCandidatesIn(scanRoot(document))
+  for (const ctx of getAccessibleFrames(cssPath)) {
+    all.push(...collectCandidatesIn(scanRoot(ctx.doc), ctx))
+  }
+  return all.filter(item => !(item.frame === undefined && item.el instanceof HTMLIFrameElement && accessibleFrames.has(item.el)))
 }
 
 function isStrongControl(el: Element): boolean {
@@ -132,16 +171,26 @@ function centerInfo(r: DOMRect) {
   }
 }
 
-function isUsableTextRect(parent: HTMLElement, r: DOMRect): boolean {
+function isUsableTextRect(parent: HTMLElement, r: DOMRect, frame?: FrameContext): boolean {
   if (r.width <= 0 || r.height <= 0) return false
-  if (r.bottom < 0 || r.right < 0 || r.top > window.innerHeight || r.left > window.innerWidth) return false
-  return isTopmostAt(parent, r.left + r.width / 2, r.top + r.height / 2)
+  const center = frame ? elementViewportCenter(parent, frame) : {
+    x: r.left + r.width / 2,
+    y: r.top + r.height / 2,
+  }
+  if (center.y < 0 || center.x < 0 || center.y > window.innerHeight || center.x > window.innerWidth) return false
+  if (frame) {
+    return isVisibleInOwnerViewport(parent) && isFrameChainVisible(frame) && isCenterOnMainViewport(frame, parent)
+  }
+  return isTopmostAtViewport(parent, center.x, center.y)
 }
 
-function collectVisibleTexts(limit: number): any[] {
+function collectVisibleTextsIn(root: ParentNode, limit: number, frame?: FrameContext): any[] {
   const out: any[] = []
   const seen = new Set<string>()
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+  const doc = root.ownerDocument || document
+
+  const walkText = (scanRoot: ParentNode) => {
+  const walker = doc.createTreeWalker(scanRoot, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       const text = String(node.textContent || '').replace(/\s+/g, ' ').trim()
       if (!text) return NodeFilter.FILTER_REJECT
@@ -161,16 +210,18 @@ function collectVisibleTexts(limit: number): any[] {
     const text = String(node.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 240)
     if (!text) continue
 
-    const range = document.createRange()
+    const range = doc.createRange()
     range.selectNodeContents(node)
     const rects = Array.from(range.getClientRects())
     range.detach()
-    const rect = rects.find(r => isUsableTextRect(parent, r))
+    const rect = rects.find(r => isUsableTextRect(parent, r, frame))
     if (!rect) continue
 
     const selector = cssPath(parent)
-    const rectKey = `${Math.round(rect.left / 4)}:${Math.round(rect.top / 4)}:${Math.round(rect.width / 4)}:${Math.round(rect.height / 4)}`
-    const key = `${selector}|${text}|${rectKey}`
+    const viewportRect = frame ? elementViewportRect(parent, frame) : rectInfo(rect)
+    const viewportCenter = frame ? elementViewportCenter(parent, frame) : centerInfo(rect)
+    const rectKey = `${Math.round(viewportRect.x / 4)}:${Math.round(viewportRect.y / 4)}:${Math.round(viewportRect.w / 4)}:${Math.round(viewportRect.h / 4)}`
+    const key = `${selector}|${text}|${rectKey}|${frame?.frameSelector || ''}`
     if (seen.has(key)) continue
     seen.add(key)
 
@@ -182,15 +233,36 @@ function collectVisibleTexts(limit: number): any[] {
       tag,
       text,
       selector,
-      center: centerInfo(rect),
-      rect: rectInfo(rect),
+      center: viewportCenter,
+      rect: viewportRect,
       groupKey: buildTextGroupKey(role, tag),
+      ...(frame ? { inFrame: true, frameSelector: frame.frameSelector, framePath: buildFramePath(frame) } : {}),
     })
+  }
+  }
+
+  for (const scanRoot of enumerateScanRoots(root)) {
+    walkText(scanRoot)
+    if (out.length >= limit) break
   }
   return out
 }
 
-function collectBlockedCandidates(all: HTMLElement[], hittableSet: Set<HTMLElement>): HTMLElement[] {
+function collectVisibleTexts(limit: number): any[] {
+  const out: any[] = []
+  for (const chunk of [
+    collectVisibleTextsIn(scanRoot(document), limit),
+    ...getAccessibleFrames(cssPath).map(ctx => collectVisibleTextsIn(scanRoot(ctx.doc), limit, ctx)),
+  ]) {
+    for (const item of chunk) {
+      out.push(item)
+      if (out.length >= limit) return out
+    }
+  }
+  return out
+}
+
+function collectBlockedCandidates(all: TaggedElement[], hittableSet: Set<HTMLElement>): HTMLElement[] {
   const out: HTMLElement[] = []
   const seen = new Set<Element>()
   const add = (el: Element | null) => {
@@ -199,15 +271,64 @@ function collectBlockedCandidates(all: HTMLElement[], hittableSet: Set<HTMLEleme
     if (isVisible(el) && (isDisabled(el) || el.matches(CONTROL) || el.matches(INTERACTIVE))) out.push(el)
   }
 
-  all.forEach(add)
+  all.forEach(item => add(item.el))
   document.querySelectorAll(CONTROL).forEach(add)
+  for (const ctx of getAccessibleFrames(cssPath)) {
+    scanRoot(ctx.doc).querySelectorAll(CONTROL).forEach(add)
+  }
   return out
 }
 
-type MarkStatus = 'clickable' | 'blocked' | 'grouped'
+function collectFrameItems(): { items: any[]; overlay: Array<{ el: HTMLIFrameElement; frame?: FrameContext }> } {
+  const items: any[] = []
+  const overlay: Array<{ el: HTMLIFrameElement; frame?: FrameContext }> = []
+
+  const visit = (doc: Document, parentFrame?: FrameContext) => {
+    for (const el of listIframeElementsIn(doc)) {
+      const base = tryFrameContext(el)
+      const localR = el.getBoundingClientRect()
+      const rect = parentFrame ? elementViewportRect(el, parentFrame) : rectInfo(localR)
+      const center = parentFrame ? elementViewportCenter(el, parentFrame) : centerInfo(localR)
+      const selector = cssPath(el)
+      const ctx = base ? { ...base, frameSelector: selector, parent: parentFrame } as FrameContext : null
+      const src = el.src || el.getAttribute('src') || ''
+      const name = el.name || el.getAttribute('name') || ''
+      const title = ctx?.doc.title || ''
+      const label = title || name || src || 'iframe'
+
+      items.push({
+        kind: 'frame',
+        accessible: !!ctx,
+        tag: 'iframe',
+        role: 'document',
+        text: ctx
+          ? `iframe (same-origin: ${label})`
+          : 'iframe (cross-origin, content not accessible)',
+        name,
+        title,
+        src,
+        selector,
+        frameSelector: selector,
+        framePath: ctx ? buildFramePath(ctx) : (parentFrame ? [...buildFramePath(parentFrame), selector] : [selector]),
+        center,
+        rect,
+        ...(parentFrame ? { parentFrameSelector: parentFrame.frameSelector } : {}),
+      })
+      overlay.push({ el, frame: parentFrame })
+
+      if (ctx) visit(ctx.doc, ctx)
+    }
+  }
+
+  visit(document)
+  return { items, overlay }
+}
+
+type MarkStatus = 'clickable' | 'blocked' | 'grouped' | 'frame'
 
 interface ElementRecord {
   el: HTMLElement
+  frame?: FrameContext
   tag: string
   role: string
   type?: string
@@ -226,6 +347,9 @@ interface TextRecord {
   center: { x: number; y: number }
   rect: { x: number; y: number; w: number; h: number }
   groupKey: string
+  inFrame?: boolean
+  frameSelector?: string
+  framePath?: string[]
 }
 
 function buildInteractiveGroupKey(tag: string, role: string, type?: string): string {
@@ -249,20 +373,21 @@ function rectToCenter(rect: { x: number; y: number; w: number; h: number }) {
   return { x: Math.round(rect.x + rect.w / 2), y: Math.round(rect.y + rect.h / 2) }
 }
 
-function elementRecord(el: HTMLElement): ElementRecord {
+function elementRecord(el: HTMLElement, frame?: FrameContext): ElementRecord {
   const r = el.getBoundingClientRect()
   const tag = el.tagName.toLowerCase()
   const role = el.getAttribute('role') || implicitRole(el)
   const type = (el as HTMLInputElement).type || undefined
   return {
     el,
+    frame,
     tag,
     role,
     type,
     text: textOf(el, 80),
     selector: cssPath(el),
-    center: centerInfo(r),
-    rect: rectInfo(r),
+    center: frame ? elementViewportCenter(el, frame) : centerInfo(r),
+    rect: frame ? elementViewportRect(el, frame) : rectInfo(r),
     groupKey: buildInteractiveGroupKey(tag, role, type),
   }
 }
@@ -278,6 +403,11 @@ function interactiveItemFromRecord(rec: ElementRecord, id: number) {
     center: rec.center,
     rect: rec.rect,
     groupKey: rec.groupKey,
+  }
+  if (rec.frame) {
+    item.inFrame = true
+    item.frameSelector = rec.frame.frameSelector
+    item.framePath = buildFramePath(rec.frame)
   }
   if (rec.type) item.type = rec.type
   if ((rec.el as HTMLInputElement).value) item.value = String((rec.el as HTMLInputElement).value).slice(0, 60)
@@ -369,48 +499,39 @@ export function clearMarksOverlay(): void {
 }
 
 function ensureMarkStyles() {
-  if (document.getElementById(MARK_STYLE_ID)) return
-  const style = document.createElement('style')
-  style.id = MARK_STYLE_ID
+  let style = document.getElementById(MARK_STYLE_ID) as HTMLStyleElement | null
+  if (!style) {
+    style = document.createElement('style')
+    style.id = MARK_STYLE_ID
+    document.documentElement.appendChild(style)
+  }
   style.textContent = `
     #${MARK_LAYER_ID} .hs-mark-box{
       position:fixed;box-sizing:border-box;pointer-events:none;
       border:2px solid var(--hs-mark-color);border-radius:4px;
-      background:var(--hs-mark-fill);
-      box-shadow:0 0 0 1px rgba(255,255,255,.45),0 0 18px var(--hs-mark-glow);
-      animation:hs-mark-in .38s cubic-bezier(.22,1,.36,1) both,hs-mark-pulse 2.4s ease-in-out .38s infinite;}
-    #${MARK_LAYER_ID} .hs-mark-clickable{
-      --hs-mark-color:rgba(34,197,94,.92);
-      --hs-mark-fill:linear-gradient(135deg,rgba(34,197,94,.16),rgba(16,185,129,.08));
-      --hs-mark-glow:rgba(34,197,94,.28);}
-    #${MARK_LAYER_ID} .hs-mark-blocked{
-      --hs-mark-color:rgba(239,68,68,.92);
-      --hs-mark-fill:linear-gradient(135deg,rgba(239,68,68,.16),rgba(244,63,94,.08));
-      --hs-mark-glow:rgba(239,68,68,.28);}
-    #${MARK_LAYER_ID} .hs-mark-grouped{
-      --hs-mark-color:rgba(56,189,248,.9);
-      --hs-mark-fill:linear-gradient(135deg,rgba(56,189,248,.18),rgba(125,211,252,.1));
-      --hs-mark-glow:rgba(56,189,248,.24);}
-    @keyframes hs-mark-in{from{opacity:0;transform:scale(.94);}to{opacity:1;transform:scale(1);}}
-    @keyframes hs-mark-pulse{0%,100%{opacity:.78;}50%{opacity:1;}}`
-  document.documentElement.appendChild(style)
+      background:transparent;}
+    #${MARK_LAYER_ID} .hs-mark-clickable{--hs-mark-color:rgba(34,197,94,.92);}
+    #${MARK_LAYER_ID} .hs-mark-blocked{--hs-mark-color:rgba(239,68,68,.92);}
+    #${MARK_LAYER_ID} .hs-mark-grouped{--hs-mark-color:rgba(56,189,248,.9);}
+    #${MARK_LAYER_ID} .hs-mark-frame{--hs-mark-color:rgba(168,85,247,.88);border-style:dashed;}`
 }
 
-function drawMarksOverlay(marks: Array<{ el: Element; status: MarkStatus }>): void {
+function drawMarksOverlay(marks: Array<{ el: Element; status: MarkStatus; frame?: FrameContext }>): void {
   clearMarksOverlay()
   ensureMarkStyles()
   const layer = document.createElement('div')
   layer.id = MARK_LAYER_ID
   layer.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;margin:0;padding:0;border:0;z-index:2147483646;pointer-events:none;'
-  marks.forEach(({ el, status }, i) => {
-    const r = (el as HTMLElement).getBoundingClientRect()
+  marks.forEach(({ el, status, frame }) => {
+    const rect = frame
+      ? elementViewportRect(el as HTMLElement, frame)
+      : rectInfo((el as HTMLElement).getBoundingClientRect())
     const box = document.createElement('div')
     box.className = `hs-mark-box hs-mark-${status}`
-    box.style.left = `${r.left}px`
-    box.style.top = `${r.top}px`
-    box.style.width = `${Math.max(0, r.width)}px`
-    box.style.height = `${Math.max(0, r.height)}px`
-    box.style.animationDelay = `${Math.min(i * 35, 420)}ms, ${Math.min(i * 35, 420) + 380}ms`
+    box.style.left = `${rect.x}px`
+    box.style.top = `${rect.y}px`
+    box.style.width = `${Math.max(0, rect.w)}px`
+    box.style.height = `${Math.max(0, rect.h)}px`
     layer.appendChild(box)
   })
   document.documentElement.appendChild(layer)
@@ -418,22 +539,6 @@ function drawMarksOverlay(marks: Array<{ el: Element; status: MarkStatus }>): vo
 
 export function doObserve(msg: any) {
   clearMarksOverlay()  // never include our own previous overlay in the next scan
-  const all = collectCandidates()
-  const hittable = all.filter(isHittable)
-  const set = new Set<HTMLElement>(hittable)
-  const blockedForMarks = collectBlockedCandidates(all, set)
-  // Remove only obvious duplicate wrappers. The old rule dropped every nested
-  // interactive child when its parent was also interactive, which hides common
-  // UI like cards that contain their own buttons/menus.
-  const pruned = hittable.filter(el => {
-    let p = el.parentElement
-    while (p) {
-      if (set.has(p) && shouldDropNested(el, p)) return false
-      p = p.parentElement
-    }
-    return true
-  })
-
   const limit = Math.min(Math.max(Number(msg.limit ?? 120), 1), 200)
   const includeText = msg.include_text !== false
   const textLimit = Math.min(Math.max(Number(msg.text_limit ?? 200), 0), 500)
@@ -443,7 +548,35 @@ export function doObserve(msg: any) {
   const expandGroup = String(msg.expand_group || '').trim() || null
   const groupOpts = { groupSimilar, groupMin, groupKeyFilter, expandGroup }
 
-  const interactiveRecords = pruned.map(elementRecord)
+  const all = collectCandidates()
+  const iframeCandidates = all.filter(item => item.frame)
+  const isItemHittable = (item: TaggedElement) => item.frame
+    ? isLikelyInteractableInFrame(item.el, item.frame)
+    : isHittable(item.el)
+  const hittable = all.filter(isItemHittable)
+  const iframeHittable = hittable.filter(item => item.frame)
+  const set = new Set<HTMLElement>(hittable.map(item => item.el))
+  const blockedForMarks = collectBlockedCandidates(all, set)
+  const { items: frameItems, overlay: frameOverlay } = collectFrameItems()
+  const frameChildCounts = new Map<string, number>()
+  for (const item of all) {
+    if (!item.frame) continue
+    const key = buildFramePath(item.frame).join('>')
+    frameChildCounts.set(key, (frameChildCounts.get(key) || 0) + 1)
+  }
+  // Remove only obvious duplicate wrappers. The old rule dropped every nested
+  // interactive child when its parent was also interactive, which hides common
+  // UI like cards that contain their own buttons/menus.
+  const pruned = hittable.filter(item => {
+    let p = item.el.parentElement
+    while (p) {
+      if (set.has(p) && shouldDropNested(item.el, p)) return false
+      p = p.parentElement
+    }
+    return true
+  })
+
+  const interactiveRecords = pruned.map(item => elementRecord(item.el, item.frame))
   const interactiveBuckets = partitionByKey(interactiveRecords)
   const interactiveDrafts: Array<{ item: any; rec?: ElementRecord }> = []
   const overlayMarks: Array<{ el: Element; status: MarkStatus }> = []
@@ -457,21 +590,21 @@ export function doObserve(msg: any) {
     if (collapse) {
       interactiveDrafts.push({ item: buildInteractiveGroupItem(members) })
       collapsedMembers.push(...members)
-      overlayMarks.push(...members.map(m => ({ el: m.el, status: 'grouped' as const })))
+      overlayMarks.push(...members.map(m => ({ el: m.el, status: 'grouped' as const, frame: m.frame })))
       continue
     }
 
     const markStatus: MarkStatus = expand ? 'grouped' : 'clickable'
     for (const rec of members) {
       interactiveDrafts.push({ item: interactiveItemFromRecord(rec, 0), rec })
-      overlayMarks.push({ el: rec.el, status: markStatus })
+      overlayMarks.push({ el: rec.el, status: markStatus, frame: rec.frame })
     }
   }
 
   interactiveDrafts.sort((a, b) => a.item.rect.y - b.item.rect.y || a.item.rect.x - b.item.rect.x)
   const slicedInteractive = interactiveDrafts.slice(0, limit)
 
-  const markTargets: Array<{ el: HTMLElement; selector: string; text: string; center: { x: number; y: number } }> = []
+  const markTargets: Array<{ el: HTMLElement; selector: string; text: string; center: { x: number; y: number }; frameSelector?: string; framePath?: string[] }> = []
   let nextId = 1
   const elements: any[] = []
   const interactiveItems = slicedInteractive.map(draft => {
@@ -484,11 +617,34 @@ export function doObserve(msg: any) {
       selector: draft.rec.selector,
       text: draft.rec.text,
       center: draft.rec.center,
+      frameSelector: draft.rec.frame?.frameSelector,
+      framePath: draft.rec.frame ? buildFramePath(draft.rec.frame) : undefined,
     })
     return item
   })
 
   const rawTexts = includeText ? collectVisibleTexts(textLimit) : []
+  const iframeTextCount = rawTexts.filter((t: any) => t.inFrame).length
+  const iframeTexts = rawTexts.filter((t: any) => t.inFrame)
+  for (const frame of frameItems) {
+    if (!frame.accessible) continue
+    const key = (frame.framePath || [frame.frameSelector]).join('>')
+    frame.interactiveCount = frameChildCounts.get(key) || 0
+    const pathKey = (frame.framePath || []).join('>')
+    const samples = iframeTexts
+      .filter((t: any) => (t.framePath || []).join('>') === pathKey || t.frameSelector === frame.frameSelector)
+      .slice(0, 5)
+      .map((t: any) => ({ text: t.text, selector: t.selector, center: t.center }))
+    if (samples.length) frame.textSamples = samples
+    frame.textCount = iframeTexts
+      .filter((t: any) => (t.framePath || []).join('>') === pathKey || t.frameSelector === frame.frameSelector)
+      .length
+    if (!frame.interactiveCount && !samples.length) {
+      frame.scanNote = 'iframe 内未扫描到可交互控件或可见文本；可能为纯渲染预览、嵌套跨域 iframe，或内容尚未加载完成'
+    } else if (!frame.interactiveCount) {
+      frame.scanNote = 'iframe 内仅有可见文本，无可交互控件；发布/投稿按钮通常在主页面 items 中（inFrame=false）'
+    }
+  }
   const textRecords: TextRecord[] = rawTexts.map((t: any) => ({
     role: t.role,
     tag: t.tag,
@@ -497,6 +653,9 @@ export function doObserve(msg: any) {
     center: t.center,
     rect: t.rect,
     groupKey: t.groupKey,
+    inFrame: t.inFrame,
+    frameSelector: t.frameSelector,
+    framePath: t.framePath,
   }))
   const textBuckets = partitionByKey(textRecords)
   const textItems: any[] = []
@@ -517,13 +676,14 @@ export function doObserve(msg: any) {
         center: rec.center,
         rect: rec.rect,
         groupKey: rec.groupKey,
+        ...(rec.inFrame ? { inFrame: true, frameSelector: rec.frameSelector, framePath: rec.framePath } : {}),
       })
     }
   }
 
   textItems.sort((a, b) => a.rect.y - b.rect.y || a.rect.x - b.rect.x)
 
-  const items = [...textItems, ...slicedInteractive]
+  const items = [...textItems, ...frameItems, ...interactiveItems]
     .sort((a, b) => a.rect.y - b.rect.y || a.rect.x - b.rect.x || kindSortRank(a.kind) - kindSortRank(b.kind))
 
   const texts = textItems
@@ -537,6 +697,7 @@ export function doObserve(msg: any) {
   const marked = msg.mark !== false
   if (marked) {
     drawMarksOverlay([
+      ...frameOverlay.map(({ el, frame }) => ({ el, status: 'frame' as const, frame })),
       ...overlayMarks,
       ...blockedChosen.map(el => ({ el, status: 'blocked' as const })),
     ])
@@ -547,7 +708,7 @@ export function doObserve(msg: any) {
     ? ` 默认同类型≥${groupMin}个会折叠为 kind=group；传 expand_group:"<groupKey>" 可单独展开获取编号。`
     : ''
   const markHint = marked
-    ? ' 页面标记：绿色=可点击，浅蓝=同类型批量/已展开批量，红色=不可点击/被禁用/被遮挡。'
+    ? ' 页面标记：紫色虚线=iframe 边界，绿色=可点击，浅蓝=同类型批量/已展开批量，红色=不可点击/被禁用/被遮挡。'
     : ''
 
   return {
@@ -558,6 +719,11 @@ export function doObserve(msg: any) {
     count: elements.length,
     textCount: texts.length,
     itemCount: items.length,
+    frameCount: frameItems.length,
+    accessibleFrameCount: frameItems.filter(f => f.accessible).length,
+    iframeCandidates: iframeCandidates.length,
+    iframeHittable: iframeHittable.length,
+    iframeTextCount,
     groupCount: groupedCount,
     groupedMemberCount,
     stats: {
@@ -574,6 +740,10 @@ export function doObserve(msg: any) {
       expandGroup,
       groups: groupedCount,
       groupedMembers: groupedMemberCount,
+      frames: frameItems.length,
+      accessibleFrames: frameItems.filter(f => f.accessible).length,
+      iframeCandidates: iframeCandidates.length,
+      iframeHittable: iframeHittable.length,
     },
     truncated: interactiveDrafts.length > slicedInteractive.length,
     textTruncated: includeText && rawTexts.length >= textLimit,
@@ -581,16 +751,19 @@ export function doObserve(msg: any) {
     scroll: { y: ctx.scrollY, percent: ctx.scrollPercent, atTop: ctx.atTop, atBottom: ctx.atBottom },
     currentSection: ctx.currentSection,
     items,
+    frames: frameItems,
     texts,
     elements,
-    hint: '返回 items：kind=text 可见文本，kind=interactive 可点击元素（有 id），kind=group 同类型批量摘要（无 id）。' +
-      ' interactive 可用 browser_click {ref:id} 点击；group 用 expand_group 展开后再点。' +
+    hint: '返回 items：kind=text 可见文本，kind=frame 页面内 iframe 边界（accessible=true 表示同源已扫描，子元素见 inFrame=true 的 interactive；accessible=false 为跨域不可用坐标点击），kind=interactive 可点击元素（有 id），kind=group 同类型批量摘要（无 id）。' +
+      ' frames 数组与 items 中 kind=frame 条目一致；interactive 可用 browser_click {ref:id} 点击；inFrame=true 表示元素在同源 iframe 内，frameSelector 指向所属 iframe。' +
+      ' 勿使用 Playwright 语法（如 :has-text）；用 text 参数或 observe 返回的 ref/selector。' +
       groupingHint + markHint,
   }
 }
 
 function kindSortRank(kind: string): number {
   if (kind === 'text') return 0
-  if (kind === 'group') return 1
-  return 2
+  if (kind === 'frame') return 1
+  if (kind === 'group') return 2
+  return 3
 }

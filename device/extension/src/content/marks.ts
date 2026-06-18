@@ -23,6 +23,10 @@ export interface MarkTarget {
   text: string
   /** Viewport-space center captured at observe time (last-resort coordinate). */
   center: { x: number; y: number }
+  /** Innermost iframe selector in its owner document. */
+  frameSelector?: string
+  /** Outermost→innermost iframe selectors for nested frames. */
+  framePath?: string[]
 }
 
 let marks: MarkTarget[] = []

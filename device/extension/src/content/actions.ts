@@ -17,7 +17,7 @@ export async function doClick(msg: any) {
   // user would hit — no occlusion guard needed (and none possible).
   const viaCoords = msg.x !== undefined && msg.y !== undefined &&
     (msg.ref === undefined || msg.ref === null || msg.ref === '')
-  let { el, x, y } = resolveTarget(msg)
+  let { el, x, y, frame } = resolveTarget(msg)
 
   if (!el) {
     if (msg.ref !== undefined && msg.ref !== null && msg.ref !== '') {
@@ -51,8 +51,8 @@ export async function doClick(msg: any) {
     // to the background element is exactly the "click failed / click conflict" the
     // user reported. Surface a clear diagnostic instead so the AI closes the cover
     // first. Pass force:true to click through deliberately.
-    if (msg.force !== true && !isHittable(el)) {
-      const cover = occluderOf(el)
+    if (msg.force !== true && !isHittable(el, frame)) {
+      const cover = occluderOf(el, frame)
       return {
         success: false,
         occluded: true,
