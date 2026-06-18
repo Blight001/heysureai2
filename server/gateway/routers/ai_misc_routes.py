@@ -7,7 +7,7 @@ import asyncio
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header
 from sqlmodel import Session, select
 
 from connector_runtime.bots import iter_bots
@@ -27,6 +27,7 @@ from api.models import (
     ChatSessionCreate,
     TokenUsageSnapshot,
 )
+from api.services.access_guards import get_ai_config_or_404
 from api.sio import agents
 from api.device_live import emit_agent_list_for_user
 from .auth import get_current_user
@@ -88,9 +89,7 @@ async def clear_ai_token_usage(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
 
     rows = session.exec(
         select(TokenUsageSnapshot).where(
@@ -112,9 +111,7 @@ async def delete_ai_config(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
 
     status_rows = session.exec(
         select(AIRuntimeStatus).where(

@@ -8,6 +8,7 @@ from sqlmodel import Session, select
 
 from api.database import engine
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, ChatSession, User
+from api.services.access_guards import get_ai_config_or_404
 from api.core.settings import settings
 from api.services.chat_persistence import _save_message
 from api.chat_runtime.run_state import _RUN_THREADS
@@ -214,9 +215,7 @@ async def receive_feishu_event(config_id: int, request: Request):
 
 def handle_feishu_event_payload(config_id: int, payload: Dict[str, Any], verify_token: bool = True) -> Dict[str, Any]:
     with Session(engine) as session:
-        cfg = session.get(AssistantAIConfig, config_id)
-        if not cfg:
-            raise HTTPException(status_code=404, detail="AI config not found")
+        cfg = get_ai_config_or_404(session, config_id)
         if str(cfg.bot_channel or "feishu").strip().lower() != "feishu":
             raise HTTPException(status_code=400, detail="Feishu bot is not the active channel for this AI")
         if not read_feishu_config(cfg).get("enabled"):
