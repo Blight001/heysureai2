@@ -25,6 +25,8 @@ def _agent_display_name(agent: Dict[str, Any]) -> str:
     device_type = device_type_of(agent)
     if device_type == "browser":
         return "浏览器端"
+    if device_type == "android":
+        return "安卓端"
     if device_type == "workshop":
         return "知识工坊"
     return "桌面端"
@@ -47,7 +49,7 @@ def _agents_for_prompt_groups(user_id: int, ai_config_id: Optional[int]) -> List
         return agents
     return [
         agent for agent in connected_agent_rows_for_user(user_id)
-        if isinstance(agent, dict) and device_type_of(agent) in {"desktop", "browser", "workshop"}
+        if isinstance(agent, dict) and device_type_of(agent) in {"desktop", "browser", "android", "workshop"}
     ]
 
 

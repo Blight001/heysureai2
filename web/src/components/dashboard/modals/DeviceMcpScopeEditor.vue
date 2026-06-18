@@ -40,6 +40,7 @@ const capabilities = computed(() => scope.value?.capabilities || [])
 const scopeTitle = computed(() => {
   if (scope.value?.deviceType === 'workshop') return '知识工坊 MCP 权限'
   if (scope.value?.deviceType === 'browser') return '浏览器端 MCP 权限'
+  if (scope.value?.deviceType === 'android') return '安卓端 MCP 权限'
   return '软件端 MCP 权限'
 })
 // Scope is keyed per individual agent, so it can be configured even before the
@@ -92,6 +93,9 @@ const basicToolIntro = (tool: string) => {
   if (name.startsWith('clipboard_')) return '剪贴板工具，用于读取或写入系统剪贴板。'
   if (name.startsWith('window_')) return '窗口工具，用于列出、聚焦或关闭窗口。'
   if (name.startsWith('process_')) return '进程工具，用于列出或结束系统进程。'
+  if (name.startsWith('touch.')) return '手机触控工具，用于点击、滑动、长按或返回/主屏/最近任务。'
+  if (name.startsWith('screen.')) return '手机屏幕工具，用于截屏或录屏。'
+  if (name === 'input.text') return '手机输入工具，用于向当前聚焦的输入框写入文本。'
   return '通用 MCP 工具。'
 }
 

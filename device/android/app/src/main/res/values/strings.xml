@@ -1,0 +1,22 @@
+<resources>
+    <string name="app_name">HeySure 安卓端</string>
+
+    <string name="server_url_hint">服务器地址，如 http://192.168.1.10:3000</string>
+    <string name="account_hint">账号</string>
+    <string name="password_hint">密码</string>
+    <string name="login">登录并连接</string>
+    <string name="logout">退出登录</string>
+    <string name="start">启动 Agent</string>
+    <string name="stop">停止 Agent</string>
+    <string name="enable_accessibility">开启无障碍（点击/滑动）</string>
+    <string name="grant_capture">授权截屏/录屏</string>
+
+    <string name="status_disconnected">未连接</string>
+    <string name="status_connecting">连接中…</string>
+    <string name="status_connected">已连接</string>
+    <string name="status_registered">已注册</string>
+    <string name="status_error">连接错误</string>
+
+    <string name="notif_channel_name">HeySure Agent</string>
+    <string name="notif_running">Agent 运行中</string>
+</resources>

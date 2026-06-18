@@ -1,0 +1,6 @@
+<resources>
+    <color name="heysure_primary">#4C6FFF</color>
+    <color name="status_green">#2EAD5B</color>
+    <color name="status_yellow">#E0A100</color>
+    <color name="status_red">#D9534F</color>
+</resources>

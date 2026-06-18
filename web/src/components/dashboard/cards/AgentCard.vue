@@ -82,6 +82,11 @@ interface AgentProps {
     browserAgentName?: string
     browserAgentPlatform?: string
     browserAgentCapabilities?: string[]
+    androidAgentConnected?: boolean
+    androidAgentId?: string
+    androidAgentName?: string
+    androidAgentPlatform?: string
+    androidAgentCapabilities?: string[]
     runtimeStatus?: string
     runtimeTool?: string
     activeRunStatus?: string
@@ -296,6 +301,18 @@ const browserConnection = computed(() => {
     text: '浏览器已连接',
     class: 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-500/40 dark:bg-violet-500/10 dark:text-violet-300',
     title: [name ? `浏览器 Agent：${name}` : '', platform ? `平台：${platform}` : '', id ? `ID：${id}` : ''].filter(Boolean).join('；') || '浏览器 Agent 已连接',
+  }
+})
+
+const androidConnection = computed(() => {
+  if (!props.agent.androidAgentConnected) return null
+  const name = String(props.agent.androidAgentName || props.agent.name || '').trim()
+  const platform = String(props.agent.androidAgentPlatform || 'Android Mobile').trim()
+  const id = String(props.agent.androidAgentId || '').trim()
+  return {
+    text: '安卓已连接',
+    class: 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-500/40 dark:bg-teal-500/10 dark:text-teal-300',
+    title: [name ? `安卓 Agent：${name}` : '', platform ? `平台：${platform}` : '', id ? `ID：${id}` : ''].filter(Boolean).join('；') || '安卓 Agent 已连接',
   }
 })
 
@@ -577,6 +594,14 @@ const onCardPointerUp = (event: PointerEvent) => {
             :title="browserConnection.title"
           >
             {{ browserConnection.text }}
+          </span>
+          <span
+            v-if="androidConnection"
+            class="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium leading-none"
+            :class="androidConnection.class"
+            :title="androidConnection.title"
+          >
+            {{ androidConnection.text }}
           </span>
         </div>
       </div>
