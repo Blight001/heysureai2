@@ -93,8 +93,10 @@ class ScreenCaptureManager(private val appContext: Context) {
         }
     }
 
-    /** Record the screen for [durationMs] into an mp4 and return its file path. */
-    suspend fun recordToFile(durationMs: Long, withAudio: Boolean): File {
+    /** Record the screen for [durationMs] into an mp4 and return its file path.
+     *  Video only — no microphone — to avoid the RECORD_AUDIO permission, which
+     *  reads as spyware to anti-fraud / Play Protect scanners. */
+    suspend fun recordToFile(durationMs: Long): File {
         val mp = projection ?: throw IllegalStateException("未授权录屏：请先在 App 内点击\"授权截屏/录屏\"")
         val dm = metrics()
         val width = (dm.widthPixels / 2) * 2   // encoder wants even dimensions
@@ -107,12 +109,10 @@ class ScreenCaptureManager(private val appContext: Context) {
             @Suppress("DEPRECATION") MediaRecorder()
         }
         recorder.apply {
-            if (withAudio) setAudioSource(MediaRecorder.AudioSource.MIC)
             setVideoSource(MediaRecorder.VideoSource.SURFACE)
             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             setOutputFile(outFile.absolutePath)
             setVideoEncoder(MediaRecorder.VideoEncoder.H264)
-            if (withAudio) setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
             setVideoSize(width, height)
             setVideoEncodingBitRate(6_000_000)
             setVideoFrameRate(30)

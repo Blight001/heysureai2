@@ -290,17 +290,15 @@ class ToolCatalog(private val capture: ScreenCaptureManager) {
 
     private fun recordTool() = object : Tool {
         override val name = "screen.record"
-        override val description = "录制屏幕一段时间，生成 mp4 视频文件并返回本机路径。"
+        override val description = "录制屏幕一段时间，生成 mp4 视频文件并返回本机路径（仅画面，不含音频）。"
         override val destructive = false
         override val inputSchema = objectSchema(
             JSONObject()
-                .put("duration_ms", intProp("录制时长，毫秒，默认 5000，最长 120000"))
-                .put("with_audio", JSONObject().put("type", "boolean").put("description", "是否录制麦克风音频")),
+                .put("duration_ms", intProp("录制时长，毫秒，默认 5000，最长 120000")),
         )
         override suspend fun run(args: JSONObject): JSONObject {
             val file = capture.recordToFile(
                 durationMs = args.optLong("duration_ms", 5_000),
-                withAudio = args.optBoolean("with_audio", false),
             )
             return JSONObject()
                 .put("path", file.absolutePath)

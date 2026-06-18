@@ -11,12 +11,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- "保持常亮 / 放着也能被控制"：用 WakeLock 让 CPU + 屏幕保持唤醒，
-         并申请电池优化豁免，减少息屏后被系统杀掉/限制网络（Doze）。 -->
+    <!-- "保持常亮 / 放着也能被控制"：仅用 WakeLock 让 CPU + 屏幕保持唤醒。
+         不声明 RECORD_AUDIO（录屏改为无音频）与受限的 REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+         （电池豁免改为引导用户到系统设置页手动开启），以收敛"间谍/木马"权限画像。 -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:allowBackup="true"
