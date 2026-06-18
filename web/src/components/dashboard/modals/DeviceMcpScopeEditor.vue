@@ -61,14 +61,14 @@ const dirty = computed(() => {
 // browser_tab，状态管理类合并为 browser_cookie / browser_storage / browser_session /
 // browser_profile（均带 action 参数）。下面同时兼容历史的按动词拆分旧名。
 const browserIntro = (tool: string) => {
-  if (['browser_tab', 'browser_search', 'browser_navigate', 'browser_history'].includes(tool) || tool.startsWith('browser_history_') || tool.startsWith('browser_tab_')) {
-    return '浏览器导航类工具，用于管理标签页、打开页面、搜索、跳转 URL、前进或后退。'
+  if (['browser_tab', 'browser_navigate', 'browser_history'].includes(tool) || tool.startsWith('browser_history_') || tool.startsWith('browser_tab_')) {
+    return '浏览器导航类工具，用于管理标签页、打开页面、跳转 URL、前进或后退。'
   }
-  if (['browser_screenshot', 'browser_get_content', 'browser_dom_snapshot', 'browser_page_info', 'browser_find_text', 'browser_find_popups', 'browser_performance', 'browser_network_log', 'browser_iframe_list'].includes(tool)) {
-    return '浏览器观察类工具，用于截图、读取页面内容、查看页面结构与状态。'
+  if (['browser_observe', 'browser_screenshot', 'browser_find_text', 'browser_performance', 'browser_network_log', 'browser_iframe_list'].includes(tool)) {
+    return '浏览器观察类工具，用于观察可交互元素、截图、查看页面结构与状态。'
   }
-  if (['browser_action', 'browser_click', 'browser_double_click', 'browser_right_click', 'browser_type', 'browser_press_key', 'browser_hover', 'browser_scroll', 'browser_wait', 'browser_drag', 'browser_fill_form', 'browser_select', 'browser_close_popup'].includes(tool)) {
-    return '浏览器交互类工具，用于点击、双击、右键、输入、滚动、按键、选择、拖拽与关闭弹窗。'
+  if (['browser_action', 'browser_click', 'browser_double_click', 'browser_right_click', 'browser_type', 'browser_press_key', 'browser_scroll', 'browser_wait', 'browser_drag'].includes(tool)) {
+    return '浏览器交互类工具，用于点击、双击、右键、输入、滚动、按键与拖拽。'
   }
   if (['browser_evaluate', 'browser_extract', 'browser_clipboard_write', 'browser_file_upload', 'browser_download'].includes(tool)) {
     return '浏览器数据类工具，用于执行脚本、提取数据、读写剪贴板、上传或下载文件。'

@@ -17,16 +17,17 @@ function inferTool(instruction: string): string {
   const t = instruction.toLowerCase()
   if (/截图|screenshot/.test(t))                                    return 'browser_screenshot'
   if (/观察|可点击|可交互|元素列表|observe/.test(t))                  return 'browser_observe'
-  if (/弹窗|关闭弹窗|popup|modal|dialog/.test(t))                     return 'browser_close_popup'
-  if (/搜索|search|查找|找/.test(t))                                 return 'browser_search'
+  if (/弹窗|关闭弹窗|popup|modal|dialog/.test(t))                     return 'browser_action'
+  if (/搜索|search/.test(t))                                        return 'browser_tab'
+  if (/查找|找/.test(t))                                            return 'browser_observe'
   if (/点击|click/.test(t))                                          return 'browser_click'
   if (/输入|type|填写/.test(t))                                      return 'browser_type'
   if (/导航|打开|访问|navigate|open|go to|前往/.test(t))             return 'browser_navigate'
   if (/滚动|scroll/.test(t))                                         return 'browser_scroll'
   if (/提取|extract|抓取/.test(t))                                   return 'browser_extract'
   if (/标签|tab/.test(t))                                            return 'browser_tab'
-  if (/内容|content|页面文本/.test(t))                               return 'browser_get_content'
-  return 'browser_get_content'
+  if (/内容|content|页面文本/.test(t))                               return 'browser_observe'
+  return 'browser_observe'
 }
 
 // ── System prompt for the AI agentic loop ─────────────────────────────────
@@ -39,17 +40,17 @@ navigation goes through browser_tab with an action param: navigate / back /
 forward / list / open / close.
 
 Core interaction loop (prefer this for any click/type):
-1. Navigate to the relevant URL (browser_tab {action:"navigate", url}) or search for it.
+1. Navigate to the relevant URL with browser_tab {action:"navigate", url}.
 2. Call browser_observe to list the top-most, un-occluded interactive elements. Each gets a numbered id and a drawn mark; call browser_screenshot to see those marks if you need the visual.
 3. Act by id: browser_action {action:"click", ref:id}, then browser_action {action:"type", text:"…"} for inputs. Using ref is far more reliable than guessing selectors or coordinates.
 4. Re-run browser_observe after anything changes the page (scroll, navigation, opening a menu/popup) to refresh the ids.
 
 Handling obstacles:
-- If browser_action {action:"click"} returns occluded:true, a popup/overlay/ad is covering the target. Use browser_find_popups + browser_close_popup to clear it, then observe again. Only use force:true to click through deliberately.
+- If browser_action {action:"click"} returns occluded:true, a popup/overlay/ad is covering the target. Re-observe to find the close button and click it, try browser_action {action:"press_key", key:"Escape"}, or use force:true only when deliberate.
 - If it returns not_visible:true, the element isn't on screen — scroll or expand its container first, then observe again.
 
 Always:
-- Read browser_get_content for page text; after scrolling, read the returned position (scrollY, percent, atTop/atBottom, section) so you know where you landed.
+- Use browser_observe + browser_screenshot to understand the page; after scrolling, read the position info returned by browser_action {action:"scroll"}.
 - Be methodical and verify each step.
 - Respond in the same language as the user's message.
 - Summarize what you accomplished at the end.`
@@ -62,8 +63,10 @@ export async function executeTask(task: DispatchedTask, settings: AgentSettings)
   if (toolName && toolName !== 'ai_agent' && !toolName.startsWith('ai.')) {
     // Inject instruction into args if no explicit tool args given
     if (!task.tool && task.instruction && Object.keys(args).length === 0) {
-      if (toolName === 'browser_search') args.query = task.instruction
-      else if (toolName === 'browser_navigate') args.url = task.instruction
+      if (toolName === 'browser_tab' && /搜索|search/.test((task.instruction || '').toLowerCase())) {
+        args.action = 'navigate'
+        args.url = `https://www.google.com/search?q=${encodeURIComponent(task.instruction || '')}`
+      } else if (toolName === 'browser_navigate') args.url = task.instruction
       else if (toolName === 'browser_tab') args.action = 'list'
     }
     try {

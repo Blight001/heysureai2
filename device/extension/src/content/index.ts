@@ -12,7 +12,7 @@ import {
   doType, getContent, doScroll, doWait, doEvaluate, doExtract,
   findText, fillForm, doSelect, doHover, storageGet, storageSet, storageRemove,
   storageList, domSnapshot, iframeList, performanceInfo, fileUpload,
-  screenshotTargetInfo, focusTarget,
+  screenshotTargetInfo, focusTarget, doScreenshotFx,
 } from './actions'
 import { doFindPopups, doClosePopup } from './popups'
 import { doPageInfo } from './viewport'
@@ -56,6 +56,7 @@ async function handleAction(msg: any): Promise<any> {
     case 'iframe_list':  return iframeList()
     case 'performance':  return performanceInfo()
     case 'screenshot_target_info': return screenshotTargetInfo(msg)
+    case 'screenshot_fx':          return doScreenshotFx(msg)
     case 'file_upload':  return fileUpload(msg)
     case 'select':       return doSelect(msg)
     case 'hover':        return doHover(msg)

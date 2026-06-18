@@ -94,11 +94,10 @@ export async function clearAvatarCache(): Promise<void> {
   await chrome.storage.local.remove(AVATAR_CACHE_KEY)
 }
 
-// ── MCP tool description overrides (local edits) ─────────────────────────────
-// The user can edit a tool's description / parameter descriptions in the MCP
-// page. Edits are stored locally and merged onto BROWSER_TOOLS before they are
-// reported to the server via device:register -> toolDefs, so the server stays
-// the single consumer and needs no per-tool storage.
+// ── MCP tool description overrides (local edits, fallback tools only) ─────────
+// Popup edits apply only while the server has not yet pushed a workspace copy
+// of the tool. Server-managed tools (device:tool-config) use workspace files
+// as the schema source of truth — same model as the Windows desktop agent.
 export interface ToolDescOverride {
   description?: string
   // paramName -> description
@@ -129,6 +128,19 @@ export async function setToolDescOverride(tool: string, override: ToolDescOverri
     all[name] = { description: desc, parameters: params }
   }
   await chrome.storage.local.set({ [TOOL_DESC_KEY]: all })
+}
+
+export async function clearToolDescOverrides(names: string[]): Promise<void> {
+  const all = await getToolDescOverrides()
+  let changed = false
+  for (const raw of names) {
+    const name = String(raw || '').trim()
+    if (name && all[name]) {
+      delete all[name]
+      changed = true
+    }
+  }
+  if (changed) await chrome.storage.local.set({ [TOOL_DESC_KEY]: all })
 }
 
 // ── MCP tool enable/disable selection ────────────────────────────────────────

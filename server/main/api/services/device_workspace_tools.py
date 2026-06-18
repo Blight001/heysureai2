@@ -358,7 +358,10 @@ def seed_defaults(user_id: int, device_type: str = "desktop") -> int:
     if dtype == "desktop":
         from api.services.device_runtime_tools import load_default_tools as _load
     elif dtype == "browser":
-        from api.services.device_browser_runtime_tools import load_default_tools as _load
+        from api.services.device_browser_runtime_tools import (
+            load_default_tools as _load,
+            sync_workspace_after_catalog_change,
+        )
     else:
         return 0
     d = _tools_dir(user_id, dtype)
@@ -370,6 +373,8 @@ def seed_defaults(user_id: int, device_type: str = "desktop") -> int:
         clean = validate_definition(spec)
         _write_files(d, clean, enabled=True, status="active")
         created += 1
+    if dtype == "browser":
+        sync_workspace_after_catalog_change(user_id)
     return created
 
 

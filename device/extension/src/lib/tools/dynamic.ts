@@ -313,6 +313,12 @@ export const BROWSER_DYNAMIC_MCP_MANAGER_DEF: AIToolDef = {
   },
 }
 
+export function isServerManagedToolDef(tool: AIToolDef): boolean {
+  const impl = tool.implementation
+  if (!impl || typeof impl !== 'object') return false
+  return impl.source === 'server' || impl.storage_key === 'memory:server'
+}
+
 export async function dynamicMcpToolDefs(): Promise<AIToolDef[]> {
   const { merged, serverNames } = await getMergedDynamicMcpDefinitions()
   return [BROWSER_DYNAMIC_MCP_MANAGER_DEF, ...merged.map(def => {

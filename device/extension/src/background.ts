@@ -4,6 +4,7 @@ import { io, Socket } from 'socket.io-client'
 import { getSettings, saveSettings, pushActivity, getActivity, getAuth } from './lib/storage'
 import { getAgentEndpoint } from './lib/client'
 import { executeTask, executeBrowserTool, effectiveToolDefs } from './lib/tools'
+import { clearToolDescOverrides } from './lib/storage'
 import { applyServerDynamicMcp, clearServerDynamicMcp, DYNAMIC_MCP_STORAGE_KEY } from './lib/tools/dynamic'
 import { callAI } from './lib/ai'
 import { screenshotToolContent } from './lib/ai'
@@ -278,6 +279,10 @@ function attachOperationalListeners(s: Socket, agentName: string) {
       try {
         const status = await applyServerDynamicMcp(payload)
         if (status.applied) {
+          const names = Array.isArray(payload?.tools)
+            ? payload.tools.map((t: any) => String(t?.name || '').trim()).filter(Boolean)
+            : []
+          if (names.length) await clearToolDescOverrides(names)
           log('system', 'info', `已应用服务器下发的 MCP 工具：${status.tools} 个`)
           if (socket?.connected) await register()
         }
@@ -408,17 +413,16 @@ async function testConnection(): Promise<any> {
 // ── AI chat with agentic browser-tool loop ────────────────────────────────
 const CHAT_SYSTEM = `You are HeySure AI, a browser automation assistant running as a Chrome extension.
 You can navigate pages, click, double-click, right-click, type, drag, press keys, scroll, take
-screenshots, search the web, detect and close popups/modals/dialogs, extract data, and more.
+screenshots, extract data, and more.
 
-Use browser_page_info to know where you are on the page (scroll position, current section,
-visible headings); after scrolling, read the returned position so you know where you landed and
-what changed.
+Use browser_observe and browser_screenshot to understand the page; after scrolling, read the
+position info returned by browser_action {action:"scroll"} so you know where you landed.
 
-If a popup/modal/dialog blocks the page, call browser_find_popups to inspect detected dialogs and
-browser_close_popup to close the matching one before continuing.
+If a popup/modal/dialog blocks the page, re-observe to find its close button and click it, or
+press Escape with browser_action {action:"press_key", key:"Escape"}.
 
 When asked to complete tasks, use the available tools systematically and summarize what you did.
-Respond in the same language as the user. For factual questions, search the web if needed.`
+Respond in the same language as the user.`
 
 async function runChat(messages: ChatMessage[]): Promise<{ text: string; toolsUsed: string[]; toolEvents: ChatToolEvent[] }> {
   const settings = await getSettings()

@@ -8,7 +8,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const defsPath = path.resolve(__dirname, '../../../../../device/extension/src/lib/tools/definitions.ts')
 let src = fs.readFileSync(defsPath, 'utf8')
 src = src.replace(/^import.*$/gm, '')
-src = src.replace(/export const SEARCH_ENGINES[\s\S]*?^}/m, 'const SEARCH_ENGINES = {google:"",bing:"",duckduckgo:"",baidu:"",github:"",youtube:"",wikipedia:"",stackoverflow:"",npm:"",pypi:"",mdn:""};')
 src = src.replace(/export /g, '')
 src = src.replace(/: AIToolDef\[\]/g, '')
 const capIdx = src.indexOf('const BROWSER_CAPABILITIES')
@@ -16,7 +15,7 @@ if (capIdx > 0) src = src.slice(0, capIdx)
 
 const out = vm.runInNewContext(
   src + '; JSON.stringify(BROWSER_TOOLS.map(t => ({ name: t.name, description: t.description, input_schema: t.input_schema })), null, 2)',
-  { SEARCH_ENGINES: { google: '', bing: '', duckduckgo: '', baidu: '', github: '', youtube: '', wikipedia: '', stackoverflow: '', npm: '', pypi: '', mdn: '' } },
+  {},
 )
 const catalog = JSON.parse(out)
 fs.writeFileSync(path.join(__dirname, 'catalog.json'), JSON.stringify(catalog, null, 2), 'utf8')

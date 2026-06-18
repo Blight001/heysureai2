@@ -4,7 +4,10 @@
 // forwards back to the AI / popup.
 
 import { findEl, resolveTarget, elCenter, isVisible, isHittable, occluderOf, textMatches, textOf, cssPath, clickLikeUser } from './dom'
-import { fxToElement, fxClickAt, fxSleep, fxDragPath, fxScrollDrag, isFxEnabled, getFxPos } from './fx'
+import {
+  fxToElement, fxClickAt, fxSleep, fxDragPath, fxScrollDrag, isFxEnabled, getFxPos,
+  fxHoverOn, fxScreenshotBefore, fxScreenshotAfter, fxScreenshotClear,
+} from './fx'
 import { viewportContext, waitScrollSettle } from './viewport'
 
 // ── Click ─────────────────────────────────────────────────────────────────
@@ -63,8 +66,8 @@ export async function doClick(msg: any) {
   if (isFxEnabled()) {
     if (!viaCoords) await fxSleep(220)   // let the smooth scroll settle before aiming
     await fxToElement(el)                // glide the virtual cursor to the element
-    fxClickAt(x, y)
-    await fxSleep(120)                   // brief press beat before the real click
+    await fxClickAt(x, y)
+    await fxSleep(80)
   }
   clickLikeUser(el, { x, y })
   const ctx = viewportContext()
@@ -81,7 +84,7 @@ export async function doDoubleClick(msg: any) {
   const { el } = resolveTarget(msg)
   if (!el) throw new Error(`Element not found: selector=${msg.selector || ''} text=${msg.text || ''} coords=${msg.x},${msg.y}`)
   el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  if (isFxEnabled()) { await fxSleep(220); await fxToElement(el); const c = elCenter(el); fxClickAt(c.x, c.y, 'double'); await fxSleep(120) }
+  if (isFxEnabled()) { await fxSleep(220); await fxToElement(el); const c = elCenter(el); await fxClickAt(c.x, c.y, 'double'); await fxSleep(80) }
   const c = elCenter(el)
   const opts = { bubbles: true, cancelable: true, view: window, clientX: c.x, clientY: c.y } as MouseEventInit
   el.dispatchEvent(new MouseEvent('mousedown', opts))
@@ -99,7 +102,7 @@ export async function doRightClick(msg: any) {
   const { el } = resolveTarget(msg)
   if (!el) throw new Error(`Element not found: selector=${msg.selector || ''} text=${msg.text || ''} coords=${msg.x},${msg.y}`)
   el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-  if (isFxEnabled()) { await fxSleep(220); await fxToElement(el); const c = elCenter(el); fxClickAt(c.x, c.y, 'right'); await fxSleep(120) }
+  if (isFxEnabled()) { await fxSleep(220); await fxToElement(el); const c = elCenter(el); await fxClickAt(c.x, c.y, 'right'); await fxSleep(80) }
   const c = elCenter(el)
   const opts = { bubbles: true, cancelable: true, view: window, button: 2, buttons: 2, clientX: c.x, clientY: c.y } as MouseEventInit
   el.dispatchEvent(new MouseEvent('mousedown', opts))
@@ -236,7 +239,7 @@ export async function doType(msg: any) {
 
   if (!el) throw new Error('No input element found — try providing a selector')
 
-  if (isFxEnabled()) { await fxToElement(el); const p = getFxPos(); fxClickAt(p.x, p.y) }
+  if (isFxEnabled()) { await fxToElement(el); const p = getFxPos(); await fxClickAt(p.x, p.y) }
   el.focus()
 
   if (el.isContentEditable) {
@@ -348,7 +351,7 @@ export async function doScroll(msg: any) {
       default: throw new Error(`Unknown scroll direction: ${msg.direction}`)
     }
   }
-  fxScrollDrag(msg.direction, amount)   // visual "grab & pull" feedback
+  void fxScrollDrag(msg.direction, amount)   // visual "grab & pull" feedback (parallel with scroll)
   await waitScrollSettle()
 
   let ctx = viewportContext()
@@ -881,8 +884,41 @@ export function storageList(msg: any) {
 export async function doHover(msg: any) {
   const el = document.querySelector(msg.selector) as HTMLElement | null
   if (!el) throw new Error(`Element not found: ${msg.selector}`)
-  if (isFxEnabled()) await fxToElement(el)
+  if (isFxEnabled()) {
+    await fxToElement(el)
+    fxHoverOn(el)
+  }
   el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
   el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
   return { success: true, selector: msg.selector }
+}
+
+export async function doScreenshotFx(msg: any) {
+  if (msg.phase === 'clear') {
+    fxScreenshotClear()
+    return { success: true, phase: 'clear' }
+  }
+  if (msg.phase === 'before') {
+    let rect = msg.rect as { x: number; y: number; width: number; height: number } | undefined
+    if (!rect && (msg.selector || msg.text)) {
+      const el = findEl(msg.selector, msg.text)
+      if (el) {
+        const margin = Math.max(0, Number(msg.margin ?? msg.padding ?? 8))
+        const r = (el as HTMLElement).getBoundingClientRect()
+        rect = {
+          x: Math.max(0, r.left - margin),
+          y: Math.max(0, r.top - margin),
+          width: Math.min(window.innerWidth, r.right + margin) - Math.max(0, r.left - margin),
+          height: Math.min(window.innerHeight, r.bottom + margin) - Math.max(0, r.top - margin),
+        }
+      }
+    }
+    await fxScreenshotBefore(rect)
+    return { success: true, phase: 'before', rect: rect || null }
+  }
+  if (msg.phase === 'after') {
+    await fxScreenshotAfter()
+    return { success: true, phase: 'after' }
+  }
+  return { success: true, phase: 'noop' }
 }

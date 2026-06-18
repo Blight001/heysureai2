@@ -5,8 +5,6 @@
 //      the page via chrome.tabs.sendMessage.
 //   3. The browser-only router (executeBrowserOnly) that dispatches by name.
 
-import { SEARCH_ENGINES } from './definitions'
-
 // ── Helpers ───────────────────────────────────────────────────────────────
 function isBrowserInternalUrl(url?: string): boolean {
   const raw = String(url || '')
@@ -72,7 +70,7 @@ function sendToContent(tabId: number, msg: any): Promise<any> {
 // restricted pages). For tabs that were already open — or after the service
 // worker restarts — chrome.tabs.sendMessage fails with "Could not establish
 // connection". When that happens we inject dist/content.js on demand and retry,
-// so browser_get_content / browser_dom_snapshot / browser_page_info keep working
+// so browser_dom_snapshot and other content-script tools keep working
 // on any ordinary http/https page without a manual reload.
 function isNoReceiverError(err: any): boolean {
   const m = err?.message || ''
@@ -159,7 +157,7 @@ function normalizeToolError(err: any, name: string, args: any) {
 }
 
 function suggestionForTool(name: string) {
-  if (name.includes('click') || name.includes('select') || name.includes('drag')) return 'Use browser_page_info, browser_dom_snapshot, or browser_find_text to verify the target selector/text, then retry.'
+  if (name.includes('click') || name.includes('select') || name.includes('drag')) return 'Use browser_observe or browser_screenshot to verify the target, then retry.'
   if (name.includes('screenshot')) return 'Confirm the tool is enabled by policy and the extension has permission for the current tab.'
   if (name.includes('cookie')) return 'Confirm the cookies permission is enabled and the URL/domain is valid.'
   return 'Check tool parameters and current page state, then retry with trace:true for details.'
@@ -217,6 +215,16 @@ function isRetryableCaptureError(message: string) {
 
 async function delay(ms: number) {
   await new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function playScreenshotFx(tab: chrome.tabs.Tab, msg: Record<string, any>) {
+  try {
+    await contentMsg(tab.id!, { action: 'screenshot_fx', ...msg })
+  } catch { /* visual-only; never block capture */ }
+}
+
+function wantsScreenshotFx(args: any) {
+  return args.screenshot_fx !== false && args.fx !== false
 }
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -470,10 +478,30 @@ async function toolScreenshot(args: any = {}): Promise<any> {
     }
   }
 
+  const showFx = wantsScreenshotFx(args)
   const wantsDebuggerCapture = !!(args.full_page || args.selector || args.text || args.clip || (
     args.x !== undefined && args.y !== undefined && args.width !== undefined && args.height !== undefined
   ))
   const attempts: string[] = []
+
+  const finishScreenshot = async (result: any) => {
+    if (showFx && result?.success) {
+      await playScreenshotFx(tab, { phase: 'after' })
+      await playScreenshotFx(tab, { phase: 'clear' })
+    }
+    return result
+  }
+
+  if (showFx) {
+    await playScreenshotFx(tab, {
+      phase: 'before',
+      selector: args.selector,
+      text: args.text,
+      margin: args.margin ?? args.padding ?? 8,
+      full_page: !!args.full_page,
+    })
+  }
+
   if (wantsDebuggerCapture) {
     try {
       const dataUrl = await captureWithDebugger(tab, args)
@@ -482,7 +510,7 @@ async function toolScreenshot(args: any = {}): Promise<any> {
         format: 'jpeg',
         quality: args.quality ?? 70,
       }))
-      return {
+      return finishScreenshot({
         success: true,
         dataUrl: optimized.dataUrl,
         save_to_server: wantsServerSave(args),
@@ -495,7 +523,7 @@ async function toolScreenshot(args: any = {}): Promise<any> {
             ? 'debugger.Page.captureScreenshot.element'
             : 'debugger.Page.captureScreenshot.clip',
         warning: optimized.warning || undefined,
-      }
+      })
     } catch (err: any) {
       attempts.push(`debugger.Page.captureScreenshot: ${err?.message || String(err)}`)
     }
@@ -520,7 +548,7 @@ async function toolScreenshot(args: any = {}): Promise<any> {
       quality: args.quality ?? 70,
       retries: 0,
     }, 0))
-    return {
+    return finishScreenshot({
       success: true,
       dataUrl: optimized.dataUrl,
       save_to_server: wantsServerSave(args),
@@ -529,7 +557,7 @@ async function toolScreenshot(args: any = {}): Promise<any> {
       url: tab.url,
       method: 'captureVisibleTab',
       warning: [attempts.length ? attempts.join('; ') : '', optimized.warning].filter(Boolean).join('; ') || undefined,
-    }
+    })
   } catch (err: any) {
     attempts.push(`captureVisibleTab: ${err?.message || String(err)}`)
   }
@@ -542,7 +570,7 @@ async function toolScreenshot(args: any = {}): Promise<any> {
         format: 'jpeg',
         quality: args.quality ?? 70,
       }))
-      return {
+      return finishScreenshot({
         success: true,
         dataUrl: optimized.dataUrl,
         save_to_server: wantsServerSave(args),
@@ -551,12 +579,13 @@ async function toolScreenshot(args: any = {}): Promise<any> {
         url: tab.url,
         method: 'debugger.Page.captureScreenshot',
         warning: [attempts.join('; '), optimized.warning].filter(Boolean).join('; '),
-      }
+      })
     } catch (err: any) {
       attempts.push(`debugger.Page.captureScreenshot: ${err?.message || String(err)}`)
     }
   }
 
+  if (showFx) await playScreenshotFx(tab, { phase: 'clear' })
   const message = attempts.join('; ')
   return {
     success: false,
@@ -566,19 +595,6 @@ async function toolScreenshot(args: any = {}): Promise<any> {
     url: tab.url,
     hint: '截图不可用。请确认扩展拥有当前页面权限；若页面是浏览器内部页、扩展页、Chrome 网上应用店或受 DRM 保护内容，Chrome 会阻止截图。',
   }
-}
-
-async function toolSearch(args: any): Promise<any> {
-  const query  = String(args.query || '')
-  if (!query) throw new Error('query is required')
-  const engine = String(args.engine || 'google').toLowerCase()
-  const base   = SEARCH_ENGINES[engine] || SEARCH_ENGINES.google
-  const url    = base + encodeURIComponent(query)
-  let tab: chrome.tabs.Tab
-  try { tab = await getActiveTab() } catch { tab = await getAnyActiveTab() }
-  await chrome.tabs.update(tab.id!, { url })
-  await waitForTabLoad(tab.id!)
-  return { success: true, query, engine, url }
 }
 
 async function toolTabList(): Promise<any> {
@@ -663,11 +679,6 @@ async function toolType(args: any): Promise<any> {
       warning: `Native submit key dispatch failed, fell back to synthetic KeyboardEvent: ${debuggerErr?.message || String(debuggerErr)}`,
     }
   }
-}
-
-async function toolGetContent(args: any): Promise<any> {
-  const tab = await getActiveTab()
-  return contentMsg(tab.id!, { action: 'get_content', selector: args.selector, includeHtml: !!args.include_html, max_chars: args.max_chars })
 }
 
 async function toolScroll(args: any): Promise<any> {
@@ -851,11 +862,6 @@ async function toolExtract(args: any): Promise<any> {
   return contentMsg(tab.id!, { action: 'extract', selector: args.selector, attributes: args.attributes, limit: args.limit || 50 })
 }
 
-async function toolDomSnapshot(args: any): Promise<any> {
-  const tab = await getActiveTab()
-  return contentMsg(tab.id!, { action: 'dom_snapshot', selector: args.selector, max_depth: args.max_depth, max_nodes: args.max_nodes, trace: !!args.trace })
-}
-
 async function toolIframeList(): Promise<any> {
   const tab = await getActiveTab()
   return contentMsg(tab.id!, { action: 'iframe_list' })
@@ -881,39 +887,6 @@ async function toolNetworkLog(args: any): Promise<any> {
 async function toolFindText(args: any): Promise<any> {
   const tab = await getActiveTab()
   return contentMsg(tab.id!, { action: 'find_text', text: args.text, exact: !!args.exact })
-}
-
-async function toolFindPopups(args: any): Promise<any> {
-  const tab = await getActiveTab()
-  return contentMsg(tab.id!, { action: 'find_popups', limit: args.limit || 10 })
-}
-
-async function toolClosePopup(args: any): Promise<any> {
-  const tab = await getActiveTab()
-  const result = await contentMsg(tab.id!, {
-    action: 'close_popup',
-    selector: args.selector,
-    text: args.text,
-    index: args.index,
-    strategy: args.strategy || 'auto',
-    force_remove: !!args.force_remove,
-  })
-  if (result?.success === false) throw new Error(result.reason || 'Popup close failed')
-  return result
-}
-
-async function toolFillForm(args: any): Promise<any> {
-  const tab = await getActiveTab()
-  return contentMsg(tab.id!, {
-    action: 'fill_form',
-    fields: args.fields || args.form_fields || args.values,
-    submitSelector: args.submit_selector || args.submitSelector,
-  })
-}
-
-async function toolSelect(args: any): Promise<any> {
-  const tab = await getActiveTab()
-  return contentMsg(tab.id!, { action: 'select', selector: args.selector, value: args.value ?? args.text ?? args.option_text })
 }
 
 async function toolStorageGet(args: any): Promise<any> {
@@ -1060,16 +1033,6 @@ async function toolProfileSet(args: any): Promise<any> {
   return { success: true, profile, scope: 'extension-logical-profile' }
 }
 
-async function toolHover(args: any): Promise<any> {
-  const tab = await getActiveTab()
-  return contentMsg(tab.id!, { action: 'hover', selector: args.selector })
-}
-
-async function toolPageInfo(): Promise<any> {
-  const tab = await getActiveTab()
-  return contentMsg(tab.id!, { action: 'page_info' })
-}
-
 async function toolRightClick(args: any): Promise<any> {
   const tab = await getActiveTab()
   return contentMsg(tab.id!, { action: 'right_click', selector: args.selector, text: args.text, x: args.x, y: args.y })
@@ -1207,30 +1170,21 @@ function toolProfile(args: any): Promise<any> {
 type ToolHandler = (args: any) => Promise<any>
 
 const HANDLERS: Record<string, ToolHandler> = {
-  // Navigation & search — navigate/back/forward are folded into browser_tab;
+  // Navigation — navigate/back/forward are folded into browser_tab;
   // browser_history stays here (hidden) so legacy back/forward calls keep working.
-  browser_search:        toolSearch,
   browser_history:       toolHistory,
   // Page observation
   browser_observe:       toolObserve,
   browser_screenshot:    toolScreenshot,
-  browser_get_content:   toolGetContent,
-  browser_dom_snapshot:  toolDomSnapshot,
-  browser_page_info:     () => toolPageInfo(),
   browser_find_text:     toolFindText,
-  browser_find_popups:   toolFindPopups,
   browser_performance:   () => toolPerformance(),
   browser_network_log:   toolNetworkLog,
   browser_iframe_list:   () => toolIframeList(),
   // Interaction — click/double_click/right_click/scroll/type/press_key merged
   // into browser_action (action param). The rest stay as their own tools.
   browser_action:        toolAction,
-  browser_hover:         toolHover,
   browser_wait:          toolWait,
   browser_drag:          toolDrag,
-  browser_fill_form:     toolFillForm,
-  browser_select:        toolSelect,
-  browser_close_popup:   toolClosePopup,
   // Data & scripting
   browser_evaluate:      toolEvaluate,
   browser_extract:       toolExtract,

@@ -15,6 +15,20 @@ from typing import Any, Dict, List
 
 _DIR = os.path.dirname(__file__)
 
+# Builtin browser_* tools removed from the extension catalog; prune workspace copies
+# on connect so server dynamic MCP stays aligned with the device.
+REMOVED_TOOL_NAMES = frozenset({
+    "browser_search",
+    "browser_get_content",
+    "browser_page_info",
+    "browser_find_popups",
+    "browser_select",
+    "browser_fill_form",
+    "browser_hover",
+    "browser_dom_snapshot",
+    "browser_close_popup",
+})
+
 
 def _wrapper_program(builtin_name: str) -> List[Dict[str, Any]]:
     return [
@@ -58,9 +72,13 @@ def _browser_run_tool(catalog: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def load_default_tools() -> List[Dict[str, Any]]:
+def _load_catalog() -> List[Dict[str, Any]]:
     with open(os.path.join(_DIR, "catalog.json"), encoding="utf-8") as f:
-        catalog = json.load(f)
+        return json.load(f)
+
+
+def load_default_tools() -> List[Dict[str, Any]]:
+    catalog = _load_catalog()
     out: List[Dict[str, Any]] = [_browser_run_tool(catalog)]
     for entry in catalog:
         name = str(entry.get("name") or "").strip()
@@ -78,3 +96,17 @@ def load_default_tools() -> List[Dict[str, Any]]:
             "permissions": [],
         })
     return out
+
+
+def sync_workspace_after_catalog_change(user_id: int) -> int:
+    """Drop removed builtin wrappers and refresh ``browser.run`` enum from catalog."""
+    from api.services import device_workspace_tools as ws
+
+    removed = 0
+    for name in REMOVED_TOOL_NAMES:
+        if ws.delete_tool(user_id, "browser", name, actor="web"):
+            removed += 1
+
+    run_tool = _browser_run_tool(_load_catalog())
+    ws.upsert_tool(user_id, "browser", run_tool, enabled=True, actor="web", action="upsert")
+    return removed

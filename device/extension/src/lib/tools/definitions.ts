@@ -2,9 +2,9 @@
 // No runtime dependencies; safe to import from any module.
 //
 // 描述规范（中文为主 + 英文术语）：每个工具的 description 说明「用途 + 典型使用
-// 场景」，每个参数的 description 说明「含义 + 取值/默认」。这些文案随 device:register
-// 的 toolDefs 上报给服务器，是 AI 在 mcp.list_tools / mcp.describe_tool 中看到的
-// 权威说明——服务器不再硬编码浏览器工具的描述与 schema。
+// 场景」，每个参数的 description 说明「含义 + 取值/默认」。在线时 schema 以服务器
+// 工作区 device_tools/browser/ 经 device:tool-config 下发为准（与 Windows 桌面一致）；
+// 本文件中的 BROWSER_TOOLS 仅作连接前兜底与端侧执行实现，不再作为持久 schema 缓存。
 //
 // 分类：工具按 BROWSER_TOOL_CATEGORIES 归到 5 个大类（导航/观察/交互/数据/状态）。
 // 这是分组的唯一来源——popup、服务器、Web 端都应按它归类，不要再各写一份名单。
@@ -27,44 +27,9 @@
 
 import { AIToolDef } from '../types'
 
-// ── Search engine registry ────────────────────────────────────────────────
-export const SEARCH_ENGINES: Record<string, string> = {
-  google:        'https://www.google.com/search?q=',
-  bing:          'https://www.bing.com/search?q=',
-  duckduckgo:    'https://duckduckgo.com/?q=',
-  baidu:         'https://www.baidu.com/s?wd=',
-  github:        'https://github.com/search?q=',
-  youtube:       'https://www.youtube.com/results?search_query=',
-  wikipedia:     'https://en.wikipedia.org/wiki/Special:Search?search=',
-  stackoverflow: 'https://stackoverflow.com/search?q=',
-  npm:           'https://www.npmjs.com/search?q=',
-  pypi:          'https://pypi.org/search/?q=',
-  mdn:           'https://developer.mozilla.org/en-US/search?q=',
-}
-
 // ── Tool definitions (MCP / Anthropic tool-use format) ────────────────────
 // 顺序即展示顺序，已按分类编排（见文件底部 BROWSER_TOOL_CATEGORIES）。
 export const BROWSER_TOOLS: AIToolDef[] = [
-  // ───── 导航与搜索 ─────────────────────────────────────────────────────
-  // 注意：跳转 URL（navigate）、前进/后退（back/forward）、列出已打开标签（list）等
-  // 「页面级操作」已并入 browser_tab（见文件下方「浏览器状态/标签页」）。
-  {
-    name: 'browser_search',
-    description: '用主流搜索引擎检索网络。用途：在浏览器内发起一次站点搜索。场景：用 Google/Bing/百度等查资料；注意这会真正打开搜索结果页（与服务器端 workspace.search 的纯数据检索不同）。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        query:  { type: 'string', description: '搜索关键词。' },
-        engine: {
-          type: 'string',
-          enum: Object.keys(SEARCH_ENGINES),
-          description: '搜索引擎，默认 google；可选 bing、baidu、duckduckgo、github 等。',
-        },
-      },
-      required: ['query'],
-    },
-  },
-
   // ───── 页面观察 ───────────────────────────────────────────────────────
   {
     name: 'browser_observe',
@@ -73,7 +38,7 @@ export const BROWSER_TOOLS: AIToolDef[] = [
       type: 'object',
       properties: {
         limit: { type: 'number', description: '最多返回的可交互元素数。默认 120，最大 200。' },
-        mark:  { type: 'boolean', description: '是否在页面上绘制编号标记，便于随后截图查看。默认 true；传 false 仅返回列表并清除已有标记。标记仅为视觉叠加，不影响 get_content/截图以外的取数，也不拦截点击。' },
+        mark:  { type: 'boolean', description: '是否在页面上绘制编号标记，便于随后截图查看。默认 true；传 false 仅返回列表并清除已有标记。标记仅为视觉叠加，不影响其他取数工具或截图，也不拦截点击。' },
       },
     },
   },
@@ -115,47 +80,6 @@ export const BROWSER_TOOLS: AIToolDef[] = [
       },
     },
   },
-  {
-    name: 'browser_get_content',
-    description: '读取当前页面的可见文本、URL、标题、链接、meta 信息和归一化条目。用途：以文本方式理解页面内容。场景：抓取文章正文、读取列表、在不截图时获取页面信息。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        selector:     { type: 'string',  description: '只取该 CSS selector 范围内的内容。默认 body。' },
-        include_html: { type: 'boolean', description: '同时返回（截断后的）原始 HTML。' },
-        max_chars:    { type: 'number',  description: '返回可见文本的最大字符数。默认 8000，最大 50000。需要长正文时再调大，避免信息过载。' },
-      },
-    },
-  },
-  {
-    name: 'browser_dom_snapshot',
-    description: '返回结构化的 DOM 树快照，作为截图被禁用或不可用时的文本替代方案。用途：以层级结构理解页面。场景：分析复杂布局、定位元素、为后续操作找 selector。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        selector:  { type: 'string',  description: '只快照该 CSS selector 子树。默认整页。' },
-        max_depth: { type: 'number',  description: 'DOM 树最大遍历深度。' },
-        max_nodes: { type: 'number',  description: '返回的最大节点数。' },
-        trace:     { type: 'boolean', description: '失败时返回结构化的错误诊断信息。' },
-      },
-    },
-  },
-  {
-    name: 'browser_page_info',
-    description: '获取你当前在页面上的位置信息：滚动位置（scrollY、百分比、是否到顶/到底）、视口尺寸、整页高度、当前小节标题、视口内所有标题、元素计数。用途：自我定位。场景：滚动或交互前后调用，确认落点和页面结构。',
-    input_schema: { type: 'object', properties: {} },
-  },
-  {
-    name: 'browser_find_popups',
-    description: '检测页面上可见的弹窗、模态框、对话框、抽屉、遮罩以及它们可能的关闭按钮。用途：发现挡住操作的弹层。场景：自动化卡住时先排查弹窗，再决定如何关闭。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        limit: { type: 'number', description: '最多返回的弹窗数。默认 10。' },
-      },
-    },
-  },
-
   // ───── 页面交互 ───────────────────────────────────────────────────────
   {
     name: 'browser_action',
@@ -163,7 +87,7 @@ export const BROWSER_TOOLS: AIToolDef[] = [
       '· click：派发完整指针+鼠标事件序列，兼容自定义组件；定位优先级 ref（browser_observe 编号，最稳）> selector > text > 坐标；非坐标点击会先做遮挡检测，被弹窗/遮罩盖住时返回 occluded 诊断（需穿透点击传 force:true）。\n' +
       '· double_click / right_click：双击、右键（上下文菜单），用 selector / text / 坐标定位。\n' +
       '· scroll：滚动页面，返回滚动后的位置、移动像素数与进入视野的小节/标题。\n' +
-      '· type：向 input/textarea 输入文本（单字段；多字段用 browser_fill_form）。\n' +
+      '· type：向 input/textarea 输入文本（单字段；多字段请多次 type 或配合 observe 逐字段操作）。\n' +
       '· press_key：在焦点元素或指定 selector 上按键，可带 Ctrl/Shift/Alt/Meta 修饰键。\n' +
       '用途：统一的点击/滚动/输入/键盘入口。场景：先 browser_observe 拿到编号，再 browser_action {action:"click", ref:id} 点击；输入用 {action:"type"}；快捷键用 {action:"press_key"}。',
     input_schema: {
@@ -194,15 +118,6 @@ export const BROWSER_TOOLS: AIToolDef[] = [
     },
   },
   {
-    name: 'browser_hover',
-    description: '把鼠标悬停 hover 到某个元素上，以显示 tooltip 或下拉菜单。用途：触发悬停才出现的内容。场景：展开悬停菜单、显示提示气泡后再操作。',
-    input_schema: {
-      type: 'object',
-      properties: { selector: { type: 'string', description: '要悬停元素的 CSS selector。' } },
-      required: ['selector'],
-    },
-  },
-  {
     name: 'browser_wait',
     description: '等待某个 CSS selector 出现，或固定等待一段时间。用途：等待页面/元素就绪后再操作。场景：等异步加载的按钮出现、等动画结束、给页面留出渲染时间。',
     input_schema: {
@@ -230,61 +145,6 @@ export const BROWSER_TOOLS: AIToolDef[] = [
       },
     },
   },
-  {
-    name: 'browser_fill_form',
-    description: '一次性填写多个表单字段，可按 selector、name、label、placeholder 或对象映射定位控件。用途：批量填表。场景：登录/注册/结算等需要填多个字段并提交的表单。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        fields: {
-          type: 'array',
-          description: '字段列表。示例：[{selector:"input[name=email]", value:"me@example.com"}, {label:"Password", value:"secret"}, {selector:"#remember", action:"check"}]；运行时也接受对象映射写法。',
-          items: {
-            type: 'object',
-            properties: {
-              selector:    { type: 'string', description: '输入框/下拉/文本域的 CSS selector。' },
-              name:        { type: 'string', description: '表单控件的 name 或 id（兜底定位）。' },
-              label:       { type: 'string', description: '字段附近的可见 label 文本。' },
-              placeholder: { type: 'string', description: '用于匹配的 placeholder 文本。' },
-              value:       { type: ['string', 'number', 'boolean'], description: '要设置的值。' },
-              action:      { type: 'string', enum: ['set', 'type', 'select', 'check', 'uncheck', 'click'], description: '如何应用值：set 设值、type 模拟输入、select 选择、check/uncheck 勾选、click 点击。默认 set。' },
-            },
-          },
-        },
-        submit_selector: { type: 'string', description: '填完后要点击的提交按钮 CSS selector。' },
-      },
-      required: ['fields'],
-    },
-  },
-  {
-    name: 'browser_select',
-    description: '在原生 <select> 下拉或常见自定义下拉/列表框中选择某项：通过点击控件并按选项文本/值匹配。用途：处理下拉选择。场景：选择国家、城市、数量等下拉项。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        selector:    { type: 'string', description: '下拉/自定义下拉控件的 CSS selector。' },
-        value:       { type: 'string', description: '要选择的选项值或可见文本。' },
-        text:        { type: 'string', description: 'value 的别名。' },
-        option_text: { type: 'string', description: 'value 的别名。' },
-      },
-      required: ['selector'],
-    },
-  },
-  {
-    name: 'browser_close_popup',
-    description: '关闭可见的弹窗/模态框/对话框：优先点检测到的关闭按钮，再回退到 Escape/点遮罩。需要先查看候选时请先调用 browser_find_popups。用途：清除遮挡。场景：关闭 cookie 同意条、订阅弹窗、登录引导层。',
-    input_schema: {
-      type: 'object',
-      properties: {
-        selector:     { type: 'string', description: '可选：要关闭弹窗的 CSS selector。' },
-        text:         { type: 'string', description: '可选：弹窗内包含的文本，用于定位它。' },
-        index:        { type: 'number', description: 'browser_find_popups 返回的弹窗序号。默认 0。' },
-        strategy:     { type: 'string', enum: ['auto', 'close_button', 'escape', 'backdrop'], description: '关闭策略：auto 自动、close_button 关闭按钮、escape 按 Esc、backdrop 点遮罩。默认 auto。' },
-        force_remove: { type: 'boolean', description: '为 true 时作为最后手段直接移除弹窗 DOM 节点。' },
-      },
-    },
-  },
-
   // ───── 数据与脚本 ─────────────────────────────────────────────────────
   {
     name: 'browser_evaluate',
@@ -457,24 +317,18 @@ export const BROWSER_TOOL_CATEGORIES: BrowserToolCategory[] = [
     title: '导航与搜索',
     kind: 'basic',
     // browser_tab 现已涵盖跳转 URL / 前进后退 / 列出标签等页面级导航，归入此类。
-    tools: ['browser_tab', 'browser_search'],
+    tools: ['browser_tab'],
   },
   {
     title: '页面观察',
     kind: 'basic',
-    tools: [
-      'browser_observe', 'browser_screenshot', 'browser_get_content',
-      'browser_dom_snapshot', 'browser_page_info', 'browser_find_popups',
-    ],
+    tools: ['browser_observe', 'browser_screenshot'],
   },
   {
     title: '页面交互',
     kind: 'basic',
     // browser_action 聚合了点击/双击/右键/滚动/输入/键盘按键。
-    tools: [
-      'browser_action', 'browser_hover', 'browser_wait', 'browser_drag',
-      'browser_fill_form', 'browser_select', 'browser_close_popup',
-    ],
+    tools: ['browser_action', 'browser_wait', 'browser_drag'],
   },
   {
     title: '数据与脚本',

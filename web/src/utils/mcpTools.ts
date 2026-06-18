@@ -103,10 +103,10 @@ const getEndpointCapabilityTag = (name: string) => {
   // 浏览器端来源本身已是「浏览器 MCP」，故标签去掉冗余的「浏览器」前缀，
   // 直接作为来源下的二级分组（导航 / 观察 / 交互 / 数据 / 状态 / 卡片）。
   // browser_tab 现已涵盖跳转 URL / 前进后退 / 列出标签等页面级导航，归入「导航」。
-  if (['browser_tab', 'browser_search', 'browser_navigate', 'browser_history', 'browser_history_back', 'browser_history_forward', 'browser_tab_list', 'browser_tab_open', 'browser_tab_close', 'browser_tab_navigate', 'browser_tab_back', 'browser_tab_forward'].includes(name)) return '导航'
-  if (['browser_screenshot', 'browser_get_content', 'browser_dom_snapshot', 'browser_page_info', 'browser_find_text', 'browser_find_popups', 'browser_performance', 'browser_network_log', 'browser_iframe_list'].includes(name)) return '观察'
+  if (['browser_tab', 'browser_navigate', 'browser_history', 'browser_history_back', 'browser_history_forward', 'browser_tab_list', 'browser_tab_open', 'browser_tab_close', 'browser_tab_navigate', 'browser_tab_back', 'browser_tab_forward'].includes(name)) return '导航'
+  if (['browser_observe', 'browser_screenshot', 'browser_find_text', 'browser_performance', 'browser_network_log', 'browser_iframe_list'].includes(name)) return '观察'
   // browser_action 聚合了点击/双击/右键/滚动/输入/键盘按键。
-  if (['browser_action', 'browser_click', 'browser_double_click', 'browser_right_click', 'browser_type', 'browser_press_key', 'browser_hover', 'browser_scroll', 'browser_wait', 'browser_drag', 'browser_fill_form', 'browser_select', 'browser_close_popup'].includes(name)) return '交互'
+  if (['browser_action', 'browser_click', 'browser_double_click', 'browser_right_click', 'browser_type', 'browser_press_key', 'browser_scroll', 'browser_wait', 'browser_drag'].includes(name)) return '交互'
   if (['browser_evaluate', 'browser_extract', 'browser_clipboard_write', 'browser_file_upload', 'browser_download'].includes(name)) return '数据'
   if (['browser_cookie', 'browser_storage', 'browser_session', 'browser_profile'].includes(name)) return '状态'
   if (hasMcpPrefix(name, 'card')) return '卡片'
@@ -181,20 +181,11 @@ const MCP_TOOL_ZH_LABELS: Record<string, string> = {
   'device_mcp.manage': '管理设备 MCP',
   'mcp.manage_dynamic_tool': '管理动态 MCP',
   'browser_mcp.manage_dynamic_tool': '管理动态 MCP',
-  browser_search: '浏览器搜索',
   browser_observe: '页面观察',
   browser_screenshot: '页面截图',
-  browser_get_content: '读取页面内容',
-  browser_dom_snapshot: 'DOM 快照',
-  browser_page_info: '页面位置信息',
-  browser_find_popups: '查找弹窗',
   browser_action: '页面交互',
-  browser_hover: '鼠标悬停',
   browser_wait: '等待页面',
   browser_drag: '拖拽元素',
-  browser_fill_form: '填写表单',
-  browser_select: '选择选项',
-  browser_close_popup: '关闭弹窗',
   browser_evaluate: '执行脚本',
   browser_extract: '提取数据',
   browser_clipboard_write: '写入剪贴板',

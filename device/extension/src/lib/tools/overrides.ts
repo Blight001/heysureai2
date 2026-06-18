@@ -1,25 +1,34 @@
-// tools/overrides.ts — merge the user's local description edits onto the static
-// BROWSER_TOOLS schemas, and apply the user's enable/disable selection. The
-// result is what gets reported to the server via device:register -> toolDefs, so
-// server-side mcp.list_tools / describe_tool reflect the popup's edited
-// descriptions without any server-side storage, and disabled tools are withheld
-// entirely (server + AI never see them).
+// tools/overrides.ts — build the MCP catalog the extension reports to the server.
+//
+// Schema source of truth matches the Windows desktop model:
+//   1. Server-pushed tools (device:tool-config, memory-only) win on name conflicts.
+//   2. Locally-authored dynamic tools (chrome.storage) are merged next.
+//   3. Hardcoded BROWSER_TOOLS schemas are a connect-time fallback only, until the
+//      server seeds/pushes workspace files under device_tools/browser/.
+//
+// Execution still uses the packaged browser.ts handlers; server program wrappers
+// forward to builtin:*. Tool enable/disable stays in chrome.storage (desktop
+// keeps an equivalent in Electron store). Description overrides are NOT applied
+// to server-managed tools — edit those on the server / web console instead.
 
 import { BROWSER_TOOLS, isToolEnabledByDefault } from './definitions'
 import { AIToolDef } from '../types'
 import { getToolDescOverrides, getToolEnabledMap } from '../storage'
-import { dynamicMcpToolDefs } from './dynamic'
+import { dynamicMcpToolDefs, isServerManagedToolDef } from './dynamic'
+
+const BUILTIN_IMPL = {
+  kind: 'builtin' as const,
+  source_files: ['src/lib/tools/definitions.ts', 'src/lib/tools/browser.ts', 'src/lib/tools/router.ts', 'dist/background.js'],
+  editable_via: 'browser_mcp.manage_dynamic_tool',
+}
 
 export async function allToolDefs(): Promise<AIToolDef[]> {
-  const merged = new Map(BROWSER_TOOLS.map(tool => [tool.name, {
-    ...tool,
-    implementation: {
-      kind: 'builtin',
-      source_files: ['src/lib/tools/definitions.ts', 'src/lib/tools/browser.ts', 'src/lib/tools/router.ts', 'dist/background.js'],
-      editable_via: 'mcp.manage_dynamic_tool',
-    },
-  }] as const))
+  const merged = new Map<string, AIToolDef>()
   for (const tool of await dynamicMcpToolDefs()) merged.set(tool.name, tool)
+  for (const tool of BROWSER_TOOLS) {
+    if (merged.has(tool.name)) continue
+    merged.set(tool.name, { ...tool, implementation: BUILTIN_IMPL })
+  }
   return Array.from(merged.values())
 }
 
@@ -33,7 +42,7 @@ export async function resolveToolEnabledMap(): Promise<Record<string, boolean>> 
   return out
 }
 
-/** Names of the currently enabled tools, preserving BROWSER_TOOLS order. */
+/** Names of the currently enabled tools. */
 export async function enabledToolNames(): Promise<string[]> {
   const enabled = await resolveToolEnabledMap()
   return (await allToolDefs()).filter(t => enabled[t.name]).map(t => t.name)
@@ -43,6 +52,7 @@ export async function effectiveToolDefs(): Promise<AIToolDef[]> {
   const overrides = await getToolDescOverrides()
   const enabled = await resolveToolEnabledMap()
   return (await allToolDefs()).filter(tool => enabled[tool.name]).map(tool => {
+    if (isServerManagedToolDef(tool)) return tool
     const o = overrides[tool.name]
     if (!o) return tool
     const desc = (o.description || '').trim()

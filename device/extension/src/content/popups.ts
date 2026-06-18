@@ -171,7 +171,7 @@ export async function doClosePopup(msg: any) {
     const candidates = findCloseCandidates(target!, 8)
     const btn = candidates[0]
     if (!btn) return false
-    if (isFxEnabled()) { await fxToElement(btn); const c = elCenter(btn); fxClickAt(c.x, c.y); await fxSleep(80) }
+    if (isFxEnabled()) { await fxToElement(btn); const c = elCenter(btn); await fxClickAt(c.x, c.y); await fxSleep(80) }
     // clickLikeUser
     const c = elCenter(btn)
     const opts = { bubbles: true, cancelable: true, view: window, clientX: c.x, clientY: c.y } as MouseEventInit

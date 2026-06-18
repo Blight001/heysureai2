@@ -5,7 +5,7 @@
 import {
   BROWSER_TOOL_CATEGORIES, BROWSER_TOOL_KIND_LABELS,
   BrowserToolCategory, BrowserToolKind, allToolDefs, browserToolKind,
-  resolveToolEnabledMap,
+  resolveToolEnabledMap, isServerManagedToolDef,
 } from '../lib/tools'
 import { AIToolDef } from '../lib/types'
 import {
@@ -14,6 +14,7 @@ import {
 import * as dom from './dom'
 import { state } from './state'
 import { sendToBackground } from './transport'
+import { renderToolDemo } from './mcp-demos'
 
 let overrides: Record<string, { description?: string; parameters?: Record<string, string> }> = {}
 let enabledMap: Record<string, boolean> = {}
@@ -36,20 +37,11 @@ const CATEGORY_META: Record<string, { zh: string; en: string }> = {
 }
 
 const TOOL_LABELS: Record<string, { zh: string; en: string }> = {
-  browser_search: { zh: '浏览器搜索', en: 'Search' },
   browser_observe: { zh: '页面观察', en: 'Observe' },
   browser_screenshot: { zh: '页面截图', en: 'Screenshot' },
-  browser_get_content: { zh: '读取页面内容', en: 'Get Content' },
-  browser_dom_snapshot: { zh: 'DOM 快照', en: 'DOM Snapshot' },
-  browser_page_info: { zh: '页面位置信息', en: 'Page Info' },
-  browser_find_popups: { zh: '查找弹窗', en: 'Find Popups' },
   browser_action: { zh: '页面交互（点击/滚动/输入/按键）', en: 'Page Action' },
-  browser_hover: { zh: '鼠标悬停', en: 'Hover' },
   browser_wait: { zh: '等待页面', en: 'Wait' },
   browser_drag: { zh: '拖拽元素', en: 'Drag' },
-  browser_fill_form: { zh: '填写表单', en: 'Fill Form' },
-  browser_select: { zh: '选择选项', en: 'Select' },
-  browser_close_popup: { zh: '关闭弹窗', en: 'Close Popup' },
   browser_evaluate: { zh: '执行脚本', en: 'Evaluate Script' },
   browser_extract: { zh: '提取数据', en: 'Extract Data' },
   browser_clipboard_write: { zh: '写入剪贴板', en: 'Write Clipboard' },
@@ -93,17 +85,20 @@ function categoryMeta(title: string) {
   return CATEGORY_META[title] || { zh: title, en: toTitleCase(title).toUpperCase() }
 }
 
-function isEdited(name: string) {
-  const o = overrides[name]
+function isEdited(tool: AIToolDef) {
+  if (isServerManagedToolDef(tool)) return false
+  const o = overrides[tool.name]
   return !!(o && (o.description || (o.parameters && Object.keys(o.parameters).length)))
 }
 
 function effDescription(t: AIToolDef) {
+  if (isServerManagedToolDef(t)) return t.description || ''
   return overrides[t.name]?.description?.trim() || t.description || ''
 }
 
-function effParamDesc(tool: string, param: string, raw: string) {
-  return overrides[tool]?.parameters?.[param]?.trim() || raw || ''
+function effParamDesc(tool: AIToolDef, param: string, raw: string) {
+  if (isServerManagedToolDef(tool)) return raw || ''
+  return overrides[tool.name]?.parameters?.[param]?.trim() || raw || ''
 }
 
 function paramEntries(t: AIToolDef) {
@@ -203,7 +198,8 @@ export async function renderMcpList() {
               <span class="tool-name-sub">${esc(tMeta.en)}</span>
             </div>
             ${on ? '' : '<span class="tool-off">已关闭</span>'}
-            ${isEdited(t.name) ? '<span class="tool-edited">已自定义</span>' : ''}
+            ${isServerManagedToolDef(t) ? '<span class="tool-edited">服务器</span>' : ''}
+            ${isEdited(t) ? '<span class="tool-edited">已自定义</span>' : ''}
           </div>
           <div class="tool-desc">${esc((effDescription(t) || '（无描述）').slice(0, 110))}</div>`
         const cb = el.querySelector('.tool-enabled') as HTMLInputElement
@@ -237,6 +233,7 @@ async function renderDetail(tool: AIToolDef) {
   const kind = category?.kind || browserToolKind(tool.name)
   const meta = toolMeta(tool.name)
   const params = paramEntries(tool)
+  const serverManaged = isServerManagedToolDef(tool)
   const paramHtml = params.length
     ? params.map(p => `
         <div class="param-row">
@@ -245,10 +242,24 @@ async function renderDetail(tool: AIToolDef) {
             <span class="param-type">${esc(p.type)}</span>
             ${p.required ? '<span class="param-req">必填</span>' : ''}
           </div>
-          <div class="tool-desc">${esc(effParamDesc(tool.name, p.name, p.desc) || '（无说明）')}</div>
-          <input type="text" data-param="${esc(p.name)}" class="edit-param" placeholder="自定义参数说明（留空用默认）" value="${esc(overrides[tool.name]?.parameters?.[p.name] || '')}" style="margin-top:5px;"/>
+          <div class="tool-desc">${esc(effParamDesc(tool, p.name, p.desc) || '（无说明）')}</div>
+          ${serverManaged ? '' : `<input type="text" data-param="${esc(p.name)}" class="edit-param" placeholder="自定义参数说明（留空用默认）" value="${esc(overrides[tool.name]?.parameters?.[p.name] || '')}" style="margin-top:5px;"/>`}
         </div>`).join('')
     : '<div class="empty-note">该工具无参数</div>'
+  const editCard = serverManaged
+    ? `<div class="card">
+      <div class="card-title">服务器管理</div>
+      <div class="login-hint">此工具的 schema 由服务器工作区 <code>device_tools/browser/</code> 下发，与 Windows 桌面一致。请在 Web 控制台或工作区文件中修改描述与参数说明。</div>
+    </div>`
+    : `<div class="card">
+      <div class="card-title">编辑描述（本地保存，随上报同步给服务器）</div>
+      <div class="fg"><label>工具描述（用途 + 使用场景）</label>
+        <textarea class="ta" id="edit-desc" placeholder="留空使用默认描述">${esc(overrides[tool.name]?.description || '')}</textarea>
+      </div>
+      <button class="btn btn-primary" id="edit-save">保存描述</button>
+      <button class="btn btn-secondary" id="edit-reset">恢复默认</button>
+      <div class="save-feedback" id="edit-feedback"></div>
+    </div>`
   const argTemplate = JSON.stringify(Object.fromEntries(params.filter(p => p.required).map(p => [p.name, ''])), null, 2)
 
   dom.mcpDetail.innerHTML = `
@@ -269,19 +280,12 @@ async function renderDetail(tool: AIToolDef) {
         <span class="tool-kind-tag ${kind}">${esc(BROWSER_TOOL_KIND_LABELS[kind])} · ${esc(category?.title || '未分类')}</span>
       </div>
     </div>
+    ${renderToolDemo(tool.name)}
     <div class="card">
       <div class="card-title">参数说明</div>
       ${paramHtml}
     </div>
-    <div class="card">
-      <div class="card-title">编辑描述（本地保存，随上报同步给服务器）</div>
-      <div class="fg"><label>工具描述（用途 + 使用场景）</label>
-        <textarea class="ta" id="edit-desc" placeholder="留空使用默认描述">${esc(overrides[tool.name]?.description || '')}</textarea>
-      </div>
-      <button class="btn btn-primary" id="edit-save">保存描述</button>
-      <button class="btn btn-secondary" id="edit-reset">恢复默认</button>
-      <div class="save-feedback" id="edit-feedback"></div>
-    </div>
+    ${editCard}
     <div class="card">
       <div class="card-title">测试调用 (mcp.test)</div>
       <div class="login-hint">在当前浏览器环境直接执行该工具并返回原始结果。</div>
@@ -299,26 +303,27 @@ async function renderDetail(tool: AIToolDef) {
     await renderDetail(tool)
   })
 
-  dom.mcpDetail.querySelector('#edit-save')!.addEventListener('click', async () => {
-    const description = (dom.mcpDetail.querySelector('#edit-desc') as HTMLTextAreaElement).value
-    const parameters: Record<string, string> = {}
-    dom.mcpDetail.querySelectorAll<HTMLInputElement>('.edit-param').forEach(inp => {
-      parameters[inp.dataset.param!] = inp.value
+  if (!serverManaged) {
+    dom.mcpDetail.querySelector('#edit-save')!.addEventListener('click', async () => {
+      const description = (dom.mcpDetail.querySelector('#edit-desc') as HTMLTextAreaElement).value
+      const parameters: Record<string, string> = {}
+      dom.mcpDetail.querySelectorAll<HTMLInputElement>('.edit-param').forEach(inp => {
+        parameters[inp.dataset.param!] = inp.value
+      })
+      await setToolDescOverride(tool.name, { description, parameters })
+      sendToBackground({ type: 'device:connect' })
+      const fb = dom.mcpDetail.querySelector('#edit-feedback') as HTMLElement
+      fb.textContent = '已保存，稍后同步给服务器'
+      fb.style.color = 'var(--success)'
+      await renderDetail(tool)
     })
-    await setToolDescOverride(tool.name, { description, parameters })
-    // Re-report toolDefs so the server picks up the edit without reconnecting.
-    sendToBackground({ type: 'device:connect' })
-    const fb = dom.mcpDetail.querySelector('#edit-feedback') as HTMLElement
-    fb.textContent = '已保存，稍后同步给服务器'
-    fb.style.color = 'var(--success)'
-    await renderDetail(tool)
-  })
 
-  dom.mcpDetail.querySelector('#edit-reset')!.addEventListener('click', async () => {
-    await setToolDescOverride(tool.name, { description: '', parameters: {} })
-    sendToBackground({ type: 'device:connect' })
-    await renderDetail(tool)
-  })
+    dom.mcpDetail.querySelector('#edit-reset')!.addEventListener('click', async () => {
+      await setToolDescOverride(tool.name, { description: '', parameters: {} })
+      sendToBackground({ type: 'device:connect' })
+      await renderDetail(tool)
+    })
+  }
 
   dom.mcpDetail.querySelector('#test-run')!.addEventListener('click', () => {
     const out = dom.mcpDetail.querySelector('#test-result') as HTMLElement

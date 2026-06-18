@@ -27,6 +27,7 @@ const INTERACTIVE = [
 ].join(',')
 
 const MARK_LAYER_ID = '__hs_marks_layer'
+const MARK_STYLE_ID = '__hs_marks_style'
 
 function implicitRole(el: Element): string {
   const tag = el.tagName.toLowerCase()
@@ -102,18 +103,50 @@ export function clearMarksOverlay(): void {
   document.getElementById(MARK_LAYER_ID)?.remove()
 }
 
+function ensureMarkStyles() {
+  if (document.getElementById(MARK_STYLE_ID)) return
+  const style = document.createElement('style')
+  style.id = MARK_STYLE_ID
+  style.textContent = `
+    #${MARK_LAYER_ID} .hs-mark-box{
+      position:fixed;box-sizing:border-box;pointer-events:none;
+      border:1.5px solid rgba(99,102,241,.75);border-radius:4px;
+      background:linear-gradient(135deg,rgba(99,102,241,.1),rgba(139,92,246,.06));
+      box-shadow:0 0 0 1px rgba(255,255,255,.35),0 0 16px rgba(99,102,241,.18);
+      animation:hs-mark-in .38s cubic-bezier(.22,1,.36,1) both,hs-mark-pulse 2.4s ease-in-out .38s infinite;}
+    #${MARK_LAYER_ID} .hs-mark-badge{
+      position:fixed;pointer-events:none;min-width:18px;height:18px;padding:0 5px;
+      display:flex;align-items:center;justify-content:center;
+      background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;
+      font:bold 10px/1 ui-monospace,monospace;border-radius:0 0 6px 0;
+      box-shadow:0 1px 6px rgba(79,70,229,.45),0 0 0 1px rgba(255,255,255,.65);
+      animation:hs-mark-in .34s cubic-bezier(.22,1,.36,1) both;}
+    @keyframes hs-mark-in{from{opacity:0;transform:scale(.94);}to{opacity:1;transform:scale(1);}}
+    @keyframes hs-mark-pulse{0%,100%{border-color:rgba(99,102,241,.65);}50%{border-color:rgba(129,140,248,.95);}}`
+  document.documentElement.appendChild(style)
+}
+
 function drawMarksOverlay(els: Element[]): void {
   clearMarksOverlay()
+  ensureMarkStyles()
   const layer = document.createElement('div')
   layer.id = MARK_LAYER_ID
   layer.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;margin:0;padding:0;border:0;z-index:2147483646;pointer-events:none;'
   els.forEach((el, i) => {
     const r = (el as HTMLElement).getBoundingClientRect()
     const box = document.createElement('div')
-    box.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${Math.max(0, r.width)}px;height:${Math.max(0, r.height)}px;box-sizing:border-box;border:1px solid rgba(37,99,235,.7);background:rgba(37,99,235,.06);pointer-events:none;`
+    box.className = 'hs-mark-box'
+    box.style.left = `${r.left}px`
+    box.style.top = `${r.top}px`
+    box.style.width = `${Math.max(0, r.width)}px`
+    box.style.height = `${Math.max(0, r.height)}px`
+    box.style.animationDelay = `${Math.min(i * 35, 420)}ms, ${Math.min(i * 35, 420) + 380}ms`
     const badge = document.createElement('div')
+    badge.className = 'hs-mark-badge'
     badge.textContent = String(i + 1)
-    badge.style.cssText = `position:fixed;left:${Math.max(0, r.left)}px;top:${Math.max(0, r.top)}px;background:#2563eb;color:#fff;font:bold 11px/14px ui-monospace,monospace;padding:0 4px;border-radius:0 0 3px 0;pointer-events:none;box-shadow:0 0 0 1px #fff;`
+    badge.style.left = `${Math.max(0, r.left)}px`
+    badge.style.top = `${Math.max(0, r.top)}px`
+    badge.style.animationDelay = `${Math.min(i * 35, 420)}ms`
     layer.appendChild(box)
     layer.appendChild(badge)
   })
