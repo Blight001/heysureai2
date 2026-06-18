@@ -10,6 +10,7 @@ import type {
   ProjectItem,
 } from '@/types'
 import { listEntries, listProposals, type KnowledgeEntryItem } from '@/api/librarian'
+import { formatDate } from '@/utils/datetime'
 import { listAiCards, toggleAiRun } from '@/api/ai'
 import {
   createProject as apiCreateProject,
@@ -491,14 +492,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     }
   }
 
-  const formatKnowledgeTime = (ts: number) => {
-    if (!ts) return ''
-    const date = new Date(ts * 1000)
-    const y = date.getFullYear()
-    const m = String(date.getMonth() + 1).padStart(2, '0')
-    const d = String(date.getDate()).padStart(2, '0')
-    return `${y}-${m}-${d}`
-  }
+  const formatKnowledgeTime = (ts: number) => formatDate(ts, '')
 
   const scopeLabel = (entry: KnowledgeEntryItem) => {
     if (entry.scope === 'global') return '系统'

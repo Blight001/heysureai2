@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, Dict
 
+from api.value_utils import to_bool
+
 if TYPE_CHECKING:
     from api.models import AssistantAIConfig
 
@@ -75,7 +77,7 @@ def update_channel_config(
             continue
         value = payload[key]
         if isinstance(default_value, bool):
-            current[key] = _coerce_bool(value, default_value)
+            current[key] = to_bool(value, default_value)
         elif isinstance(default_value, int) and not isinstance(default_value, bool):
             try:
                 current[key] = int(value)
@@ -85,16 +87,3 @@ def update_channel_config(
             current[key] = "" if value is None else str(value)
     configs[channel] = current
     save_bot_configs(cfg, configs)
-
-
-def _coerce_bool(value: Any, default: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    text = str(value or "").strip().lower()
-    if text in {"1", "true", "yes", "on"}:
-        return True
-    if text in {"0", "false", "no", "off"}:
-        return False
-    return default

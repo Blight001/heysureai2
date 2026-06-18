@@ -11,7 +11,8 @@ from fastapi import Depends, Header, HTTPException
 from sqlmodel import Session, select
 
 from api.database import get_session
-from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, ChatSession
+from api.models import AITaskJob, ChatMessage, ChatRun, ChatSession
+from api.services.access_guards import get_ai_config_or_404
 from api.services.chat_media import delete_message_media
 from .auth import get_current_user
 from api.services.task_system import (
@@ -38,9 +39,7 @@ async def trigger_ai_task(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
 
     payload_body = body if isinstance(body, dict) else {}
     owner_cfg = _resolve_task_owner_cfg(session, user.id, cfg, payload_body)
@@ -100,9 +99,7 @@ async def get_ai_task_list(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
 
     templates = normalize_tasks_from_control(cfg.system_auto_control)
     jobs = session.exec(
@@ -165,9 +162,7 @@ async def get_ai_task_jobs(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
 
     jobs = session.exec(
         select(AITaskJob).where(
@@ -281,9 +276,7 @@ async def update_ai_task_job(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
 
     job = session.exec(
         select(AITaskJob).where(
@@ -382,9 +375,7 @@ async def stop_ai_task_job(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
 
     job = session.exec(
         select(AITaskJob).where(
@@ -467,9 +458,7 @@ async def pause_ai_task_job(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
     job = session.exec(
         select(AITaskJob).where(
             AITaskJob.user_id == user.id,
@@ -501,9 +490,7 @@ async def resume_ai_task_job(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
     job = session.exec(
         select(AITaskJob).where(
             AITaskJob.user_id == user.id,
@@ -535,9 +522,7 @@ async def delete_ai_task_job(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
     job = session.exec(
         select(AITaskJob).where(
             AITaskJob.user_id == user.id,
@@ -605,9 +590,7 @@ async def get_task_job_generations(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
 
     job = session.exec(
         select(AITaskJob).where(

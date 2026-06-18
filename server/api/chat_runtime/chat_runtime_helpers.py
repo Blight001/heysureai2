@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 from api.database import engine
 from mcp_runtime.mcp import get_project_root
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatRun, User
+from api.value_utils import safe_json_obj
 from api.services.model_presets import resolve_model_preset
 from api.services.task_system import with_workspace_read_by_name_compat
 from .run_state import _RUN_LIVE_STATE, _RUN_STATE_LOCK
@@ -104,13 +105,9 @@ def _load_task_payload_by_session(
             AITaskJob.session_id == session_id,
         ).order_by(AITaskJob.updated_at.desc())
     ).first()
-    if not row or not row.task_payload:
+    if not row:
         return {}
-    try:
-        parsed = json.loads(row.task_payload)
-    except Exception:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
+    return safe_json_obj(row.task_payload)
 
 def _load_task_job_by_session(
     session: Session,

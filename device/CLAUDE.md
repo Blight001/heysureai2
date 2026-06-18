@@ -24,7 +24,7 @@
 - 平台差异不要写死在共享代码里：通过各壳 `src/platform.ts` 导出的 `platformProfile` 读取
   （见 `shared/src/platform-profile.ts`）。
 - 仍有**平台分叉文件**留在各壳 `src/`（`device.ts`、`store.ts`、`platform.ts`、
-  `tools/{mouse,screen,window,...}.ts`、`renderer/*`、`executor/{catalog,dynamic}.ts` 等）——
+  `tools/{mouse,screen,window,...}.ts`、`renderer/*`、`executor/dynamic.ts` 等）——
   改这些仍需两边都改。
 
 平台差异举例：`linux` 独有 `tools/ear.ts`(STT) `tools/git.ts` `tools/shared/command.ts`；`windows` 独有 `offline-chat`/`offline-ai` 相关文件。

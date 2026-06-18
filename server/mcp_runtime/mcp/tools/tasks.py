@@ -31,6 +31,7 @@ from api.services.task_schedule import (
     parse_weekly_days,
 )
 from api.services.task_system import extract_task_payload
+from api.value_utils import safe_json_obj, to_bool
 from ..core import get_project_root
 
 _FINISHED_STATUSES = {"completed", "cancelled", "stopped", "error"}
@@ -66,19 +67,6 @@ def _append_task_completion_archive(
         os.fsync(archive.fileno())
     return archive_path
 
-
-def _to_bool(value: Any, default: bool = False) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        lowered = value.strip().lower()
-        if lowered in {"1", "true", "yes", "on"}:
-            return True
-        if lowered in {"0", "false", "no", "off"}:
-            return False
-    if isinstance(value, (int, float)):
-        return bool(value)
-    return default
 
 def _pick_value(source: Dict[str, Any], keys: tuple[str, ...]) -> Any:
     if not isinstance(source, dict):
@@ -152,7 +140,7 @@ def _resolve_schedule_run_immediately(args: Dict[str, Any], default: bool = Fals
             "run_now",
         ),
     )
-    return _to_bool(raw, default)
+    return to_bool(raw, default)
 
 def _build_task_payload_from_args(args: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
     """构建任务 payload；schedule 的别名兼容、hint 推断与 schedule_at 补全
@@ -400,15 +388,6 @@ def _task_create_impl(
             "schedule": _build_task_schedule_meta(task_payload),
         }
 
-def _safe_decode_task_payload(raw: Optional[str]) -> Dict[str, Any]:
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except Exception:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
 def _safe_timestamp(value: Any) -> Optional[float]:
     try:
         ts = float(value)
@@ -457,7 +436,7 @@ def _build_task_schedule_meta(task_payload: Dict[str, Any]) -> Dict[str, Any]:
     return meta
 
 def _task_job_payload(row: AITaskJob) -> Dict[str, Any]:
-    payload = _safe_decode_task_payload(row.task_payload)
+    payload = safe_json_obj(row.task_payload)
     return {
         "job_id": row.job_id,
         "title": row.title,
@@ -652,14 +631,14 @@ def _task_create(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
                 _SCHEDULE_MAX_RUNS_KEYS,
                 _SCHEDULE_END_AT_KEYS,
             )
-        ) or _to_bool(
+        ) or to_bool(
             _pick_value(schedule_obj, ("loop_enabled", "loop", "repeat")),
             False,
         )
         has_schedule_hint = any(
             _is_non_empty_schedule_value(_pick_schedule_value(normalized_args, keys))
             for keys in (_SCHEDULE_AT_KEYS, _SCHEDULE_DURATION_KEYS)
-        ) or _to_bool(
+        ) or to_bool(
             _pick_value(schedule_obj, ("enabled", "schedule_enabled")),
             False,
         )
@@ -697,7 +676,7 @@ def _task_update(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
             if status == "queued":
                 row.finished_at = None
 
-        payload = _merge_task_payload_for_update(_safe_decode_task_payload(row.task_payload), args)
+        payload = _merge_task_payload_for_update(safe_json_obj(row.task_payload), args)
         row.task_payload = json.dumps(payload, ensure_ascii=False)
         schedule = payload.get("schedule") if isinstance(payload, dict) else {}
         row.trigger_type = "schedule" if isinstance(schedule, dict) and bool(schedule.get("enabled")) else "manual"
@@ -824,9 +803,9 @@ def _task_row_to_dict(row: AITaskJob) -> Dict[str, Any]:
 
 def _task_list(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     job_id = str(args.get("job_id") or "").strip()
-    current_only = _to_bool(args.get("current_only", args.get("current")), False)
-    include_history = _to_bool(args.get("include_history", args.get("history")), False)
-    history_only = _to_bool(args.get("history_only"), False)
+    current_only = to_bool(args.get("current_only", args.get("current")), False)
+    include_history = to_bool(args.get("include_history", args.get("history")), False)
+    history_only = to_bool(args.get("history_only"), False)
     requested_statuses = _parse_task_list_statuses(args.get("status") or args.get("statuses"))
     limit = _parse_task_list_limit(args.get("limit"), 100 if (include_history or history_only) else 500)
     with Session(engine) as session:

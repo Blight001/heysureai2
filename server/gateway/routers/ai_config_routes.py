@@ -23,6 +23,7 @@ from api.models import (
     AssistantAIConfigCreate,
     AssistantAIConfigUpdate,
 )
+from api.services.access_guards import get_ai_config_or_404
 from .auth import get_current_user
 from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.services.model_presets import normalize_model_presets
@@ -246,9 +247,7 @@ async def update_ai_config(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
     bot_snapshot_before = _bot_runtime_snapshot(cfg)
     updates = body.model_dump(exclude_unset=True)
     if "model_preset_id" in updates or "model" in updates:
@@ -328,9 +327,7 @@ async def toggle_ai_run(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
     cfg.enabled = not cfg.enabled
     cfg.updated_at = time.time()
     session.add(cfg)
@@ -379,9 +376,7 @@ async def bind_ai_parent(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
     raw_parent = body.get("parent_ai_config_id") if isinstance(body, dict) else None
     if raw_parent is None:
         raise HTTPException(status_code=400, detail="parent_ai_config_id is required")
@@ -391,9 +386,7 @@ async def bind_ai_parent(
         raise HTTPException(status_code=400, detail="parent_ai_config_id must be an integer")
     if parent_id == config_id:
         raise HTTPException(status_code=400, detail="An AI cannot be its own parent")
-    parent = session.get(AssistantAIConfig, parent_id)
-    if not parent or parent.user_id != user.id:
-        raise HTTPException(status_code=404, detail="Parent AI config not found")
+    parent = get_ai_config_or_404(session, parent_id, user.id, detail="Parent AI config not found")
 
     # Cycle guard: walking up from the prospective parent must not reach config_id.
     cursor = parent
@@ -429,9 +422,7 @@ async def unbind_ai_parent(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
     cfg.parent_ai_config_id = None
     cfg.root_manager_ai_config_id = int(cfg.id or 0)
     cfg.updated_at = time.time()
@@ -482,9 +473,7 @@ async def clone_ai_config(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    src = session.get(AssistantAIConfig, config_id)
-    if not src or src.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    src = get_ai_config_or_404(session, config_id, user.id)
     from api.services import kb_store
 
     src_prompt = kb_store.effective_ai_prompt(user.id, src)
@@ -534,9 +523,7 @@ async def toggle_ai_mcp(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
     cfg.mcp_enabled = not cfg.mcp_enabled
     cfg.updated_at = time.time()
     session.add(cfg)

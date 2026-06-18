@@ -16,7 +16,7 @@ from sqlmodel import Session
 
 from connector_runtime.bots import all_channels, get as get_bot
 from api.database import get_session
-from api.models import AssistantAIConfig
+from api.services.access_guards import get_ai_config_or_404
 from .auth import get_current_user
 
 
@@ -30,9 +30,7 @@ def _resolve_user_cfg(
     config_id: int, session: Session, authorization: str
 ) -> tuple:
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
     return user, cfg
 
 

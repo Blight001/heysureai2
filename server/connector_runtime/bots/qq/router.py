@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from api.database import get_session
 from api.database import engine
 from api.models import AssistantAIConfig, ChatMessage, ChatMessageCreate, ChatRun, ChatSession, User
+from api.services.access_guards import get_ai_config_or_404
 from gateway.routers.auth import get_current_user
 from api.chat_runtime.run_state import _RUN_THREADS
 from api.chat_runtime.chat_runtime_helpers import _resolve_ai_runtime
@@ -240,9 +241,7 @@ async def diagnose_qq_bot(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
     out = diagnose_qq_config(user.id, config_id)
     out["bot_status"] = get_qq_long_connection_state(config_id)
     out["status"] = out["bot_status"].get("status") or out.get("status") or "failed"
@@ -264,9 +263,7 @@ async def diagnose_qq_send_test(
     authorization: str = Header(None),
 ):
     user = get_current_user(authorization, session)
-    cfg = session.get(AssistantAIConfig, config_id)
-    if not cfg or cfg.user_id != user.id:
-        raise HTTPException(status_code=404, detail="AI config not found")
+    cfg = get_ai_config_or_404(session, config_id, user.id)
     result = send_qq_text_message(
         user.id,
         config_id,
@@ -285,9 +282,7 @@ def handle_qq_event_payload(
     raw_body: Optional[bytes] = None,
 ) -> Dict[str, Any]:
     with Session(engine) as session:
-        cfg = session.get(AssistantAIConfig, config_id)
-        if not cfg:
-            raise HTTPException(status_code=404, detail="AI config not found")
+        cfg = get_ai_config_or_404(session, config_id)
         if str(cfg.bot_channel or "feishu").strip().lower() != "qq":
             raise HTTPException(status_code=400, detail="QQ bot is not the active channel for this AI")
         if not read_qq_config(cfg).get("enabled"):

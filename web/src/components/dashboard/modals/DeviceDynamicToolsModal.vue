@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { formatDateTime } from '@/utils/datetime'
 import {
   listDeviceTools,
   upsertDeviceTool,
@@ -386,7 +387,7 @@ const remove = async (tool: DeviceDynamicTool) => {
   }
 }
 
-const fmtTime = (ts: number) => new Date((ts || 0) * 1000).toLocaleString()
+const fmtTime = (ts: number) => formatDateTime(ts, '--')
 const actionLabel = (a: string) => ({ upsert: '修改', delete: '删除', restore: '回滚' } as Record<string, string>)[a] || a
 
 const loadVersions = async () => {

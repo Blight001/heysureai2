@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
+import { formatDateTime } from '@/utils/datetime'
 import { useMessage } from '@/composables/useMessage'
 import * as adminApi from '@/api/admin'
 import type {
@@ -199,14 +200,7 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: 'member', label: '成员' },
 ]
 
-const fmtTime = (ts: number | null | undefined): string => {
-  if (!ts) return '—'
-  try {
-    return new Date(ts * 1000).toLocaleString()
-  } catch {
-    return '—'
-  }
-}
+const fmtTime = (ts: number | null | undefined): string => formatDateTime(ts, '—')
 
 const fmtLogTime = (ts: number): string => {
   try {
@@ -1157,10 +1151,7 @@ const repoDeployProgress = computed(() => {
   return { percent: 0, label: state.message || '等待开始' }
 })
 
-const fmtCommitTime = (ts: number | null | undefined) => {
-  if (!ts) return ''
-  return new Date(ts * 1000).toLocaleString()
-}
+const fmtCommitTime = (ts: number | null | undefined) => formatDateTime(ts, '')
 
 const loadRepoStatus = async (silent = false) => {
   if (!silent) repoLoading.value = true

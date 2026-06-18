@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, useAttrs } from 'vue'
+import { formatDateMinute } from '@/utils/datetime'
 import AppIcon from '@/components/common/AppIcon.vue'
 import {
   deleteInstalledClawHubSkill,
@@ -481,11 +482,7 @@ const applyFilter = (value: Props['filterValue']) => {
   emit('update:filterOpen', false)
 }
 
-const formatTime = (ts?: number | null) => {
-  if (!ts) return ''
-  const d = new Date(ts * 1000)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
+const formatTime = (ts?: number | null) => formatDateMinute(ts, '')
 
 const openDetail = async (item: KnowledgeItem) => {
   selectedItem.value = item
