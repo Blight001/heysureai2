@@ -152,14 +152,15 @@ class MainActivity : AppCompatActivity() {
             toast("已在电池白名单中")
             return
         }
+        // Open the system battery-optimization list and let the user whitelist us
+        // manually. We deliberately avoid ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+        // (and its restricted permission) to keep the permission profile clean.
+        toast("请在列表中找到「HeySure 安卓端」并设为「不优化 / 无限制」")
         try {
-            startActivity(Intent(
-                AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                Uri.parse("package:$packageName"),
-            ))
-        } catch (e: Exception) {
-            // Fall back to the settings list if the direct dialog is unavailable.
             startActivity(Intent(AndroidSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        } catch (e: Exception) {
+            startActivity(Intent(AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:$packageName")))
         }
     }
 
