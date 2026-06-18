@@ -1,6 +1,6 @@
-# device/shared — 桌面端 win/linux 共享源（单一真相源）
+# device/shared — 桌面端 win/linux/mac 共享源（单一真相源）
 
-`device/windows` 与 `device/linux` 是同源双份 Electron 壳。本目录是它们**完全相同**
+`device/windows`、`device/linux` 与 `device/mac` 是同源 Electron 壳。本目录是它们**完全相同**
 （或仅平台常量不同）那部分代码的**唯一真相源**。
 
 ## 工作方式（构建期覆盖式同步）
@@ -38,4 +38,4 @@
   - `tools/shell.ts`（`shell.run` 内置工具）已重构为 `shell-runner` 的薄封装。
 
 平台分叉文件（`device.ts`、`store.ts`、`platform.ts`、各 `tools/{mouse,screen,window,...}.ts`、
-`renderer/*` 等）仍各自保留在两壳 `src/` 下，不在此目录。
+`renderer/*` 等）仍各自保留在各壳 `src/` 下，不在此目录。

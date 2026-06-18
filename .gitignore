@@ -59,9 +59,15 @@ device/linux/dist/
 device/linux/release/
 device/linux/tsconfig.tsbuildinfo
 
+# Mac device (Electron) build output
+device/mac/dist/
+device/mac/release/
+device/mac/tsconfig.tsbuildinfo
+
 # Device Python runtime venv (created per-machine by scripts/setup-python.js)
 device/windows/device_runtime/python/.venv/
 device/linux/device_runtime/python/.venv/
+device/mac/device_runtime/python/.venv/
 device/*/device_runtime/python/__pycache__/
 device/**/__pycache__/
 
@@ -144,3 +150,29 @@ device/linux/src/services/server-client.ts
 device/linux/src/tools/shared/robot.ts
 device/linux/src/windows/main-window.ts
 device/linux/src/windows/tray.ts
+# device/mac (synced from device/shared/src)
+device/mac/src/constants.ts
+device/mac/src/executor/catalog.ts
+device/mac/src/executor/index.ts
+device/mac/src/executor/registry.ts
+device/mac/src/ipc/ai-config.ts
+device/mac/src/ipc/device.ts
+device/mac/src/platform-profile.ts
+device/mac/src/runtime/artifact-bridge.ts
+device/mac/src/runtime/permission-guard.ts
+device/mac/src/runtime/powershell-runner.ts
+device/mac/src/runtime/process-guard.ts
+device/mac/src/runtime/python-runner.ts
+device/mac/src/runtime/runtime-probe.ts
+device/mac/src/runtime/runtime-tool.ts
+device/mac/src/runtime/shell-runner.ts
+device/mac/src/server-url.ts
+device/mac/src/services/activity-log.ts
+device/mac/src/services/auth-state.ts
+device/mac/src/services/avatar-cache.ts
+device/mac/src/services/device-runtime.ts
+device/mac/src/services/reauth.ts
+device/mac/src/services/server-client.ts
+device/mac/src/tools/shared/robot.ts
+device/mac/src/windows/main-window.ts
+device/mac/src/windows/tray.ts

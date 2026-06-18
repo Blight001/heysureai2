@@ -8,7 +8,7 @@
 
 import { platformProfile } from '../platform'
 
-export type ToolPlatform = 'all' | 'windows' | 'linux'
+export type ToolPlatform = 'all' | 'windows' | 'linux' | 'mac'
 
 export interface ToolHandlerArgs {
   workspaceRoot: string

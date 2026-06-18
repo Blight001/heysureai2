@@ -11,6 +11,7 @@ import { triggerTaskForAgent } from '@/api/task'
 import { approveProposal, rejectProposal } from '@/api/librarian'
 import { setWorldActorMeta } from '@/api/world'
 import { SHEETS, TILES } from '../assetManifest'
+import { bgmTracks, sfxUrls, urlForAsset } from '../assets'
 import { MemberActor } from '../actors/MemberActor'
 import { portraitSpecFor, type PortraitSpec } from '../ui/portrait'
 import {
@@ -26,47 +27,22 @@ import {
   mulberry32,
   workshopSlotPos,
   workshopZone,
-  type Point,
   type Rect,
 } from '../world/layout'
 import { skinFor } from '../world/skins'
 import { WorldStore, type WorldEvent, type WorldMember, type WorldSnapshot, type WorldWorkshop } from '../world/store'
+import { clockLabel, nightnessForHour, resolveWorldHour } from '../world/time'
+import {
+  INTERACT_RANGE,
+  LIBRARY_DOOR,
+  OFFLINE_KEEP_MS,
+  workshopGlowTintForType,
+  workshopIsActive,
+  workshopSheetForType,
+} from '../world/workshops'
 import { Drawer } from '../ui/drawer'
 import type { Overlay, TooltipData } from '../ui/overlay'
-
-const LIBRARY_DOOR: Point = { x: 880, y: 510 }
-
-const assetUrls = import.meta.glob('../../assets/*.png', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>
-
-const sfxUrls = import.meta.glob('../../assets/sfx/*.wav', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>
-
-const bgmUrls = import.meta.glob('../../assets/bgm/*.mp3', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>
-
-const bgmTracks = Object.entries(bgmUrls)
-  .sort(([a], [b]) => a.localeCompare(b))
-  .map(([path, url], index) => ({
-    key: `bgm_${index}`,
-    url,
-    name: path.split('/').pop() ?? `bgm_${index}`,
-  }))
-
-const urlFor = (file: string): string => {
-  const url = assetUrls[`../../assets/${file}`]
-  if (!url) throw new Error(`资产缺失: ${file}`)
-  return url
-}
+import { buildingTooltipData, hudHtml, memberTooltipData, workshopTooltipData } from '../ui/worldText'
 
 interface WorkshopView {
   sprite: Phaser.GameObjects.Sprite
@@ -77,11 +53,6 @@ interface WorkshopView {
   taskActive: boolean
   glowPhase: number
 }
-
-const OFFLINE_KEEP_MS = 60000
-
-/** 辅助管理员按 F 交互的最大距离（世界像素） */
-const INTERACT_RANGE = 96
 
 export class WorldScene extends Phaser.Scene {
   private store!: WorldStore
@@ -146,7 +117,7 @@ export class WorldScene extends Phaser.Scene {
 
   preload() {
     for (const sheet of SHEETS) {
-      this.load.spritesheet(sheet.file, urlFor(sheet.file), {
+      this.load.spritesheet(sheet.file, urlForAsset(sheet.file), {
         frameWidth: sheet.frameWidth,
         frameHeight: sheet.frameHeight,
       })
@@ -341,17 +312,8 @@ export class WorldScene extends Phaser.Scene {
     const DUSK = Phaser.Display.Color.ValueToColor(0xe09a64) // 黄昏暖橙
     const NIGHT = Phaser.Display.Color.ValueToColor(0x6473a8) // 保留道路与建筑细节的月夜蓝
     const apply = () => {
-      const rawHour = new URLSearchParams(window.location.search).get('hour')
-      const debugHour = rawHour === null ? NaN : Number(rawHour)
-      const bj = this.beijingNow()
-      const h = Number.isFinite(debugHour) ? debugHour : bj.getHours() + bj.getMinutes() / 60
-      this.worldHour = h
-      // 夜深度 t：0=正午白天，1=深夜
-      let t = 0
-      if (h < 5 || h >= 21) t = 1
-      else if (h < 7.5) t = 1 - (h - 5) / 2.5 // 黎明
-      else if (h >= 17.5) t = (h - 17.5) / 3.5 // 黄昏
-      this.nightness = Phaser.Math.Clamp(t, 0, 1)
+      this.worldHour = resolveWorldHour(window.location.search)
+      this.nightness = Phaser.Math.Clamp(nightnessForHour(this.worldHour), 0, 1)
       // 调色：前半段 白→暖橙（日落），后半段 暖橙→深夜蓝
       const mix = this.nightness < 0.5
         ? Phaser.Display.Color.Interpolate.ColorWithColor(WHITE, DUSK, 100, this.nightness * 200)
@@ -366,27 +328,6 @@ export class WorldScene extends Phaser.Scene {
     }
     apply()
     this.time.addEvent({ delay: 60000, loop: true, callback: apply })
-  }
-
-  /** 北京时间（UTC+8）：世界时间的统一标准 */
-  private beijingNow(): Date {
-    const now = new Date()
-    return new Date(now.getTime() + (now.getTimezoneOffset() + 480) * 60000)
-  }
-
-  /** HUD 时钟文案：北京时间 HH:MM + 时段 */
-  private clockLabel(): string {
-    const rawHour = new URLSearchParams(window.location.search).get('hour')
-    const debugHour = rawHour === null ? NaN : Number(rawHour)
-    const h = this.worldHour
-    const phase = h < 5 || h >= 21 ? '🌙 夜晚' : h < 7.5 ? '🌄 黎明' : h >= 17.5 ? '🌆 黄昏' : '☀️ 白天'
-    if (Number.isFinite(debugHour)) {
-      return `${String(Math.floor(h)).padStart(2, '0')}:00（调试） ${phase}`
-    }
-    const bj = this.beijingNow()
-    const hh = String(bj.getHours()).padStart(2, '0')
-    const mm = String(bj.getMinutes()).padStart(2, '0')
-    return `北京时间 ${hh}:${mm} ${phase}`
   }
 
   /** 服务端直推事件 → 即时演出（权威状态随后由去抖 refresh 拉取） */
@@ -945,12 +886,12 @@ export class WorldScene extends Phaser.Scene {
 
   /** 角色头像规格（上半身）：从成员皮肤纹理裁取 */
   private portraitForMember(m: WorldMember): PortraitSpec {
-    return portraitSpecFor(urlFor, skinFor(m.role, m.id, m.skin), 0, 'character')
+    return portraitSpecFor(urlForAsset, skinFor(m.role, m.id, m.skin), 0, 'character')
   }
 
   /** 建筑头像规格（上半身）：从建筑 sheet 第 0 帧裁取 */
   private portraitForBuilding(sheetFile: string): PortraitSpec {
-    return portraitSpecFor(urlFor, sheetFile, 0, 'building')
+    return portraitSpecFor(urlForAsset, sheetFile, 0, 'building')
   }
 
   private wireHover() {
@@ -1174,12 +1115,10 @@ export class WorldScene extends Phaser.Scene {
       if (!view) {
         const slot = this.claimSlot(w.deviceId)
         const pos = workshopSlotPos(slot)
-        const sheet = w.type === 'workshop'
-          ? 'building_workshop_knowledge.png'
-          : w.type === 'desktop' ? 'building_workshop_desktop.png' : 'building_workshop_browser.png'
+        const sheet = workshopSheetForType(w.type)
         const taskGlow = this.add.image(pos.x, pos.y - 24, 'glow.png', 0)
         taskGlow.setBlendMode(Phaser.BlendModes.ADD)
-        taskGlow.setTint(w.type === 'browser' ? 0x72d8ff : w.type === 'workshop' ? 0xc99cff : 0xffd36b)
+        taskGlow.setTint(workshopGlowTintForType(w.type))
         taskGlow.setScale(6.8, 5.2)
         // 夜幕遮罩 depth=150000；任务高光需要位于其上方才不会在夜间消失。
         taskGlow.setDepth(155100)
@@ -1216,11 +1155,7 @@ export class WorldScene extends Phaser.Scene {
       }
       // 动效：绑定成员在干活 or agent 正在执行任务
       const boundMember = snap.members.find(m => m.id === w.aiConfigId)
-      const active = w.online && (
-        w.lifecycle === 'dispatching'
-        || boundMember?.taskStatus === 'running'
-        || (boundMember?.hasActiveTask && boundMember.runtimeStatus === 'running')
-      )
+      const active = workshopIsActive(w, boundMember)
       view.taskActive = !!active
       if (!active) view.taskGlow.setAlpha(0)
       const animKey = `${view.sprite.texture.key}:loop`
@@ -1304,92 +1239,21 @@ export class WorldScene extends Phaser.Scene {
 
   // ---------------------------------------------------------------- tooltip / HUD
   private memberTooltip(m: WorldMember): TooltipData {
-    const roleLabel: Record<WorldMember['role'], string> = {
-      core_admin: '核心管理员',
-      assistant_admin: '辅助管理员',
-      librarian: '图书管理员',
-      member: '数字成员',
-    }
-    const ratio = m.tokenLimit > 0 ? m.tokensUsed / m.tokenLimit : undefined
-    return {
-      title: m.name,
-      badge: `${roleLabel[m.role]} · 第 ${m.generation} 代`,
-      tokenRatio: ratio,
-      tokenText: m.tokenLimit > 0 ? `${m.tokensUsed} / ${m.tokenLimit}` : `${m.tokensUsed}（无上限）`,
-      rows: [
-        { label: '状态', value: m.enabled ? m.lifecycle : '已停用' },
-        { label: '行为', value: m.currentBehavior },
-        { label: '任务', value: m.taskTitle ? `${m.taskTitle}（${m.taskStatus}）` : '' },
-        { label: '工具', value: m.runtimeStatus === 'running' ? m.runtimeTool : '' },
-        { label: '项目', value: m.projectName },
-        { label: '模型', value: m.model },
-        { label: '端侧', value: m.boundAgentIds.join(', ') },
-      ],
-    }
+    return memberTooltipData(m)
   }
 
   private workshopTooltip(view: WorkshopView): TooltipData {
     const w = view.data
     const bound = this.snap?.members.find(m => m.id === w.aiConfigId)
-    if (w.type === 'workshop') {
-      return {
-        title: '知识工坊（知识与进化）',
-        badge: view.offlineSince !== null ? '离线' : '在线',
-        rows: [
-          { label: '形态', value: '服务端内置 · 自动上线' },
-          { label: '成员', value: bound ? `${bound.name}（ID ${bound.id}）` : '未绑定（拖成员到此绑定）' },
-          { label: '说明', value: '只能绑定一个数字成员，新绑定会替换旧绑定' },
-          { label: '工具', value: `${w.capabilities} 个知识/进化工具` },
-          { label: '错误', value: w.lastError || '' },
-        ],
-      }
-    }
-    return {
-      title: w.type === 'desktop' ? '机械坊（桌面 Agent）' : '瞭望塔（浏览器 Agent）',
-      badge: view.offlineSince !== null ? '离线' : w.lifecycle === 'dispatching' ? '执行中' : '在线',
-      rows: [
-        { label: '设备', value: `${w.name}（${w.platform || 'unknown'}）` },
-        { label: '成员', value: bound ? `${bound.name}（ID ${bound.id}）` : '未分配' },
-        { label: '工具', value: `${w.capabilities} 个端侧工具` },
-        { label: '错误', value: w.lastError || '' },
-      ],
-    }
+    return workshopTooltipData(view, bound)
   }
 
   private buildingTooltip(key: string, label: string): TooltipData {
-    const snap = this.snap
-    const rows: { label: string; value: string }[] = []
-    if (snap) {
-      if (key === 'library') {
-        rows.push({ label: '知识', value: `${snap.knowledgeActive} 条生效` })
-        rows.push({ label: '待审批', value: snap.knowledgePending > 0 ? `${snap.knowledgePending} 条沉淀申请` : '无' })
-      } else if (key === 'spawn') {
-        const idle = snap.members.filter(
-          m => m.lifecycle !== 'dead' && (!m.projectId || m.lifecycle === 'learning'),
-        ).length
-        rows.push({ label: '待分配', value: `${idle} 位成员` })
-      }
-    }
-    return { title: label, rows }
+    return buildingTooltipData(key, label, this.snap)
   }
 
   private updateHud(snap: WorldSnapshot) {
-    if (!snap.authOk) {
-      this.overlay.setHud(
-        `<div class="h-err">${snap.lastError || '连接中…'}</div>`,
-      )
-      return
-    }
-    const alive = snap.members.filter(m => m.lifecycle !== 'dead').length
-    const online = snap.workshops.length
-    const running = snap.members.filter(m => m.runtimeStatus === 'running' || m.taskStatus === 'running').length
-    this.overlay.setHud(
-      `<div>存活成员 <b>${alive}</b> · 在线作坊 <b>${online}</b> · 干活中 <b>${running}</b></div>` +
-      `<div>知识 <b>${snap.knowledgeActive}</b>` +
-      (snap.knowledgePending > 0 ? ` · <span class="h-err">待审批 ${snap.knowledgePending}</span>` : '') +
-      `</div>` +
-      `<div class="h-dim">🕐 ${this.clockLabel()}</div>`,
-    )
+    this.overlay.setHud(hudHtml(snap, clockLabel(window.location.search, this.worldHour)))
   }
 
   // ---------------------------------------------------------------- 主循环

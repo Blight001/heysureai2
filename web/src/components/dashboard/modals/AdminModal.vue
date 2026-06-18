@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
-import { formatDateTime } from '@/utils/datetime'
 import { useMessage } from '@/composables/useMessage'
 import * as adminApi from '@/api/admin'
 import type {
@@ -10,6 +9,35 @@ import type {
 import { listMcpTools, callMcpTool } from '@/api/mcp'
 import type { User, UserRole } from '@/types'
 import { resolveAvatarUrl } from '@/utils/avatar'
+import type { AdminModalTab as Tab, AdminMcpParamRow } from '@/types/admin'
+import {
+  ADMIN_ACTION_LABELS,
+  ADMIN_CLEANUP_CATEGORIES,
+  ADMIN_DB_PAGE_SIZE,
+  ADMIN_DEFAULT_FILE_PATH,
+  ADMIN_LOG_LEVELS,
+  ADMIN_REFRESH_INTERVAL_MS,
+  ADMIN_REGISTRATION_MODE_OPTIONS,
+  ADMIN_REPO_PHASE_META,
+  ADMIN_REPO_STEP_ICON,
+  ADMIN_ROLE_OPTIONS,
+  ADMIN_STATUS_META,
+  ADMIN_TAB_LABELS,
+  ADMIN_TAB_ORDER,
+  ADMIN_TASK_STATUS_CLS,
+} from '@/constants/admin'
+import {
+  buildDataBreadcrumbs,
+  buildMcpParamRows,
+  dbValuePreview,
+  dbValueToString,
+  formatCommitDateTime,
+  formatFileSize,
+  formatLogTime,
+  formatOptionalDateTime,
+  joinDataPath,
+  sampleMcpValueForType,
+} from '@/utils/adminFormat'
 
 const props = defineProps<{
   show: boolean
@@ -22,18 +50,9 @@ const emit = defineEmits<{
 
 const { alert, confirm, prompt } = useMessage()
 
-type Tab = 'services' | 'users' | 'auth' | 'files' | 'database' | 'audit' | 'diagnostics' | 'update'
 const tab = ref<Tab>('services')
-const TAB_LABELS: Record<Tab, string> = {
-  services: '服务监控',
-  users: '用户管理',
-  auth: '注册与邮箱',
-  files: '文件管理',
-  database: '数据库',
-  audit: '操作审计',
-  diagnostics: '系统测试',
-  update: '版本更新',
-}
+const TAB_LABELS = ADMIN_TAB_LABELS
+const TAB_ORDER = ADMIN_TAB_ORDER
 
 // ---- Services + tasks ----
 const services = ref<ServiceInfo[]>([])
@@ -48,12 +67,12 @@ const logLevel = ref<string>('')
 const logSearch = ref<string>('')
 const logAutoScroll = ref(true)
 const logContainer = ref<HTMLElement | null>(null)
-const LOG_LEVELS = ['', 'DEBUG', 'INFO', 'WARNING', 'ERROR']
+const LOG_LEVELS = ADMIN_LOG_LEVELS
 
 // ---- Auto refresh ----
 const autoRefresh = ref(true)
 let refreshTimer: number | null = null
-const REFRESH_INTERVAL_MS = 5000
+const REFRESH_INTERVAL_MS = ADMIN_REFRESH_INTERVAL_MS
 
 const tasks = ref<AdminTask[]>([])
 const tasksLoading = ref(false)
@@ -99,14 +118,10 @@ const authForm = ref<{
 const testEmailTo = ref('')
 const testEmailSending = ref(false)
 
-const REGISTRATION_MODE_OPTIONS: { value: adminApi.RegistrationMode; label: string; desc: string }[] = [
-  { value: 'open', label: '开放注册', desc: '账号 + 密码即可注册，无需邮箱' },
-  { value: 'email', label: '邮箱验证注册', desc: '注册必须提供邮箱并通过验证码验证（需先配置 SMTP）' },
-  { value: 'closed', label: '关闭注册', desc: '停止自助注册，仅管理员可在后台创建账号' },
-]
+const REGISTRATION_MODE_OPTIONS = ADMIN_REGISTRATION_MODE_OPTIONS
 
 // ---- Files (server data folder) ----
-const DEFAULT_FILE_PATH = 'workspace'
+const DEFAULT_FILE_PATH = ADMIN_DEFAULT_FILE_PATH
 const filePath = ref(DEFAULT_FILE_PATH)          // current directory, relative to data/
 const fileEntries = ref<FileEntry[]>([])
 const filesLoading = ref(false)
@@ -135,7 +150,7 @@ const dbRowsLoading = ref(false)
 const dbTotal = ref(0)
 const dbOffset = ref(0)
 const dbSearch = ref('')
-const DB_PAGE_SIZE = 50
+const DB_PAGE_SIZE = ADMIN_DB_PAGE_SIZE
 // Row editor: null when closed; mode 'insert' | 'update'
 const dbEditor = ref<{
   mode: 'insert' | 'update'
@@ -144,16 +159,7 @@ const dbEditor = ref<{
 } | null>(null)
 const dbSaving = ref(false)
 
-// ---- Database cleanup (destructive maintenance, owner only) ----
-// Each entry maps to a category key understood by the cleanup endpoint. All
-// listed tables are per-user data; system tables are never touched.
-const CLEANUP_CATEGORIES: { key: DbCleanupCategory; label: string; desc: string }[] = [
-  { key: 'conversations', label: '对话记录', desc: '消息 / 会话 / 运行记录' },
-  { key: 'tasks', label: '任务记录', desc: '任务作业 / 代理分发' },
-  { key: 'ai_messages', label: 'AI 互发消息 + Token 用量', desc: 'aimessage · tokenusagesnapshot' },
-  { key: 'knowledge', label: '知识库与记忆', desc: 'knowledgeentry · memory · evolutioninput' },
-  { key: 'projects', label: '协作项目', desc: 'evolutionproject' },
-]
+const CLEANUP_CATEGORIES = ADMIN_CLEANUP_CATEGORIES
 const dbCleanupOpen = ref(false)
 const dbCleanupBusy = ref(false)
 const dbCleanupResult = ref<DbCleanupResult | null>(null)
@@ -179,36 +185,11 @@ const filteredLogLines = computed(() => {
   )
 })
 
-const STATUS_META: Record<string, { label: string; cls: string }> = {
-  running: { label: '运行中', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
-  degraded: { label: '降级', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
-  down: { label: '离线', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
-  local: { label: '单体内置', cls: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400' },
-}
-
-const TASK_STATUS_CLS: Record<string, string> = {
-  running: 'text-indigo-600 dark:text-indigo-300',
-  queued: 'text-amber-600 dark:text-amber-300',
-  completed: 'text-emerald-600 dark:text-emerald-300',
-  error: 'text-red-600 dark:text-red-300',
-  stopped: 'text-zinc-500 dark:text-zinc-400',
-}
-
-const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
-  { value: 'owner', label: '房主' },
-  { value: 'admin', label: '管理员' },
-  { value: 'member', label: '成员' },
-]
-
-const fmtTime = (ts: number | null | undefined): string => formatDateTime(ts, '—')
-
-const fmtLogTime = (ts: number): string => {
-  try {
-    return new Date(ts * 1000).toLocaleTimeString()
-  } catch {
-    return ''
-  }
-}
+const STATUS_META = ADMIN_STATUS_META
+const TASK_STATUS_CLS = ADMIN_TASK_STATUS_CLS
+const ROLE_OPTIONS = ADMIN_ROLE_OPTIONS
+const fmtTime = formatOptionalDateTime
+const fmtLogTime = formatLogTime
 
 const loadServices = async () => {
   servicesLoading.value = true
@@ -407,41 +388,13 @@ const loadAudit = async () => {
   }
 }
 
-const ACTION_LABELS: Record<string, string> = {
-  set_role: '设置权限',
-  reset_password: '重置密码',
-  delete_user: '删除用户',
-  create_user: '创建用户',
-  restart_service: '重启服务',
-  stop_task: '停止子任务',
-  file_write: '保存文件',
-  file_mkdir: '新建文件夹',
-  file_rename: '重命名',
-  file_delete: '删除文件',
-  db_insert: '插入数据',
-  db_update: '更新数据',
-  db_delete: '删除数据',
-  db_cleanup: '清理数据库',
-}
+const ACTION_LABELS = ADMIN_ACTION_LABELS
 
 // ---- File manager ----
-const joinPath = (dir: string, name: string) => (dir ? `${dir}/${name}` : name)
+const joinPath = joinDataPath
 
-const fileBreadcrumbs = computed(() => {
-  const crumbs: { name: string; path: string }[] = [{ name: 'data', path: '' }]
-  let acc = ''
-  for (const part of filePath.value ? filePath.value.split('/') : []) {
-    acc = acc ? `${acc}/${part}` : part
-    crumbs.push({ name: part, path: acc })
-  }
-  return crumbs
-})
-
-const fmtSize = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
+const fileBreadcrumbs = computed(() => buildDataBreadcrumbs(filePath.value))
+const fmtSize = formatFileSize
 
 const fileDirty = computed(() => fileContent.value !== fileOriginal.value)
 
@@ -658,15 +611,8 @@ const deleteEntry = async (entry: FileEntry) => {
 }
 
 // ---- Database browser ----
-const dbValueToStr = (v: DbValue): string => {
-  if (v === null || v === undefined) return ''
-  return String(v)
-}
-
-const dbCellPreview = (v: DbValue): string => {
-  const s = dbValueToStr(v)
-  return s.length > 80 ? s.slice(0, 80) + '…' : s
-}
+const dbValueToStr = dbValueToString
+const dbCellPreview = dbValuePreview
 
 const dbPageStart = computed(() => (dbTotal.value === 0 ? 0 : dbOffset.value + 1))
 const dbPageEnd = computed(() => Math.min(dbOffset.value + DB_PAGE_SIZE, dbTotal.value))
@@ -1006,34 +952,10 @@ const loadMcpToolNames = async () => {
   }
 }
 
-interface McpParamRow { name: string; type: string; required: boolean; description: string }
-
 const selectedToolInfo = computed(() => mcpTools.value.find((t: any) => t.name === selectedMcpTool.value) || null)
 
-const selectedToolParams = computed<McpParamRow[]>(() => {
-  const schema = selectedToolInfo.value?.inputSchema
-  const props = schema && typeof schema === 'object' ? schema.properties : null
-  if (!props || typeof props !== 'object') return []
-  const required: string[] = Array.isArray(schema.required) ? schema.required : []
-  return Object.entries(props).map(([name, cfg]: [string, any]) => {
-    const rawType = cfg?.type
-    const type = Array.isArray(rawType) ? rawType.join(' | ') : String(rawType || 'any')
-    return {
-      name,
-      type,
-      required: required.includes(name),
-      description: String(cfg?.description || ''),
-    }
-  })
-})
-
-const sampleForType = (type: string): unknown => {
-  if (type.includes('integer') || type.includes('number')) return 0
-  if (type.includes('boolean')) return false
-  if (type.includes('array')) return []
-  if (type.includes('object')) return {}
-  return ''
-}
+const selectedToolParams = computed<AdminMcpParamRow[]>(() => buildMcpParamRows(selectedToolInfo.value?.inputSchema))
+const sampleForType = sampleMcpValueForType
 
 const fillMcpArgsTemplate = (requiredOnly = false) => {
   const rows = selectedToolParams.value
@@ -1116,19 +1038,8 @@ const repoForm = ref<{ auto_enabled: boolean; interval_minutes: number }>({ auto
 const repoCommitDetail = ref<RepoCommitInfo | null>(null)
 let repoPollTimer: number | null = null
 
-const REPO_PHASE_META: Record<string, { label: string; cls: string }> = {
-  idle: { label: '空闲', cls: 'bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400' },
-  checking: { label: '检测中', cls: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
-  up_to_date: { label: '已是最新', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
-  update_available: { label: '发现新版本', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
-  pulling: { label: '拉取中', cls: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300' },
-  restarting: { label: '重启中', cls: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
-  error: { label: '失败', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
-}
-
-const REPO_STEP_ICON: Record<string, string> = {
-  pending: '○', active: '◔', done: '✓', error: '✕', skipped: '–',
-}
+const REPO_PHASE_META = ADMIN_REPO_PHASE_META
+const REPO_STEP_ICON = ADMIN_REPO_STEP_ICON
 
 const repoActive = computed(() => {
   const p = repoStatus.value?.state.phase
@@ -1151,7 +1062,7 @@ const repoDeployProgress = computed(() => {
   return { percent: 0, label: state.message || '等待开始' }
 })
 
-const fmtCommitTime = (ts: number | null | undefined) => formatDateTime(ts, '')
+const fmtCommitTime = formatCommitDateTime
 
 const loadRepoStatus = async (silent = false) => {
   if (!silent) repoLoading.value = true
@@ -1322,7 +1233,7 @@ const avatarFor = (u: AdminUser) =>
           <!-- Tabs -->
           <div class="flex gap-1 px-5 pt-3 border-b border-zinc-200 dark:border-zinc-800">
             <button
-              v-for="t in (['services','users','auth','files','database','audit','diagnostics','update'] as Tab[])"
+              v-for="t in TAB_ORDER"
               :key="t"
               class="px-4 py-2 text-sm font-medium rounded-t-lg transition-colors"
               :class="tab === t
