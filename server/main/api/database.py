@@ -1,6 +1,6 @@
 """SQLModel engine + session dependency.
 
-Schema is owned by Alembic (see ``api.db`` / ``migrations/`` /
+Schema is owned by Alembic (see ``api.db`` / ``other/migrations/`` /
 ``doc/db-migrations.md``). This module only builds the engine and exposes the
 session dependency; bringing the schema up to date is delegated to
 ``api.db.ensure_schema`` via :func:`create_db_and_tables`.

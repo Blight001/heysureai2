@@ -346,6 +346,9 @@ function setStatus(status: string, _reason?: string, aiConfigId?: number | null)
   if (status !== 'registered' && status !== 'connected') boundAiConfigId = null
   else if (typeof aiConfigId !== 'undefined') boundAiConfigId = aiConfigId
   renderStatus()
+  if (status === 'disconnected' || status === 'error' || status === 'registered') {
+    void loadMcp()
+  }
 }
 function setReconnecting(active: boolean, reason?: string | null) {
   reconnecting = active

@@ -22,5 +22,5 @@ if __name__ == "__main__":
         port=3000,
         reload=reload_enabled,
         # Watch both gateway/ and api/ so router edits also trigger reload.
-        reload_dirs=["gateway", "api"] if reload_enabled else None,
+        reload_dirs=["main/gateway", "main/api"] if reload_enabled else None,
     )

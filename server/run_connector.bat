@@ -13,6 +13,7 @@ if exist "%ENV_FILE%" (
 )
 
 cd /d "%~dp0"
+set "PYTHONPATH=%~dp0main;%~dp0"
 call venv\Scripts\activate
 
 python -m connector_runtime.main

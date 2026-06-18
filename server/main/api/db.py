@@ -42,7 +42,7 @@ from .core.config import SERVER_DIR
 logger = logging.getLogger(__name__)
 
 _ALEMBIC_INI = os.path.join(SERVER_DIR, "alembic.ini")
-_MIGRATIONS_DIR = os.path.join(SERVER_DIR, "migrations")
+_MIGRATIONS_DIR = os.path.join(SERVER_DIR, "other", "migrations")
 # Presence of this table => the application schema has already been materialized
 # (by a previous Alembic run or the legacy create_all path).
 _CORE_TABLE = "user"

@@ -31,9 +31,14 @@ from typing import Any
 
 # Make ``api.*`` imports resolve when this file runs as a module.
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-SERVER_DIR = os.path.dirname(THIS_DIR)
-if SERVER_DIR not in sys.path:
-    sys.path.insert(0, SERVER_DIR)
+SERVER_DIR = os.path.dirname(os.path.dirname(THIS_DIR))
+for _path in (
+    SERVER_DIR,
+    os.path.join(SERVER_DIR, "main"),
+    os.path.join(SERVER_DIR, "other"),
+):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 from sqlalchemy import Boolean, create_engine as sa_create_engine, text  # noqa: E402
 from sqlalchemy.engine import Engine  # noqa: E402

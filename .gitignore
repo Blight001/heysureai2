@@ -34,7 +34,7 @@ venv/
 # Project Python runtime
 server/venv/
 server/__pycache__/
-server/api/__pycache__/
+server/main/api/__pycache__/
 server/aider/__pycache__/
 
 # Node

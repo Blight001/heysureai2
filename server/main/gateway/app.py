@@ -149,7 +149,7 @@ app.add_middleware(
 # Serve the preset avatar images so clients (browser extension / desktop agent)
 # can fetch them from the backend instead of bundling their own copies. The
 # stored ``user.avatar`` value resolves to ``/avatars/avatarsN.png`` here.
-_avatars_dir = Path(__file__).resolve().parent.parent / "static" / "avatars"
+_avatars_dir = Path(__file__).resolve().parent.parent.parent / "static" / "avatars"
 if _avatars_dir.is_dir():
     app.mount("/avatars", StaticFiles(directory=str(_avatars_dir)), name="avatars")
 else:

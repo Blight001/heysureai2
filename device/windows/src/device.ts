@@ -2,8 +2,8 @@ import { io, Socket } from 'socket.io-client'
 import os from 'os'
 import path from 'path'
 import { executeTask, getAvailableTools, getToolDefs, DispatchedTask } from './executor'
-import { applyServerDynamicMcp } from './executor/dynamic'
-import { setPermissionPolicy } from './runtime/permission-guard'
+import { applyServerDynamicMcp, clearServerDynamicMcp } from './executor/dynamic'
+import { resetPermissionPolicy, setPermissionPolicy } from './runtime/permission-guard'
 import { probeRuntimes, cachedRuntimes } from './runtime/runtime-probe'
 import { getPlatformInfo } from './platform'
 import { AgentSettings } from './store'
@@ -123,6 +123,7 @@ export class HeySureAgent {
 
     this.socket.on('disconnect', (reason: string) => {
       this.stopRegistrationHandshake()
+      this.clearServerSyncedTools()
       this.setStatus('disconnected', reason)
       this.log('warn', `连接断开: ${reason}`)
     })
@@ -163,9 +164,8 @@ export class HeySureAgent {
     })
 
     // Web-authored dynamic MCP tools for this device type, pushed by the server
-    // on register and whenever an operator edits them. Applying merges them into
-    // the local dynamic interpreter and (when the set actually changed) triggers
-    // a re-register so the new tool catalog is reported back up.
+    // on register and whenever an operator edits them. Held in memory only;
+    // cleared on disconnect so tools never outlive the server session.
     this.socket.on('device:tool-config', (payload: any) => {
       try {
         // Apply the permission policy every push (it sits outside the tool
@@ -183,10 +183,18 @@ export class HeySureAgent {
     this.stopRegistrationHandshake()
     this.socket?.disconnect()
     this.socket = null
+    this.clearServerSyncedTools()
     // A deliberate close is not a reconnect — clear the orange prompt so we
     // don't show "reconnecting" for an intentional disconnect/logout.
     this.events.onReconnecting?.(false)
     this.setStatus('disconnected')
+  }
+
+  private clearServerSyncedTools(): void {
+    const status = clearServerDynamicMcp()
+    if (!status.cleared) return
+    resetPermissionPolicy()
+    this.log('info', '已清空服务器下发的 MCP 工具（等待重新同步）')
   }
 
   private stopRegistrationHandshake(): void {

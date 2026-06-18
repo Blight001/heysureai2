@@ -21,7 +21,7 @@ if [[ -z "$WEBHOOK_TOKEN" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$PROJECT_DIR/server/scripts/deploy_webhook.py" ]]; then
+if [[ ! -f "$PROJECT_DIR/server/other/scripts/deploy_webhook.py" ]]; then
   echo "Webhook bridge not found under PROJECT_DIR: $PROJECT_DIR"
   exit 1
 fi
@@ -48,7 +48,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=$PROJECT_DIR
 EnvironmentFile=$ENV_FILE
-ExecStart=/usr/bin/python3 $PROJECT_DIR/server/scripts/deploy_webhook.py --host $WEBHOOK_HOST --port $WEBHOOK_PORT --token \${WEBHOOK_TOKEN} --repo $PROJECT_DIR --script $UPDATE_SCRIPT
+ExecStart=/usr/bin/python3 $PROJECT_DIR/server/other/scripts/deploy_webhook.py --host $WEBHOOK_HOST --port $WEBHOOK_PORT --token \${WEBHOOK_TOKEN} --repo $PROJECT_DIR --script $UPDATE_SCRIPT
 Restart=always
 RestartSec=5
 

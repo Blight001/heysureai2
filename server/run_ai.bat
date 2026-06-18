@@ -13,6 +13,7 @@ if exist "%ENV_FILE%" (
 )
 
 cd /d "%~dp0"
+set "PYTHONPATH=%~dp0main;%~dp0"
 call venv\Scripts\activate
 
 if not defined HEYSURE_API_GATEWAY_URL set "HEYSURE_API_GATEWAY_URL=http://127.0.0.1:3000"

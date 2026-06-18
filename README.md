@@ -120,11 +120,12 @@ The model handles reasoning and decisions. The MCP Runtime enforces tool boundar
 | Path | Role |
 | --- | --- |
 | `web/` | Vue 3 + Vite console for home, chat, dashboard, AI configuration, tasks, and knowledge management. |
-| `server/gateway/` | FastAPI + Socket.IO gateway exposing REST APIs, realtime events, and static assets. |
-| `server/api/` | Shared models, database access, authentication, services, runtime helpers, and business logic. |
-| `server/ai_runtime/` | AI worker for chat queues, inference calls, message persistence, and runtime status. |
-| `server/mcp_runtime/` | MCP tool registration, plugin loading, permission checks, and internal tool calls. |
-| `server/connector_runtime/` | QQ and Feishu bot connectors plus external agent dispatch. |
+| `server/main/gateway/` | FastAPI + Socket.IO gateway exposing REST APIs, realtime events, and static assets. |
+| `server/main/api/` | Shared models, database access, authentication, services, runtime helpers, and business logic. |
+| `server/main/ai_runtime/` | AI worker for chat queues, inference calls, message persistence, and runtime status. |
+| `server/main/mcp_runtime/` | MCP tool registration, plugin loading, permission checks, and internal tool calls. |
+| `server/main/connector_runtime/` | QQ and Feishu bot connectors plus external agent dispatch. |
+| `server/other/` | Alembic migrations, helper scripts, and pytest tests. |
 | `device/windows/` | Windows desktop client (shell) with window, screen, mouse, keyboard, clipboard, shell, and filesystem tools. |
 | `device/linux/` | Linux desktop client (shell) with equivalent local automation capabilities. |
 | `device/extension/` | Chrome MV3 browser extension for browser automation and lightweight client features. |
@@ -193,7 +194,7 @@ AI_DISPATCH_MODE=remote
 | `AI_RUNTIME_URL` | AI runtime status service URL. Usually `http://127.0.0.1:3003`. |
 | `AI_DISPATCH_MODE` | Use `remote` to send chat tasks to the queue consumed by `ai_runtime`. |
 
-See `server/api/core/settings.py` for the full configuration surface.
+See `server/main/api/core/settings.py` for the full configuration surface.
 
 ## Development Commands
 

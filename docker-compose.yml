@@ -34,7 +34,6 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./server/uploads:/app/uploads
       - ./server/data:/app/data
     environment:
       - HEYSURE_SERVICE_ROLE=gateway
@@ -62,7 +61,6 @@ services:
     expose:
       - "3003"
     volumes:
-      - ./server/uploads:/app/uploads
       - ./server/data:/app/data
     environment:
       - HEYSURE_SERVICE_ROLE=worker
@@ -92,7 +90,6 @@ services:
     expose:
       - "3001"
     volumes:
-      - ./server/uploads:/app/uploads
       - ./server/data:/app/data
     environment:
       - HEYSURE_SERVICE_ROLE=mcp
@@ -116,7 +113,6 @@ services:
     ports:
       - "3002:3002"
     volumes:
-      - ./server/uploads:/app/uploads
       - ./server/data:/app/data
     environment:
       - HEYSURE_SERVICE_ROLE=connector

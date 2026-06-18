@@ -24,7 +24,7 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-SERVER_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SERVER_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 REPOSITORY_DIR = os.path.dirname(SERVER_DIR)
 DATA_DIR = os.path.join(SERVER_DIR, "data")
 # Retained only for the explicit one-shot SQLite-to-Postgres migration tool.

@@ -10,10 +10,12 @@ export interface DynamicMcpDefinition {
 type DynamicInstruction = { op: 'call' | 'set' | 'return'; tool?: string; args?: any; name?: string; value?: any; save_as?: string }
 
 export const DYNAMIC_MCP_STORAGE_KEY = '_dynamic_mcp_tools'
-// Web-authored tools pushed by the server (device:tool-config), scoped to the
-// browser device type. Cached here as the offline source and merged with the
-// locally-authored tools, with server precedence on a name conflict.
+// Legacy key — server tools are memory-only now; kept for one-time cleanup.
 export const DYNAMIC_MCP_SERVER_STORAGE_KEY = '_dynamic_mcp_server_tools'
+// Web-authored tools pushed by the server (device:tool-config), held in memory
+// only and cleared on disconnect.
+let serverDefinitions: DynamicMcpDefinition[] = []
+let appliedServerRevision = ''
 export const DYNAMIC_MCP_MANAGER_NAME = 'mcp.manage_dynamic_tool'
 export const BROWSER_DYNAMIC_MCP_MANAGER_NAME = 'browser_mcp.manage_dynamic_tool'
 const NAME_RE = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$/
@@ -65,14 +67,22 @@ async function saveDynamicMcpDefinitions(tools: DynamicMcpDefinition[]): Promise
 }
 
 export async function getServerDynamicMcpDefinitions(): Promise<DynamicMcpDefinition[]> {
-  const stored = (await chrome.storage.local.get(DYNAMIC_MCP_SERVER_STORAGE_KEY))[DYNAMIC_MCP_SERVER_STORAGE_KEY]
-  const list = Array.isArray(stored) ? stored : stored?.tools
-  if (list == null) return []
-  if (!Array.isArray(list)) throw new Error('Server dynamic MCP storage must contain a tools array')
-  const tools = list.map(validate)
-  if (new Set(tools.map(item => item.name)).size !== tools.length) throw new Error('Duplicate dynamic MCP name')
-  return tools
+  return [...serverDefinitions]
 }
+
+async function purgeLegacyServerCache(): Promise<void> {
+  await chrome.storage.local.remove(DYNAMIC_MCP_SERVER_STORAGE_KEY)
+}
+
+export async function clearServerDynamicMcp(): Promise<{ cleared: boolean; tools: number; server: number }> {
+  const hadServer = serverDefinitions.length > 0 || !!appliedServerRevision
+  serverDefinitions = []
+  appliedServerRevision = ''
+  const { merged } = await getMergedDynamicMcpDefinitions()
+  return { cleared: hadServer, tools: merged.length, server: 0 }
+}
+
+void purgeLegacyServerCache()
 
 // Local + server tools merged, server winning on a name conflict. Used for both
 // advertising (dynamicMcpToolDefs) and execution (executeDynamicMcp) so the two
@@ -87,16 +97,16 @@ async function getMergedDynamicMcpDefinitions(): Promise<{ merged: DynamicMcpDef
 }
 
 // Apply a server-pushed dynamic MCP set (device:tool-config). Returns
-// applied:false without writing when the set is unchanged — the guard stops the
+// applied:false when the set is unchanged — the guard stops the
 // register→push→apply loop (applying re-registers, the server re-pushes).
 export async function applyServerDynamicMcp(payload: any): Promise<{ applied: boolean; revision: string; tools: number }> {
   const list = Array.isArray(payload) ? payload : payload?.tools
   const tools = Array.isArray(list) ? list.map(validate) : []
   if (new Set(tools.map(item => item.name)).size !== tools.length) throw new Error('Duplicate dynamic MCP name')
   const rev = revision(tools)
-  const current = await getServerDynamicMcpDefinitions().catch(() => [])
-  if (rev === revision(current)) return { applied: false, revision: rev, tools: tools.length }
-  await chrome.storage.local.set({ [DYNAMIC_MCP_SERVER_STORAGE_KEY]: { version: 1, tools } })
+  if (rev === appliedServerRevision) return { applied: false, revision: rev, tools: tools.length }
+  serverDefinitions = tools
+  appliedServerRevision = rev
   return { applied: true, revision: rev, tools: tools.length }
 }
 
@@ -315,7 +325,7 @@ export async function dynamicMcpToolDefs(): Promise<AIToolDef[]> {
         kind: 'dynamic',
         definition: def,
         code: def.code,
-        storage_key: fromServer ? DYNAMIC_MCP_SERVER_STORAGE_KEY : DYNAMIC_MCP_STORAGE_KEY,
+        storage_key: fromServer ? 'memory:server' : DYNAMIC_MCP_STORAGE_KEY,
         source: fromServer ? 'server' : 'local',
         editable_via: BROWSER_DYNAMIC_MCP_MANAGER_NAME,
       },

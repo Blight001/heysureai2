@@ -39,22 +39,24 @@ HEYSURE_INTERNAL_TOKEN=heysure-dev-internal-token-change-me
 - `AI_RUNTIME_URL`：AI runtime 状态服务地址，默认可设为 `http://127.0.0.1:3003`。
 - `AI_DISPATCH_MODE`：`remote` 时聊天任务进入队列，由 `ai-runtime` 消费。
 
-完整配置入口见 `api/core/settings.py`。
+完整配置入口见 `main/api/core/settings.py`。
 
 ## 目录说明
 
 | 路径 | 说明 |
 | --- | --- |
-| `gateway/` | FastAPI + Socket.IO 网关进程，挂载 `gateway/routers/` 下的 HTTP 路由 |
-| `api/` | 跨进程共享的模型、数据库、配置、认证、服务和运行时辅助代码 |
-| `ai_runtime/` | AI worker 入口、任务队列消费、推理流程和内部状态服务 |
-| `mcp_runtime/` | MCP 插件加载、工具注册、工具 HTTP 包装 |
-| `connector_runtime/` | 外部连接器、机器人适配器和 endpoint agent 调度 |
+| `main/gateway/` | FastAPI + Socket.IO 网关进程，挂载 `gateway/routers/` 下的 HTTP 路由 |
+| `main/api/` | 跨进程共享的模型、数据库、配置、认证、服务和运行时辅助代码 |
+| `main/ai_runtime/` | AI worker 入口、任务队列消费、推理流程和内部状态服务 |
+| `main/mcp_runtime/` | MCP 插件加载、工具注册、工具 HTTP 包装 |
+| `main/connector_runtime/` | 外部连接器、机器人适配器和 endpoint agent 调度 |
+| `other/migrations/` | Alembic 数据库迁移 |
+| `other/scripts/` | 辅助脚本（部署 webhook、SQLite 迁移等） |
+| `other/tests/` | pytest 测试 |
+| `workshop/` | 知识工坊内置 Agent |
 | `data/` | 本地运行数据与 workspace |
 | `logs/` | 服务日志 |
-| `scripts/` | 辅助脚本 |
 | `static/` | 后端静态资源 |
-| `uploads/` | 上传文件目录 |
 
 ## 开发命令
 
@@ -70,6 +72,7 @@ pip install -r requirements.txt
 
 ```bat
 cd server
+set PYTHONPATH=main;.
 venv\Scripts\activate
 python -m gateway.main
 ```
@@ -80,6 +83,13 @@ python -m gateway.main
 python -m mcp_runtime.main
 python -m connector_runtime.main
 python -m ai_runtime.main
+```
+
+运行测试：
+
+```bat
+cd server
+pytest
 ```
 
 ## 访问检查

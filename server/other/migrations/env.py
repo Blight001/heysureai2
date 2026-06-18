@@ -19,10 +19,15 @@ from sqlmodel import SQLModel
 
 from alembic import context
 
-# Make the ``api`` package importable when Alembic is invoked from anywhere.
-_SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _SERVER_DIR not in sys.path:
-    sys.path.insert(0, _SERVER_DIR)
+# Make runtime packages importable when Alembic is invoked from anywhere.
+_SERVER_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+for _path in (
+    _SERVER_DIR,
+    os.path.join(_SERVER_DIR, "main"),
+    os.path.join(_SERVER_DIR, "other"),
+):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 # Let standalone Alembic commands use their explicit override without also
 # requiring a duplicate DATABASE_URL environment variable.

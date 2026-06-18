@@ -13,6 +13,7 @@ if exist "%ENV_FILE%" (
 )
 
 cd /d "%~dp0"
+set "PYTHONPATH=%~dp0main;%~dp0"
 call venv\Scripts\activate
 
 if not defined MCP_RUNTIME_URL set "MCP_RUNTIME_URL=http://127.0.0.1:3001"
