@@ -52,9 +52,14 @@ async function getAnyActiveTab(): Promise<chrome.tabs.Tab> {
   return tab
 }
 
-function sendToContent(tabId: number, msg: any): Promise<any> {
+// Since manifest `all_frames` injects the content script into every frame, a
+// frame-less sendMessage would be delivered to *all* frames and only one
+// (arbitrary) sendResponse would be kept — so every call must target a specific
+// frame. Default to the top frame (frameId 0); cross-frame tools pass an
+// explicit frameId obtained from chrome.webNavigation.getAllFrames.
+function sendToContent(tabId: number, msg: any, frameId = 0): Promise<any> {
   return new Promise<any>((resolve, reject) => {
-    chrome.tabs.sendMessage(tabId, msg, (response) => {
+    chrome.tabs.sendMessage(tabId, msg, { frameId }, (response) => {
       const err = chrome.runtime.lastError
       if (err) {
         reject(err)
@@ -90,10 +95,12 @@ function contentScriptFiles(): string[] {
   return ['dist/content.js']
 }
 
-async function injectContentScript(tabId: number): Promise<boolean> {
+async function injectContentScript(tabId: number, frameId?: number): Promise<boolean> {
   try {
     await chrome.scripting.executeScript({
-      target: { tabId },
+      // Inject into the specific frame when retrying a frame-targeted call,
+      // otherwise cover every frame so cross-origin iframes also get the script.
+      target: frameId !== undefined ? { tabId, frameIds: [frameId] } : { tabId, allFrames: true },
       files: contentScriptFiles(),
     })
     return true
@@ -118,17 +125,17 @@ function unwrapContentResult(res: any): any {
   return res
 }
 
-async function contentMsg(tabId: number, msg: any): Promise<any> {
+async function contentMsg(tabId: number, msg: any, frameId = 0): Promise<any> {
   try {
-    return unwrapContentResult(await sendToContent(tabId, msg))
+    return unwrapContentResult(await sendToContent(tabId, msg, frameId))
   } catch (err: any) {
     if (!isNoReceiverError(err)) throw err
 
-    // No content script on this tab yet — try to inject it once, then retry.
-    const injected = await injectContentScript(tabId)
+    // No content script on this frame yet — try to inject it once, then retry.
+    const injected = await injectContentScript(tabId, frameId || undefined)
     if (injected) {
       try {
-        return unwrapContentResult(await sendToContent(tabId, msg))
+        return unwrapContentResult(await sendToContent(tabId, msg, frameId))
       } catch (retryErr: any) {
         if (!isNoReceiverError(retryErr)) throw retryErr
       }
@@ -139,6 +146,78 @@ async function contentMsg(tabId: number, msg: any): Promise<any> {
     e.suggestion = 'Navigate to a normal http/https page and retry.'
     throw e
   }
+}
+
+// ── Cross-frame helpers (cross-origin iframe observe / click) ───────────────
+// The content script's doObserve already scans its own document plus every
+// *same-origin* descendant frame (reaching them through contentDocument). What
+// it cannot reach is a *cross-origin* iframe — the browser blocks contentDocument
+// access there. To cover those, the content script is injected into every frame
+// (manifest all_frames) and the background fans browser_observe out to each
+// cross-origin frame, then merges the per-frame results into one list.
+
+interface FrameNode {
+  frameId: number
+  parentFrameId: number
+  url: string
+  origin: string
+}
+
+function originOf(url: string): string {
+  try {
+    if (!url || url === 'about:blank' || url === 'about:srcdoc') return ''
+    return new URL(url).origin
+  } catch {
+    return ''
+  }
+}
+
+async function listFrames(tabId: number): Promise<FrameNode[]> {
+  try {
+    const frames = await chrome.webNavigation.getAllFrames({ tabId })
+    if (!frames) return []
+    return frames.map(f => ({
+      frameId: f.frameId,
+      parentFrameId: f.parentFrameId,
+      url: f.url || '',
+      origin: originOf(f.url || ''),
+    }))
+  } catch {
+    return []
+  }
+}
+
+// A frame needs its own observe pass only when it is cross-origin relative to its
+// immediate parent. Same-origin frames (and about:blank / srcdoc, which inherit
+// their parent's origin) are already covered by an ancestor's same-origin
+// recursion, so observing them again would double-count their content.
+function crossOriginFrameRoots(frames: FrameNode[]): FrameNode[] {
+  const byId = new Map<number, FrameNode>()
+  for (const f of frames) byId.set(f.frameId, f)
+  const roots: FrameNode[] = []
+  for (const f of frames) {
+    if (f.frameId === 0) continue
+    const parent = byId.get(f.parentFrameId)
+    const childOrigin = f.origin
+    const parentOrigin = parent?.origin ?? ''
+    // No usable origin (about:blank/srcdoc/empty) → inherits parent → skip.
+    if (!childOrigin) continue
+    if (childOrigin !== parentOrigin) roots.push(f)
+  }
+  return roots
+}
+
+const MAX_CROSS_ORIGIN_FRAMES = 12
+
+// A click/type ref for an element living in a cross-origin frame is encoded as
+// "<frameId>:<localId>" (see toolObserve). Top-frame refs stay plain numbers, so
+// existing callers are unaffected. Parse it back into a routable {frameId, ref}.
+function parseRef(ref: any): { frameId: number; ref: any } {
+  if (typeof ref === 'string') {
+    const m = /^(\d+):(.+)$/.exec(ref)
+    if (m) return { frameId: Number(m[1]), ref: m[2] }
+  }
+  return { frameId: 0, ref }
 }
 
 function normalizeToolError(err: any, name: string, args: any) {
@@ -739,19 +818,28 @@ async function toolClipboardWrite(args: any): Promise<any> {
 }
 
 // ── Content-script-relayed tools ──────────────────────────────────────────
-async function toolClick(args: any): Promise<any> {
-  const tab = await getActiveTab()
-  return contentMsg(tab.id!, {
-    action: 'click',
-    ref: args.ref ?? args.mark ?? args.id,
-    selector: args.selector, text: args.text, x: args.x, y: args.y,
-    force: !!args.force,
-  })
+// Resolve which frame an interaction targets. A ref like "3:5" routes to frame 3
+// (a cross-origin iframe) with local id 5; in that case page-level x/y coords are
+// meaningless inside the sub-frame and are dropped so the ref/selector wins.
+function routeTarget(args: any): { frameId: number; ref: any; selector?: string; text?: string; x?: number; y?: number } {
+  const { frameId, ref } = parseRef(args.ref ?? args.mark ?? args.id)
+  if (frameId !== 0) return { frameId, ref, selector: args.selector, text: args.text }
+  return { frameId, ref, selector: args.selector, text: args.text, x: args.x, y: args.y }
 }
 
-async function toolObserve(args: any): Promise<any> {
+async function toolClick(args: any): Promise<any> {
   const tab = await getActiveTab()
+  const t = routeTarget(args)
   return contentMsg(tab.id!, {
+    action: 'click',
+    ref: t.ref,
+    selector: t.selector, text: t.text, x: t.x, y: t.y,
+    force: !!args.force,
+  }, t.frameId)
+}
+
+function observeMsg(args: any) {
+  return {
     action: 'observe',
     limit: args.limit,
     mark: args.mark,
@@ -761,18 +849,91 @@ async function toolObserve(args: any): Promise<any> {
     group_min: args.group_min,
     group_key: args.group_key,
     expand_group: args.expand_group,
+  }
+}
+
+// Re-key a cross-origin frame's observe result so it merges cleanly into the
+// top-frame result: element/interactive ids become "<frameId>:<localId>" (so a
+// later click routes back to this frame, where the local id is still valid) and
+// every item is tagged with frameId / frameUrl. Coordinates stay in the frame's
+// own viewport space (clicks route by ref, and each frame paints its own overlay
+// for screenshots), flagged via coordsLocalToFrame so they're not misread as
+// top-level page coordinates.
+function tagFrameObserveResult(res: any, frame: FrameNode): { items: any[]; elements: any[]; frames: any[]; texts: any[] } {
+  const fid = frame.frameId
+  const reId = (id: any) => `${fid}:${id}`
+  const tag = (item: any) => ({
+    ...item,
+    ...(item.kind === 'interactive' && item.id !== undefined ? { id: reId(item.id) } : {}),
+    inFrame: true,
+    crossOrigin: true,
+    frameId: fid,
+    frameUrl: frame.url,
+    coordsLocalToFrame: true,
   })
+  return {
+    items: Array.isArray(res?.items) ? res.items.map(tag) : [],
+    elements: Array.isArray(res?.elements) ? res.elements.map(tag) : [],
+    frames: Array.isArray(res?.frames) ? res.frames.map(tag) : [],
+    texts: Array.isArray(res?.texts) ? res.texts.map(tag) : [],
+  }
+}
+
+async function toolObserve(args: any): Promise<any> {
+  const tab = await getActiveTab()
+  const base = await contentMsg(tab.id!, observeMsg(args), 0)
+
+  // Cross-origin iframes can't be read from the top frame; observe each one in
+  // its own frame and merge. Same-origin frames are already covered by the top
+  // frame's recursion, so they are intentionally not re-observed here.
+  const roots = crossOriginFrameRoots(await listFrames(tab.id!))
+  const observed = roots.slice(0, MAX_CROSS_ORIGIN_FRAMES)
+  const frameResults = await Promise.all(observed.map(async (frame) => {
+    try {
+      const res = await contentMsg(tab.id!, observeMsg(args), frame.frameId)
+      return { frame, ...tagFrameObserveResult(res, frame) }
+    } catch {
+      return null  // frame gone, restricted, or no script — skip it
+    }
+  }))
+
+  let extraInteractive = 0
+  let extraText = 0
+  const crossFrames: any[] = []
+  for (const fr of frameResults) {
+    if (!fr) continue
+    base.items.push(...fr.items)
+    base.elements.push(...fr.elements)
+    base.frames.push(...fr.frames)
+    base.texts.push(...fr.texts)
+    extraInteractive += fr.elements.length
+    extraText += fr.texts.length
+    crossFrames.push({ frameId: fr.frame.frameId, url: fr.frame.url, interactive: fr.elements.length, text: fr.texts.length })
+  }
+
+  if (crossFrames.length) {
+    base.count = (base.count || 0) + extraInteractive
+    base.textCount = (base.textCount || 0) + extraText
+    base.itemCount = Array.isArray(base.items) ? base.items.length : base.itemCount
+    base.crossOriginFrames = crossFrames
+    base.crossOriginFramesTruncated = roots.length > observed.length
+    base.hint = `${base.hint || ''} 跨域 iframe 内容已合并：带 crossOrigin=true / frameId 的 items 来自跨域子框架，其 center/rect 为该框架内部坐标（coordsLocalToFrame=true，勿与主页面坐标混用）；点击用 browser_action {action:"click", ref:"<frameId>:<id>"}（observe 返回的 id 已是该格式）。`
+  }
+
+  return base
 }
 
 async function toolType(args: any): Promise<any> {
   const tab = await getActiveTab()
+  const { frameId, ref } = parseRef(args.ref ?? args.mark ?? args.id)
   const result = await contentMsg(tab.id!, {
     action: 'type',
+    ref,
     selector: args.selector,
     text: args.text,
     clearFirst: args.clear_first !== false,
     submit: false,
-  })
+  }, frameId)
   if (!args.submit) return result
 
   try {
@@ -1144,12 +1305,14 @@ async function toolProfileSet(args: any): Promise<any> {
 
 async function toolRightClick(args: any): Promise<any> {
   const tab = await getActiveTab()
-  return contentMsg(tab.id!, { action: 'right_click', selector: args.selector, text: args.text, x: args.x, y: args.y })
+  const t = routeTarget(args)
+  return contentMsg(tab.id!, { action: 'right_click', ref: t.ref, selector: t.selector, text: t.text, x: t.x, y: t.y }, t.frameId)
 }
 
 async function toolDoubleClick(args: any): Promise<any> {
   const tab = await getActiveTab()
-  return contentMsg(tab.id!, { action: 'double_click', selector: args.selector, text: args.text, x: args.x, y: args.y })
+  const t = routeTarget(args)
+  return contentMsg(tab.id!, { action: 'double_click', ref: t.ref, selector: t.selector, text: t.text, x: t.x, y: t.y }, t.frameId)
 }
 
 async function toolDrag(args: any): Promise<any> {

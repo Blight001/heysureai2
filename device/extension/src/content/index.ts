@@ -18,7 +18,15 @@ import { doFindPopups, doClosePopup } from './popups'
 import { doPageInfo } from './viewport'
 import { doObserve, clearMarksOverlay } from './observe'
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+// The content script is injected into every frame (manifest all_frames) and may
+// also be re-injected on demand by the background worker for already-open tabs.
+// Guard against registering the message listener twice in the same frame, which
+// would otherwise make a single action run (and sendResponse) multiple times.
+declare global { interface Window { __hsContentLoaded?: boolean } }
+if (!window.__hsContentLoaded) {
+  window.__hsContentLoaded = true
+
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   handleAction(msg).then(sendResponse).catch(err => sendResponse({
     success: false,
     error: {
@@ -29,7 +37,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     trace: msg?.trace ? { action: msg.action, args: msg } : undefined,
   }))
   return true  // keep message channel open for async response
-})
+  })
+}
 
 async function handleAction(msg: any): Promise<any> {
   switch (msg.action) {
