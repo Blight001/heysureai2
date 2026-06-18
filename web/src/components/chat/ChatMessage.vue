@@ -332,8 +332,8 @@ const renderedThinkText = computed(() => {
       <div class="front-prompt-detail-modal">
         <div class="front-prompt-detail-header">
           <div>
-            <div class="text-sm font-bold text-zinc-900 dark:text-zinc-100">前置 Prompt 详情</div>
-            <div class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">包含实际 prompt、动态 MCP schema 暴露模式和当前最新工具 schema。</div>
+            <div class="text-sm font-bold text-zinc-900 dark:text-zinc-100">MCP 工具目录</div>
+            <div class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">按工作区与端侧设备分组的 MCP 工具简表。</div>
           </div>
           <div class="flex items-center gap-2">
             <button

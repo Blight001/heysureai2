@@ -5,11 +5,21 @@ export interface McpEndpointToolEntry {
   mcpSource: 'desktop' | 'browser'
 }
 
+export interface McpPromptToolGroup {
+  groupKey: string
+  groupLabel: string
+  groupKind?: 'workspace' | 'device'
+  deviceId?: string
+  deviceType?: string
+  tools?: any[]
+}
+
 export interface McpToolsResponse {
   tools?: any[]
   endpointTools?: McpEndpointToolEntry[]
   endpointToolDefs?: any[]
   promptTools?: any[]
+  promptToolGroups?: McpPromptToolGroup[]
   promptToolsScope?: 'current_ai' | 'all_current'
   promptToolsAiConfigId?: number | null
   promptToolsMcpEnabled?: boolean

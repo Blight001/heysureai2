@@ -10,12 +10,9 @@ import * as chatApi from '@/api/chat'
 import { listAiConfigs } from '@/api/ai'
 import { callMcpTool, listMcpTools } from '@/api/mcp'
 import { getAuthToken } from '@/api/http'
+import { renderGroupedMcpToolCatalog, stripPromptSection, type McpCatalogToolGroup } from '@/utils/mcpToolCatalog'
 
 const { alert, confirm, prompt } = useMessage()
-const DEFAULT_MCP_DYNAMIC_RULE = `系统提示的[可用MCP工具]目录会一次性列出全部可调用工具的名称与简介，模型据此直接定位。需要参数时用 mcp.describe_tool（支持 tool 单个、tools 批量或 query 关键词搜索）取 schema；被加载的目标工具会在随后轮次直接可调用。
-
-browser_tab 仅 7 种动作：list 获取全部页面（id/url/title/active）及 activeTab；switch+tab_id 切换到已有页；replace+url 在当前页覆盖跳转；navigate+url 新标签打开；close 关闭；back/forward 历史导航。流程：先 list，已开则 switch，当前页改址用 replace，并行任务用 navigate。`
-
 interface ChatMessage {
   id?: number
   role: 'user' | 'assistant' | 'system'
@@ -109,13 +106,14 @@ const undoActions = ref<Record<string, { tool: string; arguments: Record<string,
 const actionResults = ref<Record<string, string>>({})
 const actionResultsBySignature = ref<Record<string, string>>({})
 const configuredFrontPrompt = ref('')
+const effectiveSystemPromptPreview = ref('')
+const frontPromptPreviewError = ref('')
 const frontPromptCopied = ref(false)
-const frontPromptToolSchemas = ref<any[]>([])
 const frontPromptAvailableTools = ref<any[]>([])
+const frontPromptToolGroups = ref<McpCatalogToolGroup[]>([])
 const frontPromptToolScope = ref('')
 const frontPromptToolMcpEnabled = ref<boolean | null>(null)
 const frontPromptToolSchemaError = ref('')
-const initialNativeToolNames = ['mcp.list_tools', 'mcp.describe_tool']
 const appliedEditsArray = computed(() => Array.from(appliedEdits.value))
 const appliedSignaturesArray = computed(() => Array.from(appliedSignatures.value))
 const isRunActive = computed(() => ['queued', 'running'].includes(currentRunStatus.value))
@@ -127,35 +125,33 @@ const latestRecordedSystemPrompt = computed(() => {
   return ''
 })
 const frontPromptBaseText = computed(() => {
-  return latestRecordedSystemPrompt.value
+  return effectiveSystemPromptPreview.value
+    || latestRecordedSystemPrompt.value
     || configuredFrontPrompt.value
-    || '当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt'
+    || '运行时 Prompt 预览加载中或暂不可用'
 })
-const frontPromptSource = computed(() => {
-  if (latestRecordedSystemPrompt.value) return 'message.system_prompt'
-  if (configuredFrontPrompt.value) return 'ai_config.prompt'
-  return 'placeholder'
+const frontPromptBodyText = computed(() => stripPromptSection(frontPromptBaseText.value, '可用MCP工具'))
+const frontPromptMcpCatalogText = computed(() => {
+  if (frontPromptToolMcpEnabled.value === false) {
+    return '- （MCP 未启用）'
+  }
+  const error = frontPromptToolSchemaError.value || frontPromptPreviewError.value
+  if (error) return `- （工具目录加载失败：${error}）`
+  if (frontPromptToolGroups.value.length > 0) {
+    return renderGroupedMcpToolCatalog(frontPromptToolGroups.value)
+  }
+  const serverTools = frontPromptAvailableTools.value.filter(tool => (tool.mcpSource || 'server') === 'server')
+  const deviceTools = frontPromptAvailableTools.value.filter(tool => (tool.mcpSource || 'server') !== 'server')
+  return renderGroupedMcpToolCatalog([
+    { groupKey: 'workspace', groupLabel: '工作区 MCP', groupKind: 'workspace', tools: serverTools },
+    { groupKey: 'device:fallback', groupLabel: '端侧设备 MCP', groupKind: 'device', tools: deviceTools },
+  ])
 })
-const frontPromptDetailsText = computed(() => JSON.stringify({
-  prompt_source: frontPromptSource.value,
-  prompt: frontPromptBaseText.value,
-  mcp_schema_mode: 'dynamic_native_tools',
-  initial_native_tools: frontPromptToolSchemas.value.length > 0
-    ? frontPromptToolSchemas.value
-    : initialNativeToolNames.map(name => ({ name })),
-  current_available_tools_scope: frontPromptToolScope.value || (props.aiConfigId ? 'current_ai' : 'all_current'),
-  current_ai_config_id: props.aiConfigId ?? null,
-  current_mcp_enabled: frontPromptToolMcpEnabled.value,
-  current_available_tools_count: frontPromptAvailableTools.value.length,
-  current_available_tools: frontPromptAvailableTools.value,
-  dynamic_rule: String(props.mcpDynamicRule || DEFAULT_MCP_DYNAMIC_RULE),
-  schema_error: frontPromptToolSchemaError.value || undefined,
-}, null, 2))
 const frontPromptPreviewText = computed(() => [
-  frontPromptBaseText.value,
+  frontPromptBodyText.value,
   '',
   '[动态 MCP 说明]',
-  frontPromptDetailsText.value,
+  frontPromptMcpCatalogText.value,
 ].join('\n'))
 const copyFrontPrompt = async () => {
   const text = frontPromptPreviewText.value
@@ -735,6 +731,20 @@ const loadConfiguredFrontPrompt = async () => {
   configuredFrontPrompt.value = String(cfg?.prompt || '').trim()
 }
 
+const loadEffectiveSystemPromptPreview = async () => {
+  effectiveSystemPromptPreview.value = ''
+  frontPromptPreviewError.value = ''
+  if (!getAuthToken()) return
+  try {
+    const data = await chatApi.getSystemPromptPreview(chatCtx.value, {
+      sessionId: currentSessionId.value || undefined,
+    })
+    effectiveSystemPromptPreview.value = String(data?.prompt || '').trim()
+  } catch (error: any) {
+    frontPromptPreviewError.value = error?.message || 'Prompt 预览加载失败'
+  }
+}
+
 const normalizePromptTool = (tool: any) => ({
   name: String(tool?.name || '').trim(),
   description: String(tool?.description || '').trim(),
@@ -756,9 +766,18 @@ const sortPromptTools = (items: any[]) =>
       return a.name.localeCompare(b.name)
     })
 
+const normalizePromptToolGroup = (group: any): McpCatalogToolGroup => ({
+  groupKey: String(group?.groupKey || '').trim(),
+  groupLabel: String(group?.groupLabel || '').trim(),
+  groupKind: group?.groupKind === 'device' ? 'device' : 'workspace',
+  deviceId: String(group?.deviceId || '').trim() || undefined,
+  deviceType: String(group?.deviceType || '').trim() || undefined,
+  tools: sortPromptTools(Array.isArray(group?.tools) ? group.tools : []),
+})
+
 const loadFrontPromptToolSchemas = async () => {
-  frontPromptToolSchemas.value = []
   frontPromptAvailableTools.value = []
+  frontPromptToolGroups.value = []
   frontPromptToolScope.value = ''
   frontPromptToolMcpEnabled.value = null
   frontPromptToolSchemaError.value = ''
@@ -766,10 +785,6 @@ const loadFrontPromptToolSchemas = async () => {
   try {
     const response = await listMcpTools({ aiConfigId: props.aiConfigId })
     const tools = Array.isArray(response.tools) ? response.tools : []
-    frontPromptToolSchemas.value = tools
-      .filter((tool: any) => initialNativeToolNames.includes(String(tool?.name || '').trim()))
-      .map(normalizePromptTool)
-      .sort((a: any, b: any) => initialNativeToolNames.indexOf(a.name) - initialNativeToolNames.indexOf(b.name))
     const promptTools = Array.isArray(response.promptTools) ? response.promptTools : []
     const endpointToolDefs = Array.isArray(response.endpointToolDefs) ? response.endpointToolDefs : []
     frontPromptAvailableTools.value = sortPromptTools(promptTools.length > 0
@@ -778,6 +793,10 @@ const loadFrontPromptToolSchemas = async () => {
           ...tools.map((tool: any) => ({ ...tool, mcpSource: 'server' })),
           ...endpointToolDefs,
         ])
+    const groups = Array.isArray(response.promptToolGroups) ? response.promptToolGroups : []
+    frontPromptToolGroups.value = groups
+      .map(normalizePromptToolGroup)
+      .filter(group => group.groupLabel)
     frontPromptToolScope.value = String(response.promptToolsScope || (props.aiConfigId ? 'current_ai' : 'all_current'))
     frontPromptToolMcpEnabled.value = typeof response.promptToolsMcpEnabled === 'boolean'
       ? response.promptToolsMcpEnabled
@@ -847,6 +866,7 @@ const loadChatHistory = async (sid: string) => {
   await scrollToBottom()
   await checkActiveRun()
   startSessionSyncPolling()
+  await loadEffectiveSystemPromptPreview()
 }
 
 const fetchRunHistoryIncrementalOnce = async () => {
@@ -1307,6 +1327,7 @@ const initializeSessions = async () => {
   if (currentSessionId.value) {
     await loadChatHistory(currentSessionId.value)
   }
+  await loadEffectiveSystemPromptPreview()
 }
 
 watch(() => props.aiConfigId, async () => {
@@ -1332,6 +1353,7 @@ watch(currentSessionId, async (sid, oldSid) => {
   isTyping.value = false
   await checkActiveRun()
   startSessionSyncPolling()
+  await loadEffectiveSystemPromptPreview()
 })
 
 onMounted(async () => {
@@ -1410,6 +1432,7 @@ onBeforeUnmount(() => {
         :mcpIcon="props.mcpIcon"
         :mcpDynamicRule="props.mcpDynamicRule"
         :aiConfigId="props.aiConfigId"
+        :sessionId="currentSessionId"
         :liveText="liveAssistantText"
         :liveTargetText="liveTargetText"
         :liveThinking="liveThinkingText"

@@ -15,8 +15,26 @@ from .auth import get_current_user
 from .chat_base import router
 from api.services.chat_persistence import _rebuild_usage_snapshots
 from api.services.chat_media import delete_message_media
-from api.chat_runtime.chat_runtime_helpers import _live_pending_tokens_for
+from api.chat_runtime.chat_runtime_helpers import _live_pending_tokens_for, build_effective_system_prompt
 
+
+@router.get("/system-prompt-preview")
+async def get_system_prompt_preview(
+    ai_config_id: Optional[int] = None,
+    ai_kind: str = "assistant",
+    session_id: Optional[str] = None,
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    user = get_current_user(authorization, session)
+    prompt = build_effective_system_prompt(
+        session,
+        user,
+        ai_kind=ai_kind,
+        ai_config_id=ai_config_id,
+        session_id=session_id,
+    )
+    return {"prompt": prompt, "prompt_source": "runtime_preview"}
 
 @router.get("/history", response_model=List[ChatMessage])
 async def get_chat_history(

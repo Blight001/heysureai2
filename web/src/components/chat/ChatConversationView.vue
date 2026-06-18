@@ -4,7 +4,9 @@ import ChatMessageList from './ChatMessageList.vue'
 import { parseChatResponseInline, type ActionBlock, type InlineContent as InlineContentType } from '@/utils/chatParser'
 import { isSameAssistantVisibleReply, normalizeAssistantReplyText } from '@/utils/chatReplyCompare'
 import { stripMcpCallBlocks } from '@/utils/mcpFormat'
+import { getSystemPromptPreview } from '@/api/chat'
 import { listMcpTools } from '@/api/mcp'
+import { renderGroupedMcpToolCatalog, stripPromptSection, type McpCatalogToolGroup } from '@/utils/mcpToolCatalog'
 
 const DEFAULT_MCP_DYNAMIC_RULE = `系统提示的[可用MCP工具]目录会一次性列出全部可调用工具的名称与简介，模型据此直接定位。需要参数时用 mcp.describe_tool（支持 tool 单个、tools 批量或 query 关键词搜索）取 schema；被加载的目标工具会在随后轮次直接可调用。
 
@@ -38,6 +40,8 @@ const props = withDefaults(defineProps<{
   mcpIcon?: string
   mcpDynamicRule?: string
   aiConfigId?: number
+  aiKind?: 'assistant' | 'core'
+  sessionId?: string
   liveText?: string
   liveTargetText?: string
   liveThinking?: string
@@ -59,6 +63,8 @@ const props = withDefaults(defineProps<{
   frontPromptPlaceholder: '（当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt）',
   mcpIcon: '',
   mcpDynamicRule: DEFAULT_MCP_DYNAMIC_RULE,
+  aiKind: 'assistant',
+  sessionId: '',
   liveText: '',
   liveTargetText: '',
   liveThinking: '',
@@ -330,27 +336,23 @@ const latestMessageSystemPrompt = computed(() => {
   return ''
 })
 
+const effectiveSystemPromptPreview = ref('')
+
 const effectiveFrontPrompt = computed(() => {
-  const recorded = latestMessageSystemPrompt.value
-  if (recorded) return recorded
   const explicit = String(props.frontPromptText || '').trim()
   if (explicit) return explicit
+  const recorded = latestMessageSystemPrompt.value
+  if (recorded) return recorded
+  const preview = effectiveSystemPromptPreview.value
+  if (preview) return preview
   return ''
 })
 
-const frontPromptSource = computed(() => {
-  if (latestMessageSystemPrompt.value) return 'message.system_prompt'
-  if (String(props.frontPromptText || '').trim()) return 'props.front_prompt_text'
-  return 'placeholder'
-})
-
-const frontPromptToolSchemas = ref<any[]>([])
 const frontPromptAvailableTools = ref<any[]>([])
+const frontPromptToolGroups = ref<McpCatalogToolGroup[]>([])
 const frontPromptToolScope = ref('')
 const frontPromptToolMcpEnabled = ref<boolean | null>(null)
 const frontPromptToolSchemaError = ref('')
-const initialNativeToolNames = ['mcp.list_tools', 'mcp.describe_tool']
-
 const normalizePromptTool = (tool: any) => ({
   name: String(tool?.name || '').trim(),
   description: String(tool?.description || '').trim(),
@@ -372,14 +374,32 @@ const sortPromptTools = (items: any[]) =>
       return a.name.localeCompare(b.name)
     })
 
+const loadEffectiveSystemPromptPreview = async () => {
+  effectiveSystemPromptPreview.value = ''
+  try {
+    const data = await getSystemPromptPreview(
+      { aiKind: props.aiKind, aiConfigId: props.aiConfigId },
+      { sessionId: String(props.sessionId || '').trim() || undefined },
+    )
+    effectiveSystemPromptPreview.value = String(data?.prompt || '').trim()
+  } catch {
+    effectiveSystemPromptPreview.value = ''
+  }
+}
+
+const normalizePromptToolGroup = (group: any): McpCatalogToolGroup => ({
+  groupKey: String(group?.groupKey || '').trim(),
+  groupLabel: String(group?.groupLabel || '').trim(),
+  groupKind: group?.groupKind === 'device' ? 'device' : 'workspace',
+  deviceId: String(group?.deviceId || '').trim() || undefined,
+  deviceType: String(group?.deviceType || '').trim() || undefined,
+  tools: sortPromptTools(Array.isArray(group?.tools) ? group.tools : []),
+})
+
 const loadFrontPromptToolSchemas = async () => {
   try {
     const response = await listMcpTools({ aiConfigId: props.aiConfigId })
     const tools = Array.isArray(response.tools) ? response.tools : []
-    frontPromptToolSchemas.value = tools
-      .filter((tool: any) => initialNativeToolNames.includes(String(tool?.name || '').trim()))
-      .map(normalizePromptTool)
-      .sort((a: any, b: any) => initialNativeToolNames.indexOf(a.name) - initialNativeToolNames.indexOf(b.name))
     const promptTools = Array.isArray(response.promptTools) ? response.promptTools : []
     const endpointToolDefs = Array.isArray(response.endpointToolDefs) ? response.endpointToolDefs : []
     frontPromptAvailableTools.value = sortPromptTools(promptTools.length > 0
@@ -388,14 +408,18 @@ const loadFrontPromptToolSchemas = async () => {
           ...tools.map((tool: any) => ({ ...tool, mcpSource: 'server' })),
           ...endpointToolDefs,
         ])
+    const groups = Array.isArray(response.promptToolGroups) ? response.promptToolGroups : []
+    frontPromptToolGroups.value = groups
+      .map(normalizePromptToolGroup)
+      .filter(group => group.groupLabel)
     frontPromptToolScope.value = String(response.promptToolsScope || (props.aiConfigId ? 'current_ai' : 'all_current'))
     frontPromptToolMcpEnabled.value = typeof response.promptToolsMcpEnabled === 'boolean'
       ? response.promptToolsMcpEnabled
       : null
     frontPromptToolSchemaError.value = ''
   } catch (error: any) {
-    frontPromptToolSchemas.value = []
     frontPromptAvailableTools.value = []
+    frontPromptToolGroups.value = []
     frontPromptToolScope.value = ''
     frontPromptToolMcpEnabled.value = null
     frontPromptToolSchemaError.value = error?.message || 'MCP schema 加载失败'
@@ -404,38 +428,39 @@ const loadFrontPromptToolSchemas = async () => {
 
 onMounted(() => {
   void loadFrontPromptToolSchemas()
+  void loadEffectiveSystemPromptPreview()
 })
 
-watch(() => props.aiConfigId, () => {
+watch(() => [props.aiConfigId, props.sessionId, props.aiKind] as const, () => {
   void loadFrontPromptToolSchemas()
+  void loadEffectiveSystemPromptPreview()
 })
 
-const frontPromptDetails = computed(() => {
-  const prompt = effectiveFrontPrompt.value
-  const details = {
-    prompt_source: frontPromptSource.value,
-    prompt,
-    mcp_schema_mode: 'dynamic_native_tools',
-    initial_native_tools: frontPromptToolSchemas.value.length > 0
-      ? frontPromptToolSchemas.value
-      : initialNativeToolNames.map(name => ({ name })),
-    current_available_tools_scope: frontPromptToolScope.value || (props.aiConfigId ? 'current_ai' : 'all_current'),
-    current_ai_config_id: props.aiConfigId ?? null,
-    current_mcp_enabled: frontPromptToolMcpEnabled.value,
-    current_available_tools_count: frontPromptAvailableTools.value.length,
-    current_available_tools: frontPromptAvailableTools.value,
-    dynamic_rule: String(props.mcpDynamicRule || DEFAULT_MCP_DYNAMIC_RULE),
-    schema_error: frontPromptToolSchemaError.value || undefined,
+const frontPromptBodyText = computed(() => stripPromptSection(effectiveFrontPrompt.value, '可用MCP工具'))
+const frontPromptMcpCatalogText = computed(() => {
+  if (frontPromptToolMcpEnabled.value === false) {
+    return '- （MCP 未启用）'
   }
-  return JSON.stringify(details, null, 2)
+  const error = frontPromptToolSchemaError.value
+  if (error) return `- （工具目录加载失败：${error}）`
+  if (frontPromptToolGroups.value.length > 0) {
+    return renderGroupedMcpToolCatalog(frontPromptToolGroups.value)
+  }
+  const serverTools = frontPromptAvailableTools.value.filter(tool => (tool.mcpSource || 'server') === 'server')
+  const deviceTools = frontPromptAvailableTools.value.filter(tool => (tool.mcpSource || 'server') !== 'server')
+  return renderGroupedMcpToolCatalog([
+    { groupKey: 'workspace', groupLabel: '工作区 MCP', groupKind: 'workspace', tools: serverTools },
+    { groupKey: 'device:fallback', groupLabel: '端侧设备 MCP', groupKind: 'device', tools: deviceTools },
+  ])
 })
+const frontPromptDetails = computed(() => frontPromptMcpCatalogText.value)
 
 const frontPromptMessage = computed<ConversationMessage | null>(() => {
   if (!props.showFrontPrompt || !props.sessionActive) return null
   const prompt = effectiveFrontPrompt.value
   if (!prompt && !props.showFrontPromptPlaceholder) return null
   const content = prompt
-    ? `[前置 Prompt]\n${prompt}`
+    ? `[前置 Prompt]\n${frontPromptBodyText.value || prompt}`
     : `[前置 Prompt]\n${props.frontPromptPlaceholder}`
   return {
     id: -2,

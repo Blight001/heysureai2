@@ -72,6 +72,17 @@ export const getChatHistory = (
     fallbackError: '会话历史加载失败',
   })
 
+export const getSystemPromptPreview = (
+  ctx: AiContext,
+  options: { sessionId?: string } = {},
+) =>
+  get<{ prompt: string; prompt_source?: string }>('/api/chat/system-prompt-preview', {
+    query: queryForAi(ctx, {
+      session_id: options.sessionId,
+    }),
+    fallbackError: 'Prompt 预览加载失败',
+  })
+
 export const getRunStatus = (runId: string, after: number) =>
   get<any>(`/api/chat/run/status/${runId}`, {
     query: { after },

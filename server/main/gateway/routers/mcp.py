@@ -36,6 +36,7 @@ from connector_runtime.dispatch.desktop_device_tools import (
     is_workshop_tool,
     strip_endpoint_tool_config_names,
 )
+from api.services.mcp_prompt_groups import build_prompt_tool_groups
 from api.services.task_system import with_workspace_read_by_name_compat
 
 router = APIRouter()
@@ -145,6 +146,13 @@ async def list_mcp_tools(
                 "allowedForCurrentAi": True,
             })
 
+    prompt_tool_groups = build_prompt_tool_groups(
+        user_id=user.id,
+        ai_config_id=ai_config_id,
+        prompt_tools=all_prompt_tools,
+        allowed_tools=allowed_tools,
+    )
+
     return {
         "tools": tools,
         # Endpoint (desktop / browser) tools currently advertised by connected
@@ -154,6 +162,7 @@ async def list_mcp_tools(
         "endpointTools": connected_endpoint_tool_catalog(),
         "endpointToolDefs": endpoint_tool_defs,
         "promptTools": sorted(all_prompt_tools, key=lambda item: str(item.get("name") or "")),
+        "promptToolGroups": prompt_tool_groups,
         "promptToolsScope": "current_ai" if ai_config_id is not None else "all_current",
         "promptToolsAiConfigId": ai_config_id,
         "promptToolsMcpEnabled": True if cfg is None else bool(cfg.mcp_enabled),

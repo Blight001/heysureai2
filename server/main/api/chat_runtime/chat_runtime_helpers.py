@@ -22,7 +22,10 @@ from .run_state import _RUN_LIVE_STATE, _RUN_STATE_LOCK
 from .chat_prompt_utils import (
     _append_prompt_section,
     _clear_run_live_text,
+    _render_mcp_tool_catalog,
+    _strip_prompt_section,
     _strip_runtime_injected_sections,
+    _strip_task_runtime_sections,
 )
 
 
@@ -77,6 +80,96 @@ def _resolve_ai_runtime(session: Session, user: User, ai_kind: str, ai_config_id
             "当前 AI 的 MCP 功能未启用。不要调用 MCP 工具；如果任务必须使用 MCP，请说明需要先在该 AI 配置中开启 MCP。",
         )
     return cfg, api_key, base_url, model, system_prompt
+
+def build_effective_system_prompt(
+    session: Session,
+    user: User,
+    *,
+    ai_kind: str = "assistant",
+    ai_config_id: Optional[int] = None,
+    session_id: Optional[str] = None,
+    merged_system_prompt: Optional[str] = None,
+) -> str:
+    """Build the same runtime system prompt the inference loop injects before a turn."""
+    from connector_runtime.dispatch.desktop_device_tools import (
+        endpoint_bridge_tools_for_config,
+        endpoint_tools_for_config,
+        strip_endpoint_tool_config_names,
+    )
+    from api.services.task_system import TASK_RUNTIME_REQUIRED_TOOLS
+    from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
+
+    cfg, _, _, _, system_prompt = _resolve_ai_runtime(session, user, ai_kind, ai_config_id)
+    sid = str(session_id or "").strip()
+    task_payload = _load_task_payload_by_session(session, user.id, ai_config_id, sid) if sid else {}
+    is_task_runtime = bool(task_payload) or sid.startswith("session_task_")
+
+    effective_tool_allowlist = _parse_allowed_tools(cfg.mcp_tools if cfg else None)
+    effective_tool_allowlist.update(MCP_INTROSPECTION_TOOLS)
+    effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user.id))
+    effective_tool_allowlist.update(endpoint_tools_for_config(ai_config_id, user.id))
+    if ai_config_id is not None:
+        effective_tool_allowlist.add("message.send_to_ai")
+
+    if sid:
+        from connector_runtime.bots import iter_bots as _iter_bots
+        from connector_runtime.bots.base import channel_for_session_id as _channel_for_session_id
+
+        session_channel = _channel_for_session_id(sid, _iter_bots())
+        if session_channel:
+            bot = next((item for item in _iter_bots() if item.channel == session_channel), None)
+            if bot is not None:
+                effective_tool_allowlist.update(bot.extra_required_mcp_tools())
+
+    if task_payload:
+        override_tools = task_payload.get("override_mcp_tools")
+        if isinstance(override_tools, dict) and bool(override_tools.get("enabled")):
+            tools = override_tools.get("tools")
+            if isinstance(tools, list):
+                effective_tool_allowlist = {
+                    str(tool).strip() for tool in tools if isinstance(tool, str) and str(tool).strip()
+                }
+                effective_tool_allowlist = strip_endpoint_tool_config_names(
+                    with_workspace_read_by_name_compat(effective_tool_allowlist)
+                )
+                effective_tool_allowlist.update(endpoint_bridge_tools_for_config(ai_config_id, user.id))
+                effective_tool_allowlist.update(endpoint_tools_for_config(ai_config_id, user.id))
+                if ai_config_id is not None:
+                    effective_tool_allowlist.add("message.send_to_ai")
+
+    if is_task_runtime:
+        effective_tool_allowlist.update(TASK_RUNTIME_REQUIRED_TOOLS)
+    effective_tool_allowlist.update(MCP_INTROSPECTION_TOOLS)
+
+    if merged_system_prompt:
+        system_prompt = merged_system_prompt
+    if is_task_runtime:
+        system_prompt = _append_prompt_section(
+            _strip_prompt_section(system_prompt, "AI 工作目录"),
+            "AI 工作目录",
+            get_project_root(user.id, ai_config_id),
+        )
+        system_prompt = _strip_task_runtime_sections(system_prompt)
+
+    mcp_catalog_active = bool(effective_tool_allowlist) and (
+        cfg is None or getattr(cfg, "mcp_enabled", False)
+    )
+    if mcp_catalog_active:
+        endpoint_catalog_tools = endpoint_tools_for_config(ai_config_id, user.id)
+        endpoint_catalog_tools |= endpoint_bridge_tools_for_config(ai_config_id, user.id)
+        catalog_body = (
+            "以下是你当前可调用的全部 MCP 工具（名称 + 简介，`!` 表示有副作用）。"
+            "直接从这里定位需要的工具。\n"
+            "确定工具后，用一次 mcp.describe_tool 取参数 schema 再调用："
+            "可在 tools 数组里一次传多个工具名，或用 query 关键词搜索相关工具。\n\n"
+            + _render_mcp_tool_catalog(effective_tool_allowlist, endpoint_catalog_tools, user.id)
+        )
+        system_prompt = _append_prompt_section(
+            _strip_prompt_section(system_prompt, "可用MCP工具"),
+            "可用MCP工具",
+            catalog_body,
+        )
+    return system_prompt
 
 def _parse_allowed_tools(raw: Optional[str]) -> set[str]:
     from connector_runtime.dispatch.desktop_device_tools import strip_endpoint_tool_config_names
