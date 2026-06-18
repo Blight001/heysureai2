@@ -92,6 +92,7 @@ game/
   index.html        ← 入口页（世界 / ?preview=1 资产预览）
   src/
     main.ts         ← 启动：默认 Phaser 世界，?preview=1 进资产预览
+    assets.ts       ← 运行时资源 URL：PNG / SFX / BGM 的统一入口
     preview.ts      ← 资产预览页（调试工具，零依赖 canvas）
     assetManifest.ts← 资产清单：每张图的帧尺寸 / 帧数 / 动画名 / 瓦片与表情索引
     scenes/WorldScene.ts ← 世界场景：地图生成 / 建筑 / 成员调度 / 相机 / 悬浮
@@ -99,8 +100,11 @@ game/
     world/store.ts  ← 数据绑定层（REST 轮询 + Socket.IO → WorldSnapshot，只读）
     world/layout.ts ← 地图尺寸 / 建筑坐标 / 锚区矩形 / 作坊插槽
     world/skins.ts  ← 角色→皮肤映射（普通成员按 id 哈希确定性取色，可被 WorldActorMeta 覆盖）
+    world/time.ts   ← 北京时间 / 调试小时 / 昼夜深度等时间规则
+    world/workshops.ts ← 作坊贴图、活跃态、保留时长、交互距离等规则
     ui/overlay.ts   ← DOM 覆盖层：tooltip + HUD
     ui/drawer.ts    ← 右侧操作抽屉：成员/建筑面板 + 全部写操作入口
+    ui/worldText.ts ← tooltip / HUD 文案与展示数据拼装
   assets/           ← 生成的 PNG（属于源码，提交进仓库）
     CREDITS.md      ← 资产来源说明
   tools/
@@ -123,3 +127,15 @@ python3 game/tools/generate_assets.py
 - 1x 内部分辨率手绘，NEAREST 放大 2 倍输出；瓦片标准 32px，角色 32x48。
 - 角色 sheet：4 列 x 5 行 —— 行 0-3 = 走路 下/左/右/上（第 0 帧兼站立），行 4 = 闭眼 idle / 坐 / 跪倒 / 躺倒。
 - 统一描边色 `(34,32,52)`；调色板集中在生成器顶部，新颜色先进调色板。
+
+## game 侧 7 大设计原则
+
+| 原则 | 项目约定 |
+| --- | --- |
+| 开闭原则 | 新增世界规则优先扩展 `world/*`、`ui/worldText.ts` 或 `assetManifest.ts`，场景类通过函数/配置消费规则。 |
+| 依赖倒置原则 | `WorldScene` 依赖资源、时间、作坊、文案等抽象模块；具体 API 写操作集中在抽屉 action 绑定处。 |
+| 里氏代换原则 | `WorldMember` / `WorldWorkshop` 的判断函数只依赖公共字段，避免对某个特殊角色或设备形态写死前置条件。 |
+| 合成-聚合复用原则 | Phaser 对象编排留在 scene/actor；资源查找、时间计算、tooltip/HUD、作坊状态用组合函数复用。 |
+| 单一职责原则 | `WorldScene` 负责世界对象生命周期；`MemberActor` 负责单个成员表现；`WorldStore` 负责数据同步；`ui/*` 负责 DOM 和文案。 |
+| 迪米特法则 | 场景只与 store、actor、drawer、overlay 和相邻规则模块交互，不穿透其它模块内部状态。 |
+| 接口隔离原则 | 新规则按资源、时间、作坊、文案等小接口拆分，调用方只拿自己需要的函数，避免继续扩大 `WorldScene.ts`。 |

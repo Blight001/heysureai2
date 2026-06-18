@@ -5,18 +5,7 @@
  * 用于校验"生成器 → manifest → 渲染"链路；正式世界场景见 scenes/WorldScene.ts。
  */
 import { SHEETS, type SheetDef } from './assetManifest'
-
-const assetUrls = import.meta.glob('../assets/*.png', {
-  eager: true,
-  query: '?url',
-  import: 'default',
-}) as Record<string, string>
-
-const urlFor = (file: string): string => {
-  const url = assetUrls[`../assets/${file}`]
-  if (!url) throw new Error(`资产缺失: ${file}（先运行 game/tools/generate_assets.py）`)
-  return url
-}
+import { urlForAsset } from './assets'
 
 const loadImage = (url: string): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
@@ -128,7 +117,7 @@ const main = async () => {
     section.appendChild(grid)
     app.appendChild(section)
 
-    const img = await loadImage(urlFor(sheet.file))
+    const img = await loadImage(urlForAsset(sheet.file))
     if (sheet.kind === 'tileset' || sheet.kind === 'ui') {
       addTileGrid(grid, sheet, img)
     }
