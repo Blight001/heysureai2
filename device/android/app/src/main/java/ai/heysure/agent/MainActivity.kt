@@ -5,14 +5,19 @@ import ai.heysure.agent.agent.DeviceStatus
 import ai.heysure.agent.agent.ServerApi
 import ai.heysure.agent.agent.Settings
 import ai.heysure.agent.databinding.ActivityMainBinding
+import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings as AndroidSettings
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -30,8 +35,6 @@ class MainActivity : AppCompatActivity() {
             toast("已取消截屏授权")
             return@registerForActivityResult
         }
-        // Hand the grant to the foreground service — getMediaProjection must run
-        // after the mediaProjection-typed foreground service is up (Android Q+).
         AgentService.start(this)
         val intent = Intent(this, AgentService::class.java).apply {
             action = AgentService.ACTION_GRANT_CAPTURE
@@ -44,7 +47,7 @@ class MainActivity : AppCompatActivity() {
 
     private val notifPermLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { /* result ignored: notification is best-effort */ }
+    ) { /* notification is best-effort */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,13 +57,24 @@ class MainActivity : AppCompatActivity() {
 
         binding.serverUrlInput.setText(settings.serverUrl)
         binding.loginButton.setOnClickListener { doLogin() }
+        binding.logoutButton.setOnClickListener { doLogout() }
         binding.accessibilityButton.setOnClickListener {
             startActivity(Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS))
         }
         binding.captureButton.setOnClickListener { requestCapture() }
+        binding.batteryButton.setOnClickListener { requestBatteryExemption() }
         binding.stopButton.setOnClickListener {
             startService(Intent(this, AgentService::class.java).apply { action = AgentService.ACTION_STOP })
-            binding.statusText.text = getString(R.string.status_disconnected)
+            renderStatus(DeviceStatus.DISCONNECTED, null)
+        }
+
+        binding.keepAwakeSwitch.isChecked = settings.keepScreenAwake
+        binding.keepAwakeSwitch.setOnCheckedChangeListener { _, checked ->
+            settings.keepScreenAwake = checked
+            // The service owns the WakeLock; make sure it is up, then apply.
+            AgentService.start(this)
+            AgentService.instance?.applyKeepAwake(checked)
+            if (checked) toast("已开启保持常亮（较耗电）")
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -75,6 +89,7 @@ class MainActivity : AppCompatActivity() {
             svc.logListener = { msg -> runOnUiThread { appendLog(msg) } }
             renderStatus(svc.lastStatus, null)
         }
+        binding.batteryButton.isEnabled = !isIgnoringBatteryOptimizations()
     }
 
     private fun doLogin() {
@@ -108,13 +123,41 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun doLogout() {
+        settings.clearSession()
+        startService(Intent(this, AgentService::class.java).apply { action = AgentService.ACTION_STOP })
+        renderStatus(DeviceStatus.DISCONNECTED, null)
+        appendLog("已退出登录")
+    }
+
     private fun requestCapture() {
         val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         captureLauncher.launch(mpm.createScreenCaptureIntent())
     }
 
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun requestBatteryExemption() {
+        if (isIgnoringBatteryOptimizations()) {
+            toast("已在电池白名单中")
+            return
+        }
+        try {
+            startActivity(Intent(
+                AndroidSettings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:$packageName"),
+            ))
+        } catch (e: Exception) {
+            // Fall back to the settings list if the direct dialog is unavailable.
+            startActivity(Intent(AndroidSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+    }
+
     private fun renderStatus(status: DeviceStatus, reason: String?) {
-        val (label, color) = when (status) {
+        val (label, colorRes) = when (status) {
             DeviceStatus.REGISTERED -> R.string.status_registered to R.color.status_green
             DeviceStatus.CONNECTED -> R.string.status_connected to R.color.status_yellow
             DeviceStatus.CONNECTING -> R.string.status_connecting to R.color.status_yellow
@@ -122,7 +165,8 @@ class MainActivity : AppCompatActivity() {
             DeviceStatus.DISCONNECTED -> R.string.status_disconnected to R.color.status_red
         }
         binding.statusText.text = getString(label) + (reason?.let { "（$it）" } ?: "")
-        binding.statusText.setTextColor(getColor(color))
+        binding.statusDot.backgroundTintList =
+            ColorStateList.valueOf(ContextCompat.getColor(this, colorRes))
     }
 
     private fun appendLog(msg: String) {

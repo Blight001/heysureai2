@@ -16,6 +16,7 @@ import android.content.pm.ServiceInfo
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 
 /**
  * Foreground service that keeps the Socket.IO connection + MediaProjection grant
@@ -27,6 +28,7 @@ class AgentService : Service() {
     private lateinit var settings: Settings
     private lateinit var capture: ScreenCaptureManager
     private var agent: SocketAgent? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     var lastStatus: DeviceStatus = DeviceStatus.DISCONNECTED
         private set
@@ -66,8 +68,34 @@ class AgentService : Service() {
                 return START_NOT_STICKY
             }
         }
+        applyKeepAwake(settings.keepScreenAwake)
         ensureAgent()
         return START_STICKY
+    }
+
+    /**
+     * "保持常亮"模式：持有一个 SCREEN_DIM_WAKE_LOCK，让 CPU 与屏幕保持唤醒（压暗），
+     * 这样放着不动时截屏不黑、手势能注入、socket 不易被 Doze 掐断。代价是耗电。
+     * 真正的息屏 + 安全锁屏控制仍需方案 B（电脑 ADB）或 root。
+     */
+    fun applyKeepAwake(enabled: Boolean) {
+        settings.keepScreenAwake = enabled
+        if (enabled) {
+            if (wakeLock?.isHeld == true) return
+            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+            @Suppress("DEPRECATION")
+            val lock = pm.newWakeLock(
+                PowerManager.SCREEN_DIM_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "heysure:keep-awake",
+            )
+            lock.setReferenceCounted(false)
+            lock.acquire()
+            wakeLock = lock
+            logListener?.invoke("已开启保持常亮（WakeLock）")
+        } else {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+            wakeLock = null
+        }
     }
 
     private fun ensureAgent() {
@@ -103,6 +131,8 @@ class AgentService : Service() {
 
     override fun onDestroy() {
         stopAgent()
+        if (wakeLock?.isHeld == true) wakeLock?.release()
+        wakeLock = null
         if (instance === this) instance = null
         super.onDestroy()
     }
