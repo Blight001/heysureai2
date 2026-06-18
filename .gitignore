@@ -85,6 +85,9 @@ device/android/captures/
 device/android/*.iml
 device/android/app/release/
 
+# Android ADB host controller (方案 B) build output
+device/android-adb/dist/
+
 # Build artifacts
 *.out
 *.exe

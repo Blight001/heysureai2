@@ -34,6 +34,11 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_USER_NAME, "") ?: ""
         set(value) = prefs.edit().putString(KEY_USER_NAME, value).apply()
 
+    /** "保持常亮"模式：用 WakeLock 让 CPU/屏幕保持唤醒，放着不动也尽量可控。 */
+    var keepScreenAwake: Boolean
+        get() = prefs.getBoolean(KEY_KEEP_AWAKE, false)
+        set(value) = prefs.edit().putBoolean(KEY_KEEP_AWAKE, value).apply()
+
     /** Stable per-install id so reconnects update the same logical agent. */
     val deviceId: String
         get() {
@@ -68,5 +73,6 @@ class Settings(context: Context) {
         const val KEY_USER_ID = "userId"
         const val KEY_USER_NAME = "userName"
         const val KEY_DEVICE_ID = "deviceId"
+        const val KEY_KEEP_AWAKE = "keepScreenAwake"
     }
 }
