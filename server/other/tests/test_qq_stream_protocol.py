@@ -100,6 +100,9 @@ def _bare_stream_session():
     stream._started = False
     stream._failed = False
     stream._last_sent_text = ""
+    stream._last_text = ""
+    stream._done = False
+    stream._finalize_queue = []
     return stream
 
 
@@ -160,12 +163,10 @@ def test_stream_fallback_uses_next_sequence_after_partial_stream(monkeypatch):
     assert bumped == [3]
 
 
-def test_finalize_resets_stream_without_thinking_or_mcp_prefix(monkeypatch):
+def test_finalize_bubble_resets_stream_without_thinking_or_mcp_prefix(monkeypatch):
     stream = _bare_stream_session()
     stream._started = True
-    stream._last_text = "answer"
     stream._last_sent_text = "answer"
-    stream._finished = False
     calls = []
     monkeypatch.setattr(
         stream_sender,
@@ -173,8 +174,50 @@ def test_finalize_resets_stream_without_thinking_or_mcp_prefix(monkeypatch):
         lambda *args, **kwargs: calls.append(kwargs) or {"id": "stream-1"},
     )
 
-    stream._finalize()
+    stream._finalize_bubble("answer")
 
     assert calls[0]["text"] == "answer"
     assert calls[0]["stream_state"] == stream_sender._STREAM_STATE_FINISHED
     assert calls[0]["reset"] is True
+    # Rolling to a fresh bubble: per-bubble send state is reset and the
+    # passive-reply sequence advances for the next turn's message.
+    assert stream._started is False
+    assert stream._stream_id == ""
+    assert stream._index == 0
+    assert stream._last_sent_text == ""
+    assert stream._seq == 2
+
+
+def test_update_queues_each_turn_so_intermediate_text_is_not_lost(monkeypatch):
+    """Multi-turn (tool-using) runs must deliver every turn's visible text.
+
+    The inference loop streams each turn's text then pushes an empty snapshot
+    as a turn boundary. Previously the empty snapshot was ignored and the next
+    turn overwrote ``_last_text``, so only the final turn ("结尾的信息") reached
+    the user. Each turn must now become its own delivered bubble.
+    """
+    stream = _bare_stream_session()
+    delivered = []
+
+    def _capture_final(text, *, final, force=False):
+        if final:
+            delivered.append(text)
+        stream._started = True
+        stream._last_sent_text = text
+
+    monkeypatch.setattr(stream, "_send_packet", _capture_final)
+    monkeypatch.setattr(stream, "_fallback_full_send", lambda text: delivered.append(text))
+
+    # Turn 1: visible text accompanying a tool call, then a boundary.
+    stream.update("Let me check the weather…")
+    stream.update("")
+    # Turn 2: the final answer, then the closing boundary from the loop.
+    stream.update("It is sunny today.")
+    stream.update("")
+
+    # Both turns are queued for delivery (no text dropped).
+    assert stream._finalize_queue == ["Let me check the weather…", "It is sunny today."]
+
+    # Draining (as the flush thread does on close) delivers both, in order.
+    stream._drain_on_close()
+    assert delivered == ["Let me check the weather…", "It is sunny today."]
