@@ -74,6 +74,16 @@ device/**/__pycache__/
 # Browser extension build output
 device/extension/dist/
 
+# Android device (Gradle) build output
+device/android/.gradle/
+device/android/build/
+device/android/app/build/
+device/android/local.properties
+device/android/.idea/
+device/android/captures/
+device/android/*.iml
+device/android/app/release/
+
 # Build artifacts
 *.out
 *.exe

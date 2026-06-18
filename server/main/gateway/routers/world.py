@@ -114,6 +114,7 @@ async def world_snapshot(
                 "platform": device_type,
                 "isWindowsDesktop": device_type == "desktop",
                 "isBrowserExtension": device_type == "browser",
+                "isAndroid": device_type == "android",
                 "aiConfigId": row.ai_config_id,
                 "capabilities": [],
                 "lifecycle": "offline",

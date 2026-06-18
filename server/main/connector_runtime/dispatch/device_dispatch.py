@@ -265,6 +265,8 @@ def _device_kind_label(device_id: str) -> str:
             return "知识工坊Agent"
         if bool(agent.get("isBrowserExtension")) or "browser-extension" in platform:
             return "浏览器Agent"
+        if bool(agent.get("isAndroid")) or "android" in platform:
+            return "安卓端Agent"
         if bool(agent.get("isWindowsDesktop")) or "desktop" in platform:
             return "桌面端Agent"
         return "端侧Agent"

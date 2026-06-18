@@ -115,7 +115,13 @@ def is_workshop_tool(name: str) -> bool:
 
 def device_type_of(agent: Optional[Dict[str, Any]]) -> Optional[str]:
     """Classify a connected-agent record as ``"desktop"`` / ``"browser"`` /
-    ``"workshop"`` (知识与进化工坊)."""
+    ``"android"`` (手机端) / ``"workshop"`` (知识与进化工坊).
+
+    Android phones are a distinct type (so they are never seeded the desktop
+    python/shell dynamic tools they cannot run, and get their own label /
+    permission group), but for *dispatch routing* they are a desktop-class
+    executor — their tap/swipe/screen tools flow through the desktop channel
+    (see ``_reported_endpoint_tools`` / ``get_connected_desktop_agent``)."""
     if not isinstance(agent, dict):
         return None
     platform = str(agent.get("platform") or "").lower()
@@ -123,6 +129,8 @@ def device_type_of(agent: Optional[Dict[str, Any]]) -> Optional[str]:
         return "workshop"
     if bool(agent.get("isBrowserExtension")) or "browser-extension" in platform:
         return "browser"
+    if bool(agent.get("isAndroid")) or "android" in platform:
+        return "android"
     if bool(agent.get("isWindowsDesktop")) or "desktop" in platform or "windows" in platform:
         return "desktop"
     return None
@@ -192,13 +200,18 @@ def agent_endpoint_tool_defs(agent: Optional[Dict[str, Any]]) -> Dict[str, Dict[
 
 
 def _reported_endpoint_tools(*, want_desktop: bool) -> Set[str]:
-    """Every tool name advertised by currently-connected agents of one kind."""
-    target = "desktop" if want_desktop else "browser"
+    """Every tool name advertised by currently-connected agents of one kind.
+
+    ``want_desktop`` covers both real desktops and Android phones: both are
+    desktop-class executors for dispatch, so their tools are routed through
+    ``is_desktop_tool`` → ``get_connected_desktop_agent``."""
+    targets = {"desktop", "android"} if want_desktop else {"browser"}
     names: Set[str] = set()
     for agent in list(agents.values()):
-        if device_type_of(agent) != target:
+        atype = device_type_of(agent)
+        if atype not in targets:
             continue
-        names.update(_agent_capabilities(agent, target))
+        names.update(_agent_capabilities(agent, atype))
     return names
 
 
@@ -335,10 +348,12 @@ def _iter_agents_for_config(ai_config_id: Optional[int], user_id: Optional[int] 
 
 
 def get_connected_desktop_agent(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    # Android phones are desktop-class executors for dispatch: their tap/swipe/
+    # screen tools route through the desktop channel, so this resolver returns
+    # them too. (Bindings are 1:1 in practice; with both a desktop and a phone
+    # bound to the same AI the first match wins — same loose behavior as before.)
     for agent in _iter_agents_for_config(ai_config_id, user_id) or []:
-        platform = str(agent.get("platform") or "").lower()
-        is_desktop = bool(agent.get("isWindowsDesktop")) or "desktop" in platform
-        if is_desktop:
+        if device_type_of(agent) in ("desktop", "android"):
             return agent
     return None
 

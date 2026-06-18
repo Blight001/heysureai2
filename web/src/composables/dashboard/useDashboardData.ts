@@ -31,6 +31,7 @@ export interface ConnectedDevice {
   aiConfigId?: number
   isWindowsDesktop?: boolean
   isBrowserExtension?: boolean
+  isAndroid?: boolean
   capabilities: string[]
   version?: string
   lifecycle?: string
@@ -274,6 +275,11 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
         browserAgentName: '',
         browserAgentPlatform: '',
         browserAgentCapabilities: [],
+        androidAgentConnected: false,
+        androidAgentId: '',
+        androidAgentName: '',
+        androidAgentPlatform: '',
+        androidAgentCapabilities: [],
         runtimeStatus: normalizeRuntimeStatus(row.runtime_status),
         runtimeTool,
         activeRunStatus: String(row.active_run_status || ''),
@@ -375,16 +381,19 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
   const decorateAgentsWithEndpointConnections = () => {
     const desktopByConfig = new Map<number, ConnectedDevice>()
     const browserByConfig = new Map<number, ConnectedDevice>()
+    const androidByConfig = new Map<number, ConnectedDevice>()
     for (const connected of connectedDevices.value) {
       const configId = Number(connected.aiConfigId)
       if (!Number.isFinite(configId) || configId <= 0) continue
       const platform = String(connected.platform || '').toLowerCase()
-      const isDesktop = !!connected.isWindowsDesktop
+      const isAndroid = !!connected.isAndroid || platform.includes('android')
+      const isDesktop = !isAndroid && (!!connected.isWindowsDesktop
         || String(connected.id || '').startsWith('win-desktop-')
-        || platform.includes('desktop')
+        || platform.includes('desktop'))
       const isBrowser = !!connected.isBrowserExtension
         || platform.includes('browser-extension')
         || platform.includes('browser')
+      if (isAndroid) androidByConfig.set(configId, connected)
       if (isDesktop) desktopByConfig.set(configId, connected)
       if (isBrowser) browserByConfig.set(configId, connected)
     }
@@ -392,6 +401,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
       const configId = Number(agent.aiConfigId)
       const desktop = Number.isFinite(configId) ? desktopByConfig.get(configId) : undefined
       const browser = Number.isFinite(configId) ? browserByConfig.get(configId) : undefined
+      const android = Number.isFinite(configId) ? androidByConfig.get(configId) : undefined
       agent.desktopAgentConnected = !!desktop
       agent.desktopAgentId = desktop?.id || ''
       agent.desktopAgentName = desktop?.name || ''
@@ -402,6 +412,11 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
       agent.browserAgentName = browser?.name || ''
       agent.browserAgentPlatform = browser?.platform || ''
       agent.browserAgentCapabilities = browser?.capabilities || []
+      agent.androidAgentConnected = !!android
+      agent.androidAgentId = android?.id || ''
+      agent.androidAgentName = android?.name || ''
+      agent.androidAgentPlatform = android?.platform || ''
+      agent.androidAgentCapabilities = android?.capabilities || []
     }
   }
 
@@ -412,6 +427,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     aiConfigId: parseConnectedAiConfigId(raw),
     isWindowsDesktop: !!raw?.isWindowsDesktop,
     isBrowserExtension: !!raw?.isBrowserExtension,
+    isAndroid: !!raw?.isAndroid,
     capabilities: Array.isArray(raw?.capabilities) ? raw.capabilities.map((c: any) => String(c)) : [],
     version: raw?.version ? String(raw.version) : undefined,
     lifecycle: raw?.lifecycle ? String(raw.lifecycle) : undefined,

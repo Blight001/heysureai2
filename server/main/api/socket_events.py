@@ -55,7 +55,7 @@ def _has_live_same_type_ai_binding(*, user_id: int, ai_config_id: int, device_id
     except Exception:
         return False
     incoming_type = device_type_of(agent_info)
-    if incoming_type not in {"desktop", "browser", "workshop"}:
+    if incoming_type not in {"desktop", "browser", "android", "workshop"}:
         return False
     target_cfg = _coerce_positive_int(ai_config_id)
     if not target_cfg:

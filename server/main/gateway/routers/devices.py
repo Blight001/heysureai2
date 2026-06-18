@@ -53,7 +53,7 @@ def _presence_device_type(session: Session, user_id: int, device_id: str) -> Opt
         .order_by(DevicePresence.updated_at.desc(), DevicePresence.id.desc())
     ).first()
     device_type = str(row.device_type or "").strip() if row else ""
-    return device_type if device_type in {"desktop", "browser", "workshop"} else None
+    return device_type if device_type in {"desktop", "browser", "android", "workshop"} else None
 
 
 def _device_type_for_binding(session: Session, user_id: int, device_id: str) -> Optional[str]:

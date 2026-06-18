@@ -85,6 +85,11 @@ export interface Agent {
   browserAgentName?: string
   browserAgentPlatform?: string
   browserAgentCapabilities?: string[]
+  androidAgentConnected?: boolean
+  androidAgentId?: string
+  androidAgentName?: string
+  androidAgentPlatform?: string
+  androidAgentCapabilities?: string[]
   runtimeStatus?: string
   runtimeTool?: string
   activeRunStatus?: string

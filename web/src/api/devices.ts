@@ -10,6 +10,7 @@ export interface ConnectedDeviceRow {
   ai_config_id?: number
   isWindowsDesktop?: boolean
   isBrowserExtension?: boolean
+  isAndroid?: boolean
   capabilities?: any[]
   version?: string
   lifecycle?: string
@@ -39,7 +40,7 @@ export const assignDeviceAi = (deviceId: string, aiConfigId: number | null) =>
 export interface DeviceMcpScope {
   deviceId: string
   agentName?: string
-  deviceType?: 'desktop' | 'browser' | 'workshop' | null
+  deviceType?: 'desktop' | 'browser' | 'android' | 'workshop' | null
   platform?: string
   aiConfigId?: number | null
   capabilities: string[]
