@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HeySure 浏览器插件测试页</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f4f5;
+      --card: #ffffff;
+      --text: #18181b;
+      --muted: #71717a;
+      --border: #e4e4e7;
+      --accent: #4f46e5;
+      --accent-soft: #eef2ff;
+      --ok: #059669;
+      --warn: #d97706;
+      --danger: #dc2626;
+      --shadow: 0 10px 30px rgba(24, 24, 27, 0.08);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #eef2ff 0%, var(--bg) 220px, var(--bg) 100%);
+      color: var(--text);
+      line-height: 1.5;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 40;
+      backdrop-filter: blur(10px);
+      background: rgba(255, 255, 255, 0.92);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .topbar h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .topbar p {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    main {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 20px 20px 80px;
+      display: grid;
+      gap: 16px;
+    }
+
+    section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    section h2 {
+      margin: 0 0 6px;
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    section .hint {
+      margin: 0 0 14px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .btn {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+      border-radius: 10px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+    }
+
+    .btn:hover { border-color: #a5b4fc; background: #fafafa; transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.primary:hover { background: #4338ca; }
+    .btn.warn { background: #fff7ed; border-color: #fdba74; color: #9a3412; }
+    .btn.danger { background: #fef2f2; border-color: #fca5a5; color: #991b1b; }
+    .btn.ghost { background: transparent; }
+
+    .field {
+      display: grid;
+      gap: 6px;
+      min-width: 220px;
+      flex: 1 1 220px;
+    }
+
+    .field label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    input[type="text"],
+    input[type="email"],
+    input[type="search"],
+    input[type="password"],
+    textarea,
+    select {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 13px;
+      background: #fff;
+    }
+
+    textarea { min-height: 72px; resize: vertical; }
+
+    .editable {
+      min-height: 64px;
+      border: 1px dashed #c7d2fe;
+      border-radius: 10px;
+      padding: 10px 12px;
+      background: #fafafa;
+    }
+
+    .log {
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fafafa;
+      min-height: 88px;
+      max-height: 180px;
+      overflow: auto;
+      padding: 10px 12px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #ecfeff;
+      color: #0e7490;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
+
+    .card-lite {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fcfcfd;
+    }
+
+    .product-card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    .product-card h3 {
+      margin: 0 0 4px;
+      font-size: 14px;
+    }
+
+    .product-card .price {
+      color: var(--accent);
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .drag-source,
+    .drag-target {
+      width: 120px;
+      height: 72px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 700;
+      user-select: none;
+    }
+
+    .drag-source {
+      background: #fef3c7;
+      border: 2px dashed #f59e0b;
+      cursor: grab;
+    }
+
+    .drag-target {
+      background: #ecfdf5;
+      border: 2px dashed #34d399;
+    }
+
+    .drag-target.over { background: #d1fae5; border-color: #059669; }
+
+    .scroll-box {
+      height: 180px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+    }
+
+    .scroll-box .block {
+      height: 120px;
+      margin-bottom: 10px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .overlay.open { display: flex; }
+
+    .dialog {
+      width: min(420px, calc(100vw - 32px));
+      background: #fff;
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+    }
+
+    .dialog h3 { margin: 0 0 8px; font-size: 16px; }
+    .dialog p { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
+
+    .delayed {
+      display: none;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #ecfccb;
+      border: 1px solid #bef264;
+      color: #3f6212;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .delayed.show { display: block; }
+
+    iframe {
+      width: 100%;
+      height: 120px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+    }
+
+    .shot-target {
+      height: 96px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #818cf8, #22d3ee);
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .status-ok { color: var(--ok); font-weight: 700; }
+    .status-warn { color: var(--warn); font-weight: 700; }
+
+    a.link {
+      color: var(--accent);
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    a.link:hover { text-decoration: underline; }
+
+    .kbd-hint {
+      font-size: 11px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>HeySure 浏览器插件测试页</h1>
+      <p>覆盖 observe / action / wait / drag / extract / storage / upload / screenshot 等 MCP 工具场景</p>
+    </div>
+    <span class="badge" id="page-status">就绪</span>
+  </header>
+
+  <main>
+    <section id="observe" data-test-section="observe">
+      <h2>观察与点击（browser_observe / browser_action）</h2>
+      <p class="hint">含按钮、链接、禁用态与背景按钮，可测试编号点击、文本定位与遮挡检测。</p>
+      <div class="row">
+        <button class="btn primary" id="btn-primary" data-testid="btn-primary">主按钮</button>
+        <button class="btn" id="btn-secondary" data-testid="btn-secondary">次按钮</button>
+        <button class="btn warn" id="btn-warn" data-testid="btn-warn">警告按钮</button>
+        <button class="btn danger" id="btn-danger" data-testid="btn-danger">危险按钮</button>
+        <button class="btn ghost" disabled>禁用按钮</button>
+        <a class="link" href="#forms" id="link-jump" data-testid="link-jump">跳转到表单区</a>
+      </div>
+      <div class="log" id="action-log" aria-live="polite">等待交互…</div>
+    </section>
+
+    <section id="forms" data-test-section="forms">
+      <h2>输入与键盘（browser_action: type / press_key）</h2>
+      <p class="hint">测试输入框清空、提交、组合键与 contenteditable。</p>
+      <div class="grid-2">
+        <div class="field">
+          <label for="input-name">姓名</label>
+          <input id="input-name" data-testid="input-name" type="text" placeholder="输入姓名" />
+        </div>
+        <div class="field">
+          <label for="input-email">邮箱</label>
+          <input id="input-email" data-testid="input-email" type="email" placeholder="name@example.com" />
+        </div>
+        <div class="field">
+          <label for="input-search">搜索框</label>
+          <input id="input-search" data-testid="input-search" type="search" placeholder="搜索关键词" />
+        </div>
+        <div class="field">
+          <label for="select-city">城市</label>
+          <select id="select-city" data-testid="select-city">
+            <option value="">请选择</option>
+            <option value="sh">上海</option>
+            <option value="bj">北京</option>
+            <option value="sz">深圳</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="textarea-note">备注</label>
+          <textarea id="textarea-note" data-testid="textarea-note" placeholder="多行文本"></textarea>
+        </div>
+        <div class="field">
+          <label>偏好</label>
+          <div class="row">
+            <label><input type="checkbox" id="chk-a" data-testid="chk-a" /> 选项 A</label>
+            <label><input type="radio" name="plan" value="free" data-testid="radio-free" /> 免费</label>
+            <label><input type="radio" name="plan" value="pro" data-testid="radio-pro" /> 专业</label>
+          </div>
+        </div>
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>可编辑区域（contenteditable）</label>
+        <div class="editable" id="editable-box" contenteditable="true" data-testid="editable-box">在此输入富文本…</div>
+      </div>
+      <p class="kbd-hint" style="margin-top:10px">聚焦搜索框后可用 press_key 测试 Enter / Escape / ArrowDown。</p>
+    </section>
+
+    <section id="scroll" data-test-section="scroll">
+      <h2>滚动（browser_action: scroll）</h2>
+      <p class="hint">页面内滚动容器 + 下方长内容，测试 up/down/top/bottom。</p>
+      <div class="scroll-box" id="scroll-box" data-testid="scroll-box">
+        <div class="block" style="background:#6366f1">区块 1</div>
+        <div class="block" style="background:#0ea5e9">区块 2</div>
+        <div class="block" style="background:#14b8a6">区块 3</div>
+        <div class="block" style="background:#22c55e">区块 4</div>
+        <div class="block" style="background:#eab308">区块 5</div>
+      </div>
+      <div style="height:720px;margin-top:12px;border-radius:12px;border:1px dashed #d4d4d8;display:grid;place-items:center;color:#71717a;font-size:12px">
+        页面底部锚点 — 用于整页滚动测试
+      </div>
+    </section>
+
+    <section id="drag" data-test-section="drag">
+      <h2>拖拽（browser_drag）</h2>
+      <p class="hint">将左侧卡片拖到右侧投放区。</p>
+      <div class="row">
+        <div class="drag-source" id="drag-source" draggable="true" data-testid="drag-source">拖我</div>
+        <div class="drag-target" id="drag-target" data-testid="drag-target">投放区</div>
+        <span class="pill" id="drag-status">未放置</span>
+      </div>
+    </section>
+
+    <section id="wait" data-test-section="wait">
+      <h2>等待（browser_wait）</h2>
+      <p class="hint">点击后 1.2 秒出现目标元素，可等待 <code>#delayed-target</code>。</p>
+      <button class="btn primary" id="btn-show-delayed" data-testid="btn-show-delayed">显示延迟元素</button>
+      <div class="delayed" id="delayed-target" data-testid="delayed-target">延迟元素已出现，可进行点击或提取。</div>
+    </section>
+
+    <section id="modal" data-test-section="modal">
+      <h2>弹窗遮挡（occlusion）</h2>
+      <p class="hint">打开遮罩后，底层按钮应被判定为 occluded（除非 force:true）。</p>
+      <button class="btn warn" id="btn-open-modal" data-testid="btn-open-modal">打开遮罩弹窗</button>
+      <button class="btn" id="btn-behind-modal" data-testid="btn-behind-modal" style="margin-left:8px">被遮挡按钮</button>
+    </section>
+
+    <section id="extract" data-test-section="extract">
+      <h2>结构化提取（browser_extract）</h2>
+      <p class="hint">建议 selector: <code>.product-card</code>，attributes: <code>["data-sku","data-stock"]</code></p>
+      <div class="grid-2">
+        <article class="product-card" data-sku="HS-001" data-stock="12">
+          <h3>测试商品 A</h3>
+          <div class="price">¥ 19.90</div>
+        </article>
+        <article class="product-card" data-sku="HS-002" data-stock="3">
+          <h3>测试商品 B</h3>
+          <div class="price">¥ 49.00</div>
+        </article>
+        <article class="product-card" data-sku="HS-003" data-stock="0">
+          <h3>测试商品 C</h3>
+          <div class="price">¥ 8.80</div>
+        </article>
+      </div>
+    </section>
+
+    <section id="screenshot" data-test-section="screenshot">
+      <h2>截图（browser_screenshot）</h2>
+      <p class="hint">可对 <code>#shot-target</code> 或整页截图。</p>
+      <div class="shot-target" id="shot-target" data-testid="shot-target">SCREENSHOT TARGET</div>
+    </section>
+
+    <section id="upload" data-test-section="upload">
+      <h2>文件上传（browser_file_upload）</h2>
+      <p class="hint">默认 selector: <code>input[type=file]</code></p>
+      <input type="file" id="file-input" data-testid="file-input" />
+      <div class="log" id="upload-log">尚未选择文件</div>
+    </section>
+
+    <section id="storage" data-test-section="storage">
+      <h2>存储与会话（browser_storage / browser_cookie / browser_session）</h2>
+      <p class="hint">可读写 localStorage / sessionStorage，并配合 cookie 工具验证。</p>
+      <div class="row">
+        <button class="btn" id="btn-storage-set" data-testid="btn-storage-set">写入 localStorage</button>
+        <button class="btn" id="btn-storage-clear" data-testid="btn-storage-clear">清除 localStorage</button>
+        <button class="btn" id="btn-session-set" data-testid="btn-session-set">写入 sessionStorage</button>
+      </div>
+      <div class="log" id="storage-log">storage: (empty)</div>
+    </section>
+
+    <section id="evaluate" data-test-section="evaluate">
+      <h2>脚本执行（browser_evaluate）</h2>
+      <p class="hint">页面暴露 <code>window.__HEYSURE_TEST__</code> 供 evaluate 读取。</p>
+      <div class="card-lite">
+        <div>version: <strong id="eval-version">1.0.0</strong></div>
+        <div>counter: <strong id="eval-counter">0</strong></div>
+        <button class="btn" id="btn-eval-inc" data-testid="btn-eval-inc">counter + 1</button>
+      </div>
+    </section>
+
+    <section id="iframe" data-test-section="iframe">
+      <h2>内嵌框架</h2>
+      <p class="hint">用于观察跨 frame 场景（部分工具仅操作顶层文档）。</p>
+      <iframe title="inner-frame" srcdoc="&lt;button id='inner-btn' style='padding:8px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-weight:700'&gt;iframe 内按钮&lt;/button&gt;"></iframe>
+    </section>
+
+    <section id="download" data-test-section="download">
+      <h2>下载（browser_download）</h2>
+      <p class="hint">可用下方链接测试下载行为。</p>
+      <a
+        class="link"
+        id="download-link"
+        data-testid="download-link"
+        href="data:text/plain;charset=utf-8,HeySure%20extension%20test%20file"
+        download="heysure-extension-test.txt"
+      >下载测试文本文件</a>
+    </section>
+  </main>
+
+  <div class="overlay" id="overlay" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+    <div class="dialog">
+      <h3 id="dialog-title">遮挡层弹窗</h3>
+      <p>关闭前，背后的「被遮挡按钮」应无法被正常点击。</p>
+      <button class="btn primary" id="btn-close-modal" data-testid="btn-close-modal">关闭弹窗</button>
+    </div>
+  </div>
+
+  <script>
+    const actionLog = document.getElementById('action-log')
+    const pageStatus = document.getElementById('page-status')
+    const storageLog = document.getElementById('storage-log')
+    const uploadLog = document.getElementById('upload-log')
+
+    const log = (msg) => {
+      const line = `[${new Date().toLocaleTimeString()}] ${msg}`
+      actionLog.textContent = actionLog.textContent === '等待交互…'
+        ? line
+        : `${line}\n${actionLog.textContent}`
+      pageStatus.textContent = '有交互'
+    }
+
+    const refreshStorageLog = () => {
+      const local = localStorage.getItem('heysure_test_key') || '(empty)'
+      const session = sessionStorage.getItem('heysure_test_session') || '(empty)'
+      storageLog.textContent = `localStorage.heysure_test_key = ${local}\nsessionStorage.heysure_test_session = ${session}`
+    }
+
+    window.__HEYSURE_TEST__ = {
+      page: 'extension-test',
+      version: '1.0.0',
+      counter: 0,
+      bump() {
+        this.counter += 1
+        document.getElementById('eval-counter').textContent = String(this.counter)
+        return this.counter
+      },
+    }
+
+    document.querySelectorAll('#observe .btn, #observe .link').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        if (el.hasAttribute('disabled')) return
+        const label = el.textContent?.trim() || el.id
+        log(`点击: ${label}`)
+      })
+    })
+
+    document.getElementById('btn-eval-inc').addEventListener('click', () => {
+      const n = window.__HEYSURE_TEST__.bump()
+      log(`evaluate counter -> ${n}`)
+    })
+
+    document.getElementById('btn-show-delayed').addEventListener('click', () => {
+      const target = document.getElementById('delayed-target')
+      target.classList.remove('show')
+      pageStatus.textContent = '等待中…'
+      setTimeout(() => {
+        target.classList.add('show')
+        pageStatus.textContent = '延迟元素已出现'
+        log('延迟元素 #delayed-target 已显示')
+      }, 1200)
+    })
+
+    const overlay = document.getElementById('overlay')
+    document.getElementById('btn-open-modal').addEventListener('click', () => {
+      overlay.classList.add('open')
+      log('打开遮挡弹窗')
+    })
+    document.getElementById('btn-close-modal').addEventListener('click', () => {
+      overlay.classList.remove('open')
+      log('关闭遮挡弹窗')
+    })
+    document.getElementById('btn-behind-modal').addEventListener('click', () => {
+      log('被遮挡按钮被点击（若弹窗打开则说明穿透成功）')
+    })
+
+    const dragSource = document.getElementById('drag-source')
+    const dragTarget = document.getElementById('drag-target')
+    const dragStatus = document.getElementById('drag-status')
+
+    dragSource.addEventListener('dragstart', (e) => {
+      e.dataTransfer?.setData('text/plain', 'heysure-drag')
+      log('开始拖拽')
+    })
+    dragTarget.addEventListener('dragover', (e) => {
+      e.preventDefault()
+      dragTarget.classList.add('over')
+    })
+    dragTarget.addEventListener('dragleave', () => dragTarget.classList.remove('over'))
+    dragTarget.addEventListener('drop', (e) => {
+      e.preventDefault()
+      dragTarget.classList.remove('over')
+      dragStatus.textContent = '已放置'
+      log('拖拽完成：已放入投放区')
+    })
+
+    document.getElementById('btn-storage-set').addEventListener('click', () => {
+      localStorage.setItem('heysure_test_key', `ok_${Date.now()}`)
+      refreshStorageLog()
+      log('写入 localStorage.heysure_test_key')
+    })
+    document.getElementById('btn-storage-clear').addEventListener('click', () => {
+      localStorage.removeItem('heysure_test_key')
+      refreshStorageLog()
+      log('清除 localStorage.heysure_test_key')
+    })
+    document.getElementById('btn-session-set').addEventListener('click', () => {
+      sessionStorage.setItem('heysure_test_session', `sess_${Date.now()}`)
+      refreshStorageLog()
+      log('写入 sessionStorage.heysure_test_session')
+    })
+
+    document.getElementById('file-input').addEventListener('change', (e) => {
+      const input = e.target
+      const file = input.files && input.files[0]
+      uploadLog.textContent = file
+        ? `已选择: ${file.name} (${file.size} bytes, ${file.type || 'unknown'})`
+        : '尚未选择文件'
+      log(file ? `选择文件: ${file.name}` : '清空文件选择')
+    })
+
+    refreshStorageLog()
+    log('测试页加载完成')
+  </script>
+</body>
+</html>

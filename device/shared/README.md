@@ -46,3 +46,20 @@
 
 平台分叉文件（`device.ts`、`store.ts`、`platform.ts`、各 `tools/{mouse,screen,window,...}.ts` 等）
 仍各自保留在各壳 `src/` 下，不在此目录。
+
+## 联调测试
+
+本目录**不单独运行**，联调请在具体平台壳上执行（`device/windows`、`device/linux`、
+`device/mac`）。改共享代码后的验证流程：
+
+1. **只改** `shared/src/` 或 `shared/assets/`，不要改各壳下 sync 出的副本
+2. 在至少一个目标平台执行 `npm run dev`（会自动 `sync-shared.js`）
+3. 打开该平台桌面端 → **MCP 工具** → 任选 1～2 个工具做 `mcp.test`（如 `shell.run`、`fs.list`）
+4. 若改动涉及 `renderer/`、`ipc/mcp.ts`、`runtime/*`，三端各抽测一次更稳妥
+
+各平台完整测试清单、AI 回归指令与排障表见：
+
+- [`device/windows/README.md`](../windows/README.md)（Windows，含最完整联调说明）
+- [`device/linux/README.md`](../linux/README.md)
+- [`device/mac/README.md`](../mac/README.md)
+- 浏览器扩展：[`device/extension/README.md`](../extension/README.md)

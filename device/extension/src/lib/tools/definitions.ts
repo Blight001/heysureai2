@@ -224,14 +224,14 @@ export const BROWSER_TOOLS: AIToolDef[] = [
   // ───── 浏览器状态（资源 + action）────────────────────────────────────
   {
     name: 'browser_tab',
-    description: '浏览器标签页与页面级导航聚合工具：列出已打开页面、新开/关闭标签，以及在当前标签内跳转 URL、前进、后退。用途：组织多标签并完成页面跳转。场景：查看有哪些标签（list）、并行打开网址（open）、完成后关闭标签（close）、跳到目标网址开始任务（navigate）、在浏览历史里回退/前进（back/forward）。',
+    description: '浏览器标签页与页面级导航聚合工具：列出已打开页面、切换/新开/关闭标签，以及在当前标签内跳转 URL、前进、后退。用途：组织多标签并完成页面跳转。场景：查看有哪些标签（list）、切换到已有标签（switch + tab_id）、并行打开网址（open）、完成后关闭标签（close）、跳到目标网址开始任务（navigate）、在浏览历史里回退/前进（back/forward）。',
     input_schema: {
       type: 'object',
       properties: {
-        action:  { type: 'string', enum: ['list', 'open', 'close', 'navigate', 'back', 'forward'], description: '动作：list 列出所有标签、open 用 url 新开标签、close 关闭 tab_id（不传则当前标签）、navigate 在当前标签打开 url（new_tab:true 则新开）、back 后退一步、forward 前进一步。' },
+        action:  { type: 'string', enum: ['list', 'open', 'close', 'switch', 'navigate', 'back', 'forward'], description: '动作：list 列出所有标签、switch 切换到 tab_id 指定标签、open 用 url 新开标签、close 关闭 tab_id（不传则当前标签）、navigate 在当前标签打开 url（new_tab:true 则新开）、back 后退一步、forward 前进一步。' },
         url:     { type: 'string',  description: 'action=open / navigate 时要打开的 URL（navigate 需为绝对地址，缺协议时按 https 补全）。' },
         new_tab: { type: 'boolean', description: 'action=navigate 时为 true 在新标签页打开，而不是替换当前页。' },
-        tab_id:  { type: 'number',  description: 'action=close 时要关闭的标签 ID；不传则关闭当前活动标签。' },
+        tab_id:  { type: 'number',  description: 'action=switch 必填；action=close 时可选（不传则关闭当前活动标签）。' },
       },
       required: ['action'],
     },

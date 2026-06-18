@@ -209,6 +209,10 @@ watch(() => props.show, visible => {
     expandedModelPresetIds.value = new Set()
   }
 })
+
+const openExtensionTestPage = () => {
+  window.open(`${window.location.origin}/extension-test/`, '_blank', 'noopener,noreferrer')
+}
 </script>
 
 <template>
@@ -297,6 +301,23 @@ watch(() => props.show, visible => {
               <p class="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">范围 1-999。连续调用 MCP 工具时，每次模型生成和工具返回后的继续执行都会消耗一步。</p>
               </div>
             </div>
+          </div>
+
+          <div class="p-4 bg-zinc-50 rounded-xl dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
+            <h4 class="text-sm font-semibold text-zinc-800 mb-3 dark:text-zinc-100 flex items-center gap-2">
+              <AppIcon name="globe" class="w-4 h-4" /> 浏览器插件
+            </h4>
+            <button
+              type="button"
+              class="settings-entry"
+              @click="openExtensionTestPage"
+            >
+              <span>
+                <span class="settings-entry-title">打开插件测试页</span>
+                <span class="settings-entry-desc">在新标签页打开静态测试页，覆盖 observe / 点击 / 输入 / 滚动 / 拖拽 / 等待 / 提取等 MCP 场景</span>
+              </span>
+              <span class="settings-entry-arrow">↗</span>
+            </button>
           </div>
 
           <div class="grid grid-cols-1 gap-3">

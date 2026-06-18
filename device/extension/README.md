@@ -113,3 +113,144 @@ device/extension/
 - 修改 src/ 后必须 `npm run build` 更新 dist/（manifest 直接引用 dist/）
 - 切换包的 popup UI 在 `popup.html` + `src/popup/`；服务端通信在
   `src/background.ts` + `src/lib/client.ts`
+
+## 联调测试
+
+项目提供专用静态测试页，覆盖 `browser_*` MCP 工具的主要场景。源码位于
+`web/extension-test/index.html`，由 Web 控制台 Vite 多页入口托管。
+
+### 测试前准备
+
+1. 启动后端（Gateway 等 4 进程）与前端：`web/run.bat`
+2. 打开测试页：`http://127.0.0.1:58150/extension-test/`
+   - 也可在 Web 控制台 → **系统全能设置** → **打开插件测试页**
+3. Chrome 加载本扩展（`npm run build` 后重新加载扩展）
+4. popup 内登录并确认已连接服务端
+5. 仪表盘中为待测 AI 成员：
+   - 绑定「浏览器插件」设备
+   - MCP 权限勾选全部 `browser_*`（至少基础类 + 特殊类）
+   - 系统全能设置里「单次运行最多步骤」建议 ≥ 80（完整回归）
+
+### 测试页区块与工具对应
+
+| 测试页区块 | 主要工具 | 验证点 |
+| --- | --- | --- |
+| 观察与点击 | `browser_observe` / `browser_action` | 编号点击、文本定位、禁用按钮、交互日志 |
+| 表单输入 | `browser_action`（type / press_key） | 输入框、下拉、checkbox、contenteditable |
+| 滚动 | `browser_action`（scroll） | 容器内滚动 + 整页长内容 |
+| 拖拽 | `browser_drag` | 拖放到投放区 |
+| 等待 | `browser_wait` | 延迟出现 `#delayed-target` |
+| 弹窗遮挡 | `browser_action`（click） | 弹窗打开时 `occluded`，关闭后可点击 |
+| 结构化提取 | `browser_extract` | `.product-card` + `data-sku` / `data-stock` |
+| 截图 | `browser_screenshot` | `#shot-target` 或整页 |
+| 文件上传 | `browser_file_upload` | `input[type=file]`（须传 `files[].content`） |
+| 存储 | `browser_storage` / `browser_cookie` / `browser_session` | localStorage / sessionStorage |
+| 脚本 | `browser_evaluate` | `window.__HEYSURE_TEST__` |
+| 下载 | `browser_download` | 页面内下载链接 |
+
+### 方式一：popup 单工具冒烟（mcp.test）
+
+适合改完 `src/lib/tools/` 后快速验单个工具。
+
+1. 在浏览器打开测试页并保持为**当前活动标签**
+2. 打开扩展 popup → MCP 工具列表 → 选中工具 → **测试调用**
+3. 填入 JSON 参数 → 运行 → 对照返回与页面交互日志（`#action-log`）
+
+常用示例：
+
+```json
+{ "action": "navigate", "url": "http://127.0.0.1:58150/extension-test/" }
+```
+
+```json
+{ "action": "list" }
+```
+
+```json
+{ "action": "switch", "tab_id": 123456789 }
+```
+
+```json
+{ "limit": 120, "mark": true }
+```
+
+```json
+{ "action": "click", "text": "主按钮" }
+```
+
+```json
+{ "action": "type", "selector": "#input-name", "text": "HeySure测试" }
+```
+
+```json
+{ "selector": ".product-card", "attributes": ["data-sku", "data-stock"], "limit": 3 }
+```
+
+`browser_tab` 的 `action` 取值：`list` / `open` / `close` / `switch` / `navigate` /
+`back` / `forward`。切换已有标签用 `switch` + `tab_id`（先 `list` 拿 id）。
+
+### 方式二：AI 成员完整回归（推荐）
+
+将以下指令发给**已绑定浏览器插件**的 AI 成员，由其自动调用 MCP 并输出报告。
+所有操作限定在测试页，不要打开其他网站。
+
+```text
+请对 HeySure 浏览器插件做一次完整联调测试，并输出结构化报告。
+
+【环境】
+- 测试页 URL：http://127.0.0.1:58150/extension-test/
+- 使用当前已连接的浏览器插件设备执行所有 browser_* MCP 工具
+- 若页面未打开，先用 browser_tab { action: "navigate", url: "http://127.0.0.1:58150/extension-test/" } 跳转
+
+【测试要求】
+按顺序逐项执行，每项记录：入参、返回摘要、通过/失败/跳过。
+失败最多重试 1 次；仍失败则记录错误并继续，不要中断全流程。
+任何点击前先 browser_observe，优先用 ref 编号点击。
+
+1) browser_tab：list → navigate 打开测试页 →（可选）open 新标签 → switch 切回测试页 → back/forward
+2) browser_observe：mark:true，记录元素数，用 ref 点击「主按钮」
+3) browser_screenshot：截 #shot-target，再截可视区（send_to_user:false）
+4) browser_action：click 次按钮；type 写入 #input-name；scroll down 400；press_key Enter
+5) browser_wait：点击「显示延迟元素」后等待 #delayed-target
+6) browser_drag：从 #drag-source 拖到 #drag-target
+7) 遮挡：打开遮罩后点「被遮挡按钮」应 occluded；关闭弹窗后再点应成功
+8) browser_extract：.product-card，attributes ["data-sku","data-stock"]
+9) browser_evaluate：执行 window.__HEYSURE_TEST__.bump() 并读取 counter
+10) browser_storage：set/get localStorage key=heysure_test_key
+11) browser_cookie：list
+12) browser_session：save（name: ai_smoke_test）→ list
+13) browser_clipboard_write：写入测试文本
+14) browser_file_upload：上传 test.txt（content 传文本，非本地路径）
+15) browser_download：触发页面下载链接
+
+【报告格式】
+# 浏览器插件联调报告
+- 测试时间 / 设备状态 / 测试页 URL
+## 总览（分类通过/失败/跳过计数）
+## 逐项结果表（工具、测试点、结果、关键返回、备注）
+## 失败与风险项
+## 结论（整体可用性 + 阻塞问题 + 建议）
+```
+
+长任务可拆两阶段：先执行 1~15 并只报进度，再单独发「根据刚才调用结果按报告模板汇总」。
+
+### 通过标准（摘要）
+
+- **导航**：`navigate` 后 URL 正确；`switch` 能激活目标标签；`back`/`forward` 返回含当前 url
+- **观察/交互**：observe 有编号；ref 点击成功；遮挡检测符合预期
+- **数据类**：extract 返回 3 条商品；evaluate 能读写 `__HEYSURE_TEST__`
+- **状态类**：storage 写入后可读出；session save 后 list 可见
+
+### 常见问题
+
+| 现象 | 排查 |
+| --- | --- |
+| 测试页打开却是控制台 | 确认 `web/run.bat` 已重启；访问 `/extension-test/` 而非被 SPA 吞掉的路径 |
+| 工具不可用 | AI 未勾选 `browser_*` 权限，或插件未连接服务端 |
+| `No ordinary web page tab found` | 切换到普通 http/https 标签后再试；或让 AI 用 `navigate` 打开测试页 |
+| `Page load timed out` | 已修复竞态；仍出现则检查目标 URL 是否可达、前端是否在跑 |
+| 点击失败 | 页面变化后重新 `browser_observe`；弹窗遮挡先关闭或传 `force:true` |
+| `file_upload` 失败 | 扩展不能读本地路径，必须用 `files[].content` |
+
+修改 `src/lib/tools/` 或 `definitions.ts` 后执行 `npm run build` 并在
+`chrome://extensions` 重新加载扩展；若改了服务端 `catalog.json` 还需重启后端。

@@ -164,10 +164,20 @@ function suggestionForTool(name: string) {
 }
 
 async function waitForTabLoad(tabId: number, timeoutMs = 15000): Promise<void> {
+  try {
+    const tab = await chrome.tabs.get(tabId)
+    if (tab.status === 'complete') return
+  } catch {
+    throw new Error(`Tab ${tabId} not found`)
+  }
+
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => {
       chrome.tabs.onUpdated.removeListener(listener)
-      reject(new Error('Page load timed out'))
+      chrome.tabs.get(tabId).then(tab => {
+        if (tab.status === 'complete') resolve()
+        else reject(new Error('Page load timed out'))
+      }).catch(() => reject(new Error('Page load timed out')))
     }, timeoutMs)
     function listener(id: number, info: chrome.tabs.TabChangeInfo) {
       if (id === tabId && info.status === 'complete') {
@@ -180,22 +190,57 @@ async function waitForTabLoad(tabId: number, timeoutMs = 15000): Promise<void> {
   })
 }
 
+function normalizePageUrl(raw: string): string {
+  const trimmed = String(raw || '').trim()
+  if (!trimmed) throw new Error('url is required')
+  if (trimmed === 'about:blank') return trimmed
+  try { return new URL(trimmed).href } catch { return new URL('https://' + trimmed).href }
+}
+
+async function focusTab(tabId: number): Promise<chrome.tabs.Tab> {
+  const tab = await chrome.tabs.get(tabId)
+  await chrome.tabs.update(tabId, { active: true })
+  if (tab.windowId !== undefined) {
+    await chrome.windows.update(tab.windowId, { focused: true })
+  }
+  return chrome.tabs.get(tabId)
+}
+
 // ── chrome.* API tools ────────────────────────────────────────────────────
 async function toolNavigate(args: any): Promise<any> {
-  if (!args.url) throw new Error('url is required')
-  let url: URL
-  try { url = new URL(args.url) } catch { url = new URL('https://' + args.url) }
+  const href = normalizePageUrl(args.url)
 
   if (args.new_tab) {
-    const tab = await chrome.tabs.create({ url: url.href })
+    const tab = await chrome.tabs.create({ url: href, active: true })
+    await focusTab(tab.id!)
     await waitForTabLoad(tab.id!)
-    return { success: true, url: url.href, tabId: tab.id, new_tab: true }
+    const refreshed = await chrome.tabs.get(tab.id!)
+    return { success: true, url: refreshed.url || href, title: refreshed.title, tabId: tab.id, new_tab: true }
   }
+
   let tab: chrome.tabs.Tab
-  try { tab = await getActiveTab() } catch { tab = await getAnyActiveTab() }
-  await chrome.tabs.update(tab.id!, { url: url.href })
+  try {
+    tab = await getActiveTab()
+  } catch {
+    // Popup / internal pages leave no usable active tab — open instead of failing.
+    const created = await chrome.tabs.create({ url: href, active: true })
+    await waitForTabLoad(created.id!)
+    const refreshed = await chrome.tabs.get(created.id!)
+    return {
+      success: true,
+      url: refreshed.url || href,
+      title: refreshed.title,
+      tabId: created.id,
+      new_tab: true,
+      note: 'No usable active page tab; opened navigation target in a new tab.',
+    }
+  }
+
+  await chrome.tabs.update(tab.id!, { url: href, active: true })
+  await focusTab(tab.id!)
   await waitForTabLoad(tab.id!)
-  return { success: true, url: url.href, tabId: tab.id }
+  const refreshed = await chrome.tabs.get(tab.id!)
+  return { success: true, url: refreshed.url || href, title: refreshed.title, tabId: tab.id }
 }
 
 function unsupportedScreenshotReason(url?: string) {
@@ -607,8 +652,32 @@ async function toolTabList(): Promise<any> {
 }
 
 async function toolTabOpen(args: any): Promise<any> {
-  const tab = await chrome.tabs.create({ url: args.url || 'about:blank' })
-  return { success: true, tabId: tab.id, url: tab.url }
+  const href = args.url ? normalizePageUrl(args.url) : 'about:blank'
+  const tab = await chrome.tabs.create({ url: href, active: true })
+  if (args.url) {
+    await waitForTabLoad(tab.id!).catch(() => {})
+  }
+  const refreshed = await chrome.tabs.get(tab.id!)
+  return { success: true, tabId: refreshed.id, url: refreshed.url, title: refreshed.title }
+}
+
+async function toolTabSwitch(args: any): Promise<any> {
+  const tabId = Number(args.tab_id)
+  if (!Number.isFinite(tabId) || tabId <= 0) {
+    throw new Error('tab_id is required for switch action')
+  }
+  const tab = await focusTab(tabId)
+  if (tab.status !== 'complete') {
+    await waitForTabLoad(tabId).catch(() => {})
+  }
+  const refreshed = await chrome.tabs.get(tabId)
+  return {
+    success: true,
+    tabId,
+    url: refreshed.url,
+    title: refreshed.title,
+    active: true,
+  }
 }
 
 async function toolTabClose(args: any): Promise<any> {
@@ -619,14 +688,22 @@ async function toolTabClose(args: any): Promise<any> {
 
 async function toolHistoryBack(): Promise<any> {
   const tab = await getActiveTab()
+  await focusTab(tab.id!)
   await chrome.scripting.executeScript({ target: { tabId: tab.id! }, func: () => history.back() })
-  return { success: true }
+  await delay(250)
+  await waitForTabLoad(tab.id!).catch(() => {})
+  const refreshed = await chrome.tabs.get(tab.id!)
+  return { success: true, url: refreshed.url, title: refreshed.title }
 }
 
 async function toolHistoryForward(): Promise<any> {
   const tab = await getActiveTab()
+  await focusTab(tab.id!)
   await chrome.scripting.executeScript({ target: { tabId: tab.id! }, func: () => history.forward() })
-  return { success: true }
+  await delay(250)
+  await waitForTabLoad(tab.id!).catch(() => {})
+  const refreshed = await chrome.tabs.get(tab.id!)
+  return { success: true, url: refreshed.url, title: refreshed.title }
 }
 
 async function toolClipboardWrite(args: any): Promise<any> {
@@ -1095,10 +1172,11 @@ function toolTab(args: any): Promise<any> {
     case 'list':     return toolTabList()
     case 'open':     return toolTabOpen(args)
     case 'close':    return toolTabClose(args)
+    case 'switch':   return toolTabSwitch(args)
     case 'navigate': return toolNavigate(args)
     case 'back':     return toolHistoryBack()
     case 'forward':  return toolHistoryForward()
-    default:         return badAction('browser_tab', args?.action, ['list', 'open', 'close', 'navigate', 'back', 'forward'])
+    default:         return badAction('browser_tab', args?.action, ['list', 'open', 'close', 'switch', 'navigate', 'back', 'forward'])
   }
 }
 
@@ -1214,6 +1292,7 @@ const LEGACY_ALIASES: Record<string, { tool: string; action: string }> = {
   browser_tab_open:       { tool: 'browser_tab',     action: 'open' },
   browser_tab_close:      { tool: 'browser_tab',     action: 'close' },
   browser_tab_navigate:   { tool: 'browser_tab',     action: 'navigate' },
+  browser_tab_switch:     { tool: 'browser_tab',     action: 'switch' },
   browser_tab_back:       { tool: 'browser_tab',     action: 'back' },
   browser_tab_forward:    { tool: 'browser_tab',     action: 'forward' },
   browser_history_back:   { tool: 'browser_history', action: 'back' },

@@ -36,8 +36,8 @@ You act like a human looking at the page: you only see and interact with what is
 
 Page interaction goes through one tool, browser_action, with an action param:
 click / double_click / right_click / scroll / type / press_key. Page-level
-navigation goes through browser_tab with an action param: navigate / back /
-forward / list / open / close.
+navigation goes through browser_tab with an action param: navigate / switch /
+back / forward / list / open / close.
 
 Core interaction loop (prefer this for any click/type):
 1. Navigate to the relevant URL with browser_tab {action:"navigate", url}.

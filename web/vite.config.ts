@@ -21,6 +21,8 @@ export default defineConfig({
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         // Agent 进化与实战区域（游戏世界，独立入口，经 iframe 嵌入或直开 /game/）
         game: fileURLToPath(new URL('./game/index.html', import.meta.url)),
+        // 浏览器插件 MCP 工具联调静态页（系统全能设置入口直开 /extension-test/）
+        extensionTest: fileURLToPath(new URL('./extension-test/index.html', import.meta.url)),
       },
     },
   },
