@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Launcher for the HeySure Agent Mac desktop app. Installs deps (and rebuilds
-# the robotjs native module against Electron) on first run, then starts the app.
+# Launcher for the HeySure Agent Mac desktop app. Installs deps and rebuilds
+# robotjs on first run, then starts the app.
 set -euo pipefail
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/mac"
 
-# Use a China-friendly Electron mirror when none is configured.
 export ELECTRON_MIRROR="${ELECTRON_MIRROR:-https://npmmirror.com/mirrors/electron/}"
 
 if [ ! -d node_modules ]; then

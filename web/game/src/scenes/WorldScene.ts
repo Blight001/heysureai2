@@ -3,16 +3,11 @@
  * + 成员按锚区规则站位/游荡 + hover tooltip + 状态气泡。只读。
  */
 import Phaser from 'phaser'
-import { getAuthToken } from '@/api/http'
-import { toggleAiRun } from '@/api/ai'
-import { assignDeviceAi, getDeviceMcpScope, setDeviceMcpScope } from '@/api/devices'
-import { setWorkshopBinding } from '@/api/workshop'
-import { triggerTaskForAgent } from '@/api/task'
-import { approveProposal, rejectProposal } from '@/api/librarian'
-import { setWorldActorMeta } from '@/api/world'
-import { SHEETS, TILES } from '../assetManifest'
-import { bgmTracks, sfxUrls, urlForAsset } from '../assets'
+import { TILES } from '../assetManifest'
+import { bgmTracks, urlForAsset } from '../assets'
 import { MemberActor } from '../actors/MemberActor'
+import { createWorldAnims, preloadWorldAssets } from './assetSetup'
+import type { WorkshopView } from './types'
 import { portraitSpecFor, type PortraitSpec } from '../ui/portrait'
 import {
   FIXED_BUILDINGS,
@@ -30,8 +25,9 @@ import {
   type Rect,
 } from '../world/layout'
 import { skinFor } from '../world/skins'
-import { WorldStore, type WorldEvent, type WorldMember, type WorldSnapshot, type WorldWorkshop } from '../world/store'
+import { WorldStore, type WorldEvent, type WorldMember, type WorldSnapshot } from '../world/store'
 import { clockLabel, nightnessForHour, resolveWorldHour } from '../world/time'
+import { applyMemberDropBinding, type DropTarget } from '../world/bindings'
 import {
   INTERACT_RANGE,
   LIBRARY_DOOR,
@@ -41,18 +37,9 @@ import {
   workshopSheetForType,
 } from '../world/workshops'
 import { Drawer } from '../ui/drawer'
+import { createDrawerActions } from '../ui/drawer/actions'
 import type { Overlay, TooltipData } from '../ui/overlay'
 import { buildingTooltipData, hudHtml, memberTooltipData, workshopTooltipData } from '../ui/worldText'
-
-interface WorkshopView {
-  sprite: Phaser.GameObjects.Sprite
-  taskGlow: Phaser.GameObjects.Image
-  slot: number
-  data: WorldWorkshop
-  offlineSince: number | null
-  taskActive: boolean
-  glowPhase: number
-}
 
 export class WorldScene extends Phaser.Scene {
   private store!: WorldStore
@@ -116,23 +103,14 @@ export class WorldScene extends Phaser.Scene {
   }
 
   preload() {
-    for (const sheet of SHEETS) {
-      this.load.spritesheet(sheet.file, urlForAsset(sheet.file), {
-        frameWidth: sheet.frameWidth,
-        frameHeight: sheet.frameHeight,
-      })
-    }
-    for (const [path, url] of Object.entries(sfxUrls)) {
-      const key = path.split('/').pop()!.replace('.wav', '')
-      this.load.audio(key, url as string)
-    }
+    preloadWorldAssets(this)
     for (const track of bgmTracks) {
       this.load.audio(track.key, track.url)
     }
   }
 
   create() {
-    this.createAnims()
+    createWorldAnims(this)
     this.createGround()
     this.createDecor()
     this.createBuildings()
@@ -403,70 +381,25 @@ export class WorldScene extends Phaser.Scene {
   }
 
   private createDrawer() {
-    const refresh = () => this.store.refreshNow()
-    this.drawer = new Drawer(document.body, {
-      toggleRun: async id => {
-        await toggleAiRun(id)
-        await refresh()
-        this.reopenMember(id)
+    this.drawer = new Drawer(document.body, createDrawerActions({
+      refresh: () => this.store.refreshNow(),
+      reopenMember: id => this.reopenMember(id),
+      reopenLibrary: () => {
+        if (this.snap) this.drawer.openLibrary(this.snap, this.portraitForBuilding('building_library.png'))
       },
-      assignAgent: async (deviceId, aiConfigId) => {
-        await assignDeviceAi(deviceId, aiConfigId)
-        await refresh()
-      },
-      loadDeviceMcpScope: deviceId => getDeviceMcpScope(deviceId),
-      saveDeviceMcpScope: async (deviceId, tools) => {
-        await setDeviceMcpScope(deviceId, tools)
-      },
-      setAppearance: async (id, meta) => {
-        await setWorldActorMeta(id, meta)
-        await refresh()
-        this.reopenMember(id)
-      },
-      previewAppearance: (id, meta) => {
-        // 仅本地预览，不落库；下次快照刷新会回到已保存外观
-        const actor = this.actors.get(id)
-        const m = this.snap?.members.find(x => x.id === id)
-        if (!actor || !m) return
-        actor.previewSkin(skinFor(m.role, id, meta.skin))
-        actor.applyAppearance(meta)
-      },
-      createTask: async (id, title, instruction) => {
-        await triggerTaskForAgent(
-          id,
-          {
-            title,
-            instruction,
-            priority: 5,
-            schedule_enabled: false,
-            schedule_loop_enabled: false,
-            schedule_run_immediately: false,
-            schedule_duration_minutes: 30,
-            schedule_at: null,
-            override_token_limit_enabled: false,
-            token_limit_override: 10000,
-            override_mcp_tools_enabled: false,
-            mcp_tools_override: [],
-          },
-          getAuthToken(),
-        )
-        await refresh()
-      },
-      approveProposal: async memoryId => {
-        await approveProposal(getAuthToken(), memoryId)
-        await refresh()
-        this.drawer.openLibrary(this.snap!, this.portraitForBuilding('building_library.png'))
-      },
-      rejectProposal: async memoryId => {
-        await rejectProposal(getAuthToken(), memoryId)
-        await refresh()
-        this.drawer.openLibrary(this.snap!, this.portraitForBuilding('building_library.png'))
-      },
-      openChat: id => {
-        this.openMemberChat(id)
-      },
+      previewAppearance: (id, meta) => this.previewAppearance(id, meta),
+      openChat: id => this.openMemberChat(id),
       focusMember: id => this.focusMember(id),
-    })
+    }))
+  }
+
+  private previewAppearance(id: number, meta: { skin: string; tint: string; scale: number; aura: string }) {
+    // 仅本地预览，不落库；下次快照刷新会回到已保存外观
+    const actor = this.actors.get(id)
+    const member = this.snap?.members.find(item => item.id === id)
+    if (!actor || !member) return
+    actor.previewSkin(skinFor(member.role, id, meta.skin))
+    actor.applyAppearance(meta)
   }
 
   /** 操作后抽屉数据已过期：用新快照重开成员面板 */
@@ -483,20 +416,6 @@ export class WorldScene extends Phaser.Scene {
   }
 
   // ---------------------------------------------------------------- 初始化
-  private createAnims() {
-    for (const sheet of SHEETS) {
-      for (const [name, anim] of Object.entries(sheet.anims)) {
-        if (anim.frames.length < 2) continue
-        this.anims.create({
-          key: `${sheet.file}:${name}`,
-          frames: this.anims.generateFrameNumbers(sheet.file, { frames: anim.frames }),
-          frameRate: anim.fps,
-          repeat: anim.repeat ? -1 : 0,
-        })
-      }
-    }
-  }
-
   private createGround() {
     const rnd = mulberry32(20260611)
     const grid: number[][] = []
@@ -971,37 +890,13 @@ export class WorldScene extends Phaser.Scene {
       const drop = this.resolveDropTarget(obj.x, obj.y)
       obj.endDrag()
       if (!drop || !this.snap) return
-      const m = this.snap.members.find(x => x.id === obj.memberId)
-      if (!m) return
-      if (drop.kind === 'workshop') {
-        const w = this.snap.workshops.find(x => x.deviceId === drop.deviceId)
-        if (!w) return
-        if (w.type === 'workshop') {
-          const current = this.snap.members.find(x => x.id === w.aiConfigId)
-          const hint = current && current.id !== m.id
-            ? `工坊当前绑定的是「${current.name}」，继续将替换为「${m.name}」。`
-            : '绑定后可使用工坊后续接入的 MCP 能力。'
-          if (window.confirm(`把成员「${m.name}」绑定到 ${w.name}？${hint}`)) {
-            void setWorkshopBinding(m.id, w.deviceId, true).then(() => this.store.refreshNow()).catch(() => undefined)
-          }
-        } else if (window.confirm(`把成员「${m.name}」绑定到 ${w.name}？`)) {
-          void assignDeviceAi(w.deviceId, m.id).then(() => this.store.refreshNow()).catch(() => undefined)
-        }
-      } else if (drop.kind === 'spawn' && m.boundAgentIds.length) {
-        if (window.confirm(`把成员「${m.name}」从端侧 agent / 知识工坊上解绑？`)) {
-          void Promise.all(m.boundAgentIds.map(id => {
-            const w = this.snap?.workshops.find(x => x.deviceId === id)
-            return w?.type === 'workshop' ? setWorkshopBinding(m.id, id, false) : assignDeviceAi(id, null)
-          }))
-            .then(() => this.store.refreshNow())
-            .catch(() => undefined)
-        }
-      }
+      const member = this.snap.members.find(item => item.id === obj.memberId)
+      if (member) applyMemberDropBinding(member, drop, this.snap, () => this.store.refreshNow())
     })
   }
 
   /** 拖放落点 → 作坊 / 出生地 */
-  private resolveDropTarget(x: number, y: number): { kind: 'workshop'; deviceId: string } | { kind: 'spawn' } | null {
+  private resolveDropTarget(x: number, y: number): DropTarget | null {
     for (const [deviceId, view] of this.workshops) {
       if (view.offlineSince !== null) continue
       if (Phaser.Math.Distance.Between(x, y, view.sprite.x, view.sprite.y) < 70) {

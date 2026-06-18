@@ -5,7 +5,7 @@ rem One-click packaging for the Windows desktop agent.
 rem - installs dependencies if needed
 rem - builds the TypeScript/Electron app
 rem - packages the installer into release\
-cd /d "%~dp0"
+cd /d "%~dp0windows"
 
 where npm >nul 2>nul
 if errorlevel 1 (

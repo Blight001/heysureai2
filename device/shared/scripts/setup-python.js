@@ -1,18 +1,13 @@
 // Create the device Python runtime venv and install requirements.
 //
-// Layout (matches python-runner.ts venv resolution):
-//   device_runtime/python/.venv/        ← created here, gitignored
-//   device_runtime/python/requirements.txt
-//
-// Run once per machine: `npm run setup:python`. Safe to re-run; it reuses an
-// existing venv and just re-applies requirements. The venv holds native
-// automation libs (pyautogui, …) so it cannot be built in CI — only on the
-// target desktop. If it is absent, python-runner falls back to a PATH python.
+// Run from a desktop shell directory with `npm run setup:python`. Safe to
+// re-run; it reuses an existing venv and reapplies requirements.
 const { spawnSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 
-const pyDir = path.join(__dirname, '..', 'device_runtime', 'python')
+const root = process.cwd()
+const pyDir = path.join(root, 'device_runtime', 'python')
 const venvDir = path.join(pyDir, '.venv')
 const requirements = path.join(pyDir, 'requirements.txt')
 const isWin = process.platform === 'win32'

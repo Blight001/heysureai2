@@ -37,9 +37,15 @@ interface AgentSettings {
   // Mouse-effect toggle (simulated cursor on AI operations), parity with the
   // browser extension's setting.
   mouseFx: boolean
-  // Offline mode (use the self-configured model directly), parity with the
-  // browser extension. Persisted here; honoured by the runtime where supported.
+  // Mouse coordinate calibration. Input coordinates are screenshot pixels.
+  mouseCoordinateScaleX: number
+  mouseCoordinateScaleY: number
+  mouseCoordinateOffsetX: number
+  mouseCoordinateOffsetY: number
+  // Legacy flag from the old offline mode. Kept for config compatibility only;
+  // local chat no longer changes the server connection lifecycle.
   offlineMode: boolean
+  offlinePrompt: string
   // Local per-tool description edits, merged onto getToolDefs() before they are
   // reported to the server via device:register -> toolDefs. Keyed by tool id.
   // { [toolId]: { description?: string; parameters?: { [param]: string } } }
@@ -75,7 +81,12 @@ const defaults: AgentSettings = {
   selectedAiConfigLifecycle: 'working',
   selectedAiConfigProject: '',
   mouseFx: true,
+  mouseCoordinateScaleX: 1,
+  mouseCoordinateScaleY: 1,
+  mouseCoordinateOffsetX: 0,
+  mouseCoordinateOffsetY: 0,
   offlineMode: false,
+  offlinePrompt: '你是 HeySure AI，运行在 Linux 桌面端的本地对话窗口中。你可以直接回答用户，也可以调用本机 MCP 工具完成文件、窗口、键鼠、剪贴板、终端等桌面任务。需要操作电脑时优先使用工具，并用和用户相同的语言回复。',
   toolDescOverrides: {},
   toolEnabled: {},
 }

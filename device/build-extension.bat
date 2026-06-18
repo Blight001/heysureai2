@@ -1,7 +1,7 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 
-cd /d "%~dp0"
+cd /d "%~dp0extension"
 
 where npm >nul 2>nul
 if errorlevel 1 (
@@ -10,7 +10,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if not exist node_modules (
+if not exist "node_modules" (
   echo [setup] Installing extension dependencies...
   call npm install
   if errorlevel 1 goto fail
@@ -20,7 +20,7 @@ echo [build] Building browser extension...
 call npm run build
 if errorlevel 1 goto fail
 
-if not exist dist\manifest.json (
+if not exist "dist\manifest.json" (
   echo [error] dist\manifest.json was not generated.
   goto fail
 )

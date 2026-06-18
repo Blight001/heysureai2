@@ -1,7 +1,7 @@
 @echo off
 setlocal
 
-cd /d "%~dp0"
+cd /d "%~dp0windows"
 
 set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 rem Optional mouse calibration in screenshot pixels.
@@ -21,4 +21,3 @@ if not exist "node_modules" (
 
 echo Starting HeySure Agent Windows desktop app...
 call npm run dev
-

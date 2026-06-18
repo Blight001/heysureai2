@@ -17,18 +17,22 @@
 ## win/linux/mac 共享代码（`device/shared/`）
 
 `windows/src`、`linux/src` 与 `mac/src` 曾是**同源多份**，其中"完全相同"与"仅平台常量不同"的部分
-已收敛到 **`device/shared/src/`（单一真相源）**，由各壳 `scripts/sync-shared.js` 在 `tsc`
-之前覆盖拷贝进自己的 `src/`（拷贝出的副本已 gitignore，**勿就地改**）。详见
+已收敛到 **`device/shared/src/`（单一真相源）**；通用图标资源收敛到 **`device/shared/assets/`**。
+由 `device/shared/scripts/sync-shared.js` 在 `tsc` 之前覆盖拷贝进各壳自己的 `src/` 与 `assets/`
+（拷贝出的副本已 gitignore，**勿就地改**）。详见
 [`device/shared/README.md`](shared/README.md) 与 [`doc/设备端win-linux去重重构计划.md`](../doc/设备端win-linux去重重构计划.md)。
 
-- **改通用逻辑只改 `device/shared/src/`**，两端构建时自动同步，不再"改一边忘另一边"。
+- **改通用逻辑只改 `device/shared/src/`，改通用图标只改 `device/shared/assets/`**，两端构建时自动同步，不再"改一边忘另一边"。
 - 平台差异不要写死在共享代码里：通过各壳 `src/platform.ts` 导出的 `platformProfile` 读取
   （见 `shared/src/platform-profile.ts`）。
 - 仍有**平台分叉文件**留在各壳 `src/`（`device.ts`、`store.ts`、`platform.ts`、
-  `tools/{mouse,screen,window,...}.ts`、`renderer/*`、`executor/dynamic.ts` 等）——
+  `tools/{mouse,screen,window,...}.ts`、`executor/dynamic.ts` 等）——
   改这些仍需两边都改。
+- 桌面端 UI 已收敛到 `device/shared/src/renderer/`；本地对话、预加载桥、截图桥、
+  登录/设置 IPC 等三端一致代码也在 `device/shared/src/`，各平台构建前同步到自己的 `src/`。
+- 三端一致的构建辅助脚本已收敛到 `device/shared/scripts/`，平台 `package.json` 直接调用它们。
 
-平台差异举例：`linux` 独有 `tools/ear.ts`(STT) `tools/git.ts` `tools/shared/command.ts`；`windows` 独有 `offline-chat`/`offline-ai` 相关文件。
+平台差异举例：`linux` 独有 `tools/ear.ts`(STT) `tools/git.ts` `tools/shared/command.ts`；本地对话与桌面 UI 已对齐到三端。
 
 ## 命令
 
@@ -38,6 +42,18 @@ cd device/linux        # 或 device/windows / device/mac
 npm install
 npm run dev
 npm run build         # → dist/ (gitignored)
+
+# 根目录一键打包入口
+cd device
+build-windows.bat
+build-linux.sh
+build-mac.sh
+build-extension.bat
+
+# 根目录直接运行入口
+run-windows.bat
+run-linux.sh
+run-mac.sh
 
 # 浏览器扩展
 cd device/extension
