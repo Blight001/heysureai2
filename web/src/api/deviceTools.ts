@@ -1,6 +1,6 @@
 import { get, post, del } from './http'
 
-export type DeviceToolType = 'desktop' | 'browser'
+export type DeviceToolType = 'desktop' | 'browser' | 'android'
 
 // One instruction of the dynamic MCP program (call / set / return).
 export interface DynamicToolStep {
@@ -19,7 +19,7 @@ export interface DynamicToolDefinition {
   description: string
   input_schema: Record<string, unknown>
   // 'js' (desktop): server-stored JS run on the device with (args, cap, ctx).
-  // 'program' (browser): the call/set/return DSL.
+  // 'program' (browser/android): the call/set/return DSL.
   // 'runtime' (desktop): plain source run by a device runtime (python/powershell/shell).
   code_kind?: 'js' | 'program' | 'runtime'
   code?: DynamicToolStep[]

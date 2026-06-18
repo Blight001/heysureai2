@@ -29,6 +29,7 @@ class SocketAgent(
     private val executor: TaskExecutor,
     private val toolDefs: () -> JSONArray,
     private val capabilities: () -> List<String>,
+    private val onToolConfig: (JSONObject) -> Boolean,
     private val onStatus: (DeviceStatus, String?) -> Unit,
     private val onLog: (String) -> Unit,
 ) {
@@ -74,6 +75,18 @@ class SocketAgent(
         s.on("device:registered") { args ->
             onStatus(DeviceStatus.REGISTERED, null)
             onLog("注册成功")
+        }
+        s.on("device:tool-config") { args ->
+            val payload = args.firstOrNull() as? JSONObject ?: return@on
+            val changed = runCatching { onToolConfig(payload) }.getOrElse { err ->
+                onLog("动态 MCP 配置失败: ${err.message ?: err}")
+                false
+            }
+            if (changed) {
+                val count = payload.optJSONArray("tools")?.length() ?: 0
+                onLog("已同步动态 MCP：$count 个工具")
+                register()
+            }
         }
         s.on("device:register_rejected") { args ->
             val reason = (args.firstOrNull() as? JSONObject)?.optString("reason") ?: "注册被拒绝"

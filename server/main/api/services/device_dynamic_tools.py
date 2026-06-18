@@ -22,7 +22,7 @@ NAME_RE = re.compile(r"^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$")
 # Reserved manager tool names on the devices — a dynamic tool can never shadow
 # the editor that loads it.
 RESERVED_NAMES = {"mcp.manage_dynamic_tool", "browser_mcp.manage_dynamic_tool"}
-VALID_DEVICE_TYPES = ("desktop", "browser")
+VALID_DEVICE_TYPES = ("desktop", "browser", "android")
 MAX_CODE_INSTRUCTIONS = 32
 # Runtimes the device executors support (runtime/runtime-tool.ts). Keep in
 # lockstep with ``isToolRuntime`` on the device.

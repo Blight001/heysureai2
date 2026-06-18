@@ -8,11 +8,13 @@ export const INTERACT_RANGE = 96
 export const workshopSheetForType = (type: WorldWorkshop['type']): string => {
   if (type === 'workshop') return 'building_workshop_knowledge.png'
   if (type === 'desktop') return 'building_workshop_desktop.png'
+  if (type === 'android') return 'building_workshop_desktop.png'
   return 'building_workshop_browser.png'
 }
 
 export const workshopGlowTintForType = (type: WorldWorkshop['type']): number => {
   if (type === 'browser') return 0x72d8ff
+  if (type === 'android') return 0x63f0a8
   if (type === 'workshop') return 0xc99cff
   return 0xffd36b
 }

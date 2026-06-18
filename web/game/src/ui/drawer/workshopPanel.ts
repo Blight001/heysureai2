@@ -11,9 +11,15 @@ export const openWorkshopPanel = (
 ) => {
   const w = snap.workshops.find(x => x.deviceId === deviceId)
   if (!w) return
-  const title = w.type === 'desktop' ? '机械坊（桌面 Agent）' : w.type === 'browser' ? '瞭望塔（浏览器 Agent）' : '知识工坊'
+  const typeTitle = w.type === 'desktop'
+    ? '机械坊（桌面 Agent）'
+    : w.type === 'browser'
+      ? '瞭望塔（浏览器 Agent）'
+      : w.type === 'android'
+        ? '移动工坊（安卓端）'
+        : '知识工坊'
   panel.openPanel({
-    title,
+    title: `${typeTitle} · ${w.name}`,
     subtitle: w.lifecycle === 'dispatching' ? '执行中' : '在线',
     portrait,
     tabs: [

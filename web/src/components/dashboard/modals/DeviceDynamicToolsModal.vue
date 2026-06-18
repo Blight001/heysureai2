@@ -30,6 +30,7 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 const TABS: { key: DeviceToolType; label: string }[] = [
   { key: 'desktop', label: '桌面端' },
   { key: 'browser', label: '浏览器' },
+  { key: 'android', label: '安卓端' },
 ]
 const NAME_RE = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$/
 
@@ -82,7 +83,7 @@ const DESKTOP_KINDS: { key: DesktopKind; label: string }[] = [
   { key: 'shell', label: 'Shell' },
 ]
 
-// Desktop tools are real JS / runtime source; browser tools are the safe DSL.
+// Desktop tools are real JS / runtime source; browser/android tools use the safe DSL.
 const isDesktop = computed(() => deviceType.value === 'desktop')
 const isJsMode = computed(() => isDesktop.value && draft.value?.desktopKind === 'js')
 const isRuntimeMode = computed(() => isDesktop.value && draft.value != null && draft.value.desktopKind !== 'js')
@@ -491,7 +492,7 @@ const onDesktopKindChange = () => {
               />
               <button type="button" class="shrink-0 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500" @click="newTool">+ 新建</button>
             </div>
-            <div v-if="!tools.length" class="text-xs text-zinc-400 py-6 text-center">还没有动态工具。连接一台{{ currentTabLabel }}设备后会自动播种其内置工具，或点「新建」。</div>
+            <div v-if="!tools.length" class="text-xs text-zinc-400 py-6 text-center">还没有动态工具。连接一台{{ currentTabLabel }}设备后，可点「新建」组合其已上报能力。</div>
             <div v-else-if="!filteredTools.length" class="text-xs text-zinc-400 py-6 text-center">没有匹配的工具</div>
             <div class="space-y-1.5">
               <div
@@ -667,7 +668,7 @@ const onDesktopKindChange = () => {
               </label>
             </div>
 
-            <!-- steps (browser): the safe call/set/return DSL -->
+            <!-- steps (browser/android): the safe call/set/return DSL -->
             <div v-else>
               <div class="mb-1 flex items-center justify-between">
                 <span class="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">程序步骤（顺序执行）</span>
