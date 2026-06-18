@@ -1,4 +1,5 @@
 import { computed, ref, watch, type Ref } from 'vue'
+import { formatDate } from '@/utils/datetime'
 import {
   batchDeleteTaskJobsById,
   deleteTaskJobById,
@@ -175,11 +176,7 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
 
   const formatDateLocal = (unixSeconds?: number) => {
     const ts = Number(unixSeconds || 0)
-    if (!Number.isFinite(ts) || ts <= 0) return ''
-    const d = new Date(ts * 1000)
-    if (Number.isNaN(d.getTime())) return ''
-    const pad = (value: number) => String(value).padStart(2, '0')
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+    return Number.isFinite(ts) && ts > 0 ? formatDate(ts, '') : ''
   }
 
   const buildTaskCreateFormFromJob = (agent?: Agent | null, job?: AITaskJobItem | null): TaskCreateForm => {

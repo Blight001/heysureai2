@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { formatDateMinute } from '@/utils/datetime'
 import {
   approveProposal,
   listProposals,
@@ -120,11 +121,7 @@ const onReject = async () => {
   }
 }
 
-const formatTime = (ts: number) => {
-  if (!ts) return ''
-  const d = new Date(ts * 1000)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
+const formatTime = (ts: number) => formatDateMinute(ts, '')
 </script>
 
 <template>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { formatDateTime } from '@/utils/datetime'
 import ChatConversationView from '@/components/chat/ChatConversationView.vue'
 import {
   WEEKDAY_OPTIONS,
@@ -128,12 +129,7 @@ const canViewJobDetail = (status?: string) => {
   return ['running', 'completed', 'cancelled', 'error', 'stopped'].includes(String(status || '').toLowerCase())
 }
 
-const formatTs = (value?: number) => {
-  if (!value) return '--'
-  const d = new Date(value * 1000)
-  if (Number.isNaN(d.getTime())) return '--'
-  return d.toLocaleString()
-}
+const formatTs = (value?: number) => formatDateTime(value, '--')
 
 const onSelectedGenerationChange = (event: Event) => {
   const target = event.target as HTMLSelectElement | null

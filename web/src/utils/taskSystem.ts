@@ -1,3 +1,5 @@
+import { formatDateTime } from '@/utils/datetime'
+
 export type TaskRuntimeState = 'running' | 'next' | 'scheduled' | 'completed' | 'idle'
 
 export interface AITaskListItem {
@@ -212,12 +214,7 @@ export const getTaskStateLabel = (state?: string) => {
   return taskStateLabelMap[key] || taskStateLabelMap.idle
 }
 
-const formatTs = (value?: number) => {
-  if (!value) return '--'
-  const d = new Date(value * 1000)
-  if (Number.isNaN(d.getTime())) return '--'
-  return d.toLocaleString()
-}
+const formatTs = (value?: number) => formatDateTime(value, '--')
 
 const weekdayLabel = (day: number) => WEEKDAY_OPTIONS.find(item => item.value === day)?.label || String(day)
 
