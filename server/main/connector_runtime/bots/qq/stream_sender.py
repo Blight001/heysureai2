@@ -7,14 +7,24 @@ The inference loop (``ai_runtime``) grows the live answer via
 "stream" packets so the user sees the answer materialise live, then emits a
 final ``state=完成`` packet when the run ends.
 
+Multi-turn / tool-using runs emit *one message bubble per turn*. A run that
+calls tools streams several assistant turns: each turn first produces visible
+text, then a tool call, then the loop continues. The inference loop signals a
+turn boundary by pushing an empty live-text snapshot
+(``_set_run_live_text(run_id, "")``) after each turn. On that signal we
+finalize the current bubble (its own ``state=完成`` packet, or a full send if
+streaming never opened) and roll a fresh bubble for the next turn. Without this,
+every turn overwrote ``_last_text`` and only the final turn's text was ever
+delivered — intermediate assistant text accompanying tool calls was lost.
+
 Robustness contract — streaming must never lose or duplicate a message:
 
 * While a session is registered, the normal post-persistence delivery
   (``QQBot.notify_assistant_message``) is suppressed for *assistant* messages
-  of that session — the stream owns delivery.
-* :meth:`QQStreamSession.finish` guarantees exactly one final delivery: a
-  ``state=完成`` packet on the happy path, or a plain/markdown full send when
-  streaming was rejected (QQ streaming is a whitelist capability).
+  of that session — the stream owns delivery of every turn.
+* Each turn's bubble is delivered exactly once: a ``state=完成`` packet on the
+  happy path, or a plain/markdown full send when streaming was rejected or the
+  bubble never opened (QQ streaming is a whitelist capability).
 """
 
 from __future__ import annotations
@@ -22,7 +32,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
-from typing import Optional, Set
+from typing import List, Optional, Set
 
 from sqlmodel import Session, select
 
@@ -120,12 +130,18 @@ class QQStreamSession:
         self._lock = threading.Lock()
         self._close_evt = threading.Event()
         self._seq = max(1, int(start_seq or 1))
+        self._done = False          # whole session finalized (guards finish)
+        # Texts of completed turns awaiting their final packet. The inference
+        # loop marks a turn boundary by pushing an empty live-text snapshot;
+        # ``update`` moves the just-finished bubble's text here so the flush
+        # thread can close it and roll a fresh bubble for the next turn.
+        self._finalize_queue: List[str] = []
+        self._last_text = ""        # current bubble's latest answer text
+        # Per-bubble send state — reset by ``_roll_bubble`` between turns.
         self._index = 0
         self._stream_id = ""
         self._started = False
         self._failed = False
-        self._finished = False
-        self._last_text = ""        # latest answer text (set by ``update``)
         self._last_sent_text = ""   # last full text we successfully pushed
 
         # Packets are flushed on a dedicated thread so the inference loop's
@@ -140,17 +156,23 @@ class QQStreamSession:
 
     def update(self, text: str) -> None:
         body = _visible(text)
-        if not body:
-            return
         with self._lock:
+            if not body:
+                # Empty snapshot = turn boundary. Hand the just-finished
+                # bubble's text to the flush thread to close, and start a fresh
+                # bubble for the next turn. Empty/tool-only turns are skipped.
+                if self._last_text:
+                    self._finalize_queue.append(self._last_text)
+                    self._last_text = ""
+                return
             self._last_text = body
 
     # ---- lifecycle --------------------------------------------------------
 
     def finish(self) -> None:
-        """Signal completion; the flush thread delivers the final message once."""
+        """Signal completion; the flush thread delivers every pending bubble."""
         with self._lock:
-            if self._finished:
+            if self._done:
                 return
         self._close_evt.set()
         self._thread.join(timeout=25.0)
@@ -159,34 +181,75 @@ class QQStreamSession:
     # ---- internals --------------------------------------------------------
 
     def _loop(self) -> None:
-        """Throttled flush loop; emits the 完成 packet on close."""
+        """Throttled flush loop; finalizes each turn's bubble in order."""
         while not self._close_evt.is_set():
+            if self._tick():
+                # Did delivery work (finalized a bubble) — keep draining the
+                # queue promptly instead of waiting out the throttle window.
+                continue
+            self._close_evt.wait(_STREAM_THROTTLE_SECONDS)
+        self._drain_on_close()
+
+    def _tick(self) -> bool:
+        """One flush step. Returns True when a completed bubble was finalized."""
+        with self._lock:
+            fin_text = self._finalize_queue.pop(0) if self._finalize_queue else None
+            live_text = self._last_text
+        if fin_text is not None:
+            self._finalize_bubble(fin_text)
+            return True
+        if live_text and live_text != self._last_sent_text and not self._failed:
+            self._send_packet(live_text, final=False)
+        return False
+
+    def _drain_on_close(self) -> None:
+        """Flush every queued bubble, then the in-flight one, exactly once."""
+        with self._lock:
+            if self._done:
+                return
+            self._done = True
+        try:
+            while True:
+                with self._lock:
+                    fin_text = self._finalize_queue.pop(0) if self._finalize_queue else None
+                if fin_text is None:
+                    break
+                self._finalize_bubble(fin_text)
             with self._lock:
                 text = self._last_text
-            if text and text != self._last_sent_text and not self._failed:
-                self._send_packet(text, final=False)
-            self._close_evt.wait(_STREAM_THROTTLE_SECONDS)
-        self._finalize()
+                self._last_text = ""
+            if text:
+                self._finalize_bubble(text)
+        finally:
+            _mark_inactive(self.session_id)
 
-    def _finalize(self) -> None:
-        with self._lock:
-            if self._finished:
-                return
-            self._finished = True
-            text = self._last_text
+    def _finalize_bubble(self, text: str) -> None:
+        """Close the current bubble with ``text`` then roll to a fresh one."""
+        text = str(text or "")
+        if not text:
+            self._roll_bubble()
+            return
         try:
-            if not text:
-                return
             if self._started and not self._failed:
                 # Happy path: close the live stream with a 完成 packet.
                 self._send_packet(text, final=True, force=(text == self._last_sent_text))
-                if not self._failed:
-                    return
-            # Stream never started or was rejected mid-flight — deliver the
-            # whole answer once as an ordinary (markdown→plain) message.
-            self._fallback_full_send(text)
+                if self._failed:
+                    self._fallback_full_send(text)
+            else:
+                # Stream never opened or was rejected mid-flight — deliver the
+                # whole turn once as an ordinary (markdown→plain) message.
+                self._fallback_full_send(text)
         finally:
-            _mark_inactive(self.session_id)
+            self._roll_bubble()
+
+    def _roll_bubble(self) -> None:
+        """Reset per-bubble state so the next turn streams as a new message."""
+        self._index = 0
+        self._stream_id = ""
+        self._started = False
+        self._failed = False
+        self._last_sent_text = ""
+        self._seq += 1
 
     def _send_packet(self, text: str, *, final: bool, force: bool = False) -> None:
         if self._failed and not force:
