@@ -39,10 +39,8 @@ from connector_runtime.dispatch.desktop_device_tools import (
     is_workshop_tool,
 )
 from api.services.task_system import (
-    DEFAULT_SYSTEM_AUTO_CONTROL,
     TASK_RUNTIME_REQUIRED_TOOLS,
     normalize_system_auto_control,
-    parse_generation_from_session_id,
     with_workspace_read_by_name_compat,
 )
 from api.chat_runtime.chat_prompt_utils import (
@@ -75,7 +73,6 @@ from api.chat_runtime.chat_runtime_helpers import (
     _run_should_stop,
     _session_total_tokens,
 )
-from api.chat_runtime.chat_scheduler import _start_task_run
 
 from api.core.config import DEFAULT_CHAT_MAX_STEPS
 from api.core.settings import settings

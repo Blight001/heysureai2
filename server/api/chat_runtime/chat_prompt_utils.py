@@ -32,7 +32,6 @@ from connector_runtime.dispatch.desktop_device_tools import (
     endpoint_tools_for_config,
 )
 from api.services.task_system import (
-    DEFAULT_SYSTEM_AUTO_CONTROL,
     with_workspace_read_by_name_compat,
 )
 from .run_state import (

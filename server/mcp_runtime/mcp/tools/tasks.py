@@ -813,7 +813,6 @@ def _parse_task_list_limit(value: Any, default: int) -> int:
     return max(1, min(500, parsed))
 
 def _task_row_to_dict(row: AITaskJob) -> Dict[str, Any]:
-    payload = _safe_decode_task_payload(row.task_payload)
     out = _task_job_payload(row)
     started = _format_ts_local(_safe_timestamp(row.started_at))
     finished = _format_ts_local(_safe_timestamp(row.finished_at))
@@ -905,7 +904,7 @@ def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[in
         if str(row.status or "").strip() in _FINISHED_STATUSES:
             raise HTTPException(status_code=400, detail="Task already finished")
         finished_at = time.time()
-        archive_path = _append_task_completion_archive(
+        _append_task_completion_archive(
             user_id=user_id,
             ai_config_id=ai_config_id,
             summary=summary,

@@ -100,7 +100,6 @@ device/windows/src/ipc/ai-config.ts
 device/windows/src/ipc/device.ts
 device/windows/src/platform-profile.ts
 device/windows/src/runtime/artifact-bridge.ts
-device/windows/src/runtime/index.ts
 device/windows/src/runtime/permission-guard.ts
 device/windows/src/runtime/powershell-runner.ts
 device/windows/src/runtime/process-guard.ts
@@ -126,7 +125,6 @@ device/linux/src/ipc/ai-config.ts
 device/linux/src/ipc/device.ts
 device/linux/src/platform-profile.ts
 device/linux/src/runtime/artifact-bridge.ts
-device/linux/src/runtime/index.ts
 device/linux/src/runtime/permission-guard.ts
 device/linux/src/runtime/powershell-runner.ts
 device/linux/src/runtime/process-guard.ts
