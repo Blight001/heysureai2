@@ -47,7 +47,7 @@ const TOOL_LABELS: Record<string, { zh: string; en: string }> = {
   browser_clipboard_write: { zh: '写入剪贴板', en: 'Write Clipboard' },
   browser_file_upload: { zh: '上传文件', en: 'File Upload' },
   browser_download: { zh: '下载文件', en: 'Download' },
-  browser_tab: { zh: '标签页与导航（跳转/前进后退）', en: 'Tab & Navigation' },
+  browser_tab: { zh: '标签页（list/switch/replace/navigate）', en: 'Tab Management' },
   browser_cookie: { zh: '管理 Cookie', en: 'Cookie Manager' },
   browser_storage: { zh: '管理存储', en: 'Storage Manager' },
   browser_session: { zh: '管理会话', en: 'Session Manager' },

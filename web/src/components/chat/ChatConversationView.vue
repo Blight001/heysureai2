@@ -6,7 +6,9 @@ import { isSameAssistantVisibleReply, normalizeAssistantReplyText } from '@/util
 import { stripMcpCallBlocks } from '@/utils/mcpFormat'
 import { listMcpTools } from '@/api/mcp'
 
-const DEFAULT_MCP_DYNAMIC_RULE = '初始只向模型暴露 mcp.list_tools / mcp.describe_tool；mcp.describe_tool 成功后，后端才把被描述的目标工具 schema 加入下一轮请求。'
+const DEFAULT_MCP_DYNAMIC_RULE = `系统提示的[可用MCP工具]目录会一次性列出全部可调用工具的名称与简介，模型据此直接定位。需要参数时用 mcp.describe_tool（支持 tool 单个、tools 批量或 query 关键词搜索）取 schema；被加载的目标工具会在随后轮次直接可调用。
+
+browser_tab 仅 7 种动作：list 获取全部页面（id/url/title/active）及 activeTab；switch+tab_id 切换到已有页；replace+url 在当前页覆盖跳转；navigate+url 新标签打开；close 关闭；back/forward 历史导航。流程：先 list，已开则 switch，当前页改址用 replace，并行任务用 navigate。`
 
 interface ConversationInputMessage {
   id?: number
@@ -320,14 +322,26 @@ const mergedActionResultsBySignature = computed(() => {
   }
 })
 
-const effectiveFrontPrompt = computed(() => {
-  const explicit = String(props.frontPromptText || '').trim()
-  if (explicit) return explicit
+const latestMessageSystemPrompt = computed(() => {
   for (let i = normalizedMessages.value.length - 1; i >= 0; i -= 1) {
     const prompt = String(normalizedMessages.value[i]?.system_prompt || '').trim()
     if (prompt) return prompt
   }
   return ''
+})
+
+const effectiveFrontPrompt = computed(() => {
+  const recorded = latestMessageSystemPrompt.value
+  if (recorded) return recorded
+  const explicit = String(props.frontPromptText || '').trim()
+  if (explicit) return explicit
+  return ''
+})
+
+const frontPromptSource = computed(() => {
+  if (latestMessageSystemPrompt.value) return 'message.system_prompt'
+  if (String(props.frontPromptText || '').trim()) return 'props.front_prompt_text'
+  return 'placeholder'
 })
 
 const frontPromptToolSchemas = ref<any[]>([])
@@ -399,7 +413,7 @@ watch(() => props.aiConfigId, () => {
 const frontPromptDetails = computed(() => {
   const prompt = effectiveFrontPrompt.value
   const details = {
-    prompt_source: prompt ? 'message.system_prompt' : 'placeholder',
+    prompt_source: frontPromptSource.value,
     prompt,
     mcp_schema_mode: 'dynamic_native_tools',
     initial_native_tools: frontPromptToolSchemas.value.length > 0

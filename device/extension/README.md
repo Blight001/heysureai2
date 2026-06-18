@@ -159,15 +159,19 @@ device/extension/
 常用示例：
 
 ```json
-{ "action": "navigate", "url": "http://127.0.0.1:58150/extension-test/" }
-```
-
-```json
 { "action": "list" }
 ```
 
 ```json
 { "action": "switch", "tab_id": 123456789 }
+```
+
+```json
+{ "action": "replace", "url": "http://127.0.0.1:58150/extension-test/" }
+```
+
+```json
+{ "action": "navigate", "url": "http://127.0.0.1:58150/extension-test/" }
 ```
 
 ```json
@@ -186,8 +190,9 @@ device/extension/
 { "selector": ".product-card", "attributes": ["data-sku", "data-stock"], "limit": 3 }
 ```
 
-`browser_tab` 的 `action` 取值：`list` / `open` / `close` / `switch` / `navigate` /
-`back` / `forward`。切换已有标签用 `switch` + `tab_id`（先 `list` 拿 id）。
+`browser_tab` 的 `action` 取值：`list` / `switch` / `replace` / `navigate` /
+`close` / `back` / `forward`。先 `list` 拿 id 与 `activeTab`，已有页用 `switch`，
+当前页改址用 `replace`，新标签打开用 `navigate`。
 
 ### 方式二：AI 成员完整回归（推荐）
 
@@ -200,14 +205,14 @@ device/extension/
 【环境】
 - 测试页 URL：http://127.0.0.1:58150/extension-test/
 - 使用当前已连接的浏览器插件设备执行所有 browser_* MCP 工具
-- 若页面未打开，先用 browser_tab { action: "navigate", url: "http://127.0.0.1:58150/extension-test/" } 跳转
+- 若页面未打开，先用 browser_tab { action: "replace", url: "http://127.0.0.1:58150/extension-test/" } 在当前页打开，或 navigate 新标签打开
 
 【测试要求】
 按顺序逐项执行，每项记录：入参、返回摘要、通过/失败/跳过。
 失败最多重试 1 次；仍失败则记录错误并继续，不要中断全流程。
 任何点击前先 browser_observe，优先用 ref 编号点击。
 
-1) browser_tab：list → navigate 打开测试页 →（可选）open 新标签 → switch 切回测试页 → back/forward
+1) browser_tab：list → replace 或 navigate 打开测试页 →（可选）navigate 再开一标签 → switch 切回测试页 → back/forward
 2) browser_observe：mark:true，记录元素数，用 ref 点击「主按钮」
 3) browser_screenshot：截 #shot-target，再截可视区（send_to_user:false）
 4) browser_action：click 次按钮；type 写入 #input-name；scroll down 400；press_key Enter
@@ -236,7 +241,7 @@ device/extension/
 
 ### 通过标准（摘要）
 
-- **导航**：`navigate` 后 URL 正确；`switch` 能激活目标标签；`back`/`forward` 返回含当前 url
+- **导航**：`list` 含 `activeTab`；`switch` 能激活目标标签；`replace`/`navigate` 后 URL 正确；`back`/`forward` 返回含当前 url
 - **观察/交互**：observe 有编号；ref 点击成功；遮挡检测符合预期
 - **数据类**：extract 返回 3 条商品；evaluate 能读写 `__HEYSURE_TEST__`
 - **状态类**：storage 写入后可读出；session save 后 list 可见

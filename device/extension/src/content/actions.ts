@@ -21,7 +21,7 @@ export async function doClick(msg: any) {
 
   if (!el) {
     if (msg.ref !== undefined && msg.ref !== null && msg.ref !== '') {
-      throw new Error(`Mark #${msg.ref} is stale or gone — call browser_observe again to refresh the numbered marks, then retry.`)
+      throw new Error(`Mark #${msg.ref} is stale or gone — call browser_observe again to refresh the page marks, then retry.`)
     }
     throw new Error(`Element not found: selector=${msg.selector || ''} text=${msg.text || ''} ref=${msg.ref ?? ''} coords=${msg.x},${msg.y}`)
   }

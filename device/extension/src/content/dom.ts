@@ -66,6 +66,7 @@ export function textOf(el: Element, max = 200): string {
     h.getAttribute('aria-label'),
     h.getAttribute('title'),
     (h as HTMLInputElement).value,
+    (h as HTMLInputElement).placeholder,
     h.textContent,
   ]
   return parts.map(v => String(v || '').replace(/\s+/g, ' ').trim()).find(Boolean)?.slice(0, max) || ''

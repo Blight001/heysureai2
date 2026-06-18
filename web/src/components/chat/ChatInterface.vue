@@ -7,10 +7,14 @@ import ChatInput from './ChatInput.vue'
 import { parseChatResponseInline, type ActionBlock, type InlineContent as InlineContentType } from '@/utils/chatParser'
 import { isSameAssistantVisibleReply, normalizeAssistantReplyText } from '@/utils/chatReplyCompare'
 import * as chatApi from '@/api/chat'
-import { callMcpTool } from '@/api/mcp'
+import { listAiConfigs } from '@/api/ai'
+import { callMcpTool, listMcpTools } from '@/api/mcp'
 import { getAuthToken } from '@/api/http'
 
 const { alert, confirm, prompt } = useMessage()
+const DEFAULT_MCP_DYNAMIC_RULE = `系统提示的[可用MCP工具]目录会一次性列出全部可调用工具的名称与简介，模型据此直接定位。需要参数时用 mcp.describe_tool（支持 tool 单个、tools 批量或 query 关键词搜索）取 schema；被加载的目标工具会在随后轮次直接可调用。
+
+browser_tab 仅 7 种动作：list 获取全部页面（id/url/title/active）及 activeTab；switch+tab_id 切换到已有页；replace+url 在当前页覆盖跳转；navigate+url 新标签打开；close 关闭；back/forward 历史导航。流程：先 list，已开则 switch，当前页改址用 replace，并行任务用 navigate。`
 
 interface ChatMessage {
   id?: number
@@ -104,9 +108,80 @@ const appliedSignatures = ref<Set<string>>(new Set())
 const undoActions = ref<Record<string, { tool: string; arguments: Record<string, any> }>>({})
 const actionResults = ref<Record<string, string>>({})
 const actionResultsBySignature = ref<Record<string, string>>({})
+const configuredFrontPrompt = ref('')
+const frontPromptCopied = ref(false)
+const frontPromptToolSchemas = ref<any[]>([])
+const frontPromptAvailableTools = ref<any[]>([])
+const frontPromptToolScope = ref('')
+const frontPromptToolMcpEnabled = ref<boolean | null>(null)
+const frontPromptToolSchemaError = ref('')
+const initialNativeToolNames = ['mcp.list_tools', 'mcp.describe_tool']
 const appliedEditsArray = computed(() => Array.from(appliedEdits.value))
 const appliedSignaturesArray = computed(() => Array.from(appliedSignatures.value))
 const isRunActive = computed(() => ['queued', 'running'].includes(currentRunStatus.value))
+const latestRecordedSystemPrompt = computed(() => {
+  for (let i = chatMessages.value.length - 1; i >= 0; i -= 1) {
+    const prompt = String(chatMessages.value[i]?.system_prompt || '').trim()
+    if (prompt) return prompt
+  }
+  return ''
+})
+const frontPromptBaseText = computed(() => {
+  return latestRecordedSystemPrompt.value
+    || configuredFrontPrompt.value
+    || '当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt'
+})
+const frontPromptSource = computed(() => {
+  if (latestRecordedSystemPrompt.value) return 'message.system_prompt'
+  if (configuredFrontPrompt.value) return 'ai_config.prompt'
+  return 'placeholder'
+})
+const frontPromptDetailsText = computed(() => JSON.stringify({
+  prompt_source: frontPromptSource.value,
+  prompt: frontPromptBaseText.value,
+  mcp_schema_mode: 'dynamic_native_tools',
+  initial_native_tools: frontPromptToolSchemas.value.length > 0
+    ? frontPromptToolSchemas.value
+    : initialNativeToolNames.map(name => ({ name })),
+  current_available_tools_scope: frontPromptToolScope.value || (props.aiConfigId ? 'current_ai' : 'all_current'),
+  current_ai_config_id: props.aiConfigId ?? null,
+  current_mcp_enabled: frontPromptToolMcpEnabled.value,
+  current_available_tools_count: frontPromptAvailableTools.value.length,
+  current_available_tools: frontPromptAvailableTools.value,
+  dynamic_rule: String(props.mcpDynamicRule || DEFAULT_MCP_DYNAMIC_RULE),
+  schema_error: frontPromptToolSchemaError.value || undefined,
+}, null, 2))
+const frontPromptPreviewText = computed(() => [
+  frontPromptBaseText.value,
+  '',
+  '[动态 MCP 说明]',
+  frontPromptDetailsText.value,
+].join('\n'))
+const copyFrontPrompt = async () => {
+  const text = frontPromptPreviewText.value
+  if (!text) return
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.setAttribute('readonly', 'true')
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    frontPromptCopied.value = true
+    window.setTimeout(() => {
+      frontPromptCopied.value = false
+    }, 1200)
+  } catch (error) {
+    console.warn('copy front prompt failed', error)
+  }
+}
 const runStatusText = computed(() => {
   if (!isRunActive.value) return ''
   if (currentRunPhase.value === 'waiting_mcp') {
@@ -646,6 +721,72 @@ const loadTotalTokens = async () => {
   return data.total_tokens || 0
 }
 
+const loadConfiguredFrontPrompt = async () => {
+  configuredFrontPrompt.value = ''
+  if (!getAuthToken()) return
+  if (props.aiConfigId === undefined || props.aiConfigId === null) return
+  let rows
+  try {
+    rows = await listAiConfigs()
+  } catch {
+    return
+  }
+  const cfg = (Array.isArray(rows) ? rows : []).find((row: any) => Number(row?.id) === Number(props.aiConfigId))
+  configuredFrontPrompt.value = String(cfg?.prompt || '').trim()
+}
+
+const normalizePromptTool = (tool: any) => ({
+  name: String(tool?.name || '').trim(),
+  description: String(tool?.description || '').trim(),
+  inputSchema: (tool?.inputSchema && typeof tool.inputSchema === 'object') ? tool.inputSchema : {},
+  destructive: !!tool?.destructive,
+  mcpSource: tool?.mcpSource || 'server',
+  allowedForCurrentAi: tool?.allowedForCurrentAi !== false,
+})
+
+const sortPromptTools = (items: any[]) =>
+  [...items]
+    .map(normalizePromptTool)
+    .filter(tool => tool.name)
+    .sort((a, b) => {
+      const sourceRank: Record<string, number> = { server: 0, desktop: 1, browser: 2 }
+      const ar = sourceRank[a.mcpSource] ?? 9
+      const br = sourceRank[b.mcpSource] ?? 9
+      if (ar !== br) return ar - br
+      return a.name.localeCompare(b.name)
+    })
+
+const loadFrontPromptToolSchemas = async () => {
+  frontPromptToolSchemas.value = []
+  frontPromptAvailableTools.value = []
+  frontPromptToolScope.value = ''
+  frontPromptToolMcpEnabled.value = null
+  frontPromptToolSchemaError.value = ''
+  if (!getAuthToken()) return
+  try {
+    const response = await listMcpTools({ aiConfigId: props.aiConfigId })
+    const tools = Array.isArray(response.tools) ? response.tools : []
+    frontPromptToolSchemas.value = tools
+      .filter((tool: any) => initialNativeToolNames.includes(String(tool?.name || '').trim()))
+      .map(normalizePromptTool)
+      .sort((a: any, b: any) => initialNativeToolNames.indexOf(a.name) - initialNativeToolNames.indexOf(b.name))
+    const promptTools = Array.isArray(response.promptTools) ? response.promptTools : []
+    const endpointToolDefs = Array.isArray(response.endpointToolDefs) ? response.endpointToolDefs : []
+    frontPromptAvailableTools.value = sortPromptTools(promptTools.length > 0
+      ? promptTools
+      : [
+          ...tools.map((tool: any) => ({ ...tool, mcpSource: 'server' })),
+          ...endpointToolDefs,
+        ])
+    frontPromptToolScope.value = String(response.promptToolsScope || (props.aiConfigId ? 'current_ai' : 'all_current'))
+    frontPromptToolMcpEnabled.value = typeof response.promptToolsMcpEnabled === 'boolean'
+      ? response.promptToolsMcpEnabled
+      : null
+  } catch (error: any) {
+    frontPromptToolSchemaError.value = error?.message || 'MCP schema 加载失败'
+  }
+}
+
 const mapHistoryMessages = (history: ChatMessage[]) => {
   return history.map((msg: ChatMessage) => {
     const parsed = parseChatResponseInline(msg.content)
@@ -1155,6 +1296,8 @@ const initializeSessions = async () => {
   currentMcpTool.value = ''
   clearLiveAssistantView()
   isTyping.value = false
+  await loadConfiguredFrontPrompt()
+  await loadFrontPromptToolSchemas()
   await loadSessions()
   if (sessionList.value.length === 0) {
     await createSession('默认会话')
@@ -1223,6 +1366,31 @@ onBeforeUnmount(() => {
         >
           终止
         </button>
+        <div class="relative group/front-prompt">
+          <button
+            class="shrink-0 text-xs px-2 py-1 rounded border border-violet-200 text-violet-600 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-900/20"
+            type="button"
+          >
+            前置 Prompt
+          </button>
+          <div
+            class="absolute right-0 top-full z-[80] hidden w-[min(42rem,calc(100vw-2rem))] pt-2 group-hover/front-prompt:block"
+          >
+            <div class="max-h-[28rem] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+              <div class="flex items-center justify-between gap-3 border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
+                <div class="text-xs font-semibold text-zinc-700 dark:text-zinc-200">前置 Prompt</div>
+                <button
+                  class="shrink-0 rounded border border-zinc-200 px-2 py-1 text-[11px] text-zinc-600 hover:border-violet-300 hover:text-violet-600 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-violet-500 dark:hover:text-violet-300"
+                  type="button"
+                  @click.stop="copyFrontPrompt"
+                >
+                  {{ frontPromptCopied ? '已复制' : '复制' }}
+                </button>
+              </div>
+              <pre class="max-h-[24rem] overflow-auto whitespace-pre-wrap break-words p-3 text-[11px] leading-relaxed text-zinc-700 dark:text-zinc-300">{{ frontPromptPreviewText }}</pre>
+            </div>
+          </div>
+        </div>
         <button
           class="shrink-0 text-xs px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-indigo-300 hover:text-indigo-600 dark:hover:text-indigo-300"
           @click="emit('open-settings')"
@@ -1236,6 +1404,8 @@ onBeforeUnmount(() => {
       <ChatConversationView
         :baseMessages="chatMessages"
         :sessionActive="!!currentSessionId"
+        :frontPromptText="configuredFrontPrompt"
+        :showFrontPrompt="false"
         :frontPromptPlaceholder="'（当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt）'"
         :mcpIcon="props.mcpIcon"
         :mcpDynamicRule="props.mcpDynamicRule"

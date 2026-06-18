@@ -1,17 +1,41 @@
 [
   {
     "name": "browser_observe",
-    "description": "感知当前视口里「用户能看到且可点击」的元素：只返回最顶层、未被遮挡的可交互元素（按钮/链接/输入框/下拉/菜单项等），每个带编号 id、角色 role、文本和中心坐标 center，并默认在页面上画出对应编号标记。用途：作为点击/输入前的首选观察手段，配合 browser_screenshot 形成「看图—按编号点击」闭环，避免点到背景或被弹窗遮挡的元素。场景：操作任意元素前先 observe，再用 browser_click {ref:id} 精确点击；页面变化（滚动/弹窗/路由切换）后重新 observe 以刷新编号。",
+    "description": "感知当前视口里用户能看到的内容，区分普通可见文本与可交互元素：返回 items 混排列表，其中 kind=text 是页面文字（不可点击），kind=interactive 是最顶层、未被遮挡的按钮/链接/输入框/下拉/菜单项等，kind=group 是同类型大批量元素的折叠摘要（无 id）。interactive 项额外带 id、角色 role、文本和中心坐标 center；默认同 tag+role+type 且数量≥group_min 的批量元素会折叠为 kind=group，需要单独获取编号时传 expand_group 为对应 groupKey 展开。页面标记：绿色=可点击，浅蓝=同类型批量/已展开批量，红色=不可点击/被禁用/被遮挡。用途：既能读取页面文字，又能作为点击/输入前的首选观察手段，配合 browser_screenshot 形成「看图—按 id 点击」闭环。场景：先 observe 理解页面；大批量列表先读 group 摘要，再 expand_group 展开后 browser_action {action:\"click\", ref:id} 精确点击；页面变化后重新 observe 以刷新 id。",
     "input_schema": {
       "type": "object",
       "properties": {
         "limit": {
           "type": "number",
-          "description": "最多返回的可交互元素数。默认 120，最大 200。"
+          "description": "最多返回的可交互元素/分组条目数。默认 120，最大 200。"
+        },
+        "include_text": {
+          "type": "boolean",
+          "description": "是否同时返回普通可见文本 texts/items。默认 true；传 false 时只返回可交互 elements。"
+        },
+        "text_limit": {
+          "type": "number",
+          "description": "最多返回的普通可见文本条数。默认 200，最大 500。"
         },
         "mark": {
           "type": "boolean",
-          "description": "是否在页面上绘制编号标记，便于随后截图查看。默认 true；传 false 仅返回列表并清除已有标记。标记仅为视觉叠加，不影响其他取数工具或截图，也不拦截点击。"
+          "description": "是否在页面上绘制无序号状态色标记，便于随后截图查看。默认 true；绿色=可点击，浅蓝=同类型批量/已展开批量，红色=不可点击/被禁用/被遮挡；传 false 仅返回列表并清除已有标记。标记仅为视觉叠加，不影响其他取数工具或截图，也不拦截点击。"
+        },
+        "group_similar": {
+          "type": "boolean",
+          "description": "是否将大批量同类型元素折叠为 kind=group 摘要。默认 true。"
+        },
+        "group_min": {
+          "type": "number",
+          "description": "触发折叠的最少同类型数量。默认 3，范围 2~50。"
+        },
+        "group_key": {
+          "type": "string",
+          "description": "可选：只折叠指定 groupKey（格式 tag|role|type，文本为 text|role|tag）；不传则对所有达标批量自动折叠。"
+        },
+        "expand_group": {
+          "type": "string",
+          "description": "可选：展开指定 groupKey，返回该批全部 interactive 编号（页面标记为浅蓝）；其他批量仍保持折叠。用于「先概览、再单独取详情」。"
         }
       }
     }
@@ -445,7 +469,7 @@
   },
   {
     "name": "browser_tab",
-    "description": "浏览器标签页与页面级导航聚合工具：列出已打开页面、切换/新开/关闭标签，以及在当前标签内跳转 URL、前进、后退。用途：组织多标签并完成页面跳转。场景：查看有哪些标签（list）、切换到已有标签（switch + tab_id）、并行打开网址（open）、完成后关闭标签（close）、跳到目标网址开始任务（navigate）、在浏览历史里回退/前进（back/forward）。",
+    "description": "浏览器标签页管理：列出已打开页面、切换标签、在当前页覆盖跳转、新标签打开链接、关闭标签、前进后退。动作仅 7 种：list 获取全部页面及当前激活页；switch 切换到已有 tab_id；replace 在当前页（或 tab_id）覆盖跳转到 url；navigate 在新标签页打开 url；close 关闭标签；back/forward 历史导航。流程：先 list，目标页已开则 switch，要在当前页改地址用 replace，并行任务用 navigate。",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -453,26 +477,30 @@
           "type": "string",
           "enum": [
             "list",
-            "open",
-            "close",
             "switch",
+            "replace",
             "navigate",
+            "close",
             "back",
             "forward"
           ],
-          "description": "动作：list 列出所有标签、switch 切换到 tab_id 指定标签、open 用 url 新开标签、close 关闭 tab_id（不传则当前标签）、navigate 在当前标签打开 url（new_tab:true 则新开）、back 后退一步、forward 前进一步。"
+          "description": "list 列出全部标签并返回 activeTab；switch 切换到 tab_id（不改 URL）；replace 在当前/指定标签覆盖跳转到 url；navigate 在新标签打开 url；close 关闭 tab_id（默认当前标签）；back/forward 后退/前进一步。"
         },
         "url": {
           "type": "string",
-          "description": "action=open / navigate 时要打开的 URL（navigate 需为绝对地址，缺协议时按 https 补全）。"
-        },
-        "new_tab": {
-          "type": "boolean",
-          "description": "action=navigate 时为 true 在新标签页打开，而不是替换当前页。"
+          "description": "action=replace / navigate 时要打开的 URL（缺协议时按 https 补全）。"
         },
         "tab_id": {
           "type": "number",
-          "description": "action=switch 必填；action=close 时可选（不传则关闭当前活动标签）。"
+          "description": "action=switch 必填；action=close/replace/back/forward 可选，指定目标标签，默认当前活动标签。"
+        },
+        "tabId": {
+          "type": "number",
+          "description": "tab_id 的兼容别名。"
+        },
+        "id": {
+          "type": "number",
+          "description": "tab_id 的兼容别名。"
         }
       },
       "required": [

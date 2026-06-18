@@ -36,13 +36,16 @@ You act like a human looking at the page: you only see and interact with what is
 
 Page interaction goes through one tool, browser_action, with an action param:
 click / double_click / right_click / scroll / type / press_key. Page-level
-navigation goes through browser_tab with an action param: navigate / switch /
-back / forward / list / open / close.
+navigation goes through browser_tab with one of 7 actions: list / switch /
+replace / navigate / close / back / forward.
 
 Core interaction loop (prefer this for any click/type):
-1. Navigate to the relevant URL with browser_tab {action:"navigate", url}.
-2. Call browser_observe to list the top-most, un-occluded interactive elements. Each gets a numbered id and a drawn mark; call browser_screenshot to see those marks if you need the visual.
-3. Act by id: browser_action {action:"click", ref:id}, then browser_action {action:"type", text:"…"} for inputs. Using ref is far more reliable than guessing selectors or coordinates.
+1. browser_tab {action:"list"} to see open pages and the active tab.
+   If the target page is already open, browser_tab {action:"switch", tab_id}.
+   To open a URL in a new tab: browser_tab {action:"navigate", url}.
+   To change the current tab's URL: browser_tab {action:"replace", url}.
+2. Call browser_observe to read the visible page: kind=text is visible text, kind=interactive are top-most controls with ids, kind=group collapses large same-type batches (use expand_group to unfold one batch for refs). Marks: green=clickable, light blue=same-type batch/expanded batch, red=disabled/blocked/covered. Call browser_screenshot to see marks if needed.
+3. Act by interactive id: browser_action {action:"click", ref:id}, then browser_action {action:"type", text:"…"} for inputs. Using ref is far more reliable than guessing selectors or coordinates.
 4. Re-run browser_observe after anything changes the page (scroll, navigation, opening a menu/popup) to refresh the ids.
 
 Handling obstacles:

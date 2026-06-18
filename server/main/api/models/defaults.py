@@ -19,7 +19,9 @@ DEFAULT_MODEL_PRESETS = """[{"id":"deepseek-chat","name":"DeepSeek Chat","api_ke
 
 DEFAULT_MCP_NAMESPACE_HINTS = """{"mcp":"MCP 自省入口。可调用工具已在系统提示的[可用MCP工具]目录中列出；用 mcp.describe_tool（支持 tools 批量或 query 搜索）取参数 schema 后即可调用。","task":"任务系统。用于查看、创建、更新、删除、传承和完成任务。","workspace":"工作区、文件读写编辑与命令执行。文件操作优先用 workspace.read_file / write_file / edit_file；只有需要运行程序或诊断命令时才用 run_command。","admin":"系统总览。用于查看在线智能体、运行状态和系统概况。","prompt":"Prompt 管理。用于读取或按权限修改 AI / 系统 prompt。","conversation":"会话管理。用于读取列表与详情、新建、删除、切换或编辑会话。","ai":"AI 间通信。用于向其他 AI 发送询问、回复、通知或协作消息。","user":"用户通知。用于向用户发送异步消息。","web":"联网搜索。用于查询外部或实时信息。","memory":"长期记忆。用于写入、检索、更新和归档结构化记忆。","project":"项目管理。用于查看或维护项目记录。"}"""
 
-DEFAULT_MCP_DYNAMIC_RULE = "系统提示的[可用MCP工具]目录会一次性列出全部可调用工具的名称与简介，模型据此直接定位。需要参数时用 mcp.describe_tool（支持 tool 单个、tools 批量或 query 关键词搜索）取 schema；被加载的目标工具会在随后轮次直接可调用。"
+DEFAULT_MCP_DYNAMIC_RULE = """系统提示的[可用MCP工具]目录会一次性列出全部可调用工具的名称与简介，模型据此直接定位。需要参数时用 mcp.describe_tool（支持 tool 单个、tools 批量或 query 关键词搜索）取 schema；被加载的目标工具会在随后轮次直接可调用。
+
+浏览器标签页 MCP 规则：调用 browser_tab / 浏览器导航类工具前，必须优先确认是否已经存在目标网页或可复用的已打开标签页；若存在，只切换到该标签页，不要重复跳转。若需要打开新网页，优先打开新标签页，避免随意覆盖用户当前已经打开的网页或当前工作上下文。"""
 
 DEFAULT_MCP_CALL_METHOD = """When you want to call a tool, output one or more blocks using EXACTLY this format and do not wrap them in markdown code fences:
 <mcp-call>
