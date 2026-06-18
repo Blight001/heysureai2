@@ -51,8 +51,13 @@ class AgentService : Service() {
                 val data = intent.getParcelableExtraCompat<Intent>(EXTRA_RESULT_DATA)
                 if (code != 0 && data != null) {
                     val mpm = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                    capture.attach(mpm.getMediaProjection(code, data))
-                    logListener?.invoke("已授权截屏/录屏")
+                    val projection = mpm.getMediaProjection(code, data)
+                    if (projection != null) {
+                        capture.attach(projection)
+                        logListener?.invoke("已授权截屏/录屏")
+                    } else {
+                        logListener?.invoke("截屏/录屏授权失败")
+                    }
                 }
             }
             ACTION_STOP -> {

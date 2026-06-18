@@ -85,6 +85,15 @@ const liveAssistantText = ref('')
 const liveTargetText = ref('')
 const liveCursor = ref(0)
 const shownRunErrorIds = ref<Set<string>>(new Set())
+
+// Runtime duration tracking for current AI run (total / MCP / deep-thinking)
+const runStartTs = ref<number | null>(null)
+const mcpElapsedMs = ref(0)
+const thinkElapsedMs = ref(0)
+const phaseEnterTs = ref<number | null>(null)
+const lastRunDurations = ref<{ total: number; mcp: number; think: number } | null>(null)
+const timeTick = ref(Date.now())
+let timeTickTimer: number | null = null
 let runLivePollTimer: number | null = null
 let runHistoryPollTimer: number | null = null
 let sessionSyncPollTimer: number | null = null
@@ -185,6 +194,98 @@ const runStatusText = computed(() => {
   }
   return '后端流式生成中'
 })
+
+const durationDisplay = computed(() => {
+  timeTick.value // reactive dependency for live updates
+  let total = 0
+  let mcp = mcpElapsedMs.value
+  let think = thinkElapsedMs.value
+  if (runStartTs.value != null) {
+    total = Date.now() - runStartTs.value
+    if (currentRunPhase.value === 'waiting_mcp' && phaseEnterTs.value != null) {
+      mcp += Date.now() - phaseEnterTs.value
+    } else if (currentRunPhase.value === 'generating' && phaseEnterTs.value != null) {
+      think += Date.now() - phaseEnterTs.value
+    }
+  } else if (lastRunDurations.value) {
+    total = lastRunDurations.value.total
+    mcp = lastRunDurations.value.mcp
+    think = lastRunDurations.value.think
+  }
+  if (total <= 0 && mcp <= 0 && think <= 0) return ''
+  const fmt = (ms: number) => {
+    const s = Math.max(0, ms) / 1000
+    return (s < 10 ? s.toFixed(1) : Math.round(s).toString()) + 's'
+  }
+  return `总 ${fmt(total)} · MCP ${fmt(mcp)} · 深思 ${fmt(think)}`
+})
+
+function startTimeTicker() {
+  if (timeTickTimer != null) return
+  timeTickTimer = window.setInterval(() => {
+    timeTick.value = Date.now()
+  }, 200)
+}
+function stopTimeTicker() {
+  if (timeTickTimer != null) {
+    window.clearInterval(timeTickTimer)
+    timeTickTimer = null
+  }
+}
+
+function applyPhaseDelta() {
+  if (phaseEnterTs.value == null) return
+  const delta = Date.now() - phaseEnterTs.value
+  const ph = currentRunPhase.value
+  if (ph === 'waiting_mcp') {
+    mcpElapsedMs.value += delta
+  } else if (ph === 'generating') {
+    thinkElapsedMs.value += delta
+  }
+}
+
+function resetRunTimers() {
+  runStartTs.value = null
+  mcpElapsedMs.value = 0
+  thinkElapsedMs.value = 0
+  phaseEnterTs.value = null
+}
+
+function startRunTimers() {
+  resetRunTimers()
+  const now = Date.now()
+  runStartTs.value = now
+  phaseEnterTs.value = now
+  lastRunDurations.value = null
+  startTimeTicker()
+}
+
+function finalizeRunTimers() {
+  applyPhaseDelta()
+  if (runStartTs.value != null) {
+    const total = Date.now() - runStartTs.value
+    lastRunDurations.value = {
+      total,
+      mcp: mcpElapsedMs.value,
+      think: thinkElapsedMs.value,
+    }
+  }
+  runStartTs.value = null
+  phaseEnterTs.value = null
+  // keep lastRunDurations so UI can still show the record briefly
+}
+
+function updatePhase(newPhase: 'idle' | 'generating' | 'waiting_mcp') {
+  if (newPhase === currentRunPhase.value) return
+  applyPhaseDelta()
+  currentRunPhase.value = newPhase
+  if (newPhase === 'idle') {
+    phaseEnterTs.value = null
+  } else {
+    phaseEnterTs.value = Date.now()
+  }
+}
+
 const STATE_PREFIX = '__HS_MCP_STATE__='
 
 const normalizedAllFiles = computed(() => props.allFiles.map(file => file.replace(/\\/g, '/')))
@@ -980,13 +1081,27 @@ const pollRunLive = async (epoch: number) => {
   } catch (err: any) {
     currentRunStatus.value = 'error'
     isTyping.value = false
+    finalizeRunTimers()
     clearLiveAssistantView()
+    stopTimeTicker()
     await appendRunErrorNotice(currentRunId.value, err?.message || '状态查询失败')
     return
   }
   try {
     currentRunStatus.value = run.status || 'running'
-    currentRunPhase.value = (run.live_phase || 'generating')
+    const incomingPhase = (run.live_phase || 'generating') as 'idle' | 'generating' | 'waiting_mcp'
+    // support resumed runs: initialize total time from server started_at if available
+    if (run.started_at && runStartTs.value == null) {
+      lastRunDurations.value = null
+      runStartTs.value = Math.floor(Number(run.started_at) * 1000)
+      phaseEnterTs.value = Date.now()
+      startTimeTicker()
+    }
+    if (incomingPhase !== currentRunPhase.value) {
+      applyPhaseDelta()
+      currentRunPhase.value = incomingPhase
+      if (incomingPhase !== 'idle') phaseEnterTs.value = Date.now()
+    }
     currentMcpTool.value = String(run.current_tool || '')
     const delta = String(run.live_delta || '')
     liveThinkingText.value = String(run.live_reasoning || '')
@@ -1002,6 +1117,7 @@ const pollRunLive = async (epoch: number) => {
     }
     if (['completed', 'error', 'stopped'].includes(currentRunStatus.value)) {
       isTyping.value = false
+      finalizeRunTimers()
       currentRunPhase.value = 'idle'
       currentMcpTool.value = ''
       await pollRunHistory(epoch)
@@ -1011,6 +1127,7 @@ const pollRunLive = async (epoch: number) => {
         await appendRunErrorNotice(currentRunId.value, String(run.error_message || '后端运行失败，但没有返回具体错误信息。'))
       }
       await loadTotalTokens()
+      stopTimeTicker()
       return
     }
     await refreshTokensDuringRunIfNeeded()
@@ -1044,7 +1161,23 @@ const checkActiveRun = async () => {
   if (!data?.run?.run_id) return
   currentRunId.value = data.run.run_id
   currentRunStatus.value = data.run.status || 'running'
-  currentRunPhase.value = (data.run.live_phase || 'generating')
+  const incomingPhase = (data.run.live_phase || 'generating') as 'idle' | 'generating' | 'waiting_mcp'
+  // initialize timers for resumed active run using server start if possible
+  if (runStartTs.value == null) {
+    lastRunDurations.value = null
+    if (data.run.started_at) {
+      runStartTs.value = Math.floor(Number(data.run.started_at) * 1000)
+    } else {
+      runStartTs.value = Date.now()
+    }
+    phaseEnterTs.value = Date.now()
+    startTimeTicker()
+  }
+  if (incomingPhase !== currentRunPhase.value) {
+    applyPhaseDelta()
+    currentRunPhase.value = incomingPhase
+    if (incomingPhase !== 'idle') phaseEnterTs.value = Date.now()
+  }
   currentMcpTool.value = String(data.run.current_tool || '')
   liveThinkingText.value = String(data.run.live_reasoning || '')
   updateLiveAssistantView(String(data.run.live_text || ''))
@@ -1063,11 +1196,13 @@ const stopCurrentRun = async () => {
     stopRunPolling()
     isTyping.value = false
     currentRunStatus.value = 'stopped'
+    finalizeRunTimers()
     currentRunPhase.value = 'idle'
     currentMcpTool.value = ''
     clearLiveAssistantView()
     await fetchRunHistoryIncrementalOnce()
     await loadTotalTokens()
+    stopTimeTicker()
   } catch (err: any) {
     alert({ message: `终止失败: ${String(err?.message || '未知错误')}`, type: 'error' })
   }
@@ -1277,9 +1412,10 @@ const sendChat = async (overrideContent?: string, options: { silent?: boolean } 
   chatInput.value = ''
   isTyping.value = true
   currentRunStatus.value = 'queued'
-  currentRunPhase.value = 'generating'
   currentMcpTool.value = ''
   clearLiveAssistantView()
+  startRunTimers()
+  updatePhase('generating')
 
   try {
     const started = await chatApi.startRun({
@@ -1296,8 +1432,10 @@ const sendChat = async (overrideContent?: string, options: { silent?: boolean } 
   } catch (err: any) {
     isTyping.value = false
     currentRunStatus.value = 'error'
+    finalizeRunTimers()
     currentRunPhase.value = 'idle'
     currentMcpTool.value = ''
+    stopTimeTicker()
     const text = String(err?.message || '')
     if (text.includes('already active')) {
       alert({ message: '当前会话已有进行中的任务，正在接入运行状态。', type: 'warning' })
@@ -1310,6 +1448,9 @@ const sendChat = async (overrideContent?: string, options: { silent?: boolean } 
 
 const initializeSessions = async () => {
   stopRunPolling()
+  stopTimeTicker()
+  resetRunTimers()
+  lastRunDurations.value = null
   currentRunId.value = ''
   currentRunStatus.value = 'idle'
   currentRunPhase.value = 'idle'
@@ -1333,6 +1474,9 @@ const initializeSessions = async () => {
 watch(() => props.aiConfigId, async () => {
   stopRunPolling()
   stopSessionSyncPolling()
+  stopTimeTicker()
+  resetRunTimers()
+  lastRunDurations.value = null
   chatMessages.value = []
   currentSessionId.value = ''
   currentRunPhase.value = 'idle'
@@ -1345,6 +1489,9 @@ watch(currentSessionId, async (sid, oldSid) => {
   if (!sid || sid === oldSid) return
   stopRunPolling()
   stopSessionSyncPolling()
+  stopTimeTicker()
+  resetRunTimers()
+  lastRunDurations.value = null
   currentRunId.value = ''
   currentRunStatus.value = 'idle'
   currentRunPhase.value = 'idle'
@@ -1363,6 +1510,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   stopRunPolling()
   stopSessionSyncPolling()
+  stopTimeTicker()
   clearLiveAssistantView()
 })
 </script>
@@ -1380,7 +1528,11 @@ onBeforeUnmount(() => {
         @rename="renameSession"
       />
       <div class="flex items-center gap-2">
-        <span v-if="isRunActive" class="text-[11px] text-emerald-600 dark:text-emerald-400">{{ runStatusText }}</span>
+        <span v-if="runStatusText" class="text-[11px] text-emerald-600 dark:text-emerald-400">{{ runStatusText }}</span>
+        <span
+          v-if="durationDisplay"
+          class="text-[10px] px-1.5 py-px rounded border text-emerald-700/80 dark:text-emerald-300/70 border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-500/10"
+        >{{ isRunActive ? durationDisplay : ('上次 ' + durationDisplay) }}</span>
         <button
           v-if="isRunActive"
           class="shrink-0 text-xs px-2 py-1 rounded border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-900/20"

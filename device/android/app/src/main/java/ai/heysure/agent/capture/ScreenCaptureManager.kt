@@ -78,7 +78,7 @@ class ScreenCaptureManager(private val appContext: Context) {
             width, height, density,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
             reader.surface, null, mainHandler,
-        )
+        ) ?: throw IllegalStateException("无法创建截屏虚拟显示")
         try {
             val image = awaitImage(reader)
             val bitmap = imageToBitmap(image, width)
@@ -124,7 +124,7 @@ class ScreenCaptureManager(private val appContext: Context) {
             width, height, dm.densityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
             recorder.surface, null, mainHandler,
-        )
+        ) ?: throw IllegalStateException("无法创建录屏虚拟显示")
         try {
             recorder.start()
             delay(durationMs.coerceIn(500, 120_000))

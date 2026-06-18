@@ -79,6 +79,7 @@ device/android/.gradle/
 device/android/build/
 device/android/app/build/
 device/android/local.properties
+device/android/HeySureAgent-*.apk
 device/android/.idea/
 device/android/captures/
 device/android/*.iml

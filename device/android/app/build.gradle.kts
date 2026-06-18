@@ -5,7 +5,10 @@ plugins {
 
 android {
     namespace = "ai.heysure.agent"
-    compileSdk = 34
+    compileSdk = providers.gradleProperty("android.compileSdk")
+        .map(String::toInt)
+        .orElse(34)
+        .get()
 
     defaultConfig {
         applicationId = "ai.heysure.agent"
