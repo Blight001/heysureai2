@@ -2,7 +2,8 @@
 // the smaller modules (windows, tray, agent runtime, IPC). Keep this file
 // short — each piece of real logic lives in its own module.
 
-import { app, Menu } from 'electron'
+import { app, Menu, dialog } from 'electron'
+import * as path from 'path'
 import { store } from './store'
 import { initCapture } from './capture-bridge'
 import { createMainWindow, getMainWindow } from './windows/main-window'
@@ -13,6 +14,31 @@ import {
 import { bindActivityLogTarget } from './services/activity-log'
 import { registerAllIpc } from './ipc'
 import { initializeDynamicMcp } from './executor/dynamic'
+import { initArtifactBridge } from './runtime/artifact-bridge'
+import { registerConfirmHandler } from './runtime/permission-guard'
+import { pauseExecution, resumeExecution, isExecutionPaused } from './runtime/process-guard'
+
+// Wire the controlled-executor base into the Electron host: artifacts dir,
+// confirm-tier permission prompts, and the tray pause/resume switch.
+function initRuntimeBase(): void {
+  initArtifactBridge(path.join(app.getPath('userData'), 'artifacts'))
+  registerConfirmHandler(async (req) => {
+    const win = getMainWindow()
+    const options = {
+      type: 'warning' as const,
+      buttons: ['允许', '拒绝'],
+      defaultId: 1,
+      cancelId: 1,
+      title: '需要确认',
+      message: `AI 请求执行工具：${req.tool}`,
+      detail: `涉及权限：${req.reasons.join(', ')}${req.summary ? `\n\n${req.summary}` : ''}`,
+    }
+    const { response } = win
+      ? await dialog.showMessageBox(win, options)
+      : await dialog.showMessageBox(options)
+    return response === 0
+  })
+}
 
 app.setName('HeySure Agent')
 if (process.platform === 'win32') {
@@ -24,6 +50,7 @@ async function bootstrap(): Promise<void> {
 
   clearAiSelectionIfLoggedOut()
   initAgent(store.store)
+  initRuntimeBase()
   initializeDynamicMcp(() => getAgent()?.refreshRegistration())
 
   registerAllIpc()
@@ -44,6 +71,12 @@ async function bootstrap(): Promise<void> {
       else { w?.show(); w?.focus() }
     },
     isActive: isAgentActive,
+    onTogglePause: () => {
+      if (isExecutionPaused()) resumeExecution()
+      else pauseExecution('user')
+      updateTray(getAgent()?.status || 'disconnected')
+    },
+    isPaused: isExecutionPaused,
   })
   updateTray(getAgent()?.status || 'disconnected')
 

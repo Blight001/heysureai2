@@ -8,6 +8,7 @@
     "dev": "node scripts/sync-shared.js && tsc && node scripts/copy-renderer.js && electron dist/main.js",
     "build": "node scripts/sync-shared.js && tsc && node scripts/copy-renderer.js",
     "start": "electron dist/main.js",
+    "setup:python": "node scripts/setup-python.js",
     "rebuild": "electron-rebuild -f -w robotjs",
     "package": "npm run build && electron-builder --linux"
   },

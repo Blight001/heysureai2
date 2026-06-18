@@ -357,14 +357,16 @@ Windows 端最终仍应保留：
 
 ## 8. 迁移路线
 
-### 阶段一：服务器成为设备动态 MCP 主入口
+### 阶段一：服务器成为设备动态 MCP 主入口  ✅（已落地）
 
-- [ ] 保留现有设备内置工具；
-- [ ] 网页端“传承技能”管理服务器保存的动态 MCP；
-- [ ] 设备继续接收 `device:tool-config` 并缓存；
-- [ ] Windows 动态工具支持 `runtime=python`；
-- [ ] 浏览器动态工具支持 `runtime=browser_js`；
-- [ ] 调用统计、失败记录、版本回滚可用。
+- [x] 保留现有设备内置工具；
+- [x] 网页端管理服务器保存的动态 MCP（`DeviceDynamicTool` + 设备工具弹窗）；
+- [x] 设备继续接收 `device:tool-config` 并缓存；
+- [x] 桌面动态工具支持 `runtime=python / powershell / shell`（端侧受控执行底座 `runtime/`，
+      服务端 `DeviceDynamicTool.runtime/source/permissions` + 下发 payload，网页/AI 均可创作）；
+- [ ] 浏览器动态工具：仍用 program/js DSL；`runtime` 受限于 desktop（MV3 无法跑 python/shell），
+      浏览器侧 `browser_js` 运行时另行评估；
+- [x] 调用统计、失败记录、版本回滚可用（含 runtime 字段快照）。
 
 ### 阶段二：内置工具一次性播种到服务器
 
@@ -373,26 +375,70 @@ Windows 端最终仍应保留：
 - [ ] 服务器工具定义可覆盖旧内置工具；
 - [ ] MCP 目录由服务器生成，而不是设备上报决定。
 
-### 阶段三：设备上报 capability，不再上报 MCP
+### 阶段三：设备上报 capability，不再上报 MCP（增量起步）
 
-- [ ] 设备注册时只上报运行能力：`python`、`powershell`、`browser_js`、依赖版本、系统信息；
-- [ ] Server 根据 capability 下发匹配工具；
-- [ ] AI 可见 MCP 目录完全来自服务器 DB；
+- [x] 设备注册时**附带**上报运行能力：`python` / `powershell` / `shell` 是否可用 + 版本
+      （`runtime-probe` 实测后随 `device:register` 上报；服务器经 `online_runtimes` 感知，
+      网页创作 runtime 工具时给「无在线设备支持」提示）；
+- [~] Server 据 capability 提示/匹配（已做提示；按能力过滤下发待做）；
+- [ ] AI 可见 MCP 目录完全来自服务器 DB（仍沿用"设备上报能力 ∩ scope"，此项为有风险的真相源切换，需灰度）；
 - [ ] 旧 `toolDefs` 上报变成兼容字段或调试字段。
 
-### 阶段四：逐步删除 TypeScript 固定工具
+### 工具存储：DB → 用户工作区文件（已切换）
 
-- [ ] 对每个 `device/windows/src/tools/*.ts` 工具找到服务器端替代定义；
-- [ ] 灰度：同名服务器工具优先，失败可回退旧 TS 工具；
-- [ ] 连续稳定后删除或移入 legacy；
-- [ ] 浏览器插件同理迁移固定工具到服务器定义。
+设备工具的真相源从数据库改为**用户工作区文件**（按用户要求弃用 DB 存储）：
 
-### 阶段五：AI 自主进化进入闭环
+- 路径：`<workspace>/<user_id>/device_tools/<device_type>/`，每个工具 = `<name>.py`（runtime
+  python 体，AI 可经工作区 MCP 直接读写）/ `<name>.js`（js 体）+ `<name>.json`（元数据：
+  description/input_schema/code_kind/runtime/permissions/enabled/status；program 的 code 也在 json）；
+  历史快照在 `.history/<name>/<id>.json`，供回滚（替代 DB 版本表）。
+- 服务 `api/services/device_workspace_tools.py` 接口与旧 `device_dynamic_tools` 同名，
+  REST / AI 管理器（device_mcp.manage）/ 下发只换 import；旧 DB 行首次连接时一次性迁到文件。
+- 出厂默认 python 工具在 `api/services/device_runtime_tools/`（独立 `bodies/*.py` + `definitions.json`），
+  首次连接播种到用户工作区。`DeviceDynamicTool`/版本表保留但不再写入。
+- 权限策略仍在 DB（`DevicePermissionPolicy`，非工具代码）。
 
-- [ ] AI 只能提交工具 draft；
-- [ ] Server 自动跑静态检查、权限分析、简单回放测试；
-- [ ] 用户审批后 active；
-- [ ] 工具成功率低自动降权或提示修复；
+### 阶段四：删除全部 TypeScript 固定工具（已执行 · 全删）
+
+设备端 `executor/catalog.ts` 现在**只注册一项**：`mcp.manage_dynamic_tool`（动态工具管理器/引导器，
+加载服务器下发工具，无法自身动态化）。其余原生 MCP 工具实现全部物理删除，**连 `shell.run` 也已迁为
+服务器下发的 `runtime=shell` 工具**，设备退化为纯受控运行器。审计结论：桌面端除引导器外无任何写死 MCP。
+
+> 浏览器扩展（MV3）仍保留 23 个 `browser_*` 内置作为能力底座：MV3 禁止运行远程 JS，服务器只能下发
+> program（call/set/return）工具来**组合**这些底座（`builtin:browser_*`），因此这些底座等价于桌面的
+> runtime 运行器，属不可消除的本地能力层，非"可迁的写死业务 MCP"。
+
+- [x] 删除并迁为服务器 `runtime=python`（`seed_default_desktop_runtime_tools` 播种 active，
+      旧 JS cap.call 包装自动迁移）：
+  - keyboard/mouse/clipboard/process（pyautogui/pyperclip/psutil）；
+  - text.input、git.diff、fs.{list,read,write}、speech.speak（pyttsx3）；
+  - display.box（tkinter 半透明高亮框，Linux 需系统包 python3-tk）；
+  - screen.{capture,capture_region,info}、vision.{capture,capture_mouse}（mss+Pillow→JPEG dataUrl，
+    复用服务器既有 `_SCREENSHOT_TOOLS` 持久化/发图管线，按名匹配生效）；
+  - window.{list,focus,close}（`sys.platform` 分支：Win pygetwindow / Linux wmctrl）；
+  - ui.{inspect,click}（uiautomation，**仅 Windows**，linux 端会因缺库报错）；
+- [x] **仅以下无法做成无状态服务器工具，已删除且无替代**：hands.*（常驻输入事件监听）、
+      ear.*（常驻麦克风听写）——一次性 python 调用无法在多次调用间维持后台监听；
+      display.clear 也移除（box 到时自动消失，无需手动清）。
+- [x] 删除的端侧文件：shared 的 keyboard/clipboard/display/filesystem/vision；win 的 mouse/process/
+      screen/window/mouth/hands/uia/text-input + shared/powershell；linux 的 mouse/process/screen/
+      window/mouth/hands/ear/git + shared/command。保留 shell.ts、shared/robot、shared/coordinates
+      与 capture-bridge（仍被 main / 设置 IPC 引用，非 MCP 工具）；
+- [x] 服务器对已存在的、指向已删原生工具的旧 JS cap.call 包装自动 `status=archived`（停止下发）；
+- [ ] 浏览器插件固定工具迁移（另议，MV3 无 python/shell）。
+
+> ⚠️ 这是按用户明确要求执行的**激进全删 + 未经设备实跑验证**的迁移。代价：截图/视觉、窗口管理、
+> UIA、桌面悬浮框、输入监听、语音听写等能力被移除或仅以 python 形态存在（截图经 stdout 会被
+> process-guard 输出上限截断，基本不可用——视为已移除）。python 工具依赖目标机 `npm run setup:python`
+> 的 venv + X11。首次上线务必整体回归；如需恢复原生能力，`git revert` 本阶段提交即可。
+
+### 阶段五：AI 自主进化进入闭环（基本落地）
+
+- [x] AI 只能提交工具 draft（`device_mcp.manage` 的 AI upsert 落 `status=draft`，不下发）；
+- [x] Server 静态检查：runtime=python 工具上架时做语法 `compile()` 校验，权限标签按已知集校验；（回放测试待做）
+- [x] 用户审批后 active（网页设备工具弹窗「待批准/批准」+ `POST /api/device-tools/status`，
+      `DeviceDynamicTool.status` 生命周期，仅 active+enabled 下发）；
+- [ ] 工具成功率低自动降权或提示修复（需后台调度，失败率信号已在 UI 展示）；
 - [ ] 可从失败记录一键生成修复草案。
 
 ## 9. 关键取舍

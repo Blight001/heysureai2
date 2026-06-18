@@ -57,6 +57,7 @@ from .device_mcp_permission import DeviceTypeMcpPermission
 from .device_presence import DevicePresence
 from .device_dynamic_tool import DeviceDynamicTool
 from .device_dynamic_tool_version import DeviceDynamicToolVersion
+from .device_permission_policy import DevicePermissionPolicy
 from .mcp_call_stat import McpToolStat, McpFailureEvent
 from .bot_session_route import BotSessionRoute, BotUserCursor
 from .workshop_binding import WorkshopAiBinding
@@ -103,6 +104,7 @@ __all__ = [
     "DevicePresence",
     "DeviceDynamicTool",
     "DeviceDynamicToolVersion",
+    "DevicePermissionPolicy",
     "McpToolStat",
     "McpFailureEvent",
     "WorkshopAiBinding",

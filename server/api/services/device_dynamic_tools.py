@@ -29,6 +29,24 @@ NAME_RE = re.compile(r"^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)*$")
 RESERVED_NAMES = {"mcp.manage_dynamic_tool", "browser_mcp.manage_dynamic_tool"}
 VALID_DEVICE_TYPES = ("desktop", "browser")
 MAX_CODE_INSTRUCTIONS = 32
+# Runtimes the device executors support (runtime/runtime-tool.ts). Keep in
+# lockstep with ``isToolRuntime`` on the device.
+VALID_RUNTIMES = ("python", "powershell", "shell")
+MAX_SOURCE = 64 * 1024
+# Permission tags the device permission-guard understands (mirror PermissionTag
+# in device/shared/src/runtime/permission-guard.ts). Unknown tags are kept (the
+# device treats them as confirm-tier) but this drives the policy editor.
+KNOWN_PERMISSION_TAGS = (
+    "keyboard", "mouse",
+    "clipboard.read", "clipboard.write",
+    "screen.read",
+    "window.read", "window.write",
+    "filesystem.read", "filesystem.write",
+    "process.read", "process.kill",
+    "shell.read", "shell.write",
+    "network",
+    "browser.dom.read", "browser.dom.write",
+)
 
 
 def normalize_device_type(value: Any) -> str:
@@ -71,12 +89,52 @@ def validate_definition(raw: Any) -> Dict[str, Any]:
     if not isinstance(input_schema, dict):
         raise ValueError(f"Dynamic MCP {name} requires input_schema object")
 
+    runtime = str(raw.get("runtime") or "").strip().lower()
     code_kind = str(raw.get("code_kind") or raw.get("codeKind") or "").strip().lower()
     if not code_kind:
-        # Infer: a non-empty ``js`` means a JS tool, otherwise a program.
-        code_kind = "js" if str(raw.get("js") or "").strip() else "program"
-    if code_kind not in ("js", "program"):
-        raise ValueError(f"Dynamic MCP {name} code_kind must be 'js' or 'program'")
+        # Infer: a runtime tag means a runtime tool, a non-empty ``js`` means a
+        # JS tool, otherwise a program.
+        code_kind = "runtime" if runtime else ("js" if str(raw.get("js") or "").strip() else "program")
+    if code_kind not in ("js", "program", "runtime"):
+        raise ValueError(f"Dynamic MCP {name} code_kind must be 'js', 'program' or 'runtime'")
+
+    if code_kind == "runtime":
+        if runtime not in VALID_RUNTIMES:
+            raise ValueError(f"Dynamic MCP {name} runtime must be one of {VALID_RUNTIMES}")
+        # The runtime body may arrive as ``source`` (preferred) or ``code`` (the
+        # device accepts a string ``code`` for runtime tools too).
+        source = raw.get("source")
+        if not isinstance(source, str) or not source.strip():
+            code_field = raw.get("code")
+            source = code_field if isinstance(code_field, str) else ""
+        if not isinstance(source, str) or not source.strip():
+            raise ValueError(f"Dynamic MCP {name} requires non-empty source")
+        if len(source) > MAX_SOURCE:
+            raise ValueError(f"Dynamic MCP {name} source is too large")
+        # Static gate: python tools must at least parse, so a syntax error is
+        # caught here on the server instead of failing on every device.
+        if runtime == "python":
+            try:
+                compile(source, f"<{name}>", "exec")
+            except SyntaxError as exc:
+                raise ValueError(f"Dynamic MCP {name} python source has a syntax error: {exc.msg} (line {exc.lineno})")
+        raw_permissions = raw.get("permissions")
+        permissions = [
+            str(p).strip()
+            for p in (raw_permissions if isinstance(raw_permissions, list) else [])
+            if str(p).strip()
+        ]
+        return {
+            "name": name,
+            "description": description,
+            "input_schema": input_schema,
+            "code_kind": "runtime",
+            "code": [],
+            "js": "",
+            "runtime": runtime,
+            "source": source,
+            "permissions": permissions,
+        }
 
     if code_kind == "js":
         js = raw.get("js")
@@ -91,6 +149,9 @@ def validate_definition(raw: Any) -> Dict[str, Any]:
             "code_kind": "js",
             "code": [],
             "js": js,
+            "runtime": "",
+            "source": "",
+            "permissions": [],
         }
 
     code = raw.get("code")
@@ -123,6 +184,9 @@ def validate_definition(raw: Any) -> Dict[str, Any]:
         "code_kind": "program",
         "code": normalized_code,
         "js": "",
+        "runtime": "",
+        "source": "",
+        "permissions": [],
     }
 
 
@@ -135,6 +199,10 @@ def _serialize(row: DeviceDynamicTool) -> Dict[str, Any]:
         code = json.loads(row.code_json or "[]")
     except Exception:
         code = []
+    try:
+        permissions = json.loads(getattr(row, "permissions_json", "") or "[]")
+    except Exception:
+        permissions = []
     code_kind = str(getattr(row, "code_kind", "") or "program")
     definition = {
         "name": row.name,
@@ -143,10 +211,14 @@ def _serialize(row: DeviceDynamicTool) -> Dict[str, Any]:
         "code_kind": code_kind,
         "code": code if isinstance(code, list) else [],
         "js": str(getattr(row, "js_source", "") or ""),
+        "runtime": str(getattr(row, "runtime", "") or ""),
+        "source": str(getattr(row, "source", "") or ""),
+        "permissions": permissions if isinstance(permissions, list) else [],
     }
     return {
         **definition,
         "enabled": bool(row.enabled),
+        "status": str(getattr(row, "status", "") or "active"),
         "revision": _revision(definition),
         "updated_at": float(row.updated_at or 0),
     }
@@ -173,6 +245,9 @@ def _record_version(
         "code_kind": row.code_kind,
         "code": json.loads(row.code_json or "[]"),
         "js": row.js_source or "",
+        "runtime": getattr(row, "runtime", "") or "",
+        "source": getattr(row, "source", "") or "",
+        "permissions": json.loads(getattr(row, "permissions_json", "") or "[]"),
     }
     session.add(DeviceDynamicToolVersion(
         user_id=user_id,
@@ -187,6 +262,9 @@ def _record_version(
         code_kind=row.code_kind,
         code_json=row.code_json,
         js_source=row.js_source or "",
+        runtime=getattr(row, "runtime", "") or "",
+        source=getattr(row, "source", "") or "",
+        permissions_json=getattr(row, "permissions_json", "") or "[]",
         created_at=time.time(),
     ))
     # Prune oldest snapshots beyond the cap for this tool.
@@ -225,6 +303,12 @@ def _serialize_version(row: DeviceDynamicToolVersion, *, full: bool = False) -> 
         except Exception:
             out["code"] = []
         out["js"] = row.js_source or ""
+        out["runtime"] = getattr(row, "runtime", "") or ""
+        out["source"] = getattr(row, "source", "") or ""
+        try:
+            out["permissions"] = json.loads(getattr(row, "permissions_json", "") or "[]")
+        except Exception:
+            out["permissions"] = []
     return out
 
 
@@ -266,6 +350,10 @@ def upsert_tool(
 ) -> Dict[str, Any]:
     dtype = normalize_device_type(device_type)
     clean = validate_definition(definition)
+    # Runtime tools (python/powershell/shell) only run on desktop shells; the
+    # browser extension has no such runner and would reject the whole config.
+    if clean["code_kind"] == "runtime" and dtype != "desktop":
+        raise ValueError("runtime tools are only supported on desktop devices")
     now = time.time()
     with Session(engine) as session:
         row = session.exec(
@@ -285,7 +373,12 @@ def upsert_tool(
         row.code_kind = clean["code_kind"]
         row.code_json = json.dumps(clean["code"], ensure_ascii=False)
         row.js_source = clean.get("js") or ""
+        row.runtime = clean.get("runtime") or ""
+        row.source = clean.get("source") or ""
+        row.permissions_json = json.dumps(clean.get("permissions") or [], ensure_ascii=False)
         row.enabled = bool(enabled)
+        # AI 只能提交 draft，人审后才 active；网页/操作者编辑直接 active。
+        row.status = "draft" if actor == "ai" else "active"
         row.updated_at = now
         _record_version(
             session, user_id=user_id, device_type=dtype, row=row,
@@ -309,6 +402,33 @@ def set_enabled(user_id: int, device_type: str, name: str, enabled: bool) -> Opt
         if not row:
             return None
         row.enabled = bool(enabled)
+        row.updated_at = time.time()
+        session.commit()
+        session.refresh(row)
+        return _serialize(row)
+
+
+VALID_STATUSES = ("active", "draft", "disabled", "archived")
+
+
+def set_status(user_id: int, device_type: str, name: str, status: str) -> Optional[Dict[str, Any]]:
+    """Approve / shelve a tool. ``active`` makes it shippable; ``draft`` /
+    ``disabled`` / ``archived`` hold it back. Used by the web approval action."""
+    dtype = normalize_device_type(device_type)
+    new_status = str(status or "").strip().lower()
+    if new_status not in VALID_STATUSES:
+        raise ValueError(f"status must be one of {VALID_STATUSES}")
+    with Session(engine) as session:
+        row = session.exec(
+            select(DeviceDynamicTool).where(
+                DeviceDynamicTool.user_id == user_id,
+                DeviceDynamicTool.device_type == dtype,
+                DeviceDynamicTool.name == str(name or "").strip(),
+            )
+        ).first()
+        if not row:
+            return None
+        row.status = new_status
         row.updated_at = time.time()
         session.commit()
         session.refresh(row)
@@ -388,6 +508,9 @@ def restore_version(
         "code_kind": snapshot.get("code_kind") or "program",
         "code": snapshot.get("code") or [],
         "js": snapshot.get("js") or "",
+        "runtime": snapshot.get("runtime") or "",
+        "source": snapshot.get("source") or "",
+        "permissions": snapshot.get("permissions") or [],
     }
     return upsert_tool(
         user_id, device_type, definition,
@@ -500,13 +623,25 @@ def device_payload(user_id: int, device_type: str) -> Dict[str, Any]:
             "code_kind": tool.get("code_kind") or "program",
             "code": tool["code"],
             "js": tool.get("js") or "",
+            "runtime": tool.get("runtime") or "",
+            "source": tool.get("source") or "",
+            "permissions": tool.get("permissions") or [],
         }
         for tool in list_tools(user_id, device_type)
-        if tool.get("enabled")
+        if tool.get("enabled") and tool.get("status", "active") == "active"
     ]
+    # Permission policy rides along so the device guard applies it on push. It
+    # is intentionally outside ``revision`` (which gates tool re-apply): the
+    # device applies the policy every push regardless of whether tools changed.
+    try:
+        from api.services import device_permission_policy as policy_svc
+        permission_policy = policy_svc.get_policy(user_id, device_type)
+    except Exception:
+        permission_policy = {}
     return {
         "version": 1,
         "deviceType": normalize_device_type(device_type),
         "tools": tools,
         "revision": _revision(tools),
+        "permissionPolicy": permission_policy,
     }

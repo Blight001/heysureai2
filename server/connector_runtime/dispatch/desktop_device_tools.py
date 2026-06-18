@@ -356,6 +356,28 @@ def get_connected_endpoint_agent(ai_config_id: Optional[int], user_id: Optional[
     return get_connected_desktop_agent(ai_config_id, user_id) or get_connected_browser_agent(ai_config_id, user_id)
 
 
+def online_runtimes(user_id: Optional[int], device_type: str = "desktop") -> Dict[str, bool]:
+    """Union of runtime availability (python/powershell/shell) across this user's
+    online devices of ``device_type``. Each device reports ``runtimes`` in
+    ``device:register`` (see device-side runtime-probe). Used to warn when a
+    runtime tool has no online device that can actually run it."""
+    out: Dict[str, bool] = {"python": False, "powershell": False, "shell": False}
+    uid = _parse_int(user_id)
+    for agent in list(agents.values()):
+        if device_type_of(agent) != device_type:
+            continue
+        if uid and _parse_int(agent.get("userId") or agent.get("user_id")) != uid:
+            continue
+        runtimes = agent.get("runtimes")
+        if not isinstance(runtimes, dict):
+            continue
+        for key in out:
+            info = runtimes.get(key)
+            if isinstance(info, dict) and info.get("available"):
+                out[key] = True
+    return out
+
+
 def endpoint_bridge_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
     if get_connected_endpoint_agent(ai_config_id, user_id):
         return set(ENDPOINT_BRIDGE_MCP_TOOLS)

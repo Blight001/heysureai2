@@ -59,6 +59,12 @@ device/linux/dist/
 device/linux/release/
 device/linux/tsconfig.tsbuildinfo
 
+# Device Python runtime venv (created per-machine by scripts/setup-python.js)
+device/windows/device_runtime/python/.venv/
+device/linux/device_runtime/python/.venv/
+device/*/device_runtime/python/__pycache__/
+device/**/__pycache__/
+
 # Browser extension build output
 device/extension/dist/
 
@@ -93,6 +99,15 @@ device/windows/src/executor/registry.ts
 device/windows/src/ipc/ai-config.ts
 device/windows/src/ipc/device.ts
 device/windows/src/platform-profile.ts
+device/windows/src/runtime/artifact-bridge.ts
+device/windows/src/runtime/index.ts
+device/windows/src/runtime/permission-guard.ts
+device/windows/src/runtime/powershell-runner.ts
+device/windows/src/runtime/process-guard.ts
+device/windows/src/runtime/python-runner.ts
+device/windows/src/runtime/runtime-probe.ts
+device/windows/src/runtime/runtime-tool.ts
+device/windows/src/runtime/shell-runner.ts
 device/windows/src/server-url.ts
 device/windows/src/services/activity-log.ts
 device/windows/src/services/auth-state.ts
@@ -100,12 +115,7 @@ device/windows/src/services/avatar-cache.ts
 device/windows/src/services/device-runtime.ts
 device/windows/src/services/reauth.ts
 device/windows/src/services/server-client.ts
-device/windows/src/tools/clipboard.ts
-device/windows/src/tools/display.ts
-device/windows/src/tools/filesystem.ts
-device/windows/src/tools/keyboard.ts
 device/windows/src/tools/shared/robot.ts
-device/windows/src/tools/vision.ts
 device/windows/src/windows/main-window.ts
 device/windows/src/windows/tray.ts
 # device/linux (synced from device/shared/src)
@@ -115,6 +125,15 @@ device/linux/src/executor/registry.ts
 device/linux/src/ipc/ai-config.ts
 device/linux/src/ipc/device.ts
 device/linux/src/platform-profile.ts
+device/linux/src/runtime/artifact-bridge.ts
+device/linux/src/runtime/index.ts
+device/linux/src/runtime/permission-guard.ts
+device/linux/src/runtime/powershell-runner.ts
+device/linux/src/runtime/process-guard.ts
+device/linux/src/runtime/python-runner.ts
+device/linux/src/runtime/runtime-probe.ts
+device/linux/src/runtime/runtime-tool.ts
+device/linux/src/runtime/shell-runner.ts
 device/linux/src/server-url.ts
 device/linux/src/services/activity-log.ts
 device/linux/src/services/auth-state.ts
@@ -122,11 +141,6 @@ device/linux/src/services/avatar-cache.ts
 device/linux/src/services/device-runtime.ts
 device/linux/src/services/reauth.ts
 device/linux/src/services/server-client.ts
-device/linux/src/tools/clipboard.ts
-device/linux/src/tools/display.ts
-device/linux/src/tools/filesystem.ts
-device/linux/src/tools/keyboard.ts
 device/linux/src/tools/shared/robot.ts
-device/linux/src/tools/vision.ts
 device/linux/src/windows/main-window.ts
 device/linux/src/windows/tray.ts

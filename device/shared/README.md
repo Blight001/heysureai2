@@ -21,10 +21,21 @@
 ## 当前共享内容
 
 - 完全相同：`constants.ts`、`server-url.ts`、`ipc/device.ts`、`services/*`（activity-log/
-  auth-state/avatar-cache/reauth/server-client）、`tools/*`（clipboard/display/filesystem/
-  keyboard/vision）、`tools/shared/robot.ts`。
+  auth-state/avatar-cache/reauth/server-client）、`tools/*`（display/filesystem/vision）、
+  `tools/shared/robot.ts`。（keyboard/clipboard 已随阶段四删除，改由服务器 python 工具替代。）
 - 仅平台常量不同（经 `platformProfile` 参数化）：`executor/registry.ts`、`executor/index.ts`、
   `ipc/ai-config.ts`、`services/device-runtime.ts`、`windows/main-window.ts`、`windows/tray.ts`。
+- 受控执行器底座 `runtime/`（设备端MCP代码下放长期方案 §3.2/§5/§7）：
+  - `process-guard.ts`：统一 spawn——超时(SIGTERM→SIGKILL)、并发上限、输出截断、一键暂停/中止；
+  - `shell-runner.ts`：按 OS + `shell` 提示选解释器（win cmd/powershell/pwsh，其余 bash），走 guard；
+  - `powershell-runner.ts`：自包含编码 + 解释器解析（win 优先 powershell.exe，其余 pwsh）；
+  - `python-runner.ts`：解析解释器（`HEYSURE_PYTHON` → `device_runtime/python/.venv` → PATH），
+    注入 `args`、回收 `result`。venv 由各壳 `npm run setup:python` 在目标机器创建
+    （依赖见 `device/<壳>/device_runtime/python/requirements.txt`，`.venv` 已 gitignore）；
+  - `permission-guard.ts`：权限标签 → allow/confirm/deny，confirm 经宿主弹窗回调，无回调则 fail-safe 拒绝；
+  - `artifact-bridge.ts`：受控 artifacts 目录、大小上限、保存/读取（mime + sha256）。
+  - 这些模块**不依赖 electron**，宿主通过 `initArtifactBridge` / `registerConfirmHandler` 注入。
+  - `tools/shell.ts`（`shell.run` 内置工具）已重构为 `shell-runner` 的薄封装。
 
 平台分叉文件（`device.ts`、`store.ts`、`platform.ts`、各 `tools/{mouse,screen,window,...}.ts`、
 `renderer/*` 等）仍各自保留在两壳 `src/` 下，不在此目录。

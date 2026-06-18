@@ -4,17 +4,23 @@ import {
   listDeviceTools,
   upsertDeviceTool,
   toggleDeviceTool,
+  setDeviceToolStatus,
   deleteDeviceTool,
   listDeviceToolVersions,
   restoreDeviceToolVersion,
   listDeviceToolStats,
   listDeviceToolFailures,
+  getPermissionPolicy,
+  setPermissionPolicy,
+  getDeviceRuntimes,
+  type PermissionDecision,
   type DeviceToolType,
   type DeviceDynamicTool,
   type DeviceToolVersion,
   type DeviceToolStat,
   type DeviceToolFailure,
   type DynamicToolStep,
+  type ToolRuntime,
 } from '@/api/deviceTools'
 
 const props = defineProps<{ show: boolean }>()
@@ -53,6 +59,9 @@ type StepDraft = {
   name: string
   value: string
 }
+// Desktop implementation kind: server-stored JS, or plain source for a device
+// runtime (python/powershell/shell). Browser is always the safe DSL (program).
+type DesktopKind = 'js' | ToolRuntime
 interface Draft {
   original: string // existing tool name being edited, '' for new
   name: string
@@ -60,11 +69,29 @@ interface Draft {
   params: ParamRow[]
   steps: StepDraft[]
   js: string // desktop: server-stored JS body run with (args, cap, ctx)
+  desktopKind: DesktopKind // desktop only: how the implementation runs
+  source: string // desktop runtime: python/powershell/shell body
+  permissions: string // desktop runtime: comma/space-separated permission tags
 }
 
-// Desktop tools are real JS run on the device; browser tools are the safe DSL.
-const isJsMode = computed(() => deviceType.value === 'desktop')
+const DESKTOP_KINDS: { key: DesktopKind; label: string }[] = [
+  { key: 'js', label: 'JS（cap 能力库）' },
+  { key: 'python', label: 'Python' },
+  { key: 'powershell', label: 'PowerShell' },
+  { key: 'shell', label: 'Shell' },
+]
+
+// Desktop tools are real JS / runtime source; browser tools are the safe DSL.
+const isDesktop = computed(() => deviceType.value === 'desktop')
+const isJsMode = computed(() => isDesktop.value && draft.value?.desktopKind === 'js')
+const isRuntimeMode = computed(() => isDesktop.value && draft.value != null && draft.value.desktopKind !== 'js')
 const JS_TEMPLATE = "// 可用: args(入参) / cap(设备能力库) / ctx(workspaceRoot)\n// 例: return await cap.call('keyboard.type', { text: args.text })\nreturn await cap.call('namespace.tool', args)"
+const SOURCE_TEMPLATES: Record<ToolRuntime, string> = {
+  python: "# 可用: args(dict 入参)。把结果赋给 result 返回；print 输出进 stdout。\n# 例: result = {'sum': args.get('a', 0) + args.get('b', 0)}\nresult = {'ok': True}",
+  powershell: "# 支持 ${args.x} 模板。\nWrite-Output \"hello ${args.name}\"",
+  shell: "# 支持 ${args.x} 模板。\necho \"hello ${args.name}\"",
+}
+const sourceTemplate = (kind: DesktopKind): string => (kind === 'js' ? '' : SOURCE_TEMPLATES[kind])
 const draft = ref<Draft | null>(null)
 const saving = ref(false)
 const versions = ref<DeviceToolVersion[]>([])
@@ -86,6 +113,14 @@ const load = async () => {
       statsByTool.value = Object.fromEntries((s.stats || []).map(st => [st.tool, st]))
     } catch {
       statsByTool.value = {}
+    }
+    if (deviceType.value === 'desktop') {
+      try {
+        const r = await getDeviceRuntimes('desktop')
+        onlineRuntimes.value = r.runtimes || { python: false, powershell: false, shell: false }
+      } catch {
+        onlineRuntimes.value = { python: false, powershell: false, shell: false }
+      }
     }
   } catch (err: any) {
     error.value = err?.message || '加载失败'
@@ -118,6 +153,53 @@ const toggleFailures = () => {
 
 const ratePct = (s?: DeviceToolStat) => (s ? Math.round((s.failure_rate || 0) * 100) : 0)
 
+// Permission policy editor (desktop only): per-tag allow/confirm/deny override
+// of the device's built-in defaults. '' means "use the device default".
+const policyOpen = ref(false)
+const policyTags = ref<string[]>([])
+const policy = ref<Record<string, PermissionDecision | ''>>({})
+const policySaving = ref(false)
+
+// Runtime availability across the user's online desktop devices — drives a
+// "no online device can run this" hint in the runtime editor.
+const onlineRuntimes = ref<Record<string, boolean>>({ python: false, powershell: false, shell: false })
+const runtimeUnavailable = computed(() =>
+  isRuntimeMode.value && draft.value != null && draft.value.desktopKind !== 'js'
+  && onlineRuntimes.value[draft.value.desktopKind] === false,
+)
+
+const loadPolicy = async () => {
+  if (deviceType.value !== 'desktop') return
+  try {
+    const data = await getPermissionPolicy('desktop')
+    policyTags.value = data.knownTags || []
+    const next: Record<string, PermissionDecision | ''> = {}
+    for (const t of policyTags.value) next[t] = (data.policy && data.policy[t]) || ''
+    policy.value = next
+  } catch { /* policy is optional; stay silent */ }
+}
+
+const togglePolicy = () => {
+  policyOpen.value = !policyOpen.value
+  if (policyOpen.value && !policyTags.value.length) loadPolicy()
+}
+
+const savePolicy = async () => {
+  policySaving.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    const out: Record<string, PermissionDecision> = {}
+    for (const [tag, dec] of Object.entries(policy.value)) if (dec) out[tag] = dec as PermissionDecision
+    const res = await setPermissionPolicy('desktop', out)
+    notice.value = `权限策略已保存，已推送到 ${res.pushedToDevices} 台在线设备`
+  } catch (err: any) {
+    error.value = err?.message || '保存权限策略失败'
+  } finally {
+    policySaving.value = false
+  }
+}
+
 watch(() => props.show, value => { if (value) { draft.value = null; notice.value = ''; load() } }, { immediate: true })
 watch(deviceType, () => { draft.value = null; notice.value = ''; load() })
 
@@ -141,7 +223,10 @@ const newTool = () => {
     description: '',
     params: [],
     steps: [blankStep()],
-    js: isJsMode.value ? JS_TEMPLATE : '',
+    js: isDesktop.value ? JS_TEMPLATE : '',
+    desktopKind: 'js',
+    source: '',
+    permissions: '',
   }
   versions.value = []
   versionsOpen.value = false
@@ -173,9 +258,12 @@ const editTool = (tool: DeviceDynamicTool) => {
       value: stringifyValue(step.value),
     })),
     js: String(tool.js || ''),
+    desktopKind: tool.code_kind === 'runtime' && tool.runtime ? tool.runtime : 'js',
+    source: String(tool.source || ''),
+    permissions: (tool.permissions || []).join(', '),
   }
   if (!draft.value.steps.length) draft.value.steps = [blankStep()]
-  if (isJsMode.value && !draft.value.js.trim()) draft.value.js = JS_TEMPLATE
+  if (isDesktop.value && draft.value.desktopKind === 'js' && !draft.value.js.trim()) draft.value.js = JS_TEMPLATE
   versions.value = []
   versionsOpen.value = false
   failures.value = []
@@ -226,6 +314,17 @@ const save = async () => {
       code_kind: 'js' as const,
       js: d.js,
     }
+  } else if (isRuntimeMode.value) {
+    if (!d.source.trim()) { error.value = '请填写运行时源码'; return }
+    definition = {
+      name,
+      description: d.description.trim(),
+      input_schema: buildInputSchema(d.params),
+      code_kind: 'runtime' as const,
+      runtime: d.desktopKind as ToolRuntime,
+      source: d.source,
+      permissions: d.permissions.split(/[,\s]+/).map(s => s.trim()).filter(Boolean),
+    }
   } else {
     if (!d.steps.length) { error.value = '至少需要一条指令'; return }
     for (const step of d.steps) {
@@ -261,6 +360,18 @@ const toggle = async (tool: DeviceDynamicTool) => {
     await load()
   } catch (err: any) {
     error.value = err?.message || '切换失败'
+  }
+}
+
+const approve = async (tool: DeviceDynamicTool) => {
+  error.value = ''
+  notice.value = ''
+  try {
+    const res = await setDeviceToolStatus(deviceType.value, tool.name, 'active')
+    notice.value = `已批准 ${tool.name}，已下发到 ${res.pushedToDevices} 台在线设备`
+    await load()
+  } catch (err: any) {
+    error.value = err?.message || '批准失败'
   }
 }
 
@@ -323,6 +434,19 @@ const moveStep = (i: number, delta: number) => {
 }
 const addArg = (step: StepDraft) => step.args.push({ key: '', value: '' })
 const addParam = () => draft.value?.params.push({ name: '', type: 'string', description: '', required: false })
+
+// Swap in the matching starter template when the desktop implementation kind
+// changes, but never clobber code the operator already typed.
+const KNOWN_TEMPLATES = [JS_TEMPLATE, ...Object.values(SOURCE_TEMPLATES)]
+const onDesktopKindChange = () => {
+  const d = draft.value
+  if (!d) return
+  if (d.desktopKind === 'js') {
+    if (!d.js.trim() || KNOWN_TEMPLATES.includes(d.source.trim())) d.js = d.js.trim() || JS_TEMPLATE
+  } else if (!d.source.trim() || KNOWN_TEMPLATES.includes(d.source.trim())) {
+    d.source = sourceTemplate(d.desktopKind)
+  }
+}
 </script>
 
 <template>
@@ -386,12 +510,50 @@ const addParam = () => draft.value?.params.push({ name: '', type: 'string', desc
                     : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'"
                   :title="`调用 ${statsByTool[tool.name].total} 次，失败 ${statsByTool[tool.name].failures} 次`"
                 >失败 {{ statsByTool[tool.name].failures }}/{{ statsByTool[tool.name].total }}（{{ ratePct(statsByTool[tool.name]) }}%）</span>
+                <span
+                  v-if="tool.status === 'draft'"
+                  class="shrink-0 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                  title="AI 提交的草稿，批准后才会下发到设备"
+                >待批准</span>
+                <button
+                  v-if="tool.status === 'draft'"
+                  type="button"
+                  class="text-[11px] text-emerald-600 dark:text-emerald-300 hover:underline shrink-0"
+                  @click="approve(tool)"
+                >批准</button>
                 <label class="flex items-center gap-1 text-[10px] text-zinc-500 cursor-pointer shrink-0">
                   <input type="checkbox" class="h-3.5 w-3.5 accent-indigo-500" :checked="tool.enabled" @change="toggle(tool)" />
                   启用
                 </label>
                 <button type="button" class="text-[11px] text-indigo-600 dark:text-indigo-300 hover:underline shrink-0" @click="editTool(tool)">编辑</button>
                 <button type="button" class="text-[11px] text-rose-600 dark:text-rose-300 hover:underline shrink-0" @click="remove(tool)">删除</button>
+              </div>
+            </div>
+
+            <!-- permission policy (desktop only): per-tag allow/confirm/deny override -->
+            <div v-if="deviceType === 'desktop'" class="mt-3 rounded-lg border border-zinc-200 dark:border-zinc-700">
+              <button type="button" class="w-full flex items-center justify-between px-3 py-2 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300" @click="togglePolicy">
+                <span>权限策略（runtime 工具的 allow / confirm / deny）</span>
+                <span class="text-zinc-400">{{ policyOpen ? '收起' : '展开' }}</span>
+              </button>
+              <div v-if="policyOpen" class="border-t border-zinc-200 dark:border-zinc-700 p-2">
+                <p class="mb-2 text-[10px] text-zinc-400 leading-relaxed">
+                  覆盖设备内置默认值；「默认」表示沿用设备默认（只读多为允许、写入/输入多需确认、删除/提权拒绝）。改动保存后立即下发到在线设备。
+                </p>
+                <div class="grid grid-cols-2 gap-x-3 gap-y-1">
+                  <label v-for="tag in policyTags" :key="tag" class="flex items-center gap-1.5">
+                    <span class="flex-1 font-mono text-[10px] text-zinc-600 dark:text-zinc-300 truncate" :title="tag">{{ tag }}</span>
+                    <select v-model="policy[tag]" class="rounded border border-zinc-200 dark:border-zinc-700 bg-transparent px-1 py-0.5 text-[10px]">
+                      <option value="">默认</option>
+                      <option value="allow">允许</option>
+                      <option value="confirm">确认</option>
+                      <option value="deny">拒绝</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="mt-2 flex justify-end">
+                  <button type="button" class="rounded-lg bg-indigo-600 px-3 py-1 text-[11px] text-white hover:bg-indigo-500 disabled:opacity-60" :disabled="policySaving" @click="savePolicy">{{ policySaving ? '保存中…' : '保存策略并下发' }}</button>
+                </div>
               </div>
             </div>
           </template>
@@ -434,6 +596,23 @@ const addParam = () => draft.value?.params.push({ name: '', type: 'string', desc
               </div>
             </div>
 
+            <!-- desktop implementation kind: JS (cap) or a device runtime -->
+            <div v-if="isDesktop">
+              <span class="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">实现方式</span>
+              <div class="mt-1 flex flex-wrap gap-1">
+                <button
+                  v-for="k in DESKTOP_KINDS"
+                  :key="k.key"
+                  type="button"
+                  class="rounded-lg px-2.5 py-1 text-[11px] font-medium border"
+                  :class="draft.desktopKind === k.key
+                    ? 'border-indigo-400 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300'
+                    : 'border-zinc-200 text-zinc-500 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800'"
+                  @click="draft.desktopKind = k.key; onDesktopKindChange()"
+                >{{ k.label }}</button>
+              </div>
+            </div>
+
             <!-- JS editor (desktop): server-stored code run on the device -->
             <div v-if="isJsMode">
               <div class="mb-1 flex items-center justify-between">
@@ -455,6 +634,36 @@ const addParam = () => draft.value?.params.push({ name: '', type: 'string', desc
                   <code v-for="t in availableTools" :key="t.name" class="rounded bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 text-[10px] text-zinc-600 dark:text-zinc-300">{{ t.name }}</code>
                 </div>
               </details>
+            </div>
+
+            <!-- runtime editor (desktop): plain source run by python/powershell/shell -->
+            <div v-else-if="isRuntimeMode">
+              <div class="mb-1 flex items-center justify-between">
+                <span class="text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">实现源码（{{ draft.desktopKind }} · 在设备上执行）</span>
+                <span class="text-[10px] text-zinc-400">服务器存储 · 改完即下发同步</span>
+              </div>
+              <div v-if="runtimeUnavailable" class="mb-1 text-[10px] text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900 rounded px-2 py-1">
+                当前没有在线桌面设备报告支持 {{ draft.desktopKind }} 运行时（python 需 npm run setup:python 或安装解释器）。仍可保存，设备具备该运行时后即可调用。
+              </div>
+              <textarea
+                v-model="draft.source"
+                rows="10"
+                spellcheck="false"
+                class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/60 dark:bg-zinc-950/50 px-2.5 py-2 text-[11px] font-mono leading-relaxed"
+              />
+              <p class="mt-1 text-[10px] text-zinc-400 leading-relaxed">
+                <template v-if="draft.desktopKind === 'python'">入参在 <code>args</code> 字典里；把结果赋给 <code>result</code> 返回。需要设备已装 Python（或设 <code>HEYSURE_PYTHON</code>）。</template>
+                <template v-else>命令/脚本支持 <code>${'{'}args.x{'}'}</code> 模板。</template>
+                高风险操作请在下方声明权限标签，设备会按策略弹窗确认或拒绝。
+              </p>
+              <label class="mt-2 block">
+                <span class="text-[11px] text-zinc-500">权限标签（逗号分隔，可留空）</span>
+                <input
+                  v-model="draft.permissions"
+                  placeholder="如 shell.write, filesystem.read, network"
+                  class="mt-0.5 w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-transparent px-2.5 py-1.5 text-[11px] font-mono"
+                />
+              </label>
             </div>
 
             <!-- steps (browser): the safe call/set/return DSL -->

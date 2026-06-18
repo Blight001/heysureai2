@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional
 
 from api.device_live import push_device_dynamic_tools
 from api.device_presence import online_tool_catalog_for_user
-from api.services import device_dynamic_tools as dyn
+from api.services import device_workspace_tools as dyn
 
 
 def _capabilities(user_id: int, device_type: str) -> list:
@@ -45,7 +45,7 @@ async def _device_mcp_manage(user_id: int, args: Dict[str, Any], ai_config_id: O
             "ok": True,
             "deviceType": device_type,
             "tools": [
-                {"name": t["name"], "description": t["description"], "code_kind": t["code_kind"], "enabled": t["enabled"]}
+                {"name": t["name"], "description": t["description"], "code_kind": t["code_kind"], "enabled": t["enabled"], "status": t.get("status", "active")}
                 for t in tools
             ],
         }
@@ -98,7 +98,10 @@ async def _device_mcp_manage(user_id: int, args: Dict[str, Any], ai_config_id: O
         except ValueError as exc:
             return {"ok": False, "error": str(exc)}
         reached = await push_device_dynamic_tools(user_id, device_type)
-        return {"ok": True, "action": "upsert", "tool": tool, "pushedToDevices": reached}
+        note = None
+        if tool.get("status") == "draft":
+            note = "工具已保存为 draft（草稿），需用户在网页端批准为 active 后才会下发到设备并可调用。"
+        return {"ok": True, "action": "upsert", "tool": tool, "pushedToDevices": reached, "note": note}
 
     return {"ok": False, "error": f"unsupported action: {action}"}
 
@@ -126,9 +129,12 @@ DEVICE_MCP_MANAGE_SCHEMA: Dict[str, Any] = {
                 "name": {"type": "string", "description": "工具名，如 fs.read_better；与现有同名则覆盖。"},
                 "description": {"type": "string", "description": "给 AI 看的工具说明。"},
                 "input_schema": {"type": "object", "description": "JSON Schema 入参定义。"},
-                "code_kind": {"type": "string", "enum": ["js", "program"], "description": "desktop 用 js；browser 用 program。缺省按是否有 js 推断。"},
+                "code_kind": {"type": "string", "enum": ["js", "program", "runtime"], "description": "desktop 用 js；browser 用 program；runtime 用设备运行时执行 source。缺省按 runtime/js 推断。"},
                 "js": {"type": "string", "description": "desktop：函数体，作用域有 args/cap/ctx，用 return 返回。例：return await cap.call('fs.read', args)。"},
                 "code": {"type": "array", "description": "browser：call/set/return 指令数组（1-32 条）。", "items": {"type": "object"}},
+                "runtime": {"type": "string", "enum": ["python", "powershell", "shell"], "description": "设备运行时（仅 desktop）。设置后改用 source 提供源码。"},
+                "source": {"type": "string", "description": "runtime 源码：python 脚本（用 args 取参、result 返回）/ powershell 脚本 / shell 命令，支持 ${args.x} 模板。"},
+                "permissions": {"type": "array", "items": {"type": "string"}, "description": "runtime 工具声明的权限标签（如 shell.write、filesystem.read），设备按策略 allow/confirm/deny。"},
             },
             "required": ["name", "description", "input_schema"],
         },
