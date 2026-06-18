@@ -234,7 +234,12 @@ export async function doType(msg: any) {
   const text       = String(msg.text ?? '')
   const clearFirst = msg.clearFirst !== false
 
-  let el = selector ? document.querySelector(selector) as HTMLInputElement | null : null
+  // A ref (observe id) is the most reliable target and is what cross-origin-frame
+  // typing relies on: the background routes the message into the owning frame and
+  // resolveTarget re-finds the input there (self-healing via selector/text).
+  const hasRef = msg.ref !== undefined && msg.ref !== null && msg.ref !== ''
+  let el = hasRef ? resolveTarget(msg).el as HTMLInputElement | null : null
+  if (!el) el = selector ? document.querySelector(selector) as HTMLInputElement | null : null
   if (!el) el = document.activeElement as HTMLInputElement | null
 
   if (!el) throw new Error('No input element found — try providing a selector')

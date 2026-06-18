@@ -579,7 +579,7 @@ export function doObserve(msg: any) {
   const interactiveRecords = pruned.map(item => elementRecord(item.el, item.frame))
   const interactiveBuckets = partitionByKey(interactiveRecords)
   const interactiveDrafts: Array<{ item: any; rec?: ElementRecord }> = []
-  const overlayMarks: Array<{ el: Element; status: MarkStatus }> = []
+  const overlayMarks: Array<{ el: Element; status: MarkStatus; frame?: FrameContext }> = []
   const collapsedMembers: ElementRecord[] = []
 
   for (const members of interactiveBuckets.values()) {
