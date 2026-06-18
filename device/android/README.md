@@ -7,6 +7,10 @@
 > 方案选型：**手机上的原生 Kotlin App**（自包含 endpoint），不依赖电脑/ADB/root。
 > 这与桌面壳"壳运行在它所控制的设备上"的心智模型一致。点击/滑动用
 > `AccessibilityService.dispatchGesture()`，截屏/录屏用 `MediaProjection`。
+>
+> 这是**方案 A**。若需要**息屏/锁屏下也能控制**，用同类设备的**方案 B**——
+> 宿主电脑经 ADB 控制手机：[`device/android-adb`](../android-adb)。两者同为 `android`
+> 设备类型、工具名一致，按场景二选一或并存。
 
 ## 与服务端的契约（与桌面壳完全一致）
 
