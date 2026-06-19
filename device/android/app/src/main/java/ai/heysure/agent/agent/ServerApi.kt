@@ -17,6 +17,7 @@ object ServerApi {
         val agentSocketUrl: String,
         val userId: Int,
         val userName: String,
+        val userAvatar: String,
     )
 
     /** Normalize "host:port" / trailing-slash variants to a clean base URL. */
@@ -42,6 +43,7 @@ object ServerApi {
             agentSocketUrl = normalizeBaseUrl(socketUrl),
             userId = user?.optInt("id", 0) ?: 0,
             userName = user?.optString("name").orEmpty().ifBlank { account },
+            userAvatar = user?.optString("avatar").orEmpty(),
         )
     }
 

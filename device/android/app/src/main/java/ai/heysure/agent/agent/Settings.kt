@@ -34,6 +34,22 @@ class Settings(context: Context) {
         get() = prefs.getString(KEY_USER_NAME, "") ?: ""
         set(value) = prefs.edit().putString(KEY_USER_NAME, value).apply()
 
+    var userAvatar: String
+        get() = prefs.getString(KEY_USER_AVATAR, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_USER_AVATAR, value).apply()
+
+    var userAccount: String
+        get() = prefs.getString(KEY_USER_ACCOUNT, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_USER_ACCOUNT, value).apply()
+
+    var userPassword: String
+        get() = prefs.getString(KEY_USER_PASSWORD, "") ?: ""
+        set(value) = prefs.edit().putString(KEY_USER_PASSWORD, value).apply()
+
+    var rememberLogin: Boolean
+        get() = prefs.getBoolean(KEY_REMEMBER_LOGIN, false)
+        set(value) = prefs.edit().putBoolean(KEY_REMEMBER_LOGIN, value).apply()
+
     /** "保持常亮"模式：用 WakeLock 让 CPU/屏幕保持唤醒，放着不动也尽量可控。 */
     var keepScreenAwake: Boolean
         get() = prefs.getBoolean(KEY_KEEP_AWAKE, false)
@@ -63,6 +79,7 @@ class Settings(context: Context) {
             .remove(KEY_AGENT_SOCKET_URL)
             .remove(KEY_USER_ID)
             .remove(KEY_USER_NAME)
+            .remove(KEY_USER_AVATAR)
             .apply()
     }
 
@@ -72,6 +89,10 @@ class Settings(context: Context) {
         const val KEY_AUTH_TOKEN = "authToken"
         const val KEY_USER_ID = "userId"
         const val KEY_USER_NAME = "userName"
+        const val KEY_USER_AVATAR = "userAvatar"
+        const val KEY_USER_ACCOUNT = "userAccount"
+        const val KEY_USER_PASSWORD = "userPassword"
+        const val KEY_REMEMBER_LOGIN = "rememberLogin"
         const val KEY_DEVICE_ID = "deviceId"
         const val KEY_KEEP_AWAKE = "keepScreenAwake"
     }

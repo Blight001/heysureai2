@@ -1,12 +1,12 @@
-# HeySure 安卓端 Agent · 方案 B（device/android-adb）
+# HeySure 安卓端 Agent · 方案 B（device/android/android-adb）
 
 **宿主电脑经 ADB 控制手机**的端侧执行器：不在手机上装 App，而是在一台电脑上跑这个
 无界面 Node 进程，用 `adb` 驱动通过 USB / 无线调试连接的安卓手机，并用和其它设备
 **同一套 Socket.IO 协议**注册成 endpoint。
 
-与 [`device/android`](../android)（方案 A，手机原生 App）是**同一类设备的两种形态**：
+与 [`device/android`](..)（方案 A，手机原生 App）是**同一类设备的两种形态**：
 
-| | 方案 A `device/android` | 方案 B `device/android-adb`（本目录） |
+| | 方案 A `device/android` | 方案 B `device/android/android-adb`（本目录） |
 | --- | --- | --- |
 | 运行位置 | 手机本机（Kotlin App） | 宿主电脑（Node 进程） |
 | 点击/滑动 | 无障碍 `dispatchGesture` | `adb shell input` |
@@ -29,7 +29,7 @@
 ## 运行
 
 ```bash
-cd device/android-adb
+cd device/android/android-adb
 cp .env.example .env        # 填 HEYSURE_SERVER_URL / 账号 / 密码 /（可选）ANDROID_SERIAL
 npm install
 npm run dev                 # 或 npm run build && npm start

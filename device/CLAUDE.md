@@ -12,7 +12,7 @@
 | `mac/` | Electron 桌面应用 | 同上（macOS；shell 默认 bash；功能表面对齐 Windows 壳） |
 | `extension/` | Chrome MV3 扩展 | 浏览器自动化与轻量客户端（仍为固定工具目录） |
 | `android/` | 原生 Kotlin App（方案 A） | 手机本机执行器：点击/滑动/截屏/录屏（无障碍 + MediaProjection）。**独立工程，不与桌面壳共享 `device/shared/`**，详见 [`android/README.md`](android/README.md) |
-| `android-adb/` | 宿主电脑 Node 进程（方案 B） | 经 ADB 控制手机：`adb input/screencap/screenrecord`，**息屏/锁屏下也能注入**。与 `android/` 同为 `android` 设备类型、同名工具，详见 [`android-adb/README.md`](android-adb/README.md) |
+| `android/android-adb/` | 宿主电脑 Node 进程（方案 B） | 经 ADB 控制手机：`adb input/screencap/screenrecord`，**息屏/锁屏下也能注入**。与 `android/` 同为 `android` 设备类型、同名工具，详见 [`android/android-adb/README.md`](android/android-adb/README.md) |
 
 > 安卓两形态（A 本机 App / B 电脑 ADB）都以 `isAndroid:true` 注册，服务端统一识别为
 > `android` 类型、工具名一致；后端识别逻辑见 `server/.../desktop_device_tools.py::device_type_of`。
