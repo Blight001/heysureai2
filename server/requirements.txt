@@ -4,6 +4,7 @@ lark-oapi>=1.4.23
 qq-botpy>=1.2.1
 python-socketio
 sqlmodel
+greenlet==3.2.4
 alembic>=1.13
 psycopg[binary]>=3.2.0
 passlib
@@ -57,7 +58,8 @@ jiter>=0.10.0
 json5>=0.12.0
 jsonschema>=4.25.0
 jsonschema-specifications>=2025.4.1
-litellm>=1.75.0
+# Keep litellm on the last Python 3.9-compatible release line.
+litellm>=1.75.0,<1.83.10
 markdown-it-py>=3.0.0
 markupsafe>=3.0.2
 mccabe>=0.7.0

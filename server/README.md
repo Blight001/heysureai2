@@ -30,7 +30,7 @@ service.
 
 ## Environment
 
-The startup scripts read the root `.env` file. Common values:
+The startup scripts read the root `.env` file. Start by copying `.env.example` to `.env` at the repository root. Common values:
 
 ```env
 DATABASE_URL=postgresql+psycopg://heysure:heysure@127.0.0.1:5432/heysure
@@ -57,6 +57,13 @@ Important variables:
 
 Full configuration lives in `main/api/core/settings.py`.
 
+## Windows launcher
+
+On Windows, `run.bat` now opens a single Tk dashboard instead of four separate
+console windows. The dashboard shows live logs for gateway, MCP runtime,
+connector runtime, and AI runtime, and includes per-service and global restart
+controls.
+
 ## Directory Layout
 
 | Path | Description |
@@ -80,8 +87,7 @@ Install backend dependencies:
 
 ```bat
 cd server
-venv\Scripts\activate
-pip install -r requirements.txt
+install-deps.bat
 ```
 
 Run the gateway manually:

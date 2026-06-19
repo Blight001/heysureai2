@@ -156,7 +156,7 @@ The gateway is healthy when it returns:
 
 ## Environment
 
-Backend scripts read the root `.env` file. Common variables:
+Backend scripts read the root `.env` file. Start by copying `.env.example` to `.env` at the repository root. Common variables:
 
 ```env
 DATABASE_URL=postgresql+psycopg://heysure:heysure@127.0.0.1:5432/heysure
@@ -197,8 +197,7 @@ npm run build
 
 ```bat
 cd server
-venv\Scripts\activate
-pip install -r requirements.txt
+install-deps.bat
 python -m gateway.main
 ```
 

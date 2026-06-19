@@ -1,20 +1,19 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-rem Aggregated launcher: start the gateway, MCP runtime, connector runtime,
-rem and AI worker in separate consoles.
+rem Single-window launcher for gateway, MCP runtime, connector runtime,
+rem and AI worker. The Tk dashboard shows live logs and restart controls.
 set "SCRIPT_DIR=%~dp0"
 
-rem When the split AI runtime is launched, route chat runs to the queue so the
-rem ai-runtime console actually consumes them and shows its debug output.
-if not defined AI_DISPATCH_MODE set "AI_DISPATCH_MODE=remote"
+cd /d "%SCRIPT_DIR%"
 
-set "TILE_SCRIPT=%SCRIPT_DIR%tile_windows.ps1"
-if exist "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" (
-  "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%TILE_SCRIPT%"
-) else if exist "%ProgramFiles%\PowerShell\7\pwsh.exe" (
-  "%ProgramFiles%\PowerShell\7\pwsh.exe" -NoProfile -Sta -ExecutionPolicy Bypass -File "%TILE_SCRIPT%"
+if exist "%SCRIPT_DIR%venv\Scripts\activate.bat" (
+  call "%SCRIPT_DIR%venv\Scripts\activate.bat"
+) else if exist "%SCRIPT_DIR%venv\Scripts\activate" (
+  call "%SCRIPT_DIR%venv\Scripts\activate"
 ) else (
-  echo PowerShell is not available.
-  exit /b 1
+  echo [WARN] Python venv not found at "%SCRIPT_DIR%venv". Continuing with the current Python interpreter.
 )
+
+python "%SCRIPT_DIR%tk_launcher.py"
+pause

@@ -198,8 +198,7 @@ npm run build
 
 ```bat
 cd server
-venv\Scripts\activate
-pip install -r requirements.txt
+install-deps.bat
 python -m gateway.main
 ```
 
