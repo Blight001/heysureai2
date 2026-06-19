@@ -95,7 +95,7 @@ class MainActivity : AppCompatActivity() {
         binding.loginButton.setOnClickListener { doLogin() }
         binding.logoutButton.setOnClickListener { doLogout() }
         binding.userChip.setOnClickListener { showAccountDialog() }
-        binding.settingsButton.setOnClickListener { showSettingsDialog() }
+        binding.settingsButton.visibility = View.GONE
         binding.backFromSettingsButton.setOnClickListener { showMainPanel() }
         binding.backFromAccountButton.setOnClickListener { showMainPanel() }
         binding.accessibilityButton.setOnClickListener {
@@ -129,7 +129,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         bindTapFeedback(binding.userChip)
-        bindTapFeedback(binding.settingsButton)
         bindTapFeedback(binding.loginButton)
         bindTapFeedback(binding.logoutButton)
         makeAvatarCircular()
@@ -381,7 +380,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateSessionUi() {
         val loggedIn = settings.isLoggedIn
         binding.userChip.visibility = if (loggedIn) View.VISIBLE else View.GONE
-        binding.settingsButton.visibility = if (loggedIn) View.VISIBLE else View.GONE
+        binding.settingsButton.visibility = View.GONE
         binding.headerSubtitle.visibility = if (loggedIn) View.VISIBLE else View.GONE
         if (loggedIn) {
             updateUserChip()
@@ -469,13 +468,18 @@ class MainActivity : AppCompatActivity() {
             })
         }
         lateinit var dialog: AlertDialog
-        val actions = dialogActions(
-            dialogButton(getString(R.string.back)) { dialog.dismiss() },
-            dialogButton(getString(R.string.logout), danger = true) {
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(dialogButton("设置", primary = true) {
+                dialog.dismiss()
+                showSettingsDialog()
+            })
+            addView(dialogButton(getString(R.string.logout), danger = true) {
                 dialog.dismiss()
                 doLogout()
-            },
-        )
+            })
+            addView(dialogButton(getString(R.string.back)) { dialog.dismiss() })
+        }
 
         dialog = AlertDialog.Builder(this)
             .setView(dialogShell(
@@ -632,6 +636,7 @@ class MainActivity : AppCompatActivity() {
     private fun prepareDialogWindow(dialog: AlertDialog) {
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         dialog.window?.setDimAmount(0.62f)
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.9f).toInt(), android.view.WindowManager.LayoutParams.WRAP_CONTENT)
         animateDialog(dialog)
     }
 
@@ -849,16 +854,12 @@ class MainActivity : AppCompatActivity() {
         val decor = dialog.window?.decorView ?: return
         decor.alpha = 0f
         decor.translationY = dp(18).toFloat()
-        decor.scaleX = 0.98f
-        decor.scaleY = 0.98f
         AnimatorSet().apply {
             playTogether(
                 ObjectAnimator.ofFloat(decor, View.ALPHA, 0f, 1f),
                 ObjectAnimator.ofFloat(decor, View.TRANSLATION_Y, dp(18).toFloat(), 0f),
-                ObjectAnimator.ofFloat(decor, View.SCALE_X, 0.98f, 1f),
-                ObjectAnimator.ofFloat(decor, View.SCALE_Y, 0.98f, 1f),
             )
-            duration = 260
+            duration = 180
             interpolator = DecelerateInterpolator(1.5f)
             start()
         }
