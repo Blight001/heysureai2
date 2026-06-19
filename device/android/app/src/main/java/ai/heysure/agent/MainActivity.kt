@@ -48,9 +48,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var settings: Settings
     private var dialogLogText: TextView? = null
     private var permissionDialog: AlertDialog? = null
-    private var permissionStatusText: TextView? = null
-    private var accessibilityStepStatusText: TextView? = null
-    private var captureStepStatusText: TextView? = null
+    private var accessibilityStep: StepViews? = null
+    private var captureStep: StepViews? = null
     private val permissionPoller = Handler(Looper.getMainLooper())
     private val permissionPoll = object : Runnable {
         override fun run() {
@@ -265,23 +264,21 @@ class MainActivity : AppCompatActivity() {
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        accessibilityStepStatusText = TextView(this)
-        captureStepStatusText = TextView(this)
-        body.addView(permissionStep(
-            step = "01",
+        accessibilityStep = permissionStep(
+            number = "01",
             title = "开启无障碍服务",
             description = "允许 HeySure 执行点击、滑动、返回等触控操作。",
-            statusText = accessibilityStepStatusText!!,
         ) {
             startActivity(Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS))
-        })
-        body.addView(permissionStep(
-            step = "02",
+        }
+        captureStep = permissionStep(
+            number = "02",
             title = "授权截屏/录屏",
             description = "允许 AI 获取屏幕画面，用于判断界面状态。",
-            statusText = captureStepStatusText!!,
-        ) { requestCapture() })
-        body.addView(hintText("授权完成后会自动刷新状态并关闭，不需要手动重进 App。").apply {
+        ) { requestCapture() }
+        body.addView(accessibilityStep!!.container)
+        body.addView(captureStep!!.container)
+        body.addView(hintText("授权完成后步骤会变绿并自动关闭，无需手动重进 App。").apply {
             setPadding(0, dp(8), 0, 0)
         })
 
@@ -302,9 +299,8 @@ class MainActivity : AppCompatActivity() {
                     permissionPoller.postDelayed(permissionPoll, 800)
                 }
                 setOnDismissListener {
-                    permissionStatusText = null
-                    accessibilityStepStatusText = null
-                    captureStepStatusText = null
+                    accessibilityStep = null
+                    captureStep = null
                     permissionPoller.removeCallbacks(permissionPoll)
                     if (permissionDialog === this) permissionDialog = null
                 }
@@ -313,16 +309,53 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshPermissionDialog() {
-        val dialog = permissionDialog
+        if (permissionDialog == null) return
+        applyStepState(accessibilityStep, isAccessibilityReady(), "已开启无障碍服务", "尚未开启")
+        applyStepState(captureStep, isCaptureReady(), "已授权截屏 / 录屏", "尚未授权")
         if (hasRequiredPermissions()) {
-            dialog?.dismiss()
-            permissionDialog = null
-            return
+            // Let the user see both steps flip to green before the dialog closes.
+            permissionPoller.removeCallbacks(permissionPoll)
+            binding.root.postDelayed({
+                permissionDialog?.dismiss()
+                permissionDialog = null
+            }, 560)
         }
-        val accessibility = if (isAccessibilityReady()) "已开启" else "未开启"
-        val capture = if (isCaptureReady()) "已授权" else "未授权"
-        accessibilityStepStatusText?.text = accessibility
-        captureStepStatusText?.text = capture
+    }
+
+    /** Recolor a permission step to reflect its done/pending state (green = 已完成). */
+    private fun applyStepState(
+        step: StepViews?,
+        ready: Boolean,
+        doneText: String,
+        pendingText: String,
+    ) {
+        step ?: return
+        val justCompleted = ready && !step.done
+        step.done = ready
+        if (ready) {
+            step.container.background = ContextCompat.getDrawable(this, R.drawable.step_bg_done)
+            step.badge.background = ContextCompat.getDrawable(this, R.drawable.badge_step_done)
+            step.badge.text = "✓"
+            step.status.text = doneText
+            step.status.setTextColor(ContextCompat.getColor(this, R.color.status_green))
+            step.button.background = ContextCompat.getDrawable(this, R.drawable.btn_secondary)
+            step.button.text = "已完成"
+            step.button.setTextColor(ContextCompat.getColor(this, R.color.status_green))
+            step.button.isEnabled = false
+            step.button.alpha = 1f
+            if (justCompleted) pop(step.badge)
+        } else {
+            step.container.background = ContextCompat.getDrawable(this, R.drawable.step_bg)
+            step.badge.background = ContextCompat.getDrawable(this, R.drawable.badge_step)
+            step.badge.text = step.number
+            step.status.text = pendingText
+            step.status.setTextColor(ContextCompat.getColor(this, R.color.pending))
+            step.button.background = ContextCompat.getDrawable(this, R.drawable.btn_primary)
+            step.button.text = "授权"
+            step.button.setTextColor(Color.WHITE)
+            step.button.isEnabled = true
+            step.button.alpha = 1f
+        }
     }
 
     private fun renderStatus(status: DeviceStatus, reason: String?) {
@@ -374,7 +407,7 @@ class MainActivity : AppCompatActivity() {
         binding.accountPanel.visibility = View.GONE
         renderMcpInfo()
         renderConnectionInfo()
-        animateReveal(binding.mainPanel)
+        staggerReveal(binding.mainPanel)
     }
 
     private fun showSettingsPanel() {
@@ -648,58 +681,65 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun permissionStep(
-        step: String,
+        number: String,
         title: String,
         description: String,
-        statusText: TextView,
         onAuthorize: () -> Unit,
-    ) = LinearLayout(this).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = android.view.Gravity.CENTER_VERTICAL
-        background = ContextCompat.getDrawable(this@MainActivity, R.drawable.pill_bg)
-        setPadding(dp(12), dp(10), dp(10), dp(10))
-        layoutParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-        ).apply { bottomMargin = dp(10) }
-
-        addView(TextView(this@MainActivity).apply {
-            text = step
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.heysure_primary))
-            textSize = 12f
+    ): StepViews {
+        val badge = TextView(this).apply {
+            text = number
+            setTextColor(Color.WHITE)
+            textSize = 14f
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             gravity = android.view.Gravity.CENTER
-            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.card_bg)
-            layoutParams = LinearLayout.LayoutParams(dp(34), dp(34)).apply {
-                rightMargin = dp(10)
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.badge_step)
+            layoutParams = LinearLayout.LayoutParams(dp(36), dp(36)).apply {
+                rightMargin = dp(12)
             }
-        })
-        addView(LinearLayout(this@MainActivity).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            addView(TextView(this@MainActivity).apply {
-                text = title
-                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
-                textSize = 13f
-                typeface = android.graphics.Typeface.DEFAULT_BOLD
-            })
-            addView(TextView(this@MainActivity).apply {
-                text = description
-                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.muted))
-                textSize = 10f
-                setPadding(0, dp(2), 0, dp(2))
-            })
-            statusText.apply {
-                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.muted))
-                textSize = 10f
-            }
-            addView(statusText)
-        })
-        addView(dialogButton("授权", primary = true, onClick = onAuthorize).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(74), dp(42)).apply {
+        }
+        val status = TextView(this).apply {
+            textSize = 11f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.pending))
+            setPadding(0, dp(4), 0, 0)
+        }
+        val button = dialogButton("授权", primary = true, onClick = onAuthorize).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(78), dp(44)).apply {
                 leftMargin = dp(10)
             }
-        })
+        }
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.step_bg)
+            setPadding(dp(12), dp(12), dp(10), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = dp(10) }
+
+            addView(badge)
+            addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                addView(TextView(this@MainActivity).apply {
+                    text = title
+                    setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+                    textSize = 14f
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = description
+                    setTextColor(ContextCompat.getColor(this@MainActivity, R.color.muted))
+                    textSize = 11f
+                    setLineSpacing(dp(2).toFloat(), 1f)
+                    setPadding(0, dp(3), 0, 0)
+                })
+                addView(status)
+            })
+            addView(button)
+        }
+        return StepViews(container, badge, status, button, number)
     }
 
     private fun mcpGroupTitle(group: String, count: Int) = LinearLayout(this).apply {
@@ -722,8 +762,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun mcpToolRow(tool: AndroidMcpTool) = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
-        background = ContextCompat.getDrawable(this@MainActivity, R.drawable.pill_bg)
-        setPadding(dp(12), dp(9), dp(12), dp(9))
+        background = ContextCompat.getDrawable(this@MainActivity, R.drawable.row_bg)
+        setPadding(dp(13), dp(11), dp(13), dp(11))
         layoutParams = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
             LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -771,46 +811,68 @@ class MainActivity : AppCompatActivity() {
         view.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> v.animate()
-                    .scaleX(0.96f)
-                    .scaleY(0.96f)
-                    .setDuration(80)
+                    .scaleX(0.97f)
+                    .scaleY(0.97f)
+                    .alpha(0.9f)
+                    .setDuration(90)
                     .setInterpolator(DecelerateInterpolator())
                     .start()
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate()
                     .scaleX(1f)
                     .scaleY(1f)
-                    .setDuration(180)
-                    .setInterpolator(OvershootInterpolator(2.2f))
+                    .alpha(1f)
+                    .setDuration(240)
+                    .setInterpolator(OvershootInterpolator(1.6f))
                     .start()
             }
             false
         }
     }
 
-    private fun animateReveal(view: View) {
-        view.alpha = 0f
-        view.translationY = dp(10).toFloat()
-        view.animate()
-            .alpha(1f)
-            .translationY(0f)
-            .setDuration(240)
-            .setInterpolator(DecelerateInterpolator())
-            .start()
+    /** Fade + slide each child of a vertical container up in sequence. */
+    private fun staggerReveal(container: LinearLayout, perChildDelay: Long = 70L) {
+        for (i in 0 until container.childCount) {
+            val child = container.getChildAt(i)
+            child.alpha = 0f
+            child.translationY = dp(12).toFloat()
+            child.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setStartDelay(i * perChildDelay)
+                .setDuration(300)
+                .setInterpolator(DecelerateInterpolator(1.6f))
+                .start()
+        }
     }
 
     private fun animateDialog(dialog: AlertDialog) {
         val decor = dialog.window?.decorView ?: return
         decor.alpha = 0f
-        decor.scaleX = 0.96f
-        decor.scaleY = 0.96f
+        decor.translationY = dp(18).toFloat()
+        decor.scaleX = 0.98f
+        decor.scaleY = 0.98f
         AnimatorSet().apply {
             playTogether(
                 ObjectAnimator.ofFloat(decor, View.ALPHA, 0f, 1f),
-                ObjectAnimator.ofFloat(decor, View.SCALE_X, 0.96f, 1f),
-                ObjectAnimator.ofFloat(decor, View.SCALE_Y, 0.96f, 1f),
+                ObjectAnimator.ofFloat(decor, View.TRANSLATION_Y, dp(18).toFloat(), 0f),
+                ObjectAnimator.ofFloat(decor, View.SCALE_X, 0.98f, 1f),
+                ObjectAnimator.ofFloat(decor, View.SCALE_Y, 0.98f, 1f),
             )
-            duration = 180
-            interpolator = OvershootInterpolator(1.4f)
+            duration = 260
+            interpolator = DecelerateInterpolator(1.5f)
+            start()
+        }
+    }
+
+    /** A springy scale-up, used when a status badge flips to "done". */
+    private fun pop(view: View) {
+        AnimatorSet().apply {
+            playTogether(
+                ObjectAnimator.ofFloat(view, View.SCALE_X, 0.5f, 1.18f, 1f),
+                ObjectAnimator.ofFloat(view, View.SCALE_Y, 0.5f, 1.18f, 1f),
+            )
+            duration = 360
+            interpolator = DecelerateInterpolator()
             start()
         }
     }
@@ -822,8 +884,8 @@ class MainActivity : AppCompatActivity() {
                 ObjectAnimator.ofFloat(view, View.SCALE_Y, 0.88f, 1f),
                 ObjectAnimator.ofFloat(view, View.ALPHA, 0.65f, 1f),
             )
-            duration = 220
-            interpolator = OvershootInterpolator(2f)
+            duration = 240
+            interpolator = OvershootInterpolator(1.8f)
             start()
         }
     }
@@ -835,6 +897,16 @@ class MainActivity : AppCompatActivity() {
         val title: String,
         val name: String,
         val description: String,
+    )
+
+    /** References to a single authorization step so it can be recolored on refresh. */
+    private class StepViews(
+        val container: LinearLayout,
+        val badge: TextView,
+        val status: TextView,
+        val button: AppCompatButton,
+        val number: String,
+        var done: Boolean = false,
     )
 
     private companion object {

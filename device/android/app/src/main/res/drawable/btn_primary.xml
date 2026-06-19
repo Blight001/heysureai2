@@ -4,5 +4,5 @@
         android:angle="0"
         android:startColor="@color/heysure_primary"
         android:endColor="@color/heysure_accent2" />
-    <corners android:radius="8dp" />
+    <corners android:radius="12dp" />
 </shape>
