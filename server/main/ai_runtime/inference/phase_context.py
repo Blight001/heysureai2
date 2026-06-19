@@ -63,6 +63,66 @@ def build_phase_compaction_text(
     return "\n".join(line for line in lines if line)
 
 
+def render_plan_required_notice() -> str:
+    """System directive: a task must be planned before any real work."""
+    return (
+        "[系统要求 · 先制定计划]\n"
+        "这是一个需要分阶段完成的任务。在执行任何实际操作前，你必须先调用 plan.create "
+        "制定一份完整的分阶段计划：把总体目标拆成有序的多个阶段，每个阶段写清目标(goal)"
+        "与结束标志(done_signal)，可在 actions 里列出子行动。\n"
+        "在计划登记完成前，系统只接受 plan.create 调用，其它工具一律拒绝。"
+    )
+
+
+def render_phase_directive(phase: Optional[dict], total: int) -> str:
+    """System directive that hands the AI the current phase to execute."""
+    phase = phase or {}
+    seq_human = int(phase.get("seq", 0)) + 1
+    title = str(phase.get("title") or f"阶段{seq_human}")
+    goal = str(phase.get("goal") or "")
+    done = str(phase.get("done_signal") or "")
+    lines = [
+        f"[系统调度 · 阶段 {seq_human}/{total}] {title}",
+        "现在开始执行这个阶段，不要跳过、也不要提前结束整个任务。",
+        f"- 阶段目标: {goal}",
+        f"- 结束标志: {done}",
+    ]
+    actions = phase.get("actions") or []
+    if isinstance(actions, list) and actions:
+        lines.append("- 子行动:")
+        for action in actions:
+            if isinstance(action, dict):
+                a_goal = str(action.get("goal") or "").strip()
+                a_done = str(action.get("done_signal") or "").strip()
+            else:
+                a_goal, a_done = str(action).strip(), ""
+            if not a_goal:
+                continue
+            lines.append(f"  - {a_goal}" + (f"（结束标志：{a_done}）" if a_done else ""))
+    lines.append("达成本阶段结束标志后，调用 phase.complete 收尾本阶段（无需总结），由系统安排下一步。")
+    return "\n".join(lines)
+
+
+def render_finish_required_notice(goal: str) -> str:
+    """System directive: all phases done, the run must close via task.finish."""
+    return (
+        "[系统要求 · 收尾总结]\n"
+        f"计划「{str(goal or '').strip()}」的所有阶段均已完成。"
+        "现在必须调用 task.finish 对整个任务做完整总结并收尾："
+        "outcome 填 success 或 failure，summary 给出完整复盘。\n"
+        "系统只接受 task.finish 调用，其它工具一律拒绝。"
+    )
+
+
+def render_continue_phase_notice() -> str:
+    """System directive: don't end a task by talking; keep executing the phase."""
+    return (
+        "[系统要求 · 继续执行]\n"
+        "当前阶段尚未收尾。请继续执行本阶段，达成结束标志后调用 phase.complete；"
+        "不要用普通回复结束任务。"
+    )
+
+
 def mark_phase_messages_compressed(
     session: Session,
     *,

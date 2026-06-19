@@ -43,19 +43,21 @@ TASK_RUNTIME_REQUIRED_TOOLS = {
     "task.finish",
 }
 
-# Injected into the task-runtime system prompt to steer the planned flow:
-# trigger -> plan -> phased execution -> summarized end.
+# Injected into the task-runtime system prompt. The flow is enforced by the
+# runtime (see ai_runtime.inference.core): plan first, the system hands over
+# each phase, and the run must close via task.finish.
 TASK_PLAN_FLOW_PROMPT = (
-    "复杂任务请遵循「先规划，再分阶段执行，最后总结收尾」的流程：\n"
-    "1) 行动前先用 plan.create 制定一份完整计划：把总体目标拆成有序的多个阶段，"
-    "每个阶段写清目标(goal)与结束标志(done_signal)，并在 actions 里列出该阶段的子行动；"
-    "若任务很简单、无需分阶段，可直接执行并在结束时用 task.finish 收尾。\n"
-    "2) 按阶段推进：完成一个阶段后调用 phase.complete 并附该阶段总结。"
+    "本任务采用「先规划，再分阶段执行，最后总结收尾」的强制流程，由系统调度推进：\n"
+    "1) 行动前必须先调用 plan.create 制定完整计划：把总体目标拆成有序的多个阶段，"
+    "每个阶段写清目标(goal)与结束标志(done_signal)，并在 actions 里列出该阶段的子行动。"
+    "计划登记前系统只接受 plan.create。\n"
+    "2) 计划登记后，系统会主动下发「当前阶段」让你执行，你无需自己查询计划进度。"
+    "达成该阶段的结束标志后调用 phase.complete 收尾本阶段（无需总结）；"
     "系统会自动隐藏上一阶段的深度思考与 MCP 详细结果、只保留调用状态，"
-    "为后续阶段腾出上下文、避免越跑越乱。\n"
-    "3) 全流程结束后（无论成功或失败）调用 task.finish，给出完整复盘总结；"
-    "系统会把整个流程写入工作区的成功/失败日志，沉淀为可复用知识。\n"
-    "随时可用 plan.get 查看当前计划与进度。"
+    "并自动下发下一个阶段，直到所有阶段完成。\n"
+    "3) 所有阶段完成后，系统会要求你调用 task.finish 给出完整复盘总结"
+    "（outcome=success/failure）；系统会把整个流程写入工作区的成功/失败日志，"
+    "沉淀为可复用知识。不要用普通回复结束任务。"
 )
 
 

@@ -1522,14 +1522,59 @@ def _run_worker_impl(
             phase_start_convo_index = len(convo)
             phase_started_at = time.time()
             phase_mcp_statuses: List[tuple] = []
-            if is_task_runtime and ai_config_id is not None:
+            # Hard flow enforcement is on for task runtimes: the run must go
+            # through plan.create -> phased execution -> task.finish, and the
+            # *system* drives phase transitions (the AI never has to poll the
+            # plan). ``flow_awaiting_finish`` means all phases are done and only
+            # task.finish is accepted; ``flow_nudges`` caps how many times we
+            # steer a stalling model before degrading to a normal finish.
+            plan_enforced = bool(is_task_runtime and ai_config_id is not None)
+            flow_awaiting_finish = False
+            flow_nudges = 0
+            # A directive to inject *after* the current tool result is appended
+            # (so a native tool_call keeps its matching tool response adjacent).
+            pending_flow_directive = ""
+            if plan_enforced:
                 try:
                     plan_state = plan_service.get_active_plan(
                         bg, user_id, int(ai_config_id), session_id
                     )
+                    flow_awaiting_finish = plan_service.awaiting_finish(bg, plan_state)
                 except Exception:
                     logger.exception("plan state load failed")
                     plan_state = None
+                # Tell the AI exactly where it stands without it having to ask.
+                if plan_state is None:
+                    convo.append({"role": "user", "content": phase_context.render_plan_required_notice()})
+                elif flow_awaiting_finish:
+                    convo.append({
+                        "role": "user",
+                        "content": phase_context.render_finish_required_notice(plan_state.goal),
+                    })
+                else:
+                    _prog = plan_service.plan_progress(bg, plan_state)
+                    _cur = next(
+                        (p for p in _prog["phases"] if p["seq"] == plan_state.current_phase_seq),
+                        None,
+                    )
+                    convo.append({
+                        "role": "user",
+                        "content": phase_context.render_phase_directive(_cur, _prog["phase_count"]),
+                    })
+
+            def _flow_allowed_tool(tool_name: str) -> bool:
+                """Hard gate: which tools the planned flow permits right now."""
+                if not plan_enforced:
+                    return True
+                name = str(tool_name or "")
+                if name in MCP_INTROSPECTION_TOOLS:
+                    return True
+                if plan_state is None:
+                    return name == "plan.create"
+                if flow_awaiting_finish:
+                    return name == "task.finish"
+                return True
+
             for step_index in range(max_steps):
                 if _run_should_stop(run_id):
                     _run_set_status(run_id, "stopped", finished=True)
@@ -1604,6 +1649,17 @@ def _run_worker_impl(
                 if mcp_active:
                     current_exposed_tools = set(exposed_tool_allowlist) & set(effective_tool_allowlist)
                     current_exposed_tools.update(set(MCP_INTROSPECTION_TOOLS) & set(effective_tool_allowlist))
+                    # Hard flow gate: while a task runtime still needs a plan or
+                    # must close out, only show the single tool that moves the
+                    # flow forward (plus self-inspection).
+                    if plan_enforced and plan_state is None:
+                        current_exposed_tools = (
+                            {"plan.create"} | set(MCP_INTROSPECTION_TOOLS)
+                        ) & set(effective_tool_allowlist)
+                    elif plan_enforced and flow_awaiting_finish:
+                        current_exposed_tools = (
+                            {"task.finish"} | set(MCP_INTROSPECTION_TOOLS)
+                        ) & set(effective_tool_allowlist)
                     step_tools, native_tool_name_map = _build_native_tools_payload(current_exposed_tools)
                 else:
                     step_tools, native_tool_name_map = [], {}
@@ -1977,6 +2033,36 @@ def _run_worker_impl(
                         # Compression failed or not enough history to compress:
                         # don't retry-loop forever; fall through this turn.
                         compression_failed = True
+
+                # Hard flow gate: reject any tool call that does not move the
+                # planned flow forward in the current state (no-plan -> only
+                # plan.create; all-phases-done -> only task.finish). The
+                # assistant tool_call message was already appended above, so we
+                # answer it (native) / reply (text) and steer back.
+                if payload_call and plan_enforced and not _flow_allowed_tool(payload_tool):
+                    if plan_state is None:
+                        _flow_block_text = phase_context.render_plan_required_notice()
+                    elif flow_awaiting_finish:
+                        _flow_block_text = phase_context.render_finish_required_notice(
+                            plan_state.goal if plan_state else ""
+                        )
+                    else:
+                        _flow_block_text = phase_context.render_continue_phase_notice()
+                    if _has_native_tc:
+                        convo.append({
+                            "role": "tool",
+                            "tool_call_id": _tc_id or "call_0",
+                            "content": _safe_json({
+                                "success": False,
+                                "error": "flow_violation",
+                                "note": _flow_block_text,
+                            }),
+                        })
+                    else:
+                        convo.append({"role": "user", "content": _flow_block_text})
+                    _set_run_live_phase(run_id, "generating")
+                    continue
+
                 if not payload_call:
                     # Only check for text-format MCP warnings when not using native tool_calls.
                     if not _has_native_tc:
@@ -1999,6 +2085,23 @@ def _run_worker_impl(
                             )
                             convo.append({"role": "user", "content": warning})
                             continue
+                    # Hard flow: a task runtime must not end by "talking". Steer
+                    # it back to plan.create / phase execution / task.finish.
+                    # ``flow_nudges`` bounds this so a stubborn model degrades to
+                    # a normal finish instead of burning the whole step budget.
+                    if plan_enforced and flow_nudges < 3:
+                        if plan_state is None:
+                            _nudge_text = phase_context.render_plan_required_notice()
+                        elif flow_awaiting_finish:
+                            _nudge_text = phase_context.render_finish_required_notice(
+                                plan_state.goal if plan_state else ""
+                            )
+                        else:
+                            _nudge_text = phase_context.render_continue_phase_notice()
+                        flow_nudges += 1
+                        convo.append({"role": "user", "content": _nudge_text})
+                        _set_run_live_phase(run_id, "generating")
+                        continue
                     if pending_ai_reply_message_id and assistant_text.strip() and ai_config_id is not None:
                         try:
                             _auto_reply = ai_message_service.complete_inbound_with_assistant_reply(
@@ -2345,21 +2448,53 @@ def _run_worker_impl(
                     _set_run_live_phase(run_id, "generating")
                     continue
 
-                # Planned task flow: keep a plan in sync and apply per-phase
-                # context compaction. ``plan.create`` (re)starts the boundary;
-                # ``phase.complete`` folds the finished phase out of context;
-                # ``task.finish`` closes the whole run.
+                # Planned task flow (system-driven). ``plan.create`` is followed
+                # by the system handing the AI phase 1; ``phase.complete`` folds
+                # the finished phase out of context and the system hands over the
+                # next phase (or requires task.finish); ``task.finish`` closes the
+                # whole run.
                 if (not tool_failed) and tool == "plan.create":
+                    # Answer the tool call, then drive straight into phase 1 — the
+                    # AI never has to poll plan progress itself.
+                    if _has_native_tc:
+                        convo.append({
+                            "role": "tool",
+                            "tool_call_id": _tc_id or "call_0",
+                            "content": _safe_json(_model_visible_tool_result(tool, tool_result, image_attached=False)),
+                        })
+                    else:
+                        convo.append({
+                            "role": "user",
+                            "content": (
+                                f"[MCP执行确认]\n系统已执行工具：{tool}\n执行状态：成功\n\n"
+                                "[工具执行结果]\n"
+                                f"{_safe_json(_model_visible_tool_result(tool, tool_result, image_attached=False))}"
+                            ),
+                        })
                     try:
                         plan_state = plan_service.get_active_plan(
                             bg, user_id, int(ai_config_id), session_id
                         ) if ai_config_id is not None else None
+                        flow_awaiting_finish = plan_service.awaiting_finish(bg, plan_state)
                     except Exception:
                         logger.exception("plan reload after plan.create failed")
                         plan_state = None
+                    flow_nudges = 0
                     phase_start_convo_index = len(convo)
                     phase_started_at = time.time()
                     phase_mcp_statuses = []
+                    if plan_state is not None and not flow_awaiting_finish:
+                        _prog = plan_service.plan_progress(bg, plan_state)
+                        _cur = next(
+                            (p for p in _prog["phases"] if p["seq"] == plan_state.current_phase_seq),
+                            None,
+                        )
+                        convo.append({
+                            "role": "user",
+                            "content": phase_context.render_phase_directive(_cur, _prog["phase_count"]),
+                        })
+                    _set_run_live_phase(run_id, "generating")
+                    continue
 
                 if (not tool_failed) and tool == "phase.complete" and plan_state is not None:
                     result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
@@ -2406,11 +2541,32 @@ def _run_worker_impl(
                         plan_state = plan_service.get_active_plan(
                             bg, user_id, int(ai_config_id), session_id
                         ) if ai_config_id is not None else None
+                        flow_awaiting_finish = plan_service.awaiting_finish(bg, plan_state)
                     except Exception:
                         logger.exception("plan reload after phase.complete failed")
+                    flow_nudges = 0
                     phase_start_convo_index = len(convo)
                     phase_started_at = time.time()
                     phase_mcp_statuses = []
+                    # System drives the next step: hand over the next phase, or
+                    # require task.finish when every phase is done.
+                    if flow_awaiting_finish:
+                        convo.append({
+                            "role": "user",
+                            "content": phase_context.render_finish_required_notice(
+                                plan_state.goal if plan_state else ""
+                            ),
+                        })
+                    elif plan_state is not None:
+                        _prog = plan_service.plan_progress(bg, plan_state)
+                        _cur = next(
+                            (p for p in _prog["phases"] if p["seq"] == plan_state.current_phase_seq),
+                            None,
+                        )
+                        convo.append({
+                            "role": "user",
+                            "content": phase_context.render_phase_directive(_cur, _prog["phase_count"]),
+                        })
                     _set_run_live_phase(run_id, "generating")
                     continue
 

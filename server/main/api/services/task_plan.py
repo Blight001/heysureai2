@@ -119,6 +119,23 @@ def current_phase(session: Session, plan: TaskPlan) -> Optional[TaskPhase]:
     ).first()
 
 
+def awaiting_finish(session: Session, plan: Optional[TaskPlan]) -> bool:
+    """True when every phase is done and only ``task.finish`` remains.
+
+    After the last phase's ``phase.complete`` the plan's ``current_phase_seq``
+    stays on the final phase (no next phase to advance to); that phase being
+    finished is the signal the whole plan should be summarized and closed.
+    """
+    if plan is None or plan.status not in ACTIVE_PLAN_STATUSES:
+        return False
+    phase = current_phase(session, plan)
+    return bool(
+        phase is not None
+        and phase.status in {"completed", "failed"}
+        and phase.seq >= plan.phase_count - 1
+    )
+
+
 def _phase_dict(phase: TaskPhase) -> Dict[str, Any]:
     try:
         actions = json.loads(phase.actions_json) if phase.actions_json else []

@@ -417,21 +417,21 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="phase.complete",
         description=(
-            "完成当前阶段并收尾：必须附一段总结说明该阶段做了什么、关键产出与结论。"
-            "调用后系统会自动隐藏上一阶段的深度思考与 MCP 详细结果、只保留调用状态，"
-            "为后续阶段腾出上下文。若该阶段未达成目标，可传 status=failed 如实记录后继续。"
+            "完成当前阶段并收尾（无需总结）。调用后系统会自动隐藏上一阶段的深度思考与 MCP "
+            "详细结果、只保留调用状态，并自动下发下一个阶段；若已是最后一个阶段，系统会要求你"
+            "调用 task.finish 收尾。若该阶段未达成目标，可传 status=failed 如实记录后继续。"
+            "summary 可选，一般留空即可。"
         ),
         input_schema={
             "type": "object",
             "properties": {
-                "summary": {"type": "string", "minLength": 1, "description": "该阶段的非空总结。"},
                 "status": {
                     "type": "string",
                     "enum": ["completed", "failed"],
                     "description": "阶段结果，默认 completed；未达成目标用 failed。",
                 },
+                "summary": {"type": "string", "description": "可选，一句话备注该阶段；留空即可。"},
             },
-            "required": ["summary"],
         },
         handler=_phase_complete,
         destructive=True,

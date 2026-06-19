@@ -106,9 +106,9 @@ def _plan_get(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -
 
 def _phase_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     cfg_id = _require_ai_config_id(ai_config_id)
+    # Summary is optional: the system drives phase progression, so phase.complete
+    # only needs to mark the boundary.
     summary = str((args or {}).get("summary") or "").strip()
-    if not summary:
-        raise HTTPException(status_code=400, detail="summary is required: 用一段话总结这个阶段做了什么、产出与结论。")
     status = str((args or {}).get("status") or "completed").strip().lower()
     if status not in {"completed", "failed"}:
         status = "completed"
@@ -120,9 +120,9 @@ def _phase_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[i
         result = plan_service.complete_current_phase(session, plan, summary=summary, status=status)
         progress = plan_service.plan_progress(session, plan)
     hint = (
-        "已是最后一个阶段：请调用 task.finish 总结整个任务（成功或失败都要）。"
+        "已是最后一个阶段：系统将要求你调用 task.finish 总结整个任务。"
         if result["all_phases_done"]
-        else "上一阶段上下文已精简。请开始下一个阶段。"
+        else "本阶段已收尾、上下文已精简。系统会下发下一个阶段，按系统调度执行即可。"
     )
     return {
         "phase_completed": True,
