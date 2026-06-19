@@ -49,6 +49,8 @@ class MainActivity : AppCompatActivity() {
     private var dialogLogText: TextView? = null
     private var permissionDialog: AlertDialog? = null
     private var permissionStatusText: TextView? = null
+    private var accessibilityStepStatusText: TextView? = null
+    private var captureStepStatusText: TextView? = null
     private val permissionPoller = Handler(Looper.getMainLooper())
     private val permissionPoll = object : Runnable {
         override fun run() {
@@ -263,30 +265,31 @@ class MainActivity : AppCompatActivity() {
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        permissionStatusText = TextView(this).apply {
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
-            textSize = 13f
-            setLineSpacing(dp(3).toFloat(), 1f)
-            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.pill_bg)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-        }
-        body.addView(permissionStatusText)
+        accessibilityStepStatusText = TextView(this)
+        captureStepStatusText = TextView(this)
+        body.addView(permissionStep(
+            step = "01",
+            title = "开启无障碍服务",
+            description = "允许 HeySure 执行点击、滑动、返回等触控操作。",
+            statusText = accessibilityStepStatusText!!,
+        ) {
+            startActivity(Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS))
+        })
+        body.addView(permissionStep(
+            step = "02",
+            title = "授权截屏/录屏",
+            description = "允许 AI 获取屏幕画面，用于判断界面状态。",
+            statusText = captureStepStatusText!!,
+        ) { requestCapture() })
         body.addView(hintText("授权完成后会自动刷新状态并关闭，不需要手动重进 App。").apply {
             setPadding(0, dp(8), 0, 0)
         })
-        val actions = dialogActions(
-            dialogButton(getString(R.string.enable_accessibility)) {
-            startActivity(Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS))
-            },
-            dialogButton(getString(R.string.grant_capture), primary = true) { requestCapture() },
-        )
 
         permissionDialog = AlertDialog.Builder(this)
             .setView(dialogShell(
                 title = "完成权限授权",
-                subtitle = "Android 端需要点击/滑动权限和截屏/录屏授权，全部通过后才能稳定执行 MCP 工具。",
+                subtitle = "按顺序完成下面两个步骤，全部通过后才能稳定执行 Android MCP 工具。",
                 body = body,
-                actions = actions,
             ))
             .create()
             .apply {
@@ -300,6 +303,8 @@ class MainActivity : AppCompatActivity() {
                 }
                 setOnDismissListener {
                     permissionStatusText = null
+                    accessibilityStepStatusText = null
+                    captureStepStatusText = null
                     permissionPoller.removeCallbacks(permissionPoll)
                     if (permissionDialog === this) permissionDialog = null
                 }
@@ -316,10 +321,8 @@ class MainActivity : AppCompatActivity() {
         }
         val accessibility = if (isAccessibilityReady()) "已开启" else "未开启"
         val capture = if (isCaptureReady()) "已授权" else "未授权"
-        permissionStatusText?.text = listOf(
-            "无障碍服务：$accessibility",
-            "截屏/录屏：$capture",
-        ).joinToString("\n")
+        accessibilityStepStatusText?.text = accessibility
+        captureStepStatusText?.text = capture
     }
 
     private fun renderStatus(status: DeviceStatus, reason: String?) {
@@ -634,8 +637,69 @@ class MainActivity : AppCompatActivity() {
                 else -> ContextCompat.getColor(this@MainActivity, R.color.text)
             },
         )
+        setSingleLine(true)
+        minWidth = dp(72)
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin = dp(8) }
         bindTapFeedback(this)
         setOnClickListener { onClick() }
+    }
+
+    private fun permissionStep(
+        step: String,
+        title: String,
+        description: String,
+        statusText: TextView,
+        onAuthorize: () -> Unit,
+    ) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = android.view.Gravity.CENTER_VERTICAL
+        background = ContextCompat.getDrawable(this@MainActivity, R.drawable.pill_bg)
+        setPadding(dp(12), dp(10), dp(10), dp(10))
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+        ).apply { bottomMargin = dp(10) }
+
+        addView(TextView(this@MainActivity).apply {
+            text = step
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.heysure_primary))
+            textSize = 12f
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            gravity = android.view.Gravity.CENTER
+            background = ContextCompat.getDrawable(this@MainActivity, R.drawable.card_bg)
+            layoutParams = LinearLayout.LayoutParams(dp(34), dp(34)).apply {
+                rightMargin = dp(10)
+            }
+        })
+        addView(LinearLayout(this@MainActivity).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            addView(TextView(this@MainActivity).apply {
+                text = title
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+                textSize = 13f
+                typeface = android.graphics.Typeface.DEFAULT_BOLD
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = description
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.muted))
+                textSize = 10f
+                setPadding(0, dp(2), 0, dp(2))
+            })
+            statusText.apply {
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.muted))
+                textSize = 10f
+            }
+            addView(statusText)
+        })
+        addView(dialogButton("授权", primary = true, onClick = onAuthorize).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(74), dp(42)).apply {
+                leftMargin = dp(10)
+            }
+        })
     }
 
     private fun mcpGroupTitle(group: String, count: Int) = LinearLayout(this).apply {
