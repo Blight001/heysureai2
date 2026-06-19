@@ -1604,6 +1604,7 @@ _SYSTEM_PROMPT_SECTIONS = [
             ("default_supervision_prompt", "监督 Prompt", "text"),
             ("default_supervision_idle_seconds", "AI 停止思考提醒秒数", "number"),
             ("default_compression_prompt", "对话压缩 Prompt", "text"),
+            ("task_plan_flow_prompt", "任务分阶段流程 Prompt", "text"),
         ],
     },
     {

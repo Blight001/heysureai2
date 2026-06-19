@@ -80,6 +80,48 @@ export const deleteTaskJobById = (configId: number, jobId: string, token: string
     fallbackError: '删除任务失败',
   })
 
+export type TaskPlanStage = 'planning' | 'executing' | 'finishing' | 'finished' | 'none'
+
+export interface TaskPlanAction {
+  goal: string
+  done_signal?: string
+}
+
+export interface TaskPlanPhase {
+  seq: number
+  title: string
+  goal: string
+  done_signal: string
+  actions: TaskPlanAction[]
+  status: 'pending' | 'active' | 'completed' | 'failed'
+  summary?: string
+}
+
+export interface TaskPlanProgress {
+  plan_id: string
+  goal: string
+  status: string
+  outcome: string
+  phase_count: number
+  current_phase_seq: number
+  phases: TaskPlanPhase[]
+}
+
+export interface TaskPlanResponse {
+  is_task_session: boolean
+  stage: TaskPlanStage
+  has_plan: boolean
+  outcome: 'success' | 'failure' | ''
+  plan: TaskPlanProgress | null
+}
+
+export const fetchTaskPlan = (configId: number, sessionId: string, token: string) =>
+  get<TaskPlanResponse>(`/api/ai/configs/${configId}/plan`, {
+    token,
+    query: { session_id: sessionId },
+    fallbackError: '任务计划加载失败',
+  })
+
 export const batchDeleteTaskJobsById = async (configId: number, jobIds: string[], token: string) => {
   let successCount = 0
   let failCount = 0

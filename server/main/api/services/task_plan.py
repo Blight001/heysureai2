@@ -104,6 +104,37 @@ def get_active_plan(
     return session.exec(stmt.order_by(TaskPlan.created_at.desc())).first()
 
 
+def get_session_plan(
+    session: Session,
+    user_id: int,
+    ai_config_id: int,
+    session_id: Optional[str],
+) -> Optional[TaskPlan]:
+    """Return the most recent plan (any status) for a session — for display.
+
+    Unlike :func:`get_active_plan` this also surfaces a finished plan so the UI
+    can show the completed/failed outcome after the run ends.
+    """
+    if not session_id:
+        return None
+    return session.exec(
+        select(TaskPlan).where(
+            TaskPlan.user_id == user_id,
+            TaskPlan.ai_config_id == int(ai_config_id),
+            TaskPlan.session_id == session_id,
+        ).order_by(TaskPlan.created_at.desc())
+    ).first()
+
+
+def progress_stage(session: Session, plan: Optional[TaskPlan], *, is_task_session: bool) -> str:
+    """Derive the coarse UI stage: planning / executing / finishing / finished / none."""
+    if plan is None:
+        return "planning" if is_task_session else "none"
+    if plan.status in FINISHED_PLAN_STATUSES:
+        return "finished"
+    return "finishing" if awaiting_finish(session, plan) else "executing"
+
+
 def list_phases(session: Session, plan_id: str) -> List[TaskPhase]:
     return session.exec(
         select(TaskPhase).where(TaskPhase.plan_id == plan_id).order_by(TaskPhase.seq.asc())

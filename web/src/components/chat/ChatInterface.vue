@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMessage } from '@/composables/useMessage'
 import ChatHeader from './ChatHeader.vue'
 import ChatConversationView from './ChatConversationView.vue'
+import TaskProgressPanel from './TaskProgressPanel.vue'
 import ChatInput from './ChatInput.vue'
 import { parseChatResponseInline, type ActionBlock, type InlineContent as InlineContentType } from '@/utils/chatParser'
 import { isSameAssistantVisibleReply, normalizeAssistantReplyText } from '@/utils/chatReplyCompare'
@@ -108,6 +109,9 @@ let lastRealtimeTokenSyncAt = 0
 let lastExternalRunCheckAt = 0
 const chatScrollRef = ref<HTMLElement | null>(null)
 const currentSessionId = ref<string>('')
+// Bumped to make the task-progress panel refetch (session switch / run finish).
+const taskPlanRefreshSignal = ref(0)
+const bumpTaskPlan = () => { taskPlanRefreshSignal.value += 1 }
 const sessionList = ref<SessionItem[]>([])
 const appliedEdits = ref<Set<string>>(new Set())
 const appliedSignatures = ref<Set<string>>(new Set())
@@ -1102,7 +1106,13 @@ const pollRunLive = async (epoch: number) => {
       currentRunPhase.value = incomingPhase
       if (incomingPhase !== 'idle') phaseEnterTs.value = Date.now()
     }
-    currentMcpTool.value = String(run.current_tool || '')
+    const incomingTool = String(run.current_tool || '')
+    // Refresh the task-progress panel exactly when the flow advances.
+    if (incomingTool !== currentMcpTool.value
+      && ['plan.create', 'phase.complete', 'task.finish'].includes(incomingTool)) {
+      bumpTaskPlan()
+    }
+    currentMcpTool.value = incomingTool
     const delta = String(run.live_delta || '')
     liveThinkingText.value = String(run.live_reasoning || '')
     if (delta) {
@@ -1128,6 +1138,7 @@ const pollRunLive = async (epoch: number) => {
       }
       await loadTotalTokens()
       stopTimeTicker()
+      bumpTaskPlan()
       return
     }
     await refreshTokensDuringRunIfNeeded()
@@ -1573,6 +1584,12 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </div>
+
+    <TaskProgressPanel
+      :configId="props.aiConfigId"
+      :sessionId="currentSessionId"
+      :refreshSignal="taskPlanRefreshSignal"
+    />
 
     <div ref="chatScrollRef" class="flex-1 overflow-y-auto">
       <ChatConversationView

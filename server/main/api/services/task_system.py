@@ -12,6 +12,7 @@ from ..models import (
     DEFAULT_RESUME_TASK_PROMPT,
     DEFAULT_START_TASK_PROMPT,
     DEFAULT_SUPERVISION_PROMPT,
+    DEFAULT_TASK_PLAN_FLOW_PROMPT,
     AITaskJob,
     ChatRun,
 )
@@ -45,20 +46,10 @@ TASK_RUNTIME_REQUIRED_TOOLS = {
 
 # Injected into the task-runtime system prompt. The flow is enforced by the
 # runtime (see ai_runtime.inference.core): plan first, the system hands over
-# each phase, and the run must close via task.finish.
-TASK_PLAN_FLOW_PROMPT = (
-    "本任务采用「先规划，再分阶段执行，最后总结收尾」的强制流程，由系统调度推进：\n"
-    "1) 行动前必须先调用 plan.create 制定完整计划：把总体目标拆成有序的多个阶段，"
-    "每个阶段写清目标(goal)与结束标志(done_signal)，并在 actions 里列出该阶段的子行动。"
-    "计划登记前系统只接受 plan.create。\n"
-    "2) 计划登记后，系统会主动下发「当前阶段」让你执行，你无需自己查询计划进度。"
-    "达成该阶段的结束标志后调用 phase.complete 收尾本阶段（无需总结）；"
-    "系统会自动隐藏上一阶段的深度思考与 MCP 详细结果、只保留调用状态，"
-    "并自动下发下一个阶段，直到所有阶段完成。\n"
-    "3) 所有阶段完成后，系统会要求你调用 task.finish 给出完整复盘总结"
-    "（outcome=success/failure）；系统会把整个流程写入工作区的成功/失败日志，"
-    "沉淀为可复用知识。不要用普通回复结束任务。"
-)
+# each phase, and the run must close via task.finish. The text is editable as a
+# 固有思想 system prompt (key ``task_plan_flow_prompt``); this constant is only
+# the built-in fallback.
+TASK_PLAN_FLOW_PROMPT = DEFAULT_TASK_PLAN_FLOW_PROMPT
 
 
 def with_workspace_read_by_name_compat(tools: set[str]) -> set[str]:

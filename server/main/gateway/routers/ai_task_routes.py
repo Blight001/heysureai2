@@ -31,6 +31,39 @@ from .ai_base import (
 )
 
 
+@router.get("/configs/{config_id}/plan")
+async def get_ai_task_plan(
+    config_id: int,
+    session_id: str = "",
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    """Plan progress for a chat session, for the web task-mode progress UI.
+
+    Returns the coarse ``stage`` (planning/executing/finishing/finished/none)
+    plus the full plan + phases (each with sub-actions and status) so the
+    console can render: 安排 → 实施的阶段 N → 子任务进度 → 结束.
+    """
+    from api.services import task_plan as plan_service
+
+    user = get_current_user(authorization, session)
+    cfg = get_ai_config_or_404(session, config_id, user.id)
+    sid = str(session_id or "").strip()
+    is_task_session = bool(sid.startswith("session_task_"))
+    plan = plan_service.get_session_plan(session, user.id, int(cfg.id), sid) if sid else None
+    if plan is not None:
+        is_task_session = True
+    stage = plan_service.progress_stage(session, plan, is_task_session=is_task_session)
+    payload = {
+        "is_task_session": is_task_session,
+        "stage": stage,
+        "has_plan": plan is not None,
+        "outcome": (plan.outcome or "") if plan is not None else "",
+        "plan": plan_service.plan_progress(session, plan) if plan is not None else None,
+    }
+    return payload
+
+
 @router.post("/configs/{config_id}/task-trigger")
 async def trigger_ai_task(
     config_id: int,

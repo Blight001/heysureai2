@@ -1409,10 +1409,15 @@ def _run_worker_impl(
                 # Remove legacy task-runtime prompt sections; task constraints are enforced server-side.
                 system_prompt = _strip_task_runtime_sections(system_prompt)
                 # Steer the planned task flow: plan -> phased execution -> summarized end.
+                # Editable as a 固有思想 system prompt (task_plan_flow_prompt);
+                # falls back to the built-in default when no override exists.
+                task_plan_flow_text = kb_store.effective_system_value(
+                    user_id, "task_plan_flow_prompt", TASK_PLAN_FLOW_PROMPT
+                ).strip() or TASK_PLAN_FLOW_PROMPT
                 system_prompt = _append_prompt_section(
                     _strip_prompt_section(system_prompt, "任务规划流程"),
                     "任务规划流程",
-                    TASK_PLAN_FLOW_PROMPT,
+                    task_plan_flow_text,
                 )
 
             # Up-front MCP tool catalog: list every callable tool (name + short
