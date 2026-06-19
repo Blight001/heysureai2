@@ -9,15 +9,8 @@ interface Session {
 
 interface SessionMeta extends Session {
   isTask: boolean
+  /** Display label for task rows (task title without the "任务:" prefix). */
   taskTitle: string
-  generation: number | null
-}
-
-interface TaskSessionGroup {
-  key: string
-  title: string
-  sessions: SessionMeta[]
-  totalTokens: number
 }
 
 const props = defineProps<{
@@ -36,73 +29,31 @@ const emit = defineEmits<{
 const open = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 const normalGroupOpen = ref(true)
-const expandedTaskGroupKeys = ref<Set<string>>(new Set())
+const taskGroupOpen = ref(true)
 const selectedSessionIds = ref<Set<string>>(new Set())
 const contextMenu = ref({ visible: false, x: 0, y: 0 })
 
-const parseTaskSessionName = (name: string) => {
-  const raw = String(name || '').trim()
-  if (!raw) {
-    return { isTask: false, taskTitle: '', generation: null as number | null }
+// A session is a task conversation when its id uses the task-runtime prefix
+// (the authoritative signal); fall back to the legacy "任务:" name prefix.
+const parseSession = (session: Session): SessionMeta => {
+  const id = String(session.id || '')
+  const name = String(session.name || '').trim()
+  const isTaskById = id.startsWith('session_task_')
+  const nameMatch = name.match(/^任务[:：]\s*(.+)$/)
+  const isTask = isTaskById || !!nameMatch
+  let taskTitle = ''
+  if (isTask) {
+    taskTitle = String(nameMatch?.[1] || name || '').trim() || '未命名任务'
   }
-  const taskPrefix = raw.match(/^任务[:：]\s*(.+)$/)
-  if (!taskPrefix) {
-    return { isTask: false, taskTitle: '', generation: null as number | null }
-  }
-  const body = String(taskPrefix[1] || '').trim()
-  if (!body) {
-    return { isTask: true, taskTitle: '未命名任务', generation: null as number | null }
-  }
-  const generationMatch = body.match(/^(.*?)\s*·\s*第\s*(\d+)\s*代$/)
-  if (!generationMatch) {
-    return { isTask: true, taskTitle: body, generation: null as number | null }
-  }
-  const title = String(generationMatch[1] || '').trim() || '未命名任务'
-  const generation = Number(generationMatch[2] || 0)
-  return {
-    isTask: true,
-    taskTitle: title,
-    generation: Number.isFinite(generation) && generation > 0 ? generation : null,
-  }
+  return { ...session, isTask, taskTitle }
 }
 
-const toSessionMeta = (session: Session): SessionMeta => {
-  const parsed = parseTaskSessionName(session.name)
-  return {
-    ...session,
-    isTask: parsed.isTask,
-    taskTitle: parsed.taskTitle,
-    generation: parsed.generation,
-  }
-}
-
-const sessionMetaList = computed<SessionMeta[]>(() => props.sessionList.map(toSessionMeta))
+const sessionMetaList = computed<SessionMeta[]>(() => props.sessionList.map(parseSession))
 const normalSessions = computed<SessionMeta[]>(() => sessionMetaList.value.filter(item => !item.isTask))
-const normalSessionsTokenTotal = computed(() =>
-  normalSessions.value.reduce((sum, item) => sum + Number(item.totalTokens || 0), 0)
-)
-const taskSessionGroups = computed<TaskSessionGroup[]>(() => {
-  const map = new Map<string, TaskSessionGroup>()
-  for (const session of sessionMetaList.value) {
-    if (!session.isTask) continue
-    const groupKey = `task:${session.taskTitle}`
-    const found = map.get(groupKey)
-    if (!found) {
-      map.set(groupKey, {
-        key: groupKey,
-        title: session.taskTitle || '未命名任务',
-        sessions: [session],
-        totalTokens: Number(session.totalTokens || 0),
-      })
-      continue
-    }
-    found.sessions.push(session)
-    found.totalTokens += Number(session.totalTokens || 0)
-  }
-  return Array.from(map.values())
-})
-
-const groupKeyOfSession = (session: SessionMeta) => `task:${session.taskTitle}`
+const taskSessions = computed<SessionMeta[]>(() => sessionMetaList.value.filter(item => item.isTask))
+const sumTokens = (rows: SessionMeta[]) => rows.reduce((sum, item) => sum + Number(item.totalTokens || 0), 0)
+const normalSessionsTokenTotal = computed(() => sumTokens(normalSessions.value))
+const taskSessionsTokenTotal = computed(() => sumTokens(taskSessions.value))
 
 const currentSessionName = computed(() => {
   const row = props.sessionList.find(item => item.id === props.currentSessionId)
@@ -110,19 +61,10 @@ const currentSessionName = computed(() => {
 })
 
 const sessionLineLabel = (session: SessionMeta) => {
-  if (!session.isTask) return session.name || '未命名会话'
-  if (session.generation) return `第${session.generation}代`
-  return session.name || '未命名任务会话'
+  if (session.isTask) return session.taskTitle || session.name || '未命名任务'
+  return session.name || '未命名会话'
 }
 
-const toggleTaskGroup = (groupKey: string) => {
-  const next = new Set(expandedTaskGroupKeys.value)
-  if (next.has(groupKey)) next.delete(groupKey)
-  else next.add(groupKey)
-  expandedTaskGroupKeys.value = next
-}
-
-const isTaskGroupExpanded = (groupKey: string) => expandedTaskGroupKeys.value.has(groupKey)
 const isSessionSelected = (sessionId: string) => selectedSessionIds.value.has(sessionId)
 
 const toggleSessionSelection = (sessionId: string) => {
@@ -165,20 +107,9 @@ const deleteSelectedSessions = () => {
 }
 
 const applyDefaultExpansion = () => {
-  if (normalSessions.value.length > 0) {
-    normalGroupOpen.value = true
-    expandedTaskGroupKeys.value = new Set()
-    return
-  }
-  normalGroupOpen.value = false
-  const next = new Set<string>()
-  const current = sessionMetaList.value.find(item => item.id === props.currentSessionId && item.isTask)
-  if (current) {
-    next.add(groupKeyOfSession(current))
-  } else if (taskSessionGroups.value.length > 0) {
-    next.add(taskSessionGroups.value[0].key)
-  }
-  expandedTaskGroupKeys.value = next
+  // Show whichever sections have content; keep both open by default.
+  normalGroupOpen.value = normalSessions.value.length > 0 || taskSessions.value.length === 0
+  taskGroupOpen.value = taskSessions.value.length > 0
 }
 
 const toggleOpen = () => {
@@ -210,18 +141,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
     </button>
 
     <div v-if="open" class="absolute left-0 top-[calc(100%+6px)] z-20 w-[420px] max-w-[88vw] rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 shadow-lg p-2">
-      <button
-        class="w-full mb-2 px-2 py-1.5 text-left text-xs rounded border border-zinc-200 text-zinc-600 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300"
-        @click="emit('create'); open = false"
-      >
-        + 新建对话
-      </button>
-
       <div class="max-h-72 overflow-y-auto space-y-2">
-        <div
-          v-if="normalSessions.length > 0"
-          class="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-800/40"
-        >
+        <!-- 普通对话：在此栏目下创建对话 -->
+        <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-800/40">
           <button
             class="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-left text-xs text-zinc-700 dark:text-zinc-200"
             @click="normalGroupOpen = !normalGroupOpen"
@@ -230,6 +152,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             <span class="shrink-0 text-[10px] text-zinc-500 dark:text-zinc-400">Token: {{ normalSessionsTokenTotal }}</span>
           </button>
           <div v-if="normalGroupOpen" class="px-1 pb-1 space-y-1">
+            <button
+              class="w-full px-2 py-1.5 text-left text-xs rounded border border-dashed border-zinc-300 text-zinc-600 bg-white/60 hover:border-emerald-300 hover:text-emerald-600 dark:border-zinc-600 dark:bg-zinc-800/40 dark:text-zinc-300 dark:hover:text-emerald-300"
+              @click="emit('create'); open = false"
+            >
+              + 新建对话
+            </button>
             <div
               v-for="session in normalSessions"
               :key="session.id"
@@ -262,43 +190,47 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
                 删除
               </button>
             </div>
+            <div
+              v-if="normalSessions.length === 0"
+              class="px-2 py-2 text-center text-[11px] text-zinc-400 dark:text-zinc-500"
+            >
+              还没有普通对话，点上方新建一个
+            </div>
           </div>
         </div>
 
-        <div
-          v-for="group in taskSessionGroups"
-          :key="group.key"
-          class="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-800/40"
-        >
+        <!-- 任务：存放全部任务对话记录 -->
+        <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-800/40">
           <button
             class="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-left text-xs text-zinc-700 dark:text-zinc-200"
-            @click="toggleTaskGroup(group.key)"
+            @click="taskGroupOpen = !taskGroupOpen"
           >
-            <span class="truncate">任务: {{ group.title }} ({{ group.sessions.length }})</span>
-            <span class="shrink-0 text-[10px] text-zinc-500 dark:text-zinc-400">Token: {{ group.totalTokens }}</span>
+            <span class="truncate">任务 ({{ taskSessions.length }})</span>
+            <span class="shrink-0 text-[10px] text-zinc-500 dark:text-zinc-400">Token: {{ taskSessionsTokenTotal }}</span>
           </button>
-          <div v-if="isTaskGroupExpanded(group.key)" class="px-1 pb-1 space-y-1">
+          <div v-if="taskGroupOpen" class="px-1 pb-1 space-y-1">
             <div
-              v-for="session in group.sessions"
+              v-for="session in taskSessions"
               :key="session.id"
               class="flex items-center gap-2 px-2 py-1.5 rounded border"
               :class="[
                 session.id === currentSessionId
-                  ? 'border-emerald-300/70 bg-emerald-50/45 dark:border-emerald-500/35 dark:bg-emerald-500/10'
-                  : 'border-emerald-200/60 bg-emerald-50/25 dark:border-emerald-700/35 dark:bg-emerald-500/5',
+                  ? 'border-indigo-300/70 bg-indigo-50/45 dark:border-indigo-500/35 dark:bg-indigo-500/10'
+                  : 'border-indigo-200/60 bg-indigo-50/25 dark:border-indigo-700/35 dark:bg-indigo-500/5',
                 isSessionSelected(session.id) ? 'ring-2 ring-zinc-400/40 dark:ring-zinc-500/50' : ''
               ]"
               @contextmenu="onSessionContextMenu(session.id, $event)"
             >
+              <span class="shrink-0 rounded bg-indigo-100 px-1 text-[10px] text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">任务</span>
               <button
-                class="min-w-0 flex-1 text-left text-xs truncate text-emerald-900/85 dark:text-emerald-100/85"
+                class="min-w-0 flex-1 text-left text-xs truncate text-indigo-900/85 dark:text-indigo-100/85"
                 @click="onSessionClick(session.id, $event)"
               >
                 {{ sessionLineLabel(session) }}
               </button>
-              <span class="shrink-0 text-[10px] text-emerald-700/60 dark:text-emerald-300/70">Token: {{ session.totalTokens || 0 }}</span>
+              <span class="shrink-0 text-[10px] text-indigo-700/60 dark:text-indigo-300/70">Token: {{ session.totalTokens || 0 }}</span>
               <button
-                class="shrink-0 text-[11px] px-2 py-0.5 rounded border border-emerald-300/60 text-emerald-700/80 hover:bg-emerald-50/50 dark:border-emerald-600/50 dark:text-emerald-300/80 dark:hover:bg-emerald-900/10"
+                class="shrink-0 text-[11px] px-2 py-0.5 rounded border border-indigo-300/60 text-indigo-700/80 hover:bg-indigo-50/50 dark:border-indigo-600/50 dark:text-indigo-300/80 dark:hover:bg-indigo-900/10"
                 @click="emit('rename', session.id)"
               >
                 编辑
@@ -310,14 +242,13 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
                 删除
               </button>
             </div>
+            <div
+              v-if="taskSessions.length === 0"
+              class="px-2 py-2 text-center text-[11px] text-zinc-400 dark:text-zinc-500"
+            >
+              暂无任务对话记录
+            </div>
           </div>
-        </div>
-
-        <div
-          v-if="normalSessions.length === 0 && taskSessionGroups.length === 0"
-          class="text-xs text-zinc-500 dark:text-zinc-400 px-2 py-4 text-center border border-zinc-200 dark:border-zinc-700 rounded-lg"
-        >
-          暂无会话
         </div>
       </div>
     </div>
