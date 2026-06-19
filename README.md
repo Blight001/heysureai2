@@ -137,6 +137,7 @@ docker compose up -d --build
 ### Local Windows Development
 
 ```bat
+windows-run.bat
 server\run.bat
 web\run.bat
 device\windows\run.bat

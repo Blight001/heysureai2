@@ -42,10 +42,26 @@ def _user_payload(user: User) -> dict:
     用 model_dump 合并文件值，避免在 ORM 实例上设置瞬态属性（更稳健）。"""
     from api.services import kb_store
 
-    try:
-        data = user.model_dump()
-    except Exception:
-        data = {c: getattr(user, c, None) for c in user.__dict__ if not c.startswith("_")}
+    data = {
+        "id": getattr(user, "id", None),
+        "name": getattr(user, "name", ""),
+        "account": getattr(user, "account", ""),
+        "avatar": getattr(user, "avatar", None),
+        "email": getattr(user, "email", None),
+        "role": getattr(user, "role", "member"),
+        "admin_api_key": getattr(user, "admin_api_key", ""),
+        "admin_base_url": getattr(user, "admin_base_url", ""),
+        "admin_model": getattr(user, "admin_model", ""),
+        "mcp_max_steps": getattr(user, "mcp_max_steps", 0),
+        "role_mcp_permissions": getattr(user, "role_mcp_permissions", ""),
+        "tavily_api_key": getattr(user, "tavily_api_key", ""),
+        "model_presets": getattr(user, "model_presets", ""),
+        "default_supervision_idle_seconds": getattr(user, "default_supervision_idle_seconds", 0),
+        "ai_message_inquiry_reminder_seconds": getattr(user, "ai_message_inquiry_reminder_seconds", 0),
+        "ui_theme_mode": getattr(user, "ui_theme_mode", ""),
+        "ui_font_size": getattr(user, "ui_font_size", ""),
+        "ui_brain_view_mode": getattr(user, "ui_brain_view_mode", ""),
+    }
     try:
         data.update(kb_store.user_prompt_dict(user))
     except Exception:

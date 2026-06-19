@@ -61,8 +61,8 @@ Full configuration lives in `main/api/core/settings.py`.
 
 On Windows, `run.bat` now opens a single Tk dashboard instead of four separate
 console windows. The dashboard shows live logs for gateway, MCP runtime,
-connector runtime, and AI runtime, and includes per-service and global restart
-controls.
+connector runtime, AI runtime, and the Web console, with per-service start /
+restart / stop controls plus a global open-web shortcut.
 
 ## Directory Layout
 

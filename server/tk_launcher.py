@@ -1,12 +1,10 @@
-"""Windows 单窗口启动器：用 4 个中文标签页管理后端服务。
+"""Windows 单窗口启动器：用 Tk 管理后端服务和 Web 控制台。
 
 功能：
-- 4 个标签页分别显示 网关 / MCP / 连接器 / AI 服务；
-- 每个标签页都有独立日志、独立启动/重启/停止；
-- 支持复制当前页报错、复制当前页全部日志；
-- 颜色区分日志级别，便于快速定位异常。
-
-启动器会读取仓库根目录的 ``.env``，让各个子进程共享同一套环境变量。
+- 统一启动 / 停止 / 重启 gateway、mcp、connector、ai、web
+- 每个服务独立日志页，支持复制日志与复制错误
+- Web 控制台提供“打开网页”快捷按钮
+- 启动器读取仓库根目录的 .env，让各子进程共享同一套环境变量
 """
 
 from __future__ import annotations
@@ -16,6 +14,7 @@ import queue
 import subprocess
 import sys
 import threading
+import webbrowser
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -27,8 +26,10 @@ from tkinter import scrolledtext, ttk
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SERVER_DIR = Path(__file__).resolve().parent
+WEB_DIR = ROOT_DIR / "web"
 ENV_FILE = ROOT_DIR / ".env"
 VENV_PYTHON = SERVER_DIR / "venv" / "Scripts" / "python.exe"
+WEB_URL = "http://127.0.0.1:58150"
 
 
 def _parse_env_file(path: Path) -> Dict[str, str]:
@@ -67,6 +68,7 @@ def build_env() -> Dict[str, str]:
     env.setdefault("CONNECTOR_RUNTIME_URL", "http://127.0.0.1:3002")
     env.setdefault("AI_RUNTIME_URL", "http://127.0.0.1:3003")
     env.setdefault("HEYSURE_API_GATEWAY_URL", "http://127.0.0.1:3000")
+    env.setdefault("SERVER_URL", "http://127.0.0.1:3000")
     env.setdefault("AI_DISPATCH_MODE", "remote")
     env.setdefault("HEYSURE_SERVER_RELOAD", "0")
     env["PYTHONUNBUFFERED"] = "1"
@@ -105,15 +107,30 @@ def short_status_text(status: str) -> str:
 class ServiceSpec:
     key: str
     title: str
-    module: str
     accent: str
+    launch_mode: str = "python"
+    module: Optional[str] = None
+    command: Optional[Tuple[str, ...]] = None
+    cwd: Optional[Path] = None
+    requires_database: bool = True
+    open_url: Optional[str] = None
 
 
 SERVICES: tuple[ServiceSpec, ...] = (
-    ServiceSpec("gateway", "网关服务", "gateway.main", "#60a5fa"),
-    ServiceSpec("mcp", "MCP 服务", "mcp_runtime.main", "#34d399"),
-    ServiceSpec("connector", "连接器服务", "connector_runtime.main", "#f59e0b"),
-    ServiceSpec("ai", "AI 服务", "ai_runtime.main", "#a78bfa"),
+    ServiceSpec("gateway", "API 网关", "#60a5fa", module="gateway.main"),
+    ServiceSpec("mcp", "MCP 运行时", "#34d399", module="mcp_runtime.main"),
+    ServiceSpec("connector", "连接器", "#f59e0b", module="connector_runtime.main"),
+    ServiceSpec("ai", "AI 运行时", "#a78bfa", module="ai_runtime.main"),
+    ServiceSpec(
+        "web",
+        "Web 控制台",
+        "#22c55e",
+        launch_mode="command",
+        command=("cmd.exe", "/c", "run.bat"),
+        cwd=WEB_DIR,
+        requires_database=False,
+        open_url=WEB_URL,
+    ),
 )
 
 
@@ -165,7 +182,7 @@ class ServicePane:
 
         self.subtitle_label = tk.Label(
             header,
-            text="日志区会自动跟随最新输出。遇到异常时可直接复制报错。",
+            text="日志区会自动滚动。遇到异常时可直接复制错误信息。",
             fg="#94a3b8",
             bg="#111827",
             font=("Segoe UI", 9),
@@ -186,18 +203,20 @@ class ServicePane:
         self.start_button = ttk.Button(left, text="启动", command=self.start)
         self.restart_button = ttk.Button(left, text="重启", command=self.restart)
         self.stop_button = ttk.Button(left, text="停止", command=self.stop)
-
         self.start_button.grid(row=0, column=0, padx=(0, 8))
         self.restart_button.grid(row=0, column=1, padx=(0, 8))
-        self.stop_button.grid(row=0, column=2)
+        self.stop_button.grid(row=0, column=2, padx=(0, 8))
+
+        if self.spec.open_url:
+            self.open_button = ttk.Button(left, text="打开网页", command=lambda: self.controller.open_url(self.spec.open_url))
+            self.open_button.grid(row=0, column=3, padx=(0, 8))
 
         right = tk.Frame(bar, bg="#0f172a")
         right.grid(row=0, column=1, sticky="e")
 
-        self.copy_error_button = ttk.Button(right, text="复制报错", command=self.copy_errors)
+        self.copy_error_button = ttk.Button(right, text="复制错误", command=self.copy_errors)
         self.copy_log_button = ttk.Button(right, text="复制日志", command=self.copy_all_logs)
         self.clear_button = ttk.Button(right, text="清空", command=self.clear_logs)
-
         self.copy_error_button.grid(row=0, column=0, padx=(0, 8))
         self.copy_log_button.grid(row=0, column=1, padx=(0, 8))
         self.clear_button.grid(row=0, column=2)
@@ -252,26 +271,44 @@ class ServicePane:
 
     def start(self) -> None:
         if self.is_running():
-            self.append("服务已经在运行。", "warning")
+            self.append("服务已经在运行", "warning")
             return
 
         env = build_env()
-        if not env.get("DATABASE_URL"):
+        if self.spec.requires_database and not env.get("DATABASE_URL"):
             self.set_status("缺少 DATABASE_URL", "#b91c1c")
-            self.append("缺少 DATABASE_URL，请先复制 .env.example 为 .env 并填写数据库连接串。", "error")
+            self.append("请先在 .env 里配置 DATABASE_URL，或者参考 .env.example 补齐数据库配置。", "error")
             return
 
         self.run_id += 1
         run_id = self.run_id
 
-        cmd = [get_python_executable(), "-u", "-m", self.spec.module]
+        if self.spec.launch_mode == "python":
+            if not self.spec.module:
+                self.set_status("配置错误", "#b91c1c")
+                self.append("Python 服务缺少 module 配置。", "error")
+                return
+            cmd = [get_python_executable(), "-u", "-m", self.spec.module]
+            cwd = SERVER_DIR
+        elif self.spec.launch_mode == "command":
+            if not self.spec.command:
+                self.set_status("配置错误", "#b91c1c")
+                self.append("命令模式缺少 command 配置。", "error")
+                return
+            cmd = list(self.spec.command)
+            cwd = self.spec.cwd or ROOT_DIR
+        else:
+            self.set_status("配置错误", "#b91c1c")
+            self.append(f"未知启动模式：{self.spec.launch_mode}", "error")
+            return
+
         self.append(f"启动命令：{' '.join(cmd)}", "meta")
         self.set_status("启动中...", "#d97706")
 
         try:
             self.process = subprocess.Popen(
                 cmd,
-                cwd=str(SERVER_DIR),
+                cwd=str(cwd),
                 env=env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -397,9 +434,9 @@ class ServicePane:
 class LauncherApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("HeySure 后端控制台")
-        self.root.geometry("1080x680")
-        self.root.minsize(960, 600)
+        self.root.title("HeySure 后端与 Web 控制台")
+        self.root.geometry("1080x700")
+        self.root.minsize(960, 620)
         self.root.configure(bg="#0b1220")
 
         style = ttk.Style()
@@ -470,7 +507,8 @@ class LauncherApp:
         group_right.pack(side="right")
         ttk.Button(group_right, text="复制当前页报错", command=self.copy_current_errors).grid(row=0, column=0, padx=(0, 8))
         ttk.Button(group_right, text="复制当前页日志", command=self.copy_current_logs).grid(row=0, column=1, padx=(0, 8))
-        ttk.Button(group_right, text="清空当前页", command=self.clear_current).grid(row=0, column=2)
+        ttk.Button(group_right, text="清空当前页", command=self.clear_current).grid(row=0, column=2, padx=(0, 8))
+        ttk.Button(group_right, text="打开网页", command=self.open_web_page).grid(row=0, column=3)
 
         tabs_wrap = tk.Frame(self.root, bg="#0b1220")
         tabs_wrap.pack(fill="both", expand=True, padx=16, pady=(0, 16))
@@ -490,13 +528,14 @@ class LauncherApp:
     def _update_banner(self) -> None:
         messages: List[str] = []
         if not ENV_FILE.exists():
-            messages.append(f"未找到 {ENV_FILE.name}，请先复制 .env.example 为 .env。")
+            messages.append(f"未找到 {ENV_FILE.name}，请先复制 .env.example 并补齐配置。")
         if not build_env().get("DATABASE_URL"):
-            messages.append("DATABASE_URL 还未配置，当前不能启动服务。")
+            messages.append("DATABASE_URL 还未配置，当前部分后端服务可能无法启动。")
         if VENV_PYTHON.exists():
             messages.append(f"使用虚拟环境 Python：{VENV_PYTHON}")
         else:
             messages.append(f"使用系统 Python：{sys.executable}")
+        messages.append(f"Web 控制台地址：{WEB_URL}")
         self.banner_var.set("  |  ".join(messages))
 
     def current_pane(self) -> ServicePane:
@@ -515,7 +554,7 @@ class LauncherApp:
             pass
 
         if installing:
-            self.show_tip("正在安装依赖，请稍候...", "warning")
+            self.show_tip("正在安装依赖，请稍等...", "warning")
         else:
             self._update_banner()
 
@@ -584,10 +623,6 @@ class LauncherApp:
             self.root.after(120, self._drain_queue)
 
     def _auto_start(self) -> None:
-        if not build_env().get("DATABASE_URL"):
-            for pane in self.panes.values():
-                pane.set_status("等待 DATABASE_URL", "#b91c1c")
-            return
         self.start_all()
 
     def start_all(self) -> None:
@@ -651,6 +686,17 @@ class LauncherApp:
     def copy_current_logs(self) -> None:
         self.current_pane().copy_all_logs()
 
+    def open_url(self, url: Optional[str] = None) -> None:
+        target = (url or WEB_URL).strip()
+        if not target:
+            self.show_tip("没有可打开的网址。", "warning")
+            return
+        webbrowser.open(target, new=1, autoraise=True)
+        self.show_tip(f"已打开 {target}", "info")
+
+    def open_web_page(self) -> None:
+        self.open_url(WEB_URL)
+
     def _read_install_output(self, proc: subprocess.Popen[str]) -> None:
         if proc.stdout is None:
             return
@@ -677,7 +723,7 @@ class LauncherApp:
 
 def main() -> None:
     if os.name != "nt":
-        print("这个启动器仅适用于 Windows。")
+        print("这个启动器只适用于 Windows。")
         raise SystemExit(1)
 
     root = tk.Tk()
