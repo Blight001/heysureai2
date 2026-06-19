@@ -17,4 +17,10 @@
     <color name="status_red">#EF4444</color>
     <color name="status_orange">#F97316</color>
     <color name="info">#38BDF8</color>
+
+    <!-- 完成态：授权步骤通过后的绿色提示底色/描边 -->
+    <color name="success_surface">#16291F</color>
+    <color name="success_border">#2E6B47</color>
+    <!-- 待办态：尚未授权时的琥珀色提示 -->
+    <color name="pending">#F59E0B</color>
 </resources>
