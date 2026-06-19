@@ -21,7 +21,14 @@ from .ai_config import (
     AssistantAIConfigCreate,
     AssistantAIConfigUpdate,
 )
-from .ai_runtime import AgentDispatchTask, AIRuntimeStatus, AITaskJob, TokenUsageSnapshot
+from .ai_runtime import (
+    AgentDispatchTask,
+    AIRuntimeStatus,
+    AITaskJob,
+    TaskPhase,
+    TaskPlan,
+    TokenUsageSnapshot,
+)
 from .chat import (
     ChatMessage,
     ChatMessageCreate,
@@ -123,6 +130,8 @@ __all__ = [
     "AgentDispatchTask",
     "AIRuntimeStatus",
     "AITaskJob",
+    "TaskPlan",
+    "TaskPhase",
     "TokenUsageSnapshot",
     # project
     "EvolutionProject",

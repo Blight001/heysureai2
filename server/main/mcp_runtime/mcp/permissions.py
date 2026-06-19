@@ -57,6 +57,11 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "task.create": ROLE_MANAGER,
     "task.update": ROLE_MANAGER,
     "task.delete": ROLE_MANAGER,
+    # Planned task flow — every member plans and runs its own task.
+    "plan.create": ROLE_MEMBER,
+    "plan.get": ROLE_MEMBER,
+    "phase.complete": ROLE_MEMBER,
+    "task.finish": ROLE_MEMBER,
     # Prompt — read own prompt is member; editing AI prompts is manager+;
     # global/system prompt templates are assistant_admin+.
     "prompt.list_targets": ROLE_MEMBER,

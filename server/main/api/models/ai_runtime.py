@@ -57,6 +57,55 @@ class AgentDispatchTask(SQLModel, table=True):
     completed_at: Optional[float] = None
 
 
+class TaskPlan(SQLModel, table=True):
+    """A multi-phase execution plan an AI commits to before acting.
+
+    The planned task flow is: trigger -> plan.create (commit a full plan) ->
+    execute phase by phase (phase.complete compacts the finished phase out of
+    the live context) -> task.finish (summarize the whole run into a success or
+    failure log). One active plan per (user, ai_config, session).
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    plan_id: str = Field(index=True, unique=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    ai_config_id: int = Field(index=True)
+    job_id: Optional[str] = Field(default=None, index=True)  # linked AITaskJob.job_id
+    session_id: Optional[str] = Field(default=None, index=True)
+    goal: str = Field(default="")
+    status: str = Field(default="active", index=True)  # active/completed/failed/abandoned
+    outcome: Optional[str] = None  # success/failure (set on task.finish)
+    phase_count: int = Field(default=0)
+    current_phase_seq: int = Field(default=0)  # 0-based index of the in-progress phase
+    summary: Optional[str] = None  # final whole-run summary
+    created_at: float = Field(default_factory=time.time, index=True)
+    updated_at: float = Field(default_factory=time.time)
+    finished_at: Optional[float] = None
+
+
+class TaskPhase(SQLModel, table=True):
+    """One phase of a :class:`TaskPlan`.
+
+    Each phase carries its own goal and a done-signal that marks completion, and
+    a JSON list of sub-actions (each with its own goal + done-signal). Phases are
+    executed in ``seq`` order; ``phase.complete`` advances ``TaskPlan`` to the
+    next one and records this phase's summary.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    phase_id: str = Field(index=True, unique=True)
+    plan_id: str = Field(index=True)
+    user_id: int = Field(index=True)
+    seq: int = Field(default=0, index=True)  # 0-based order within the plan
+    title: str = Field(default="")
+    goal: str = Field(default="")
+    done_signal: str = Field(default="")
+    actions_json: Optional[str] = None  # JSON list of {goal, done_signal}
+    status: str = Field(default="pending", index=True)  # pending/active/completed/failed
+    summary: Optional[str] = None  # phase summary recorded on completion
+    created_at: float = Field(default_factory=time.time)
+    started_at: Optional[float] = None
+    finished_at: Optional[float] = None
+
+
 class AITaskJob(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     job_id: str = Field(index=True, unique=True)

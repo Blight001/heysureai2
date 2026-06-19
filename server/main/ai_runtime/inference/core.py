@@ -24,7 +24,9 @@ from mcp_runtime.mcp import get_project_root, registry
 from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
 from api.models import AITaskJob, AssistantAIConfig, ChatMessage, ChatMessageCreate, User
 from api.services import conversation_compress
+from api.services import task_plan as plan_service
 from ai_runtime.inference import ai_message_service
+from ai_runtime.inference import phase_context
 from connector_runtime.dispatch.device_dispatch import (
     dispatch_endpoint_tool_and_wait,
     get_run_session_context,
@@ -39,6 +41,7 @@ from connector_runtime.dispatch.desktop_device_tools import (
     is_workshop_tool,
 )
 from api.services.task_system import (
+    TASK_PLAN_FLOW_PROMPT,
     TASK_RUNTIME_REQUIRED_TOOLS,
     normalize_system_auto_control,
     with_workspace_read_by_name_compat,
@@ -1405,6 +1408,12 @@ def _run_worker_impl(
                 )
                 # Remove legacy task-runtime prompt sections; task constraints are enforced server-side.
                 system_prompt = _strip_task_runtime_sections(system_prompt)
+                # Steer the planned task flow: plan -> phased execution -> summarized end.
+                system_prompt = _append_prompt_section(
+                    _strip_prompt_section(system_prompt, "任务规划流程"),
+                    "任务规划流程",
+                    TASK_PLAN_FLOW_PROMPT,
+                )
 
             # Up-front MCP tool catalog: list every callable tool (name + short
             # description) so the model can locate one directly, then load the
@@ -1475,6 +1484,10 @@ def _run_worker_impl(
             # self-inspection tools to the model.
             mcp_active = bool(cfg and cfg.mcp_enabled and effective_tool_allowlist)
             exposed_tool_allowlist = set(MCP_INTROSPECTION_TOOLS) & set(effective_tool_allowlist)
+            if is_task_runtime:
+                # Pre-expose the task / planned-flow tools so a task runtime can
+                # plan, advance phases and finish without a describe_tool detour.
+                exposed_tool_allowlist |= set(TASK_RUNTIME_REQUIRED_TOOLS) & set(effective_tool_allowlist)
             provider = _detect_provider(base_url)
             _ai_debug_stage(
                 "INIT",
@@ -1498,6 +1511,25 @@ def _run_worker_impl(
             })
 
             pending_ai_reply_message_id = ""
+            # Planned task flow state. ``plan_state`` is non-None only while an
+            # active plan exists for this (ai, session); it drives per-phase
+            # context compaction. ``phase_start_convo_index`` marks where the
+            # current phase begins in the live convo; ``phase_started_at`` marks
+            # the wall-clock boundary used to tag persisted messages on phase
+            # completion; ``phase_mcp_statuses`` records each tool's outcome so a
+            # finished phase collapses to a compact status line.
+            plan_state = None
+            phase_start_convo_index = len(convo)
+            phase_started_at = time.time()
+            phase_mcp_statuses: List[tuple] = []
+            if is_task_runtime and ai_config_id is not None:
+                try:
+                    plan_state = plan_service.get_active_plan(
+                        bg, user_id, int(ai_config_id), session_id
+                    )
+                except Exception:
+                    logger.exception("plan state load failed")
+                    plan_state = None
             for step_index in range(max_steps):
                 if _run_should_stop(run_id):
                     _run_set_status(run_id, "stopped", finished=True)
@@ -1866,6 +1898,12 @@ def _run_worker_impl(
                         convo = rebuilt_convo
                         convo.append({"role": "user", "content": _compress_note})
                         _set_run_live_usage(run_id, 0, 0, 0)
+                        # Conversation was rebuilt; reset the phase boundary so
+                        # phase compaction never splices against a stale index.
+                        if plan_state is not None:
+                            phase_start_convo_index = len(convo)
+                            phase_started_at = time.time()
+                            phase_mcp_statuses = []
                     else:
                         _compress_note = "当前对话历史较短，暂无需压缩，请直接继续。"
                         if _has_native_tc:
@@ -1900,7 +1938,7 @@ def _run_worker_impl(
                     and cfg.ai_role == "digital_member"
                     and not task_is_finished
                     and not compression_failed
-                    and payload_tool != "task.complete"
+                    and payload_tool not in ("task.complete", "task.finish", "phase.complete")
                 ):
                     threshold = token_threshold_override if token_threshold_override is not None else max(1, int(cfg.token_limit or 1))
                     session_tokens = _session_total_tokens(bg, user_id, ai_kind, session_id, ai_config_id)
@@ -1931,6 +1969,10 @@ def _run_worker_impl(
                             # Reset live pending token state so the threshold is not
                             # immediately re-hit on the next loop step.
                             _set_run_live_usage(run_id, 0, 0, 0)
+                            if plan_state is not None:
+                                phase_start_convo_index = len(convo)
+                                phase_started_at = time.time()
+                                phase_mcp_statuses = []
                             continue
                         # Compression failed or not enough history to compress:
                         # don't retry-loop forever; fall through this turn.
@@ -2061,6 +2103,8 @@ def _run_worker_impl(
                             session_id=session_id, run_id=run_id, message_id=getattr(saved, "id", None),
                             failed=item_failed, error=item_error,
                         )
+                        if plan_state is not None:
+                            phase_context.record_status(phase_mcp_statuses, split_tool, item_failed)
                         saved.tags = _append_mcp_state_to_tags(
                             saved.tags,
                             split_tool,
@@ -2220,6 +2264,8 @@ def _run_worker_impl(
                     session_id=session_id, run_id=run_id, message_id=getattr(saved, "id", None),
                     failed=tool_failed, error=tool_error,
                 )
+                if plan_state is not None:
+                    phase_context.record_status(phase_mcp_statuses, tool, tool_failed)
                 result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
                 if (
                     (not tool_failed)
@@ -2292,8 +2338,160 @@ def _run_worker_impl(
                         current_user_content=current_user_content,
                         tool_result=tool_result,
                     )
+                    if plan_state is not None:
+                        phase_start_convo_index = len(convo)
+                        phase_started_at = time.time()
+                        phase_mcp_statuses = []
                     _set_run_live_phase(run_id, "generating")
                     continue
+
+                # Planned task flow: keep a plan in sync and apply per-phase
+                # context compaction. ``plan.create`` (re)starts the boundary;
+                # ``phase.complete`` folds the finished phase out of context;
+                # ``task.finish`` closes the whole run.
+                if (not tool_failed) and tool == "plan.create":
+                    try:
+                        plan_state = plan_service.get_active_plan(
+                            bg, user_id, int(ai_config_id), session_id
+                        ) if ai_config_id is not None else None
+                    except Exception:
+                        logger.exception("plan reload after plan.create failed")
+                        plan_state = None
+                    phase_start_convo_index = len(convo)
+                    phase_started_at = time.time()
+                    phase_mcp_statuses = []
+
+                if (not tool_failed) and tool == "phase.complete" and plan_state is not None:
+                    result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
+                    finished_phase = result_payload.get("finished_phase") if isinstance(result_payload, dict) else None
+                    boundary = max(0, min(phase_start_convo_index, len(convo)))
+                    compaction_text = phase_context.build_phase_compaction_text(
+                        finished_phase, phase_mcp_statuses
+                    )
+                    # Fold the finished phase out of the live conversation: drop
+                    # its deep-thinking + verbose MCP results, keep one status line.
+                    convo[boundary:] = [{"role": "user", "content": compaction_text}]
+                    now_ts = time.time()
+                    try:
+                        phase_context.mark_phase_messages_compressed(
+                            bg,
+                            user_id=user_id,
+                            ai_config_id=ai_config_id,
+                            ai_kind=ai_kind,
+                            session_id=session_id,
+                            since_ts=phase_started_at,
+                            until_ts=now_ts,
+                        )
+                        _save_message(
+                            bg,
+                            user_id,
+                            ChatMessageCreate(
+                                role="user",
+                                content=compaction_text,
+                                tags="phase_summary",
+                                ai_config_id=ai_config_id,
+                                ai_kind=ai_kind,
+                                session_id=session_id,
+                                session_name=session_name,
+                                model=model,
+                                total_tokens=max(1, len(compaction_text) // 3),
+                            ),
+                        )
+                        bg.commit()
+                    except Exception:
+                        logger.exception("phase compaction persistence failed")
+                        bg.rollback()
+                    # Refresh plan state and open a fresh boundary for next phase.
+                    try:
+                        plan_state = plan_service.get_active_plan(
+                            bg, user_id, int(ai_config_id), session_id
+                        ) if ai_config_id is not None else None
+                    except Exception:
+                        logger.exception("plan reload after phase.complete failed")
+                    phase_start_convo_index = len(convo)
+                    phase_started_at = time.time()
+                    phase_mcp_statuses = []
+                    _set_run_live_phase(run_id, "generating")
+                    continue
+
+                if (not tool_failed) and tool == "task.finish":
+                    result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
+                    finish_outcome = str(result_payload.get("outcome") or "").strip() or "success"
+                    finish_job_id = str(result_payload.get("job_id") or "").strip()
+                    finish_log_path = str(result_payload.get("log_path") or "").strip()
+                    finish_summary = str((arguments or {}).get("summary") or "").strip()
+                    # Hide the whole run's deep-thinking + MCP detail: the final
+                    # phase (since its boundary) still carries verbose turns;
+                    # earlier phases were already folded at phase.complete.
+                    now_ts = time.time()
+                    completed_job = None
+                    if finish_job_id and ai_config_id is not None:
+                        completed_job = bg.exec(
+                            select(AITaskJob).where(
+                                AITaskJob.user_id == user_id,
+                                AITaskJob.ai_config_id == ai_config_id,
+                                AITaskJob.job_id == finish_job_id,
+                            )
+                        ).first()
+                    if completed_job is None and task_job is not None:
+                        completed_job = task_job
+                    try:
+                        phase_context.mark_phase_messages_compressed(
+                            bg,
+                            user_id=user_id,
+                            ai_config_id=ai_config_id,
+                            ai_kind=ai_kind,
+                            session_id=session_id,
+                            since_ts=phase_started_at,
+                            until_ts=now_ts,
+                        )
+                    except Exception:
+                        logger.exception("task.finish compaction tagging failed")
+                    if completed_job is not None:
+                        completed_job.status = "completed"
+                        completed_job.finished_at = now_ts
+                        completed_job.updated_at = now_ts
+                        bg.add(completed_job)
+                        try:
+                            notify_task_completion(
+                                user_id=user_id,
+                                job_id=str(completed_job.job_id or ""),
+                                summary=finish_summary,
+                            )
+                        except Exception:
+                            logger.exception("task.finish completion notify failed")
+                    next_loop_job = _create_loop_scheduled_job(bg, completed_job, time.time())
+                    finish_notice_lines = [
+                        "[系统提示]",
+                        f"任务已通过 `task.finish` 收尾，结果：{'成功' if finish_outcome == 'success' else '失败'}。",
+                    ]
+                    if finish_log_path:
+                        finish_notice_lines.append(
+                            f"- 完整流程已写入{'成功' if finish_outcome == 'success' else '失败'}日志: {finish_log_path}"
+                        )
+                    if next_loop_job is not None:
+                        finish_notice_lines.append(f"- 循环任务已创建: {next_loop_job.job_id}")
+                    finish_notice_lines.append("")
+                    finish_notice_lines.append("本任务对话已自动锁定，不再继续后续操作。")
+                    _save_message(
+                        bg,
+                        user_id,
+                        ChatMessageCreate(
+                            role="user",
+                            content="\n".join(finish_notice_lines),
+                            tags="system_notice_task_complete",
+                            ai_config_id=ai_config_id,
+                            ai_kind=ai_kind,
+                            session_id=session_id,
+                            session_name=session_name,
+                            model=model,
+                            total_tokens=0,
+                        ),
+                    )
+                    bg.commit()
+                    _set_run_live_phase(run_id, "idle")
+                    _run_set_status(run_id, "completed", finished=True)
+                    return
 
                 if (not tool_failed) and tool == "task.complete":
                     result_payload = tool_result.get("result", tool_result)
