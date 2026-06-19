@@ -55,6 +55,10 @@ class Settings(context: Context) {
         get() = prefs.getBoolean(KEY_KEEP_AWAKE, false)
         set(value) = prefs.edit().putBoolean(KEY_KEEP_AWAKE, value).apply()
 
+    var captureQuality: CaptureQuality
+        get() = CaptureQuality.fromId(prefs.getString(KEY_CAPTURE_QUALITY, null))
+        set(value) = prefs.edit().putString(KEY_CAPTURE_QUALITY, value.id).apply()
+
     /** Stable per-install id so reconnects update the same logical agent. */
     val deviceId: String
         get() {
@@ -95,5 +99,49 @@ class Settings(context: Context) {
         const val KEY_REMEMBER_LOGIN = "rememberLogin"
         const val KEY_DEVICE_ID = "deviceId"
         const val KEY_KEEP_AWAKE = "keepScreenAwake"
+        const val KEY_CAPTURE_QUALITY = "captureQuality"
+    }
+}
+
+enum class CaptureQuality(
+    val id: String,
+    val label: String,
+    val description: String,
+    val imageMaxSide: Int,
+    val imageStartQuality: Int,
+    val videoScale: Float,
+    val videoBitrate: Int,
+) {
+    LOW(
+        id = "low",
+        label = "低",
+        description = "更小文件，适合弱网和快速识别",
+        imageMaxSide = 900,
+        imageStartQuality = 62,
+        videoScale = 0.42f,
+        videoBitrate = 450_000,
+    ),
+    MEDIUM(
+        id = "medium",
+        label = "中",
+        description = "默认设置，兼顾清晰度与 500KB 限制",
+        imageMaxSide = 1280,
+        imageStartQuality = 76,
+        videoScale = 0.55f,
+        videoBitrate = 800_000,
+    ),
+    HIGH(
+        id = "high",
+        label = "高",
+        description = "优先清晰度，仍会压缩到 500KB 以内",
+        imageMaxSide = 1600,
+        imageStartQuality = 88,
+        videoScale = 0.72f,
+        videoBitrate = 1_200_000,
+    );
+
+    companion object {
+        fun fromId(id: String?): CaptureQuality =
+            entries.firstOrNull { it.id == id } ?: MEDIUM
     }
 }

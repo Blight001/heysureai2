@@ -3,6 +3,7 @@ package ai.heysure.agent
 import android.animation.AnimatorSet
 import android.animation.ObjectAnimator
 import ai.heysure.agent.agent.AgentService
+import ai.heysure.agent.agent.CaptureQuality
 import ai.heysure.agent.agent.DeviceStatus
 import ai.heysure.agent.agent.ServerApi
 import ai.heysure.agent.agent.Settings
@@ -28,6 +29,8 @@ import android.view.ViewOutlineProvider
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -505,6 +508,10 @@ class MainActivity : AppCompatActivity() {
         body.addView(dialogButton(getString(R.string.grant_capture)) { requestCapture() })
         body.addView(hintText(getString(R.string.hint_permissions)))
 
+        body.addView(sectionTitle(getString(R.string.card_capture_quality)))
+        body.addView(captureQualityPicker())
+        body.addView(hintText(getString(R.string.hint_capture_quality)))
+
         body.addView(sectionTitle(getString(R.string.card_power)))
         body.addView(SwitchMaterial(this).apply {
             text = getString(R.string.keep_awake)
@@ -683,6 +690,33 @@ class MainActivity : AppCompatActivity() {
         ).apply { topMargin = dp(8) }
         bindTapFeedback(this)
         setOnClickListener { onClick() }
+    }
+
+    private fun captureQualityPicker() = RadioGroup(this).apply {
+        orientation = RadioGroup.VERTICAL
+        background = ContextCompat.getDrawable(this@MainActivity, R.drawable.pill_bg)
+        setPadding(dp(10), dp(8), dp(10), dp(8))
+
+        val ids = mutableMapOf<Int, CaptureQuality>()
+        CaptureQuality.entries.forEach { quality ->
+            val radio = RadioButton(this@MainActivity).apply {
+                id = View.generateViewId()
+                text = "${quality.label}画质 · ${quality.description}"
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+                textSize = 12f
+                minHeight = dp(38)
+                buttonTintList = ColorStateList.valueOf(ContextCompat.getColor(this@MainActivity, R.color.heysure_primary))
+                isChecked = settings.captureQuality == quality
+            }
+            ids[radio.id] = quality
+            addView(radio)
+        }
+        setOnCheckedChangeListener { _, checkedId ->
+            val selected = ids[checkedId] ?: return@setOnCheckedChangeListener
+            if (settings.captureQuality == selected) return@setOnCheckedChangeListener
+            settings.captureQuality = selected
+            toast("已切换为${selected.label}画质")
+        }
     }
 
     private fun permissionStep(

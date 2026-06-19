@@ -4,6 +4,7 @@
 
     <string name="card_account">🔐 登录软件端账号</string>
     <string name="card_permissions">🛡 权限授权</string>
+    <string name="card_capture_quality">🎞 截图与录屏画质</string>
     <string name="card_power">🔋 后台与常亮</string>
     <string name="card_log">📜 运行日志</string>
     <string name="card_connection">连接与 AI 分配</string>
@@ -27,6 +28,7 @@
     <string name="hint_account_card">登录后会固定自动连接服务器，设备出现在网页端「作坊」栏目等待分配 AI。</string>
     <string name="hint_connection_card">本设备登录后自动连接服务器。AI 由管理员在网页端「作坊」栏目中为本设备分配。</string>
     <string name="hint_permissions">点击/滑动依赖无障碍；截屏/录屏依赖投屏授权，二者需手动授予一次。</string>
+    <string name="hint_capture_quality">默认中画质。截图会自动压缩到 500KB 以内；录屏会按时长下调码率，目标文件控制在 500KB 内。</string>
     <string name="hint_power">常亮模式用 WakeLock 让屏幕压暗常亮、CPU 不休眠；真正息屏+安全锁屏控制请用「电脑 ADB」形态。</string>
 
     <string name="status_disconnected">未连接</string>

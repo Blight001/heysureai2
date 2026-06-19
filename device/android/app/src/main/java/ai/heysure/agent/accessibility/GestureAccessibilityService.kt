@@ -15,6 +15,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * must enable it once under Settings > Accessibility.
  */
 class GestureAccessibilityService : AccessibilityService() {
+    private val effectOverlay by lazy { GestureEffectOverlay(this) }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -22,11 +23,13 @@ class GestureAccessibilityService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
+        effectOverlay.detach()
         instance = null
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
+        effectOverlay.detach()
         if (instance === this) instance = null
         super.onDestroy()
     }
@@ -45,6 +48,18 @@ class GestureAccessibilityService : AccessibilityService() {
             }, null)
             if (!ok && cont.isActive) cont.resume(false)
         }
+
+    fun showTapEffect(x: Float, y: Float) {
+        effectOverlay.showTap(x, y)
+    }
+
+    fun showDragEffect(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long) {
+        effectOverlay.showDrag(x1, y1, x2, y2, durationMs)
+    }
+
+    fun showHomeEffect() {
+        effectOverlay.showHome()
+    }
 
     /** Type into the currently focused editable node (best-effort). */
     fun typeIntoFocused(text: String): Boolean {

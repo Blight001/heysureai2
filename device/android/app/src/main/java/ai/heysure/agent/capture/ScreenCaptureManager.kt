@@ -1,5 +1,7 @@
 package ai.heysure.agent.capture
 
+import ai.heysure.agent.agent.CaptureQuality
+import ai.heysure.agent.agent.Settings
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
@@ -31,6 +33,7 @@ class ScreenCaptureManager(private val appContext: Context) {
 
     @Volatile
     private var projection: MediaProjection? = null
+    private val settings = Settings(appContext)
     private val mainHandler = Handler(Looper.getMainLooper())
 
     val isReady: Boolean get() = projection != null
@@ -63,10 +66,11 @@ class ScreenCaptureManager(private val appContext: Context) {
         return dm
     }
 
-    /** Capture one frame and return it as a PNG data URL (key the server's
+    /** Capture one frame and return it as a compressed image data URL (key the server's
      *  screenshot pipeline recognises — see device_dispatch `_IMAGE_DATA_URL_KEYS`). */
     suspend fun captureDataUrl(): String {
         val mp = projection ?: throw IllegalStateException("未授权截屏：请先在 App 内点击\"授权截屏/录屏\"")
+        val quality = settings.captureQuality
         val dm = metrics()
         val width = dm.widthPixels
         val height = dm.heightPixels
@@ -86,7 +90,7 @@ class ScreenCaptureManager(private val appContext: Context) {
             val cropped = if (bitmap.width != width) {
                 Bitmap.createBitmap(bitmap, 0, 0, width, height)
             } else bitmap
-            return "data:image/png;base64," + encodePng(cropped)
+            return "data:image/jpeg;base64," + encodeJpegUnderLimit(cropped, quality)
         } finally {
             display.release()
             reader.close()
@@ -98,9 +102,11 @@ class ScreenCaptureManager(private val appContext: Context) {
      *  reads as spyware to anti-fraud / Play Protect scanners. */
     suspend fun recordToFile(durationMs: Long): File {
         val mp = projection ?: throw IllegalStateException("未授权录屏：请先在 App 内点击\"授权截屏/录屏\"")
+        val quality = settings.captureQuality
         val dm = metrics()
-        val width = (dm.widthPixels / 2) * 2   // encoder wants even dimensions
-        val height = (dm.heightPixels / 2) * 2
+        val width = even((dm.widthPixels * quality.videoScale).toInt())
+        val height = even((dm.heightPixels * quality.videoScale).toInt())
+        val bitrate = videoBitrateFor(quality, durationMs)
 
         val outFile = File(appContext.cacheDir, "heysure-record-${System.currentTimeMillis()}.mp4")
         val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -114,7 +120,7 @@ class ScreenCaptureManager(private val appContext: Context) {
             setOutputFile(outFile.absolutePath)
             setVideoEncoder(MediaRecorder.VideoEncoder.H264)
             setVideoSize(width, height)
-            setVideoEncodingBitRate(6_000_000)
+            setVideoEncodingBitRate(bitrate)
             setVideoFrameRate(30)
             prepare()
         }
@@ -159,9 +165,54 @@ class ScreenCaptureManager(private val appContext: Context) {
         return bitmap
     }
 
-    private fun encodePng(bitmap: Bitmap): String {
+    private fun encodeJpegUnderLimit(source: Bitmap, quality: CaptureQuality): String {
+        var current = scaleToMaxSide(source, quality.imageMaxSide)
+        var jpegQuality = quality.imageStartQuality
+        var bytes = jpegBytes(current, jpegQuality)
+
+        while (bytes.size > MAX_CAPTURE_BYTES && jpegQuality > MIN_JPEG_QUALITY) {
+            jpegQuality -= 8
+            bytes = jpegBytes(current, jpegQuality)
+        }
+
+        while (bytes.size > MAX_CAPTURE_BYTES && current.width > MIN_IMAGE_SIDE && current.height > MIN_IMAGE_SIDE) {
+            val nextWidth = even((current.width * 0.86f).toInt()).coerceAtLeast(MIN_IMAGE_SIDE)
+            val nextHeight = even((current.height * 0.86f).toInt()).coerceAtLeast(MIN_IMAGE_SIDE)
+            current = Bitmap.createScaledBitmap(current, nextWidth, nextHeight, true)
+            jpegQuality = minOf(jpegQuality, 68)
+            bytes = jpegBytes(current, jpegQuality)
+        }
+
+        return Base64.encodeToString(bytes, Base64.NO_WRAP)
+    }
+
+    private fun jpegBytes(bitmap: Bitmap, quality: Int): ByteArray {
         val out = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-        return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+        bitmap.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(MIN_JPEG_QUALITY, 95), out)
+        return out.toByteArray()
+    }
+
+    private fun scaleToMaxSide(source: Bitmap, maxSide: Int): Bitmap {
+        val longest = maxOf(source.width, source.height)
+        if (longest <= maxSide) return source
+        val scale = maxSide.toFloat() / longest
+        val width = even((source.width * scale).toInt()).coerceAtLeast(MIN_IMAGE_SIDE)
+        val height = even((source.height * scale).toInt()).coerceAtLeast(MIN_IMAGE_SIDE)
+        return Bitmap.createScaledBitmap(source, width, height, true)
+    }
+
+    private fun videoBitrateFor(quality: CaptureQuality, durationMs: Long): Int {
+        val seconds = (durationMs.coerceIn(500, 120_000) / 1000.0).coerceAtLeast(0.5)
+        val budgetBitrate = ((MAX_CAPTURE_BYTES * 8 * 0.62) / seconds).toInt()
+        return minOf(quality.videoBitrate, budgetBitrate).coerceAtLeast(MIN_VIDEO_BITRATE)
+    }
+
+    private fun even(value: Int): Int = value.coerceAtLeast(2).let { if (it % 2 == 0) it else it - 1 }
+
+    private companion object {
+        const val MAX_CAPTURE_BYTES = 500 * 1024
+        const val MIN_JPEG_QUALITY = 28
+        const val MIN_IMAGE_SIDE = 160
+        const val MIN_VIDEO_BITRATE = 24_000
     }
 }

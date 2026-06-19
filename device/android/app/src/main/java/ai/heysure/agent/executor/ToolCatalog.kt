@@ -22,7 +22,7 @@ class ToolCatalog(private val capture: ScreenCaptureManager) {
         add(longPressTool())
         add(swipeTool())
         add(globalActionTool("touch.back", "返回上一页（系统返回键）", AccessibilityService.GLOBAL_ACTION_BACK))
-        add(globalActionTool("touch.home", "回到桌面（系统 Home 键）", AccessibilityService.GLOBAL_ACTION_HOME))
+        add(globalActionTool("touch.home", "回到桌面（系统 Home 键）", AccessibilityService.GLOBAL_ACTION_HOME, showHomeEffect = true))
         add(globalActionTool("touch.recents", "打开最近任务", AccessibilityService.GLOBAL_ACTION_RECENTS))
         add(typeTool())
         add(screenshotTool())
@@ -207,7 +207,9 @@ class ToolCatalog(private val capture: ScreenCaptureManager) {
             val x = args.getInt("x").toFloat()
             val y = args.getInt("y").toFloat()
             val path = Path().apply { moveTo(x, y) }
-            val ok = gesture().dispatch(path, 0, 60)
+            val service = gesture()
+            service.showTapEffect(x, y)
+            val ok = service.dispatch(path, 0, 60)
             return JSONObject().put("ok", ok).put("x", x).put("y", y)
         }
     }
@@ -227,7 +229,9 @@ class ToolCatalog(private val capture: ScreenCaptureManager) {
             val y = args.getInt("y").toFloat()
             val dur = args.optLong("duration_ms", 600)
             val path = Path().apply { moveTo(x, y) }
-            val ok = gesture().dispatch(path, 0, dur)
+            val service = gesture()
+            service.showTapEffect(x, y)
+            val ok = service.dispatch(path, 0, dur)
             return JSONObject().put("ok", ok)
         }
     }
@@ -245,21 +249,35 @@ class ToolCatalog(private val capture: ScreenCaptureManager) {
             required = listOf("x1", "y1", "x2", "y2"),
         )
         override suspend fun run(args: JSONObject): JSONObject {
+            val x1 = args.getInt("x1").toFloat()
+            val y1 = args.getInt("y1").toFloat()
+            val x2 = args.getInt("x2").toFloat()
+            val y2 = args.getInt("y2").toFloat()
+            val durationMs = args.optLong("duration_ms", 300)
             val path = Path().apply {
-                moveTo(args.getInt("x1").toFloat(), args.getInt("y1").toFloat())
-                lineTo(args.getInt("x2").toFloat(), args.getInt("y2").toFloat())
+                moveTo(x1, y1)
+                lineTo(x2, y2)
             }
-            val ok = gesture().dispatch(path, 0, args.optLong("duration_ms", 300))
+            val service = gesture()
+            service.showDragEffect(x1, y1, x2, y2, durationMs)
+            val ok = service.dispatch(path, 0, durationMs)
             return JSONObject().put("ok", ok)
         }
     }
 
-    private fun globalActionTool(toolName: String, desc: String, action: Int) = object : Tool {
+    private fun globalActionTool(
+        toolName: String,
+        desc: String,
+        action: Int,
+        showHomeEffect: Boolean = false,
+    ) = object : Tool {
         override val name = toolName
         override val description = desc
         override val inputSchema = objectSchema(JSONObject())
         override suspend fun run(args: JSONObject): JSONObject {
-            val ok = gesture().performGlobalAction(action)
+            val service = gesture()
+            if (showHomeEffect) service.showHomeEffect()
+            val ok = service.performGlobalAction(action)
             return JSONObject().put("ok", ok)
         }
     }
@@ -279,7 +297,7 @@ class ToolCatalog(private val capture: ScreenCaptureManager) {
 
     private fun screenshotTool() = object : Tool {
         override val name = "screen.capture"
-        override val description = "对当前手机屏幕截图，返回 PNG 图片。"
+        override val description = "按当前画质设置对手机屏幕截图，返回 500KB 以内的压缩图片。"
         override val inputSchema = objectSchema(JSONObject())
         override suspend fun run(args: JSONObject): JSONObject {
             val dataUrl = capture.captureDataUrl()
@@ -290,7 +308,7 @@ class ToolCatalog(private val capture: ScreenCaptureManager) {
 
     private fun recordTool() = object : Tool {
         override val name = "screen.record"
-        override val description = "录制屏幕一段时间，生成 mp4 视频文件并返回本机路径（仅画面，不含音频）。"
+        override val description = "按当前画质设置录制屏幕一段时间，生成 mp4 视频文件并返回本机路径（仅画面，不含音频）。"
         override val destructive = false
         override val inputSchema = objectSchema(
             JSONObject()
