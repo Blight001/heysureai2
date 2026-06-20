@@ -337,9 +337,9 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="knowledge.manage",
         description=(
-            "知识库统一工具：用 action 操作知识工坊里的传承思想与内置知识类目——"
+            "知识库统一工具：用 action 操作图书馆里的传承思想与内置知识类目——"
             "list_thoughts/get_thought/create_thought/edit_thought/delete_thought、install_skill_package、"
-            "read_*/update_* 各内置类目。需要该 AI 已绑定知识工坊；写操作按角色受限。"
+            "read_*/update_* 各内置类目。需要该 AI 已绑定图书馆；写操作按角色受限。"
         ),
         input_schema=KNOWLEDGE_MANAGE_SCHEMA,
         handler=_knowledge_manage,
@@ -349,7 +349,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="knowledge.search",
         description=(
-            "语义召回知识工坊里的主题思想。根据 query 通过向量检索与关键词回退返回最相关条目，"
+            "语义召回图书馆里的主题思想。根据 query 通过向量检索与关键词回退返回最相关条目，"
             "用于在写作、任务执行和复盘时快速找到可复用的有效思想。"
         ),
         input_schema=KNOWLEDGE_SEARCH_SCHEMA,

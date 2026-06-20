@@ -5,7 +5,7 @@ TOOL_DEFS = [
     {
         "name": "librarian.list_inheritance_thoughts",
         "description": (
-            "获取当前用户知识工坊中已安装的传承思想列表。"
+            "获取当前用户图书馆中已安装的传承思想列表。"
             "返回每条思想的 ID、名称、摘要、版本、来源和本地可用状态；"
             "需要正文时再调用 librarian.get_inheritance_thought。"
         ),

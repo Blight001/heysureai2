@@ -1,4 +1,4 @@
-"""``/api/workshop`` — 服务端内置知识工坊 Agent 的绑定接口。
+"""``/api/workshop`` — 服务端内置图书馆 Agent 的绑定接口。
 
 工坊按账号自动上线（无需用户运行独立程序），本路由只管"哪个 AI 绑定了
 工坊"：当前提供传承思想列表、带行号详情、安装、按行编辑和删除 MCP。
@@ -110,7 +110,7 @@ async def update_workshop_binding(
     if not device_id:
         raise HTTPException(status_code=400, detail="device_id is required")
     if bool(payload.bound) and str(cfg.ai_role or "") != "digital_member":
-        raise HTTPException(status_code=400, detail="知识工坊只能绑定 AI 数字成员")
+        raise HTTPException(status_code=400, detail="图书馆只能绑定 AI 数字成员")
     # 1:1：绑定会替换该工坊原有的绑定，把被替换的成员返回给前端提示。
     replaced_id = bound_config_id_for_agent(user.id, device_id)
     if replaced_id == int(cfg.id):

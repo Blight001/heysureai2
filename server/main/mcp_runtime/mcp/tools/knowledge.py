@@ -82,13 +82,13 @@ KNOWLEDGE_MANAGE_SCHEMA: Dict[str, Any] = {
             "type": "string",
             "enum": sorted(_KNOWLEDGE_ACTIONS),
             "description": (
-                "操作类型（知识库 / 知识工坊）：\n"
+                "操作类型（知识库 / 图书馆）：\n"
                 "- list_thoughts 列出传承思想；get_thought 读取某条传承思想正文；\n"
                 "- create_thought 新建传承思想；edit_thought 按行编辑；delete_thought 删除（需管理者+）；\n"
                 "- install_skill_package 安装 Skill 包（需管理者+）；\n"
                 "- read_inheritance_skills / read_skills / read_personas / read_system_prompts 读取内置类目；\n"
                 "- update_skills / update_system_prompts（需辅助管理员+）、update_persona（需管理者+）改写内置类目。\n"
-                "需要该 AI 已绑定知识工坊。各 action 的具体参数可放在 params 对象或直接平铺在顶层。"
+                "需要该 AI 已绑定图书馆。各 action 的具体参数可放在 params 对象或直接平铺在顶层。"
             ),
         },
         "params": {

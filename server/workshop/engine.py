@@ -22,7 +22,7 @@ from . import tools
 logger = logging.getLogger(__name__)
 
 _AGENT_ID_PREFIX = "workshop_builtin_"
-WORKSHOP_DISPLAY_NAME = "知识工坊（内置）"
+WORKSHOP_DISPLAY_NAME = "图书馆（内置）"
 WORKSHOP_PLATFORM = "Workshop-Server"
 
 _TOOL_HANDLERS = {
@@ -222,7 +222,7 @@ def execute_tool(user_id: int, ai_config_id: Optional[int], tool: str, args: Opt
     if not workshop_device_ids_for_config(user_id, cfg.id):
         raise HTTPException(
             status_code=403,
-            detail=f"AI config {cfg.id} 未绑定知识工坊，无法调用 {tool}（在 AI 配置弹窗或世界中绑定）",
+            detail=f"AI config {cfg.id} 未绑定图书馆，无法调用 {tool}（在 AI 配置弹窗或世界中绑定）",
         )
 
     # 角色最低权限复核。

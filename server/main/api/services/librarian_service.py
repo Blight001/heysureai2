@@ -84,6 +84,18 @@ _BUILTIN_ENTRIES = {
         "triggers": ["固有属性", "服务端MCP", "系统MCP", "固定MCP"],
         "summary": "系统固定注册的服务端 MCP 工具定义（按 namespace 分组）。",
     },
+    # 工具箱：每个 AI 默认即可用、无需绑定的系统固定 MCP（图书馆绑定工具除外）。
+    "builtin.toolbox": {
+        "title": "工具箱",
+        "triggers": ["工具箱", "系统工具", "默认MCP", "固定MCP"],
+        "summary": "每个 AI 默认绑定的系统固定 MCP 工具（无需绑定图书馆即可用）。",
+    },
+    # 图书馆管理工具：需绑定图书馆后才能调用的治理 / 管理类 MCP。
+    "builtin.library_mcp": {
+        "title": "图书馆管理工具",
+        "triggers": ["图书馆", "管理工具", "治理MCP", "绑定工具"],
+        "summary": "需绑定图书馆后调用的管理类 MCP：prompt 管理、管理员操作、设备管理、知识库管理。",
+    },
     "builtin.inheritance_tools": {
         "title": "传承思想",
         "triggers": ["传承思想", "Markdown文件", "思想沉淀"],
@@ -1135,6 +1147,14 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
             properties = _intrinsic_properties_payload(int(user_id or 0))
             out["intrinsic_properties"] = properties
             out["body"] = _render_intrinsic_properties_body(properties)
+        elif memory_id == "builtin.toolbox":
+            toolbox = _intrinsic_properties_payload(int(user_id or 0), scope="toolbox")
+            out["toolbox"] = toolbox
+            out["body"] = _render_intrinsic_properties_body(toolbox, title="工具箱")
+        elif memory_id == "builtin.library_mcp":
+            library_mcp = _intrinsic_properties_payload(int(user_id or 0), scope="library")
+            out["library_mcp"] = library_mcp
+            out["body"] = _render_intrinsic_properties_body(library_mcp, title="图书馆管理工具")
         elif memory_id == "builtin.inheritance_skills":
             skills = _inheritance_skills_payload(int(user_id or 0))
             out["inheritance_skills"] = skills
@@ -1146,21 +1166,37 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
     return out
 
 
-def _intrinsic_properties_payload(user_id: int = 0) -> Dict[str, Any]:
+_INTRINSIC_SCOPE_DESCRIPTIONS = {
+    "all": "系统当前固定注册的服务端 MCP 工具定义如下；默认中文展示，编辑后会同步影响 [可用MCP工具] 目录与 mcp.describe_tool 的返回。",
+    "toolbox": "「工具箱」：每个 AI 默认即可用的系统固定 MCP 工具（无需绑定）；编辑后会同步影响 mcp.describe_tool 的返回。",
+    "library": "「图书馆」管理工具：需要该 AI 绑定图书馆后才能调用的治理 / 管理类 MCP（prompt 管理、管理员操作、设备管理、知识库管理）。",
+}
+
+
+def _intrinsic_properties_payload(user_id: int = 0, *, scope: str = "all") -> Dict[str, Any]:
+    """服务端固定 MCP 工具视图。``scope``：all 全部 / toolbox 工具箱 / library 图书馆管理工具。"""
     from mcp_runtime.mcp import registry
+    from mcp_runtime.mcp.permissions import LIBRARY_BOUND_TOOLS
 
     overrides = _load_intrinsic_properties_overrides(user_id) if user_id else {}
-    tools = sorted(registry.list_tools(), key=lambda item: str(item.get("name") or ""))
-    # 文件为真相源：首次把注册表工具导出成 mcp/<ns>/<tool>.md（已存在跳过）。
+    all_tools = sorted(registry.list_tools(), key=lambda item: str(item.get("name") or ""))
+    # 文件为真相源：首次把注册表工具导出成 mcp/<ns>/<tool>.md（已存在跳过）。始终按全量
+    # seed，避免按 scope 过滤后漏建文件。
     if user_id:
         try:
             kb_store.seed_mcp_tools(
                 int(user_id),
-                tools,
+                all_tools,
                 lambda nm, schema: _mcp_schema_parameter_rows(nm, schema, None),
             )
         except Exception as exc:
             logger.info(f"seed_mcp_tools user={user_id} failed: {exc}")
+    if scope == "toolbox":
+        tools = [t for t in all_tools if str(t.get("name") or "").strip() not in LIBRARY_BOUND_TOOLS]
+    elif scope == "library":
+        tools = [t for t in all_tools if str(t.get("name") or "").strip() in LIBRARY_BOUND_TOOLS]
+    else:
+        tools = all_tools
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for tool in tools:
         name = str(tool.get("name") or "").strip()
@@ -1193,7 +1229,8 @@ def _intrinsic_properties_payload(user_id: int = 0) -> Dict[str, Any]:
         for namespace, items in sorted(grouped.items())
     ]
     return {
-        "description": "系统当前固定注册的服务端 MCP 工具定义如下；默认中文展示，编辑后会同步影响 [可用MCP工具] 目录与 mcp.describe_tool 的返回。",
+        "description": _INTRINSIC_SCOPE_DESCRIPTIONS.get(scope, _INTRINSIC_SCOPE_DESCRIPTIONS["all"]),
+        "scope": scope,
         "total": len(tools),
         "categories": categories,
     }
@@ -1342,10 +1379,10 @@ def save_intrinsic_properties_overrides(*, user_id: int, tools: List[Dict[str, A
     return _builtin_entry("builtin.inheritance_skills", user_id=user_id, with_body=True) or {}
 
 
-def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None) -> str:
+def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None, *, title: str = "固有属性") -> str:
     data = payload or _intrinsic_properties_payload()
     lines = [
-        "# 固有属性",
+        f"# {title}",
         "",
         str(data.get("description") or ""),
         "",
@@ -1451,7 +1488,7 @@ def _inheritance_skills_payload(user_id: int = 0) -> Dict[str, Any]:
             "传承技能包含系统服务端内置 MCP 与当前账号在线设备实时上报的工具；"
             "服务端工具说明可编辑，保存后同步 mcp.list_tools / mcp.describe_tool。"
         ),
-        "workshop": "知识工坊（内置）",
+        "workshop": "图书馆（内置）",
         "online": bool(online_devices),
         "server_total": len(server_tools),
         "server_categories": server_categories,
@@ -1469,7 +1506,7 @@ def _render_inheritance_skills_body(payload: Dict[str, Any]) -> str:
         "",
         str(payload.get("description") or ""),
         "",
-        f"工坊：{payload.get('workshop') or ''}",
+        f"图书馆：{payload.get('workshop') or ''}",
         f"服务端 MCP 工具数：{int(payload.get('server_total') or 0)}",
         f"设备数：{int(payload.get('device_total') or 0)}（端侧 {int(payload.get('endpoint_device_total') or 0)}）",
         f"传承 MCP 工具总数：{int(payload.get('total') or 0)}",
