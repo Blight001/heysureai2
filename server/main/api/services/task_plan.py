@@ -167,6 +167,48 @@ def awaiting_finish(session: Session, plan: Optional[TaskPlan]) -> bool:
     )
 
 
+def unfinished_phases(session: Session, plan: Optional[TaskPlan]) -> List[Dict[str, Any]]:
+    """Return phases that have not been explicitly closed yet.
+
+    A phase is considered closed once ``phase.complete`` records either
+    ``completed`` or ``failed``. The final task outcome can still be success or
+    failure, but ``task.finish`` must not skip unclosed phase boundaries.
+    """
+    if plan is None or plan.status not in ACTIVE_PLAN_STATUSES:
+        return []
+    out: List[Dict[str, Any]] = []
+    for phase in list_phases(session, plan.plan_id):
+        if phase.status in {"completed", "failed"}:
+            continue
+        out.append(_phase_dict(phase))
+    return out
+
+
+def get_active_plan_for_job(
+    session: Session,
+    user_id: int,
+    ai_config_id: int,
+    *,
+    job_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> Optional[TaskPlan]:
+    """Find an active plan linked to a task job or its session."""
+    if session_id:
+        plan = get_active_plan(session, user_id, ai_config_id, session_id)
+        if plan is not None:
+            return plan
+    if job_id:
+        return session.exec(
+            select(TaskPlan).where(
+                TaskPlan.user_id == user_id,
+                TaskPlan.ai_config_id == int(ai_config_id),
+                TaskPlan.job_id == str(job_id),
+                TaskPlan.status.in_(list(ACTIVE_PLAN_STATUSES)),
+            ).order_by(TaskPlan.created_at.desc())
+        ).first()
+    return None
+
+
 def _phase_dict(phase: TaskPhase) -> Dict[str, Any]:
     try:
         actions = json.loads(phase.actions_json) if phase.actions_json else []

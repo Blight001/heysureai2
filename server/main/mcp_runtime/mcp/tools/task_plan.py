@@ -147,6 +147,22 @@ def _task_finish(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
         plan = plan_service.get_active_plan(session, user_id, cfg_id, session_id)
         if plan is None:
             raise HTTPException(status_code=404, detail="没有进行中的计划可以收尾。")
+        unfinished = plan_service.unfinished_phases(session, plan)
+        if unfinished:
+            labels = "；".join(
+                f"阶段{int(item.get('seq', 0)) + 1}（{item.get('title') or item.get('goal') or '未命名'}，状态={item.get('status') or 'unknown'}）"
+                for item in unfinished[:5]
+            )
+            more = "；..." if len(unfinished) > 5 else ""
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "阶段性目标尚未全部收尾，已自动阻止 task.finish。"
+                    "请先继续执行当前阶段；达成结束标志后调用 phase.complete，"
+                    "若该阶段失败也请用 phase.complete(status=failed) 如实收尾。"
+                    f"未收尾阶段：{labels}{more}"
+                ),
+            )
         plan_service.finish_plan(session, plan, outcome=outcome, summary=summary)
         phases = plan_service.list_phases(session, plan.plan_id)
         workspace_root = get_project_root(user_id, cfg_id)
