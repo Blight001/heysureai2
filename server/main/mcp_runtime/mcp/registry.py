@@ -134,7 +134,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         destructive=True,
     ))
     registry.register(MCPTool(
-        name="file.manage",
+        name="workspace.manage",
         description=(
             "工作区文件统一工具：用 action 选择 read 读取 / tree 列出文件树 / write 创建覆盖 / edit 按块编辑。"
             "路径必须位于当前 AI 工作区内；write/edit 需管理者及以上。"

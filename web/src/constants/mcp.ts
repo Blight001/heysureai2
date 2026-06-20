@@ -8,7 +8,7 @@ export const DEFAULT_MCP_TOOLS = [
   'mcp.describe_tool',
   'workspace.search',
   'workspace.run_command',
-  'file.manage',
+  'workspace.manage',
   'admin.list_agents',
   'admin.get_overview',
   'task.manage',

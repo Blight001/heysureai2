@@ -403,7 +403,7 @@ def _file_manage(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
     raw = str((args or {}).get("action") or "").strip().lower()
     action = _FILE_ACTION_ALIASES.get(raw, raw)
     if not action:
-        raise HTTPException(status_code=400, detail="action is required for file.manage")
+        raise HTTPException(status_code=400, detail="action is required for workspace.manage")
     spec = _FILE_ACTIONS.get(action)
     if spec is None:
         raise HTTPException(

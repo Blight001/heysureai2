@@ -48,7 +48,7 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # Unified workspace file tool (read/write/edit/tree). Member is the floor so
     # everyone can read; write/edit are gated to manager+ inside the handler via
     # ``enforce_min_role``.
-    "file.manage": ROLE_MEMBER,
+    "workspace.manage": ROLE_MEMBER,
     # Shell command execution is powerful; keep it manager+.
     "workspace.run_command": ROLE_MANAGER,
     # Unified task management tool (create/list/update/delete). Member floor so
@@ -267,6 +267,7 @@ def clamp_tools_json(user, tier: str, mcp_tools_json: Optional[str]) -> str:
         if tool.startswith("workspace.") and tool not in {
             "workspace.search",
             "workspace.run_command",
+            "workspace.manage",
         }:
             continue
         # Endpoint desktop/browser tools are governed exclusively by
