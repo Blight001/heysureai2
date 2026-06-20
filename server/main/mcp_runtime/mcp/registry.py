@@ -18,7 +18,7 @@ from .tools.task_plan import (
     _phase_complete,
     _plan_create,
     _plan_get,
-    _task_finish,
+    _plan_finish,
 )
 from .tools.prompts import (
     _prompt_manage,
@@ -159,9 +159,11 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="task.manage",
         description=(
-            "任务管理统一工具：用 action 选择 list 列出 / create 创建 / update 接管更新 / delete 删除。"
+            "任务管理统一工具（任务=定时/无人值守、在独立会话中运行的后台工作）："
+            "用 action 选择 list 列出 / create 创建 / update 接管更新 / delete 删除。"
             "create/update/delete 需管理者及以上。"
-            "完成当前任务用独立的 task.complete；分阶段计划用 plan.create / plan.get / phase.complete / task.finish。"
+            "完成当前任务用独立的 task.complete；对长动作做分阶段执行用 plan 域："
+            "plan.create / plan.get / plan.phase_complete / plan.finish。"
         ),
         input_schema=TASK_MANAGE_SCHEMA,
         handler=_task_manage,
@@ -189,14 +191,15 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         destructive=True,
     ))
 
-    # ---------- 计划 / 分阶段执行（长任务） ----------
+    # ---------- plan 域：分阶段执行（长动作；普通对话与任务对话均可用） ----------
     registry.register(MCPTool(
         name="plan.create",
         description=(
-            "为复杂任务制定一份完整计划，行动前先调用。把整体目标拆成有序的多个阶段，"
+            "为复杂的长动作制定一份完整计划，行动前先调用（普通对话和任务对话都可使用）。"
+            "把整体目标拆成有序的多个阶段，"
             "每个阶段有明确的目标(goal)与结束标志(done_signal)，并可在 actions 里列出该阶段的子行动"
             "（每个子行动也有自己的 goal 与 done_signal）。"
-            "登记后从第 1 个阶段开始执行：每完成一个阶段调用 phase.complete，全部完成后调用 task.finish。"
+            "登记后从第 1 个阶段开始执行：每完成一个阶段调用 plan.phase_complete，全部完成后调用 plan.finish。"
             "同一会话只保留一份进行中的计划，重复调用会覆盖旧计划。"
         ),
         input_schema={
@@ -241,11 +244,11 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         handler=_plan_get,
     ))
     registry.register(MCPTool(
-        name="phase.complete",
+        name="plan.phase_complete",
         description=(
-            "完成当前阶段并收尾（无需总结）。调用后系统会自动隐藏上一阶段的深度思考与 MCP "
+            "plan 的子操作：完成当前阶段并收尾（无需总结）。调用后系统会自动隐藏上一阶段的深度思考与 MCP "
             "详细结果、只保留调用状态，并自动下发下一个阶段；若已是最后一个阶段，系统会要求你"
-            "调用 task.finish 收尾。若该阶段未达成目标，可传 status=failed 如实记录后继续。"
+            "调用 plan.finish 收尾。若该阶段未达成目标，可传 status=failed 如实记录后继续。"
             "summary 可选，一般留空即可。"
         ),
         input_schema={
@@ -263,9 +266,9 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         destructive=True,
     ))
     registry.register(MCPTool(
-        name="task.finish",
+        name="plan.finish",
         description=(
-            "收尾整个计划任务（无论成功或失败都要调用）。系统会隐藏全过程的深度思考与 MCP 详细结果，"
+            "收尾整个计划（无论成功或失败都要调用）。系统会隐藏全过程的深度思考与 MCP 详细结果，"
             "把完整行动流程写入工作区的成功/失败日志（logs/success 或 logs/failure），"
             "便于后续沉淀为可复用、稳定的知识。outcome=success 写成功日志，failure 写失败日志。"
         ),
@@ -285,7 +288,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
             },
             "required": ["outcome", "summary"],
         },
-        handler=_task_finish,
+        handler=_plan_finish,
         destructive=True,
     ))
 

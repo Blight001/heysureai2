@@ -1530,10 +1530,10 @@ def _run_worker_impl(
             phase_started_at = time.time()
             phase_mcp_statuses: List[tuple] = []
             # Hard flow enforcement is on for task runtimes: the run must go
-            # through plan.create -> phased execution -> task.finish, and the
+            # through plan.create -> phased execution -> plan.finish, and the
             # *system* drives phase transitions (the AI never has to poll the
             # plan). ``flow_awaiting_finish`` means all phases are done and only
-            # task.finish is accepted; ``flow_nudges`` caps how many times we
+            # plan.finish is accepted; ``flow_nudges`` caps how many times we
             # steer a stalling model before degrading to a normal finish.
             plan_enforced = bool(is_task_runtime and ai_config_id is not None)
             flow_awaiting_finish = False
@@ -1579,7 +1579,7 @@ def _run_worker_impl(
                 if plan_state is None:
                     return name == "plan.create"
                 if flow_awaiting_finish:
-                    return name == "task.finish"
+                    return name == "plan.finish"
                 return True
 
             for step_index in range(max_steps):
@@ -1665,7 +1665,7 @@ def _run_worker_impl(
                         ) & set(effective_tool_allowlist)
                     elif plan_enforced and flow_awaiting_finish:
                         current_exposed_tools = (
-                            {"task.finish"} | set(MCP_INTROSPECTION_TOOLS)
+                            {"plan.finish"} | set(MCP_INTROSPECTION_TOOLS)
                         ) & set(effective_tool_allowlist)
                     step_tools, native_tool_name_map = _build_native_tools_payload(current_exposed_tools)
                 else:
@@ -2003,7 +2003,7 @@ def _run_worker_impl(
                     and cfg.ai_role == "digital_member"
                     and not task_is_finished
                     and not compression_failed
-                    and payload_tool not in ("task.complete", "task.finish", "phase.complete")
+                    and payload_tool not in ("task.complete", "plan.finish", "plan.phase_complete")
                 ):
                     threshold = token_threshold_override if token_threshold_override is not None else max(1, int(cfg.token_limit or 1))
                     session_tokens = _session_total_tokens(bg, user_id, ai_kind, session_id, ai_config_id)
@@ -2045,7 +2045,7 @@ def _run_worker_impl(
 
                 # Hard flow gate: reject any tool call that does not move the
                 # planned flow forward in the current state (no-plan -> only
-                # plan.create; all-phases-done -> only task.finish). The
+                # plan.create; all-phases-done -> only plan.finish). The
                 # assistant tool_call message was already appended above, so we
                 # answer it (native) / reply (text) and steer back.
                 if payload_call and plan_enforced and not _flow_allowed_tool(payload_tool):
@@ -2095,7 +2095,7 @@ def _run_worker_impl(
                             convo.append({"role": "user", "content": warning})
                             continue
                     # Hard flow: a task runtime must not end by "talking". Steer
-                    # it back to plan.create / phase execution / task.finish.
+                    # it back to plan.create / phase execution / plan.finish.
                     # ``flow_nudges`` bounds this so a stubborn model degrades to
                     # a normal finish instead of burning the whole step budget.
                     if plan_enforced and flow_nudges < 3:
@@ -2458,9 +2458,9 @@ def _run_worker_impl(
                     continue
 
                 # Planned task flow (system-driven). ``plan.create`` is followed
-                # by the system handing the AI phase 1; ``phase.complete`` folds
+                # by the system handing the AI phase 1; ``plan.phase_complete`` folds
                 # the finished phase out of context and the system hands over the
-                # next phase (or requires task.finish); ``task.finish`` closes the
+                # next phase (or requires plan.finish); ``plan.finish`` closes the
                 # whole run.
                 if (not tool_failed) and tool == "plan.create":
                     # Answer the tool call, then drive straight into phase 1 — the
@@ -2505,7 +2505,7 @@ def _run_worker_impl(
                     _set_run_live_phase(run_id, "generating")
                     continue
 
-                if (not tool_failed) and tool == "phase.complete" and plan_state is not None:
+                if (not tool_failed) and tool == "plan.phase_complete" and plan_state is not None:
                     result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
                     finished_phase = result_payload.get("finished_phase") if isinstance(result_payload, dict) else None
                     boundary = max(0, min(phase_start_convo_index, len(convo)))
@@ -2552,13 +2552,13 @@ def _run_worker_impl(
                         ) if ai_config_id is not None else None
                         flow_awaiting_finish = plan_service.awaiting_finish(bg, plan_state)
                     except Exception:
-                        logger.exception("plan reload after phase.complete failed")
+                        logger.exception("plan reload after plan.phase_complete failed")
                     flow_nudges = 0
                     phase_start_convo_index = len(convo)
                     phase_started_at = time.time()
                     phase_mcp_statuses = []
                     # System drives the next step: hand over the next phase, or
-                    # require task.finish when every phase is done.
+                    # require plan.finish when every phase is done.
                     if flow_awaiting_finish:
                         convo.append({
                             "role": "user",
@@ -2579,7 +2579,7 @@ def _run_worker_impl(
                     _set_run_live_phase(run_id, "generating")
                     continue
 
-                if (not tool_failed) and tool == "task.finish":
+                if (not tool_failed) and tool == "plan.finish":
                     result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
                     finish_outcome = str(result_payload.get("outcome") or "").strip() or "success"
                     finish_job_id = str(result_payload.get("job_id") or "").strip()
@@ -2587,7 +2587,7 @@ def _run_worker_impl(
                     finish_summary = str((arguments or {}).get("summary") or "").strip()
                     # Hide the whole run's deep-thinking + MCP detail: the final
                     # phase (since its boundary) still carries verbose turns;
-                    # earlier phases were already folded at phase.complete.
+                    # earlier phases were already folded at plan.phase_complete.
                     now_ts = time.time()
                     completed_job = None
                     if finish_job_id and ai_config_id is not None:
@@ -2611,7 +2611,7 @@ def _run_worker_impl(
                             until_ts=now_ts,
                         )
                     except Exception:
-                        logger.exception("task.finish compaction tagging failed")
+                        logger.exception("plan.finish compaction tagging failed")
                     if completed_job is not None:
                         completed_job.status = "completed"
                         completed_job.finished_at = now_ts
@@ -2624,11 +2624,11 @@ def _run_worker_impl(
                                 summary=finish_summary,
                             )
                         except Exception:
-                            logger.exception("task.finish completion notify failed")
+                            logger.exception("plan.finish completion notify failed")
                     next_loop_job = _create_loop_scheduled_job(bg, completed_job, time.time())
                     finish_notice_lines = [
                         "[系统提示]",
-                        f"任务已通过 `task.finish` 收尾，结果：{'成功' if finish_outcome == 'success' else '失败'}。",
+                        f"任务已通过 `plan.finish` 收尾，结果：{'成功' if finish_outcome == 'success' else '失败'}。",
                     ]
                     if finish_log_path:
                         finish_notice_lines.append(

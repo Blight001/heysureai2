@@ -17,7 +17,7 @@ class _FakePlan:
     job_id = "job_test"
 
 
-def test_task_finish_blocks_when_phase_is_unclosed(monkeypatch):
+def test_plan_finish_blocks_when_phase_is_unclosed(monkeypatch):
     finish_called = False
 
     def fake_finish_plan(*args, **kwargs):
@@ -35,7 +35,7 @@ def test_task_finish_blocks_when_phase_is_unclosed(monkeypatch):
     monkeypatch.setattr(task_plan_tools.plan_service, "finish_plan", fake_finish_plan)
 
     with pytest.raises(HTTPException) as exc:
-        task_plan_tools._task_finish(
+        task_plan_tools._plan_finish(
             user_id=1,
             args={"outcome": "failure", "summary": "执行失败，准备收尾。"},
             ai_config_id=2,

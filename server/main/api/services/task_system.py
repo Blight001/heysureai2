@@ -42,13 +42,13 @@ TASK_RUNTIME_REQUIRED_TOOLS = {
     # its own plan even when the operational tool allowlist is narrowed.
     "plan.create",
     "plan.get",
-    "phase.complete",
-    "task.finish",
+    "plan.phase_complete",
+    "plan.finish",
 }
 
 # Injected into the task-runtime system prompt. The flow is enforced by the
 # runtime (see ai_runtime.inference.core): plan first, the system hands over
-# each phase, and the run must close via task.finish. The text is editable as a
+# each phase, and the run must close via plan.finish. The text is editable as a
 # 固有思想 system prompt (key ``task_plan_flow_prompt``); this constant is only
 # the built-in fallback.
 TASK_PLAN_FLOW_PROMPT = DEFAULT_TASK_PLAN_FLOW_PROMPT

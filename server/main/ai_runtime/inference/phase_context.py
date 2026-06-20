@@ -1,6 +1,6 @@
-"""Phase-aware context compaction for the planned task flow.
+"""Phase-aware context compaction for the plan flow.
 
-When a phase finishes (``phase.complete``) the inference loop folds that phase's
+When a phase finishes (``plan.phase_complete``) the inference loop folds that phase's
 turns out of the live conversation — the deep-thinking (reasoning) and the
 verbose MCP results are dropped, and only a compact line of "which tools ran and
 whether they succeeded" plus the phase summary is kept. The same turns are
@@ -23,8 +23,8 @@ from api.models import ChatMessage
 _FLOW_TOOLS = {
     "plan.create",
     "plan.get",
-    "phase.complete",
-    "task.finish",
+    "plan.phase_complete",
+    "plan.finish",
     "mcp.describe_tool",
 }
 
@@ -99,18 +99,18 @@ def render_phase_directive(phase: Optional[dict], total: int) -> str:
             if not a_goal:
                 continue
             lines.append(f"  - {a_goal}" + (f"（结束标志：{a_done}）" if a_done else ""))
-    lines.append("达成本阶段结束标志后，调用 phase.complete 收尾本阶段（无需总结），由系统安排下一步。")
+    lines.append("达成本阶段结束标志后，调用 plan.phase_complete 收尾本阶段（无需总结），由系统安排下一步。")
     return "\n".join(lines)
 
 
 def render_finish_required_notice(goal: str) -> str:
-    """System directive: all phases done, the run must close via task.finish."""
+    """System directive: all phases done, the run must close via plan.finish."""
     return (
         "[系统要求 · 收尾总结]\n"
         f"计划「{str(goal or '').strip()}」的所有阶段均已完成。"
-        "现在必须调用 task.finish 对整个任务做完整总结并收尾："
+        "现在必须调用 plan.finish 对整个计划做完整总结并收尾："
         "outcome 填 success 或 failure，summary 给出完整复盘。\n"
-        "系统只接受 task.finish 调用，其它工具一律拒绝。"
+        "系统只接受 plan.finish 调用，其它工具一律拒绝。"
     )
 
 
@@ -118,7 +118,7 @@ def render_continue_phase_notice() -> str:
     """System directive: don't end a task by talking; keep executing the phase."""
     return (
         "[系统要求 · 继续执行]\n"
-        "当前阶段尚未收尾。请继续执行本阶段，达成结束标志后调用 phase.complete；"
+        "当前阶段尚未收尾。请继续执行本阶段，达成结束标志后调用 plan.phase_complete；"
         "不要用普通回复结束任务。"
     )
 
