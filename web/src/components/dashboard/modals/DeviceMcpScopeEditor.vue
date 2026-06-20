@@ -38,7 +38,7 @@ watch(() => [props.deviceId, props.refreshKey], load, { immediate: true })
 
 const capabilities = computed(() => scope.value?.capabilities || [])
 const scopeTitle = computed(() => {
-  if (scope.value?.deviceType === 'workshop') return '知识工坊 MCP 权限'
+  if (scope.value?.deviceType === 'workshop') return '图书馆 MCP 权限'
   if (scope.value?.deviceType === 'browser') return '浏览器端 MCP 权限'
   if (scope.value?.deviceType === 'android') return '安卓端 MCP 权限'
   return '软件端 MCP 权限'

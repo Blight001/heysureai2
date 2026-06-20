@@ -93,7 +93,7 @@ const onModelPresetChange = () => {
   props.form.model = preset?.model || ''
 }
 
-// ---------- 内置知识工坊绑定 ----------
+// ---------- 内置图书馆绑定 ----------
 // 工坊 agent（agent/workshop/）服务多个 AI；在这里为当前 AI 单独绑定/解绑。
 // 当前工具集为空，绑定关系保留给后续 MCP 能力使用。
 const workshopAgents = ref<WorkshopAgentItem[]>([])
@@ -117,7 +117,7 @@ const loadWorkshopAgents = async () => {
     const data = await fetchWorkshopBindings(cfgId)
     workshopAgents.value = Array.isArray(data.agents) ? data.agents : []
   } catch (err: any) {
-    workshopError.value = err?.message || '知识工坊列表加载失败'
+    workshopError.value = err?.message || '图书馆列表加载失败'
   } finally {
     workshopLoading.value = false
   }
@@ -139,7 +139,7 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
   // 1:1 绑定：勾选会替换工坊当前绑定的成员，先确认
   if (next && agent.bound_ai_config_id && agent.bound_ai_config_id !== cfgId) {
     const ok = window.confirm(
-      `「${agent.name}」当前绑定的是「${agent.bound_ai_name}」。知识工坊只能绑定一个 AI 数字成员，继续将替换为本 AI？`,
+      `「${agent.name}」当前绑定的是「${agent.bound_ai_name}」。图书馆只能绑定一个 AI 数字成员，继续将替换为本 AI？`,
     )
     if (!ok) {
       if (target) target.checked = agent.bound
@@ -150,7 +150,7 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
     await setWorkshopBinding(cfgId, agent.device_id, next)
     await loadWorkshopAgents()
   } catch (err: any) {
-    workshopError.value = err?.message || '更新知识工坊绑定失败'
+    workshopError.value = err?.message || '更新图书馆绑定失败'
     if (target) target.checked = agent.bound
   }
 }
@@ -347,13 +347,13 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                   />
                 </div>
 
-                <!-- 服务端内置知识工坊：保留 1:1 专用绑定。 -->
+                <!-- 服务端内置图书馆：保留 1:1 专用绑定。 -->
                 <div
                   v-if="editingConfigId && form.ai_role_group !== 'assistant_admin'"
                   class="mb-3 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3 dark:border-indigo-500/30 dark:bg-indigo-500/5"
                 >
                   <div class="flex items-center justify-between">
-                    <div class="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">知识工坊</div>
+                    <div class="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">图书馆</div>
                     <button
                       class="text-[10px] px-1.5 py-0.5 rounded border border-indigo-200 text-indigo-600 dark:border-indigo-500/40 dark:text-indigo-300"
                       @click="loadWorkshopAgents"

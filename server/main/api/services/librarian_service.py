@@ -1098,6 +1098,8 @@ def _builtin_entries(*, user_id: Optional[int] = None, with_body: bool = False) 
         for memory_id in (
             "builtin.intrinsic_personas",
             "builtin.system_prompts",
+            "builtin.toolbox",
+            "builtin.library_mcp",
             "builtin.inheritance_skills",
             "builtin.inheritance_tools",
         )

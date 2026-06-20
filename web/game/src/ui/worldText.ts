@@ -39,7 +39,7 @@ export const workshopTooltipData = (
   const workshop = view.data
   if (workshop.type === 'workshop') {
     return {
-      title: '知识工坊（知识与进化）',
+      title: '图书馆（知识与进化）',
       badge: view.offlineSince !== null ? '离线' : '在线',
       rows: [
         { label: '形态', value: '服务端内置 · 自动上线' },
