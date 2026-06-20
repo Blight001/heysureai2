@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from api.integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
 from api.models import AssistantAIConfig
+from ..text_format import strip_markdown_to_plain
 from ..transport import TokenCache, load_active_config, parse_json_response
 from ._config import read_qq_config
 
@@ -30,29 +31,7 @@ def _qq_http_session() -> requests.Session:
 
 
 def normalize_qq_text(text: str) -> str:
-    body = str(text or "")
-    if not body:
-        return ""
-    body = body.replace("\r\n", "\n").replace("\r", "\n")
-    body = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", body)
-    body = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", body)
-    body = re.sub(r"```[^\n]*\n?", "", body).replace("```", "")
-    lines = []
-    for raw_line in body.split("\n"):
-        line = raw_line.rstrip()
-        line = re.sub(r"^\s{0,3}#{1,6}\s*", "", line)
-        line = re.sub(r"^\s{0,3}>\s?", "", line)
-        line = re.sub(r"^\s*[-*+]\s+", "", line)
-        line = re.sub(r"^\s*\d+[.)]\s+", "", line)
-        lines.append(line)
-    body = "\n".join(lines)
-    body = re.sub(r"(?<!\w)([*_~]{1,3})(\S(?:.*?\S)?)\1(?!\w)", r"\2", body)
-    body = body.replace("`", "")
-    body = re.sub(r"\[\s*[xX ]\s*\]\s*", "", body)
-    body = re.sub(r"\\([\\`*_{}\[\]()#+\-.!|>])", r"\1", body)
-    body = re.sub(r"[ \t]{2,}", " ", body)
-    body = re.sub(r"\n{2,}", "\n", body)
-    return body.strip()
+    return strip_markdown_to_plain(text, collapse_tables=False)
 
 
 def _normalize_target_type(raw: str) -> str:
