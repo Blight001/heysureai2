@@ -33,3 +33,21 @@ export const formatDate = (ts?: number | null, fallback = ''): string => {
   const d = new Date((ts as number) * 1000)
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 }
+
+/** Compact duration label, e.g. `1.2s` or `1m 03s`. */
+export const formatDurationMs = (ms?: number | null, fallback = ''): string => {
+  if (ms == null || Number.isNaN(Number(ms))) return fallback
+  const totalSeconds = Math.max(0, Number(ms) / 1000)
+  if (totalSeconds < 10) {
+    return `${totalSeconds.toFixed(1)}s`
+  }
+
+  if (totalSeconds < 60) {
+    return `${Math.round(totalSeconds)}s`
+  }
+
+  const totalRoundedSeconds = Math.round(totalSeconds)
+  const minutes = Math.floor(totalRoundedSeconds / 60)
+  const remainder = totalRoundedSeconds % 60
+  return `${minutes}m ${pad2(remainder)}s`
+}

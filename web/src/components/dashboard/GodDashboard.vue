@@ -50,6 +50,7 @@ const emit = defineEmits<{
 const selectedFiles = ref<string[]>([])
 const chatModalOpen = ref(false)
 const chatTarget = ref<Agent | null>(null)
+const chatInitialSessionId = ref('')
 const proposalReviewOpen = ref(false)
 const adminModalOpen = ref(false)
 const isAdminUser = computed(() => ['owner', 'admin'].includes(props.currentUser?.role || ''))
@@ -268,6 +269,7 @@ const openAllMcpToolsFromSystemSettings = async () => {
 const openAgentChat = (agent: Agent) => {
   if (!agent.aiConfigId) return
   chatTarget.value = agent
+  chatInitialSessionId.value = ''
   chatModalOpen.value = true
 }
 
@@ -279,17 +281,30 @@ const onWorldOpenChat = (aiConfigId: number) => {
 
 const closeAgentChat = () => {
   chatModalOpen.value = false
+  chatInitialSessionId.value = ''
 }
 
 const chatTargetAiKind = computed<'assistant' | 'core'>(() => {
   return chatTarget.value?.aiRole === 'assistant_admin' ? 'assistant' : 'core'
 })
 
+const openAgentTaskDetail = (agent: Agent, jobId: string, sessionId?: string) => {
+  if (!agent.aiConfigId || !jobId) return
+  chatTarget.value = agent
+  chatInitialSessionId.value = String(sessionId || `session_task_${jobId}`).trim()
+  chatModalOpen.value = true
+}
+
 const openAgentTaskDetailFromCard = async (payload: { agent: Agent; jobId: string }) => {
   const agent = payload?.agent
   if (!agent?.aiConfigId) return
   // 代际详情已移除：从卡片点击直接打开该 AI 的任务列表。
   await openAgentTaskList(agent)
+}
+
+const openAgentTaskDetailFromTaskJob = (job: { job_id: string; session_id?: string }, agent: Agent | null) => {
+  if (!agent?.aiConfigId || !job?.job_id) return
+  openAgentTaskDetail(agent, job.job_id, job.session_id)
 }
 
 const stopDashboardRefreshLoop = () => {
@@ -531,6 +546,7 @@ onUnmounted(() => {
       :on-submit-task="() => submitTaskForAgent(taskListTarget)"
       :on-task-create-tool-change="onTaskCreateToolChange"
       :on-reuse-task-template="(job) => taskListTarget && openTaskCreatePanelFromJob(taskListTarget, job)"
+      :on-show-task-detail="(job) => openAgentTaskDetailFromTaskJob(job, taskListTarget)"
       :on-pause-task-job="(job) => taskListTarget && pauseTaskJob(taskListTarget, job)"
       :on-resume-task-job="(job) => taskListTarget && resumeTaskJob(taskListTarget, job)"
       :on-delete-task-job="(job) => taskListTarget && deleteTaskJob(taskListTarget, job)"
@@ -550,17 +566,18 @@ onUnmounted(() => {
           </div>
           <div class="flex-1 min-h-0 p-4">
             <ChatInterface
-              :key="`unified-chat-${chatTarget.aiConfigId}`"
+              :key="`unified-chat-${chatTarget.aiConfigId}-${chatInitialSessionId || 'default'}`"
               :adminModel="chatTarget.model || ''"
               :aiConfigId="chatTarget.aiConfigId"
               :aiKind="chatTargetAiKind"
+              :initialSessionId="chatInitialSessionId || undefined"
               :mcpAutoApprove="!!chatTarget.mcpAutoApprove"
               :mcpDynamicRule="mcpDynamicRule"
-            :selectedFiles="selectedFiles"
-            :allFiles="allFiles"
-            @update:selectedFiles="selectedFiles = $event"
-            @open-settings="chatTarget && openAgentSettings(chatTarget)"
-            @totalChatTokensUpdate="syncChatTokensToAgents"
+              :selectedFiles="selectedFiles"
+              :allFiles="allFiles"
+              @update:selectedFiles="selectedFiles = $event"
+              @open-settings="chatTarget && openAgentSettings(chatTarget)"
+              @totalChatTokensUpdate="syncChatTokensToAgents"
             @refreshFiles="loadProjectContext"
           />
         </div>

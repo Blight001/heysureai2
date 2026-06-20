@@ -18,6 +18,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, FastAPI
 
+from api.core.http_logging import install_http_request_logging
 from api.runtime.internal_http import require_internal_token
 
 
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 def create_status_app() -> FastAPI:
     app = FastAPI(title="HeySure AI Runtime Status")
+    install_http_request_logging(app, __name__)
     router = APIRouter(prefix="/internal", dependencies=[Depends(require_internal_token)])
 
     @router.get("/health")
@@ -66,12 +68,8 @@ def start_status_server_in_thread(port: int) -> Optional[threading.Thread]:
             create_status_app(),
             host="0.0.0.0",
             port=port,
-            # log_config=None lets uvicorn.access propagate to the root handler
-            # from configure_logging() so this worker's HTTP requests show in the
-            # console / admin panel like the other three backends.
-            log_config=None,
-            access_log=True,
             log_level="info",
+            access_log=True,
             # The worker owns SIGINT/SIGTERM; uvicorn must not install its own.
             lifespan="off",
         )

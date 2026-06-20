@@ -13,6 +13,7 @@ interface Message {
   inlineContent?: InlineContentType[]
   front_prompt_details?: string
   id?: number
+  created_at?: number
 }
 
 const props = defineProps<{
@@ -27,6 +28,7 @@ const props = defineProps<{
   readonly?: boolean
   plainTextMode?: boolean
   mcpIcon?: string
+  memberTimeLabels?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -64,6 +66,7 @@ const summaryText = computed(() => formatActivityGroupSummary(props.thinkCount, 
           :plain-text-mode="plainTextMode"
           :mcp-icon="mcpIcon"
           :think-only="member.kind === 'think'"
+          :time-label="memberTimeLabels?.[memberIdx] || ''"
           embedded
           @delete="(idx) => emit('delete', idx)"
           @recall="(idx) => emit('recall', idx)"

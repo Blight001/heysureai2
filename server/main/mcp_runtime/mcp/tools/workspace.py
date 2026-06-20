@@ -403,8 +403,10 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
     try:
         # Capture raw bytes (no ``text``/``encoding``) and decode ourselves:
         # Windows console programs emit the OEM code page (GBK on zh-CN), so a
-        # hard-coded utf-8 decode is what garbled Chinese output. See
-        # ``_decode_output`` for the candidate-encoding fallback.
+        # hard-coded utf-8 decode is what garbled Chinese output. Decoding via
+        # ``_decode_output`` (UTF-8 first, then the OEM/locale code page) also
+        # handles tools that emit UTF-8 even when launched through cmd (git,
+        # node, …), which a fixed per-shell encoding would still mangle.
         result = subprocess.run(
             run_args,
             shell=use_shell,

@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from connector_runtime.bots import iter_bots
+from api.core.http_logging import install_http_request_logging
 from api.database import create_db_and_tables
 from api.models import AssistantAIConfig
 from api.sio import sio
@@ -125,6 +126,7 @@ async def _lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     fastapi_app = FastAPI(title="HeySure Connector Runtime", lifespan=_lifespan)
+    install_http_request_logging(fastapi_app, __name__)
 
     router = APIRouter(prefix="/internal", dependencies=[Depends(require_internal_token)])
 
