@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from api.core.http_logging import install_http_request_logging
 from api.database import create_db_and_tables
 from mcp_runtime.mcp import registry
 from mcp_runtime.mcp.loader import load_plugins_on_startup, reload_registry
@@ -61,6 +62,7 @@ async def _lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="HeySure MCP Runtime", lifespan=_lifespan)
+    install_http_request_logging(app, __name__)
     router = APIRouter(prefix="/internal", dependencies=[Depends(require_internal_token)])
 
     @router.get("/health")

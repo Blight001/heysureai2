@@ -38,6 +38,7 @@ interface Props {
   onSubmitTask: () => void
   onTaskCreateToolChange: (tool: string, event: Event) => void
   onReuseTaskTemplate: (job: AITaskJobItem) => void
+  onShowTaskDetail: (job: AITaskJobItem) => void
   onPauseTaskJob: (job: AITaskJobItem) => void
   onResumeTaskJob: (job: AITaskJobItem) => void
   onDeleteTaskJob: (job: AITaskJobItem) => void
@@ -301,6 +302,12 @@ const taskStateFilterButtonClass = (state: JobStateFilter) => {
                       </div>
                     </div>
                     <div class="flex items-center gap-1 shrink-0">
+                      <button
+                        class="text-[11px] px-2 py-1 rounded border border-sky-200 text-sky-700 dark:border-sky-500/40 dark:text-sky-300"
+                        @click="onShowTaskDetail(job)"
+                      >
+                        对话详情
+                      </button>
                       <button
                         v-if="isCompletedTaskJob(job)"
                         class="text-[11px] px-2 py-1 rounded border border-indigo-200 text-indigo-600 dark:border-indigo-500/40 dark:text-indigo-300"

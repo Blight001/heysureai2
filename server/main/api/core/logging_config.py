@@ -12,8 +12,8 @@ Two formats:
   cleanly into Loki / CloudWatch / Datadog without parsing tricks.
 
 ``settings.log_level`` picks the root threshold (DEBUG / INFO / WARNING /
-ERROR). Third-party noise (uvicorn access log, httpx) is dialled down
-one notch so our own INFO doesn't drown in framework chatter.
+ERROR). HTTP access logs stay visible at INFO so the launcher console shows
+ordinary requests, while chatty client libraries are dialled down.
 """
 
 from __future__ import annotations
@@ -230,7 +230,10 @@ def configure_logging() -> None:
     # Replace any prior handlers so re-runs in tests don't double-print.
     root.handlers[:] = [handler, _ring_buffer_handler]
 
-    # Dial third-party loggers down one notch so the operator's INFO logs
-    # don't drown in framework chatter.
-    for noisy in ("uvicorn.access", "httpx", "httpcore", "watchfiles"):
+    # Keep HTTP request lines visible in the launcher console.
+    logging.getLogger("uvicorn.access").setLevel(logging.INFO)
+
+    # Dial chatty third-party client/watch loggers down one notch so the
+    # operator's INFO logs don't drown in framework chatter.
+    for noisy in ("httpx", "httpcore", "watchfiles"):
         logging.getLogger(noisy).setLevel(logging.WARNING)

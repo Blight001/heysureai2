@@ -56,6 +56,7 @@ interface Props {
   adminModel?: string
   aiConfigId?: number
   aiKind?: 'assistant' | 'core'
+  initialSessionId?: string
   mcpAutoApprove?: boolean
   mcpIcon?: string
   mcpDynamicRule?: string
@@ -72,6 +73,7 @@ const emit = defineEmits<{
   (e: 'open-settings'): void
 }>()
 const aiKindValue = computed(() => props.aiKind || 'assistant')
+const preferredInitialSessionId = computed(() => String(props.initialSessionId || '').trim())
 
 const isFileSelectorOpen = ref(false)
 const currentPath = ref('')
@@ -200,31 +202,6 @@ const runStatusText = computed(() => {
   return '后端流式生成中'
 })
 
-const durationDisplay = computed(() => {
-  timeTick.value // reactive dependency for live updates
-  let total = 0
-  let mcp = mcpElapsedMs.value
-  let think = thinkElapsedMs.value
-  if (runStartTs.value != null) {
-    total = Date.now() - runStartTs.value
-    if (currentRunPhase.value === 'waiting_mcp' && phaseEnterTs.value != null) {
-      mcp += Date.now() - phaseEnterTs.value
-    } else if (currentRunPhase.value === 'generating' && phaseEnterTs.value != null) {
-      think += Date.now() - phaseEnterTs.value
-    }
-  } else if (lastRunDurations.value) {
-    total = lastRunDurations.value.total
-    mcp = lastRunDurations.value.mcp
-    think = lastRunDurations.value.think
-  }
-  if (total <= 0 && mcp <= 0 && think <= 0) return ''
-  const fmt = (ms: number) => {
-    const s = Math.max(0, ms) / 1000
-    return (s < 10 ? s.toFixed(1) : Math.round(s).toString()) + 's'
-  }
-  return `总 ${fmt(total)} · MCP ${fmt(mcp)} · 深思 ${fmt(think)}`
-})
-
 function startTimeTicker() {
   if (timeTickTimer != null) return
   timeTickTimer = window.setInterval(() => {
@@ -300,6 +277,11 @@ const isTaskSessionName = (name: string) => /^任务[:：]\s*/.test(String(name 
 
 const pickPreferredSessionId = (items: SessionItem[]) => {
   if (!Array.isArray(items) || items.length === 0) return ''
+  const requested = preferredInitialSessionId.value
+  if (requested) {
+    const match = items.find(item => item.id === requested)
+    if (match) return match.id
+  }
   const normal = items.find(item => !isTaskSessionName(item.name || ''))
   return normal?.id || items[0].id
 }
@@ -751,6 +733,10 @@ const loadSessions = async () => {
     totalTokens: Number(row?.total_tokens || 0),
     forwardToBot: !!row?.forward_to_bot,
   }))
+  if (preferredInitialSessionId.value) {
+    currentSessionId.value = preferredInitialSessionId.value
+    return
+  }
   if (!currentSessionId.value && sessionList.value.length > 0) {
     currentSessionId.value = pickPreferredSessionId(sessionList.value)
   }
@@ -1496,6 +1482,8 @@ const initializeSessions = async () => {
   await loadSessions()
   if (sessionList.value.length === 0) {
     await createSession('默认会话')
+  } else if (preferredInitialSessionId.value) {
+    currentSessionId.value = preferredInitialSessionId.value
   } else if (!currentSessionId.value) {
     currentSessionId.value = pickPreferredSessionId(sessionList.value)
   }
@@ -1505,7 +1493,7 @@ const initializeSessions = async () => {
   await loadEffectiveSystemPromptPreview()
 }
 
-watch(() => props.aiConfigId, async () => {
+watch(() => [props.aiConfigId, preferredInitialSessionId.value] as const, async () => {
   stopRunPolling()
   stopSessionSyncPolling()
   stopTimeTicker()
@@ -1564,10 +1552,6 @@ onBeforeUnmount(() => {
       />
       <div class="flex items-center gap-2">
         <span v-if="runStatusText" class="text-[11px] text-emerald-600 dark:text-emerald-400">{{ runStatusText }}</span>
-        <span
-          v-if="durationDisplay"
-          class="text-[10px] px-1.5 py-px rounded border text-emerald-700/80 dark:text-emerald-300/70 border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-500/10"
-        >{{ isRunActive ? durationDisplay : ('上次 ' + durationDisplay) }}</span>
         <button
           v-if="isRunActive"
           class="shrink-0 text-xs px-2 py-1 rounded border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-900/20"
@@ -1630,6 +1614,8 @@ onBeforeUnmount(() => {
         :liveTargetText="liveTargetText"
         :liveThinking="liveThinkingText"
         :livePhase="currentRunPhase"
+        :nowTimestamp="isRunActive ? timeTick : undefined"
+        :liveSegmentStartedAt="currentRunPhase !== 'idle' ? phaseEnterTs ?? undefined : undefined"
         :appliedEdits="appliedEditsArray"
         :appliedSignatures="appliedSignaturesArray"
         :actionResults="actionResults"

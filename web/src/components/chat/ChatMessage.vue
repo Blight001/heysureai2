@@ -22,6 +22,7 @@ const props = defineProps<{
     inlineContent?: InlineContentType[]
     front_prompt_details?: string
     id?: number
+    created_at?: number
   }
   appliedEdits: string[]
   appliedSignatures: string[]
@@ -34,6 +35,7 @@ const props = defineProps<{
   embedded?: boolean
   thinkOnly?: boolean
   hideThink?: boolean
+  timeLabel?: string
 }>()
 
 const isFrontPromptMessage = computed(() => {
@@ -141,6 +143,8 @@ const renderedThinkText = computed(() => {
   if (!props.plainTextMode) return think
   return stripMarkdownFormatting(think)
 })
+
+const segmentTimeLabel = computed(() => String(props.timeLabel || '').trim())
 </script>
 
 <template>
@@ -166,6 +170,7 @@ const renderedThinkText = computed(() => {
           <template #summary>
             <span class="chat-collapsible-arrow text-[10px] leading-none">➣</span>
             <span class="font-medium tracking-wide">深度思考</span>
+            <span v-if="segmentTimeLabel" class="segment-time-badge">{{ segmentTimeLabel }}</span>
           </template>
           {{ renderedThinkText }}
         </ChatCollapsible>
@@ -269,6 +274,7 @@ const renderedThinkText = computed(() => {
               ></span>
               <span class="shrink-0 text-[11px] font-medium text-inherit">{{ mcpToolSummary.status === '失败' ? '调用失败' : '已调用' }}</span>
               <span class="min-w-0 truncate font-mono text-[11px] text-inherit">{{ mcpToolSummary.tool }}</span>
+              <span v-if="segmentTimeLabel" class="segment-time-badge ml-auto">{{ segmentTimeLabel }}</span>
             </template>
               <button
                 class="absolute right-0 top-0 w-6 h-6 rounded text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 flex items-center justify-center transition-colors"
@@ -431,6 +437,29 @@ const renderedThinkText = computed(() => {
   height: auto;
   object-fit: contain;
   cursor: zoom-in;
+}
+
+.segment-time-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: rgba(255, 255, 255, 0.8);
+  color: rgb(100 116 139);
+  font-size: 10px;
+  line-height: 1.3;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.dark .segment-time-badge {
+  border-color: rgba(71, 85, 105, 0.65);
+  background: rgba(24, 24, 27, 0.85);
+  color: rgb(148 163 184);
 }
 
 .front-prompt-detail-button {

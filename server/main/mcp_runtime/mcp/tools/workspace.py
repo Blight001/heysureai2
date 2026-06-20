@@ -1,4 +1,5 @@
 import os
+import locale
 import re
 import subprocess
 from typing import Any, Dict, List, Optional, Tuple
@@ -148,6 +149,14 @@ def _coerce_timeout(value: Any) -> int:
     except Exception:
         seconds = DEFAULT_COMMAND_TIMEOUT
     return max(1, min(MAX_COMMAND_TIMEOUT, seconds))
+
+
+def _command_output_encoding(shell_used: str) -> str:
+    if os.name != "nt":
+        return "utf-8"
+    if shell_used in {"powershell", "pwsh"}:
+        return "utf-8"
+    return locale.getpreferredencoding(False) or "utf-8"
 
 
 def _resolve_workspace_file(project_root: str, args: Dict[str, Any]) -> str:
@@ -352,6 +361,7 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
         }
 
     try:
+        output_encoding = _command_output_encoding(shell_used)
         result = subprocess.run(
             run_args,
             shell=use_shell,
@@ -359,7 +369,7 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
             env=_command_env(project_root, sandbox_env=sandbox_env),
             capture_output=True,
             text=True,
-            encoding="utf-8",
+            encoding=output_encoding,
             errors="replace",
             timeout=timeout,
         )

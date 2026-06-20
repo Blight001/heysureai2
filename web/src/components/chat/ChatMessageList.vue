@@ -5,6 +5,7 @@ import ChatMessage from './ChatMessage.vue'
 import TypingIndicator from './TypingIndicator.vue'
 import type { InlineContent as InlineContentType } from '@/utils/chatParser'
 import { buildChatRenderItems } from '@/utils/chatMessageGroups'
+import { formatDurationMs } from '@/utils/datetime'
 
 interface Message {
   role: 'user' | 'assistant' | 'system'
@@ -30,9 +31,44 @@ const props = defineProps<{
   isEmpty: boolean
   readonly?: boolean
   mcpIcon?: string
+  nowTimestamp?: number
 }>()
 
 const renderItems = computed(() => buildChatRenderItems(props.messages))
+
+const messageTimeLabels = computed<Record<number, string>>(() => {
+  const labels: Record<number, string> = {}
+  const now = Number(props.nowTimestamp || 0) || null
+
+  const getMessageTimeMs = (message?: Message) => {
+    const ts = Number(message?.created_at || 0)
+    return ts > 0 ? ts * 1000 : null
+  }
+
+  for (let idx = 0; idx < props.messages.length; idx += 1) {
+    const current = props.messages[idx]
+    const start = getMessageTimeMs(current)
+    if (start == null) continue
+
+    let end: number | null = null
+    for (let nextIdx = idx + 1; nextIdx < props.messages.length; nextIdx += 1) {
+      const nextStart = getMessageTimeMs(props.messages[nextIdx])
+      if (nextStart != null) {
+        end = nextStart
+        break
+      }
+    }
+
+    if (end == null && now != null && now > start) {
+      end = now
+    }
+
+    const duration = end != null && end > start ? formatDurationMs(end - start) : ''
+    if (duration) labels[idx] = duration
+  }
+
+  return labels
+})
 
 const emit = defineEmits<{
   (e: 'delete', idx: number): void
@@ -64,6 +100,7 @@ const emit = defineEmits<{
           :readonly="readonly"
           :plain-text-mode="stripMarkdownSymbols"
           :mcp-icon="mcpIcon"
+          :member-time-labels="item.kind === 'activity-group' ? item.members.map((member) => messageTimeLabels[member.index] || '') : undefined"
           @delete="(i) => emit('delete', i)"
           @recall="(i) => emit('recall', i)"
           @apply="(msgIdx, blockIdx) => emit('apply', msgIdx, blockIdx)"
@@ -80,6 +117,7 @@ const emit = defineEmits<{
           :readonly="readonly"
           :plain-text-mode="stripMarkdownSymbols"
           :mcp-icon="mcpIcon"
+          :time-label="messageTimeLabels[item.index] || ''"
           :hide-think="item.hideThink"
           @delete="(i) => emit('delete', i)"
           @recall="(i) => emit('recall', i)"

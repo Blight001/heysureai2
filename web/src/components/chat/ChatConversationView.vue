@@ -46,6 +46,8 @@ const props = withDefaults(defineProps<{
   liveTargetText?: string
   liveThinking?: string
   livePhase?: 'idle' | 'generating' | 'waiting_mcp'
+  nowTimestamp?: number
+  liveSegmentStartedAt?: number | null
   collapseLiveThinking?: boolean
   isTyping?: boolean
   stripMarkdownSymbols?: boolean
@@ -69,6 +71,8 @@ const props = withDefaults(defineProps<{
   liveTargetText: '',
   liveThinking: '',
   livePhase: 'idle',
+  nowTimestamp: 0,
+  liveSegmentStartedAt: null,
   collapseLiveThinking: false,
   isTyping: false,
   stripMarkdownSymbols: false,
@@ -481,6 +485,7 @@ const liveAssistantMessage = computed<ConversationMessage | null>(() => {
     content: text,
     display_text: text,
     think: think || undefined,
+    created_at: props.liveSegmentStartedAt ?? props.nowTimestamp,
   }
 })
 
@@ -547,16 +552,17 @@ const onRevert = (msgIdx: number, blockIdx: number) => {
     :appliedSignatures="mergedAppliedSignatures"
     :actionResults="mergedActionResults"
     :actionResultsBySignature="mergedActionResultsBySignature"
-    :isTyping="isTyping"
-    :thinkingText="typingThinkingText"
-    :collapseThinking="collapseLiveThinking"
-    :stripMarkdownSymbols="stripMarkdownSymbols"
-    :isEmpty="renderMessages.length === 0"
-    :readonly="readonly"
-    :mcpIcon="mcpIcon"
-    @delete="onDelete"
-    @recall="onRecall"
-    @apply="onApply"
-    @revert="onRevert"
-  />
+  :isTyping="isTyping"
+  :thinkingText="typingThinkingText"
+  :collapseThinking="collapseLiveThinking"
+  :stripMarkdownSymbols="stripMarkdownSymbols"
+  :isEmpty="renderMessages.length === 0"
+  :readonly="readonly"
+  :mcpIcon="mcpIcon"
+  :nowTimestamp="nowTimestamp"
+  @delete="onDelete"
+  @recall="onRecall"
+  @apply="onApply"
+  @revert="onRevert"
+/>
 </template>
