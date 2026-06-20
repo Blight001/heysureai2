@@ -93,15 +93,61 @@ def timestamp() -> str:
 
 
 def classify_line(line: str) -> str:
+    """Classify a log line for coloring (full log view) and filtering (全部/警告/错误).
+    Reliably parses the standard logging format used by the app:
+        HH:MM:SS LEVEL   logger.name — message
+    Falls back to keyword + status code detection for uvicorn direct output etc.
+    """
     upper = line.upper()
-    if "TRACEBACK" in upper or "[ERROR]" in upper or " CRITICAL" in upper or upper.startswith("ERROR"):
+    parts = line.split()
+
+    # 1. Best: look for the LEVEL token directly (split removes padding/spaces)
+    #    This catches INFO, WARNING, ERROR, etc. from our _ConsoleFormatter.
+    for p in parts:
+        pu = p.upper()
+        if pu == "ERROR" or pu == "CRITICAL":
+            return "error"
+        if pu == "WARNING" or pu == "WARN":
+            return "warning"
+        if pu == "DEBUG":
+            return "debug"
+        if pu == "INFO":
+            # continue scanning for other indicators below
+            break
+
+    # 2. Fallback keyword detection (for tracebacks, uvicorn direct prints, etc.)
+    if "TRACEBACK" in upper or "EXCEPTION" in upper:
         return "error"
-    if "[WARN]" in upper or " WARNING" in upper or upper.startswith("WARNING"):
+    if "[ERROR]" in upper or " CRITICAL" in upper or " ERROR " in upper or " ERROR:" in upper:
+        return "error"
+    if upper.lstrip().startswith("ERROR"):
+        return "error"
+
+    if "UVICORN.ERROR" in upper or ".ERROR —" in upper:
+        if any(kw in upper for kw in ["FAILED", "EXCEPTION", "TIMEOUT", "REFUSED", "DENIED", "CONNECTION REFUSED"]):
+            return "error"
+
+    if "[WARN]" in upper or " WARNING " in upper or " WARN " in upper:
         return "warning"
-    if "[DEBUG]" in upper or upper.startswith("DEBUG"):
+    if upper.lstrip().startswith("WARNING") or upper.lstrip().startswith("WARN"):
+        return "warning"
+
+    if "[DEBUG]" in upper or " DEBUG " in upper:
         return "debug"
-    if "[SUCCESS]" in upper or " SUCCESS" in upper:
+    if "[SUCCESS]" in upper or " SUCCESS " in upper:
         return "success"
+
+    # 3. HTTP status codes from access logs
+    if "UVICORN.ACCESS" in upper or 'HTTP/1.1"' in upper or "HTTP/1.1 " in upper:
+        for token in reversed(parts):
+            if token.isdigit() and len(token) == 3:
+                code = int(token)
+                if code >= 500:
+                    return "error"
+                if code >= 400:
+                    return "warning"
+                break
+
     return "info"
 
 
@@ -244,14 +290,20 @@ class ServicePane:
         self.text.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
         self.text.configure(state="disabled")
 
-        # 颜色标签（通过内部 textbox）
-        txt = self.text._textbox  # type: ignore[attr-defined]
-        txt.tag_configure("info", foreground="#e0f2fe")
-        txt.tag_configure("warning", foreground="#fbbf24")
-        txt.tag_configure("error", foreground="#f87171")
-        txt.tag_configure("debug", foreground="#60a5fa")
-        txt.tag_configure("success", foreground="#34d399")
-        txt.tag_configure("meta", foreground="#64748b")
+        self._ensure_log_tags()
+
+    def _ensure_log_tags(self):
+        """Re-assert tag foreground colors (CTkTextbox can re-apply widget styles on configure)."""
+        try:
+            txt = self.text._textbox  # type: ignore[attr-defined]
+            txt.tag_configure("info", foreground="#e0f2fe")
+            txt.tag_configure("warning", foreground="#fbbf24")
+            txt.tag_configure("error", foreground="#f87171")
+            txt.tag_configure("debug", foreground="#60a5fa")
+            txt.tag_configure("success", foreground="#34d399")
+            txt.tag_configure("meta", foreground="#64748b")
+        except Exception:
+            pass
 
     def append(self, message: str, level: str = "info") -> None:
         line = f"[{timestamp()}] {message}"
@@ -261,9 +313,12 @@ class ServicePane:
 
         if self._should_show(level):
             self.text.configure(state="normal")
-            # CTkTextbox 使用内部 textbox 插入带 tag
+            self._ensure_log_tags()
             txt = self.text._textbox  # type: ignore[attr-defined]
-            txt.insert("end", line + "\n", (level,))
+            start_idx = txt.index("end")
+            txt.insert("end", line + "\n")
+            end_idx = txt.index("end-1c")
+            txt.tag_add(level, start_idx, end_idx)
             self.text.see("end")
             self.text.configure(state="disabled")
 
@@ -307,11 +362,15 @@ class ServicePane:
     def _refresh_logs(self):
         """根据当前 filter 重建日志显示"""
         self.text.configure(state="normal")
+        self._ensure_log_tags()
         txt = self.text._textbox
         txt.delete("1.0", "end")
         for level, line in self.history:
             if self._should_show(level):
-                txt.insert("end", line + "\n", (level,))
+                start_idx = txt.index("end")
+                txt.insert("end", line + "\n")
+                end_idx = txt.index("end-1c")
+                txt.tag_add(level, start_idx, end_idx)
         self.text.see("end")
         self.text.configure(state="disabled")
 
@@ -526,11 +585,11 @@ class LauncherApp:
 
         # 新增：针对性重启按钮（放在全部重启旁边）
         self.btn_restart_backends = ctk.CTkButton(
-            left, text="⟳ 重启全部后端", fg_color="#1e3a8a", hover_color="#1e40af", text_color="#dbeafe",
+            left, text="⟳ 重启全部后端", fg_color="#0f766e", hover_color="#115e59", text_color="#ccfbf1",
             **compact_btn, command=self.restart_backends
         )
         self.btn_restart_frontend = ctk.CTkButton(
-            left, text="⟳ 重启前端", fg_color="#166534", hover_color="#15803d", text_color="#ecfdf5",
+            left, text="⟳ 重启前端", fg_color="#ca8a04", hover_color="#a16207", text_color="#fefce8",
             **compact_btn, command=self.restart_frontend
         )
 
