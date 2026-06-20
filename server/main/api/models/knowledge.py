@@ -1,8 +1,28 @@
 import time
-from typing import Optional
+from typing import List, Optional
 
 from sqlalchemy import Column, JSON
 from sqlmodel import Field, SQLModel
+
+from ..core.settings import settings
+
+# Embedding storage backend. In production the ``pgvector`` extension provides a
+# native ``vector`` column with ANN indexing; environments without the package
+# (e.g. lightweight CI) transparently fall back to a JSON column so the models
+# still import and run. ``EMBEDDING_BACKEND`` lets the service layer pick the
+# matching retrieval path (SQL ``<=>`` distance vs. in-process scan).
+try:  # pragma: no cover - import guard exercised only by environment
+    from pgvector.sqlalchemy import Vector as _Vector
+
+    EMBEDDING_BACKEND = "pgvector"
+
+    def _embedding_column() -> Column:
+        return Column(_Vector(int(settings.embedding_dimensions or 1536)), nullable=True)
+except Exception:  # pragma: no cover - pgvector missing
+    EMBEDDING_BACKEND = "json"
+
+    def _embedding_column() -> Column:
+        return Column(JSON, nullable=True)
 
 
 class Memory(SQLModel, table=True):
@@ -82,6 +102,6 @@ class KnowledgeEmbedding(SQLModel, table=True):
     content_hash: str = Field(default="", index=True)
     content_text: str = Field(default="")
     source_snapshot: str = Field(default="{}")
-    embedding: list[float] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    embedding: Optional[List[float]] = Field(default=None, sa_column=_embedding_column())
     created_at: float = Field(default_factory=time.time, index=True)
     updated_at: float = Field(default_factory=time.time, index=True)

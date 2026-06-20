@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlmodel import Session
 
 from api.core.settings import settings
@@ -20,7 +20,15 @@ from api.core.config import user_shared_knowledge_dir
 from api.database import engine
 from api.http_client import ai_http_post
 from api.models import AssistantAIConfig, KnowledgeEmbedding, KnowledgeEntry, User
+from api.models.knowledge import EMBEDDING_BACKEND
 from api.services.model_presets import resolve_model_preset
+
+try:  # numpy accelerates the in-process cosine fallback; optional dependency.
+    import numpy as _np
+except Exception:  # pragma: no cover - numpy missing
+    _np = None
+
+_PGVECTOR = EMBEDDING_BACKEND == "pgvector"
 
 logger = logging.getLogger(__name__)
 
@@ -146,13 +154,24 @@ def _render_embedding_text(
     return "\n".join(part for part in parts if part).strip()
 
 
-def _content_hash(row: KnowledgeEntry, body_text: str) -> str:
+def _content_hash(
+    row: KnowledgeEntry,
+    body_text: str,
+    *,
+    model: str = "",
+    dimensions: int = 0,
+) -> str:
     payload = {
         "title": str(row.title or ""),
         "triggers": _normalize_csv(row.triggers),
         "summary": str(row.summary or ""),
         "body": _clip_text(body_text or ""),
         "status": str(row.status or ""),
+        # Bind the cache to the embedding model + width so switching either one
+        # (e.g. text-embedding-3-small → -large, or a different dimension)
+        # invalidates stale vectors instead of silently mixing incompatible ones.
+        "embedding_model": str(model or ""),
+        "embedding_dimensions": int(dimensions or 0),
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
@@ -229,8 +248,39 @@ def _cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
     return dot / ((left_norm ** 0.5) * (right_norm ** 0.5))
 
 
+def _batch_cosine(query: Sequence[float], vectors: Sequence[Sequence[float]]) -> list[float]:
+    """Cosine similarity of ``query`` against each row in ``vectors``.
+
+    Vectorised with numpy when available; otherwise falls back to the pure
+    Python pairwise implementation. Rows are aligned to ``len(query)`` by
+    truncation / zero-padding to tolerate width drift.
+    """
+    if not vectors:
+        return []
+    if _np is None:
+        return [_cosine_similarity(query, vec) for vec in vectors]
+    q = _np.asarray(list(query), dtype=_np.float32)
+    dim = int(q.shape[0])
+    if dim == 0:
+        return [0.0] * len(vectors)
+    q_norm = float(_np.linalg.norm(q)) or 1.0
+    mat = _np.zeros((len(vectors), dim), dtype=_np.float32)
+    for idx, vec in enumerate(vectors):
+        n = min(dim, len(vec))
+        if n:
+            mat[idx, :n] = _np.asarray(vec[:n], dtype=_np.float32)
+    norms = _np.linalg.norm(mat, axis=1)
+    norms[norms == 0.0] = 1.0
+    sims = (mat @ q) / (norms * q_norm)
+    return [float(s) for s in sims.tolist()]
+
+
 def _coerce_embedding(value: Any) -> list[float]:
-    if isinstance(value, list):
+    if value is None:
+        return []
+    if _np is not None and isinstance(value, _np.ndarray):
+        return [float(item) for item in value.tolist()]
+    if isinstance(value, (list, tuple)):
         return [float(item) for item in value if isinstance(item, (int, float))]
     if isinstance(value, str):
         try:
@@ -239,7 +289,12 @@ def _coerce_embedding(value: Any) -> list[float]:
             return []
         if isinstance(parsed, list):
             return [float(item) for item in parsed if isinstance(item, (int, float))]
-    return []
+        return []
+    # pgvector may hand back its own array-like type; fall back to iteration.
+    try:
+        return [float(item) for item in value]
+    except Exception:
+        return []
 
 
 def _resolve_embedding_credentials(
@@ -313,12 +368,20 @@ def ensure_knowledge_embedding(
     row: KnowledgeEntry,
     ai_config_id: Optional[int] = None,
     force: bool = False,
+    creds: Optional[Tuple[str, str, str, int]] = None,
+    commit: bool = True,
 ) -> bool:
-    """Upsert a semantic index row for a single KnowledgeEntry."""
+    """Upsert a semantic index row for a single KnowledgeEntry.
 
+    ``creds`` lets a batch caller resolve embedding credentials once and reuse
+    them; ``commit=False`` defers the commit so the batch can flush in a single
+    transaction.
+    """
+
+    api_key, base_url, model, dimensions = creds or _resolve_embedding_credentials(user_id, ai_config_id)
     body_text = _read_topic_body(user_id, row)
     embedded_text = _render_embedding_text(row, body_text=body_text)
-    content_hash = _content_hash(row, body_text)
+    content_hash = _content_hash(row, body_text, model=model, dimensions=dimensions)
     snapshot = _source_snapshot(row, body_text)
     existing = session.exec(
         select(KnowledgeEmbedding).where(
@@ -331,10 +394,14 @@ def ensure_knowledge_embedding(
             existing.source_snapshot = snapshot
             existing.updated_at = time.time()
             session.add(existing)
-            session.commit()
+            if commit:
+                session.commit()
         return False
 
-    api_key, base_url, model, dimensions = _resolve_embedding_credentials(user_id, ai_config_id)
+    if not api_key or not base_url:
+        # No embedding endpoint configured: leave the index untouched rather
+        # than raising inside a batch backfill.
+        return False
     embedding = _embed_text(
         api_key=api_key,
         base_url=base_url,
@@ -360,7 +427,8 @@ def ensure_knowledge_embedding(
     target.embedding = embedding
     target.updated_at = now
     session.add(target)
-    session.commit()
+    if commit:
+        session.commit()
     return True
 
 
@@ -375,7 +443,8 @@ def ensure_knowledge_embeddings(
     sess = session or Session(engine)
     changed = 0
     try:
-        api_key, base_url, _model, _dimensions = _resolve_embedding_credentials(user_id, ai_config_id)
+        creds = _resolve_embedding_credentials(user_id, ai_config_id)
+        api_key, base_url = creds[0], creds[1]
         if not api_key or not base_url:
             return 0
         rows = sess.exec(
@@ -383,14 +452,69 @@ def ensure_knowledge_embeddings(
         ).all()
         for row in rows:
             try:
-                if ensure_knowledge_embedding(sess, user_id=int(user_id), row=row, ai_config_id=ai_config_id, force=force):
+                if ensure_knowledge_embedding(
+                    sess,
+                    user_id=int(user_id),
+                    row=row,
+                    ai_config_id=ai_config_id,
+                    creds=creds,
+                    force=force,
+                    commit=False,
+                ):
                     changed += 1
             except Exception as exc:
                 logger.info("knowledge_vector index failed user=%s memory_id=%s: %s", user_id, row.memory_id, exc)
+        # Single commit for the whole batch (also flushes deferred snapshot
+        # refreshes from unchanged rows).
+        sess.commit()
         return changed
     finally:
         if own:
             sess.close()
+
+
+def _backfill_missing_embeddings(
+    session: Session,
+    *,
+    user_id: int,
+    ai_config_id: Optional[int] = None,
+) -> int:
+    """Embed only KnowledgeEntries that have no index row yet.
+
+    This is the cheap path used on the search hot route: unlike
+    :func:`ensure_knowledge_embeddings` it does not read every topic file or
+    re-hash already-indexed entries — write-time sync keeps those fresh.
+    """
+    creds = _resolve_embedding_credentials(user_id, ai_config_id)
+    api_key, base_url = creds[0], creds[1]
+    if not api_key or not base_url:
+        return 0
+    missing = session.exec(
+        select(KnowledgeEntry)
+        .outerjoin(KnowledgeEmbedding, KnowledgeEmbedding.memory_id == KnowledgeEntry.memory_id)
+        .where(
+            KnowledgeEntry.user_id == int(user_id),
+            KnowledgeEntry.status == "active",
+            KnowledgeEmbedding.id == None,  # noqa: E711 - SQL NULL check
+        )
+    ).all()
+    changed = 0
+    for row in missing:
+        try:
+            if ensure_knowledge_embedding(
+                session,
+                user_id=int(user_id),
+                row=row,
+                ai_config_id=ai_config_id,
+                creds=creds,
+                commit=False,
+            ):
+                changed += 1
+        except Exception as exc:
+            logger.info("knowledge_vector backfill missing failed memory_id=%s: %s", row.memory_id, exc)
+    if changed:
+        session.commit()
+    return changed
 
 
 def _entry_result(
@@ -426,6 +550,33 @@ def _entry_result(
     return payload
 
 
+def _scope_conditions(scope: Optional[str], ai_config_id: Optional[int]):
+    """SQL equivalent of :func:`_scope_match`, pushed into the WHERE clause.
+
+    ``global`` topics are always visible; ``ai`` topics only when their
+    ``scope_target`` matches the active AI; ``project`` topics only when the
+    caller explicitly requests the project scope.
+    """
+    conditions = [KnowledgeEntry.scope == "global"]
+    ai_match = None
+    if ai_config_id is not None:
+        ai_match = and_(
+            KnowledgeEntry.scope == "ai",
+            KnowledgeEntry.scope_target == str(ai_config_id),
+        )
+    if scope == "global":
+        pass
+    elif scope == "project":
+        conditions.append(KnowledgeEntry.scope == "project")
+    elif scope == "ai":
+        if ai_match is not None:
+            conditions.append(ai_match)
+    else:  # no explicit scope → default visibility for the active AI
+        if ai_match is not None:
+            conditions.append(ai_match)
+    return or_(*conditions)
+
+
 def _vector_search_candidates(
     session: Session,
     *,
@@ -435,28 +586,106 @@ def _vector_search_candidates(
     ai_config_id: Optional[int],
     candidate_limit: int,
 ) -> list[tuple[KnowledgeEntry, float]]:
+    if _PGVECTOR:
+        try:
+            return _vector_search_candidates_sql(
+                session,
+                user_id=user_id,
+                query_vector=query_vector,
+                scope=scope,
+                ai_config_id=ai_config_id,
+                candidate_limit=candidate_limit,
+            )
+        except Exception as exc:
+            logger.info("knowledge_vector pgvector search failed, falling back to scan: %s", exc)
+    return _vector_search_candidates_python(
+        session,
+        user_id=user_id,
+        query_vector=query_vector,
+        scope=scope,
+        ai_config_id=ai_config_id,
+        candidate_limit=candidate_limit,
+    )
+
+
+def _vector_search_candidates_sql(
+    session: Session,
+    *,
+    user_id: int,
+    query_vector: Sequence[float],
+    scope: Optional[str],
+    ai_config_id: Optional[int],
+    candidate_limit: int,
+) -> list[tuple[KnowledgeEntry, float]]:
+    """ANN retrieval via the pgvector cosine-distance operator.
+
+    Filtering (user / status / scope) is pushed into SQL so ``ORDER BY
+    distance LIMIT k`` returns the correct top-k without post-filtering.
+    """
+    distance = KnowledgeEmbedding.embedding.cosine_distance(list(query_vector)).label("distance")
+    stmt = (
+        select(KnowledgeEntry, distance)
+        .join(KnowledgeEmbedding, KnowledgeEmbedding.memory_id == KnowledgeEntry.memory_id)
+        .where(
+            KnowledgeEntry.user_id == int(user_id),
+            KnowledgeEmbedding.user_id == int(user_id),
+            KnowledgeEntry.status == "active",
+            KnowledgeEmbedding.embedding.isnot(None),
+            _scope_conditions(scope, ai_config_id),
+        )
+        .order_by(distance)
+        .limit(int(candidate_limit))
+    )
+    scored: list[tuple[KnowledgeEntry, float]] = []
+    for row, dist in session.exec(stmt).all():
+        if not isinstance(row, KnowledgeEntry):
+            continue
+        similarity = 1.0 - float(dist if dist is not None else 1.0)
+        scored.append((row, similarity))
+    return scored
+
+
+def _vector_search_candidates_python(
+    session: Session,
+    *,
+    user_id: int,
+    query_vector: Sequence[float],
+    scope: Optional[str],
+    ai_config_id: Optional[int],
+    candidate_limit: int,
+) -> list[tuple[KnowledgeEntry, float]]:
+    """In-process fallback when pgvector is unavailable (JSON backend).
+
+    Scope/status/user filtering is still pushed into SQL; only the cosine
+    ranking happens in Python (numpy-vectorised when available).
+    """
     stmt = (
         select(KnowledgeEntry, KnowledgeEmbedding.embedding)
         .join(KnowledgeEmbedding, KnowledgeEmbedding.memory_id == KnowledgeEntry.memory_id)
         .where(
             KnowledgeEntry.user_id == int(user_id),
             KnowledgeEntry.status == "active",
+            _scope_conditions(scope, ai_config_id),
         )
     )
     rows = session.exec(stmt).all()
-    scored: list[tuple[KnowledgeEntry, float]] = []
+    entries: list[KnowledgeEntry] = []
+    vectors: list[list[float]] = []
     for item in rows:
         try:
             row = item[0]
             embedding = item[1]
         except Exception:
             continue
-        if not isinstance(row, KnowledgeEntry) or not _scope_match(row, scope, ai_config_id):
+        if not isinstance(row, KnowledgeEntry):
             continue
         vector = _coerce_embedding(embedding)
         if not vector:
             continue
-        scored.append((row, _cosine_similarity(query_vector, vector)))
+        entries.append(row)
+        vectors.append(vector)
+    sims = _batch_cosine(query_vector, vectors)
+    scored = list(zip(entries, sims))
     scored.sort(key=lambda pair: (-pair[1], -float(pair[0].updated_at or 0.0)))
     return scored[:candidate_limit]
 
@@ -476,7 +705,10 @@ def search_knowledge(
 
     with Session(engine) as session:
         try:
-            ensure_knowledge_embeddings(user_id=user_id, ai_config_id=ai_config_id, session=session)
+            # Hot path: only embed entries that have no index row yet. Existing
+            # entries are kept fresh at write time (sync_topic_embedding_for_entry),
+            # so we avoid re-reading every topic file on each search.
+            _backfill_missing_embeddings(session, user_id=user_id, ai_config_id=ai_config_id)
         except Exception as exc:
             logger.info("knowledge_vector backfill skipped for search: %s", exc)
 
