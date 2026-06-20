@@ -1,20 +1,18 @@
 import json
 import mimetypes
-import re
-import time
 from typing import Any, Dict, Optional
 
 import requests
 from fastapi import HTTPException
-from sqlmodel import Session, select
 
-from api.database import engine
 from api.integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
 from api.models import AssistantAIConfig
+from ..text_format import strip_markdown_to_plain
+from ..transport import TokenCache, load_active_config, parse_json_response
 from ._config import read_feishu_config
 
 FEISHU_OPEN_API_BASE = "https://open.feishu.cn/open-apis"
-_TOKEN_CACHE: Dict[int, Dict[str, Any]] = {}
+_TOKEN_CACHE = TokenCache()
 
 
 def normalize_feishu_text(text: str, *, strip_markdown: bool = True) -> str:
@@ -25,95 +23,87 @@ def normalize_feishu_text(text: str, *, strip_markdown: bool = True) -> str:
     """
     if not strip_markdown:
         return str(text or "").strip()
-    body = str(text or "")
-    if not body:
-        return ""
+    return strip_markdown_to_plain(text, collapse_tables=True)
 
-    body = body.replace("\r\n", "\n").replace("\r", "\n")
 
-    if strip_markdown:
-        # Links/images: keep the label, drop the URL and image marker.
-        body = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", body)
-        body = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", body)
-
-        # Fenced code keeps content, drops fence punctuation and optional language.
-        body = re.sub(r"```[^\n]*\n?", "", body)
-        body = body.replace("```", "")
-
-        lines = []
-        for raw_line in body.split("\n"):
-            line = raw_line.rstrip()
-            stripped = line.strip()
-            if re.fullmatch(r"[:\-\s|]+", stripped) and "|" in stripped:
-                continue
-            line = re.sub(r"^\s{0,3}#{1,6}\s*", "", line)
-            line = re.sub(r"^\s{0,3}>\s?", "", line)
-            line = re.sub(r"^\s*[-*+]\s+", "", line)
-            line = re.sub(r"^\s*\d+[.)]\s+", "", line)
-            if "|" in line:
-                line = re.sub(r"\s*\|\s*", "  ", line).strip()
-            lines.append(line)
-        body = "\n".join(lines)
-
-        # Inline formatting marks: remove the punctuation, keep text.
-        body = re.sub(r"(?<!\w)([*_~]{1,3})(\S(?:.*?\S)?)\1(?!\w)", r"\2", body)
-        body = body.replace("`", "")
-
-        # Markdown task checkboxes and escaped punctuation.
-        body = re.sub(r"\[\s*[xX ]\s*\]\s*", "", body)
-        body = re.sub(r"\\([\\`*_{}\[\]()#+\-.!|>])", r"\1", body)
-
-    # Avoid symbols stuck to CJK/ASCII after marker removal.
-    body = re.sub(r"[ \t]{2,}", " ", body)
-    body = re.sub(r"\n{2,}", "\n", body)
-    return body.strip()
+def _validate_feishu_credentials(bot_cfg: Dict[str, Any]) -> None:
+    if not bot_cfg.get("webhook_url") and (not bot_cfg.get("app_id") or not bot_cfg.get("app_secret")):
+        raise HTTPException(status_code=400, detail="Feishu 仅通知 URL 或 app_id/app_secret 未配置")
 
 
 def _load_feishu_config(user_id: int, ai_config_id: Optional[int]) -> AssistantAIConfig:
-    if not ai_config_id:
-        raise HTTPException(status_code=400, detail="feishu tool requires ai_config_id")
-    with Session(engine) as session:
-        cfg = session.exec(
-            select(AssistantAIConfig).where(
-                AssistantAIConfig.id == ai_config_id,
-                AssistantAIConfig.user_id == user_id,
-            )
-        ).first()
-    if not cfg:
-        raise HTTPException(status_code=404, detail="AI config not found")
-    if str(cfg.bot_channel or "feishu").strip().lower() != "feishu":
-        raise HTTPException(status_code=400, detail="Feishu bot is not the active channel for this AI")
-    bot_cfg = read_feishu_config(cfg)
-    if not bot_cfg.get("enabled"):
-        raise HTTPException(status_code=400, detail="Feishu bot is not enabled for this AI")
-    if not bot_cfg.get("webhook_url") and (not bot_cfg.get("app_id") or not bot_cfg.get("app_secret")):
-        raise HTTPException(status_code=400, detail="Feishu 仅通知 URL 或 app_id/app_secret 未配置")
-    return cfg
+    return load_active_config(
+        user_id,
+        ai_config_id,
+        channel="feishu",
+        tool_name="feishu",
+        channel_label="Feishu",
+        read_config=read_feishu_config,
+        validate_credentials=_validate_feishu_credentials,
+    )
 
 
 def get_tenant_access_token(user_id: int, ai_config_id: Optional[int]) -> str:
     cfg = _load_feishu_config(user_id, ai_config_id)
-    now = time.time()
-    cache = _TOKEN_CACHE.get(int(cfg.id or 0))
-    if cache and cache.get("token") and float(cache.get("expires_at") or 0) > now + 120:
-        return str(cache["token"])
-
     bot_cfg = read_feishu_config(cfg)
-    res = requests.post(
-        f"{FEISHU_OPEN_API_BASE}/auth/v3/tenant_access_token/internal",
-        headers={"Content-Type": "application/json; charset=utf-8"},
-        json={"app_id": bot_cfg.get("app_id", ""), "app_secret": bot_cfg.get("app_secret", "")},
-        timeout=20,
-    )
-    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
-    if not res.ok or int(data.get("code") or 0) != 0:
-        raise HTTPException(status_code=502, detail=f"Feishu token failed: {data or res.text}")
-    token = str(data.get("tenant_access_token") or "").strip()
-    if not token:
-        raise HTTPException(status_code=502, detail="Feishu token response missing tenant_access_token")
-    expire = int(data.get("expire") or 7200)
-    _TOKEN_CACHE[int(cfg.id or 0)] = {"token": token, "expires_at": now + max(60, expire)}
-    return token
+
+    def _fetch() -> "tuple[str, int]":
+        res = requests.post(
+            f"{FEISHU_OPEN_API_BASE}/auth/v3/tenant_access_token/internal",
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            json={"app_id": bot_cfg.get("app_id", ""), "app_secret": bot_cfg.get("app_secret", "")},
+            timeout=20,
+        )
+        data = _feishu_json(res)
+        _raise_feishu_error(res, data, "token")
+        token = str(data.get("tenant_access_token") or "").strip()
+        if not token:
+            raise HTTPException(status_code=502, detail="Feishu token response missing tenant_access_token")
+        return token, int(data.get("expire") or 7200)
+
+    return _TOKEN_CACHE.get_or_fetch(int(cfg.id or 0), _fetch)
+
+
+# --------------------------------------------------------------------------- #
+# Shared send-path helpers — the JSON parsing, open-API error check, target
+# resolution/validation and result shaping that every Feishu send repeated.
+# --------------------------------------------------------------------------- #
+
+_FEISHU_RECEIVE_ID_TYPES = {"chat_id", "open_id", "user_id", "union_id", "email"}
+
+
+def _feishu_json(res: requests.Response) -> Dict[str, Any]:
+    return parse_json_response(res)
+
+
+def _raise_feishu_error(res: requests.Response, data: Dict[str, Any], action: str) -> None:
+    """Raise a 502 with the open-platform error body when the call failed."""
+    if not res.ok or int((data or {}).get("code") or 0) != 0:
+        raise HTTPException(status_code=502, detail=f"Feishu {action} failed: {data or res.text}")
+
+
+def _resolve_feishu_target(bot_cfg: Dict[str, Any], receive_id: str, receive_id_type: str) -> tuple[str, str]:
+    """Apply the default-receiver fallback (no validation), once."""
+    target_id = str(receive_id or bot_cfg.get("default_receive_id") or "").strip()
+    target_type = str(receive_id_type or bot_cfg.get("default_receive_id_type") or "chat_id").strip()
+    return target_id, target_type
+
+
+def _validate_feishu_target(target_id: str, target_type: str) -> None:
+    if not target_id:
+        raise HTTPException(status_code=400, detail="Feishu receive_id is required")
+    if target_type not in _FEISHU_RECEIVE_ID_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported Feishu receive_id_type: {target_type}")
+
+
+def _feishu_send_result(receive_id: str, receive_id_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "success": True,
+        "receive_id": receive_id,
+        "receive_id_type": receive_id_type,
+        "message_id": (data.get("data") or {}).get("message_id"),
+        "raw": data,
+    }
 
 
 def send_feishu_text_message(
@@ -127,8 +117,7 @@ def send_feishu_text_message(
     cfg = _load_feishu_config(user_id, ai_config_id)
     bot_cfg = read_feishu_config(cfg)
     text = normalize_feishu_text(text, strip_markdown=False)
-    target_id = str(receive_id or bot_cfg.get("default_receive_id") or "").strip()
-    target_type = str(receive_id_type or bot_cfg.get("default_receive_id_type") or "chat_id").strip()
+    target_id, target_type = _resolve_feishu_target(bot_cfg, receive_id, receive_id_type)
     can_send_to_target = bool(target_id and bot_cfg.get("app_id") and bot_cfg.get("app_secret"))
     if bot_cfg.get("webhook_url") and not can_send_to_target:
         res = requests.post(
@@ -137,16 +126,13 @@ def send_feishu_text_message(
             json={"msg_type": "text", "content": {"text": str(text or "")}},
             timeout=20,
         )
-        data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
+        data = _feishu_json(res)
         code = data.get("code", data.get("StatusCode", 0)) if isinstance(data, dict) else 0
         if not res.ok or int(code or 0) != 0:
             raise HTTPException(status_code=502, detail=f"Feishu 仅通知发送失败: {data or res.text}")
         return {"success": True, "mode": "webhook", "raw": data}
 
-    if not target_id:
-        raise HTTPException(status_code=400, detail="Feishu receive_id is required")
-    if target_type not in {"chat_id", "open_id", "user_id", "union_id", "email"}:
-        raise HTTPException(status_code=400, detail=f"Unsupported Feishu receive_id_type: {target_type}")
+    _validate_feishu_target(target_id, target_type)
 
     token = get_tenant_access_token(user_id, ai_config_id)
     res = requests.post(
@@ -163,16 +149,9 @@ def send_feishu_text_message(
         },
         timeout=20,
     )
-    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
-    if not res.ok or int(data.get("code") or 0) != 0:
-        raise HTTPException(status_code=502, detail=f"Feishu send_message failed: {data or res.text}")
-    return {
-        "success": True,
-        "receive_id": target_id,
-        "receive_id_type": target_type,
-        "message_id": (data.get("data") or {}).get("message_id"),
-        "raw": data,
-    }
+    data = _feishu_json(res)
+    _raise_feishu_error(res, data, "send_message")
+    return _feishu_send_result(target_id, target_type, data)
 
 
 def _send_feishu_open_message(
@@ -198,16 +177,9 @@ def _send_feishu_open_message(
         },
         timeout=20,
     )
-    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
-    if not res.ok or int(data.get("code") or 0) != 0:
-        raise HTTPException(status_code=502, detail=f"Feishu send {msg_type} failed: {data or res.text}")
-    return {
-        "success": True,
-        "receive_id": receive_id,
-        "receive_id_type": receive_id_type,
-        "message_id": (data.get("data") or {}).get("message_id"),
-        "raw": data,
-    }
+    data = _feishu_json(res)
+    _raise_feishu_error(res, data, f"send {msg_type}")
+    return _feishu_send_result(receive_id, receive_id_type, data)
 
 
 def upload_feishu_image(user_id: int, ai_config_id: Optional[int], source: MediaSource) -> str:
@@ -221,9 +193,8 @@ def upload_feishu_image(user_id: int, ai_config_id: Optional[int], source: Media
             files={"image": (source.filename, fh, source.mime_type)},
             timeout=60,
         )
-    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
-    if not res.ok or int(data.get("code") or 0) != 0:
-        raise HTTPException(status_code=502, detail=f"Feishu image upload failed: {data or res.text}")
+    data = _feishu_json(res)
+    _raise_feishu_error(res, data, "image upload")
     image_key = str((data.get("data") or {}).get("image_key") or "").strip()
     if not image_key:
         raise HTTPException(status_code=502, detail="Feishu image upload response missing image_key")
@@ -251,9 +222,8 @@ def upload_feishu_file(
             files={"file": (source.filename, fh, source.mime_type or mimetypes.guess_type(source.filename)[0] or "application/octet-stream")},
             timeout=120,
         )
-    parsed = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
-    if not res.ok or int(parsed.get("code") or 0) != 0:
-        raise HTTPException(status_code=502, detail=f"Feishu file upload failed: {parsed or res.text}")
+    parsed = _feishu_json(res)
+    _raise_feishu_error(res, parsed, "file upload")
     file_key = str((parsed.get("data") or {}).get("file_key") or "").strip()
     if not file_key:
         raise HTTPException(status_code=502, detail="Feishu file upload response missing file_key")
@@ -276,12 +246,8 @@ def send_feishu_media_message(
     bot_cfg = read_feishu_config(cfg)
     if not bot_cfg.get("app_id") or not bot_cfg.get("app_secret"):
         raise HTTPException(status_code=400, detail="Feishu media messages require App ID / App Secret")
-    target_id = str(receive_id or bot_cfg.get("default_receive_id") or "").strip()
-    target_type = str(receive_id_type or bot_cfg.get("default_receive_id_type") or "chat_id").strip()
-    if not target_id:
-        raise HTTPException(status_code=400, detail="Feishu receive_id is required")
-    if target_type not in {"chat_id", "open_id", "user_id", "union_id", "email"}:
-        raise HTTPException(status_code=400, detail=f"Unsupported Feishu receive_id_type: {target_type}")
+    target_id, target_type = _resolve_feishu_target(bot_cfg, receive_id, receive_id_type)
+    _validate_feishu_target(target_id, target_type)
     source = resolve_media_source(
         url=media_url,
         path=media_path,
