@@ -69,7 +69,7 @@ from .device_permission_policy import DevicePermissionPolicy
 from .mcp_call_stat import McpToolStat, McpFailureEvent
 from .bot_session_route import BotSessionRoute, BotUserCursor
 from .workshop_binding import WorkshopAiBinding
-from .knowledge import EvolutionInput, KnowledgeEntry, Memory
+from .knowledge import EvolutionInput, KnowledgeEmbedding, KnowledgeEntry, Memory
 from .project import EvolutionProject, EvolutionProjectCreate, EvolutionProjectUpdate
 from .system import EmailVerificationCode, SystemSetting
 from .user import Token, User, UserCreate, UserLogin, UserRead, UserUpdate
@@ -141,6 +141,7 @@ __all__ = [
     "EvolutionProjectUpdate",
     # knowledge
     "EvolutionInput",
+    "KnowledgeEmbedding",
     "KnowledgeEntry",
     "Memory",
     "WorldActorMeta",

@@ -1,6 +1,7 @@
 import time
 from typing import Optional
 
+from sqlalchemy import Column, JSON
 from sqlmodel import Field, SQLModel
 
 
@@ -66,3 +67,21 @@ class KnowledgeEntry(SQLModel, table=True):
     librarian_ai_config_id: Optional[int] = Field(default=None, index=True)  # 由哪个图书管理员负责
     created_at: float = Field(default_factory=time.time, index=True)
     updated_at: float = Field(default_factory=time.time)
+
+
+class KnowledgeEmbedding(SQLModel, table=True):
+    """Semantic index for KnowledgeEntry topics.
+
+    The embedding rows are the vector-search acceleration layer; the markdown
+    files under KnowledgeBase/topics remain the source of truth.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    memory_id: str = Field(index=True, unique=True)
+    user_id: int = Field(foreign_key="user.id", index=True)
+    content_hash: str = Field(default="", index=True)
+    content_text: str = Field(default="")
+    source_snapshot: str = Field(default="{}")
+    embedding: list[float] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    created_at: float = Field(default_factory=time.time, index=True)
+    updated_at: float = Field(default_factory=time.time, index=True)

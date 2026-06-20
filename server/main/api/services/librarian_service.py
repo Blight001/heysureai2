@@ -39,6 +39,7 @@ from ..models import AssistantAIConfig, KnowledgeEntry, User
 from ..sio import sio
 from ..core.config import user_shared_knowledge_dir
 from . import kb_store
+from .knowledge_vector import sync_topic_embedding_for_entry
 from mcp_runtime.mcp.core import safe_join
 import logging
 
@@ -2125,6 +2126,10 @@ def propose(
 
     _rebuild_index(user_id)
     entry_dict = _entry_to_dict(row, with_body=False)
+    try:
+        sync_topic_embedding_for_entry(user_id=user_id, row=row, ai_config_id=librarian_id or None, force=True)
+    except Exception as exc:
+        logger.info(f"knowledge embedding sync after propose failed user={user_id} memory_id={row.memory_id}: {exc}")
     _emit_proposal_event(user_id, "librarian:proposal_new", entry_dict)
     return entry_dict
 
@@ -2156,6 +2161,10 @@ def approve(
         if edited_content is not None:
             path = _topic_path(user_id, row.file_path)
             _safe_write(path, edited_content)
+        try:
+            sync_topic_embedding_for_entry(user_id=user_id, row=row, force=True)
+        except Exception as exc:
+            logger.info(f"knowledge embedding sync after approve failed user={user_id} memory_id={row.memory_id}: {exc}")
         out = _entry_to_dict(row, with_body=False)
     _rebuild_index(user_id)
     _emit_proposal_event(user_id, "librarian:proposal_resolved", out)
@@ -2186,6 +2195,10 @@ def reject(*, user_id: int, memory_id: str, reason: Optional[str] = None) -> Dic
                     f.write(f"\n\n<!-- rejected by user: {reason} at {time.time()} -->\n")
             except Exception:
                 pass
+        try:
+            sync_topic_embedding_for_entry(user_id=user_id, row=row, force=True)
+        except Exception as exc:
+            logger.info(f"knowledge embedding sync after reject failed user={user_id} memory_id={row.memory_id}: {exc}")
         out = _entry_to_dict(row, with_body=False)
     _rebuild_index(user_id)
     _emit_proposal_event(user_id, "librarian:proposal_resolved", out)
@@ -2220,6 +2233,10 @@ def archive(*, user_id: int, memory_id: str) -> Dict[str, Any]:
         session.add(row)
         session.commit()
         session.refresh(row)
+        try:
+            sync_topic_embedding_for_entry(user_id=user_id, row=row, force=True)
+        except Exception as exc:
+            logger.info(f"knowledge embedding sync after archive failed user={user_id} memory_id={row.memory_id}: {exc}")
         out = _entry_to_dict(row, with_body=False)
     _rebuild_index(user_id)
     return out

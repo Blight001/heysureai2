@@ -69,6 +69,8 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # Unified knowledge-base tool. Member floor; the underlying workshop handlers
     # re-check the per-action minimum role, and a workshop binding is required.
     "knowledge.manage": ROLE_MEMBER,
+    # Read-only semantic recall for the knowledge base.
+    "knowledge.search": ROLE_MEMBER,
     # Knowledge workshop package installation writes user-level global skills.
     "librarian.install_skill_package": ROLE_MANAGER,
     "librarian.edit_inheritance_thought": ROLE_MANAGER,

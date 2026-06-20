@@ -104,6 +104,21 @@ class Settings(BaseSettings):
     mcp_runtime_port: int = Field(default=3001)
     ai_runtime_port: int = Field(default=3003)
 
+    # ---- Knowledge embedding -------------------------------------------------
+
+    embedding_model: str = Field(
+        default="text-embedding-3-small",
+        alias="HEYSURE_EMBEDDING_MODEL",
+        description="Default embedding model used by knowledge vector indexing/search.",
+    )
+    embedding_dimensions: int = Field(
+        default=1536,
+        alias="HEYSURE_EMBEDDING_DIMENSIONS",
+        ge=1,
+        le=8192,
+        description="Embedding vector width used by the pgvector index.",
+    )
+
     # ---- Chat / AI runtime ---------------------------------------------------
 
     chat_max_steps: int = Field(

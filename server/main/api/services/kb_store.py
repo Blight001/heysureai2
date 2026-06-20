@@ -842,6 +842,12 @@ def ensure_user_kb(user_id: int, *, session: Optional[Session] = None) -> None:
             seed_evolution(user_id, session=sess)
             sync_memories_from_files(user_id, session=sess)
             sync_evolution_from_files(user_id, session=sess)
+            try:
+                from .knowledge_vector import ensure_knowledge_embeddings
+
+                ensure_knowledge_embeddings(user_id=user_id, session=sess)
+            except Exception as exc:
+                logger.info(f"kb_store ensure_user_kb knowledge embeddings user={user_id} failed: {exc}")
         finally:
             if own:
                 sess.close()

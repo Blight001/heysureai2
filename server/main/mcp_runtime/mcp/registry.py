@@ -32,6 +32,7 @@ from .tools.conversation import (
     CONVERSATION_MANAGE_SCHEMA,
 )
 from .tools.knowledge import _knowledge_manage, KNOWLEDGE_MANAGE_SCHEMA
+from .tools.knowledge_search import _knowledge_search, KNOWLEDGE_SEARCH_SCHEMA
 from .tools.web_search import _web_search
 from .tools.device_mcp import _device_mcp_manage, DEVICE_MCP_MANAGE_SCHEMA
 
@@ -343,6 +344,16 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         input_schema=KNOWLEDGE_MANAGE_SCHEMA,
         handler=_knowledge_manage,
         destructive=True,
+    ))
+
+    registry.register(MCPTool(
+        name="knowledge.search",
+        description=(
+            "语义召回知识工坊里的主题思想。根据 query 通过向量检索与关键词回退返回最相关条目，"
+            "用于在写作、任务执行和复盘时快速找到可复用的有效思想。"
+        ),
+        input_schema=KNOWLEDGE_SEARCH_SCHEMA,
+        handler=_knowledge_search,
     ))
 
     # ---------- AI 间通信 ----------
