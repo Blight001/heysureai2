@@ -76,6 +76,14 @@ _BUILTIN_ENTRIES = {
         "triggers": ["传承技能", "固定MCP", "在线MCP", "工坊工具", "MCP工具"],
         "summary": "系统服务端内置 MCP 与在线设备实时上报的工具能力。",
     },
+    # 纯服务端固定 MCP 视图：与 inheritance_skills 共享同一权威源（注册表 + 文件
+    # 覆盖），但只含服务端工具、按 namespace 分组。仅供 read() 解析，不进入
+    # _builtin_entries() 列表，因此不会在前端多出一张知识库卡片。
+    "builtin.intrinsic_properties": {
+        "title": "固有属性",
+        "triggers": ["固有属性", "服务端MCP", "系统MCP", "固定MCP"],
+        "summary": "系统固定注册的服务端 MCP 工具定义（按 namespace 分组）。",
+    },
     "builtin.inheritance_tools": {
         "title": "传承思想",
         "triggers": ["传承思想", "Markdown文件", "思想沉淀"],
@@ -1123,6 +1131,10 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
             prompts = _system_prompts_payload(int(user_id or 0))
             out["system_prompts"] = prompts
             out["body"] = _render_system_prompts_body(prompts)
+        elif memory_id == "builtin.intrinsic_properties":
+            properties = _intrinsic_properties_payload(int(user_id or 0))
+            out["intrinsic_properties"] = properties
+            out["body"] = _render_intrinsic_properties_body(properties)
         elif memory_id == "builtin.inheritance_skills":
             skills = _inheritance_skills_payload(int(user_id or 0))
             out["inheritance_skills"] = skills

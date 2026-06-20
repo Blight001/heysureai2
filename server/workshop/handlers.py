@@ -137,9 +137,11 @@ def read_intrinsic_skills(
     ai_config_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     _ = args, ai_config_id
+    # 纯服务端固定 MCP（按 namespace 分组），与 update_intrinsic_skills 写路径同源；
+    # 在线设备工具请用 read_inheritance_skills。
     return librarian_service.read(
         user_id=int(user_id),
-        memory_id="builtin.inheritance_skills",
+        memory_id="builtin.intrinsic_properties",
     )
 
 
@@ -153,12 +155,17 @@ def update_intrinsic_skills(
     if not isinstance(tools, list) or not tools:
         raise HTTPException(status_code=400, detail="tools (non-empty list) is required")
     try:
-        return librarian_service.save_intrinsic_properties_overrides(
+        librarian_service.save_intrinsic_properties_overrides(
             user_id=int(user_id),
             tools=tools,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # 回读纯服务端 MCP 视图，保证读/写出口形状一致。
+    return librarian_service.read(
+        user_id=int(user_id),
+        memory_id="builtin.intrinsic_properties",
+    )
 
 
 def read_intrinsic_personas(
