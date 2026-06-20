@@ -156,6 +156,67 @@ def _post_qq_message(cfg: AssistantAIConfig, *, endpoint: str, payload: Dict[str
     return data
 
 
+# --------------------------------------------------------------------------- #
+# Shared send-path helpers — the target resolution, reply-context injection,
+# passive-id retry and result shaping that every QQ send function repeated.
+# --------------------------------------------------------------------------- #
+
+def _resolve_qq_target(bot_cfg: Dict[str, Any], target_id: str, target_type: str) -> tuple[str, str]:
+    """Apply the default-receiver fallback + type normalization, once."""
+    final_target_id = str(target_id or bot_cfg.get("default_target_id") or "").strip()
+    final_target_type = _normalize_target_type(target_type or bot_cfg.get("default_target_type") or "c2c")
+    if not final_target_id:
+        raise HTTPException(status_code=400, detail="QQ target_id is required")
+    return final_target_id, final_target_type
+
+
+def _apply_reply_context(
+    payload: Dict[str, Any], *, msg_id: str, event_id: str, msg_seq: Optional[int]
+) -> None:
+    """Attach the passive reply ids (msg_id/msg_seq or event_id) onto ``payload``."""
+    if msg_id:
+        payload["msg_id"] = str(msg_id)
+        if msg_seq is not None:
+            payload["msg_seq"] = int(msg_seq)
+    if event_id and not msg_id:
+        payload["event_id"] = str(event_id)
+
+
+def _strip_passive_ids(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a copy of ``payload`` with the passive reply ids removed."""
+    out = dict(payload)
+    out.pop("msg_id", None)
+    out.pop("msg_seq", None)
+    out.pop("event_id", None)
+    return out
+
+
+def _post_with_passive_retry(
+    cfg: AssistantAIConfig, *, endpoint: str, payload: Dict[str, Any]
+) -> Dict[str, Any]:
+    """POST a message, retrying once as an active send if a passive id is stale.
+
+    Mirrors the shared behavior of the text/media senders: a stale ``msg_id``
+    is the most common rejection, so drop the passive ids and resend.
+    """
+    try:
+        return _post_qq_message(cfg, endpoint=endpoint, payload=payload)
+    except HTTPException:
+        if "msg_id" not in payload:
+            raise
+        return _post_qq_message(cfg, endpoint=endpoint, payload=_strip_passive_ids(payload))
+
+
+def _qq_send_result(target_id: str, target_type: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "success": True,
+        "target_id": target_id,
+        "target_type": target_type,
+        "message_id": data.get("id") if isinstance(data, dict) else None,
+        "raw": data,
+    }
+
+
 def _qq_media_file_endpoint(cfg: AssistantAIConfig, target_type: str, target_id: str) -> str:
     base = _qq_api_base(cfg)
     if target_type == "c2c":
@@ -221,37 +282,14 @@ def send_qq_text_message(
     body = normalize_qq_text(text)
     if not body:
         raise HTTPException(status_code=400, detail="QQ message text is required")
-    final_target_id = str(target_id or bot_cfg.get("default_target_id") or "").strip()
-    final_target_type = _normalize_target_type(target_type or bot_cfg.get("default_target_type") or "c2c")
-    if not final_target_id:
-        raise HTTPException(status_code=400, detail="QQ target_id is required")
+    final_target_id, final_target_type = _resolve_qq_target(bot_cfg, target_id, target_type)
 
     payload: Dict[str, Any] = {"content": body, "msg_type": 0}
-    if msg_id:
-        payload["msg_id"] = str(msg_id)
-        if msg_seq is not None:
-            payload["msg_seq"] = int(msg_seq)
-    if event_id and not msg_id:
-        payload["event_id"] = str(event_id)
+    _apply_reply_context(payload, msg_id=msg_id, event_id=event_id, msg_seq=msg_seq)
 
     endpoint = _message_endpoint(cfg, final_target_type, final_target_id)
-    try:
-        data = _post_qq_message(cfg, endpoint=endpoint, payload=payload)
-    except HTTPException:
-        if "msg_id" not in payload:
-            raise
-        fallback_payload = dict(payload)
-        fallback_payload.pop("msg_id", None)
-        fallback_payload.pop("msg_seq", None)
-        fallback_payload.pop("event_id", None)
-        data = _post_qq_message(cfg, endpoint=endpoint, payload=fallback_payload)
-    return {
-        "success": True,
-        "target_id": final_target_id,
-        "target_type": final_target_type,
-        "message_id": data.get("id") if isinstance(data, dict) else None,
-        "raw": data,
-    }
+    data = _post_with_passive_retry(cfg, endpoint=endpoint, payload=payload)
+    return _qq_send_result(final_target_id, final_target_type, data)
 
 
 def _prepare_markdown_text(text: str) -> str:
@@ -321,21 +359,13 @@ def send_qq_markdown_message(
     content = _prepare_markdown_text(text)
     if not content:
         raise HTTPException(status_code=400, detail="QQ message text is required")
-    final_target_id = str(target_id or bot_cfg.get("default_target_id") or "").strip()
-    final_target_type = _normalize_target_type(target_type or bot_cfg.get("default_target_type") or "c2c")
-    if not final_target_id:
-        raise HTTPException(status_code=400, detail="QQ target_id is required")
+    final_target_id, final_target_type = _resolve_qq_target(bot_cfg, target_id, target_type)
 
     payload: Dict[str, Any] = {
         "msg_type": 2,
         "markdown": _qq_markdown_field(content, markdown_mode, template_id),
     }
-    if msg_id:
-        payload["msg_id"] = str(msg_id)
-        if msg_seq is not None:
-            payload["msg_seq"] = int(msg_seq)
-    if event_id and not msg_id:
-        payload["event_id"] = str(event_id)
+    _apply_reply_context(payload, msg_id=msg_id, event_id=event_id, msg_seq=msg_seq)
 
     endpoint = _message_endpoint(cfg, final_target_type, final_target_id)
     try:
@@ -344,19 +374,9 @@ def send_qq_markdown_message(
         # Stale passive ids are the most common rejection; retry as an
         # active markdown message before giving up on markdown entirely.
         if "msg_id" in payload or "event_id" in payload:
-            retry_payload = dict(payload)
-            retry_payload.pop("msg_id", None)
-            retry_payload.pop("msg_seq", None)
-            retry_payload.pop("event_id", None)
             try:
-                data = _post_qq_message(cfg, endpoint=endpoint, payload=retry_payload)
-                return {
-                    "success": True,
-                    "target_id": final_target_id,
-                    "target_type": final_target_type,
-                    "message_id": data.get("id") if isinstance(data, dict) else None,
-                    "raw": data,
-                }
+                data = _post_qq_message(cfg, endpoint=endpoint, payload=_strip_passive_ids(payload))
+                return _qq_send_result(final_target_id, final_target_type, data)
             except HTTPException:
                 pass
         if not fallback_plain:
@@ -372,13 +392,7 @@ def send_qq_markdown_message(
             event_id=event_id,
             msg_seq=msg_seq,
         )
-    return {
-        "success": True,
-        "target_id": final_target_id,
-        "target_type": final_target_type,
-        "message_id": data.get("id") if isinstance(data, dict) else None,
-        "raw": data,
-    }
+    return _qq_send_result(final_target_id, final_target_type, data)
 
 
 def post_qq_stream_packet(
@@ -437,12 +451,7 @@ def post_qq_stream_packet(
         "markdown": _qq_markdown_field(content, markdown_mode, template_id),
         "stream": stream_payload,
     }
-    if msg_id:
-        payload["msg_id"] = str(msg_id)
-        if msg_seq is not None:
-            payload["msg_seq"] = int(msg_seq)
-    if event_id and not msg_id:
-        payload["event_id"] = str(event_id)
+    _apply_reply_context(payload, msg_id=msg_id, event_id=event_id, msg_seq=msg_seq)
     endpoint = _message_endpoint(cfg, final_target_type, str(target_id or "").strip())
     return _post_qq_message(cfg, endpoint=endpoint, payload=payload)
 
@@ -484,10 +493,7 @@ def send_qq_media_message(
 ) -> Dict[str, Any]:
     cfg = _load_qq_config(user_id, ai_config_id)
     bot_cfg = read_qq_config(cfg)
-    final_target_id = str(target_id or bot_cfg.get("default_target_id") or "").strip()
-    final_target_type = _normalize_target_type(target_type or bot_cfg.get("default_target_type") or "c2c")
-    if not final_target_id:
-        raise HTTPException(status_code=400, detail="QQ target_id is required")
+    final_target_id, final_target_type = _resolve_qq_target(bot_cfg, target_id, target_type)
     if final_target_type not in {"c2c", "group"}:
         raise HTTPException(status_code=400, detail="QQ image/video messages are supported for c2c or group targets")
     source = resolve_media_source(
@@ -515,31 +521,11 @@ def send_qq_media_message(
     content = normalize_qq_text(text)
     if content:
         payload["content"] = content
-    if msg_id:
-        payload["msg_id"] = str(msg_id)
-        if msg_seq is not None:
-            payload["msg_seq"] = int(msg_seq)
-    if event_id and not msg_id:
-        payload["event_id"] = str(event_id)
+    _apply_reply_context(payload, msg_id=msg_id, event_id=event_id, msg_seq=msg_seq)
 
     endpoint = _message_endpoint(cfg, final_target_type, final_target_id)
-    try:
-        data = _post_qq_message(cfg, endpoint=endpoint, payload=payload)
-    except HTTPException:
-        if "msg_id" not in payload:
-            raise
-        fallback_payload = dict(payload)
-        fallback_payload.pop("msg_id", None)
-        fallback_payload.pop("msg_seq", None)
-        fallback_payload.pop("event_id", None)
-        data = _post_qq_message(cfg, endpoint=endpoint, payload=fallback_payload)
-    return {
-        "success": True,
-        "target_id": final_target_id,
-        "target_type": final_target_type,
-        "message_id": data.get("id") if isinstance(data, dict) else None,
-        "raw": data,
-    }
+    data = _post_with_passive_retry(cfg, endpoint=endpoint, payload=payload)
+    return _qq_send_result(final_target_id, final_target_type, data)
 
 
 def parse_qq_text_event(payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
