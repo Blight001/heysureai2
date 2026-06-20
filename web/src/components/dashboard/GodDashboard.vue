@@ -204,17 +204,10 @@ const {
   taskListLoading,
   taskCreatePanelOpen,
   taskCreateSubmitting,
-  taskDetailOpen,
-  taskDetailLoading,
-  taskDetailJob,
-  taskGenerations,
-  selectedGeneration,
   taskCreateForm,
   fetchAgentTaskList,
   openAgentTaskList,
   closeAgentTaskList,
-  openTaskDetail,
-  closeTaskDetail,
   toggleTaskCreatePanel,
   openTaskCreatePanelFromJob,
   closeTaskCreatePanel,
@@ -294,18 +287,9 @@ const chatTargetAiKind = computed<'assistant' | 'core'>(() => {
 
 const openAgentTaskDetailFromCard = async (payload: { agent: Agent; jobId: string }) => {
   const agent = payload?.agent
-  const jobId = String(payload?.jobId || '').trim()
   if (!agent?.aiConfigId) return
-
+  // 代际详情已移除：从卡片点击直接打开该 AI 的任务列表。
   await openAgentTaskList(agent)
-  if (!jobId) return
-
-  const job = taskJobs.value.find(row => String(row.job_id) === jobId)
-  if (!job) {
-    void alert({ message: '未找到该任务记录，已打开任务列表。', type: 'warning' })
-    return
-  }
-  await openTaskDetail(job)
 }
 
 const stopDashboardRefreshLoop = () => {
@@ -540,18 +524,12 @@ onUnmounted(() => {
       :task-create-form="taskCreateForm"
       :available-mcp-tools="availableMcpTools"
       :default-mcp-tools="defaultMcpTools"
-      :task-detail-open="taskDetailOpen"
-      :task-detail-loading="taskDetailLoading"
-      :task-detail-job="taskDetailJob"
-      :task-generations="taskGenerations"
-      :selected-generation="selectedGeneration"
       :on-close="closeAgentTaskList"
       :on-refresh="() => taskListTarget && fetchAgentTaskList(taskListTarget)"
       :on-toggle-task-create-panel="() => taskListTarget && toggleTaskCreatePanel(taskListTarget)"
       :on-close-task-create-panel="closeTaskCreatePanel"
       :on-submit-task="() => submitTaskForAgent(taskListTarget)"
       :on-task-create-tool-change="onTaskCreateToolChange"
-      :on-open-task-detail="openTaskDetail"
       :on-reuse-task-template="(job) => taskListTarget && openTaskCreatePanelFromJob(taskListTarget, job)"
       :on-pause-task-job="(job) => taskListTarget && pauseTaskJob(taskListTarget, job)"
       :on-resume-task-job="(job) => taskListTarget && resumeTaskJob(taskListTarget, job)"
@@ -559,8 +537,6 @@ onUnmounted(() => {
       :on-toggle-all-task-jobs-selection="onSelectAllTaskJobsChange"
       :on-task-job-select-change="onTaskJobSelectChange"
       :on-batch-delete-task-jobs="() => batchDeleteTaskJobs(taskListTarget)"
-      :on-close-task-detail="closeTaskDetail"
-      :on-update-selected-generation="(value) => selectedGeneration = value"
     />
     <Transition name="fade">
       <div v-if="chatTarget && chatModalOpen" class="fixed inset-0 z-[90] bg-black/45 flex items-center justify-center p-4" @click="closeAgentChat">

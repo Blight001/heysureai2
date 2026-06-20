@@ -16,7 +16,7 @@ from sqlmodel import Session, select
 from api.database import engine
 from api.models import AITaskJob, AssistantAIConfig, ChatMessageCreate, ChatRun, ChatSession, User
 from api.services import librarian_service
-from api.services.task_system import DEFAULT_SYSTEM_AUTO_CONTROL, normalize_system_auto_control, parse_generation_from_session_id
+from api.services.task_system import DEFAULT_SYSTEM_AUTO_CONTROL, normalize_system_auto_control
 from .run_state import MAX_AUTO_SUPERVISION_ROUNDS, _RUN_THREADS
 from api.services.chat_persistence import _save_message
 import logging
@@ -33,35 +33,12 @@ def _start_task_run(
     trigger_type: str,
 ) -> Optional[str]:
     session_prefix = f"session_task_{job.job_id}"
-    run_history = session.exec(
-        select(ChatRun).where(
-            ChatRun.user_id == cfg.user_id,
-            ChatRun.ai_config_id == cfg.id,
-            ChatRun.ai_kind == "core",
-            ChatRun.session_id.like(f"{session_prefix}%"),
-        ).order_by(ChatRun.created_at.asc())
-    ).all()
-    previous_session_id = str(job.session_id or "").strip()
-    previous_generation = parse_generation_from_session_id(previous_session_id, 0)
-    is_supervision = str(trigger_type or "").strip().lower() == "supervision"
-
-    existing_generations: set[int] = set()
-    for run in run_history:
-        sid = str(run.session_id or "").strip()
-        if not sid.startswith(f"{session_prefix}_g"):
-            continue
-        parsed = parse_generation_from_session_id(sid, 0)
-        if parsed > 0:
-            existing_generations.add(parsed)
-
-    if is_supervision and previous_session_id.startswith(f"{session_prefix}_g") and previous_generation > 0:
-        generation = previous_generation
-        session_id = previous_session_id
-    else:
-        generation = (max(existing_generations) if existing_generations else 0) + 1
-        session_id = f"{session_prefix}_g{generation}"
+    # One conversation per task. The 传宗接代/代际 lineage (per-run
+    # ``_g{n}`` generation sessions) was removed: every run of the job — first
+    # dispatch, supervision, or loop — reuses this single task session.
+    session_id = session_prefix
     job.session_id = session_id
-    sname = f"任务: {job.title} · 第{generation}代"
+    sname = f"任务: {job.title}"
     chat_session = session.exec(
         select(ChatSession).where(
             ChatSession.user_id == cfg.user_id,
@@ -131,7 +108,6 @@ def _start_task_run(
         f"[系统提示]\n{task_prompt}\n\n"
         f"[任务系统下发]\n"
         f"- 任务ID: {job.job_id}\n"
-        f"- 代际: 第{generation}代\n"
         f"- 标题: {job.title}\n"
         f"- 优先级: P{job.priority}\n"
         f"- 要求: {job.instruction}\n\n"

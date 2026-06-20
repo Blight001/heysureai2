@@ -1,6 +1,5 @@
 import { del, get, post } from './http'
 import type {
-  AITaskGenerationItem,
   AITaskJobItem,
   AITaskListItem,
 } from '@/utils/taskSystem'
@@ -45,14 +44,6 @@ export const fetchTaskListAndJobs = async (configId: number, token: string) => {
     tasks: Array.isArray(taskData.tasks) ? taskData.tasks : [],
     jobs: Array.isArray(jobsData.jobs) ? jobsData.jobs : [],
   }
-}
-
-export const fetchTaskGenerationItems = async (configId: number, jobId: string, token: string) => {
-  const data = await get<{ generations?: AITaskGenerationItem[] }>(
-    `/api/ai/configs/${configId}/task-jobs/${jobId}/generations`,
-    { token, fallbackError: '任务代际详情加载失败' },
-  )
-  return Array.isArray(data.generations) ? data.generations : []
 }
 
 export const triggerTaskForAgent = (configId: number, payload: TriggerTaskPayload, token: string) =>

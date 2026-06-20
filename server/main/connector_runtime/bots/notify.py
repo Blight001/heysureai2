@@ -14,16 +14,20 @@ iteration picks up any new ``BotAdapter`` automatically.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import TYPE_CHECKING
 
 from api.chat_runtime.mcp_parser import MCP_CALL_BLOCK_RE
+from .base import channel_for_session_id
 from .registry import iter_bots
 
 if TYPE_CHECKING:
     from sqlmodel import Session
 
     from api.models import ChatMessage
+
+logger = logging.getLogger(__name__)
 
 
 def _visible_content(message: "ChatMessage") -> str:
@@ -87,11 +91,16 @@ def notify_saved_assistant_message(session: "Session", message: "ChatMessage") -
         if route:
             bot = candidate
             break
-    if bot is None or route is None:
-        return
 
     content = content.lstrip("\n")
     content = _format_content(content)
+
+    if bot is None or route is None:
+        # No bot owns this session (ordinary web conversation). Optionally
+        # mirror the reply into the bound bot's default conversation when the
+        # AI config opted in.
+        _maybe_forward_web_chat(session, message, content)
+        return
 
     bot.notify_assistant_message(
         session,
@@ -99,3 +108,44 @@ def notify_saved_assistant_message(session: "Session", message: "ChatMessage") -
         rendered_content=content,
         route=route,
     )
+
+
+def _maybe_forward_web_chat(session: "Session", message: "ChatMessage", content: str) -> None:
+    """Forward an ordinary web-chat assistant reply to the bot default receiver.
+
+    Gated by ``AssistantAIConfig.forward_web_chat_to_bot``. Skips bot-owned
+    sessions (already handled by routes) and task-runtime sessions (their
+    progress is surfaced in the console, not the bot).
+    """
+    if not content:
+        return
+    sid = str(message.session_id or "")
+    if sid.startswith("session_task_"):
+        return
+    if message.ai_config_id is None:
+        return
+
+    from api.models import AssistantAIConfig
+
+    cfg = session.get(AssistantAIConfig, message.ai_config_id)
+    if not cfg or not bool(getattr(cfg, "forward_web_chat_to_bot", False)):
+        return
+
+    bots = list(iter_bots())
+    # Defensive: if this session actually belongs to a bot, routes own it.
+    if channel_for_session_id(sid, bots):
+        return
+    channel = str(cfg.bot_channel or "").strip().lower()
+    bot = next((b for b in bots if b.channel == channel), None)
+    if bot is None or not bot.is_enabled(cfg):
+        return
+    try:
+        # Empty target → adapter falls back to the configured default receiver.
+        bot.send_text(
+            user_id=message.user_id,
+            ai_config_id=message.ai_config_id,
+            text=content,
+            target={},
+        )
+    except Exception as exc:  # delivery is best-effort, never break the save path
+        logger.exception("forward web chat to bot failed message_id=%s: %s", message.id, exc)

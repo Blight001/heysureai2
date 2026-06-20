@@ -30,36 +30,6 @@ export interface AITaskJobItem {
   created_at?: number
   started_at?: number
   finished_at?: number
-  generation_count: number
-  latest_generation: number
-}
-
-export interface AITaskGenerationMessage {
-  id?: number
-  role: string
-  content: string
-  tags?: string
-  system_prompt?: string
-  created_at?: number
-}
-
-export interface AITaskGenerationItem {
-  generation: number
-  label: string
-  run_id: string
-  session_id: string
-  status: string
-  started_at?: number
-  finished_at?: number
-  system_prompt?: string
-  messages: AITaskGenerationMessage[]
-  live: {
-    text: string
-    reasoning: string
-    phase: 'idle' | 'generating' | 'waiting_mcp'
-    current_tool: string
-    updated_at?: number
-  }
 }
 
 export type TaskLoopMode = 'interval' | 'daily' | 'weekly'

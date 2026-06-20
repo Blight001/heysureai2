@@ -1,8 +1,7 @@
 """Task-system helpers: normalize the per-config ``system_auto_control`` blob and
-its task items, decode task payloads, and resolve task session/generation ids."""
+its task items, decode task payloads, and resolve task session ids."""
 
 import json
-import re
 from typing import Any, Dict, Optional
 
 from sqlmodel import Session, select
@@ -171,17 +170,6 @@ def iter_task_session_ids(job_id: str, current_session_id: Optional[str]) -> lis
     if sid and not sid.startswith(prefix) and sid not in out:
         out.append(sid)
     return out
-
-
-def parse_generation_from_session_id(session_id: str, fallback: int) -> int:
-    sid = str(session_id or "")
-    match = re.search(r"_g(\d+)$", sid)
-    if not match:
-        return fallback
-    try:
-        return max(1, int(match.group(1)))
-    except Exception:
-        return fallback
 
 
 def _parse_bool(value: Any, default: bool = False) -> bool:

@@ -3,7 +3,6 @@ import { formatDate } from '@/utils/datetime'
 import {
   batchDeleteTaskJobsById,
   deleteTaskJobById,
-  fetchTaskGenerationItems,
   fetchTaskListAndJobs,
   pauseTaskJobById,
   resumeTaskJobById,
@@ -16,7 +15,6 @@ import {
   syncArrayByKey,
 } from '@/utils/taskSystem'
 import type {
-  AITaskGenerationItem,
   AITaskJobItem,
   AITaskListItem,
   TaskCreateForm,
@@ -53,11 +51,6 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
   const taskListLoading = ref(false)
   const taskCreatePanelOpen = ref(false)
   const taskCreateSubmitting = ref(false)
-  const taskDetailOpen = ref(false)
-  const taskDetailLoading = ref(false)
-  const taskDetailJob = ref<AITaskJobItem | null>(null)
-  const taskGenerations = ref<AITaskGenerationItem[]>([])
-  const selectedGeneration = ref(1)
 
   const completedTaskJobs = computed(() => {
     return taskJobs.value.filter(isCompletedTaskJob)
@@ -82,33 +75,6 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
     }
   }
 
-  const fetchTaskGenerations = async (agent: Agent, jobId: string, opts?: { silent?: boolean }) => {
-    if (!agent.aiConfigId) return
-    const token = getAuthToken()
-    if (!token) return
-    const silent = !!opts?.silent
-    if (!silent) taskDetailLoading.value = true
-    try {
-      const previousSelected = selectedGeneration.value
-      const generations = await fetchTaskGenerationItems(agent.aiConfigId, jobId, token)
-      syncArrayByKey(taskGenerations.value, generations, item => String((item as AITaskGenerationItem).run_id))
-      if (taskGenerations.value.length > 0) {
-        const hasPrev = taskGenerations.value.some(item => item.generation === previousSelected)
-        selectedGeneration.value = hasPrev
-          ? previousSelected
-          : taskGenerations.value[taskGenerations.value.length - 1].generation
-      } else {
-        selectedGeneration.value = 1
-      }
-    } catch (err: any) {
-      if (!silent) {
-        void alert({ message: err?.message || '任务代际详情加载失败', type: 'error' })
-      }
-    } finally {
-      if (!silent) taskDetailLoading.value = false
-    }
-  }
-
   const openAgentTaskList = async (agent: Agent) => {
     if (!agent.aiConfigId) return
     taskListTarget.value = agent
@@ -123,22 +89,6 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
     taskCreatePanelOpen.value = false
     taskCreateSubmitting.value = false
     selectedTaskJobIds.value = []
-    taskDetailOpen.value = false
-    taskDetailJob.value = null
-    taskGenerations.value = []
-  }
-
-  const openTaskDetail = async (job: AITaskJobItem) => {
-    if (!taskListTarget.value) return
-    taskDetailJob.value = job
-    taskDetailOpen.value = true
-    await fetchTaskGenerations(taskListTarget.value, job.job_id)
-  }
-
-  const closeTaskDetail = () => {
-    taskDetailOpen.value = false
-    taskDetailJob.value = null
-    taskGenerations.value = []
   }
 
   const parseAgentMcpTools = (agent?: Agent | null) => {
@@ -405,9 +355,6 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
     void alert({ message: `任务「${job.title}」已删除`, type: 'success' })
     await fetchAgentTaskList(agent, { silent: true })
     await onReloadAgents()
-    if (taskDetailOpen.value && taskDetailJob.value?.job_id === job.job_id) {
-      closeTaskDetail()
-    }
   }
 
   const toggleTaskJobSelection = (jobId: string, checked: boolean) => {
@@ -451,10 +398,6 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
     if (!token) return
 
     const { successCount, failCount } = await batchDeleteTaskJobsById(agent.aiConfigId, selectedIds, token)
-    for (const jobId of selectedIds) {
-      if (taskDetailOpen.value && taskDetailJob.value?.job_id === jobId) closeTaskDetail()
-    }
-
     selectedTaskJobIds.value = []
     await fetchAgentTaskList(agent, { silent: true })
     await onReloadAgents()
@@ -468,9 +411,6 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
   const refreshOpenTaskPanel = async () => {
     if (!taskListModalOpen.value || !taskListTarget.value) return
     await fetchAgentTaskList(taskListTarget.value, { silent: true })
-    if (taskDetailOpen.value && taskDetailJob.value) {
-      await fetchTaskGenerations(taskListTarget.value, taskDetailJob.value.job_id, { silent: true })
-    }
   }
 
   watch(taskJobs, (rows) => {
@@ -487,18 +427,10 @@ export const useTaskManagement = (options: UseTaskManagementOptions) => {
     taskListLoading,
     taskCreatePanelOpen,
     taskCreateSubmitting,
-    taskDetailOpen,
-    taskDetailLoading,
-    taskDetailJob,
-    taskGenerations,
-    selectedGeneration,
     taskCreateForm,
     fetchAgentTaskList,
-    fetchTaskGenerations,
     openAgentTaskList,
     closeAgentTaskList,
-    openTaskDetail,
-    closeTaskDetail,
     toggleTaskCreatePanel,
     openTaskCreatePanelFromJob,
     closeTaskCreatePanel,

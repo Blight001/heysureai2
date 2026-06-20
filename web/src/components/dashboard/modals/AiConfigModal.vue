@@ -496,6 +496,14 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                   </select>
                 </div>
 
+                <label class="flex items-center justify-between gap-2 text-xs text-zinc-600 dark:text-zinc-300 px-2 py-2 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60">
+                  <span class="min-w-0">
+                    <span class="block">普通对话自动转发到机器人</span>
+                    <span class="block text-[10px] text-zinc-400 dark:text-zinc-500">开启后，控制台普通对话里 AI 的回复会同步发送到机器人默认接收方（任务对话除外）。</span>
+                  </span>
+                  <input type="checkbox" v-model="form.forward_web_chat_to_bot" class="shrink-0" />
+                </label>
+
                 <template v-if="form.bot_channel === 'feishu'">
                 <label class="flex items-center justify-between text-xs text-zinc-600 dark:text-zinc-300 px-2 py-2 rounded border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/60">
                   <span>启用飞书机器人</span>

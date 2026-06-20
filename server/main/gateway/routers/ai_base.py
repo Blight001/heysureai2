@@ -5,7 +5,6 @@ role normalization, task-owner resolution) used by the ai_* route modules."""
 IS_ROUTER_ENTRY = False
 
 import json
-import re
 import time
 from typing import Any, Dict, Optional
 
@@ -19,22 +18,7 @@ from api.models import (
 
 router = APIRouter()
 PREFIX = "/api/ai"
-_TASK_PROMPT_HIDDEN_SECTION_TITLES: tuple[str, ...] = (
-    "任务运行时MCP调用规则",
-    "任务运行时MCP工具白名单",
-)
 
-
-def _strip_prompt_section(text: str, section_title: str) -> str:
-    src = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
-    pattern = re.compile(rf"\n*\[{re.escape(section_title)}\]\n[\s\S]*?(?=\n\[[^\n]+\]\n|$)")
-    return pattern.sub("", src)
-
-def _sanitize_task_generation_prompt(text: str) -> str:
-    cleaned = str(text or "")
-    for title in _TASK_PROMPT_HIDDEN_SECTION_TITLES:
-        cleaned = _strip_prompt_section(cleaned, title)
-    return cleaned.strip()
 
 def _default_system_auto_control_for_user(user: User) -> str:
     _ = user

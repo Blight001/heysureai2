@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { formatDateTime } from '@/utils/datetime'
-import ChatConversationView from '@/components/chat/ChatConversationView.vue'
 import {
   WEEKDAY_OPTIONS,
   canPauseTaskJob,
@@ -13,8 +12,6 @@ import {
   isCompletedTaskJob,
 } from '@/utils/taskSystem'
 import type {
-  AITaskGenerationItem,
-  AITaskGenerationMessage,
   AITaskJobItem,
   AITaskListItem,
   TaskCreateForm,
@@ -34,18 +31,12 @@ interface Props {
   taskCreateForm: TaskCreateForm
   availableMcpTools: string[]
   defaultMcpTools: string[]
-  taskDetailOpen: boolean
-  taskDetailLoading: boolean
-  taskDetailJob: AITaskJobItem | null
-  taskGenerations: AITaskGenerationItem[]
-  selectedGeneration: number
   onClose: () => void
   onRefresh: () => void
   onToggleTaskCreatePanel: () => void
   onCloseTaskCreatePanel: () => void
   onSubmitTask: () => void
   onTaskCreateToolChange: (tool: string, event: Event) => void
-  onOpenTaskDetail: (job: AITaskJobItem) => void
   onReuseTaskTemplate: (job: AITaskJobItem) => void
   onPauseTaskJob: (job: AITaskJobItem) => void
   onResumeTaskJob: (job: AITaskJobItem) => void
@@ -53,8 +44,6 @@ interface Props {
   onToggleAllTaskJobsSelection: (event: Event) => void
   onTaskJobSelectChange: (jobId: string, event: Event) => void
   onBatchDeleteTaskJobs: () => void
-  onCloseTaskDetail: () => void
-  onUpdateSelectedGeneration: (value: number) => void
 }
 
 const props = defineProps<Props>()
@@ -116,27 +105,7 @@ const allTaskJobsSelected = computed(() => {
   return filteredCompletedTaskJobs.value.every(job => selected.has(job.job_id))
 })
 
-const selectedGenerationDetail = computed(() => {
-  return props.taskGenerations.find(item => item.generation === props.selectedGeneration) || null
-})
-
-const selectedGenerationMessages = computed<AITaskGenerationMessage[]>(() => {
-  if (!selectedGenerationDetail.value) return []
-  return selectedGenerationDetail.value.messages
-})
-
-const canViewJobDetail = (status?: string) => {
-  return ['running', 'completed', 'cancelled', 'error', 'stopped'].includes(String(status || '').toLowerCase())
-}
-
 const formatTs = (value?: number) => formatDateTime(value, '--')
-
-const onSelectedGenerationChange = (event: Event) => {
-  const target = event.target as HTMLSelectElement | null
-  if (!target) return
-  const next = Number(target.value)
-  props.onUpdateSelectedGeneration(Number.isFinite(next) ? next : 1)
-}
 
 const onScheduleEnabledChange = (event: Event) => {
   const target = event.target as HTMLInputElement | null
@@ -320,7 +289,6 @@ const taskStateFilterButtonClass = (state: JobStateFilter) => {
                         <span> · 类型: {{ job.trigger_type }}</span>
                         <span v-if="job.run_status"> · run: {{ job.run_status }}</span>
                         <span> · 创建: {{ formatTs(job.created_at) }}</span>
-                        <span> · 共{{ Math.max(1, Number(job.generation_count) || 1) }}代</span>
                       </div>
                       <div v-if="getTaskPayloadTags(job.task_payload).length > 0" class="mt-1 flex flex-wrap gap-1">
                         <span
@@ -332,13 +300,6 @@ const taskStateFilterButtonClass = (state: JobStateFilter) => {
                         </span>
                       </div>
                     </div>
-                    <button
-                      v-if="canViewJobDetail(job.effective_status || job.status)"
-                      class="text-[11px] px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 shrink-0 hover:text-indigo-600 hover:border-indigo-200 dark:hover:text-indigo-300"
-                      @click="onOpenTaskDetail(job)"
-                    >
-                      查看任务详情
-                    </button>
                     <div class="flex items-center gap-1 shrink-0">
                       <button
                         v-if="isCompletedTaskJob(job)"
@@ -736,73 +697,6 @@ const taskStateFilterButtonClass = (state: JobStateFilter) => {
           >
             {{ taskCreateSubmitting ? '创建中...' : '提交任务' }}
           </button>
-        </div>
-      </div>
-    </div>
-  </Transition>
-
-  <Transition name="fade">
-    <div v-if="show && taskDetailOpen && target && taskDetailJob" class="fixed inset-0 z-[90] bg-black/45 flex items-center justify-center p-4" @click="onCloseTaskDetail">
-      <div class="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700 shadow-xl w-full max-w-5xl h-[82vh] flex flex-col" @click.stop>
-        <div class="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
-          <div>
-            <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">{{ taskDetailJob.title }} 对话详情</div>
-            <div class="text-xs text-zinc-500 dark:text-zinc-400">可切换查看第n代，执行中会实时刷新思考内容</div>
-          </div>
-          <button class="text-xs px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-300" @click="onCloseTaskDetail">关闭</button>
-        </div>
-        <div class="px-4 py-2 border-b border-zinc-200 dark:border-zinc-700">
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-zinc-500 dark:text-zinc-400">选择代际:</span>
-            <select
-              :value="selectedGeneration"
-              class="text-xs px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-              @change="onSelectedGenerationChange"
-            >
-              <option v-for="g in taskGenerations" :key="`g-opt-${g.run_id}-${g.generation}`" :value="g.generation">
-                {{ g.label }} · {{ g.status }}
-              </option>
-            </select>
-            <span v-if="selectedGenerationDetail" class="text-[11px] text-zinc-500 dark:text-zinc-400">
-              run: {{ selectedGenerationDetail.run_id }}
-            </span>
-          </div>
-        </div>
-        <div class="flex-1 min-h-0">
-          <div class="p-4 overflow-y-auto min-h-0 h-full">
-            <div v-if="taskDetailLoading" class="text-xs text-zinc-500 dark:text-zinc-400">正在加载代际数据...</div>
-            <div v-else-if="taskGenerations.length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">暂无可展示的代际记录</div>
-            <div v-else-if="!selectedGenerationDetail" class="text-xs text-zinc-500 dark:text-zinc-400">请选择要查看的代际</div>
-            <div v-else class="space-y-3">
-              <div class="text-xs text-zinc-500 dark:text-zinc-400">
-                {{ selectedGenerationDetail.label }} · run: {{ selectedGenerationDetail.run_id }} · {{ formatTs(selectedGenerationDetail.started_at) }}
-                <span v-if="selectedGenerationDetail.live.text || selectedGenerationDetail.live.reasoning"> · 实时运行中 ({{ selectedGenerationDetail.live.phase }}){{ selectedGenerationDetail.live.current_tool ? ` · 工具: ${selectedGenerationDetail.live.current_tool}` : '' }}</span>
-              </div>
-              <ChatConversationView
-                :baseMessages="selectedGenerationMessages"
-                :sessionActive="true"
-                :frontPromptText="selectedGenerationDetail.system_prompt || ''"
-                :aiConfigId="props.target?.aiConfigId"
-                :liveText="selectedGenerationDetail.live.text || ''"
-                :liveThinking="selectedGenerationDetail.live.reasoning || ''"
-                :livePhase="selectedGenerationDetail.live.phase || 'idle'"
-                :collapseLiveThinking="true"
-                :showFrontPrompt="true"
-                :showFrontPromptPlaceholder="true"
-                :recoverActionStateFromTags="true"
-                :appliedEdits="[]"
-                :appliedSignatures="[]"
-                :actionResults="{}"
-                :actionResultsBySignature="{}"
-                :isTyping="['queued', 'running'].includes(String(selectedGenerationDetail.status || '').toLowerCase())"
-                :readonly="true"
-                @delete="() => {}"
-                @recall="() => {}"
-                @apply="() => {}"
-                @revert="() => {}"
-              />
-            </div>
-          </div>
         </div>
       </div>
     </div>

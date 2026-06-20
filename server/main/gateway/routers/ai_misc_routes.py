@@ -33,7 +33,7 @@ from api.device_live import emit_agent_list_for_user
 from .auth import get_current_user
 from ai_runtime.inference.ai_service import ensure_default_ai_for_user
 from api.services.model_presets import resolve_model_preset
-from api.services.task_system import decode_task_payload, parse_generation_from_session_id
+from api.services.task_system import decode_task_payload
 from .ai_base import router
 
 
@@ -336,19 +336,12 @@ async def list_ai_cards(
             ChatRun.session_id.like("session_task_%"),
         ).order_by(ChatRun.updated_at.desc())
     ).all()
-    task_generations_by_prefix: Dict[str, set[int]] = {}
     task_active_status_by_prefix: Dict[str, str] = {}
     for row in task_runs:
         sid = str(row.session_id or "").strip()
         if not sid.startswith("session_task_"):
             continue
         session_prefix = sid.split("_g")[0] if "_g" in sid else sid
-        generation = parse_generation_from_session_id(sid, 1)
-        if generation <= 0:
-            generation = 1
-        if session_prefix not in task_generations_by_prefix:
-            task_generations_by_prefix[session_prefix] = set()
-        task_generations_by_prefix[session_prefix].add(generation)
         if session_prefix not in task_active_status_by_prefix and str(row.status or "") in {"queued", "running"}:
             task_active_status_by_prefix[session_prefix] = str(row.status or "")
 
@@ -361,9 +354,6 @@ async def list_ai_cards(
 
     def _build_task_summary(job: AITaskJob, token_limit: int) -> Dict[str, Any]:
         session_prefix = f"session_task_{job.job_id}"
-        generation_set = task_generations_by_prefix.get(session_prefix) or set()
-        generation_count = len(generation_set)
-        latest_generation = max(generation_set) if generation_set else 1
         run_status = str(task_active_status_by_prefix.get(session_prefix) or "")
         effective_status = str(job.status or "")
         if run_status in {"queued", "running"} and effective_status in {"queued", "running"}:
@@ -391,8 +381,6 @@ async def list_ai_cards(
             "schedule_at": schedule_at if schedule_at > 0 else None,
             "schedule_loop_enabled": bool(schedule.get("loop_enabled")),
             "schedule_duration_minutes": schedule_duration_minutes,
-            "generation_count": generation_count,
-            "latest_generation": latest_generation,
             "task_token_used": int(task_token_used or 0),
             "task_token_limit": int(token_limit or 0),
             "created_at": job.created_at,
