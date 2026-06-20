@@ -47,7 +47,7 @@ _TASK_RUNTIME_SECTION_TITLES: tuple[str, ...] = (
     "任务运行时MCP工具白名单",
 )
 _TASK_CREATE_TOOL_NAMES: set[str] = {
-    "task.create",
+    "task.manage",
 }
 
 

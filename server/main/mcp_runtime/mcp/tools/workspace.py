@@ -356,6 +356,100 @@ def _edit_file(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) 
     }
 
 
+def _list_tree(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    """Render the workspace file tree, optionally rooted at a sub-path."""
+    project_root = get_project_root(user_id, ai_config_id)
+    target = args.get("target") if isinstance(args.get("target"), dict) else {}
+    sub = args.get("path") or target.get("path")
+    if isinstance(sub, str) and sub.strip() and sub.strip() not in {".", "/"}:
+        root = _resolve_workspace_file(project_root, {"path": sub})
+    else:
+        root = project_root
+    return {
+        "success": True,
+        "root": os.path.relpath(root, project_root).replace(os.sep, "/") or ".",
+        "abs_root": root,
+        "tree": generate_file_tree(root),
+    }
+
+
+# Action → (handler, minimum role). ``None`` role means available to every tier.
+_FILE_ACTIONS = {
+    "read": (_read_file, None),
+    "tree": (_list_tree, None),
+    "write": (_write_file, "digital_member_manager"),
+    "edit": (_edit_file, "digital_member_manager"),
+}
+
+_FILE_ACTION_ALIASES = {
+    "list": "tree",
+    "ls": "tree",
+    "create": "write",
+    "save": "write",
+    "modify": "edit",
+}
+
+
+def _file_manage(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    """Unified workspace file tool. Dispatch by ``action``.
+
+    Folds ``workspace.{read_file,write_file,edit_file}`` plus a file-tree listing
+    behind one ``action`` parameter. ``read``/``tree`` are open to every tier;
+    ``write``/``edit`` stay manager+ (re-enforced here). Shell execution and web
+    search remain separate tools (``workspace.run_command`` / ``workspace.search``).
+    """
+    from ..permissions import enforce_min_role
+
+    raw = str((args or {}).get("action") or "").strip().lower()
+    action = _FILE_ACTION_ALIASES.get(raw, raw)
+    if not action:
+        raise HTTPException(status_code=400, detail="action is required for file.manage")
+    spec = _FILE_ACTIONS.get(action)
+    if spec is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported action: {action}. 可用: {', '.join(sorted(_FILE_ACTIONS))}",
+        )
+    handler, min_role = spec
+    if min_role:
+        enforce_min_role(user_id, ai_config_id, min_role)
+    return handler(user_id, args or {}, ai_config_id)
+
+
+FILE_MANAGE_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": sorted(_FILE_ACTIONS),
+            "description": (
+                "操作类型："
+                "read 读取工作区内文本文件；tree 列出工作区（或 path 子目录）的文件树；"
+                "write 创建/覆盖文本文件（需管理者+）；edit 按文本块替换/删除/追加/前置编辑（需管理者+）。"
+                "路径必须位于当前 AI 工作区内。"
+            ),
+        },
+        "path": {"type": "string", "description": "目标文件/目录路径。相对路径相对当前 AI 工作区；绝对路径必须位于工作区内。"},
+        "max_bytes": {"type": "integer", "description": "read：最多读取字节数，默认 1000000。"},
+        "text": {"type": "string", "description": "write：要写入的完整文本。"},
+        "create": {"type": "boolean", "description": "write：文件不存在时是否创建。"},
+        "overwrite": {"type": "boolean", "description": "write：文件已存在时是否允许覆盖。"},
+        "create_dirs": {"type": "boolean", "description": "write：是否自动创建父目录。"},
+        "edits": {
+            "type": "array",
+            "items": {"type": "object"},
+            "description": "edit：编辑列表。每项 op=replace/delete/append/prepend；replace/delete 需 search；多处匹配需 replace_all=true。",
+        },
+        "op": {"type": "string", "enum": ["replace", "delete", "append", "prepend"], "description": "edit：单条编辑写法的操作类型。"},
+        "search": {"type": "string", "description": "edit：replace/delete 要查找的原文块（默认唯一匹配）。"},
+        "replace": {"type": "string", "description": "edit：replace 的替换文本。"},
+        "replace_all": {"type": "boolean", "description": "edit：是否替换/删除所有匹配，默认 false。"},
+        "create_if_missing": {"type": "boolean", "description": "edit：文件不存在时是否按空文件创建。"},
+    },
+    "required": ["action"],
+}
+
+
 def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     project_root = get_project_root(user_id, ai_config_id)
     strict_workspace = _truthy(args.get("strict_workspace") or args.get("workspace_only"))

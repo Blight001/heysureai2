@@ -1909,8 +1909,10 @@ def _run_worker_impl(
                     payload_call["tool"] = payload_tool
                 # AI 主动压缩上下文：复用自动压缩机制，但不看 token 阈值，立即把
                 # 较早的对话历史折叠成摘要并重建当前会话，让本轮就用上压缩结果。
-                if payload_tool == "conversation.compress":
-                    _compress_args = (payload_call or {}).get("arguments", {}) or {}
+                _payload_args = (payload_call or {}).get("arguments", {}) or {}
+                _payload_action = str(_payload_args.get("action") or "").strip().lower()
+                if payload_tool == "conversation.manage" and _payload_action == "compress":
+                    _compress_args = _payload_args
                     try:
                         _keep_recent = int(_compress_args.get("keep_recent", 4))
                     except Exception:
@@ -2379,7 +2381,7 @@ def _run_worker_impl(
                 result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
                 if (
                     (not tool_failed)
-                    and tool == "conversation.edit"
+                    and tool == "conversation.manage"
                     and isinstance(result_payload, dict)
                     and result_payload.get("action") == "rename"
                     and str(result_payload.get("session_id") or "") == str(session_id)
@@ -2428,7 +2430,7 @@ def _run_worker_impl(
 
                 if (
                     (not tool_failed)
-                    and tool == "conversation.edit"
+                    and tool == "conversation.manage"
                     and isinstance(result_payload, dict)
                     and result_payload.get("action") == "clear"
                     and str(result_payload.get("session_id") or "") == str(session_id)
