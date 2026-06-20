@@ -22,6 +22,7 @@ from sqlmodel import select
 
 from api.chat_runtime.mcp_parser import MCP_CALL_BLOCK_RE
 from .base import channel_for_session_id
+from .messaging import Recipient, dispatcher
 from .registry import iter_bots
 
 if TYPE_CHECKING:
@@ -152,12 +153,13 @@ def _maybe_forward_web_chat(session: "Session", message: "ChatMessage", content:
     if bot is None or not bot.is_enabled(cfg):
         return
     try:
-        # Empty target → adapter falls back to the configured default receiver.
-        bot.send_text(
-            user_id=message.user_id,
+        # Empty recipient → adapter falls back to the configured default receiver.
+        dispatcher.send_text(
+            user_id=int(message.user_id),
             ai_config_id=message.ai_config_id,
+            channel=channel,
             text=content,
-            target={},
+            recipient=Recipient(),
         )
     except Exception as exc:  # delivery is best-effort, never break the save path
         logger.exception("forward web chat to bot failed message_id=%s: %s", message.id, exc)

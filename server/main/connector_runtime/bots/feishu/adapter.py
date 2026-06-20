@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from sqlmodel import Session
 
     from api.models import AssistantAIConfig, ChatMessage
+    from ..messaging import MediaPayload, Recipient
     from .routes_store import FeishuRouteView
 
 
@@ -60,65 +61,69 @@ class FeishuBot(BotAdapter):
 
     # ---- outbound messaging -----------------------------------------------
 
-    def send_text(
+    def parse_recipient(self, raw: Dict[str, Any]) -> "Recipient":
+        from ..messaging import Recipient
+
+        raw = raw or {}
+        to_id = (
+            raw.get("receive_id") or raw.get("chat_id")
+            or raw.get("open_id") or raw.get("to_id") or ""
+        )
+        to_type = raw.get("receive_id_type") or raw.get("to_type")
+        if not to_type and raw.get("open_id"):
+            to_type = "open_id"
+        return Recipient(to_id=str(to_id).strip(), to_type=str(to_type or "").strip())
+
+    def deliver_text(
         self,
         *,
         user_id: int,
         ai_config_id: Optional[int],
+        recipient: "Recipient",
         text: str,
-        target: Dict[str, Any],
     ) -> Any:
         from .service import send_feishu_text_message
         return send_feishu_text_message(
             user_id,
             ai_config_id,
             text=text,
-            receive_id=str(target.get("receive_id") or ""),
-            receive_id_type=str(target.get("receive_id_type") or ""),
+            receive_id=recipient.to_id,
+            receive_id_type=recipient.to_type,
         )
 
-    def send_media(
+    def deliver_media(
         self,
         *,
         user_id: int,
         ai_config_id: Optional[int],
-        text: str,
-        media: Dict[str, Any],
-        target: Dict[str, Any],
+        recipient: "Recipient",
+        media: "MediaPayload",
     ) -> Any:
         from .service import send_feishu_media_message, send_feishu_text_message
 
-        media_url = str(media.get("url") or "").strip()
-        media_path = str(media.get("path") or "").strip()
-        media_type = str(media.get("type") or "").strip()
-        file_name = str(media.get("file_name") or "").strip()
-        duration = media.get("duration")
-        receive_id = str(target.get("receive_id") or "")
-        receive_id_type = str(target.get("receive_id_type") or "")
-
         results = []
         # Feishu requires text and media to ride on separate messages.
-        if text and (media_url or media_path):
+        if media.text and media.has_media:
             results.append(
                 send_feishu_text_message(
                     user_id,
                     ai_config_id,
-                    text=text,
-                    receive_id=receive_id,
-                    receive_id_type=receive_id_type,
+                    text=media.text,
+                    receive_id=recipient.to_id,
+                    receive_id_type=recipient.to_type,
                 )
             )
         results.append(
             send_feishu_media_message(
                 user_id,
                 ai_config_id,
-                media_url=media_url,
-                media_path=media_path,
-                media_type=media_type,
-                file_name=file_name,
-                receive_id=receive_id,
-                receive_id_type=receive_id_type,
-                duration=int(duration) if duration is not None else None,
+                media_url=media.url,
+                media_path=media.path,
+                media_type=media.media_type,
+                file_name=media.file_name,
+                receive_id=recipient.to_id,
+                receive_id_type=recipient.to_type,
+                duration=int(media.duration) if media.duration is not None else None,
             )
         )
         if len(results) > 1:
@@ -237,46 +242,28 @@ class FeishuBot(BotAdapter):
         remote_state: Optional[Dict[str, str]] = None,
         remote_error: Optional[str] = None,
     ) -> Dict[str, str]:
+        from .. import status
+
         if str(cfg.bot_channel or "feishu").strip().lower() != self.channel:
-            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "当前机器人类型不是飞书"}
+            return status.disabled("当前机器人类型不是飞书")
         bot_cfg = self.read_config(cfg)
         if not bot_cfg.get("enabled"):
-            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "飞书机器人未启用"}
+            return status.disabled("飞书机器人未启用")
         app_id = str(bot_cfg.get("app_id") or "").strip()
         app_secret = str(bot_cfg.get("app_secret") or "").strip()
         webhook_url = str(bot_cfg.get("webhook_url") or "").strip()
         if app_id or app_secret:
             if not app_id or not app_secret:
-                return {
-                    "status": "failed",
-                    "mode": "long_connection",
-                    "label": "失败",
-                    "message": "App ID / Secret 配置不完整",
-                }
+                return status.failed("long_connection", "App ID / Secret 配置不完整")
             state = remote_state
             if state is None:
                 if remote_error:
-                    return {
-                        "status": "failed",
-                        "mode": "long_connection",
-                        "label": "失败",
-                        "message": f"connector-runtime 状态不可用: {remote_error}",
-                    }
+                    return status.failed("long_connection", f"connector-runtime 状态不可用: {remote_error}")
                 state = self.get_long_connection_state(int(cfg.id or 0))
-            return {
-                "status": state.get("status") or "failed",
-                "mode": "long_connection",
-                "label": "成功" if state.get("status") == "success" else "失败",
-                "message": state.get("message") or "",
-            }
+            return status.from_connection_state(state, mode="long_connection", starting_hint="")
         if webhook_url:
-            return {
-                "status": "success",
-                "mode": "webhook",
-                "label": "成功",
-                "message": "仅通知发送配置已完成",
-            }
-        return {"status": "failed", "mode": "none", "label": "失败", "message": "未配置 App ID/Secret 或 仅通知 URL"}
+            return status.status_report("success", "webhook", "仅通知发送配置已完成")
+        return status.failed("none", "未配置 App ID/Secret 或 仅通知 URL")
 
 
 # Self-register the singleton at import time.

@@ -28,7 +28,7 @@ import socketio
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from connector_runtime.bots import iter_bots, get as get_bot
+from connector_runtime.bots import iter_bots
 from api.database import create_db_and_tables
 from api.models import AssistantAIConfig
 from api.sio import sio
@@ -235,22 +235,22 @@ def create_app() -> FastAPI:
     def feishu_send(req: FeishuSendRequest) -> Dict[str, Any]:
         # Lark-oapi is loaded lazily inside the adapter so processes that
         # never send outbound Feishu traffic don't pull it in at import time.
-        bot = get_bot("feishu")
-        if bot is None:
-            raise HTTPException(status_code=503, detail="feishu bot not registered")
+        from connector_runtime.bots.messaging import dispatcher
+
         try:
-            result = bot.send_text(
+            delivery = dispatcher.send_text(
                 user_id=req.user_id,
                 ai_config_id=req.ai_config_id,
+                channel="feishu",
                 text=req.text,
-                target={
+                raw_target={
                     "receive_id": req.receive_id or "",
                     "receive_id_type": req.receive_id_type or "",
                 },
             )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"feishu send failed: {exc}")
-        return {"ok": True, "result": result}
+        return {"ok": True, "result": delivery.detail}
 
     fastapi_app.include_router(router)
 

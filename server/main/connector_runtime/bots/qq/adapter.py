@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from sqlmodel import Session
 
     from api.models import AssistantAIConfig, ChatMessage
+    from ..messaging import MediaPayload, Recipient
     from .routes_store import QQRouteHandle
 
 
@@ -54,49 +55,70 @@ class QQBot(BotAdapter):
 
     # ---- outbound messaging -----------------------------------------------
 
-    def send_text(
+    def parse_recipient(self, raw: Dict[str, Any]) -> "Recipient":
+        from ..messaging import Recipient
+
+        raw = raw or {}
+        msg_seq = raw.get("msg_seq")
+        to_id = (
+            raw.get("target_id") or raw.get("to_id")
+            or raw.get("group_openid") or raw.get("openid")
+            or raw.get("receive_id") or raw.get("chat_id") or raw.get("open_id") or ""
+        )
+        to_type = (
+            raw.get("target_type") or raw.get("qq_target_type")
+            or raw.get("to_type") or raw.get("receive_id_type") or ""
+        )
+        return Recipient(
+            to_id=str(to_id).strip(),
+            to_type=str(to_type).strip(),
+            reply_message_id=str(raw.get("msg_id") or "").strip(),
+            reply_event_id=str(raw.get("event_id") or "").strip(),
+            msg_seq=int(msg_seq) if msg_seq is not None else None,
+        )
+
+    def deliver_text(
         self,
         *,
         user_id: int,
         ai_config_id: Optional[int],
+        recipient: "Recipient",
         text: str,
-        target: Dict[str, Any],
     ) -> Any:
         from .service import send_qq_text_message
         return send_qq_text_message(
             user_id,
             ai_config_id,
             text=text,
-            target_id=str(target.get("target_id") or ""),
-            target_type=str(target.get("target_type") or ""),
-            msg_id=str(target.get("msg_id") or ""),
-            event_id=str(target.get("event_id") or ""),
-            msg_seq=int(target["msg_seq"]) if target.get("msg_seq") is not None else None,
+            target_id=recipient.to_id,
+            target_type=recipient.to_type,
+            msg_id=recipient.reply_message_id,
+            event_id=recipient.reply_event_id,
+            msg_seq=recipient.msg_seq,
         )
 
-    def send_media(
+    def deliver_media(
         self,
         *,
         user_id: int,
         ai_config_id: Optional[int],
-        text: str,
-        media: Dict[str, Any],
-        target: Dict[str, Any],
+        recipient: "Recipient",
+        media: "MediaPayload",
     ) -> Any:
         from .service import send_qq_media_message
         return send_qq_media_message(
             user_id,
             ai_config_id,
-            media_url=str(media.get("url") or ""),
-            media_path=str(media.get("path") or ""),
-            media_type=str(media.get("type") or ""),
-            file_name=str(media.get("file_name") or ""),
-            target_id=str(target.get("target_id") or ""),
-            target_type=str(target.get("target_type") or ""),
-            text=text,
-            msg_id=str(target.get("msg_id") or ""),
-            event_id=str(target.get("event_id") or ""),
-            msg_seq=int(target["msg_seq"]) if target.get("msg_seq") is not None else None,
+            media_url=media.url,
+            media_path=media.path,
+            media_type=media.media_type,
+            file_name=media.file_name,
+            target_id=recipient.to_id,
+            target_type=recipient.to_type,
+            text=media.text,
+            msg_id=recipient.reply_message_id,
+            event_id=recipient.reply_event_id,
+            msg_seq=recipient.msg_seq,
         )
 
     def normalize_text(self, text: str, *, strip_markdown: bool = True) -> str:
@@ -221,39 +243,26 @@ class QQBot(BotAdapter):
         remote_state: Optional[Dict[str, str]] = None,
         remote_error: Optional[str] = None,
     ) -> Dict[str, str]:
+        from .. import status
+
         if str(cfg.bot_channel or "feishu").strip().lower() != self.channel:
-            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "当前机器人类型不是 QQ"}
+            return status.disabled("当前机器人类型不是 QQ")
         bot_cfg = self.read_config(cfg)
         if not bot_cfg.get("enabled"):
-            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "QQ机器人未启用"}
+            return status.disabled("QQ机器人未启用")
         app_id = str(bot_cfg.get("app_id") or "").strip()
         app_secret = str(bot_cfg.get("app_secret") or "").strip()
         if not app_id or not app_secret:
-            return {
-                "status": "failed",
-                "mode": "long_connection",
-                "label": "失败",
-                "message": "App ID / Secret 配置不完整",
-            }
+            return status.failed("long_connection", "App ID / Secret 配置不完整")
         state = remote_state
         if state is None:
             if remote_error:
-                return {
-                    "status": "failed",
-                    "mode": "long_connection",
-                    "label": "失败",
-                    "message": f"connector-runtime 状态不可用: {remote_error}",
-                }
+                return status.failed("long_connection", f"connector-runtime 状态不可用: {remote_error}")
             state = self.get_long_connection_state(int(cfg.id or 0))
-        label = "成功" if state.get("status") == "success" and "启动中" not in str(state.get("message") or "") else "失败"
-        if "启动中" in str(state.get("message") or ""):
-            label = "启动中"
-        return {
-            "status": state.get("status") or "failed",
-            "mode": "long_connection",
-            "label": label,
-            "message": state.get("message") or "botpy 长连接未运行",
-        }
+        report = status.from_connection_state(state, mode="long_connection", starting_hint="启动中")
+        if not report["message"]:
+            report["message"] = "botpy 长连接未运行"
+        return report
 
 
 # Self-register the singleton at import time.

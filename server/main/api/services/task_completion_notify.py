@@ -72,8 +72,7 @@ def _push_completion_to_user(
                 )
             ).first()
         channel = str(getattr(cfg, "bot_channel", "") or "feishu").strip().lower()
-        bot = get_bot(channel)
-        if bot is None:
+        if get_bot(channel) is None:
             return {"delivered": False, "channel": channel, "reason": "channel_not_supported"}
         lines = ["【任务完成通知】"]
         if executor_name:
@@ -82,13 +81,16 @@ def _push_completion_to_user(
         lines.append(f"- 任务ID: {job_id}")
         if summary:
             lines.append(f"- 完成摘要: {summary}")
-        result = bot.send_text(
+        from connector_runtime.bots.messaging import Recipient, dispatcher
+
+        delivery = dispatcher.send_text(
             user_id=user_id,
             ai_config_id=executor_ai_config_id,
+            channel=channel,
             text="\n".join(lines),
-            target={},
+            recipient=Recipient(),
         )
-        return {"delivered": True, "channel": channel, "result": result}
+        return {"delivered": True, "channel": channel, "result": delivery.detail}
     except Exception as exc:
         return {"delivered": False, "error": str(exc)}
 

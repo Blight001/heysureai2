@@ -9,12 +9,13 @@ through this interface only.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Dict, Iterable, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Mapping, Optional, Set
 
 if TYPE_CHECKING:
     from sqlmodel import Session
 
     from api.models import AssistantAIConfig, ChatMessage
+    from .messaging import MediaPayload, Recipient
 
 
 class BotAdapter(ABC):
@@ -85,38 +86,42 @@ class BotAdapter(ABC):
         """Return ``{"status": "...", "label": "...", "message": "..."}``."""
 
     # ---- outbound messaging -------------------------------------------------
+    #
+    # Outbound delivery is orchestrated by ``bots.messaging.OutboundDispatcher``;
+    # adapters contribute only these small primitives. ``parse_recipient`` turns
+    # a loose caller-supplied addressing dict into the typed :class:`Recipient`
+    # the channel understands (the one place per channel that knows its address
+    # aliases); ``deliver_text`` / ``deliver_media`` perform a single wire send.
 
     @abstractmethod
-    def send_text(
+    def parse_recipient(self, raw: Mapping[str, Any]) -> "Recipient":
+        """Map a loose addressing dict onto this channel's :class:`Recipient`.
+
+        An empty result (``Recipient(to_id="")``) signals "use the configured
+        default receiver"; the adapter applies that fallback at delivery time.
+        """
+
+    @abstractmethod
+    def deliver_text(
         self,
         *,
         user_id: int,
         ai_config_id: Optional[int],
+        recipient: "Recipient",
         text: str,
-        target: Dict[str, Any],
     ) -> Any:
-        """Send a plain-text message via this bot.
-
-        ``target`` is the bot-specific addressing payload (e.g. Feishu
-        ``{"receive_id": ..., "receive_id_type": ...}`` or QQ
-        ``{"target_id": ..., "target_type": ..., "msg_id": ..., ...}``).
-        """
+        """Send one plain-text message to ``recipient`` via this bot."""
 
     @abstractmethod
-    def send_media(
+    def deliver_media(
         self,
         *,
         user_id: int,
         ai_config_id: Optional[int],
-        text: str,
-        media: Dict[str, Any],
-        target: Dict[str, Any],
+        recipient: "Recipient",
+        media: "MediaPayload",
     ) -> Any:
-        """Send a media message (image/video/file) via this bot.
-
-        ``media`` carries ``url`` / ``path`` / ``type`` / ``file_name`` /
-        ``duration``. Adapters pick the fields relevant to their channel.
-        """
+        """Send one media message (with optional caption) to ``recipient``."""
 
     # ---- diagnostics ------------------------------------------------------
 
