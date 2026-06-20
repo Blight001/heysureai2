@@ -935,7 +935,7 @@ const mapHistoryMessages = (history: ChatMessage[]) => {
 
 const isConversationEditToolMessage = (msg: ChatMessage) => {
   return String(msg.tags || '') === 'mcp_tool_call'
-    && String(msg.content || '').includes('工具: conversation.edit')
+    && String(msg.content || '').includes('工具: conversation.manage')
     && String(msg.content || '').includes('状态: 成功')
 }
 

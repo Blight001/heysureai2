@@ -4,18 +4,15 @@ from .tools.introspection import (
 )
 from .tools.workspace import (
     _get_overview,
-    _edit_file,
+    _file_manage,
     _list_agents,
-    _read_file,
     _run_command,
-    _write_file,
+    FILE_MANAGE_SCHEMA,
 )
 from .tools.tasks import (
     _task_complete,
-    _task_create,
-    _task_delete,
-    _task_list,
-    _task_update,
+    _task_manage,
+    TASK_MANAGE_SCHEMA,
 )
 from .tools.task_plan import (
     _phase_complete,
@@ -24,27 +21,18 @@ from .tools.task_plan import (
     _task_finish,
 )
 from .tools.prompts import (
-    SYSTEM_PROMPT_FIELDS,
-    _prompt_list_targets,
-    _prompt_read_ai,
-    _prompt_read_system,
-    _prompt_write_ai,
-    _prompt_write_system,
+    _prompt_manage,
+    PROMPT_MANAGE_SCHEMA,
 )
 from .tools.communication import (
     _ai_send_message,
     _user_send_message,
 )
 from .tools.conversation import (
-    _compress_conversation,
-    _conversation_detail,
-    _create_conversation,
-    _delete_conversation,
-    _edit_conversation,
-    _list_conversations,
-    _new_conversation,
-    _switch_conversation,
+    _conversation_manage,
+    CONVERSATION_MANAGE_SCHEMA,
 )
+from .tools.knowledge import _knowledge_manage, KNOWLEDGE_MANAGE_SCHEMA
 from .tools.web_search import _web_search
 from .tools.device_mcp import _device_mcp_manage, DEVICE_MCP_MANAGE_SCHEMA
 
@@ -146,69 +134,14 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         destructive=True,
     ))
     registry.register(MCPTool(
-        name="workspace.read_file",
-        description="读取当前 AI 工作区内的文本文件。用于查看 task.md、代码、文档等内容；路径必须位于工作区内。",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "要读取的文件路径。相对路径相对当前 AI 工作区；绝对路径必须位于工作区内。"},
-                "target": {
-                    "type": "object",
-                    "description": "兼容对象写法：{\"path\":\"...\"}。",
-                },
-                "max_bytes": {"type": "integer", "description": "最多读取字节数，默认 1000000。"},
-            },
-            "required": ["path"],
-        },
-        handler=_read_file,
-    ))
-    registry.register(MCPTool(
-        name="workspace.write_file",
-        description="安全写入当前 AI 工作区内的文本文件。支持创建或覆盖；路径必须位于工作区内。",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "要写入的文件路径。相对路径相对当前 AI 工作区；绝对路径必须位于工作区内。"},
-                "target": {"type": "object", "description": "兼容对象写法：{\"path\":\"...\"}。"},
-                "text": {"type": "string", "description": "要写入的完整文本。"},
-                "content": {"type": "object", "description": "兼容对象写法：{\"text\":\"...\"}。"},
-                "create": {"type": "boolean", "description": "文件不存在时是否创建。"},
-                "overwrite": {"type": "boolean", "description": "文件已存在时是否允许覆盖。"},
-                "create_dirs": {"type": "boolean", "description": "是否自动创建父目录。"},
-                "options": {"type": "object", "description": "兼容对象写法，可包含 create/overwrite/create_dirs。"},
-            },
-            "required": ["path", "text"],
-        },
-        handler=_write_file,
-        destructive=True,
-    ))
-    registry.register(MCPTool(
-        name="workspace.edit_file",
+        name="file.manage",
         description=(
-            "安全编辑当前 AI 工作区内的文本文件。支持按文本块 replace/delete，以及 append/prepend；"
-            "默认要求 search 只匹配一次，避免误改多处。适合删除 task.md 中某条失败记录。"
+            "工作区文件统一工具：用 action 选择 read 读取 / tree 列出文件树 / write 创建覆盖 / edit 按块编辑。"
+            "路径必须位于当前 AI 工作区内；write/edit 需管理者及以上。"
+            "（运行命令用 workspace.run_command，联网搜索用 workspace.search。）"
         ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "path": {"type": "string", "description": "要编辑的文件路径。相对路径相对当前 AI 工作区；绝对路径必须位于工作区内。"},
-                "target": {"type": "object", "description": "兼容对象写法：{\"path\":\"...\"}。"},
-                "edits": {
-                    "type": "array",
-                    "items": {"type": "object"},
-                    "description": "编辑列表。每项支持 op=replace/delete/append/prepend；replace/delete 需 search；replace 可传 replace/text；多处匹配需 replace_all=true。",
-                },
-                "op": {"type": "string", "enum": ["replace", "delete", "append", "prepend"], "description": "单条编辑写法的操作类型。"},
-                "search": {"type": "string", "description": "replace/delete 要查找的原文块。默认必须唯一匹配。"},
-                "replace": {"type": "string", "description": "replace 的替换文本。"},
-                "text": {"type": "string", "description": "append/prepend 文本，或 replace 的替换文本。"},
-                "replace_all": {"type": "boolean", "description": "是否替换/删除所有匹配。默认 false；多处匹配时不传会报错。"},
-                "create_if_missing": {"type": "boolean", "description": "文件不存在时是否先按空文件创建。"},
-                "options": {"type": "object", "description": "兼容对象写法，可包含 create_if_missing。"},
-            },
-            "required": ["path"],
-        },
-        handler=_edit_file,
+        input_schema=FILE_MANAGE_SCHEMA,
+        handler=_file_manage,
         destructive=True,
     ))
     registry.register(MCPTool(
@@ -224,121 +157,14 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         handler=_get_overview,
     ))
     registry.register(MCPTool(
-        name="task.create",
+        name="task.manage",
         description=(
-            "创建任务。不提供任何调度字段时 mode 默认为 immediate；为兼容旧用法，给了调度字段会自动推断为 scheduled/recurring。\n"
-            "- immediate：被调度器选中后立即执行。\n"
-            "- scheduled：一次性定时任务，用 schedule_at 或 schedule_duration_minutes 指定时间。\n"
-            "- recurring：循环任务，循环方式由 schedule_loop_mode 决定——"
-            "interval（每轮完成后隔 schedule_duration_minutes 分钟）、daily（每天 schedule_daily_time）、"
-            "weekly（每周 schedule_weekly_days 的 schedule_daily_time）。\n"
-            "循环可用 schedule_max_runs 和/或 schedule_end_at 限定结束。"
-            "schedule_at/schedule_end_at 需为 Unix 秒或带时区的 ISO-8601。"
+            "任务管理统一工具：用 action 选择 list 列出 / create 创建 / update 接管更新 / delete 删除。"
+            "create/update/delete 需管理者及以上。"
+            "完成当前任务用独立的 task.complete；分阶段计划用 plan.create / plan.get / phase.complete / task.finish。"
         ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "mode": {
-                    "type": "string",
-                    "enum": ["immediate", "scheduled", "recurring"],
-                    "description": "任务类型：immediate=立即执行，scheduled=一次性定时，recurring=循环运行。",
-                },
-                "title": {"type": "string", "description": "任务标题。"},
-                "instruction": {"type": "string", "description": "任务执行说明/要求。"},
-                "priority": {"type": "integer", "description": "优先级 1-10，默认 5。"},
-                "schedule_at": {"type": ["number", "string"], "description": "一次性执行时间。支持 Unix 秒，或带时区的 ISO-8601（必须包含 +08:00 或 Z）。"},
-                "schedule_duration_minutes": {"type": "integer", "description": "scheduled: now + 该分钟数；recurring(interval): 每轮完成后的循环间隔（分钟）。默认 30。"},
-                "schedule_loop_mode": {
-                    "type": "string",
-                    "enum": ["interval", "daily", "weekly"],
-                    "description": "循环方式（仅 mode=recurring）：interval=按间隔分钟，daily=每天定时，weekly=每周指定星期定时。默认 interval。",
-                },
-                "schedule_daily_time": {"type": "string", "description": "daily/weekly 循环的触发时刻 HH:MM（服务器本地时区），如 \"09:30\"。"},
-                "schedule_weekly_days": {
-                    "type": "array",
-                    "items": {"type": "integer"},
-                    "description": "weekly 循环的星期列表，0=周一 ... 6=周日，如 [0,2,4]。",
-                },
-                "schedule_max_runs": {"type": "integer", "description": "循环总轮数上限，0 或省略 = 不限。跑满后自动停止续期。"},
-                "schedule_end_at": {"type": ["number", "string"], "description": "循环截止时间（Unix 秒或带时区 ISO-8601）；下一轮超过该时刻则停止续期。"},
-                "schedule_run_immediately": {"type": "boolean", "description": "mode=recurring 时是否首轮立即执行。"},
-                "template_id": {"type": "string", "description": "可选模板 ID。"},
-                "target_ai_config_id": {"type": "integer", "description": "assistant_admin 代理投递目标 AI 配置 ID。"},
-            },
-            "required": ["title", "instruction"],
-        },
-        handler=_task_create,
-        destructive=True,
-    ))
-    registry.register(MCPTool(
-        name="task.list",
-        description=(
-            "列出任务。默认返回进行中的任务（排队/运行中/暂停）。"
-            "current_only=true 只返回当前任务（优先运行中，其次排队，再次暂停）；"
-            "include_history=true 额外包含已完成/已取消/已停止/出错的历史任务；"
-            "history_only=true 只返回已结束的历史任务。"
-            "assistant_admin 可代理到数字成员（自动或用 target_ai_config_id 指定）。"
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "current_only": {"type": "boolean", "description": "只返回当前任务（作为 task 和 tasks[0]）。"},
-                "include_history": {"type": "boolean", "description": "在进行中任务之外，附带已结束的历史任务。"},
-                "history_only": {"type": "boolean", "description": "只返回已结束的历史任务。"},
-                "status": {
-                    "description": "可选，按状态过滤，可填单个或逗号分隔的多个状态。",
-                    "oneOf": [
-                        {"type": "string"},
-                        {"type": "array", "items": {"type": "string"}},
-                    ],
-                },
-                "limit": {"type": "integer", "description": "使用历史/状态过滤时的最大返回条数，1-500，默认 100。"},
-                "job_id": {"type": "string", "description": "可选，只查询指定任务的 job id。"},
-                "target_ai_config_id": {"type": "integer", "description": "assistant_admin/主管代理时的目标数字成员 AI 配置 id。"},
-            },
-        },
-        handler=_task_list,
-    ))
-    registry.register(MCPTool(
-        name="task.update",
-        description=(
-            "管理员/主管接管工具：更新已有任务的标题、说明、优先级、状态或调度信息。"
-            "status 仅支持 queued/paused；运行中的任务正文不会被改写。"
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "job_id": {"type": "string", "description": "要更新的任务 job id。"},
-                "title": {"type": "string", "description": "新的任务标题。"},
-                "instruction": {"type": "string", "description": "新的任务说明。"},
-                "priority": {"type": "integer", "description": "优先级 1-10。"},
-                "status": {"type": "string", "enum": ["queued", "paused"], "description": "可选，接管后的状态。"},
-                "mode": {"type": "string", "enum": ["immediate", "scheduled", "recurring"], "description": "可选，更新调度类型。"},
-                "schedule_at": {"type": ["number", "string"], "description": "用于 mode=scheduled。Unix 秒或带时区的 ISO-8601。"},
-                "schedule_duration_minutes": {"type": "integer", "description": "用于 scheduled/recurring。"},
-                "schedule_run_immediately": {"type": "boolean", "description": "用于 mode=recurring 是否首轮立即执行。"},
-                "target_ai_config_id": {"type": "integer", "description": "assistant_admin/主管代理的目标 AI 配置 id。"},
-            },
-            "required": ["job_id"],
-        },
-        handler=_task_update,
-        destructive=True,
-    ))
-    registry.register(MCPTool(
-        name="task.delete",
-        description=(
-            "管理员/主管接管工具：彻底删除一个任务。运行中的任务会被停止，"
-            "相关的任务会话消息/会话也会一并删除。"
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "job_id": {"type": "string", "description": "要彻底删除的任务 job id。"},
-                "target_ai_config_id": {"type": "integer", "description": "assistant_admin/主管代理的目标 AI 配置 id。"},
-            },
-            "required": ["job_id"],
-        },
-        handler=_task_delete,
+        input_schema=TASK_MANAGE_SCHEMA,
+        handler=_task_manage,
         destructive=True,
     ))
     registry.register(MCPTool(
@@ -498,170 +324,28 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     ))
 
     registry.register(MCPTool(
-        name="conversation.create",
-        description="在当前 AI 作用域内新建一个空的聊天会话。",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "会话名称；默认「未命名会话」。"},
-                "session_id": {"type": "string", "description": "可选，显式指定会话 id；一般省略。"},
-                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
-                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则使用当前运行或 assistant。"},
-            },
-            "required": [],
-        },
-        handler=_create_conversation,
+        name="conversation.manage",
+        description=(
+            "会话统一工具：用 action 选择对该 AI 共享对话区的操作——"
+            "list 列出会话 / detail 读取会话与消息 / create 新建空白会话 / delete 删除会话 / "
+            "rename 改名 / clear 清空消息（默认保留当前这条用户消息）/ compress 压缩当前上下文 / "
+            "switch 切换激活会话 / new 新建对话并切换。"
+            "清理/压缩当前上下文时不要传 session_id、ai_config_id、ai_kind，运行上下文会自动补齐。"
+        ),
+        input_schema=CONVERSATION_MANAGE_SCHEMA,
+        handler=_conversation_manage,
         destructive=True,
     ))
 
     registry.register(MCPTool(
-        name="conversation.delete",
-        description="删除当前 AI 作用域内的一个聊天会话及其全部消息。",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "session_id": {"type": "string", "description": "要删除的会话 id；有则默认当前运行所在会话。"},
-                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
-                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则使用当前运行或 assistant。"},
-            },
-            "required": [],
-        },
-        handler=_delete_conversation,
-        destructive=True,
-    ))
-
-    registry.register(MCPTool(
-        name="conversation.list",
+        name="knowledge.manage",
         description=(
-            "列出该 AI 共享对话池（统一的「机器人对话区」）里的所有会话，覆盖 Web 控制台和各机器人渠道。"
-            "返回每个会话的 id、名称、来源渠道、最后更新时间，以及它是否是你当前激活的会话。"
-            "当用户想查看/列出对话、或想挑一个切换时使用。"
+            "知识库统一工具：用 action 操作知识工坊里的传承思想与内置知识类目——"
+            "list_thoughts/get_thought/create_thought/edit_thought/delete_thought、install_skill_package、"
+            "read_*/update_* 各内置类目。需要该 AI 已绑定知识工坊；写操作按角色受限。"
         ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "limit": {"type": "integer", "description": "最多返回多少个会话，1-200，默认 50。"},
-                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
-                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则跟随当前运行。"},
-            },
-            "required": [],
-        },
-        handler=_list_conversations,
-    ))
-
-    registry.register(MCPTool(
-        name="conversation.detail",
-        description=(
-            "读取当前 AI 作用域内某个会话及其消息内容。"
-            "默认读当前激活的会话，支持 offset/limit 分页。"
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "session_id": {"type": "string", "description": "可选，会话 id；默认当前运行所在会话。"},
-                "offset": {"type": "integer", "description": "消息偏移量（从 0 开始），默认 0。"},
-                "limit": {"type": "integer", "description": "返回的消息条数，1-500，默认 100。"},
-                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
-                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则跟随当前运行。"},
-            },
-            "required": [],
-        },
-        handler=_conversation_detail,
-    ))
-
-    registry.register(MCPTool(
-        name="conversation.edit",
-        description=(
-            "在不删除会话的前提下编辑对话：action=rename 改名，action=clear 清空消息。"
-            "不传参数（arguments={}）时，默认清空当前运行所在会话，并保留当前这条用户请求。"
-            "清理当前上下文时不要传 session_id、ai_config_id 或 ai_kind，运行上下文会自动补齐。"
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["rename", "clear"],
-                    "description": "可选；默认 clear。rename 用于改名，clear 用于清空消息。",
-                },
-                "session_id": {"type": "string", "description": "可选，会话 id；默认当前运行所在会话。"},
-                "name": {"type": "string", "description": "action=rename 时必填，新的会话名。"},
-                "keep_current_message": {
-                    "type": "boolean",
-                    "description": "action=clear 且编辑当前激活会话时，是否保留当前这条用户消息。默认 true。",
-                },
-                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
-                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则跟随当前运行。"},
-            },
-            "required": [],
-        },
-        handler=_edit_conversation,
-        destructive=True,
-    ))
-
-    registry.register(MCPTool(
-        name="conversation.compress",
-        description=(
-            "压缩当前对话的上下文：把较早的对话历史总结成一条摘要，只保留最近的几条原文，"
-            "用来在对话变长、接近 token 上限时主动腾出空间继续工作。"
-            "在标准 AI 运行内调用会立即对本轮对话生效；摘要也会写入历史。"
-            "当你发现上下文过长、或被提示接近上限时，可主动调用本工具。"
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "keep_recent": {
-                    "type": "integer",
-                    "description": "保留最近多少条原始对话不被压缩（其余折叠为摘要）。默认 4，范围 0-20。",
-                },
-                "session_id": {"type": "string", "description": "可选，目标会话 id。默认当前运行所在会话。"},
-                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id。默认当前 AI。"},
-                "ai_kind": {"type": "string", "description": "可选，AI 类型。默认当前运行。"},
-            },
-            "required": [],
-        },
-        handler=_compress_conversation,
-    ))
-
-    registry.register(MCPTool(
-        name="conversation.switch",
-        description=(
-            "把当前用户/身份的激活会话切换到该 AI 共享池里的另一个会话。"
-            "可传 session_id，或用 name/query 按标题匹配。"
-            "从用户的下一条消息起生效；本轮回复仍发到当前会话。"
-            "当用户说「换个对话 / 切回刚才那个」时使用。"
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "session_id": {"type": "string", "description": "要切换到的目标会话 id。"},
-                "name": {"type": "string", "description": "省略 session_id 时，按名称/标题匹配目标会话。"},
-                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
-                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则跟随当前运行。"},
-            },
-            "required": [],
-        },
-        handler=_switch_conversation,
-        destructive=True,
-    ))
-
-    registry.register(MCPTool(
-        name="conversation.new",
-        description=(
-            "在该 AI 共享池里新建一个对话，并把当前用户/身份切换过去。"
-            "从用户的下一条消息起生效；本轮回复仍发到当前会话。"
-            "当用户说「新开一个对话」时使用。"
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "新对话的名称；默认「新对话」。"},
-                "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
-                "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则跟随当前运行。"},
-            },
-            "required": [],
-        },
-        handler=_new_conversation,
+        input_schema=KNOWLEDGE_MANAGE_SCHEMA,
+        handler=_knowledge_manage,
         destructive=True,
     ))
 
@@ -718,103 +402,14 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     ))
 
     registry.register(MCPTool(
-        name="prompt.list_targets",
-        description="列出可改写的 AI 人格 prompt 目标，以及全局/系统 prompt 的键。prompt 正文都存放在 KnowledgeBase 的 md 文件里。",
-        input_schema={"type": "object", "properties": {}},
-        handler=_prompt_list_targets,
-    ))
-    registry.register(MCPTool(
-        name="prompt.read_ai",
-        description="读取某个 AI 配置实际使用的基础人格 prompt。省略 target_ai_config_id 时读当前 AI。",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "target_ai_config_id": {"type": "integer", "description": "目标 AI 配置 id；省略则使用当前 AI 配置。"},
-            },
-            "required": [],
-        },
-        handler=_prompt_read_ai,
-    ))
-    registry.register(MCPTool(
-        name="prompt.write_ai",
+        name="prompt.manage",
         description=(
-            "按行编辑某个 AI 配置的人格 prompt。省略 target_ai_config_id 时编辑当前 AI。"
-            "用 mode=replace_line/insert_before/insert_after/delete_line/append/prepend 配合 line/text 做局部编辑；"
-            "只有要整篇覆盖时才用 mode=replace_all。"
+            "Prompt 统一工具：用 action 选择 list_targets 列目标 / read_ai 读 AI 人格 prompt / "
+            "write_ai 改 AI 人格 prompt（需管理者+）/ read_system 读系统 prompt（需管理者+）/ "
+            "write_system 改系统 prompt（需辅助管理员+）。prompt 正文存放在 KnowledgeBase 的 md 文件里。"
         ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "target_ai_config_id": {"type": "integer", "description": "目标 AI 配置 id；省略则使用当前 AI 配置。"},
-                "mode": {
-                    "type": "string",
-                    "enum": ["replace_line", "insert_before", "insert_after", "delete_line", "append", "prepend", "replace_all"],
-                    "description": "按行编辑方式；整篇覆盖必须显式用 replace_all。",
-                },
-                "line": {"type": "integer", "description": "目标行号（从 1 开始）。"},
-                "start_line": {"type": "integer", "description": "替换/删除的起始行号（从 1 开始）。"},
-                "end_line": {"type": "integer", "description": "替换/删除的结束行号（从 1 开始）。"},
-                "text": {"type": "string", "description": "要写入的文本，可包含多行；mode=replace_all 时作为整篇内容。"},
-                "edits": {
-                    "type": "array",
-                    "description": "批量按行编辑；每项支持 mode、line、start_line、end_line、text。",
-                    "items": {"type": "object"},
-                },
-            },
-            "required": [],
-        },
-        handler=_prompt_write_ai,
-        destructive=True,
-    ))
-    registry.register(MCPTool(
-        name="prompt.read_system",
-        description="读取当前用户的全局/系统 prompt 模板。它们多为运行时注入模板或旧版兜底字段；当前 AI 的基础人格 prompt 请用 prompt.read_ai 读。",
-        input_schema={
-            "type": "object",
-            "properties": {
-                "key": {
-                    "type": "string",
-                    "enum": list(SYSTEM_PROMPT_FIELDS),
-                    "description": "系统 prompt 的键；省略则返回全部。",
-                },
-            },
-            "required": [],
-        },
-        handler=_prompt_read_system,
-    ))
-    registry.register(MCPTool(
-        name="prompt.write_system",
-        description=(
-            "按行编辑某个全局/系统 prompt 模板。它们多为运行时注入模板或旧版兜底字段，不是当前 AI 的基础人格 prompt。"
-            "用 mode=replace_line/insert_before/insert_after/delete_line/append/prepend 配合 line/text 做局部编辑；"
-            "只有要整篇覆盖时才用 mode=replace_all。"
-        ),
-        input_schema={
-            "type": "object",
-            "properties": {
-                "key": {
-                    "type": "string",
-                    "enum": list(SYSTEM_PROMPT_FIELDS),
-                    "description": "要更新的系统 prompt 键。",
-                },
-                "mode": {
-                    "type": "string",
-                    "enum": ["replace_line", "insert_before", "insert_after", "delete_line", "append", "prepend", "replace_all"],
-                    "description": "按行编辑方式；整篇覆盖必须显式用 replace_all。",
-                },
-                "line": {"type": "integer", "description": "目标行号（从 1 开始）。"},
-                "start_line": {"type": "integer", "description": "替换/删除的起始行号（从 1 开始）。"},
-                "end_line": {"type": "integer", "description": "替换/删除的结束行号（从 1 开始）。"},
-                "text": {"type": "string", "description": "要写入的文本，可包含多行；mode=replace_all 时作为整篇内容。"},
-                "edits": {
-                    "type": "array",
-                    "description": "批量按行编辑；每项支持 mode、line、start_line、end_line、text。",
-                    "items": {"type": "object"},
-                },
-            },
-            "required": ["key"],
-        },
-        handler=_prompt_write_system,
+        input_schema=PROMPT_MANAGE_SCHEMA,
+        handler=_prompt_manage,
         destructive=True,
     ))
 

@@ -281,6 +281,7 @@ def _edit_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
                 session.add(message)
             session.commit()
             return {
+                "success": True,
                 "action": "rename",
                 "session_id": session_id,
                 "name": session_name,
@@ -312,6 +313,7 @@ def _edit_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
         _rebuild_usage_snapshots(session, user_id, scope["ai_kind"], scope["ai_config_id"])
 
     return {
+        "success": True,
         "action": "clear",
         "session_id": session_id,
         "deleted_messages": len(messages),
@@ -617,6 +619,31 @@ def _clone_bot_route(
         session.commit()
 
 
+def _conversation_manage(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    """Unified conversation tool. Dispatch by ``action`` to the concrete handler.
+
+    Folds the former ``conversation.{create,delete,list,detail,edit,compress,
+    switch,new}`` tools behind one ``action`` parameter. ``rename``/``clear`` map
+    onto the legacy ``edit`` handler (which keys off ``args['action']``), so the
+    result still carries an ``action`` field the inference loop can detect.
+    """
+    raw = str((args or {}).get("action") or "").strip().lower()
+    action = _CONVERSATION_ACTION_ALIASES.get(raw, raw)
+    if not action:
+        raise HTTPException(status_code=400, detail="action is required for conversation.manage")
+    if action in {"rename", "clear"}:
+        merged = dict(args or {})
+        merged["action"] = action
+        return _edit_conversation(user_id, merged, ai_config_id)
+    handler = _CONVERSATION_ACTIONS.get(action)
+    if handler is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported action: {action}. 可用: {', '.join(sorted(_CONVERSATION_ACTION_NAMES))}",
+        )
+    return handler(user_id, args or {}, ai_config_id)
+
+
 def _new_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     """Create a new conversation in the pool and point this identity's cursor at it."""
     from connector_runtime.bots.session_cursor import set_active_session_id
@@ -681,3 +708,53 @@ def _new_conversation(user_id: int, args: Dict[str, Any], ai_config_id: Optional
             else "已新建空白对话。"
         ),
     }
+
+
+# Action → concrete handler for ``conversation.manage`` (rename/clear are routed
+# through ``_edit_conversation`` separately because they share one handler).
+_CONVERSATION_ACTIONS = {
+    "list": _list_conversations,
+    "detail": _conversation_detail,
+    "create": _create_conversation,
+    "delete": _delete_conversation,
+    "compress": _compress_conversation,
+    "switch": _switch_conversation,
+    "new": _new_conversation,
+}
+
+_CONVERSATION_ACTION_ALIASES = {
+    "read": "detail",
+    "get": "detail",
+    "remove": "delete",
+    "trim": "compress",
+}
+
+_CONVERSATION_ACTION_NAMES = set(_CONVERSATION_ACTIONS) | {"rename", "clear"}
+
+CONVERSATION_MANAGE_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": sorted(_CONVERSATION_ACTION_NAMES),
+            "description": (
+                "操作类型："
+                "list 列出该 AI 共享对话区的全部会话；detail 读取某会话及其消息（支持 offset/limit）；"
+                "create 新建空白会话；delete 删除会话及其全部消息；"
+                "rename 重命名会话；clear 清空会话消息但保留会话（默认保留当前这条用户消息）；"
+                "compress 压缩当前对话上下文（把较早历史折叠成摘要）；"
+                "switch 把本身份的激活会话切到另一个会话；new 新建对话并切换过去。"
+            ),
+        },
+        "session_id": {"type": "string", "description": "目标会话 id；多数 action 省略则用当前运行所在会话。"},
+        "name": {"type": "string", "description": "create/new/rename 的会话名；switch 时可按名称匹配目标。"},
+        "query": {"type": "string", "description": "switch 时省略 session_id，按名称/标题匹配目标会话。"},
+        "offset": {"type": "integer", "description": "detail：消息偏移量（从 0 开始），默认 0。"},
+        "limit": {"type": "integer", "description": "detail：返回消息条数（1-500，默认 100）；list：返回会话数（1-200，默认 50）。"},
+        "keep_current_message": {"type": "boolean", "description": "clear 当前激活会话时是否保留当前这条用户消息，默认 true。"},
+        "keep_recent": {"type": "integer", "description": "compress：保留最近多少条原始对话不被折叠，默认 4，范围 0-20。"},
+        "ai_config_id": {"type": "integer", "description": "可选，目标 AI 配置 id；省略则使用当前 AI。"},
+        "ai_kind": {"type": "string", "description": "可选，AI 类型；省略则跟随当前运行或 assistant。"},
+    },
+    "required": ["action"],
+}

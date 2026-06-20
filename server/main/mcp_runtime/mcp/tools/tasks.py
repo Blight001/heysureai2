@@ -34,6 +34,7 @@ from api.services.task_schedule import (
 from api.services.task_system import extract_task_payload
 from api.value_utils import safe_json_obj, to_bool
 from ..core import get_project_root
+from ..permissions import ROLE_MANAGER
 
 _FINISHED_STATUSES = {"completed", "cancelled", "stopped", "error"}
 _ACTIVE_STATUSES = {"queued", "running", "paused"}
@@ -854,6 +855,34 @@ def _task_list(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) 
             "tasks": tasks,
         }
 
+def _task_manage(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    """Unified task management tool. Dispatch by ``action``.
+
+    Folds ``task.{create,list,update,delete}`` behind one ``action`` parameter.
+    The self-execution operators (``task.complete``/``plan.*``/``phase.complete``/
+    ``task.finish``) stay separate because the task runtime drives them by name.
+    Per-action minimum role is re-enforced here so members keep read-only access
+    (``list``) while orchestration (``create``/``update``/``delete``) stays
+    manager+.
+    """
+    from mcp_runtime.mcp.permissions import ROLE_MANAGER, enforce_min_role
+
+    raw = str((args or {}).get("action") or "").strip().lower()
+    action = _TASK_ACTION_ALIASES.get(raw, raw)
+    if not action:
+        raise HTTPException(status_code=400, detail="action is required for task.manage")
+    spec = _TASK_ACTIONS.get(action)
+    if spec is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported action: {action}. 可用: {', '.join(sorted(_TASK_ACTIONS))}",
+        )
+    handler, min_role = spec
+    if min_role:
+        enforce_min_role(user_id, ai_config_id, min_role)
+    return handler(user_id, args or {}, ai_config_id)
+
+
 def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     if not ai_config_id:
         raise HTTPException(status_code=400, detail="ai_config_id is required for task tools")
@@ -945,3 +974,78 @@ def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[in
             "notified_user": bool(isinstance(notification, dict) and notification.get("delivered")),
             "next_step_hint": "任务已完成，可继续处理后续事项。",
         }
+
+
+# Action → (handler, minimum role). ``None`` role means available to every tier.
+_TASK_ACTIONS = {
+    "list": (_task_list, None),
+    "create": (_task_create, ROLE_MANAGER),
+    "update": (_task_update, ROLE_MANAGER),
+    "delete": (_task_delete, ROLE_MANAGER),
+}
+
+_TASK_ACTION_ALIASES = {
+    "add": "create",
+    "new": "create",
+    "edit": "update",
+    "remove": "delete",
+}
+
+TASK_MANAGE_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": sorted(_TASK_ACTIONS),
+            "description": (
+                "操作类型："
+                "list 列出任务（默认进行中；current_only/include_history/history_only/status 可调整范围）；"
+                "create 创建任务（需管理者+，支持 immediate/scheduled/recurring）；"
+                "update 接管更新任务标题/说明/优先级/状态/调度（需管理者+）；"
+                "delete 彻底删除任务并清理其会话（需管理者+）。"
+                "注意：完成任务用独立的 task.complete；分阶段计划用 plan.create / plan.get / phase.complete / task.finish。"
+            ),
+        },
+        # ---- list ----
+        "current_only": {"type": "boolean", "description": "list：只返回当前任务（优先运行中，其次排队，再次暂停）。"},
+        "include_history": {"type": "boolean", "description": "list：在进行中任务之外附带已结束的历史任务。"},
+        "history_only": {"type": "boolean", "description": "list：只返回已结束的历史任务。"},
+        "status": {
+            "description": "list：按状态过滤（单个或逗号分隔/数组）；update：接管后的状态，仅支持 queued 或 paused。",
+            "oneOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}},
+            ],
+        },
+        "limit": {"type": "integer", "description": "list：历史/状态过滤时的最大条数，1-500。"},
+        # ---- create / update shared ----
+        "job_id": {"type": "string", "description": "update/delete 必填：目标任务 job id。"},
+        "title": {"type": "string", "description": "create 必填 / update 可选：任务标题。"},
+        "instruction": {"type": "string", "description": "create 必填 / update 可选：任务执行说明。"},
+        "priority": {"type": "integer", "description": "优先级 1-10，默认 5。"},
+        "mode": {
+            "type": "string",
+            "enum": ["immediate", "scheduled", "recurring"],
+            "description": "create/update：任务类型。immediate=立即执行，scheduled=一次性定时，recurring=循环运行。",
+        },
+        "schedule_at": {"type": ["number", "string"], "description": "scheduled：执行时间，Unix 秒或带时区 ISO-8601。"},
+        "schedule_duration_minutes": {"type": "integer", "description": "scheduled: now + 分钟数；recurring(interval): 循环间隔分钟。"},
+        "schedule_loop_mode": {
+            "type": "string",
+            "enum": ["interval", "daily", "weekly"],
+            "description": "recurring 循环方式：interval/daily/weekly。",
+        },
+        "schedule_daily_time": {"type": "string", "description": "daily/weekly 循环触发时刻 HH:MM（服务器本地时区）。"},
+        "schedule_weekly_days": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "weekly 循环的星期列表，0=周一 ... 6=周日。",
+        },
+        "schedule_max_runs": {"type": "integer", "description": "循环总轮数上限，0/省略=不限。"},
+        "schedule_end_at": {"type": ["number", "string"], "description": "循环截止时间，Unix 秒或带时区 ISO-8601。"},
+        "schedule_run_immediately": {"type": "boolean", "description": "recurring 是否首轮立即执行。"},
+        "template_id": {"type": "string", "description": "create：可选模板 id。"},
+        "target_ai_config_id": {"type": "integer", "description": "assistant_admin/主管代理投递的目标数字成员 AI 配置 id。"},
+    },
+    "required": ["action"],
+}
