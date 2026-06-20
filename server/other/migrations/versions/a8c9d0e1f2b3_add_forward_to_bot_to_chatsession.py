@@ -1,4 +1,4 @@
-"""add forward_web_chat_to_bot to assistantaiconfig
+"""add forward_to_bot to chatsession
 
 Revision ID: a8c9d0e1f2b3
 Revises: f7b8c9d0e1f2
@@ -25,20 +25,20 @@ def _has_column(table: str, column: str) -> bool:
 
 
 def upgrade() -> None:
-    if not _has_column("assistantaiconfig", "forward_web_chat_to_bot"):
+    if not _has_column("chatsession", "forward_to_bot"):
         op.add_column(
-            "assistantaiconfig",
+            "chatsession",
             sa.Column(
-                "forward_web_chat_to_bot",
+                "forward_to_bot",
                 sa.Boolean(),
                 nullable=False,
                 server_default=sa.false(),
             ),
         )
         # Drop the server_default so the ORM default governs future inserts.
-        op.alter_column("assistantaiconfig", "forward_web_chat_to_bot", server_default=None)
+        op.alter_column("chatsession", "forward_to_bot", server_default=None)
 
 
 def downgrade() -> None:
-    if _has_column("assistantaiconfig", "forward_web_chat_to_bot"):
-        op.drop_column("assistantaiconfig", "forward_web_chat_to_bot")
+    if _has_column("chatsession", "forward_to_bot"):
+        op.drop_column("chatsession", "forward_to_bot")

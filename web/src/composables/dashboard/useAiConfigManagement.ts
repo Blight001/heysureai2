@@ -197,7 +197,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
     mcp_tools: [...defaultMcpTools],
     mcp_auto_approve: false,
     bot_channel: 'feishu' as 'feishu' | 'qq',
-    forward_web_chat_to_bot: false,
     bot_configs: {
       feishu: {
         enabled: false,
@@ -329,7 +328,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       mcp_tools: parsedTools,
       mcp_auto_approve: !!aiConfigForm.value.mcp_auto_approve,
       bot_channel: cfg.bot_channel === 'qq' ? 'qq' : 'feishu',
-      forward_web_chat_to_bot: !!cfg.forward_web_chat_to_bot,
       // Hydrate ``bot_configs`` from the server (default fills in any
       // missing keys so the form bindings always have a value).
       bot_configs: hydrateBotConfigs(cfg.bot_configs),
@@ -365,8 +363,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       mcp_tools: parsedTools,
       mcp_auto_approve: !!agent.mcpAutoApprove,
       bot_channel: agent.botChannel === 'qq' ? 'qq' : 'feishu',
-      // Real value is hydrated by loadAiConfigDetail below.
-      forward_web_chat_to_bot: false,
       bot_configs: hydrateBotConfigs(null),
       system_auto_control: normalizeSystemAutoControl({}),
     }
@@ -414,7 +410,6 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
       prompt: aiConfigForm.value.prompt,
       mcp_tools: JSON.stringify(aiConfigForm.value.mcp_tools || []),
       bot_channel: selectedBotChannel,
-      forward_web_chat_to_bot: !!aiConfigForm.value.forward_web_chat_to_bot,
       bot_configs: buildBotConfigsPayload(aiConfigForm.value.bot_configs, selectedBotChannel),
       system_auto_control: JSON.stringify(
         normalizeSystemAutoControl(

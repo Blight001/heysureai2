@@ -18,6 +18,8 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from sqlmodel import select
+
 from api.chat_runtime.mcp_parser import MCP_CALL_BLOCK_RE
 from .base import channel_for_session_id
 from .registry import iter_bots
@@ -113,27 +115,37 @@ def notify_saved_assistant_message(session: "Session", message: "ChatMessage") -
 def _maybe_forward_web_chat(session: "Session", message: "ChatMessage", content: str) -> None:
     """Forward an ordinary web-chat assistant reply to the bot default receiver.
 
-    Gated by ``AssistantAIConfig.forward_web_chat_to_bot``. Skips bot-owned
-    sessions (already handled by routes) and task-runtime sessions (their
-    progress is surfaced in the console, not the bot).
+    Gated per-conversation by ``ChatSession.forward_to_bot`` (set from the chat
+    dropdown). Skips bot-owned sessions (already handled by routes) and
+    task-runtime sessions (their progress is surfaced in the console).
     """
     if not content:
         return
     sid = str(message.session_id or "")
-    if sid.startswith("session_task_"):
+    if not sid or sid.startswith("session_task_"):
         return
     if message.ai_config_id is None:
         return
 
-    from api.models import AssistantAIConfig
+    from api.models import AssistantAIConfig, ChatSession
 
-    cfg = session.get(AssistantAIConfig, message.ai_config_id)
-    if not cfg or not bool(getattr(cfg, "forward_web_chat_to_bot", False)):
+    chat_session = session.exec(
+        select(ChatSession).where(
+            ChatSession.user_id == message.user_id,
+            ChatSession.ai_config_id == message.ai_config_id,
+            ChatSession.ai_kind == message.ai_kind,
+            ChatSession.session_id == sid,
+        )
+    ).first()
+    if chat_session is None or not bool(getattr(chat_session, "forward_to_bot", False)):
         return
 
     bots = list(iter_bots())
     # Defensive: if this session actually belongs to a bot, routes own it.
     if channel_for_session_id(sid, bots):
+        return
+    cfg = session.get(AssistantAIConfig, message.ai_config_id)
+    if cfg is None:
         return
     channel = str(cfg.bot_channel or "").strip().lower()
     bot = next((b for b in bots if b.channel == channel), None)

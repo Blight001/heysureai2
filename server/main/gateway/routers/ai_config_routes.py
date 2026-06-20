@@ -148,7 +148,6 @@ async def create_ai_config(
         workspace_root=None,
         database_uri=body.database_uri,
         bot_channel=bot_channel,
-        forward_web_chat_to_bot=bool(body.forward_web_chat_to_bot),
         project_id=body.project_id,
         project_name=body.project_name,
         sort_order=body.sort_order or 100,

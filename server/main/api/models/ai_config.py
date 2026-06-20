@@ -61,10 +61,6 @@ class AssistantAIConfig(SQLModel, table=True):
     #    ...      }
     bot_channel: str = Field(default="feishu", index=True)
     bot_configs: str = Field(default="{}")
-    # When true, assistant replies in ordinary (non-bot, non-task) web
-    # conversations are also forwarded to this AI's bound bot default receiver,
-    # mirroring the普通对话 into the机器人对话. Off by default.
-    forward_web_chat_to_bot: bool = Field(default=False)
 
     project_id: Optional[str] = Field(default=None, index=True)
     project_name: Optional[str] = None
@@ -105,7 +101,6 @@ class AssistantAIConfigCreate(SQLModel):
     # ``bot_configs`` carries per-channel credentials and addressing.
     # Adapters normalize / validate; routes don't introspect channel keys.
     bot_configs: Optional[Dict[str, Dict[str, Any]]] = None
-    forward_web_chat_to_bot: Optional[bool] = False
     project_id: Optional[str] = None
     project_name: Optional[str] = None
     parent_ai_config_id: Optional[int] = None
@@ -139,7 +134,6 @@ class AssistantAIConfigUpdate(SQLModel):
     database_uri: Optional[str] = None
     bot_channel: Optional[str] = None
     bot_configs: Optional[Dict[str, Dict[str, Any]]] = None
-    forward_web_chat_to_bot: Optional[bool] = None
     project_id: Optional[str] = None
     project_name: Optional[str] = None
     parent_ai_config_id: Optional[int] = None

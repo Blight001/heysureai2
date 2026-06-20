@@ -54,7 +54,6 @@ export interface AiConfigUpsertPayload {
   prompt?: string
   mcp_tools: string
   bot_channel: 'feishu' | 'qq'
-  forward_web_chat_to_bot?: boolean
   bot_configs: BotConfigsPayload
   system_auto_control: string
 }

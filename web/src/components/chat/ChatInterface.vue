@@ -39,6 +39,7 @@ interface SessionItem {
   id: string
   name: string
   totalTokens?: number
+  forwardToBot?: boolean
 }
 
 interface PersistedBlockState {
@@ -748,6 +749,7 @@ const loadSessions = async () => {
     id: String(row?.id || ''),
     name: String(row?.name || '未命名会话'),
     totalTokens: Number(row?.total_tokens || 0),
+    forwardToBot: !!row?.forward_to_bot,
   }))
   if (!currentSessionId.value && sessionList.value.length > 0) {
     currentSessionId.value = pickPreferredSessionId(sessionList.value)
@@ -808,6 +810,21 @@ const renameSession = async (sid: string) => {
     return
   }
   await loadSessions()
+}
+
+const toggleSessionForwardToBot = async (payload: { sessionId: string; enabled: boolean }) => {
+  const sid = String(payload?.sessionId || '')
+  if (!sid || !getAuthToken()) return
+  const row = sessionList.value.find(item => item.id === sid)
+  const previous = !!row?.forwardToBot
+  // Optimistic update so the toggle feels instant.
+  if (row) row.forwardToBot = payload.enabled
+  try {
+    await chatApi.setSessionForwardToBot(chatCtx.value, sid, payload.enabled)
+  } catch {
+    if (row) row.forwardToBot = previous
+    alert({ message: '设置机器人回复失败', type: 'error' })
+  }
 }
 
 const loadTotalTokens = async () => {
@@ -1537,6 +1554,7 @@ onBeforeUnmount(() => {
         @delete="deleteSession"
         @batch-delete="deleteSessions"
         @rename="renameSession"
+        @toggle-forward="toggleSessionForwardToBot"
       />
       <div class="flex items-center gap-2">
         <span v-if="runStatusText" class="text-[11px] text-emerald-600 dark:text-emerald-400">{{ runStatusText }}</span>

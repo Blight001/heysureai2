@@ -87,7 +87,12 @@ async def get_sessions(
         token_by_session[sid] = token_by_session.get(sid, 0) + int(msg.total_tokens or 0)
 
     return [
-        {"id": row.session_id, "name": row.session_name, "total_tokens": token_by_session.get(row.session_id, 0)}
+        {
+            "id": row.session_id,
+            "name": row.session_name,
+            "total_tokens": token_by_session.get(row.session_id, 0),
+            "forward_to_bot": bool(getattr(row, "forward_to_bot", False)),
+        }
         for row in results
     ]
 
@@ -196,6 +201,38 @@ async def rename_session(
 
     session.commit()
     return {"id": session_id, "name": session_name}
+
+@router.put("/sessions/{session_id}/forward-to-bot")
+async def set_session_forward_to_bot(
+    session_id: str,
+    req: dict,
+    ai_config_id: Optional[int] = None,
+    ai_kind: str = "assistant",
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    """Toggle whether this conversation forwards assistant replies to the bot."""
+    user = get_current_user(authorization, session)
+    enabled = bool(req.get("enabled"))
+
+    rows = session.exec(
+        select(ChatSession).where(
+            ChatSession.user_id == user.id,
+            ChatSession.session_id == session_id,
+            ChatSession.ai_kind == ai_kind,
+        )
+    ).all()
+    if ai_config_id is not None:
+        rows = [row for row in rows if row.ai_config_id == ai_config_id]
+    if not rows:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    for row in rows:
+        row.forward_to_bot = enabled
+        row.updated_at = time.time()
+        session.add(row)
+    session.commit()
+    return {"id": session_id, "forward_to_bot": enabled}
 
 @router.get("/total-tokens")
 async def get_total_tokens(

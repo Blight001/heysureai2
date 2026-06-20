@@ -26,6 +26,7 @@ export interface ChatSessionRow {
   id: string
   name: string
   total_tokens?: number
+  forward_to_bot?: boolean
 }
 
 export const listChatSessions = (ctx: AiContext) =>
@@ -52,6 +53,13 @@ export const renameChatSession = (ctx: AiContext, sessionId: string, name: strin
     query: queryForAi(ctx),
     fallbackError: '会话重命名失败',
   })
+
+export const setSessionForwardToBot = (ctx: AiContext, sessionId: string, enabled: boolean) =>
+  put<{ id: string; forward_to_bot: boolean }>(
+    `/api/chat/sessions/${sessionId}/forward-to-bot`,
+    { enabled },
+    { query: queryForAi(ctx), fallbackError: '设置机器人回复失败' },
+  )
 
 export const getChatTotalTokens = (ctx: AiContext) =>
   get<{ total_tokens: number }>('/api/chat/total-tokens', {

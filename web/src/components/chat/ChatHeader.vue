@@ -5,6 +5,7 @@ interface Session {
   id: string
   name: string
   totalTokens?: number
+  forwardToBot?: boolean
 }
 
 interface SessionMeta extends Session {
@@ -24,6 +25,7 @@ const emit = defineEmits<{
   (e: 'delete', sessionId: string): void
   (e: 'batchDelete', sessionIds: string[]): void
   (e: 'rename', sessionId: string): void
+  (e: 'toggleForward', payload: { sessionId: string; enabled: boolean }): void
 }>()
 
 const open = ref(false)
@@ -177,6 +179,16 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
                 {{ sessionLineLabel(session) }}
               </button>
               <span class="shrink-0 text-[10px] text-emerald-700/60 dark:text-emerald-300/70">Token: {{ session.totalTokens || 0 }}</span>
+              <button
+                class="shrink-0 text-[11px] px-2 py-0.5 rounded border"
+                :class="session.forwardToBot
+                  ? 'border-sky-300 text-sky-600 bg-sky-50/60 dark:border-sky-500/40 dark:text-sky-300 dark:bg-sky-900/20'
+                  : 'border-zinc-200 text-zinc-400 dark:border-zinc-700 dark:text-zinc-500'"
+                :title="session.forwardToBot ? '机器人会回复此对话，点击关闭' : '机器人不回复此对话，点击开启'"
+                @click.stop="emit('toggleForward', { sessionId: session.id, enabled: !session.forwardToBot })"
+              >
+                {{ session.forwardToBot ? '机器人✓' : '机器人✗' }}
+              </button>
               <button
                 class="shrink-0 text-[11px] px-2 py-0.5 rounded border border-emerald-300/60 text-emerald-700/80 hover:bg-emerald-50/50 dark:border-emerald-600/50 dark:text-emerald-300/80 dark:hover:bg-emerald-900/10"
                 @click="emit('rename', session.id)"
