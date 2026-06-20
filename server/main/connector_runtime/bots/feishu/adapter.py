@@ -234,12 +234,7 @@ class FeishuBot(BotAdapter):
         # shared-pool multi-session tools, even for older AI configs whose
         # saved MCP allowlist predates them.
         return {
-            "conversation.edit",
-            "conversation.compress",
-            "conversation.list",
-            "conversation.detail",
-            "conversation.switch",
-            "conversation.new",
+            "conversation.manage",
         }
 
     # ---- status -----------------------------------------------------------

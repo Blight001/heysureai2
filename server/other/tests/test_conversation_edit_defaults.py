@@ -7,11 +7,14 @@ from mcp_runtime.mcp.tools.conversation import _edit_conversation
 
 
 class ConversationEditDefaultsTests(unittest.TestCase):
-    def test_schema_allows_empty_arguments(self):
-        tool = next(item for item in registry.list_tools() if item["name"] == "conversation.edit")
+    def test_manage_schema_exposes_clear_action(self):
+        tool = next(item for item in registry.list_tools() if item["name"] == "conversation.manage")
 
-        self.assertEqual(tool["inputSchema"]["required"], [])
-        self.assertIn("arguments={}", tool["description"])
+        # The unified tool requires an explicit action; clear/rename/compress are
+        # all reachable through it.
+        self.assertEqual(tool["inputSchema"]["required"], ["action"])
+        self.assertIn("clear", tool["inputSchema"]["properties"]["action"]["enum"])
+        self.assertIn("rename", tool["inputSchema"]["properties"]["action"]["enum"])
 
     def test_empty_arguments_clear_current_conversation(self):
         session_row = SimpleNamespace(updated_at=0)

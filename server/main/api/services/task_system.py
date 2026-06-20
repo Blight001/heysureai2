@@ -33,7 +33,10 @@ TASK_FLOW_PROMPT_KEYS = (
 
 TASK_RUNTIME_REQUIRED_TOOLS = {
     "task.complete",
-    "task.list",
+    # ``task.list`` was folded into the unified ``task.manage`` tool; the runtime
+    # only needs read access (action=list), which task.manage permits for every
+    # tier while gating create/update/delete to manager+.
+    "task.manage",
     "message.send_to_ai",
     # Planned task flow: a task runtime can always plan, inspect and close out
     # its own plan even when the operational tool allowlist is narrowed.

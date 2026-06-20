@@ -212,7 +212,8 @@ def _render_mcp_tool_item(tool_info: Dict[str, Any]) -> str:
     field_limit = 100 if name in _TASK_CREATE_TOOL_NAMES else (30 if name.startswith("task.") else 6)
 
     example_args: Dict[str, Any] = {}
-    if name == "task.create":
+    if name == "task.manage":
+        example_args["action"] = "create"
         example_args["mode"] = "scheduled"
         if "title" in props:
             example_args["title"] = "两小时后执行代码健康巡检"
@@ -233,9 +234,10 @@ def _render_mcp_tool_item(tool_info: Dict[str, Any]) -> str:
         separators=(",", ":"),
     )
     format_hint = ""
-    if name == "task.create":
+    if name == "task.manage":
         format_hint = (
             "\n"
+            "  action: `list`/`create`/`update`/`delete`；create/update/delete 需管理者及以上。\n"
             "  mode: `immediate` 立即执行；`scheduled` 一次性定时；`recurring` 循环运行。\n"
             "  时间格式: mode=scheduled 的 `schedule_at` 仅支持 Unix 秒或带时区 ISO-8601（必须包含 `+08:00` 或 `Z`）；"
             "mode=recurring 不传 `schedule_at`，仅使用 `schedule_duration_minutes`（分钟间隔）。"

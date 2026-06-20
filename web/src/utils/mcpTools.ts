@@ -120,8 +120,11 @@ const getEndpointCapabilityTag = (name: string) => {
 const getMcpToolFallbackTag = (name: string) => {
   const endpointCapabilityTag = getEndpointCapabilityTag(name)
   if (endpointCapabilityTag) return endpointCapabilityTag
-  // workspace.run_command（终端）与 workspace.search（联网搜索）同归「工作区」。
+  // workspace.run_command（终端）与 workspace.search（联网搜索）同归「工作区」；
+  // file.manage（工作区文件统一工具）也归「工作区」。
   if (hasMcpPrefix(name, 'workspace')) return '工作区'
+  if (hasMcpPrefix(name, 'file')) return '工作区'
+  if (hasMcpPrefix(name, 'knowledge')) return '知识总结'
   if (hasMcpPrefix(name, 'admin')) return '概览'
   if (hasMcpPrefix(name, 'desktop')) return '桌面能力'
   if (hasMcpPrefix(name, 'task')) return '任务'
@@ -152,32 +155,17 @@ const MCP_TOOL_ZH_LABELS: Record<string, string> = {
   'mcp.list_tools': '工具列表',
   'mcp.describe_tool': '工具说明',
   'workspace.search': '联网搜索',
-  'workspace.read_file': '读取文件',
-  'workspace.write_file': '写入文件',
-  'workspace.edit_file': '编辑文件',
   'workspace.run_command': '执行命令',
+  'file.manage': '文件管理',
   'admin.get_overview': '工作区概览',
   'admin.list_agents': 'Agent 列表',
-  'task.create': '创建任务',
-  'task.list': '任务列表',
-  'task.update': '更新任务',
-  'task.delete': '删除任务',
+  'task.manage': '任务管理',
   'task.complete': '完成任务',
   'message.send_to_user': '发给用户',
   'message.send_to_ai': '发给 AI',
-  'conversation.create': '创建会话',
-  'conversation.delete': '删除会话',
-  'conversation.list': '会话列表',
-  'conversation.detail': '会话详情',
-  'conversation.edit': '编辑会话',
-  'conversation.compress': '压缩会话',
-  'conversation.switch': '切换会话',
-  'conversation.new': '新建对话',
-  'prompt.list_targets': 'Prompt 目标',
-  'prompt.read_ai': '读取 AI Prompt',
-  'prompt.write_ai': '写入 AI Prompt',
-  'prompt.read_system': '读取系统 Prompt',
-  'prompt.write_system': '写入系统 Prompt',
+  'conversation.manage': '会话管理',
+  'prompt.manage': 'Prompt 管理',
+  'knowledge.manage': '知识库管理',
   'device_mcp.manage': '管理设备 MCP',
   'mcp.manage_dynamic_tool': '管理动态 MCP',
   'browser_mcp.manage_dynamic_tool': '管理动态 MCP',
@@ -230,6 +218,8 @@ const MCP_NAMESPACE_ZH: Record<string, string> = {
   message: '消息',
   conversation: '会话',
   prompt: 'Prompt',
+  file: '文件',
+  knowledge: '知识库',
   browser: '浏览器',
   mouse: '鼠标',
   keyboard: '键盘',
@@ -311,10 +301,7 @@ const getMcpToolZhTag = (name: string) => getMcpToolFallbackTag(name)
 
 const MEMORY_PREFIX_ORDER = ['memory']
 const TASK_TOOL_ORDER = [
-  'task.create',
-  'task.update',
-  'task.delete',
-  'task.list',
+  'task.manage',
   'task.complete',
 ]
 

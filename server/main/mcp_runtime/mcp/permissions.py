@@ -45,30 +45,30 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "mcp.describe_tool": ROLE_MEMBER,
     # Web search — external read-only lookup, available to every tier by default.
     "workspace.search": ROLE_MEMBER,
-    # Workspace file access is safer than shell for routine reads/edits.
-    "workspace.read_file": ROLE_MEMBER,
-    "workspace.write_file": ROLE_MANAGER,
-    "workspace.edit_file": ROLE_MANAGER,
+    # Unified workspace file tool (read/write/edit/tree). Member is the floor so
+    # everyone can read; write/edit are gated to manager+ inside the handler via
+    # ``enforce_min_role``.
+    "file.manage": ROLE_MEMBER,
     # Shell command execution is powerful; keep it manager+.
     "workspace.run_command": ROLE_MANAGER,
-    # Task — members run their own task; orchestration is manager+.
+    # Unified task management tool (create/list/update/delete). Member floor so
+    # everyone can list; create/update/delete are gated to manager+ inside the
+    # handler. The self-execution operators below stay separate because the
+    # task-runtime flow drives them by name.
+    "task.manage": ROLE_MEMBER,
     "task.complete": ROLE_MEMBER,
-    "task.list": ROLE_MEMBER,
-    "task.create": ROLE_MANAGER,
-    "task.update": ROLE_MANAGER,
-    "task.delete": ROLE_MANAGER,
     # Planned task flow — every member plans and runs its own task.
     "plan.create": ROLE_MEMBER,
     "plan.get": ROLE_MEMBER,
     "phase.complete": ROLE_MEMBER,
     "task.finish": ROLE_MEMBER,
-    # Prompt — read own prompt is member; editing AI prompts is manager+;
-    # global/system prompt templates are assistant_admin+.
-    "prompt.list_targets": ROLE_MEMBER,
-    "prompt.read_ai": ROLE_MEMBER,
-    "prompt.write_ai": ROLE_MANAGER,
-    "prompt.read_system": ROLE_MANAGER,
-    "prompt.write_system": ROLE_ASSISTANT_ADMIN,
+    # Unified prompt tool. Member floor so everyone can read its own prompt; the
+    # write/system actions are gated inside the handler (write_ai=manager+,
+    # read_system=manager+, write_system=assistant_admin+).
+    "prompt.manage": ROLE_MEMBER,
+    # Unified knowledge-base tool. Member floor; the underlying workshop handlers
+    # re-check the per-action minimum role, and a workshop binding is required.
+    "knowledge.manage": ROLE_MEMBER,
     # Knowledge workshop package installation writes user-level global skills.
     "librarian.install_skill_package": ROLE_MANAGER,
     "librarian.edit_inheritance_thought": ROLE_MANAGER,
@@ -85,14 +85,9 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "librarian.update_system_prompts": ROLE_ASSISTANT_ADMIN,
     # Send message — outbound to the human user; every tier by default.
     "message.send_to_user": ROLE_MEMBER,
-    # Conversation maintenance — every tier can manage its own scoped sessions.
-    "conversation.create": ROLE_MEMBER,
-    "conversation.delete": ROLE_MEMBER,
-    "conversation.list": ROLE_MEMBER,
-    "conversation.detail": ROLE_MEMBER,
-    "conversation.edit": ROLE_MEMBER,
-    "conversation.switch": ROLE_MEMBER,
-    "conversation.new": ROLE_MEMBER,
+    # Unified conversation tool (list/detail/create/delete/rename/clear/compress/
+    # switch/new) — every tier can manage its own scoped sessions.
+    "conversation.manage": ROLE_MEMBER,
     # Admin / governance — assistant_admin only.
     "admin.list_agents": ROLE_ASSISTANT_ADMIN,
     "admin.get_overview": ROLE_ASSISTANT_ADMIN,
@@ -104,6 +99,43 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
 
 def tool_min_role(tool_name: str) -> str:
     return MCP_TOOL_MIN_ROLE.get(tool_name, DEFAULT_MIN_ROLE)
+
+
+def enforce_min_role(user_id: int, ai_config_id: Optional[int], min_role: str) -> None:
+    """Raise 403 if the calling AI config's role tier is below ``min_role``.
+
+    Unified ``*.manage`` tools fold several legacy tools (with different minimum
+    role tiers) behind one tool name, so the per-tool allow-list can no longer
+    express the finer per-action gating. Handlers call this to keep the original
+    granularity (e.g. ``task.manage`` allows ``list`` for everyone but reserves
+    ``create``/``update``/``delete`` for managers). A missing ``ai_config_id``
+    means an admin/core direct call and bypasses the check; an unknown config is
+    treated as the lowest tier so writes stay blocked.
+    """
+    if not ai_config_id:
+        return
+    from fastapi import HTTPException
+    from sqlmodel import Session, select
+
+    from api.database import engine
+    from api.models import AssistantAIConfig
+
+    with Session(engine) as session:
+        cfg = session.exec(
+            select(AssistantAIConfig).where(
+                AssistantAIConfig.user_id == user_id,
+                AssistantAIConfig.id == ai_config_id,
+            )
+        ).first()
+    tier = config_role_tier(cfg) if cfg else ROLE_MEMBER
+    if ROLE_RANK.get(tier, 0) < ROLE_RANK.get(min_role, 0):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"角色「{ROLE_LABELS_ZH.get(tier, tier)}」无权执行该操作"
+                f"（需「{ROLE_LABELS_ZH.get(min_role, min_role)}」及以上）"
+            ),
+        )
 
 
 def all_registry_tool_names() -> Set[str]:
@@ -208,9 +240,6 @@ def clamp_tools_json(user, tier: str, mcp_tools_json: Optional[str]) -> str:
         if tool.startswith("workspace.") and tool not in {
             "workspace.search",
             "workspace.run_command",
-            "workspace.read_file",
-            "workspace.write_file",
-            "workspace.edit_file",
         }:
             continue
         # Endpoint desktop/browser tools are governed exclusively by

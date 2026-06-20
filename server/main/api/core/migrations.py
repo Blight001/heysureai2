@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import sqlite3
+from typing import Dict
 
 from .config import SQLITE_FILE, database_dialect
 
@@ -502,6 +503,7 @@ def run_pending_migrations() -> None:
     _migrate_agenttypemcppermission_nullable_ai_config()
     _migrate_assistantaiconfig_strip_endpoint_mcp_tools()
     _migrate_assistantaiconfig_prune_unknown_mcp_tools()
+    _migrate_user_role_mcp_permissions_rename()
     _migrate_chatmessagemedia_message_cascade()
     _migrate_rename_device_tables()
     # Only run for SQLite. Postgres deployments either start fresh or are
@@ -799,6 +801,66 @@ def _migrate_assistantaiconfig_strip_endpoint_mcp_tools() -> None:
             )
 
 
+def _migrate_user_role_mcp_permissions_rename() -> None:
+    """Rename legacy granular tool names inside ``User.role_mcp_permissions``.
+
+    The admin-configured per-role allow-list stores tool names as JSON. After the
+    consolidation refactor those granular names no longer exist, so map them onto
+    the unified ``*.manage`` tools (de-duplicated) to preserve each role's grants.
+    """
+    from ..database import engine
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if "user" not in set(insp.get_table_names()):
+        return
+    columns = {col["name"] for col in insp.get_columns("user")}
+    if "role_mcp_permissions" not in columns:
+        return
+
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text('SELECT id, role_mcp_permissions FROM "user"')
+        ).mappings().all()
+        for row in rows:
+            raw = row.get("role_mcp_permissions") or ""
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            changed = False
+            for role, tools in list(data.items()):
+                if not isinstance(tools, list):
+                    continue
+                next_tools = []
+                seen = set()
+                for item in tools:
+                    tool = str(item or "").strip() if isinstance(item, str) else ""
+                    if not tool:
+                        changed = True
+                        continue
+                    renamed = _LEGACY_TOOL_RENAMES.get(tool)
+                    if renamed:
+                        tool = renamed
+                        changed = True
+                    if tool in seen:
+                        changed = True
+                        continue
+                    next_tools.append(tool)
+                    seen.add(tool)
+                data[role] = next_tools
+            if not changed:
+                continue
+            conn.execute(
+                text('UPDATE "user" SET role_mcp_permissions = :perms WHERE id = :id'),
+                {"perms": json.dumps(data, ensure_ascii=False), "id": row["id"]},
+            )
+
+
 def _live_registered_tool_names() -> set:
     """Authoritative set of currently-valid MCP tool names.
 
@@ -823,6 +885,39 @@ def _live_registered_tool_names() -> set:
         return names
     except Exception:
         return set()
+
+
+# Legacy granular MCP tool name -> unified ``*.manage`` tool. Applied when
+# pruning stored allow-lists so operators keep an equivalent grant after the
+# consolidation refactor instead of silently losing the permission.
+_LEGACY_TOOL_RENAMES: Dict[str, str] = {
+    # 会话
+    "conversation.create": "conversation.manage",
+    "conversation.delete": "conversation.manage",
+    "conversation.list": "conversation.manage",
+    "conversation.detail": "conversation.manage",
+    "conversation.edit": "conversation.manage",
+    "conversation.compress": "conversation.manage",
+    "conversation.switch": "conversation.manage",
+    "conversation.new": "conversation.manage",
+    "conversation.forget_before_current": "conversation.manage",
+    "conversation.find": "conversation.manage",
+    # 任务管理（task.complete / plan.* / phase.complete / task.finish 保持独立）
+    "task.create": "task.manage",
+    "task.list": "task.manage",
+    "task.update": "task.manage",
+    "task.delete": "task.manage",
+    # Prompt
+    "prompt.list_targets": "prompt.manage",
+    "prompt.read_ai": "prompt.manage",
+    "prompt.write_ai": "prompt.manage",
+    "prompt.read_system": "prompt.manage",
+    "prompt.write_system": "prompt.manage",
+    # 文件
+    "workspace.read_file": "file.manage",
+    "workspace.write_file": "file.manage",
+    "workspace.edit_file": "file.manage",
+}
 
 
 def _migrate_assistantaiconfig_prune_unknown_mcp_tools() -> None:
@@ -863,18 +958,14 @@ def _migrate_assistantaiconfig_prune_unknown_mcp_tools() -> None:
             next_tools = []
             seen = set()
             changed = False
-            had_legacy_find = False
             for item in parsed:
                 tool = str(item or "").strip() if isinstance(item, str) else ""
                 if not tool:
                     changed = True
                     continue
-                if tool == "conversation.forget_before_current":
-                    tool = "conversation.edit"
-                    changed = True
-                elif tool == "conversation.find":
-                    tool = "conversation.list"
-                    had_legacy_find = True
+                renamed = _LEGACY_TOOL_RENAMES.get(tool)
+                if renamed:
+                    tool = renamed
                     changed = True
                 # Endpoint tools are governed by per-agent scope, not stored here.
                 if is_endpoint_tool_config_name(tool):
@@ -888,9 +979,6 @@ def _migrate_assistantaiconfig_prune_unknown_mcp_tools() -> None:
                     continue
                 next_tools.append(tool)
                 seen.add(tool)
-            if had_legacy_find and "conversation.detail" in valid and "conversation.detail" not in seen:
-                next_tools.append("conversation.detail")
-                changed = True
             if not changed:
                 continue
             conn.execute(

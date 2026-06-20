@@ -4,14 +4,11 @@ from typing import Any, Dict, Optional
 from sqlmodel import Field, SQLModel
 
 _DEFAULT_MCP_TOOLS = (
-    '["mcp.describe_tool","workspace.search","workspace.read_file","workspace.write_file",'
-    '"workspace.edit_file","workspace.run_command",'
+    '["mcp.describe_tool","workspace.search","file.manage","workspace.run_command",'
     '"admin.list_agents","admin.get_overview",'
-    '"task.create","task.update","task.delete","task.list",'
-    '"task.complete",'
-    '"prompt.list_targets","prompt.read_ai","prompt.write_ai","prompt.read_system",'
-    '"prompt.write_system","message.send_to_user","conversation.list","conversation.detail",'
-    '"conversation.create","conversation.delete","conversation.edit","conversation.compress",'
+    '"task.manage","task.complete",'
+    '"prompt.manage","knowledge.manage",'
+    '"message.send_to_user","conversation.manage",'
     '"message.send_to_ai"]'
 )
 

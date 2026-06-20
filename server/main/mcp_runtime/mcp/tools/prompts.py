@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 from api.database import engine
 from api.models import AssistantAIConfig, User
 from api.services.governance import assert_can_manage_or_legacy
+from ..permissions import ROLE_ASSISTANT_ADMIN, ROLE_MANAGER
 
 
 SYSTEM_PROMPT_FIELDS = {
@@ -344,3 +345,87 @@ def _prompt_write_system(user_id: int, args: dict, ai_config_id: Optional[int] =
             "new_prompt_length": len(new_prompt),
             "line_count": len(new_prompt.splitlines()),
         }
+
+
+# Action → (handler, minimum role). ``None`` role means available to every tier.
+_PROMPT_ACTIONS = {
+    "list_targets": (_prompt_list_targets, None),
+    "read_ai": (_prompt_read_ai, None),
+    "write_ai": (_prompt_write_ai, ROLE_MANAGER),
+    "read_system": (_prompt_read_system, ROLE_MANAGER),
+    "write_system": (_prompt_write_system, ROLE_ASSISTANT_ADMIN),
+}
+
+_PROMPT_ACTION_ALIASES = {
+    "list": "list_targets",
+    "targets": "list_targets",
+    "read": "read_ai",
+    "write": "write_ai",
+}
+
+
+def _prompt_manage(user_id: int, args: dict, ai_config_id: Optional[int] = None):
+    """Unified prompt tool. Dispatch by ``action`` to the concrete handler.
+
+    Folds ``prompt.{list_targets,read_ai,write_ai,read_system,write_system}``
+    behind one ``action`` parameter. Per-action minimum role is re-enforced here:
+    reading an AI's own prompt is open to every tier, while AI-prompt writes are
+    manager+, system-prompt reads are manager+, and system-prompt writes are
+    assistant_admin+.
+    """
+    from ..permissions import enforce_min_role
+
+    raw = str((args or {}).get("action") or "").strip().lower()
+    action = _PROMPT_ACTION_ALIASES.get(raw, raw)
+    if not action:
+        raise HTTPException(status_code=400, detail="action is required for prompt.manage")
+    spec = _PROMPT_ACTIONS.get(action)
+    if spec is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unsupported action: {action}. 可用: {', '.join(sorted(_PROMPT_ACTIONS))}",
+        )
+    handler, min_role = spec
+    if min_role:
+        enforce_min_role(user_id, ai_config_id, min_role)
+    return handler(user_id, args or {}, ai_config_id)
+
+
+PROMPT_MANAGE_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "action": {
+            "type": "string",
+            "enum": sorted(_PROMPT_ACTIONS),
+            "description": (
+                "操作类型："
+                "list_targets 列出可改写的 AI 人格 prompt 目标与系统 prompt 键；"
+                "read_ai 读取某 AI 配置的基础人格 prompt（省略 target_ai_config_id 读当前 AI）；"
+                "write_ai 按行编辑某 AI 配置的人格 prompt（需管理者+）；"
+                "read_system 读取全局/系统 prompt 模板（需管理者+）；"
+                "write_system 按行编辑全局/系统 prompt 模板（需辅助管理员+）。"
+            ),
+        },
+        "target_ai_config_id": {"type": "integer", "description": "read_ai/write_ai：目标 AI 配置 id；省略则使用当前 AI。"},
+        "key": {
+            "type": "string",
+            "enum": list(SYSTEM_PROMPT_FIELDS),
+            "description": "read_system（省略=全部）/write_system（必填）：系统 prompt 的键。",
+        },
+        "mode": {
+            "type": "string",
+            "enum": ["replace_line", "insert_before", "insert_after", "delete_line", "append", "prepend", "replace_all"],
+            "description": "write_ai/write_system：按行编辑方式；整篇覆盖必须显式用 replace_all。",
+        },
+        "line": {"type": "integer", "description": "目标行号（从 1 开始）。"},
+        "start_line": {"type": "integer", "description": "替换/删除的起始行号（从 1 开始）。"},
+        "end_line": {"type": "integer", "description": "替换/删除的结束行号（从 1 开始）。"},
+        "text": {"type": "string", "description": "要写入的文本，可多行；mode=replace_all 时作为整篇内容。"},
+        "edits": {
+            "type": "array",
+            "items": {"type": "object"},
+            "description": "批量按行编辑；每项支持 mode、line、start_line、end_line、text。",
+        },
+    },
+    "required": ["action"],
+}
