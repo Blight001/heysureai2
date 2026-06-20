@@ -2,22 +2,20 @@ import json
 import base64
 import re
 import threading
-import time
 from typing import Any, Dict, Optional
 
 import requests
 from fastapi import HTTPException
-from sqlmodel import Session, select
 
-from api.database import engine
 from api.integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
 from api.models import AssistantAIConfig
+from ..transport import TokenCache, load_active_config, parse_json_response
 from ._config import read_qq_config
 
 QQ_TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
 QQ_API_BASE = "https://api.sgroup.qq.com"
 QQ_SANDBOX_API_BASE = "https://sandbox.api.sgroup.qq.com"
-_TOKEN_CACHE: Dict[int, Dict[str, Any]] = {}
+_TOKEN_CACHE = TokenCache()
 _HTTP_LOCAL = threading.local()
 
 
@@ -72,49 +70,40 @@ def _normalize_target_type(raw: str) -> str:
     return value
 
 
-def _load_qq_config(user_id: int, ai_config_id: Optional[int]) -> AssistantAIConfig:
-    if not ai_config_id:
-        raise HTTPException(status_code=400, detail="qq tool requires ai_config_id")
-    with Session(engine) as session:
-        cfg = session.exec(
-            select(AssistantAIConfig).where(
-                AssistantAIConfig.id == ai_config_id,
-                AssistantAIConfig.user_id == user_id,
-            )
-        ).first()
-    if not cfg:
-        raise HTTPException(status_code=404, detail="AI config not found")
-    if str(cfg.bot_channel or "feishu").strip().lower() != "qq":
-        raise HTTPException(status_code=400, detail="QQ bot is not the active channel for this AI")
-    bot_cfg = read_qq_config(cfg)
-    if not bot_cfg.get("enabled"):
-        raise HTTPException(status_code=400, detail="QQ bot is not enabled for this AI")
+def _validate_qq_credentials(bot_cfg: Dict[str, Any]) -> None:
     if not bot_cfg.get("app_id") or not bot_cfg.get("app_secret"):
         raise HTTPException(status_code=400, detail="QQ App ID / App Secret not configured")
-    return cfg
+
+
+def _load_qq_config(user_id: int, ai_config_id: Optional[int]) -> AssistantAIConfig:
+    return load_active_config(
+        user_id,
+        ai_config_id,
+        channel="qq",
+        tool_name="qq",
+        channel_label="QQ",
+        read_config=read_qq_config,
+        validate_credentials=_validate_qq_credentials,
+    )
 
 
 def get_qq_access_token(user_id: int, ai_config_id: Optional[int]) -> str:
     cfg = _load_qq_config(user_id, ai_config_id)
     bot_cfg = read_qq_config(cfg)
-    now = time.time()
-    cache = _TOKEN_CACHE.get(int(cfg.id or 0))
-    if cache and cache.get("token") and float(cache.get("expires_at") or 0) > now + 120:
-        return str(cache["token"])
 
-    res = _qq_http_session().post(
-        QQ_TOKEN_URL,
-        headers={"Content-Type": "application/json"},
-        json={"appId": str(bot_cfg.get("app_id") or ""), "clientSecret": str(bot_cfg.get("app_secret") or "")},
-        timeout=20,
-    )
-    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
-    if not res.ok or not data.get("access_token"):
-        raise HTTPException(status_code=502, detail=f"QQ token failed: {data or res.text}")
-    token = str(data.get("access_token") or "").strip()
-    expire = int(data.get("expires_in") or 7200)
-    _TOKEN_CACHE[int(cfg.id or 0)] = {"token": token, "expires_at": now + max(60, expire)}
-    return token
+    def _fetch() -> "tuple[str, int]":
+        res = _qq_http_session().post(
+            QQ_TOKEN_URL,
+            headers={"Content-Type": "application/json"},
+            json={"appId": str(bot_cfg.get("app_id") or ""), "clientSecret": str(bot_cfg.get("app_secret") or "")},
+            timeout=20,
+        )
+        data = parse_json_response(res)
+        if not res.ok or not data.get("access_token"):
+            raise HTTPException(status_code=502, detail=f"QQ token failed: {data or res.text}")
+        return str(data.get("access_token") or "").strip(), int(data.get("expires_in") or 7200)
+
+    return _TOKEN_CACHE.get_or_fetch(int(cfg.id or 0), _fetch)
 
 
 def _qq_api_base(cfg: AssistantAIConfig) -> str:
@@ -150,7 +139,7 @@ def _post_qq_message(cfg: AssistantAIConfig, *, endpoint: str, payload: Dict[str
         json=payload,
         timeout=20,
     )
-    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
+    data = parse_json_response(res)
     if not res.ok or (isinstance(data, dict) and data.get("code") not in (None, 0)):
         raise HTTPException(status_code=502, detail=f"QQ send_message failed: {data or res.text}")
     return data
@@ -257,7 +246,7 @@ def upload_qq_media_file_info(
         json=payload,
         timeout=60,
     )
-    data = res.json() if res.headers.get("content-type", "").lower().startswith("application/json") else {}
+    data = parse_json_response(res)
     if not res.ok or (isinstance(data, dict) and data.get("code") not in (None, 0)):
         raise HTTPException(status_code=502, detail=f"QQ media upload failed: {data or res.text}")
     file_info = str(data.get("file_info") or (data.get("data") or {}).get("file_info") or "").strip()

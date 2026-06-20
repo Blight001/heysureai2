@@ -1,20 +1,18 @@
 import json
 import mimetypes
 import re
-import time
 from typing import Any, Dict, Optional
 
 import requests
 from fastapi import HTTPException
-from sqlmodel import Session, select
 
-from api.database import engine
 from api.integrations.media_source import MediaSource, infer_media_kind, resolve_media_source
 from api.models import AssistantAIConfig
+from ..transport import TokenCache, load_active_config, parse_json_response
 from ._config import read_feishu_config
 
 FEISHU_OPEN_API_BASE = "https://open.feishu.cn/open-apis"
-_TOKEN_CACHE: Dict[int, Dict[str, Any]] = {}
+_TOKEN_CACHE = TokenCache()
 
 
 def normalize_feishu_text(text: str, *, strip_markdown: bool = True) -> str:
@@ -69,50 +67,42 @@ def normalize_feishu_text(text: str, *, strip_markdown: bool = True) -> str:
     return body.strip()
 
 
-def _load_feishu_config(user_id: int, ai_config_id: Optional[int]) -> AssistantAIConfig:
-    if not ai_config_id:
-        raise HTTPException(status_code=400, detail="feishu tool requires ai_config_id")
-    with Session(engine) as session:
-        cfg = session.exec(
-            select(AssistantAIConfig).where(
-                AssistantAIConfig.id == ai_config_id,
-                AssistantAIConfig.user_id == user_id,
-            )
-        ).first()
-    if not cfg:
-        raise HTTPException(status_code=404, detail="AI config not found")
-    if str(cfg.bot_channel or "feishu").strip().lower() != "feishu":
-        raise HTTPException(status_code=400, detail="Feishu bot is not the active channel for this AI")
-    bot_cfg = read_feishu_config(cfg)
-    if not bot_cfg.get("enabled"):
-        raise HTTPException(status_code=400, detail="Feishu bot is not enabled for this AI")
+def _validate_feishu_credentials(bot_cfg: Dict[str, Any]) -> None:
     if not bot_cfg.get("webhook_url") and (not bot_cfg.get("app_id") or not bot_cfg.get("app_secret")):
         raise HTTPException(status_code=400, detail="Feishu 仅通知 URL 或 app_id/app_secret 未配置")
-    return cfg
+
+
+def _load_feishu_config(user_id: int, ai_config_id: Optional[int]) -> AssistantAIConfig:
+    return load_active_config(
+        user_id,
+        ai_config_id,
+        channel="feishu",
+        tool_name="feishu",
+        channel_label="Feishu",
+        read_config=read_feishu_config,
+        validate_credentials=_validate_feishu_credentials,
+    )
 
 
 def get_tenant_access_token(user_id: int, ai_config_id: Optional[int]) -> str:
     cfg = _load_feishu_config(user_id, ai_config_id)
-    now = time.time()
-    cache = _TOKEN_CACHE.get(int(cfg.id or 0))
-    if cache and cache.get("token") and float(cache.get("expires_at") or 0) > now + 120:
-        return str(cache["token"])
-
     bot_cfg = read_feishu_config(cfg)
-    res = requests.post(
-        f"{FEISHU_OPEN_API_BASE}/auth/v3/tenant_access_token/internal",
-        headers={"Content-Type": "application/json; charset=utf-8"},
-        json={"app_id": bot_cfg.get("app_id", ""), "app_secret": bot_cfg.get("app_secret", "")},
-        timeout=20,
-    )
-    data = _feishu_json(res)
-    _raise_feishu_error(res, data, "token")
-    token = str(data.get("tenant_access_token") or "").strip()
-    if not token:
-        raise HTTPException(status_code=502, detail="Feishu token response missing tenant_access_token")
-    expire = int(data.get("expire") or 7200)
-    _TOKEN_CACHE[int(cfg.id or 0)] = {"token": token, "expires_at": now + max(60, expire)}
-    return token
+
+    def _fetch() -> "tuple[str, int]":
+        res = requests.post(
+            f"{FEISHU_OPEN_API_BASE}/auth/v3/tenant_access_token/internal",
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            json={"app_id": bot_cfg.get("app_id", ""), "app_secret": bot_cfg.get("app_secret", "")},
+            timeout=20,
+        )
+        data = _feishu_json(res)
+        _raise_feishu_error(res, data, "token")
+        token = str(data.get("tenant_access_token") or "").strip()
+        if not token:
+            raise HTTPException(status_code=502, detail="Feishu token response missing tenant_access_token")
+        return token, int(data.get("expire") or 7200)
+
+    return _TOKEN_CACHE.get_or_fetch(int(cfg.id or 0), _fetch)
 
 
 # --------------------------------------------------------------------------- #
@@ -124,9 +114,7 @@ _FEISHU_RECEIVE_ID_TYPES = {"chat_id", "open_id", "user_id", "union_id", "email"
 
 
 def _feishu_json(res: requests.Response) -> Dict[str, Any]:
-    if res.headers.get("content-type", "").lower().startswith("application/json"):
-        return res.json()
-    return {}
+    return parse_json_response(res)
 
 
 def _raise_feishu_error(res: requests.Response, data: Dict[str, Any], action: str) -> None:
