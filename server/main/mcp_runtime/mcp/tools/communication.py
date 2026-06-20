@@ -9,12 +9,12 @@ import os
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
-from sqlmodel import Session, select
+from sqlmodel import Session
 
-from connector_runtime.bots import all_channels, get as get_bot
+from connector_runtime.bots.messaging import MediaPayload, dispatcher
 from api.database import engine
 from ..core import get_project_root, safe_join
-from api.models import AssistantAIConfig, User
+from api.models import User
 from ai_runtime.inference import ai_message_service
 from connector_runtime.dispatch.device_dispatch import get_run_session_context
 
@@ -69,65 +69,37 @@ def _user_send_message(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
     file_name = str(args.get("file_name") or args.get("filename") or "").strip()
     if not text and not media_url and not media_path:
         raise HTTPException(status_code=400, detail="text or media_url/media_path is required for message.send_to_user")
-    receive_id = str(args.get("receive_id") or args.get("chat_id") or args.get("open_id") or "").strip()
-    receive_id_type = str(args.get("receive_id_type") or ("open_id" if args.get("open_id") else "")).strip()
     channel = str(args.get("channel") or "").strip().lower()
-    if not channel:
-        with Session(engine) as session:
-            cfg = session.exec(
-                select(AssistantAIConfig).where(
-                    AssistantAIConfig.id == ai_config_id,
-                    AssistantAIConfig.user_id == user_id,
-                )
-            ).first() if ai_config_id else None
-            channel = str(getattr(cfg, "bot_channel", "") or "feishu").strip().lower()
 
-    bot = get_bot(channel)
-    if bot is None:
-        raise HTTPException(
-            status_code=400,
-            detail=f"channel '{channel}' not supported; use one of {sorted(all_channels())}",
-        )
-
-    # Bots pick the fields they need out of ``target``; we pass through every
-    # plausible alias the caller might have used (qq aliases group_openid /
-    # openid; feishu uses receive_id / receive_id_type).
-    target: Dict[str, Any] = {
-        "receive_id": receive_id,
-        "receive_id_type": receive_id_type,
-        "target_id": str(
-            args.get("target_id") or args.get("group_openid") or args.get("openid") or receive_id or ""
-        ).strip(),
-        "target_type": str(
-            args.get("target_type") or args.get("qq_target_type") or receive_id_type or ""
-        ).strip(),
-        "msg_id": str(args.get("msg_id") or "").strip(),
-        "event_id": str(args.get("event_id") or "").strip(),
-        "msg_seq": args.get("msg_seq"),
-    }
-    media: Dict[str, Any] = {
-        "url": media_url,
-        "path": media_path,
-        "type": media_type,
-        "file_name": file_name,
-        "duration": args.get("duration"),
-    }
-
+    # The whole arg bag is handed to the dispatcher as the raw addressing
+    # payload; each channel's adapter (parse_recipient) picks the aliases it
+    # understands. Channel resolution + default-receiver fallback live in the
+    # dispatcher / adapter, not here.
     if media_url or media_path:
-        result = bot.send_media(
+        delivery = dispatcher.send_media(
             user_id=user_id,
             ai_config_id=ai_config_id,
-            text=text,
-            media=media,
-            target=target,
+            channel=channel or None,
+            media=MediaPayload(
+                text=text,
+                url=media_url,
+                path=media_path,
+                media_type=media_type,
+                file_name=file_name,
+                duration=args.get("duration"),
+            ),
+            raw_target=args,
         )
     else:
-        result = bot.send_text(
+        delivery = dispatcher.send_text(
             user_id=user_id,
             ai_config_id=ai_config_id,
+            channel=channel or None,
             text=text,
-            target=target,
+            raw_target=args,
         )
+    channel = delivery.channel
+    result = delivery.detail
     # 套一层 user 语义包装 + 拼出"已送达"提示
     notice_template = ""
     try:

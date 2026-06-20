@@ -1083,13 +1083,15 @@ def _deliver_screenshot_to_bot(bg: Session, message: ChatMessage, *, tool_result
     media_url = str(payload.get("image_url") or payload.get("public_url") or image_payload.get("url") or "").strip()
     if not media_path and not media_url:
         return {"delivered": False, "reason": "no media path or url"}
-    media = {
-        "url": media_url,
-        "path": media_path,
-        "type": "image",
-        "file_name": str(payload.get("file_name") or "screenshot.png"),
-    }
+    from connector_runtime.bots.messaging import MediaPayload, Recipient, dispatcher
     from connector_runtime.bots.registry import iter_bots
+
+    media = MediaPayload(
+        url=media_url,
+        path=media_path,
+        media_type="image",
+        file_name=str(payload.get("file_name") or "screenshot.png"),
+    )
 
     bots = list(iter_bots())
     for bot in bots:
@@ -1097,13 +1099,13 @@ def _deliver_screenshot_to_bot(bg: Session, message: ChatMessage, *, tool_result
         if not route:
             continue
         target = _bot_target_from_route(route)
-        sent = bot.send_media(
+        sent = dispatcher.send_media(
             user_id=int(message.user_id),
             ai_config_id=message.ai_config_id,
-            text="",
+            channel=bot.channel,
             media=media,
-            target=target,
-        )
+            raw_target=target,
+        ).detail
         if hasattr(route, "row") and "msg_seq" in target:
             try:
                 route.row.next_msg_seq = int(target["msg_seq"]) + 1
@@ -1121,13 +1123,13 @@ def _deliver_screenshot_to_bot(bg: Session, message: ChatMessage, *, tool_result
         return {"delivered": False, "reason": "no bot session route and no active bot channel", "channel": channel}
     if cfg is not None and not active_bot.is_enabled(cfg):
         return {"delivered": False, "reason": "active bot is disabled", "channel": active_bot.channel}
-    sent = active_bot.send_media(
+    sent = dispatcher.send_media(
         user_id=int(message.user_id),
         ai_config_id=message.ai_config_id,
-        text="",
+        channel=active_bot.channel,
         media=media,
-        target={},
-    )
+        recipient=Recipient(),
+    ).detail
     return {"delivered": True, "mode": "default_target", "channel": active_bot.channel, "result": sent}
 
 

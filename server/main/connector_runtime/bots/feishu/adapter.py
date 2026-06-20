@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from sqlmodel import Session
 
     from api.models import AssistantAIConfig, ChatMessage
+    from ..messaging import MediaPayload, Recipient
     from .routes_store import FeishuRouteView
 
 
@@ -60,65 +61,69 @@ class FeishuBot(BotAdapter):
 
     # ---- outbound messaging -----------------------------------------------
 
-    def send_text(
+    def parse_recipient(self, raw: Dict[str, Any]) -> "Recipient":
+        from ..messaging import Recipient
+
+        raw = raw or {}
+        to_id = (
+            raw.get("receive_id") or raw.get("chat_id")
+            or raw.get("open_id") or raw.get("to_id") or ""
+        )
+        to_type = raw.get("receive_id_type") or raw.get("to_type")
+        if not to_type and raw.get("open_id"):
+            to_type = "open_id"
+        return Recipient(to_id=str(to_id).strip(), to_type=str(to_type or "").strip())
+
+    def deliver_text(
         self,
         *,
         user_id: int,
         ai_config_id: Optional[int],
+        recipient: "Recipient",
         text: str,
-        target: Dict[str, Any],
     ) -> Any:
         from .service import send_feishu_text_message
         return send_feishu_text_message(
             user_id,
             ai_config_id,
             text=text,
-            receive_id=str(target.get("receive_id") or ""),
-            receive_id_type=str(target.get("receive_id_type") or ""),
+            receive_id=recipient.to_id,
+            receive_id_type=recipient.to_type,
         )
 
-    def send_media(
+    def deliver_media(
         self,
         *,
         user_id: int,
         ai_config_id: Optional[int],
-        text: str,
-        media: Dict[str, Any],
-        target: Dict[str, Any],
+        recipient: "Recipient",
+        media: "MediaPayload",
     ) -> Any:
         from .service import send_feishu_media_message, send_feishu_text_message
 
-        media_url = str(media.get("url") or "").strip()
-        media_path = str(media.get("path") or "").strip()
-        media_type = str(media.get("type") or "").strip()
-        file_name = str(media.get("file_name") or "").strip()
-        duration = media.get("duration")
-        receive_id = str(target.get("receive_id") or "")
-        receive_id_type = str(target.get("receive_id_type") or "")
-
         results = []
         # Feishu requires text and media to ride on separate messages.
-        if text and (media_url or media_path):
+        if media.text and media.has_media:
             results.append(
                 send_feishu_text_message(
                     user_id,
                     ai_config_id,
-                    text=text,
-                    receive_id=receive_id,
-                    receive_id_type=receive_id_type,
+                    text=media.text,
+                    receive_id=recipient.to_id,
+                    receive_id_type=recipient.to_type,
                 )
             )
         results.append(
             send_feishu_media_message(
                 user_id,
                 ai_config_id,
-                media_url=media_url,
-                media_path=media_path,
-                media_type=media_type,
-                file_name=file_name,
-                receive_id=receive_id,
-                receive_id_type=receive_id_type,
-                duration=int(duration) if duration is not None else None,
+                media_url=media.url,
+                media_path=media.path,
+                media_type=media.media_type,
+                file_name=media.file_name,
+                receive_id=recipient.to_id,
+                receive_id_type=recipient.to_type,
+                duration=int(media.duration) if media.duration is not None else None,
             )
         )
         if len(results) > 1:
