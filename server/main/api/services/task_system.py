@@ -1,8 +1,7 @@
 """Task-system helpers: normalize the per-config ``system_auto_control`` blob and
-its task items, decode task payloads, and resolve task session/generation ids."""
+its task items, decode task payloads, and resolve task session ids."""
 
 import json
-import re
 from typing import Any, Dict, Optional
 
 from sqlmodel import Session, select
@@ -12,6 +11,7 @@ from ..models import (
     DEFAULT_RESUME_TASK_PROMPT,
     DEFAULT_START_TASK_PROMPT,
     DEFAULT_SUPERVISION_PROMPT,
+    DEFAULT_TASK_PLAN_FLOW_PROMPT,
     AITaskJob,
     ChatRun,
 )
@@ -35,7 +35,20 @@ TASK_RUNTIME_REQUIRED_TOOLS = {
     "task.complete",
     "task.list",
     "message.send_to_ai",
+    # Planned task flow: a task runtime can always plan, inspect and close out
+    # its own plan even when the operational tool allowlist is narrowed.
+    "plan.create",
+    "plan.get",
+    "phase.complete",
+    "task.finish",
 }
+
+# Injected into the task-runtime system prompt. The flow is enforced by the
+# runtime (see ai_runtime.inference.core): plan first, the system hands over
+# each phase, and the run must close via task.finish. The text is editable as a
+# 固有思想 system prompt (key ``task_plan_flow_prompt``); this constant is only
+# the built-in fallback.
+TASK_PLAN_FLOW_PROMPT = DEFAULT_TASK_PLAN_FLOW_PROMPT
 
 
 def with_workspace_read_by_name_compat(tools: set[str]) -> set[str]:
@@ -157,17 +170,6 @@ def iter_task_session_ids(job_id: str, current_session_id: Optional[str]) -> lis
     if sid and not sid.startswith(prefix) and sid not in out:
         out.append(sid)
     return out
-
-
-def parse_generation_from_session_id(session_id: str, fallback: int) -> int:
-    sid = str(session_id or "")
-    match = re.search(r"_g(\d+)$", sid)
-    if not match:
-        return fallback
-    try:
-        return max(1, int(match.group(1)))
-    except Exception:
-        return fallback
 
 
 def _parse_bool(value: Any, default: bool = False) -> bool:

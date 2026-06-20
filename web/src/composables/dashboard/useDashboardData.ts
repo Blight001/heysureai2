@@ -133,8 +133,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
       scheduleAt: Number.isFinite(Number(raw.schedule_at)) ? Number(raw.schedule_at) : undefined,
       scheduleLoopEnabled: !!raw.schedule_loop_enabled,
       scheduleDurationMinutes: Math.max(0, Number(raw.schedule_duration_minutes) || 0),
-      generationCount: Math.max(1, Number(raw.generation_count) || 1),
-      latestGeneration: Math.max(1, Number(raw.latest_generation) || 1),
       taskTokenUsed: Math.max(0, Number(raw.task_token_used) || 0),
       taskTokenLimit: Number(raw.task_token_limit) || 0,
       createdAt: Number.isFinite(Number(raw.created_at)) ? Number(raw.created_at) : undefined,
@@ -217,13 +215,7 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
           : null
         if (fallbackScheduled) taskScheduledTasks.push(fallbackScheduled)
       }
-      const parsedGeneration = Math.max(
-        1,
-        Number(row.generation) || 1,
-        Number(taskCurrent?.latestGeneration) || 1,
-        Number(taskCurrentOrRecent?.latestGeneration) || 1,
-        Number(taskRecentCompleted?.latestGeneration) || 1,
-      )
+      const parsedGeneration = Math.max(1, Number(row.generation) || 1)
       return createAgent({
         id: `cfg-${row.id}`,
         name: row.name,

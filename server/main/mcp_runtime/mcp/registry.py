@@ -17,6 +17,12 @@ from .tools.tasks import (
     _task_list,
     _task_update,
 )
+from .tools.task_plan import (
+    _phase_complete,
+    _plan_create,
+    _plan_get,
+    _task_finish,
+)
 from .tools.prompts import (
     SYSTEM_PROMPT_FIELDS,
     _prompt_list_targets,
@@ -354,6 +360,106 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
             "required": ["summary"],
         },
         handler=_task_complete,
+        destructive=True,
+    ))
+
+    # ---------- 计划 / 分阶段执行（长任务） ----------
+    registry.register(MCPTool(
+        name="plan.create",
+        description=(
+            "为复杂任务制定一份完整计划，行动前先调用。把整体目标拆成有序的多个阶段，"
+            "每个阶段有明确的目标(goal)与结束标志(done_signal)，并可在 actions 里列出该阶段的子行动"
+            "（每个子行动也有自己的 goal 与 done_signal）。"
+            "登记后从第 1 个阶段开始执行：每完成一个阶段调用 phase.complete，全部完成后调用 task.finish。"
+            "同一会话只保留一份进行中的计划，重复调用会覆盖旧计划。"
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "goal": {"type": "string", "description": "整个任务的总体目标，一句话讲清要交付什么。"},
+                "phases": {
+                    "type": "array",
+                    "description": "有序的阶段列表（建议 2-20 个）。阶段太少说明任务不需要计划，太多说明拆得过细。",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string", "description": "阶段名称。"},
+                            "goal": {"type": "string", "description": "该阶段要达成的明确目标。"},
+                            "done_signal": {"type": "string", "description": "判断该阶段已完成的明确结束标志。"},
+                            "actions": {
+                                "type": "array",
+                                "description": "该阶段的子行动列表，每个子行动有自己的 goal 与 done_signal。",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "goal": {"type": "string", "description": "子行动的目标。"},
+                                        "done_signal": {"type": "string", "description": "子行动的结束标志。"},
+                                    },
+                                    "required": ["goal"],
+                                },
+                            },
+                        },
+                        "required": ["goal", "done_signal"],
+                    },
+                },
+            },
+            "required": ["goal", "phases"],
+        },
+        handler=_plan_create,
+        destructive=True,
+    ))
+    registry.register(MCPTool(
+        name="plan.get",
+        description="查看当前进行中的计划与进度：各阶段的目标、结束标志、状态，以及当前所处阶段。",
+        input_schema={"type": "object", "properties": {}},
+        handler=_plan_get,
+    ))
+    registry.register(MCPTool(
+        name="phase.complete",
+        description=(
+            "完成当前阶段并收尾（无需总结）。调用后系统会自动隐藏上一阶段的深度思考与 MCP "
+            "详细结果、只保留调用状态，并自动下发下一个阶段；若已是最后一个阶段，系统会要求你"
+            "调用 task.finish 收尾。若该阶段未达成目标，可传 status=failed 如实记录后继续。"
+            "summary 可选，一般留空即可。"
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "enum": ["completed", "failed"],
+                    "description": "阶段结果，默认 completed；未达成目标用 failed。",
+                },
+                "summary": {"type": "string", "description": "可选，一句话备注该阶段；留空即可。"},
+            },
+        },
+        handler=_phase_complete,
+        destructive=True,
+    ))
+    registry.register(MCPTool(
+        name="task.finish",
+        description=(
+            "收尾整个计划任务（无论成功或失败都要调用）。系统会隐藏全过程的深度思考与 MCP 详细结果，"
+            "把完整行动流程写入工作区的成功/失败日志（logs/success 或 logs/failure），"
+            "便于后续沉淀为可复用、稳定的知识。outcome=success 写成功日志，failure 写失败日志。"
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "outcome": {
+                    "type": "string",
+                    "enum": ["success", "failure"],
+                    "description": "整个任务的最终结果：success=成功，failure=失败。",
+                },
+                "summary": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "整个任务的完整复盘总结：目标、过程、产出/失败原因、可复用经验。",
+                },
+            },
+            "required": ["outcome", "summary"],
+        },
+        handler=_task_finish,
         destructive=True,
     ))
 

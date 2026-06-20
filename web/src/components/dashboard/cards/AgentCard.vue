@@ -14,8 +14,6 @@ interface AgentTaskSnapshot {
   scheduleAt?: number
   scheduleLoopEnabled?: boolean
   scheduleDurationMinutes?: number
-  generationCount: number
-  latestGeneration: number
   taskTokenUsed: number
   taskTokenLimit: number
   createdAt?: number
@@ -119,12 +117,8 @@ const emit = defineEmits<{
 }>()
 
 const isUnlimitedLife = computed(() => props.agent.tokenLimit <= 0)
-const syncedGeneration = computed(() => {
-  const base = Math.max(1, Number(props.agent.generation) || 1)
-  const fromCurrentTask = Math.max(1, Number(props.agent.taskCurrentOrRecent?.latestGeneration) || 1)
-  const fromCompletedTask = Math.max(1, Number(props.agent.taskRecentCompleted?.latestGeneration) || 1)
-  return Math.max(base, fromCurrentTask, fromCompletedTask)
-})
+// AI 自身的代数（进化代际），与任务无关。
+const syncedGeneration = computed(() => Math.max(1, Number(props.agent.generation) || 1))
 
 const lifePercentage = computed(() => {
   if (isUnlimitedLife.value) return 100
@@ -478,18 +472,6 @@ const taskStatusClass = (raw?: string) => {
   return 'border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'
 }
 
-const taskGenerationText = (task?: AgentTaskSnapshot | null) => {
-  if (!task) return '第1代 / 共1代'
-  const latest = Math.max(1, Number(task.latestGeneration) || 1)
-  const total = Math.max(1, Number(task.generationCount) || 1)
-  return `第${latest}代 / 共${total}代`
-}
-
-const taskTotalGenerations = (task?: AgentTaskSnapshot | null) => {
-  if (!task) return 1
-  return Math.max(1, Number(task.generationCount) || 1)
-}
-
 const DOUBLE_TAP_DELAY = 320
 let lastTouchTapAt = 0
 
@@ -685,9 +667,6 @@ const onCardPointerUp = (event: PointerEvent) => {
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0">
               <div class="text-xs font-medium text-zinc-800 dark:text-zinc-100 truncate">{{ taskSnapshotDisplay.task.title }}</div>
-              <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
-                {{ taskSnapshotDisplay.isCurrent ? `代数: ${taskGenerationText(taskSnapshotDisplay.task)}` : `总共代数: ${taskTotalGenerations(taskSnapshotDisplay.task)}` }}
-              </div>
             </div>
             <button
               class="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50 transition-colors dark:border-indigo-500/40 dark:text-indigo-300 dark:hover:bg-indigo-500/10"
@@ -717,7 +696,7 @@ const onCardPointerUp = (event: PointerEvent) => {
             <div class="min-w-0">
               <div class="text-xs font-medium text-zinc-800 dark:text-zinc-100 truncate">{{ task.title }}</div>
               <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">
-                {{ formatTaskSchedule(task) || `代数: ${taskGenerationText(task)}` }}
+                {{ formatTaskSchedule(task) || '定时任务' }}
               </div>
             </div>
             <span

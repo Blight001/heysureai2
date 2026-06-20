@@ -11,13 +11,18 @@ DEFAULT_COMPRESSION_PROMPT = """你正在把一段较长的对话历史压缩成
 
 [待压缩的对话历史]
 {history}"""
+DEFAULT_TASK_PLAN_FLOW_PROMPT = """本任务采用「先规划，再分阶段执行，最后总结收尾」的强制流程，由系统调度推进：
+1) 行动前必须先调用 plan.create 制定完整计划：把总体目标拆成有序的多个阶段，每个阶段写清目标(goal)与结束标志(done_signal)，并在 actions 里列出该阶段的子行动。计划登记前系统只接受 plan.create。
+2) 计划登记后，系统会主动下发「当前阶段」让你执行，你无需自己查询计划进度。达成该阶段的结束标志后调用 phase.complete 收尾本阶段（无需总结）；系统会自动隐藏上一阶段的深度思考与 MCP 详细结果、只保留调用状态，并自动下发下一个阶段，直到所有阶段完成。
+3) 所有阶段完成后，系统会要求你调用 task.finish 给出完整复盘总结（outcome=success/failure）；系统会把整个流程写入工作区的成功/失败日志，沉淀为可复用知识。不要用普通回复结束任务。"""
+
 DEFAULT_UI_THEME_MODE = "dark"
 DEFAULT_UI_FONT_SIZE = "md"
 DEFAULT_UI_BRAIN_VIEW_MODE = "sections"
 
 DEFAULT_MODEL_PRESETS = """[{"id":"deepseek-chat","name":"DeepSeek Chat","api_key":"sk-cb40bc0b0b894934919907913e337927","base_url":"https://api.deepseek.com/chat/completions","model":"deepseek-chat"}]"""
 
-DEFAULT_MCP_NAMESPACE_HINTS = """{"mcp":"MCP 自省入口。可调用工具已在系统提示的[可用MCP工具]目录中列出；用 mcp.describe_tool（支持 tools 批量或 query 搜索）取参数 schema 后即可调用。","task":"任务系统。用于查看、创建、更新、删除、传承和完成任务。","workspace":"工作区、文件读写编辑与命令执行。文件操作优先用 workspace.read_file / write_file / edit_file；只有需要运行程序或诊断命令时才用 run_command。","admin":"系统总览。用于查看在线智能体、运行状态和系统概况。","prompt":"Prompt 管理。用于读取或按权限修改 AI / 系统 prompt。","conversation":"会话管理。用于读取列表与详情、新建、删除、切换或编辑会话。","ai":"AI 间通信。用于向其他 AI 发送询问、回复、通知或协作消息。","user":"用户通知。用于向用户发送异步消息。","web":"联网搜索。用于查询外部或实时信息。","memory":"长期记忆。用于写入、检索、更新和归档结构化记忆。","project":"项目管理。用于查看或维护项目记录。"}"""
+DEFAULT_MCP_NAMESPACE_HINTS = """{"mcp":"MCP 自省入口。可调用工具已在系统提示的[可用MCP工具]目录中列出；用 mcp.describe_tool（支持 tools 批量或 query 搜索）取参数 schema 后即可调用。","task":"任务系统。用于查看、创建、更新、删除、传承、完成任务，以及用 task.finish 收尾计划任务并写入成功/失败日志。","plan":"任务计划。复杂任务行动前先用 plan.create 制定分阶段计划，用 plan.get 查看进度。","phase":"阶段推进。完成一个阶段用 phase.complete 收尾，系统会自动精简上一阶段上下文。","workspace":"工作区、文件读写编辑与命令执行。文件操作优先用 workspace.read_file / write_file / edit_file；只有需要运行程序或诊断命令时才用 run_command。","admin":"系统总览。用于查看在线智能体、运行状态和系统概况。","prompt":"Prompt 管理。用于读取或按权限修改 AI / 系统 prompt。","conversation":"会话管理。用于读取列表与详情、新建、删除、切换或编辑会话。","ai":"AI 间通信。用于向其他 AI 发送询问、回复、通知或协作消息。","user":"用户通知。用于向用户发送异步消息。","web":"联网搜索。用于查询外部或实时信息。","memory":"长期记忆。用于写入、检索、更新和归档结构化记忆。","project":"项目管理。用于查看或维护项目记录。"}"""
 
 DEFAULT_MCP_DYNAMIC_RULE = """系统提示的[可用MCP工具]目录会一次性列出全部可调用工具的名称与简介，模型据此直接定位。需要参数时用 mcp.describe_tool（支持 tool 单个、tools 批量或 query 关键词搜索）取 schema；被加载的目标工具会在随后轮次直接可调用。
 

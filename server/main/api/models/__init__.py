@@ -21,7 +21,14 @@ from .ai_config import (
     AssistantAIConfigCreate,
     AssistantAIConfigUpdate,
 )
-from .ai_runtime import AgentDispatchTask, AIRuntimeStatus, AITaskJob, TokenUsageSnapshot
+from .ai_runtime import (
+    AgentDispatchTask,
+    AIRuntimeStatus,
+    AITaskJob,
+    TaskPhase,
+    TaskPlan,
+    TokenUsageSnapshot,
+)
 from .chat import (
     ChatMessage,
     ChatMessageCreate,
@@ -47,6 +54,7 @@ from .defaults import (
     DEFAULT_RESUME_TASK_PROMPT,
     DEFAULT_START_TASK_PROMPT,
     DEFAULT_SUPERVISION_PROMPT,
+    DEFAULT_TASK_PLAN_FLOW_PROMPT,
     DEFAULT_UI_FONT_SIZE,
     DEFAULT_UI_THEME_MODE,
     DEFAULT_USER_MESSAGE_NOTICE,
@@ -83,6 +91,7 @@ __all__ = [
     "DEFAULT_RESUME_TASK_PROMPT",
     "DEFAULT_START_TASK_PROMPT",
     "DEFAULT_SUPERVISION_PROMPT",
+    "DEFAULT_TASK_PLAN_FLOW_PROMPT",
     "DEFAULT_UI_FONT_SIZE",
     "DEFAULT_UI_THEME_MODE",
     "DEFAULT_USER_MESSAGE_NOTICE",
@@ -123,6 +132,8 @@ __all__ = [
     "AgentDispatchTask",
     "AIRuntimeStatus",
     "AITaskJob",
+    "TaskPlan",
+    "TaskPhase",
     "TokenUsageSnapshot",
     # project
     "EvolutionProject",

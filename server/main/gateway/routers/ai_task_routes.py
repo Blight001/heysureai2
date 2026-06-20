@@ -1,5 +1,5 @@
 """``/api/ai`` task routes: trigger AI tasks and manage task jobs (list, inspect,
-patch, stop/pause/resume, delete, generations) for a given AI config."""
+patch, stop/pause/resume, delete) for a given AI config."""
 
 IS_ROUTER_ENTRY = False
 
@@ -21,14 +21,45 @@ from api.services.task_system import (
     find_task_active_run,
     iter_task_session_ids,
     normalize_tasks_from_control,
-    parse_generation_from_session_id,
 )
 from .ai_base import (
     _append_task_title_suffix,
     _resolve_task_owner_cfg,
-    _sanitize_task_generation_prompt,
     router,
 )
+
+
+@router.get("/configs/{config_id}/plan")
+async def get_ai_task_plan(
+    config_id: int,
+    session_id: str = "",
+    session: Session = Depends(get_session),
+    authorization: str = Header(None),
+):
+    """Plan progress for a chat session, for the web task-mode progress UI.
+
+    Returns the coarse ``stage`` (planning/executing/finishing/finished/none)
+    plus the full plan + phases (each with sub-actions and status) so the
+    console can render: 安排 → 实施的阶段 N → 子任务进度 → 结束.
+    """
+    from api.services import task_plan as plan_service
+
+    user = get_current_user(authorization, session)
+    cfg = get_ai_config_or_404(session, config_id, user.id)
+    sid = str(session_id or "").strip()
+    is_task_session = bool(sid.startswith("session_task_"))
+    plan = plan_service.get_session_plan(session, user.id, int(cfg.id), sid) if sid else None
+    if plan is not None:
+        is_task_session = True
+    stage = plan_service.progress_stage(session, plan, is_task_session=is_task_session)
+    payload = {
+        "is_task_session": is_task_session,
+        "stage": stage,
+        "has_plan": plan is not None,
+        "outcome": (plan.outcome or "") if plan is not None else "",
+        "plan": plan_service.plan_progress(session, plan) if plan is not None else None,
+    }
+    return payload
 
 
 @router.post("/configs/{config_id}/task-trigger")
@@ -178,19 +209,12 @@ async def get_ai_task_jobs(
             ChatRun.ai_kind == "core",
         ).order_by(ChatRun.created_at.asc())
     ).all()
-    runs_by_prefix: dict[str, set[int]] = {}
     latest_run_by_prefix: dict[str, ChatRun] = {}
     for run in runs:
         sid = str(run.session_id or "")
         if not sid.startswith("session_task_job_"):
             continue
         prefix = sid.split("_g")[0] if "_g" in sid else sid
-        generation = parse_generation_from_session_id(sid, 1)
-        if generation <= 0:
-            generation = 1
-        if prefix not in runs_by_prefix:
-            runs_by_prefix[prefix] = set()
-        runs_by_prefix[prefix].add(generation)
         prev = latest_run_by_prefix.get(prefix)
         if prev is None or float(run.updated_at or run.created_at or 0) >= float(prev.updated_at or prev.created_at or 0):
             latest_run_by_prefix[prefix] = run
@@ -220,9 +244,6 @@ async def get_ai_task_jobs(
     out = []
     for job in jobs:
         prefix = f"session_task_{job.job_id}"
-        generation_set = runs_by_prefix.get(prefix) or set()
-        generation_count = len(generation_set)
-        latest_generation = max(generation_set) if generation_set else 1
         active_run = find_task_active_run(session, user.id, config_id, job)
         run_status = str(active_run.status) if active_run else ""
         effective_status = str(job.status or "")
@@ -255,8 +276,6 @@ async def get_ai_task_jobs(
                 "created_at": job.created_at,
                 "started_at": job.started_at,
                 "finished_at": job.finished_at,
-                "generation_count": generation_count,
-                "latest_generation": latest_generation,
                 "task_token_used": int(task_tokens_by_prefix.get(prefix, 0) or 0),
                 "task_token_limit": token_limit,
                 "latest_thinking": str(live.get("reasoning") or live.get("text") or ""),
@@ -581,125 +600,3 @@ async def delete_ai_task_job(
     session.delete(job)
     session.commit()
     return {"success": True, "job_id": job_id, "deleted": True}
-
-@router.get("/configs/{config_id}/task-jobs/{job_id}/generations")
-async def get_task_job_generations(
-    config_id: int,
-    job_id: str,
-    session: Session = Depends(get_session),
-    authorization: str = Header(None),
-):
-    user = get_current_user(authorization, session)
-    cfg = get_ai_config_or_404(session, config_id, user.id)
-
-    job = session.exec(
-        select(AITaskJob).where(
-            AITaskJob.user_id == user.id,
-            AITaskJob.ai_config_id == config_id,
-            AITaskJob.job_id == job_id,
-        )
-    ).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Task job not found")
-
-    run_rows = session.exec(
-        select(ChatRun).where(
-            ChatRun.user_id == user.id,
-            ChatRun.ai_config_id == config_id,
-            ChatRun.ai_kind == "core",
-        ).order_by(ChatRun.created_at.asc())
-    ).all()
-    prefix = f"session_task_{job_id}"
-    related_runs = []
-    for row in run_rows:
-        sid = str(row.session_id or "")
-        if sid.startswith(prefix):
-            related_runs.append(row)
-            continue
-        if job.session_id and sid == str(job.session_id):
-            related_runs.append(row)
-
-    msg_rows = session.exec(
-        select(ChatMessage).where(
-            ChatMessage.user_id == user.id,
-            ChatMessage.ai_config_id == config_id,
-            ChatMessage.ai_kind == "core",
-        ).order_by(ChatMessage.created_at.asc())
-    ).all()
-
-    try:
-        from api.chat_runtime.run_state import _RUN_LIVE_STATE, _RUN_STATE_LOCK  # type: ignore
-        with _RUN_STATE_LOCK:
-            live_map = dict(_RUN_LIVE_STATE)
-    except Exception:
-        live_map = {}
-
-    generation_run_map: dict[int, ChatRun] = {}
-    for idx, run in enumerate(related_runs):
-        generation = parse_generation_from_session_id(str(run.session_id or ""), idx + 1)
-        prev = generation_run_map.get(generation)
-        if prev is None:
-            generation_run_map[generation] = run
-            continue
-        prev_updated = float(prev.updated_at or prev.created_at or 0)
-        run_updated = float(run.updated_at or run.created_at or 0)
-        if run_updated >= prev_updated:
-            generation_run_map[generation] = run
-
-    generations = []
-    for generation in sorted(generation_run_map.keys()):
-        run = generation_run_map[generation]
-        msgs = []
-        for m in msg_rows:
-            if str(m.session_id or "") != str(run.session_id or ""):
-                continue
-            msgs.append(
-                {
-                    "id": m.id,
-                    "role": m.role,
-                    "content": m.content,
-                    "created_at": m.created_at,
-                    "model": m.model,
-                    "system_prompt": m.system_prompt,
-                    "finish_reason": m.finish_reason,
-                    "tags": m.tags,
-                }
-            )
-        prompt_text = ""
-        for m in msgs:
-            if str(m.get("role") or "") == "assistant" and str(m.get("system_prompt") or "").strip():
-                prompt_text = _sanitize_task_generation_prompt(str(m.get("system_prompt") or ""))
-                break
-        live = live_map.get(run.run_id) or {}
-        run_is_active = str(run.status or "").lower() in {"queued", "running"}
-        live_text = str(live.get("text") or "") if run_is_active else ""
-        live_reasoning = str(live.get("reasoning") or "") if run_is_active else ""
-        generations.append(
-            {
-                "generation": generation,
-                "label": f"第{generation}代",
-                "run_id": run.run_id,
-                "session_id": run.session_id,
-                "status": run.status,
-                "started_at": run.started_at or run.created_at,
-                "finished_at": run.finished_at,
-                "system_prompt": prompt_text,
-                "messages": msgs,
-                "live": {
-                    "text": live_text,
-                    "reasoning": live_reasoning,
-                    "phase": str(live.get("phase") or "idle") if run_is_active else "idle",
-                    "current_tool": str(live.get("current_tool") or "") if run_is_active else "",
-                    "updated_at": live.get("updated_at") if run_is_active else None,
-                },
-            }
-        )
-
-    generations.sort(key=lambda item: int(item.get("generation") or 0))
-    return {
-        "ai_config_id": config_id,
-        "job_id": job.job_id,
-        "title": job.title,
-        "status": job.status,
-        "generations": generations,
-    }

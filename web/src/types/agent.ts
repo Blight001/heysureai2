@@ -12,8 +12,6 @@ export interface AgentTaskSnapshot {
   scheduleAt?: number
   scheduleLoopEnabled?: boolean
   scheduleDurationMinutes?: number
-  generationCount: number
-  latestGeneration: number
   taskTokenUsed: number
   taskTokenLimit: number
   createdAt?: number

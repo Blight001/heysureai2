@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMessage } from '@/composables/useMessage'
 import ChatHeader from './ChatHeader.vue'
 import ChatConversationView from './ChatConversationView.vue'
+import TaskProgressPanel from './TaskProgressPanel.vue'
 import ChatInput from './ChatInput.vue'
 import { parseChatResponseInline, type ActionBlock, type InlineContent as InlineContentType } from '@/utils/chatParser'
 import { isSameAssistantVisibleReply, normalizeAssistantReplyText } from '@/utils/chatReplyCompare'
@@ -38,6 +39,7 @@ interface SessionItem {
   id: string
   name: string
   totalTokens?: number
+  forwardToBot?: boolean
 }
 
 interface PersistedBlockState {
@@ -108,6 +110,9 @@ let lastRealtimeTokenSyncAt = 0
 let lastExternalRunCheckAt = 0
 const chatScrollRef = ref<HTMLElement | null>(null)
 const currentSessionId = ref<string>('')
+// Bumped to make the task-progress panel refetch (session switch / run finish).
+const taskPlanRefreshSignal = ref(0)
+const bumpTaskPlan = () => { taskPlanRefreshSignal.value += 1 }
 const sessionList = ref<SessionItem[]>([])
 const appliedEdits = ref<Set<string>>(new Set())
 const appliedSignatures = ref<Set<string>>(new Set())
@@ -744,6 +749,7 @@ const loadSessions = async () => {
     id: String(row?.id || ''),
     name: String(row?.name || '未命名会话'),
     totalTokens: Number(row?.total_tokens || 0),
+    forwardToBot: !!row?.forward_to_bot,
   }))
   if (!currentSessionId.value && sessionList.value.length > 0) {
     currentSessionId.value = pickPreferredSessionId(sessionList.value)
@@ -804,6 +810,21 @@ const renameSession = async (sid: string) => {
     return
   }
   await loadSessions()
+}
+
+const toggleSessionForwardToBot = async (payload: { sessionId: string; enabled: boolean }) => {
+  const sid = String(payload?.sessionId || '')
+  if (!sid || !getAuthToken()) return
+  const row = sessionList.value.find(item => item.id === sid)
+  const previous = !!row?.forwardToBot
+  // Optimistic update so the toggle feels instant.
+  if (row) row.forwardToBot = payload.enabled
+  try {
+    await chatApi.setSessionForwardToBot(chatCtx.value, sid, payload.enabled)
+  } catch {
+    if (row) row.forwardToBot = previous
+    alert({ message: '设置机器人回复失败', type: 'error' })
+  }
 }
 
 const loadTotalTokens = async () => {
@@ -1102,7 +1123,13 @@ const pollRunLive = async (epoch: number) => {
       currentRunPhase.value = incomingPhase
       if (incomingPhase !== 'idle') phaseEnterTs.value = Date.now()
     }
-    currentMcpTool.value = String(run.current_tool || '')
+    const incomingTool = String(run.current_tool || '')
+    // Refresh the task-progress panel exactly when the flow advances.
+    if (incomingTool !== currentMcpTool.value
+      && ['plan.create', 'phase.complete', 'task.finish'].includes(incomingTool)) {
+      bumpTaskPlan()
+    }
+    currentMcpTool.value = incomingTool
     const delta = String(run.live_delta || '')
     liveThinkingText.value = String(run.live_reasoning || '')
     if (delta) {
@@ -1128,6 +1155,7 @@ const pollRunLive = async (epoch: number) => {
       }
       await loadTotalTokens()
       stopTimeTicker()
+      bumpTaskPlan()
       return
     }
     await refreshTokensDuringRunIfNeeded()
@@ -1526,6 +1554,7 @@ onBeforeUnmount(() => {
         @delete="deleteSession"
         @batch-delete="deleteSessions"
         @rename="renameSession"
+        @toggle-forward="toggleSessionForwardToBot"
       />
       <div class="flex items-center gap-2">
         <span v-if="runStatusText" class="text-[11px] text-emerald-600 dark:text-emerald-400">{{ runStatusText }}</span>
@@ -1573,6 +1602,12 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </div>
+
+    <TaskProgressPanel
+      :configId="props.aiConfigId"
+      :sessionId="currentSessionId"
+      :refreshSignal="taskPlanRefreshSignal"
+    />
 
     <div ref="chatScrollRef" class="flex-1 overflow-y-auto">
       <ChatConversationView
