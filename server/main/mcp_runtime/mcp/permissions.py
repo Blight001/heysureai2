@@ -91,8 +91,7 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # switch/new) — every tier can manage its own scoped sessions.
     "conversation.manage": ROLE_MEMBER,
     # Admin / governance — assistant_admin only.
-    "admin.list_agents": ROLE_ASSISTANT_ADMIN,
-    "admin.get_overview": ROLE_ASSISTANT_ADMIN,
+    "admin.manage": ROLE_ASSISTANT_ADMIN,
     # Self-iterate device MCP tools — writes code that runs on devices with
     # native access, so it sits at the assistant_admin tier.
     "device_mcp.manage": ROLE_ASSISTANT_ADMIN,
@@ -106,8 +105,7 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
 # 中央分发处的绑定校验对它是幂等的。
 LIBRARY_BOUND_TOOLS: Set[str] = {
     "prompt.manage",
-    "admin.get_overview",
-    "admin.list_agents",
+    "admin.manage",
     "device_mcp.manage",
     "knowledge.manage",
 }

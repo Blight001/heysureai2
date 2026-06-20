@@ -3,9 +3,8 @@ from .tools.introspection import (
     _mcp_describe_tool,
 )
 from .tools.workspace import (
-    _get_overview,
+    _admin_manage,
     _file_manage,
-    _list_agents,
     _run_command,
     FILE_MANAGE_SCHEMA,
 )
@@ -145,16 +144,23 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         destructive=True,
     ))
     registry.register(MCPTool(
-        name="admin.list_agents",
-        description="列出当前用户已连接的端侧 Agent，以及受管的 AI 配置。",
-        input_schema={"type": "object", "properties": {}},
-        handler=_list_agents,
-    ))
-    registry.register(MCPTool(
-        name="admin.get_overview",
-        description="获取系统总览：工作区状态，以及已连接的端侧 Agent 和受管的 AI 配置。",
-        input_schema={"type": "object", "properties": {}},
-        handler=_get_overview,
+        name="admin.manage",
+        description=(
+            "管理员/治理统一工具：用 action 选择 overview 获取系统总览（工作区状态 + "
+            "已连接端侧 Agent 与受管 AI 配置）/ list_agents 仅列出已连接端侧 Agent 与受管 AI 配置。"
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["overview", "list_agents"],
+                    "description": "overview 系统总览；list_agents 仅列出 Agent。",
+                },
+            },
+            "required": ["action"],
+        },
+        handler=_admin_manage,
     ))
     registry.register(MCPTool(
         name="task.manage",

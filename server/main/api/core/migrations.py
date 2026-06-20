@@ -920,6 +920,9 @@ _LEGACY_TOOL_RENAMES: Dict[str, str] = {
     "workspace.write_file": "workspace.manage",
     "workspace.edit_file": "workspace.manage",
     "file.manage": "workspace.manage",
+    # admin 合并入 admin.manage
+    "admin.list_agents": "admin.manage",
+    "admin.get_overview": "admin.manage",
 }
 
 
