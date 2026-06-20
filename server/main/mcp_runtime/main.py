@@ -37,4 +37,7 @@ if __name__ == "__main__":
         port=settings.mcp_runtime_port,
         log_level="info",
         access_log=True,
+        # log_config=None lets uvicorn.access propagate to the root handler from
+        # configure_logging() so HTTP requests show in the console / admin panel.
+        log_config=None,
     )
