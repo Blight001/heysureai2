@@ -13,7 +13,7 @@ DEFAULT_COMPRESSION_PROMPT = """你正在把一段较长的对话历史压缩成
 {history}"""
 DEFAULT_TASK_PLAN_FLOW_PROMPT = """本任务采用「先规划，再分阶段执行，最后总结收尾」的强制流程，由系统调度推进：
 1) 行动前必须先调用 plan.create 制定完整计划：把总体目标拆成有序的多个阶段，每个阶段写清目标(goal)与结束标志(done_signal)，并在 actions 里列出该阶段的子行动。计划登记前系统只接受 plan.create。
-2) 计划登记后，系统会主动下发「当前阶段」让你执行，你无需自己查询计划进度。达成该阶段的结束标志后调用 phase.complete 收尾本阶段（无需总结）；系统会自动隐藏上一阶段的深度思考与 MCP 详细结果、只保留调用状态，并自动下发下一个阶段，直到所有阶段完成。
+2) 计划登记后，系统会主动下发「当前阶段」让你执行，你无需自己查询计划进度。达成该阶段的结束标志后调用 plan.phase_complete 收尾本阶段（无需总结）；系统会自动隐藏上一阶段的深度思考与 MCP 详细结果、只保留调用状态，并自动下发下一个阶段，直到所有阶段完成。
 3) 所有阶段完成后，系统会要求你调用 task.finish 给出完整复盘总结（outcome=success/failure）；系统会把整个流程写入工作区的成功/失败日志，沉淀为可复用知识。不要用普通回复结束任务。"""
 
 DEFAULT_UI_THEME_MODE = "dark"
@@ -22,7 +22,7 @@ DEFAULT_UI_BRAIN_VIEW_MODE = "sections"
 
 DEFAULT_MODEL_PRESETS = """[{"id":"deepseek-chat","name":"DeepSeek Chat","api_key":"sk-cb40bc0b0b894934919907913e337927","base_url":"https://api.deepseek.com/chat/completions","model":"deepseek-chat"}]"""
 
-DEFAULT_MCP_NAMESPACE_HINTS = """{"mcp":"MCP 自省入口。可调用工具已在系统提示的[可用MCP工具]目录中列出；用 mcp.describe_tool（支持 tools 批量或 query 搜索）取参数 schema 后即可调用。","task":"任务系统。task.manage(action=list/create/update/delete) 管理任务；完成当前任务用 task.complete；计划任务用 task.finish 收尾。","plan":"任务计划。复杂任务行动前先用 plan.create 制定分阶段计划，用 plan.get 查看进度。","phase":"阶段推进。完成一个阶段用 phase.complete 收尾，系统会自动精简上一阶段上下文。","file":"工作区文件。file.manage(action=read/tree/write/edit) 读取、列出、写入或编辑工作区内文件。","workspace":"工作区命令与联网搜索。需要运行程序或诊断命令用 workspace.run_command，联网查信息用 workspace.search。","admin":"系统总览。用于查看在线智能体、运行状态和系统概况。","prompt":"Prompt 管理。prompt.manage(action=list_targets/read_ai/write_ai/read_system/write_system) 读取或按权限修改 prompt。","conversation":"会话管理。conversation.manage(action=list/detail/create/delete/rename/clear/compress/switch/new) 操作会话。","knowledge":"知识库。knowledge.manage(action=...) 操作知识工坊的传承思想与内置知识类目（需绑定工坊）。","ai":"AI 间通信。用于向其他 AI 发送询问、回复、通知或协作消息。","user":"用户通知。用于向用户发送异步消息。","web":"联网搜索。用于查询外部或实时信息。","memory":"长期记忆。用于写入、检索、更新和归档结构化记忆。","project":"项目管理。用于查看或维护项目记录。"}"""
+DEFAULT_MCP_NAMESPACE_HINTS = """{"mcp":"MCP 自省入口。可调用工具已在系统提示的[可用MCP工具]目录中列出；用 mcp.describe_tool（支持 tools 批量或 query 搜索）取参数 schema 后即可调用。","task":"任务系统（定时/无人值守、在独立会话中运行的后台工作）。task.manage(action=list/create/update/delete) 管理任务；完成当前任务用 task.complete；分阶段计划任务用 task.finish 收尾。","plan":"计划/分阶段执行（普通对话与任务对话均可用）。对长动作先用 plan.create 制定分阶段计划，plan.get 查看进度，plan.phase_complete 收尾当前阶段（phase 是 plan 的子操作）。","file":"工作区文件。file.manage(action=read/tree/write/edit) 读取、列出、写入或编辑工作区内文件。","workspace":"工作区命令与联网搜索。需要运行程序或诊断命令用 workspace.run_command，联网查信息用 workspace.search。","admin":"系统总览。用于查看在线智能体、运行状态和系统概况。","prompt":"Prompt 管理。prompt.manage(action=list_targets/read_ai/write_ai/read_system/write_system) 读取或按权限修改 prompt。","conversation":"会话管理。conversation.manage(action=list/detail/create/delete/rename/clear/compress/switch/new) 操作会话。","knowledge":"知识库。knowledge.manage(action=...) 操作知识工坊的传承思想与内置知识类目（需绑定工坊）。","ai":"AI 间通信。用于向其他 AI 发送询问、回复、通知或协作消息。","user":"用户通知。用于向用户发送异步消息。","web":"联网搜索。用于查询外部或实时信息。","memory":"长期记忆。用于写入、检索、更新和归档结构化记忆。","project":"项目管理。用于查看或维护项目记录。"}"""
 
 DEFAULT_MCP_DYNAMIC_RULE = """系统提示的[可用MCP工具]目录会一次性列出全部可调用工具的名称与简介，模型据此直接定位。需要参数时用 mcp.describe_tool（支持 tool 单个、tools 批量或 query 关键词搜索）取 schema；被加载的目标工具会在随后轮次直接可调用。
 

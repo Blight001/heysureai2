@@ -2003,7 +2003,7 @@ def _run_worker_impl(
                     and cfg.ai_role == "digital_member"
                     and not task_is_finished
                     and not compression_failed
-                    and payload_tool not in ("task.complete", "task.finish", "phase.complete")
+                    and payload_tool not in ("task.complete", "task.finish", "plan.phase_complete")
                 ):
                     threshold = token_threshold_override if token_threshold_override is not None else max(1, int(cfg.token_limit or 1))
                     session_tokens = _session_total_tokens(bg, user_id, ai_kind, session_id, ai_config_id)
@@ -2458,7 +2458,7 @@ def _run_worker_impl(
                     continue
 
                 # Planned task flow (system-driven). ``plan.create`` is followed
-                # by the system handing the AI phase 1; ``phase.complete`` folds
+                # by the system handing the AI phase 1; ``plan.phase_complete`` folds
                 # the finished phase out of context and the system hands over the
                 # next phase (or requires task.finish); ``task.finish`` closes the
                 # whole run.
@@ -2505,7 +2505,7 @@ def _run_worker_impl(
                     _set_run_live_phase(run_id, "generating")
                     continue
 
-                if (not tool_failed) and tool == "phase.complete" and plan_state is not None:
+                if (not tool_failed) and tool == "plan.phase_complete" and plan_state is not None:
                     result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
                     finished_phase = result_payload.get("finished_phase") if isinstance(result_payload, dict) else None
                     boundary = max(0, min(phase_start_convo_index, len(convo)))
@@ -2552,7 +2552,7 @@ def _run_worker_impl(
                         ) if ai_config_id is not None else None
                         flow_awaiting_finish = plan_service.awaiting_finish(bg, plan_state)
                     except Exception:
-                        logger.exception("plan reload after phase.complete failed")
+                        logger.exception("plan reload after plan.phase_complete failed")
                     flow_nudges = 0
                     phase_start_convo_index = len(convo)
                     phase_started_at = time.time()
@@ -2587,7 +2587,7 @@ def _run_worker_impl(
                     finish_summary = str((arguments or {}).get("summary") or "").strip()
                     # Hide the whole run's deep-thinking + MCP detail: the final
                     # phase (since its boundary) still carries verbose turns;
-                    # earlier phases were already folded at phase.complete.
+                    # earlier phases were already folded at plan.phase_complete.
                     now_ts = time.time()
                     completed_job = None
                     if finish_job_id and ai_config_id is not None:

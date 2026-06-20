@@ -902,11 +902,13 @@ _LEGACY_TOOL_RENAMES: Dict[str, str] = {
     "conversation.new": "conversation.manage",
     "conversation.forget_before_current": "conversation.manage",
     "conversation.find": "conversation.manage",
-    # 任务管理（task.complete / plan.* / phase.complete / task.finish 保持独立）
+    # 任务管理（task.complete 保持独立）
     "task.create": "task.manage",
     "task.list": "task.manage",
     "task.update": "task.manage",
     "task.delete": "task.manage",
+    # plan 域：phase 收归 plan 子操作（旧名迁移到新名，保留授权）
+    "phase.complete": "plan.phase_complete",
     # Prompt
     "prompt.list_targets": "prompt.manage",
     "prompt.read_ai": "prompt.manage",

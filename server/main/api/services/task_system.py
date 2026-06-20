@@ -42,7 +42,7 @@ TASK_RUNTIME_REQUIRED_TOOLS = {
     # its own plan even when the operational tool allowlist is narrowed.
     "plan.create",
     "plan.get",
-    "phase.complete",
+    "plan.phase_complete",
     "task.finish",
 }
 
