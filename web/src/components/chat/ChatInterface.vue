@@ -820,7 +820,13 @@ const toggleSessionForwardToBot = async (payload: { sessionId: string; enabled: 
   // Optimistic update so the toggle feels instant.
   if (row) row.forwardToBot = payload.enabled
   try {
-    await chatApi.setSessionForwardToBot(chatCtx.value, sid, payload.enabled)
+    const res = await chatApi.setSessionForwardToBot(chatCtx.value, sid, payload.enabled)
+    if (payload.enabled && res?.warning) {
+      // Saved, but the bot can't actually deliver — tell the user why.
+      alert({ message: `已开启，但${res.warning}`, type: 'warning' })
+    } else {
+      alert({ message: payload.enabled ? '已开启：此对话的 AI 回复会转发到机器人' : '已关闭机器人转发', type: 'success' })
+    }
   } catch {
     if (row) row.forwardToBot = previous
     alert({ message: '设置机器人回复失败', type: 'error' })

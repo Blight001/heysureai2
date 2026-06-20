@@ -55,7 +55,7 @@ export const renameChatSession = (ctx: AiContext, sessionId: string, name: strin
   })
 
 export const setSessionForwardToBot = (ctx: AiContext, sessionId: string, enabled: boolean) =>
-  put<{ id: string; forward_to_bot: boolean }>(
+  put<{ id: string; forward_to_bot: boolean; warning?: string }>(
     `/api/chat/sessions/${sessionId}/forward-to-bot`,
     { enabled },
     { query: queryForAi(ctx), fallbackError: '设置机器人回复失败' },
