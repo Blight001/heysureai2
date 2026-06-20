@@ -907,9 +907,8 @@ _LEGACY_TOOL_RENAMES: Dict[str, str] = {
     "task.list": "task.manage",
     "task.update": "task.manage",
     "task.delete": "task.manage",
-    # plan 域：phase/finish 收归 plan 子操作（旧名迁移到新名，保留授权）
+    # plan 域：phase 收归 plan 子操作（旧名迁移到新名，保留授权）
     "phase.complete": "plan.phase_complete",
-    "task.finish": "plan.finish",
     # Prompt
     "prompt.list_targets": "prompt.manage",
     "prompt.read_ai": "prompt.manage",

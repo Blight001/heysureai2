@@ -18,7 +18,7 @@ from .tools.task_plan import (
     _phase_complete,
     _plan_create,
     _plan_get,
-    _plan_finish,
+    _task_finish,
 )
 from .tools.prompts import (
     _prompt_manage,
@@ -163,7 +163,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
             "用 action 选择 list 列出 / create 创建 / update 接管更新 / delete 删除。"
             "create/update/delete 需管理者及以上。"
             "完成当前任务用独立的 task.complete；对长动作做分阶段执行用 plan 域："
-            "plan.create / plan.get / plan.phase_complete / plan.finish。"
+            "plan.create / plan.get / plan.phase_complete / task.finish。"
         ),
         input_schema=TASK_MANAGE_SCHEMA,
         handler=_task_manage,
@@ -199,7 +199,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
             "把整体目标拆成有序的多个阶段，"
             "每个阶段有明确的目标(goal)与结束标志(done_signal)，并可在 actions 里列出该阶段的子行动"
             "（每个子行动也有自己的 goal 与 done_signal）。"
-            "登记后从第 1 个阶段开始执行：每完成一个阶段调用 plan.phase_complete，全部完成后调用 plan.finish。"
+            "登记后从第 1 个阶段开始执行：每完成一个阶段调用 plan.phase_complete，全部完成后调用 task.finish。"
             "同一会话只保留一份进行中的计划，重复调用会覆盖旧计划。"
         ),
         input_schema={
@@ -248,7 +248,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         description=(
             "plan 的子操作：完成当前阶段并收尾（无需总结）。调用后系统会自动隐藏上一阶段的深度思考与 MCP "
             "详细结果、只保留调用状态，并自动下发下一个阶段；若已是最后一个阶段，系统会要求你"
-            "调用 plan.finish 收尾。若该阶段未达成目标，可传 status=failed 如实记录后继续。"
+            "调用 task.finish 收尾。若该阶段未达成目标，可传 status=failed 如实记录后继续。"
             "summary 可选，一般留空即可。"
         ),
         input_schema={
@@ -266,7 +266,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         destructive=True,
     ))
     registry.register(MCPTool(
-        name="plan.finish",
+        name="task.finish",
         description=(
             "收尾整个计划（无论成功或失败都要调用）。系统会隐藏全过程的深度思考与 MCP 详细结果，"
             "把完整行动流程写入工作区的成功/失败日志（logs/success 或 logs/failure），"
@@ -288,7 +288,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
             },
             "required": ["outcome", "summary"],
         },
-        handler=_plan_finish,
+        handler=_task_finish,
         destructive=True,
     ))
 

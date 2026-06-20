@@ -62,7 +62,7 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     "plan.create": ROLE_MEMBER,
     "plan.get": ROLE_MEMBER,
     "plan.phase_complete": ROLE_MEMBER,
-    "plan.finish": ROLE_MEMBER,
+    "task.finish": ROLE_MEMBER,
     # Unified prompt tool. Member floor so everyone can read its own prompt; the
     # write/system actions are gated inside the handler (write_ai=manager+,
     # read_system=manager+, write_system=assistant_admin+).

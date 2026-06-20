@@ -24,7 +24,7 @@ _FLOW_TOOLS = {
     "plan.create",
     "plan.get",
     "plan.phase_complete",
-    "plan.finish",
+    "task.finish",
     "mcp.describe_tool",
 }
 
@@ -104,13 +104,13 @@ def render_phase_directive(phase: Optional[dict], total: int) -> str:
 
 
 def render_finish_required_notice(goal: str) -> str:
-    """System directive: all phases done, the run must close via plan.finish."""
+    """System directive: all phases done, the run must close via task.finish."""
     return (
         "[系统要求 · 收尾总结]\n"
         f"计划「{str(goal or '').strip()}」的所有阶段均已完成。"
-        "现在必须调用 plan.finish 对整个计划做完整总结并收尾："
+        "现在必须调用 task.finish 对整个任务做完整总结并收尾："
         "outcome 填 success 或 failure，summary 给出完整复盘。\n"
-        "系统只接受 plan.finish 调用，其它工具一律拒绝。"
+        "系统只接受 task.finish 调用，其它工具一律拒绝。"
     )
 
 

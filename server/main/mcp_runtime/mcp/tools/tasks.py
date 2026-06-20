@@ -933,13 +933,13 @@ def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[in
                     status_code=409,
                     detail=(
                         "当前任务仍有分阶段计划未完成，已自动阻止 task.complete。"
-                        "请先完成阶段目标并调用 plan.phase_complete；全部阶段收尾后使用 plan.finish 结束计划。"
+                        "请先完成阶段目标并调用 plan.phase_complete；全部阶段收尾后使用 task.finish 结束计划任务。"
                         f"未收尾阶段：{labels}{more}"
                     ),
                 )
             raise HTTPException(
                 status_code=409,
-                detail="当前任务使用分阶段计划流，不能用 task.complete 直接结束；请调用 plan.finish 收尾并写入成功/失败日志。",
+                detail="当前任务使用分阶段计划流，不能用 task.complete 直接结束；请调用 task.finish 收尾并写入成功/失败日志。",
             )
         finished_at = time.time()
         _append_task_completion_archive(
@@ -1003,7 +1003,7 @@ TASK_MANAGE_SCHEMA: Dict[str, Any] = {
                 "create 创建任务（需管理者+，支持 immediate/scheduled/recurring）；"
                 "update 接管更新任务标题/说明/优先级/状态/调度（需管理者+）；"
                 "delete 彻底删除任务并清理其会话（需管理者+）。"
-                "注意：完成任务用独立的 task.complete；对长动作分阶段执行用 plan 域：plan.create / plan.get / plan.phase_complete / plan.finish。"
+                "注意：完成任务用独立的 task.complete；对长动作分阶段执行用 plan 域 plan.create / plan.get / plan.phase_complete，整个分阶段计划任务收尾用 task.finish。"
             ),
         },
         # ---- list ----
