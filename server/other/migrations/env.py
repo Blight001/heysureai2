@@ -38,11 +38,19 @@ if _override_db_url:
 # Importing the models package populates ``SQLModel.metadata`` as a side effect.
 from api import models  # noqa: E402,F401
 from api.core.settings import settings  # noqa: E402
+from api.core.logging_config import is_configured as _app_logging_configured  # noqa: E402
 
 config = context.config
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# Only let Alembic own logging when running standalone (the ``alembic`` CLI).
+# When migrations run in-process during app startup, the app has already
+# configured logging; ``fileConfig`` would disable every existing logger
+# (uvicorn.access / uvicorn.error / gateway.app …) and replace the root
+# handlers, silencing ALL logs — including the HTTP access log — for the rest
+# of the process. ``disable_existing_loggers=False`` is belt-and-braces for the
+# standalone path.
+if config.config_file_name is not None and not _app_logging_configured():
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Resolve the database URL: explicit override > app settings.
 _db_url = _override_db_url or settings.database_url

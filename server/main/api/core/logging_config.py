@@ -205,6 +205,19 @@ def _stdout_is_tty() -> bool:
 # ---- Public API -------------------------------------------------------------
 
 
+def is_configured() -> bool:
+    """Whether :func:`configure_logging` has already installed app logging.
+
+    Alembic's ``env.py`` checks this so that migrations running in-process at
+    startup do NOT call ``logging.config.fileConfig`` — that would disable every
+    existing logger (uvicorn.access, uvicorn.error, gateway.app, …) and replace
+    the root handlers, silencing all logs (incl. the HTTP access log) for the
+    rest of the process's life. Standalone ``alembic`` CLI runs still get the
+    ini's logging because this returns ``False`` there.
+    """
+    return _CONFIGURED
+
+
 def configure_logging() -> None:
     """Idempotently install the root logging configuration.
 
