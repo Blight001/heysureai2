@@ -1529,19 +1529,15 @@ def _run_worker_impl(
             phase_start_convo_index = len(convo)
             phase_started_at = time.time()
             phase_mcp_statuses: List[tuple] = []
-            # Hard flow enforcement is on for task runtimes: the run must go
-            # through plan.create -> phased execution -> task.finish, and the
-            # *system* drives phase transitions (the AI never has to poll the
-            # plan). ``flow_awaiting_finish`` means all phases are done and only
-            # task.finish is accepted; ``flow_nudges`` caps how many times we
-            # steer a stalling model before degrading to a normal finish.
-            plan_enforced = bool(is_task_runtime and ai_config_id is not None)
+            # Plan mode is optional for task runtimes. If the AI chooses to
+            # enter a plan, the system drives phase transitions and finish
+            # handling from that point onward.
             flow_awaiting_finish = False
             flow_nudges = 0
             # A directive to inject *after* the current tool result is appended
             # (so a native tool_call keeps its matching tool response adjacent).
             pending_flow_directive = ""
-            if plan_enforced:
+            if is_task_runtime and ai_config_id is not None:
                 try:
                     plan_state = plan_service.get_active_plan(
                         bg, user_id, int(ai_config_id), session_id
@@ -1550,7 +1546,7 @@ def _run_worker_impl(
                 except Exception:
                     logger.exception("plan state load failed")
                     plan_state = None
-                # Tell the AI exactly where it stands without it having to ask.
+                # Tell the AI where it stands if plan mode is already active.
                 if plan_state is None:
                     convo.append({"role": "user", "content": phase_context.render_plan_required_notice()})
                 elif flow_awaiting_finish:
@@ -1571,13 +1567,11 @@ def _run_worker_impl(
 
             def _flow_allowed_tool(tool_name: str) -> bool:
                 """Hard gate: which tools the planned flow permits right now."""
-                if not plan_enforced:
+                if plan_state is None:
                     return True
                 name = str(tool_name or "")
                 if name in MCP_INTROSPECTION_TOOLS:
                     return True
-                if plan_state is None:
-                    return name == "plan.create"
                 if flow_awaiting_finish:
                     return name == "task.finish"
                 return True
@@ -1656,14 +1650,13 @@ def _run_worker_impl(
                 if mcp_active:
                     current_exposed_tools = set(exposed_tool_allowlist) & set(effective_tool_allowlist)
                     current_exposed_tools.update(set(MCP_INTROSPECTION_TOOLS) & set(effective_tool_allowlist))
-                    # Hard flow gate: while a task runtime still needs a plan or
-                    # must close out, only show the single tool that moves the
-                    # flow forward (plus self-inspection).
-                    if plan_enforced and plan_state is None:
+                    # If plan mode is already active, narrow the visible tools
+                    # to the phase-forward action (plus self-inspection).
+                    if is_task_runtime and plan_state is None:
                         current_exposed_tools = (
                             {"plan.create"} | set(MCP_INTROSPECTION_TOOLS)
                         ) & set(effective_tool_allowlist)
-                    elif plan_enforced and flow_awaiting_finish:
+                    elif is_task_runtime and flow_awaiting_finish:
                         current_exposed_tools = (
                             {"task.finish"} | set(MCP_INTROSPECTION_TOOLS)
                         ) & set(effective_tool_allowlist)
@@ -2043,12 +2036,11 @@ def _run_worker_impl(
                         # don't retry-loop forever; fall through this turn.
                         compression_failed = True
 
-                # Hard flow gate: reject any tool call that does not move the
-                # planned flow forward in the current state (no-plan -> only
-                # plan.create; all-phases-done -> only task.finish). The
-                # assistant tool_call message was already appended above, so we
-                # answer it (native) / reply (text) and steer back.
-                if payload_call and plan_enforced and not _flow_allowed_tool(payload_tool):
+                # Plan-mode gate: once a plan exists, reject tool calls that do
+                # not move the current plan forward. The assistant tool_call
+                # message was already appended above, so we answer it (native)
+                # / reply (text) and steer back.
+                if payload_call and is_task_runtime and plan_state is not None and not _flow_allowed_tool(payload_tool):
                     if plan_state is None:
                         _flow_block_text = phase_context.render_plan_required_notice()
                     elif flow_awaiting_finish:
@@ -2094,11 +2086,11 @@ def _run_worker_impl(
                             )
                             convo.append({"role": "user", "content": warning})
                             continue
-                    # Hard flow: a task runtime must not end by "talking". Steer
-                    # it back to plan.create / phase execution / task.finish.
-                    # ``flow_nudges`` bounds this so a stubborn model degrades to
-                    # a normal finish instead of burning the whole step budget.
-                    if plan_enforced and flow_nudges < 3:
+                    # In plan mode, a task runtime should not end by "talking".
+                    # Steer it back to the active plan flow. ``flow_nudges``
+                    # bounds this so a stubborn model degrades to a normal
+                    # finish instead of burning the whole step budget.
+                    if is_task_runtime and plan_state is not None and flow_nudges < 3:
                         if plan_state is None:
                             _nudge_text = phase_context.render_plan_required_notice()
                         elif flow_awaiting_finish:

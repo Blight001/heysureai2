@@ -60,7 +60,6 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # plan 域：分阶段执行（普通对话与任务对话均可用）。phase_complete/finish
     # 是 plan 的子操作；每个成员都能为自己的长动作制定并推进计划。
     "plan.create": ROLE_MEMBER,
-    "plan.get": ROLE_MEMBER,
     "plan.phase_complete": ROLE_MEMBER,
     "task.finish": ROLE_MEMBER,
     # Unified prompt tool. Member floor so everyone can read its own prompt; the

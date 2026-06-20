@@ -7,10 +7,9 @@ appear inside either a normal conversation or a task conversation. ``phase`` is
 a sub-operation of ``plan`` and lives under the ``plan.*`` namespace; closing a
 run uses the task-domain ``task.finish`` (the ``task`` namespace stays separate).
 
-The AI drives a plan through four tools:
+The AI drives a plan through three tools:
 
 - ``plan.create``         commit a full multi-phase plan before acting
-- ``plan.get``            read the current plan + progress
 - ``plan.phase_complete`` finish the current phase (runtime then hides its
                           deep-thinking + MCP detail from the live context)
 - ``task.finish``         summarize the whole plan into a success/failure log

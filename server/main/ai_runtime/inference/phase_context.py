@@ -22,7 +22,6 @@ from api.models import ChatMessage
 # MCP-status line (they are how the phase boundary itself is driven).
 _FLOW_TOOLS = {
     "plan.create",
-    "plan.get",
     "plan.phase_complete",
     "task.finish",
     "mcp.describe_tool",
@@ -64,13 +63,13 @@ def build_phase_compaction_text(
 
 
 def render_plan_required_notice() -> str:
-    """System directive: a task must be planned before any real work."""
+    """System directive: plan mode is optional and should be used for complex tasks."""
     return (
-        "[系统要求 · 先制定计划]\n"
-        "这是一个需要分阶段完成的任务。在执行任何实际操作前，你必须先调用 plan.create "
-        "制定一份完整的分阶段计划：把总体目标拆成有序的多个阶段，每个阶段写清目标(goal)"
+        "[系统提示 · 计划模式可选]\n"
+        "当前任务可以直接执行，不必强制进入 plan 模式。若步骤较多、依赖较多、风险较高或不确定性较强，"
+        "再自行调用 plan.create 制定分阶段计划：把总体目标拆成有序的多个阶段，每个阶段写清目标(goal)"
         "与结束标志(done_signal)，可在 actions 里列出子行动。\n"
-        "在计划登记完成前，系统只接受 plan.create 调用，其它工具一律拒绝。"
+        "进入 plan 模式后，系统会自动下发当前阶段并统一控制进度。"
     )
 
 

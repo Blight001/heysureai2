@@ -24,6 +24,7 @@ import { me } from '@/api/auth'
 import { runInheritanceMcpTest, type InheritanceMcpTestResult } from '@/api/mcp'
 import { useMessage } from '@/composables/useMessage'
 import { getMcpToolParamRows, getMcpToolZhLabel } from '@/utils/mcpTools'
+import MarkdownText from '@/components/chat/MarkdownText.vue'
 import type { McpToolDefinition } from '@/types'
 import type { ModelPreset, User } from '@/types'
 
@@ -106,6 +107,17 @@ const installedClawhubError = ref('')
 const installedClawhubNotice = ref('')
 const installedClawhubSelected = ref<ClawHubInstalledSkillDetail | null>(null)
 const installedClawhubDraft = ref('')
+const installedClawhubEditMode = ref(false)
+
+const stripSkillFrontmatter = (raw: string) => {
+  const text = String(raw || '')
+  if (!text.startsWith('---')) return text
+  const end = text.indexOf('\n---', 3)
+  if (end < 0) return text
+  return text.slice(end + 4).replace(/^\s+/, '')
+}
+
+const installedClawhubPreview = computed(() => stripSkillFrontmatter(installedClawhubDraft.value))
 // 传承思想端归类：安装时选择 + 已装列表筛选 + 改端。
 const installEndpointKind = ref<'auto' | 'any' | 'desktop' | 'browser'>('auto')
 const thoughtEndpointFilter = ref<'all' | 'any' | 'desktop' | 'browser'>('all')
@@ -657,6 +669,7 @@ const openInstalledClawHubSkill = async (slug: string) => {
   installedClawhubNotice.value = ''
   installedClawhubSelected.value = null
   installedClawhubDraft.value = ''
+  installedClawhubEditMode.value = false
   try {
     const token = getAuthToken()
     const detail = await readInstalledClawHubSkill(token, targetSlug)
@@ -676,6 +689,7 @@ const closeInstalledClawHubModal = () => {
   installedClawhubDeleting.value = false
   installedClawhubError.value = ''
   installedClawhubNotice.value = ''
+  installedClawhubEditMode.value = false
 }
 
 const saveInstalledClawHubSkill = async () => {
@@ -688,8 +702,10 @@ const saveInstalledClawHubSkill = async () => {
     const token = getAuthToken()
     const updated = await updateInstalledClawHubSkill(token, slug, installedClawhubDraft.value)
     installedClawhubSelected.value = updated.detail
+    installedClawhubDraft.value = updated.detail.skill_card || ''
     currentDetail.value = updated.entry
     installedClawhubNotice.value = '已保存'
+    installedClawhubEditMode.value = false
   } catch (err) {
     installedClawhubError.value = (err as Error).message || '保存失败'
   } finally {
@@ -1649,6 +1665,17 @@ const closeDetail = () => {
             <div class="flex gap-2">
               <button
                 type="button"
+                class="px-3 py-1.5 rounded border text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                :class="installedClawhubEditMode
+                  ? 'border-indigo-300 bg-indigo-50 text-indigo-600 dark:border-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300'
+                  : 'border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800'"
+                :disabled="!installedClawhubSelected"
+                @click.stop.prevent="installedClawhubEditMode = !installedClawhubEditMode"
+              >
+                {{ installedClawhubEditMode ? '预览' : '编辑' }}
+              </button>
+              <button
+                type="button"
                 class="px-3 py-1.5 rounded border border-rose-200 bg-white text-xs text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-zinc-900 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
                 :disabled="installedClawhubDeleting || !installedClawhubSelected"
                 @click.stop.prevent="removeInstalledClawHubSkill"
@@ -1656,6 +1683,7 @@ const closeDetail = () => {
                 {{ installedClawhubDeleting ? '删除中…' : '删除' }}
               </button>
               <button
+                v-if="installedClawhubEditMode"
                 type="button"
                 class="px-3 py-1.5 rounded bg-indigo-600 text-xs text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
                 :disabled="installedClawhubSaving || !installedClawhubSelected"
@@ -1671,8 +1699,19 @@ const closeDetail = () => {
           <div v-if="installedClawhubNotice" class="mx-5 mt-3 text-xs text-emerald-600 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 rounded-lg px-3 py-2">
             {{ installedClawhubNotice }}
           </div>
-          <div class="flex-1 min-h-0 p-5">
+          <div class="flex-1 min-h-0 p-5 overflow-y-auto">
+            <div
+              v-if="!installedClawhubEditMode"
+              class="h-full text-xs leading-relaxed text-zinc-700 dark:text-zinc-200 bg-zinc-50 dark:bg-zinc-800/40 p-4 rounded-lg border border-zinc-100 dark:border-zinc-800"
+            >
+              <MarkdownText
+                v-if="installedClawhubPreview.trim()"
+                :text="installedClawhubPreview"
+              />
+              <div v-else class="text-zinc-400">（无内容）</div>
+            </div>
             <textarea
+              v-else
               v-model="installedClawhubDraft"
               class="w-full h-full resize-none whitespace-pre font-mono text-xs leading-relaxed text-zinc-700 dark:text-zinc-200 bg-zinc-50 dark:bg-zinc-800/40 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-800"
               spellcheck="false"

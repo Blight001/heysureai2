@@ -204,43 +204,41 @@ class ServicePane:
 
     def _build_toolbar(self) -> None:
         bar = ctk.CTkFrame(self.frame, fg_color="#0b1220", corner_radius=10)
-        bar.grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 4))
+        bar.grid(row=0, column=0, sticky="ew", padx=12, pady=(4, 1))
         bar.grid_columnconfigure(0, weight=1)
         bar.grid_columnconfigure(1, weight=1)
 
         # 左侧操作按钮
         left = ctk.CTkFrame(bar, fg_color="transparent")
-        left.grid(row=0, column=0, sticky="w", padx=8, pady=6)
+        left.grid(row=0, column=0, sticky="w", padx=6, pady=2)
 
-        btn_style = {"corner_radius": 8, "height": 32, "font": ctk.CTkFont(family="Segoe UI", size=11, weight="bold")}
+        btn_style = {"corner_radius": 8, "height": 26, "font": ctk.CTkFont(family="Segoe UI", size=11, weight="bold")}
 
-        self.start_button = ctk.CTkButton(
+        # 合并启动/停止为一个反转状态按钮（类似全局）
+        self.toggle_button = ctk.CTkButton(
             left, text="▶ 启动", fg_color="#166534", hover_color="#15803d", text_color="#f0fdf4", **btn_style,
-            command=self.start
+            command=self.toggle
         )
         self.restart_button = ctk.CTkButton(
             left, text="⟳ 重启", fg_color="#1e3a8a", hover_color="#1e40af", text_color="#dbeafe", **btn_style,
             command=self.restart
         )
-        self.stop_button = ctk.CTkButton(
-            left, text="⏹ 停止", fg_color="#7f1d1d", hover_color="#991b1b", text_color="#fee2e2", **btn_style,
-            command=self.stop
-        )
 
-        self.start_button.grid(row=0, column=0, padx=(0, 6))
+        self.toggle_button.grid(row=0, column=0, padx=(0, 6))
         self.restart_button.grid(row=0, column=1, padx=6)
-        self.stop_button.grid(row=0, column=2, padx=6)
 
         if self.spec.open_url:
             self.open_button = ctk.CTkButton(
                 left, text="🌐 打开网页", fg_color="#166534", hover_color="#15803d", **btn_style,
                 command=lambda: self.controller.open_url(self.spec.open_url)
             )
-            self.open_button.grid(row=0, column=3, padx=(12, 0))
+            self.open_button.grid(row=0, column=2, padx=(12, 0))
+
+        self._update_toggle_button()
 
         # 右侧工具按钮
         right = ctk.CTkFrame(bar, fg_color="transparent")
-        right.grid(row=0, column=1, sticky="e", padx=8, pady=6)
+        right.grid(row=0, column=1, sticky="e", padx=6, pady=2)
 
         self.copy_error_button = ctk.CTkButton(
             right, text="复制错误", fg_color="#334155", hover_color="#475569", width=84, **btn_style,
@@ -255,9 +253,9 @@ class ServicePane:
             command=self.clear_logs
         )
 
-        self.copy_error_button.grid(row=0, column=0, padx=(0, 6))
-        self.copy_log_button.grid(row=0, column=1, padx=6)
-        self.clear_button.grid(row=0, column=2, padx=(6, 0))
+        self.copy_error_button.grid(row=0, column=0, padx=(0, 4))
+        self.copy_log_button.grid(row=0, column=1, padx=4)
+        self.clear_button.grid(row=0, column=2, padx=(4, 0))
 
         # 日志筛选 - 选择性查看全部 / 警告 / 错误日志
         self.filter_button = ctk.CTkSegmentedButton(
@@ -265,22 +263,22 @@ class ServicePane:
             values=["全部", "警告", "错误"],
             command=self._on_log_filter_change,
             font=ctk.CTkFont(family="Segoe UI", size=10),
-            height=26,
+            height=24,
             width=95,
         )
         self.filter_button.set("全部")
-        self.filter_button.grid(row=0, column=3, padx=(10, 0))
+        self.filter_button.grid(row=0, column=3, padx=(6, 0))
 
     def _build_log_view(self) -> None:
         wrap = ctk.CTkFrame(self.frame, fg_color="#07111f", corner_radius=10)
-        wrap.grid(row=1, column=0, sticky="nsew", padx=12, pady=(4, 12))
+        wrap.grid(row=1, column=0, sticky="nsew", padx=12, pady=(2, 6))
         wrap.grid_rowconfigure(0, weight=1)
         wrap.grid_columnconfigure(0, weight=1)
 
         self.text = ctk.CTkTextbox(
             wrap,
             wrap="word",
-            height=320,
+            height=100,  # small min; the row weight=1 + container expand will fill available space
             fg_color="#07111f",
             text_color="#e0f2fe",
             font=ctk.CTkFont(family="Consolas", size=10),
@@ -435,9 +433,11 @@ class ServicePane:
             self.process = None
             self.set_status("启动失败", "#b91c1c")
             self.append(f"启动失败：{exc}", "error")
+            self._update_toggle_button()
             return
 
         self.set_status("运行中", "#15803d")
+        self._update_toggle_button()
         threading.Thread(target=self._read_output, args=(run_id,), daemon=True).start()
         threading.Thread(target=self._watch_exit, args=(run_id,), daemon=True).start()
 
@@ -446,6 +446,7 @@ class ServicePane:
             self.process = None
             self.set_status("已停止", "#334155")
             self.append("服务已经停止。", "warning")
+            self._update_toggle_button()
             return
 
         self.run_id += 1
@@ -472,11 +473,36 @@ class ServicePane:
             self.process = None
             self.set_status("已停止", "#334155")
             self.append("服务已停止。", "success")
+            self._update_toggle_button()
 
     def restart(self) -> None:
         self.append("正在重启服务...", "meta")
         self.stop()
         self.controller.root.after(350, self.start)
+
+    def toggle(self) -> None:
+        """反转状态：运行中则停止，否则启动"""
+        if self.is_running():
+            self.stop()
+        else:
+            self.start()
+        # start/stop 内部会调用 _update_toggle_button
+
+    def _update_toggle_button(self) -> None:
+        if self.is_running():
+            self.toggle_button.configure(
+                text="⏹ 停止",
+                fg_color="#7f1d1d",
+                hover_color="#991b1b",
+                text_color="#fee2e2"
+            )
+        else:
+            self.toggle_button.configure(
+                text="▶ 启动",
+                fg_color="#166534",
+                hover_color="#15803d",
+                text_color="#f0fdf4"
+            )
 
     def clear_logs(self) -> None:
         self.history.clear()
@@ -561,6 +587,8 @@ class LauncherApp:
         self.queue: "queue.Queue[tuple]" = queue.Queue()
         self.panes: Dict[str, ServicePane] = {}
         self.status_dots: Dict[str, ctk.CTkLabel] = {}  # 概览状态圆形指示器
+        self.status_items: Dict[str, ctk.CTkFrame] = {}  # 用于点击切换的栏目状态标签
+        self.current_service_key: Optional[str] = None
         self.installing = False
         self.install_target_key = "gateway"
         self._build_ui()
@@ -571,48 +599,49 @@ class LauncherApp:
     def _build_ui(self) -> None:
         # ===== 全局操作栏（无大标题、无提示横幅，简洁启动器风格） =====
         topbar = ctk.CTkFrame(self.root, fg_color="#0f172a", corner_radius=12)
-        topbar.pack(fill="x", padx=18, pady=(14, 8))
+        topbar.pack(fill="x", padx=18, pady=(8, 4))
 
-        # 左侧大按钮
+        # 左侧主要控制按钮
         left = ctk.CTkFrame(topbar, fg_color="transparent")
-        left.pack(side="left", padx=10, pady=8)
+        left.pack(side="left", padx=6, pady=2)
 
-        big_btn = {"corner_radius": 10, "height": 34, "font": ctk.CTkFont(family="Segoe UI", size=12, weight="bold")}
-        compact_btn = {"corner_radius": 8, "height": 32, "font": ctk.CTkFont(family="Segoe UI", size=11, weight="bold")}
+        big_btn = {"corner_radius": 10, "height": 30, "font": ctk.CTkFont(family="Segoe UI", size=12, weight="bold")}
+        compact_btn = {"corner_radius": 8, "height": 28, "font": ctk.CTkFont(family="Segoe UI", size=11, weight="bold")}
 
-        self.btn_start_all = ctk.CTkButton(left, text="▶ 全部启动", fg_color="#166534", hover_color="#15803d", text_color="#ecfdf5", **big_btn, command=self.start_all)
-        self.btn_restart_all = ctk.CTkButton(left, text="⟳ 全部重启", fg_color="#1e40af", hover_color="#1e3a8a", text_color="#dbeafe", **big_btn, command=self.restart_all)
+        self.btn_toggle_all = ctk.CTkButton(
+            left, text="▶ 全部启动", fg_color="#166534", hover_color="#15803d", text_color="#ecfdf5",
+            **big_btn, command=self.toggle_all
+        )
+        self.install_button = ctk.CTkButton(left, text="📦 安装依赖", fg_color="#334155", hover_color="#475569", text_color="#e0f2fe", **big_btn, command=self.install_dependencies)
+        self.open_web_button = ctk.CTkButton(left, text="🌐 打开 Web", fg_color="#166534", hover_color="#15803d", text_color="#ecfdf5", **big_btn, command=self.open_web_page)
 
-        # 新增：针对性重启按钮（放在全部重启旁边）
+        self.btn_toggle_all.pack(side="left", padx=(0, 4))
+        self.install_button.pack(side="left", padx=(0, 4))
+        self.open_web_button.pack(side="left", padx=(0, 4))
+
+        # 弹性 spacer（height=1 不改变栏目/按钮高度），将重启按钮推到最右侧
+        spacer = ctk.CTkFrame(topbar, fg_color="transparent", height=1, width=1)
+        spacer.pack(side="left", fill="x", expand=True)
+
+        # 重启按钮组直接 pack 到 topbar 右侧对齐
+        self.btn_restart_all = ctk.CTkButton(
+            topbar, text="⟳ 全部重启", fg_color="#1e40af", hover_color="#1e3a8a", text_color="#dbeafe", **big_btn, command=self.restart_all
+        )
         self.btn_restart_backends = ctk.CTkButton(
-            left, text="⟳ 重启全部后端", fg_color="#0f766e", hover_color="#115e59", text_color="#ccfbf1",
+            topbar, text="⟳ 重启全部后端", fg_color="#0f766e", hover_color="#115e59", text_color="#ccfbf1",
             **compact_btn, command=self.restart_backends
         )
         self.btn_restart_frontend = ctk.CTkButton(
-            left, text="⟳ 重启前端", fg_color="#ca8a04", hover_color="#a16207", text_color="#fefce8",
+            topbar, text="⟳ 重启前端", fg_color="#ca8a04", hover_color="#a16207", text_color="#fefce8",
             **compact_btn, command=self.restart_frontend
         )
 
-        self.btn_stop_all = ctk.CTkButton(left, text="⏹ 全部停止", fg_color="#7f1d1d", hover_color="#991b1b", text_color="#fee2e2", **big_btn, command=self.stop_all)
-        self.install_button = ctk.CTkButton(left, text="📦 安装依赖", fg_color="#334155", hover_color="#475569", text_color="#e0f2fe", **big_btn, command=self.install_dependencies)
+        # 先 pack 最右边的，确保从左到右顺序正确
+        self.btn_restart_frontend.pack(side="right", padx=2)
+        self.btn_restart_backends.pack(side="right", padx=2)
+        self.btn_restart_all.pack(side="right", padx=2)
 
-        self.btn_start_all.pack(side="left", padx=(0, 6))
-        self.btn_restart_all.pack(side="left", padx=(6, 4))
-        self.btn_restart_backends.pack(side="left", padx=3)
-        self.btn_restart_frontend.pack(side="left", padx=(3, 6))
-        self.btn_stop_all.pack(side="left", padx=6)
-        self.install_button.pack(side="left", padx=(12, 0))
-
-        # 右侧工具
-        right = ctk.CTkFrame(topbar, fg_color="transparent")
-        right.pack(side="right", padx=10, pady=8)
-
-        ctk.CTkButton(right, text="复制当前错误", fg_color="#1f2937", hover_color="#334155", width=98, height=30, command=self.copy_current_errors).pack(side="left", padx=4)
-        ctk.CTkButton(right, text="复制当前日志", fg_color="#1f2937", hover_color="#334155", width=98, height=30, command=self.copy_current_logs).pack(side="left", padx=4)
-        ctk.CTkButton(right, text="清空当前页", fg_color="#1f2937", hover_color="#334155", width=86, height=30, command=self.clear_current).pack(side="left", padx=4)
-        ctk.CTkButton(right, text="🌐 打开 Web", fg_color="#166534", hover_color="#15803d", width=94, height=30, command=self.open_web_page).pack(side="left", padx=(8, 0))
-
-        # ===== 服务状态概览条（圆形颜色指示 + 栏目文字） =====
+        # ===== 服务状态概览条（圆形颜色指示 + 栏目文字，现在作为控制台切换器） =====
         overview = ctk.CTkFrame(self.root, fg_color="#0f172a", corner_radius=10)
         overview.pack(fill="x", padx=18, pady=(2, 8))
 
@@ -620,7 +649,7 @@ class LauncherApp:
             short = spec.title.split(" ", 1)[-1] if " " in spec.title else spec.title
 
             item = ctk.CTkFrame(overview, fg_color="transparent")
-            item.pack(side="left", padx=8, pady=4)
+            item.pack(side="left", padx=8, pady=2)
 
             # 颜色圆球（直接显示状态，放在栏目文字左侧）
             dot = ctk.CTkLabel(
@@ -642,6 +671,7 @@ class LauncherApp:
             name_label.pack(side="left")
 
             # 端口号直接显示在栏目右侧
+            port_label = None
             if spec.port:
                 port_label = ctk.CTkLabel(
                     item,
@@ -652,41 +682,69 @@ class LauncherApp:
                 port_label.pack(side="left", padx=(2, 0))
 
             self.status_dots[spec.key] = dot
+            self.status_items[spec.key] = item
 
-        # ===== 标签页（使用 CTkTabview 更现代） =====
-        tabs_wrap = ctk.CTkFrame(self.root, fg_color="#0b1220", corner_radius=0)
-        tabs_wrap.pack(fill="both", expand=True, padx=18, pady=(2, 16))
-        tabs_wrap.grid_rowconfigure(0, weight=1)
-        tabs_wrap.grid_columnconfigure(0, weight=1)
-
-        self.tabview = ctk.CTkTabview(tabs_wrap, corner_radius=12, fg_color="#0f172a", segmented_button_fg_color="#111827")
-        self.tabview.grid(row=0, column=0, sticky="nsew")
+        # ===== 内容区域（使用概览栏中的状态标签切换，无需额外 tab 标签） =====
+        self.content_frame = ctk.CTkFrame(self.root, fg_color="#0b1220", corner_radius=0)
+        self.content_frame.pack(fill="both", expand=True, padx=18, pady=(2, 16))
+        self.content_frame.grid_rowconfigure(0, weight=1)
+        self.content_frame.grid_columnconfigure(0, weight=1)
 
         for spec in SERVICES:
-            tab = self.tabview.add(spec.title)
-            # 让 tab 内部有 padding 容器
-            inner = ctk.CTkFrame(tab, fg_color="transparent")
-            inner.pack(fill="both", expand=True, padx=4, pady=4)
-
-            pane = ServicePane(inner, spec, self)
-            pane.frame.pack(fill="both", expand=True)
+            pane = ServicePane(self.content_frame, spec, self)
             self.panes[spec.key] = pane
             # 初始化概览圆点为停止色
             if spec.key in self.status_dots:
                 self.status_dots[spec.key].configure(fg_color="#475569")
 
+        # 将概览条中的状态标签设为可点击的切换器
+        for spec in SERVICES:
+            item = self.status_items[spec.key]
+            key = spec.key
+            def _make_handler(k=key):
+                def _handler(event):
+                    self.switch_to_service(k)
+                return _handler
+            handler = _make_handler()
+            item.bind("<Button-1>", handler)
+            item.configure(cursor="hand2")
+            # 绑定子控件，确保点任何地方都能切换
+            for child in item.winfo_children():
+                child.bind("<Button-1>", handler)
+                child.configure(cursor="hand2")
+
+        # 默认显示第一个控制台
+        if SERVICES:
+            self.switch_to_service(SERVICES[0].key)
+
         # 不再有 banner
         # self._update_banner()  # 已移除标题和提示
 
+        # 初始化全部启动/停止的反转按钮状态
+        self._update_toggle_button()
+
     def current_pane(self) -> ServicePane:
-        try:
-            key = self.tabview.get()
-            for pane in self.panes.values():
-                if pane.spec.title == key:
-                    return pane
-        except Exception:
-            pass
-        return next(iter(self.panes.values()))
+        if self.current_service_key and self.current_service_key in self.panes:
+            return self.panes[self.current_service_key]
+        if self.panes:
+            return next(iter(self.panes.values()))
+        return None  # type: ignore[return-value]
+
+    def switch_to_service(self, key: str) -> None:
+        """使用概览栏中的状态标签切换不同控制台内容，无需额外 tab。"""
+        if self.current_service_key == key:
+            return
+        if self.current_service_key is not None:
+            if self.current_service_key in self.panes:
+                self.panes[self.current_service_key].frame.pack_forget()
+            if self.current_service_key in self.status_items:
+                self.status_items[self.current_service_key].configure(fg_color="transparent")
+        if key in self.panes:
+            self.panes[key].frame.pack(fill="both", expand=True)
+            self.current_service_key = key
+            if key in self.status_items:
+                # 高亮选中的栏目状态标签
+                self.status_items[key].configure(fg_color="#1f2937")
 
     def _set_installing(self, installing: bool) -> None:
         self.installing = installing
@@ -748,6 +806,8 @@ class LauncherApp:
                         pane.append(f"服务异常退出，返回码 {exit_code}。", "error")
                         if pane._has_missing_dependency_error():
                             self.show_tip("检测到缺少 Python 依赖，请先运行“安装依赖”。", "error")
+                    self._update_toggle_button()
+                    pane._update_toggle_button()
                 elif kind == "install-log":
                     line, level = payload
                     self.panes[self.install_target_key].append(f"[依赖安装] {line}", level)
@@ -771,25 +831,57 @@ class LauncherApp:
     def start_all(self) -> None:
         for pane in self.panes.values():
             pane.start()
+        self._update_toggle_button()
 
     def restart_all(self) -> None:
         for pane in self.panes.values():
             pane.restart()
+        self._update_toggle_button()
 
     def restart_backends(self) -> None:
         """重启 4 个后端服务（gateway、mcp、connector、ai）"""
         for key in ("gateway", "mcp", "connector", "ai"):
             if key in self.panes:
                 self.panes[key].restart()
+        self._update_toggle_button()
 
     def restart_frontend(self) -> None:
         """只重启 Web 控制台（前端）"""
         if "web" in self.panes:
             self.panes["web"].restart()
+        self._update_toggle_button()
 
     def stop_all(self) -> None:
         for pane in self.panes.values():
             pane.stop()
+        self._update_toggle_button()
+
+    def toggle_all(self) -> None:
+        """反转状态：如果有服务在运行则全部停止，否则全部启动"""
+        if any(pane.is_running() for pane in self.panes.values()):
+            self.stop_all()
+        else:
+            self.start_all()
+        # start_all / stop_all 内部已调用 update，这里保险再调一次
+        self._update_toggle_button()
+
+    def _update_toggle_button(self) -> None:
+        """根据当前是否有服务在运行，反转显示全部启动 / 全部停止"""
+        running = any(pane.is_running() for pane in self.panes.values())
+        if running:
+            self.btn_toggle_all.configure(
+                text="⏹ 全部停止",
+                fg_color="#7f1d1d",
+                hover_color="#991b1b",
+                text_color="#fee2e2"
+            )
+        else:
+            self.btn_toggle_all.configure(
+                text="▶ 全部启动",
+                fg_color="#166534",
+                hover_color="#15803d",
+                text_color="#ecfdf5"
+            )
 
     def install_dependencies(self) -> None:
         if self.installing:
@@ -831,14 +923,7 @@ class LauncherApp:
         threading.Thread(target=self._read_install_output, args=(proc,), daemon=True).start()
         threading.Thread(target=self._watch_install_exit, args=(proc,), daemon=True).start()
 
-    def clear_current(self) -> None:
-        self.current_pane().clear_logs()
-
-    def copy_current_errors(self) -> None:
-        self.current_pane().copy_errors()
-
-    def copy_current_logs(self) -> None:
-        self.current_pane().copy_all_logs()
+    # 全局清空/复制按钮已移除，仅保留每个栏目（标签页）内部的独立按钮
 
     def open_url(self, url: Optional[str] = None) -> None:
         target = (url or WEB_URL).strip()

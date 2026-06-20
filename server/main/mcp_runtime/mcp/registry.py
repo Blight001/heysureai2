@@ -17,7 +17,6 @@ from .tools.tasks import (
 from .tools.task_plan import (
     _phase_complete,
     _plan_create,
-    _plan_get,
     _task_finish,
 )
 from .tools.prompts import (
@@ -163,7 +162,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
             "用 action 选择 list 列出 / create 创建 / update 接管更新 / delete 删除。"
             "create/update/delete 需管理者及以上。"
             "完成当前任务用独立的 task.complete；对长动作做分阶段执行用 plan 域："
-            "plan.create / plan.get / plan.phase_complete / task.finish。"
+            "plan.create / plan.phase_complete / task.finish。"
         ),
         input_schema=TASK_MANAGE_SCHEMA,
         handler=_task_manage,
@@ -236,12 +235,6 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         },
         handler=_plan_create,
         destructive=True,
-    ))
-    registry.register(MCPTool(
-        name="plan.get",
-        description="查看当前进行中的计划与进度：各阶段的目标、结束标志、状态，以及当前所处阶段。",
-        input_schema={"type": "object", "properties": {}},
-        handler=_plan_get,
     ))
     registry.register(MCPTool(
         name="plan.phase_complete",

@@ -1741,12 +1741,19 @@ def _render_system_prompts_body(payload: Dict[str, Any]) -> str:
 
 # ---------- 传承思想 / ClawHub ----------
 
-_SAFE_CLAWHUB_SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@/-]{0,160}$")
+_SAFE_CLAWHUB_REMOTE_SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@/-]{0,160}$")
+# manual/npx 本地快照 slug 允许中文等 Unicode（与 _slugify 一致），ClawHub 远程 slug 仍限 ASCII
+_SAFE_INSTALLED_SKILL_SLUG = re.compile(r"^(?:manual|npx)/[^\x00-\x1f\x7f]{1,200}$")
 
 
 def _normalize_clawhub_slug(slug: str) -> str:
     value = str(slug or "").strip().strip("/")
-    if not value or not _SAFE_CLAWHUB_SLUG.match(value) or ".." in value.split("/"):
+    if not value or ".." in value.split("/"):
+        raise ValueError("invalid ClawHub skill slug")
+    if value.startswith("manual/") or value.startswith("npx/"):
+        if not _SAFE_INSTALLED_SKILL_SLUG.match(value):
+            raise ValueError("invalid installed skill slug")
+    elif not _SAFE_CLAWHUB_REMOTE_SLUG.match(value):
         raise ValueError("invalid ClawHub skill slug")
     return value
 

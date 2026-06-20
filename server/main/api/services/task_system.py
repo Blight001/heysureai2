@@ -38,10 +38,9 @@ TASK_RUNTIME_REQUIRED_TOOLS = {
     # tier while gating create/update/delete to manager+.
     "task.manage",
     "message.send_to_ai",
-    # Planned task flow: a task runtime can always plan, inspect and close out
-    # its own plan even when the operational tool allowlist is narrowed.
+    # Planned task flow: a task runtime can always plan and close out its own
+    # plan even when the operational tool allowlist is narrowed.
     "plan.create",
-    "plan.get",
     "plan.phase_complete",
     "task.finish",
 }
