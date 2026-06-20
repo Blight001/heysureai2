@@ -19,7 +19,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from connector_runtime.bots import iter_bots
-from api.core.http_logging import install_http_request_logging
 from api.core.logging_config import configure_logging
 from api.core.settings import settings
 from api.sio import sio
@@ -138,7 +137,6 @@ async def lifespan(app: FastAPI):
 
 # FastAPI App
 app = FastAPI(lifespan=lifespan)
-install_http_request_logging(app, __name__)
 
 app.add_middleware(
     CORSMiddleware,

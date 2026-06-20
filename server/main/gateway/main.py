@@ -23,6 +23,12 @@ if __name__ == "__main__":
         reload=reload_enabled,
         log_level="info",
         access_log=True,
+        # log_config=None stops uvicorn from installing its own isolated,
+        # non-propagating handlers. uvicorn.access (the per-request HTTP log,
+        # protocol-level so it also covers Socket.IO polling) then propagates to
+        # the root handler from configure_logging() and shows in the launcher
+        # console + admin panel ring buffer.
+        log_config=None,
         # Watch both gateway/ and api/ so router edits also trigger reload.
         reload_dirs=["main/gateway", "main/api"] if reload_enabled else None,
     )
