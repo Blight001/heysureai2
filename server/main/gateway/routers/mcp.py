@@ -247,21 +247,19 @@ async def call_mcp_tool(
     from api.core.settings import settings
     runtime_url = settings.mcp_runtime_url
     if runtime_url:
-        import httpx
-        from api.runtime.internal_http import internal_headers
-        async with httpx.AsyncClient(base_url=runtime_url.rstrip("/"), timeout=120.0) as client:
-            resp = await client.post(
-                "/internal/mcp/call",
-                headers=internal_headers(),
-                json={
-                    "tool": req.tool,
-                    "user_id": user.id,
-                    "ai_config_id": req.ai_config_id,
-                    "arguments": req.arguments or {},
-                },
-            )
-            resp.raise_for_status()
-            return resp.json()
+        from api.runtime.internal_http import get_internal_async_client
+        client = get_internal_async_client(runtime_url, timeout=120.0)
+        resp = await client.post(
+            "/internal/mcp/call",
+            json={
+                "tool": req.tool,
+                "user_id": user.id,
+                "ai_config_id": req.ai_config_id,
+                "arguments": req.arguments or {},
+            },
+        )
+        resp.raise_for_status()
+        return resp.json()
 
     return await registry.call(req.tool, user.id, req.arguments, req.ai_config_id)
 

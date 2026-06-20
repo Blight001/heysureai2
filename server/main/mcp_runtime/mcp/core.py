@@ -1,3 +1,6 @@
+import asyncio
+import contextvars
+import inspect
 import os
 import time
 from dataclasses import dataclass
@@ -171,7 +174,21 @@ class MCPRegistry:
             room=f"user_{user_id}",
         )
         try:
-            result = tool.handler(user_id, args, ai_config_id)
+            if inspect.iscoroutinefunction(tool.handler):
+                result = await tool.handler(user_id, args, ai_config_id)
+            else:
+                # Sync handlers routinely do blocking I/O (file ops,
+                # workspace.run_command subprocess, embedding calls over the
+                # blocking `requests` client). Running them inline on the event
+                # loop stalls *every* other concurrent MCP call, which is the
+                # main source of intermittent multi-second latency under load.
+                # Offload to a worker thread, copying the current contextvars so
+                # get_run_session_context() still resolves inside the thread.
+                loop = asyncio.get_running_loop()
+                ctx = contextvars.copy_context()
+                result = await loop.run_in_executor(
+                    None, lambda: ctx.run(tool.handler, user_id, args, ai_config_id)
+                )
             if hasattr(result, "__await__"):
                 result = await result
             payload = {
@@ -231,7 +248,7 @@ def _enforce_library_binding(tool_name: str, user_id: int, ai_config_id: Optiona
         )
 
 
-async def _set_runtime_status(user_id: int, ai_config_id: Optional[int], status: str, tool: str) -> None:
+def _write_runtime_status(user_id: int, ai_config_id: Optional[int], status: str, tool: str) -> None:
     with Session(engine) as session:
         row = session.exec(
             select(AIRuntimeStatus).where(
@@ -251,3 +268,13 @@ async def _set_runtime_status(user_id: int, ai_config_id: Optional[int], status:
         row.updated_at = time.time()
         session.add(row)
         session.commit()
+
+
+async def _set_runtime_status(user_id: int, ai_config_id: Optional[int], status: str, tool: str) -> None:
+    # The status write is a synchronous DB round-trip and fires twice per tool
+    # call (running -> idle). Run it off the event loop so it doesn't serialize
+    # with other concurrent MCP calls in the same process.
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(
+        None, _write_runtime_status, user_id, ai_config_id, status, tool
+    )
