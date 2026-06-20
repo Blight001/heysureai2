@@ -66,7 +66,12 @@ def start_status_server_in_thread(port: int) -> Optional[threading.Thread]:
             create_status_app(),
             host="0.0.0.0",
             port=port,
-            log_level="warning",
+            # log_config=None lets uvicorn.access propagate to the root handler
+            # from configure_logging() so this worker's HTTP requests show in the
+            # console / admin panel like the other three backends.
+            log_config=None,
+            access_log=True,
+            log_level="info",
             # The worker owns SIGINT/SIGTERM; uvicorn must not install its own.
             lifespan="off",
         )

@@ -1,3 +1,4 @@
+import locale
 import os
 import re
 import subprocess
@@ -140,6 +141,54 @@ def _command_env(project_root: str, *, sandbox_env: bool = False) -> Dict[str, s
     env = os.environ.copy()
     env.setdefault("SANDBOX_ROOT", project_root)
     return env
+
+
+def _output_decode_encodings() -> List[str]:
+    """Preferred decode order for bytes captured from a child process.
+
+    Most cross-platform tools (git, node, python, PowerShell configured for a
+    UTF-8 output encoding) emit UTF-8, so we try that first. On Windows,
+    ``cmd.exe`` and native console programs instead emit the console/OEM code
+    page — ``cp936``/GBK on a zh-CN system — which is exactly why decoding their
+    output as UTF-8 turns Chinese text into mojibake (乱码). Fall back to the
+    OEM/ANSI code page and the locale's preferred encoding so those byte streams
+    decode correctly too.
+    """
+    encodings = ["utf-8"]
+    if os.name == "nt":
+        encodings += ["oem", "mbcs"]
+    try:
+        preferred = locale.getpreferredencoding(False)
+    except Exception:
+        preferred = ""
+    if preferred:
+        encodings.append(preferred)
+    return encodings
+
+
+def _decode_output(data: Any) -> str:
+    """Decode captured stdout/stderr bytes, tolerating mixed encodings.
+
+    ``subprocess`` gives us bytes here on purpose: a hard-coded ``encoding`` is
+    what produced the garbled Chinese in the first place. We try a small set of
+    candidate encodings (UTF-8 first, then the Windows OEM/locale code page) and
+    only fall back to lossy replacement if none decode cleanly.
+    """
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data
+    seen: set[str] = set()
+    for enc in _output_decode_encodings():
+        key = enc.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            return data.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return data.decode("utf-8", errors="replace")
 
 
 def _coerce_timeout(value: Any) -> int:
@@ -352,28 +401,31 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
         }
 
     try:
+        # Capture raw bytes (no ``text``/``encoding``) and decode ourselves:
+        # Windows console programs emit the OEM code page (GBK on zh-CN), so a
+        # hard-coded utf-8 decode is what garbled Chinese output. See
+        # ``_decode_output`` for the candidate-encoding fallback.
         result = subprocess.run(
             run_args,
             shell=use_shell,
             cwd=command_cwd,
             env=_command_env(project_root, sandbox_env=sandbox_env),
             capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
-        output = exc.stdout or ""
-        if exc.stderr:
-            output += f"\nError:\n{exc.stderr}"
+        timeout_stdout = _decode_output(exc.stdout)
+        timeout_stderr = _decode_output(exc.stderr)
+        output = timeout_stdout
+        if timeout_stderr:
+            output += f"\nError:\n{timeout_stderr}"
         output += f"\nError:\nCommand timed out after {timeout} seconds"
         return {
             "success": False,
             "failure_type": "timeout",
             "exit_code": None,
-            "stdout": exc.stdout or "",
-            "stderr": exc.stderr or "",
+            "stdout": timeout_stdout,
+            "stderr": timeout_stderr,
             "output": output,
             **base_result,
         }
@@ -398,17 +450,19 @@ def _run_command(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
             **base_result,
         }
 
-    output = result.stdout
-    if result.stderr:
-        output += f"\nError:\n{result.stderr}"
+    stdout = _decode_output(result.stdout)
+    stderr = _decode_output(result.stderr)
+    output = stdout
+    if stderr:
+        output += f"\nError:\n{stderr}"
 
     return {
         "success": result.returncode == 0,
         "failure_type": None if result.returncode == 0 else "nonzero_exit",
         "exit_code": result.returncode,
         "output": output,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
+        "stdout": stdout,
+        "stderr": stderr,
         **base_result,
     }
 

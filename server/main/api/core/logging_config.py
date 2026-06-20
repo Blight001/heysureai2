@@ -232,5 +232,12 @@ def configure_logging() -> None:
 
     # Dial third-party loggers down one notch so the operator's INFO logs
     # don't drown in framework chatter.
-    for noisy in ("uvicorn.access", "httpx", "httpcore", "watchfiles"):
+    #
+    # ``uvicorn.access`` is intentionally NOT dialled down: those INFO lines are
+    # the per-request HTTP access log the operator wants to see in each service
+    # console (and in the admin panel's ring buffer). For them to reach this
+    # root handler at all, each service starts uvicorn with ``log_config=None``
+    # so uvicorn's loggers propagate here instead of using uvicorn's own
+    # isolated, non-propagating handlers.
+    for noisy in ("httpx", "httpcore", "watchfiles"):
         logging.getLogger(noisy).setLevel(logging.WARNING)

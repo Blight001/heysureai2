@@ -31,4 +31,12 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=settings.mcp_runtime_port)
+    # log_config=None lets uvicorn.access propagate to the root handler from
+    # configure_logging() so HTTP requests show in the console / admin panel.
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=settings.mcp_runtime_port,
+        log_config=None,
+        access_log=True,
+    )
