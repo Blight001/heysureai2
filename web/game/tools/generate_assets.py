@@ -11,6 +11,7 @@
   building_workshop_desktop.png 32x32@1x -> 64x64 x4 帧（桌面 agent 作坊·机械坊）
   building_workshop_browser.png 32x40@1x -> 64x80 x4 帧（浏览器 agent 作坊·瞭望塔）
   building_workshop_knowledge.png 32x40@1x -> 64x80 x4 帧（知识工坊·学者书斋，悬浮魔典脉冲）
+  building_workshop_android.png 32x40@1x -> 64x80 x4 帧（安卓 agent 作坊·移动信号坊，天线信号波脉冲）
   char_*.png                  16x24@1x -> 32x48，4 列 x 5 行：
                               行 0-3 = 走路 下/左/右/上（第 0 帧兼站立），
                               行 4 = [闭眼 idle, 坐下, 跪倒, 躺倒]
@@ -492,6 +493,54 @@ def gen_workshop_knowledge():
     save_strip(frames, "building_workshop_knowledge.png")
 
 
+def gen_workshop_android():
+    """安卓 agent 作坊（移动信号坊）：绿机体墙 + 安卓吉祥物头像嵌屏，顶部天线信号波 4 帧脉冲。"""
+    A_GREEN = (120, 196, 80, 255)       # 安卓机器人绿
+    A_GREEN_D = (96, 166, 62, 255)
+    A_GREEN_L = (170, 222, 120, 255)
+    SCREEN = (40, 46, 42, 255)          # 嵌墙暗屏
+    signal_seq = [
+        (150, 220, 110, 150),
+        (180, 238, 140, 200),
+        (210, 250, 170, 240),
+        (180, 238, 140, 200),
+    ]
+    frames = []
+    for f in range(4):
+        c = C(32, 40)
+        g = signal_seq[f]
+        # 天线杆 + 顶灯（信号源）
+        c.vline(16, 3, 9, STONE_D)
+        c.disc(16, 3, 2, g[:3] + (255,))
+        c.px(16, 1, FLAME_W)
+        # 信号波（顶灯两侧弧线，按帧外扩脉冲）
+        rad = 4 + f * 2
+        for a in (-60, -35, 35, 60):
+            c.px(16 + rad * math.sin(math.radians(a)), 3 + rad * (1 - math.cos(math.radians(a))) * 0.4, g)
+        # 平台檐口
+        c.rect(4, 12, 24, 4, A_GREEN_D)
+        c.hline(4, 12, 24, A_GREEN_L)
+        # 墙体（绿机体 + 右侧背光压暗）
+        c.rect(6, 16, 20, 23, A_GREEN)
+        c.rect(22, 16, 4, 23, A_GREEN_D)
+        c.outline(6, 16, 20, 23, OUT)
+        # 嵌墙暗屏（衬托吉祥物）
+        c.rect(9, 19, 14, 11, SCREEN)
+        c.outline(9, 19, 14, 11, OUT)
+        # 安卓吉祥物头像（圆顶 + 两触角 + 两眼，屏内发光绿）
+        c.disc(16, 25, 4, A_GREEN_L)
+        c.rect(12, 25, 9, 4, A_GREEN_L)
+        c.px(13, 20, A_GREEN_L); c.px(14, 21, A_GREEN_L)
+        c.px(19, 20, A_GREEN_L); c.px(18, 21, A_GREEN_L)
+        c.px(14, 24, OUT); c.px(18, 24, OUT)
+        # 门
+        c.rect(12, 31, 8, 8, WOOD_D)
+        c.px(18, 35, GOLD)
+        c.add_silhouette_outline()
+        frames.append(c)
+    save_strip(frames, "building_workshop_android.png")
+
+
 # ================================================================ 角色
 LOOKS = {
     # 核心管理员（数字社会管理员）：紫袍金冠（深棕发，避免与金冠混色）
@@ -954,6 +1003,7 @@ def main():
     gen_workshop_desktop()
     gen_workshop_browser()
     gen_workshop_knowledge()
+    gen_workshop_android()
     gen_characters()
     gen_emotes()
     gen_envelope()
