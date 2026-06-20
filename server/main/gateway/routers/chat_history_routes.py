@@ -232,7 +232,30 @@ async def set_session_forward_to_bot(
         row.updated_at = time.time()
         session.add(row)
     session.commit()
-    return {"id": session_id, "forward_to_bot": enabled}
+
+    result = {"id": session_id, "forward_to_bot": enabled}
+    if enabled:
+        warning = _forward_readiness_warning(session, user.id, ai_config_id)
+        if warning:
+            result["warning"] = warning
+    return result
+
+
+def _forward_readiness_warning(session: Session, user_id: int, ai_config_id: Optional[int]) -> Optional[str]:
+    """Explain (for the UI) why turning on forwarding won't actually deliver."""
+    if not ai_config_id:
+        return "当前对话未绑定具体 AI（默认助手），无法通过机器人转发"
+    from api.models import AssistantAIConfig
+
+    cfg = session.get(AssistantAIConfig, int(ai_config_id))
+    if cfg is None or cfg.user_id != user_id:
+        return None
+    try:
+        from connector_runtime.bots.notify import forward_readiness
+
+        return forward_readiness(cfg)
+    except Exception:
+        return None
 
 @router.get("/total-tokens")
 async def get_total_tokens(

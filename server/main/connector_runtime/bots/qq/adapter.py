@@ -43,6 +43,9 @@ class QQBot(BotAdapter):
             return False
         return bool(self.read_config(cfg).get("enabled"))
 
+    def has_default_recipient(self, cfg: "AssistantAIConfig") -> bool:
+        return bool(str(self.read_config(cfg).get("default_target_id") or "").strip())
+
     # ---- long-connection lifecycle ----------------------------------------
 
     def start_long_connections(self) -> int:

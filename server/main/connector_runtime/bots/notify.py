@@ -113,6 +113,25 @@ def notify_saved_assistant_message(session: "Session", message: "ChatMessage") -
     )
 
 
+def forward_readiness(cfg) -> "str | None":
+    """Why a web-chat forward for ``cfg`` would not deliver, or ``None`` if ready.
+
+    Used by the chat dropdown toggle to turn the otherwise-silent prerequisites
+    (bound channel + enabled bot + a configured default receiver) into an
+    actionable message.
+    """
+    channel = str(getattr(cfg, "bot_channel", "") or "").strip().lower()
+    bot = next((b for b in iter_bots() if b.channel == channel), None)
+    if bot is None:
+        return "该 AI 未绑定可用的机器人渠道"
+    label = bot.label or channel
+    if not bot.is_enabled(cfg):
+        return f"{label}机器人未启用，请先在「AI 配置 → 机器人配置」里启用"
+    if not bot.has_default_recipient(cfg):
+        return f"{label}机器人未配置默认接收方，转发将无处送达；请在机器人配置里设置默认接收方"
+    return None
+
+
 def _maybe_forward_web_chat(session: "Session", message: "ChatMessage", content: str) -> None:
     """Forward an ordinary web-chat assistant reply to the bot default receiver.
 
@@ -148,9 +167,15 @@ def _maybe_forward_web_chat(session: "Session", message: "ChatMessage", content:
     cfg = session.get(AssistantAIConfig, message.ai_config_id)
     if cfg is None:
         return
+    not_ready = forward_readiness(cfg)
+    if not_ready:
+        # The conversation opted into forwarding but the bot can't deliver —
+        # log loudly so this never fails silently.
+        logger.warning("forward web chat skipped (session=%s): %s", sid, not_ready)
+        return
     channel = str(cfg.bot_channel or "").strip().lower()
     bot = next((b for b in bots if b.channel == channel), None)
-    if bot is None or not bot.is_enabled(cfg):
+    if bot is None:
         return
     try:
         # Empty recipient → adapter falls back to the configured default receiver.

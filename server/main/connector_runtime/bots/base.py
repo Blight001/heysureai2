@@ -70,6 +70,17 @@ class BotAdapter(ABC):
     def is_enabled(self, cfg: "AssistantAIConfig") -> bool:
         """Return True iff this bot should run for the given AI config."""
 
+    def has_default_recipient(self, cfg: "AssistantAIConfig") -> bool:
+        """Whether this bot can deliver to a configured default receiver.
+
+        Used to validate "forward web chat to bot": a forward with an empty
+        recipient only reaches someone when the channel has a default target
+        configured. Default ``False``; channels override to inspect their own
+        addressing keys (e.g. Feishu ``default_receive_id`` / webhook, QQ
+        ``default_target_id``).
+        """
+        return False
+
     # ---- long connection lifecycle -----------------------------------------
 
     @abstractmethod

@@ -49,6 +49,15 @@ class FeishuBot(BotAdapter):
             return False
         return bool(self.read_config(cfg).get("enabled"))
 
+    def has_default_recipient(self, cfg: "AssistantAIConfig") -> bool:
+        bot_cfg = self.read_config(cfg)
+        # A default receive_id, or a webhook-only "仅通知" URL, both give the
+        # forward somewhere to land.
+        return bool(
+            str(bot_cfg.get("default_receive_id") or "").strip()
+            or str(bot_cfg.get("webhook_url") or "").strip()
+        )
+
     # ---- long-connection lifecycle ----------------------------------------
 
     def start_long_connections(self) -> int:
