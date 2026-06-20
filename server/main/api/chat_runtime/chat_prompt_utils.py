@@ -464,6 +464,13 @@ def _build_mcp_stream_warning(
                 xml_arguments_tag_count += 1
 
     known_tools = {item.get("name") for item in registry.list_tools() if item.get("name")}
+    if cfg:
+        known_tools.update(
+            endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None))
+        )
+        known_tools.update(
+            endpoint_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None))
+        )
 
     unauthorized_tools = []
     unknown_tools = []

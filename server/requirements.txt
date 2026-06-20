@@ -109,3 +109,6 @@ sounddevice>=0.4.6
 soundfile>=0.12.1
 watchfiles>=0.21.0
 tree-sitter>=0.21.3
+
+# Windows launcher UI (tk_launcher.py)
+customtkinter>=5.2.0

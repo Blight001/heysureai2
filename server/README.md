@@ -59,10 +59,9 @@ Full configuration lives in `main/api/core/settings.py`.
 
 ## Windows launcher
 
-On Windows, `run.bat` now opens a single Tk dashboard instead of four separate
-console windows. The dashboard shows live logs for gateway, MCP runtime,
-connector runtime, AI runtime, and the Web console, with per-service start /
-restart / stop controls plus a global open-web shortcut.
+On Windows, `run.bat` opens a modern single-window launcher (built with customtkinter).
+It provides live log tabs for gateway / MCP / connector / AI runtime + Web console,
+per-service start/restart/stop, global controls, status overview pills, and quick "open web" button.
 
 ## Directory Layout
 

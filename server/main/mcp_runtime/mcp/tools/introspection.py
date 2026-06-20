@@ -65,6 +65,22 @@ def _describable_tool_names(endpoint_defs: Dict[str, Any]) -> set[str]:
     return names
 
 
+def _workshop_tool_defs() -> Dict[str, Dict[str, Any]]:
+    """Definitions for built-in workshop tools.
+
+    Workshop tools are executed through the endpoint dispatch path, but their
+    schemas live in the built-in workshop catalog rather than the MCP registry.
+    Keep describe_tool able to explain them even before the presence snapshot is
+    refreshed for this process.
+    """
+    try:
+        from workshop import engine as workshop_engine
+
+        return workshop_engine.tool_defs_map()
+    except Exception:
+        return {}
+
+
 def _resolve_tool_alias(name: str, available: set[str]) -> str:
     raw = str(name or "").strip()
     if raw in available:
@@ -179,6 +195,9 @@ def _mcp_describe_tool(user_id: int, args: Dict[str, Any], ai_config_id: Optiona
     """
 
     endpoint_defs = online_tool_defs_for_user(user_id)
+    endpoint_defs.update(
+        {name: spec for name, spec in _workshop_tool_defs().items() if name not in endpoint_defs}
+    )
     available = _describable_tool_names(endpoint_defs)
 
     requested: list[str] = []

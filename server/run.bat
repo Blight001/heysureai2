@@ -1,8 +1,8 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-rem Single-window launcher for gateway, MCP runtime, connector runtime,
-rem and AI worker. The Tk dashboard shows live logs and restart controls.
+rem Modern single-window launcher (customtkinter) for all backend services + web console.
+rem Shows live colored logs, status pills, and convenient controls.
 set "SCRIPT_DIR=%~dp0"
 
 cd /d "%SCRIPT_DIR%"
