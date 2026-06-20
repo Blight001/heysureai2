@@ -3,9 +3,8 @@ from .tools.introspection import (
     _mcp_describe_tool,
 )
 from .tools.workspace import (
-    _get_overview,
+    _admin_manage,
     _file_manage,
-    _list_agents,
     _run_command,
     FILE_MANAGE_SCHEMA,
 )
@@ -134,7 +133,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         destructive=True,
     ))
     registry.register(MCPTool(
-        name="file.manage",
+        name="workspace.manage",
         description=(
             "工作区文件统一工具：用 action 选择 read 读取 / tree 列出文件树 / write 创建覆盖 / edit 按块编辑。"
             "路径必须位于当前 AI 工作区内；write/edit 需管理者及以上。"
@@ -145,16 +144,23 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         destructive=True,
     ))
     registry.register(MCPTool(
-        name="admin.list_agents",
-        description="列出当前用户已连接的端侧 Agent，以及受管的 AI 配置。",
-        input_schema={"type": "object", "properties": {}},
-        handler=_list_agents,
-    ))
-    registry.register(MCPTool(
-        name="admin.get_overview",
-        description="获取系统总览：工作区状态，以及已连接的端侧 Agent 和受管的 AI 配置。",
-        input_schema={"type": "object", "properties": {}},
-        handler=_get_overview,
+        name="admin.manage",
+        description=(
+            "管理员/治理统一工具：用 action 选择 overview 获取系统总览（工作区状态 + "
+            "已连接端侧 Agent 与受管 AI 配置）/ list_agents 仅列出已连接端侧 Agent 与受管 AI 配置。"
+        ),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["overview", "list_agents"],
+                    "description": "overview 系统总览；list_agents 仅列出 Agent。",
+                },
+            },
+            "required": ["action"],
+        },
+        handler=_admin_manage,
     ))
     registry.register(MCPTool(
         name="task.manage",
@@ -337,9 +343,9 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="knowledge.manage",
         description=(
-            "知识库统一工具：用 action 操作知识工坊里的传承思想与内置知识类目——"
+            "知识库统一工具：用 action 操作图书馆里的传承思想与内置知识类目——"
             "list_thoughts/get_thought/create_thought/edit_thought/delete_thought、install_skill_package、"
-            "read_*/update_* 各内置类目。需要该 AI 已绑定知识工坊；写操作按角色受限。"
+            "read_*/update_* 各内置类目。需要该 AI 已绑定图书馆；写操作按角色受限。"
         ),
         input_schema=KNOWLEDGE_MANAGE_SCHEMA,
         handler=_knowledge_manage,
@@ -349,7 +355,7 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
     registry.register(MCPTool(
         name="knowledge.search",
         description=(
-            "语义召回知识工坊里的主题思想。根据 query 通过向量检索与关键词回退返回最相关条目，"
+            "语义召回图书馆里的主题思想。根据 query 通过向量检索与关键词回退返回最相关条目，"
             "用于在写作、任务执行和复盘时快速找到可复用的有效思想。"
         ),
         input_schema=KNOWLEDGE_SEARCH_SCHEMA,

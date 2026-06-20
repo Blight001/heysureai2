@@ -262,7 +262,7 @@ def _device_kind_label(device_id: str) -> str:
             continue
         platform = str(agent.get("platform") or "").lower()
         if bool(agent.get("isWorkshop")) or "workshop" in platform:
-            return "知识工坊Agent"
+            return "图书馆Agent"
         if bool(agent.get("isBrowserExtension")) or "browser-extension" in platform:
             return "浏览器Agent"
         if bool(agent.get("isAndroid")) or "android" in platform:

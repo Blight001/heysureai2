@@ -76,138 +76,31 @@ _BUILTIN_ENTRIES = {
         "triggers": ["传承技能", "固定MCP", "在线MCP", "工坊工具", "MCP工具"],
         "summary": "系统服务端内置 MCP 与在线设备实时上报的工具能力。",
     },
+    # 纯服务端固定 MCP 视图：与 inheritance_skills 共享同一权威源（注册表 + 文件
+    # 覆盖），但只含服务端工具、按 namespace 分组。仅供 read() 解析，不进入
+    # _builtin_entries() 列表，因此不会在前端多出一张知识库卡片。
+    "builtin.intrinsic_properties": {
+        "title": "固有属性",
+        "triggers": ["固有属性", "服务端MCP", "系统MCP", "固定MCP"],
+        "summary": "系统固定注册的服务端 MCP 工具定义（按 namespace 分组）。",
+    },
+    # 工具箱：每个 AI 默认即可用、无需绑定的系统固定 MCP（图书馆绑定工具除外）。
+    "builtin.toolbox": {
+        "title": "工具箱",
+        "triggers": ["工具箱", "系统工具", "默认MCP", "固定MCP"],
+        "summary": "每个 AI 默认绑定的系统固定 MCP 工具（无需绑定图书馆即可用）。",
+    },
+    # 图书馆管理工具：需绑定图书馆后才能调用的治理 / 管理类 MCP。
+    "builtin.library_mcp": {
+        "title": "图书馆管理工具",
+        "triggers": ["图书馆", "管理工具", "治理MCP", "绑定工具"],
+        "summary": "需绑定图书馆后调用的管理类 MCP：prompt 管理、管理员操作、设备管理、知识库管理。",
+    },
     "builtin.inheritance_tools": {
         "title": "传承思想",
         "triggers": ["传承思想", "Markdown文件", "思想沉淀"],
         "summary": "从 ClawHub 安装到本地知识库的 Markdown 思想与技能快照。",
     },
-}
-
-_INTRINSIC_TOOL_DESCRIPTIONS_ZH = {
-    "admin.get_overview": "获取当前工作区概览，包括连接中的 socket Agent、受管 AI 配置和运行状态。",
-    "admin.list_agents": "列出当前用户连接中的 socket Agent 和受管 AI 配置。",
-    "message.send_to_ai": "向同一数字社会中的另一个 AI 发送消息，可用于询问、回复、通知或闲聊，并支持按需等待答复。",
-    "conversation.create": "为当前 AI 作用域创建一个新的空聊天会话。",
-    "conversation.delete": "删除当前 AI 作用域内指定聊天会话及其中所有消息。",
-    "conversation.list": "读取当前 AI 作用域内的对话列表及消息数量、Token 用量等摘要。",
-    "conversation.detail": "读取当前 AI 作用域内指定对话的详情和分页消息内容。",
-    "conversation.edit": "编辑指定对话，支持重命名或清空消息但保留会话。",
-    "conversation.compress": "压缩当前对话上下文：把较早的历史总结成一条摘要、保留最近几条原文，用于对话变长时主动腾出 Token 空间继续工作。",
-    "mcp.describe_tool": "按工具名（支持 tools 批量或 query 关键词搜索）读取已允许 MCP 工具的完整说明和参数 schema。",
-    "prompt.list_targets": "列出当前 AI prompt 目标和全局/系统 prompt 键；当前 AI 基础 prompt 位于 AI 配置中。",
-    "prompt.read_ai": "读取一个 AI 配置实际使用的基础 prompt；未指定目标时读取当前 AI。",
-    "prompt.read_system": "读取当前用户的全局/系统 prompt 模板；当前 AI 基础 prompt 请使用 prompt.read_ai。",
-    "prompt.write_ai": "按行编辑一个 AI 配置的 prompt；未指定目标时编辑当前 AI。",
-    "prompt.write_system": "按行编辑一个全局/系统 prompt 模板；主要用于运行时注入模板或旧版兜底模板。",
-    "task.complete": "将当前任务标记为已完成，必须提供非空完成摘要；成功后自动追加日期和摘要到该 AI 工作目录的 task.md。",
-    "task.create": "创建任务，支持立即执行、一次性定时或循环任务。",
-    "task.delete": "管理员或管理者接管工具：硬删除任务，停止活跃运行并清理相关任务会话消息。",
-    "task.list": "列出任务；默认返回排队、运行和暂停任务，也可查看当前任务或历史任务。",
-    "task.update": "管理员或管理者接管工具：更新任务标题、说明、优先级、状态或调度信息。",
-    "message.send_to_user": "通过绑定的飞书或 QQ 机器人向人类用户发送文本或媒体消息。",
-    "workspace.search": "使用 Tavily 搜索公网信息，适合查询外部信息或实时信息。",
-    "workspace.read_file": "读取当前 AI 工作区内的文本文件，路径必须位于工作区内。",
-    "workspace.write_file": "安全写入当前 AI 工作区内的文本文件，支持创建或覆盖。",
-    "workspace.edit_file": "安全编辑当前 AI 工作区内的文本文件，支持按文本块替换、删除、追加和前置。",
-    "workspace.run_command": "执行 shell 命令，默认在当前用户工作区运行，支持绝对路径和环境变量；需要隔离时可开启 strict_workspace 或 sandbox_env。",
-}
-
-_INTRINSIC_PARAM_DESCRIPTIONS_ZH = {
-    "ai_config_id": "目标 AI 配置 ID；未提供时默认使用当前 AI。",
-    "ai_kind": "AI 类型；未提供时默认使用当前运行或 assistant。",
-    "ai_member_ids": "项目关联的 AI 成员 ID 列表。",
-    "all": "为 true 时等同于 mode=all，展开全部工具。",
-    "applied_to": "应用该进化建议的位置或对象。",
-    "channel": "发送渠道；默认使用 AI 配置中的机器人渠道。",
-    "chat_id": "receive_id 的别名。",
-    "command": "要执行的 shell 命令。",
-    "confidence": "置信度，范围 0.0 到 1.0。",
-    "content": "正文内容。",
-    "current": "current_only 的别名。",
-    "current_message_id": "当前用户消息 ID；未提供时默认使用活跃运行中的当前用户消息。",
-    "current_session_id": "当前会话 ID；运行时通常会自动补充。",
-    "current_only": "仅返回当前任务，优先运行中任务，其次排队或暂停任务。",
-    "cwd": "工作目录；相对路径按工作区解析，也可传绝对路径。",
-    "decision": "评审决定，例如接受、拒绝或应用。",
-    "description": "描述文本。",
-    "duration": "媒体时长，单位毫秒，飞书视频上传时可用。",
-    "edits": "批量行编辑列表；每项可包含 mode、line、start_line、end_line、text/content/prompt。",
-    "end_line": "范围结束行号，从 1 开始。",
-    "evidence": "证据或来源信息。",
-    "evolution_input_id": "要评审的系统进化建议 ID。",
-    "file_name": "上传媒体时使用的文件名。",
-    "generation": "任务或 AI 代数。",
-    "gotchas": "注意事项、已知坑或风险点列表。",
-    "history": "include_history 的别名。",
-    "history_only": "仅返回已完成、已取消、已停止或错误等历史任务。",
-    "id": "目标记录 ID。",
-    "image_path": "media_path 的图片别名。",
-    "image_url": "media_url 的图片别名。",
-    "include_answer": "是否让 Tavily 返回生成式答案。",
-    "include_archived": "是否包含已归档记录。",
-    "include_history": "是否在活跃任务之外同时包含已结束历史任务。",
-    "include_images": "是否包含图片搜索结果。",
-    "include_messages": "是否包含匹配会话中的完整消息。",
-    "include_raw_content": "是否包含可用的网页原始内容。",
-    "instruction": "任务执行说明或要求。",
-    "job_id": "任务 job_id。",
-    "k": "最多返回结果数，默认 5。",
-    "key": "系统 prompt 键；省略时读取全部。",
-    "keyword": "query 的别名。",
-    "kind": "记忆类型。",
-    "limit": "返回数量上限。",
-    "line": "目标行号，从 1 开始。",
-    "line_number": "line 的别名。",
-    "max_results": "最大搜索结果数，范围 1 到 20，默认 5。",
-    "media_path": "服务端本地图片或视频路径。",
-    "media_type": "显式媒体类型。",
-    "media_url": "图片或视频的 HTTP(S) URL，服务器会下载后发送。",
-    "memory_id": "知识或记忆条目的 memory_id。",
-    "message_type": "消息语义类型：inquiry=询问并期望答复，reply=回复上一条询问，notify=单向通知，chitchat=闲聊。",
-    "mode": "操作模式。",
-    "name": "名称；在部分工具中也是 tool 的别名。",
-    "namespace": "MCP 命名空间过滤，例如 workspace、task、prompt。",
-    "open_id": "receive_id 的飞书 open_id 别名。",
-    "priority": "优先级，范围 1 到 10。",
-    "project_id": "项目 ID。",
-    "prompt": "prompt 文本；仅在 mode=replace_all 时作为完整 prompt 覆盖使用。",
-    "proposal": "系统进化建议内容。",
-    "query": "查询文本。",
-    "receive_id": "接收方 ID；默认使用 AI 配置中的默认接收方。",
-    "receive_id_type": "接收方 ID 类型；QQ 可使用 c2c、group、channel 或 dm。",
-    "reply_to_message_id": "回复的原始 AI 消息 ID，用于保持消息线程上下文。",
-    "require_reply": "是否同步等待对方回复；普通 AI 协作建议保持 false。",
-    "review_status": "评审状态过滤条件。",
-    "risk": "风险说明。",
-    "schedule_at": "一次性执行时间，支持 Unix 秒或带时区的 ISO-8601。",
-    "schedule_duration_minutes": "定时延迟或循环间隔，单位分钟。",
-    "schedule_run_immediately": "循环任务是否首次立即执行。",
-    "scenario": "流程适用场景或触发条件。",
-    "scope": "知识作用域。",
-    "scope_target": "非全局作用域的目标 ID。",
-    "search_depth": "Tavily 搜索深度，默认 advanced。",
-    "session_id": "会话 ID。",
-    "session_name": "name 的别名。",
-    "source": "来源信息，例如聊天消息 ID 或文件路径。",
-    "start_line": "范围起始行号，从 1 开始。",
-    "status": "状态过滤或目标状态。",
-    "steps": "按顺序执行的步骤列表。",
-    "tags": "标签列表。",
-    "target_ai_config_id": "代理操作的目标 AI 配置 ID。",
-    "target_config_id": "target_ai_config_id 的别名。",
-    "target_id": "QQ 目标 ID 别名。",
-    "target_scope": "建议影响的目标范围。",
-    "target_type": "QQ 目标类型。",
-    "text": "文本内容。",
-    "timeout": "命令超时时间，单位秒，最高 600 秒。",
-    "timeout_seconds": "require_reply=true 时最多等待的秒数；默认最长等待 24 小时。",
-    "title": "标题。",
-    "to_ai_config_id": "目标 AI 的 ai_config_id。",
-    "tool": "要查看的精确 MCP 工具名。",
-    "triggers": "未来任务自动匹配时使用的关键词列表。",
-    "type": "类型。",
-    "video_path": "media_path 的视频别名。",
-    "video_url": "media_url 的视频别名。",
 }
 
 
@@ -1078,6 +971,8 @@ def _builtin_entries(*, user_id: Optional[int] = None, with_body: bool = False) 
         for memory_id in (
             "builtin.intrinsic_personas",
             "builtin.system_prompts",
+            "builtin.toolbox",
+            "builtin.library_mcp",
             "builtin.inheritance_skills",
             "builtin.inheritance_tools",
         )
@@ -1123,6 +1018,18 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
             prompts = _system_prompts_payload(int(user_id or 0))
             out["system_prompts"] = prompts
             out["body"] = _render_system_prompts_body(prompts)
+        elif memory_id == "builtin.intrinsic_properties":
+            properties = _intrinsic_properties_payload(int(user_id or 0))
+            out["intrinsic_properties"] = properties
+            out["body"] = _render_intrinsic_properties_body(properties)
+        elif memory_id == "builtin.toolbox":
+            toolbox = _intrinsic_properties_payload(int(user_id or 0), scope="toolbox")
+            out["toolbox"] = toolbox
+            out["body"] = _render_intrinsic_properties_body(toolbox, title="工具箱")
+        elif memory_id == "builtin.library_mcp":
+            library_mcp = _intrinsic_properties_payload(int(user_id or 0), scope="library")
+            out["library_mcp"] = library_mcp
+            out["body"] = _render_intrinsic_properties_body(library_mcp, title="图书馆管理工具")
         elif memory_id == "builtin.inheritance_skills":
             skills = _inheritance_skills_payload(int(user_id or 0))
             out["inheritance_skills"] = skills
@@ -1134,21 +1041,37 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
     return out
 
 
-def _intrinsic_properties_payload(user_id: int = 0) -> Dict[str, Any]:
+_INTRINSIC_SCOPE_DESCRIPTIONS = {
+    "all": "系统当前固定注册的服务端 MCP 工具定义如下；默认中文展示，编辑后会同步影响 [可用MCP工具] 目录与 mcp.describe_tool 的返回。",
+    "toolbox": "「工具箱」：每个 AI 默认即可用的系统固定 MCP 工具（无需绑定）；编辑后会同步影响 mcp.describe_tool 的返回。",
+    "library": "「图书馆」管理工具：需要该 AI 绑定图书馆后才能调用的治理 / 管理类 MCP（prompt 管理、管理员操作、设备管理、知识库管理）。",
+}
+
+
+def _intrinsic_properties_payload(user_id: int = 0, *, scope: str = "all") -> Dict[str, Any]:
+    """服务端固定 MCP 工具视图。``scope``：all 全部 / toolbox 工具箱 / library 图书馆管理工具。"""
     from mcp_runtime.mcp import registry
+    from mcp_runtime.mcp.permissions import LIBRARY_BOUND_TOOLS
 
     overrides = _load_intrinsic_properties_overrides(user_id) if user_id else {}
-    tools = sorted(registry.list_tools(), key=lambda item: str(item.get("name") or ""))
-    # 文件为真相源：首次把注册表工具导出成 mcp/<ns>/<tool>.md（已存在跳过）。
+    all_tools = sorted(registry.list_tools(), key=lambda item: str(item.get("name") or ""))
+    # 文件为真相源：首次把注册表工具导出成 mcp/<ns>/<tool>.md（已存在跳过）。始终按全量
+    # seed，避免按 scope 过滤后漏建文件。
     if user_id:
         try:
             kb_store.seed_mcp_tools(
                 int(user_id),
-                tools,
+                all_tools,
                 lambda nm, schema: _mcp_schema_parameter_rows(nm, schema, None),
             )
         except Exception as exc:
             logger.info(f"seed_mcp_tools user={user_id} failed: {exc}")
+    if scope == "toolbox":
+        tools = [t for t in all_tools if str(t.get("name") or "").strip() not in LIBRARY_BOUND_TOOLS]
+    elif scope == "library":
+        tools = [t for t in all_tools if str(t.get("name") or "").strip() in LIBRARY_BOUND_TOOLS]
+    else:
+        tools = all_tools
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for tool in tools:
         name = str(tool.get("name") or "").strip()
@@ -1181,7 +1104,8 @@ def _intrinsic_properties_payload(user_id: int = 0) -> Dict[str, Any]:
         for namespace, items in sorted(grouped.items())
     ]
     return {
-        "description": "系统当前固定注册的服务端 MCP 工具定义如下；默认中文展示，编辑后会同步影响 [可用MCP工具] 目录与 mcp.describe_tool 的返回。",
+        "description": _INTRINSIC_SCOPE_DESCRIPTIONS.get(scope, _INTRINSIC_SCOPE_DESCRIPTIONS["all"]),
+        "scope": scope,
         "total": len(tools),
         "categories": categories,
     }
@@ -1209,7 +1133,7 @@ def _mcp_schema_parameter_rows(tool_name: str, schema: Dict[str, Any], overrides
             "name": param_name,
             "type": type_name or "any",
             "required": param_name in required_set,
-            "description": override_description or _intrinsic_param_description(tool_name, param_name, str(cfg.get("description") or "").strip()),
+            "description": override_description or str(cfg.get("description") or "").strip(),
         })
     rows.sort(key=lambda item: (not bool(item.get("required")), str(item.get("name") or "")))
     return rows
@@ -1226,7 +1150,7 @@ def intrinsic_tool_description(user_id: int, name: str, raw: str) -> str:
         description = str(override.get("description") or "").strip()
         if description:
             return description
-    return _intrinsic_tool_description(name, raw)
+    return str(raw or "").strip()
 
 
 def intrinsic_input_schema(user_id: int, tool_name: str, schema: Dict[str, Any]) -> Dict[str, Any]:
@@ -1246,20 +1170,8 @@ def intrinsic_input_schema(user_id: int, tool_name: str, schema: Dict[str, Any])
         override_description = ""
         if isinstance(param_overrides, dict):
             override_description = str(param_overrides.get(param_name) or "").strip()
-        config["description"] = override_description or _intrinsic_param_description(
-            tool_name,
-            param_name,
-            str(config.get("description") or "").strip(),
-        )
+        config["description"] = override_description or str(config.get("description") or "").strip()
     return out
-
-
-def _intrinsic_tool_description(name: str, raw: str) -> str:
-    return str(raw or "").strip()
-
-
-def _intrinsic_param_description(tool_name: str, name: str, raw: str) -> str:
-    return str(raw or "").strip()
 
 
 def _intrinsic_properties_overrides_path(user_id: int) -> str:
@@ -1330,10 +1242,10 @@ def save_intrinsic_properties_overrides(*, user_id: int, tools: List[Dict[str, A
     return _builtin_entry("builtin.inheritance_skills", user_id=user_id, with_body=True) or {}
 
 
-def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None) -> str:
+def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None, *, title: str = "固有属性") -> str:
     data = payload or _intrinsic_properties_payload()
     lines = [
-        "# 固有属性",
+        f"# {title}",
         "",
         str(data.get("description") or ""),
         "",
@@ -1439,7 +1351,7 @@ def _inheritance_skills_payload(user_id: int = 0) -> Dict[str, Any]:
             "传承技能包含系统服务端内置 MCP 与当前账号在线设备实时上报的工具；"
             "服务端工具说明可编辑，保存后同步 mcp.list_tools / mcp.describe_tool。"
         ),
-        "workshop": "知识工坊（内置）",
+        "workshop": "图书馆（内置）",
         "online": bool(online_devices),
         "server_total": len(server_tools),
         "server_categories": server_categories,
@@ -1457,7 +1369,7 @@ def _render_inheritance_skills_body(payload: Dict[str, Any]) -> str:
         "",
         str(payload.get("description") or ""),
         "",
-        f"工坊：{payload.get('workshop') or ''}",
+        f"图书馆：{payload.get('workshop') or ''}",
         f"服务端 MCP 工具数：{int(payload.get('server_total') or 0)}",
         f"设备数：{int(payload.get('device_total') or 0)}（端侧 {int(payload.get('endpoint_device_total') or 0)}）",
         f"传承 MCP 工具总数：{int(payload.get('total') or 0)}",

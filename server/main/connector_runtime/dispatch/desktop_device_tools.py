@@ -45,9 +45,10 @@ def _presence_tool_defs() -> Dict[str, Dict[str, Any]]:
 
 
 
-# ``admin.list_agents`` is a *server* bridge tool surfaced whenever any endpoint
-# agent is connected — not a device-side tool — so it stays a fixed set.
-ENDPOINT_BRIDGE_MCP_TOOLS = {"admin.list_agents"}
+# ``admin.manage`` is a *server* bridge tool surfaced whenever any endpoint
+# agent is connected — not a device-side tool — so it stays a fixed set. The AI
+# calls it with action=list_agents to enumerate the connected agents.
+ENDPOINT_BRIDGE_MCP_TOOLS = {"admin.manage"}
 
 # The endpoint (desktop / browser) tool surface is no longer a hardcoded
 # whitelist. Each connected agent advertises its own tools in the

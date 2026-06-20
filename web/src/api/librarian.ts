@@ -1,5 +1,29 @@
 import { del, get, post, put } from './http'
 
+// 服务端固定 MCP 工具视图（固有属性 / 工具箱 / 图书馆管理工具共用同一形态）。
+export interface IntrinsicMcpView {
+  description: string
+  total: number
+  scope?: 'all' | 'toolbox' | 'library'
+  categories: Array<{
+    namespace: string
+    count: number
+    tools: Array<{
+      name: string
+      description: string
+      inputSchema?: Record<string, any>
+      parameters?: Array<{
+        name: string
+        type: string
+        required: boolean
+        description: string
+      }>
+      destructive?: boolean
+      source?: 'server' | 'endpoint'
+    }>
+  }>
+}
+
 export interface KnowledgeEntryItem {
   memory_id: string
   title: string
@@ -19,27 +43,11 @@ export interface KnowledgeEntryItem {
   created_at: number
   updated_at: number
   body?: string
-  intrinsic_properties?: {
-    description: string
-    total: number
-    categories: Array<{
-      namespace: string
-      count: number
-      tools: Array<{
-        name: string
-        description: string
-        inputSchema?: Record<string, any>
-        parameters?: Array<{
-          name: string
-          type: string
-          required: boolean
-          description: string
-        }>
-        destructive?: boolean
-        source?: 'server' | 'endpoint'
-      }>
-    }>
-  }
+  intrinsic_properties?: IntrinsicMcpView
+  // 工具箱：每个 AI 默认即可用的系统固定 MCP（无需绑定图书馆）。
+  toolbox?: IntrinsicMcpView
+  // 图书馆管理工具：需绑定图书馆后才能调用的治理 / 管理类 MCP。
+  library_mcp?: IntrinsicMcpView
   intrinsic_personas?: {
     description: string
     total: number

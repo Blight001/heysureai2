@@ -36,7 +36,7 @@ export const FIXED_BUILDINGS: FixedBuildingDef[] = [
   { key: 'library', sheet: 'building_library.png', label: '传承知识库（图书馆）', pos: { x: 880, y: 430 }, scale: 1.55 },
 ]
 
-/** 动态作坊（机械坊 / 瞭望塔 / 知识工坊）的世界显示放大倍数 */
+/** 动态作坊（机械坊 / 瞭望塔 / 图书馆）的世界显示放大倍数 */
 export const WORKSHOP_SCALE = 1.45
 
 /** 角色锚区（成员在矩形内游荡） */

@@ -5,7 +5,7 @@ TOOL_DEFS = [
     {
         "name": "librarian.list_inheritance_thoughts",
         "description": (
-            "获取当前用户知识工坊中已安装的传承思想列表。"
+            "获取当前用户图书馆中已安装的传承思想列表。"
             "返回每条思想的 ID、名称、摘要、版本、来源和本地可用状态；"
             "需要正文时再调用 librarian.get_inheritance_thought。"
         ),
@@ -163,10 +163,11 @@ TOOL_DEFS = [
     {
         "name": "librarian.read_inheritance_skills",
         "description": (
-            "读取知识库中的「传承技能」：即当前账号在线设备上报的 MCP 工具信息。"
-            "除名称、描述和入参 schema 外，还返回实现类型、源码入口、处理函数片段或"
-            "动态程序代码，以及通过 mcp.manage_dynamic_tool 执行 inspect/get_source/"
-            "upsert 的修改路径。只读，不接受参数。"
+            "读取知识库中的「传承技能」总览：系统服务端内置 MCP 与当前账号在线设备"
+            "上报的 MCP 工具，按设备分组。除名称、描述和入参 schema 外，还返回实现"
+            "类型、源码入口、处理函数片段或动态程序代码，以及通过 "
+            "mcp.manage_dynamic_tool 执行 inspect/get_source/upsert 的修改路径。"
+            "只看服务端固定 MCP 请用 read_intrinsic_skills。只读，不接受参数。"
         ),
         "inputSchema": {
             "type": "object",
@@ -178,8 +179,10 @@ TOOL_DEFS = [
     {
         "name": "librarian.read_intrinsic_skills",
         "description": (
-            "读取知识库中的「传承技能」服务端部分：系统固定注册的服务端 MCP 工具清单，"
-            "按 namespace 分组返回每个工具的描述与参数说明。只读，不接受参数。"
+            "读取知识库中的「固有属性」：仅系统固定注册的服务端 MCP 工具清单（不含在线"
+            "设备工具），按 namespace 分组返回每个工具的描述与参数说明，与 "
+            "update_intrinsic_skills、mcp.describe_tool 同源。在线设备工具请用 "
+            "read_inheritance_skills。只读，不接受参数。"
         ),
         "inputSchema": {
             "type": "object",

@@ -403,7 +403,7 @@ def _file_manage(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
     raw = str((args or {}).get("action") or "").strip().lower()
     action = _FILE_ACTION_ALIASES.get(raw, raw)
     if not action:
-        raise HTTPException(status_code=400, detail="action is required for file.manage")
+        raise HTTPException(status_code=400, detail="action is required for workspace.manage")
     spec = _FILE_ACTIONS.get(action)
     if spec is None:
         raise HTTPException(
@@ -664,4 +664,25 @@ def _get_overview(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int
         "agent_count": len(all_agents),
         "agents": all_agents,
     }
+
+
+# admin.manage 统一门面：用 action 选择 overview 系统总览 / list_agents 列出 Agent。
+_ADMIN_ACTION_ALIASES = {
+    "get_overview": "overview",
+    "list": "list_agents",
+    "agents": "list_agents",
+}
+
+
+def _admin_manage(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    raw = str((args or {}).get("action") or "").strip().lower()
+    action = _ADMIN_ACTION_ALIASES.get(raw, raw)
+    if action == "overview":
+        return _get_overview(user_id, args, ai_config_id)
+    if action == "list_agents":
+        return _list_agents(user_id, args, ai_config_id)
+    raise HTTPException(
+        status_code=400,
+        detail="action is required for admin.manage（可用：overview / list_agents）",
+    )
 

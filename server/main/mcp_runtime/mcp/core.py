@@ -157,6 +157,7 @@ class MCPRegistry:
     ) -> Dict[str, Any]:
         tool = self.get(name)
         args = arguments or {}
+        _enforce_library_binding(tool.name, user_id, ai_config_id)
         await _set_runtime_status(user_id, ai_config_id, "running", tool.name)
         await sio.emit(
             "mcp:status",
@@ -207,6 +208,28 @@ class MCPRegistry:
                 room=f"user_{user_id}",
             )
             raise
+
+def _enforce_library_binding(tool_name: str, user_id: int, ai_config_id: Optional[int]) -> None:
+    """图书馆（绑定制）工具：除注册表存在外，还要求调用 AI 已绑定知识工坊（图书馆）。
+
+    没有 ``ai_config_id`` 视为核心 / 管理员直调，放行（与 ``enforce_min_role``
+    约定一致）；带 ``ai_config_id`` 的 AI 调用未绑定图书馆时抛 403。「工具箱」
+    工具不在此集合内，每个 AI 默认即可用。
+    """
+    from .permissions import requires_library_binding
+
+    if not requires_library_binding(tool_name):
+        return
+    if not ai_config_id:
+        return
+    from api.workshop_bindings import workshop_device_ids_for_config
+
+    if not workshop_device_ids_for_config(user_id, ai_config_id):
+        raise HTTPException(
+            status_code=403,
+            detail=f"该 AI 未绑定图书馆，无法调用 {tool_name}（请在 AI 配置或世界中绑定图书馆）",
+        )
+
 
 async def _set_runtime_status(user_id: int, ai_config_id: Optional[int], status: str, tool: str) -> None:
     with Session(engine) as session:

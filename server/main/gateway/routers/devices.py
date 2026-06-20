@@ -25,7 +25,7 @@ def _find_connected_agent(device_id: str, user_id: int) -> Optional[dict]:
     is not currently connected. Scope is only visible while connected — a
     disconnected agent is simply not shown.
 
-    内置知识工坊不走 socket，按需合成一条常在线虚拟记录。"""
+    内置图书馆不走 socket，按需合成一条常在线虚拟记录。"""
     aid = str(device_id or "").strip()
     for agent in agents.values():
         if str(agent.get("id") or "") == aid and agent.get("userId") == user_id:
@@ -170,7 +170,7 @@ async def bind_agent_ai(
         from workshop import engine as workshop_engine
 
         if workshop_engine.is_builtin_workshop_device_id(device_id):
-            raise HTTPException(status_code=400, detail="知识工坊请通过 /api/workshop/bindings 绑定")
+            raise HTTPException(status_code=400, detail="图书馆请通过 /api/workshop/bindings 绑定")
     except HTTPException:
         raise
     except Exception:

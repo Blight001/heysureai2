@@ -28,7 +28,7 @@ def _agent_display_name(agent: Dict[str, Any]) -> str:
     if device_type == "android":
         return "安卓端"
     if device_type == "workshop":
-        return "知识工坊"
+        return "图书馆"
     return "桌面端"
 
 
@@ -95,13 +95,32 @@ def build_prompt_tool_groups(
             if name in by_name and _is_workspace_tool(by_name[name])
         }
 
-    workspace_tools = [by_name[name] for name in sorted(workspace_names) if name in by_name]
+    # 工作区（服务端）MCP 再分两组：工具箱（默认即用）与 图书馆（需绑定图书馆）。
+    from mcp_runtime.mcp.permissions import LIBRARY_BOUND_TOOLS
+
+    toolbox_tools = [
+        by_name[name]
+        for name in sorted(workspace_names)
+        if name in by_name and name not in LIBRARY_BOUND_TOOLS
+    ]
+    library_tools = [
+        by_name[name]
+        for name in sorted(workspace_names)
+        if name in by_name and name in LIBRARY_BOUND_TOOLS
+    ]
     groups: List[Dict[str, Any]] = [{
-        "groupKey": "workspace",
-        "groupLabel": "工作区 MCP",
+        "groupKey": "toolbox",
+        "groupLabel": "工具箱 MCP",
         "groupKind": "workspace",
-        "tools": workspace_tools,
+        "tools": toolbox_tools,
     }]
+    if library_tools:
+        groups.append({
+            "groupKey": "library",
+            "groupLabel": "图书馆 MCP（需绑定图书馆）",
+            "groupKind": "workspace",
+            "tools": library_tools,
+        })
 
     agents = _agents_for_prompt_groups(user_id, ai_config_id)
     for agent in agents:

@@ -28,7 +28,7 @@ export const applyMemberDropBinding = (
   }
 
   if (!member.boundAgentIds.length) return
-  if (window.confirm(`把成员「${member.name}」从端侧 agent / 知识工坊上解绑？`)) {
+  if (window.confirm(`把成员「${member.name}」从端侧 agent / 图书馆上解绑？`)) {
     void Promise.all(member.boundAgentIds.map(deviceId => {
       const workshop = snap.workshops.find(item => item.deviceId === deviceId)
       return workshop?.type === 'workshop'

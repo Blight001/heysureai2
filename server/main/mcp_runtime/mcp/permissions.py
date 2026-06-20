@@ -48,7 +48,7 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # Unified workspace file tool (read/write/edit/tree). Member is the floor so
     # everyone can read; write/edit are gated to manager+ inside the handler via
     # ``enforce_min_role``.
-    "file.manage": ROLE_MEMBER,
+    "workspace.manage": ROLE_MEMBER,
     # Shell command execution is powerful; keep it manager+.
     "workspace.run_command": ROLE_MANAGER,
     # Unified task management tool (create/list/update/delete). Member floor so
@@ -91,12 +91,35 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # switch/new) — every tier can manage its own scoped sessions.
     "conversation.manage": ROLE_MEMBER,
     # Admin / governance — assistant_admin only.
-    "admin.list_agents": ROLE_ASSISTANT_ADMIN,
-    "admin.get_overview": ROLE_ASSISTANT_ADMIN,
+    "admin.manage": ROLE_ASSISTANT_ADMIN,
     # Self-iterate device MCP tools — writes code that runs on devices with
     # native access, so it sits at the assistant_admin tier.
     "device_mcp.manage": ROLE_ASSISTANT_ADMIN,
 }
+
+
+# 图书馆（绑定制）工具：在角色门槛之外，**还要求调用 AI 已绑定知识工坊（图书馆）**。
+# 这些是治理/管理类能力（prompt 管理、管理员操作、设备管理、知识库管理）。其余
+# 服务端固定工具属于「工具箱」，每个 AI 默认即可用、无需绑定。``knowledge.manage``
+# 的门面早已在 workshop 引擎内校验绑定，这里一并登记以表达完整的图书馆工具集，
+# 中央分发处的绑定校验对它是幂等的。
+LIBRARY_BOUND_TOOLS: Set[str] = {
+    "prompt.manage",
+    "admin.manage",
+    "device_mcp.manage",
+    "knowledge.manage",
+}
+
+
+def requires_library_binding(tool_name: str) -> bool:
+    """该工具是否需要「图书馆」绑定才能由 AI 调用。"""
+    return str(tool_name or "").strip() in LIBRARY_BOUND_TOOLS
+
+
+def toolbox_tool_names(all_tool_names: Iterable[str]) -> Set[str]:
+    """「工具箱」工具：服务端固定工具中除图书馆绑定工具外的其余部分。"""
+    return {str(name).strip() for name in all_tool_names if str(name).strip() not in LIBRARY_BOUND_TOOLS}
+
 
 
 def tool_min_role(tool_name: str) -> str:
@@ -242,6 +265,7 @@ def clamp_tools_json(user, tier: str, mcp_tools_json: Optional[str]) -> str:
         if tool.startswith("workspace.") and tool not in {
             "workspace.search",
             "workspace.run_command",
+            "workspace.manage",
         }:
             continue
         # Endpoint desktop/browser tools are governed exclusively by
