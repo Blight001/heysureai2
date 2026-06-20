@@ -243,39 +243,26 @@ class QQBot(BotAdapter):
         remote_state: Optional[Dict[str, str]] = None,
         remote_error: Optional[str] = None,
     ) -> Dict[str, str]:
+        from .. import status
+
         if str(cfg.bot_channel or "feishu").strip().lower() != self.channel:
-            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "当前机器人类型不是 QQ"}
+            return status.disabled("当前机器人类型不是 QQ")
         bot_cfg = self.read_config(cfg)
         if not bot_cfg.get("enabled"):
-            return {"status": "disabled", "mode": "off", "label": "未启用", "message": "QQ机器人未启用"}
+            return status.disabled("QQ机器人未启用")
         app_id = str(bot_cfg.get("app_id") or "").strip()
         app_secret = str(bot_cfg.get("app_secret") or "").strip()
         if not app_id or not app_secret:
-            return {
-                "status": "failed",
-                "mode": "long_connection",
-                "label": "失败",
-                "message": "App ID / Secret 配置不完整",
-            }
+            return status.failed("long_connection", "App ID / Secret 配置不完整")
         state = remote_state
         if state is None:
             if remote_error:
-                return {
-                    "status": "failed",
-                    "mode": "long_connection",
-                    "label": "失败",
-                    "message": f"connector-runtime 状态不可用: {remote_error}",
-                }
+                return status.failed("long_connection", f"connector-runtime 状态不可用: {remote_error}")
             state = self.get_long_connection_state(int(cfg.id or 0))
-        label = "成功" if state.get("status") == "success" and "启动中" not in str(state.get("message") or "") else "失败"
-        if "启动中" in str(state.get("message") or ""):
-            label = "启动中"
-        return {
-            "status": state.get("status") or "failed",
-            "mode": "long_connection",
-            "label": label,
-            "message": state.get("message") or "botpy 长连接未运行",
-        }
+        report = status.from_connection_state(state, mode="long_connection", starting_hint="启动中")
+        if not report["message"]:
+            report["message"] = "botpy 长连接未运行"
+        return report
 
 
 # Self-register the singleton at import time.
