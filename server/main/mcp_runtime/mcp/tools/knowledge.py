@@ -86,8 +86,8 @@ KNOWLEDGE_MANAGE_SCHEMA: Dict[str, Any] = {
                 "- list_thoughts 列出传承思想；get_thought 读取某条传承思想正文；\n"
                 "- create_thought 新建传承思想；edit_thought 按行编辑；delete_thought 删除（需管理者+）；\n"
                 "- install_skill_package 安装 Skill 包（需管理者+）；\n"
-                "- read_inheritance_skills / read_skills / read_personas / read_system_prompts 读取内置类目；\n"
-                "- update_skills / update_system_prompts（需辅助管理员+）、update_persona（需管理者+）改写内置类目。\n"
+                "- read_inheritance_skills 读取传承技能总览；read_skills 读取服务端固定 MCP；read_personas 读取固有人格；read_system_prompts 读取固有思想；\n"
+                "- update_skills 改写服务端 MCP 说明（需辅助管理员+）；update_system_prompts 改写系统提示词（需辅助管理员+）；update_persona 改写 AI 人格（需管理者+）。\n"
                 "需要该 AI 已绑定图书馆。各 action 的具体参数可放在 params 对象或直接平铺在顶层。"
             ),
         },

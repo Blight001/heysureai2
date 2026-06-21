@@ -51,7 +51,7 @@ const DEFAULT_MCP_NAMESPACE_HINTS = JSON.stringify({
   project: '项目管理。用于查看或维护项目记录。',
 }, null, 2)
 
-const DEFAULT_MCP_DYNAMIC_RULE = `系统提示的[可用MCP工具]目录会一次性列出全部可调用工具的名称与简介，模型据此直接定位。需要参数时用 mcp.describe_tool（支持 tool 单个、tools 批量或 query 关键词搜索）取 schema；被加载的目标工具会在随后轮次直接可调用。
+const DEFAULT_MCP_DYNAMIC_RULE = `系统提示的[动态 MCP 说明]目录会一次性列出全部可调用工具的名称与简介，模型据此直接定位。需要参数时用 mcp.describe_tool（支持 tool 单个、tools 批量或 query 关键词搜索）取 schema；被加载的目标工具会在随后轮次直接可调用。
 
 browser_tab 仅 7 种动作：list 获取全部页面（id/url/title/active）及 activeTab；switch+tab_id 切换到已有页；replace+url 在当前页覆盖跳转；navigate+url 新标签打开；close 关闭；back/forward 历史导航。流程：先 list，已开则 switch，当前页改址用 replace，并行任务用 navigate。`
 
