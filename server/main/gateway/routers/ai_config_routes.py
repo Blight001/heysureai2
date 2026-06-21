@@ -170,7 +170,7 @@ async def create_ai_config(
     _write_persona_file(user.id, cfg, prompt=body.prompt or "")
     # 工具箱默认自动绑定：新建 AI 即获得默认工具集（多绑；之后可在作坊里手动解绑）。
     try:
-        from api.workshop_bindings import bind_config_to_toolbox
+        from tools.engine import bind_config_to_toolbox
 
         bind_config_to_toolbox(user.id, cfg.id)
     except Exception:

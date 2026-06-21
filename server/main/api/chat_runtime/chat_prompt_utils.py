@@ -399,9 +399,10 @@ def _filter_tools_for_current_bindings(
         return set(allowed)
     result = set(allowed)
     try:
-        from api.workshop_bindings import config_bound_to_library, config_bound_to_toolbox
+        from api.workshop_bindings import config_bound_to_library
         from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
-        from mcp_runtime.mcp.permissions import LIBRARY_BOUND_TOOLS, is_toolbox_gated_tool
+        from mcp_runtime.mcp.permissions import LIBRARY_BOUND_TOOLS
+        from tools.engine import config_bound_to_toolbox, is_toolbox_gated_tool
 
         protected = set(MCP_INTROSPECTION_TOOLS or set())
         if not config_bound_to_library(int(user_id), int(ai_config_id)):

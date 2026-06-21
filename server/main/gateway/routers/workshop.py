@@ -73,6 +73,7 @@ async def list_workshop_bindings(
     cfg = _load_owned_config(session, user.id, ai_config_id)
 
     from api.device_presence import online_workshop_agents_for_user
+    from tools import engine as toolbox_engine
     from workshop import engine as workshop_engine
 
     workshop_engine.ensure_presence_for_user(user.id)
@@ -80,10 +81,10 @@ async def list_workshop_bindings(
     online = {device_id: caps for device_id, caps in online_workshop_agents_for_user(user.id)}
 
     library_device_id = workshop_engine.device_id_for_user(user.id)
-    toolbox_device_id = workshop_engine.toolbox_device_id_for_user(user.id)
+    toolbox_device_id = toolbox_engine.toolbox_device_id_for_user(user.id)
     names: Dict[str, str] = {
         library_device_id: workshop_engine.WORKSHOP_DISPLAY_NAME,
-        toolbox_device_id: workshop_engine.TOOLBOX_DISPLAY_NAME,
+        toolbox_device_id: toolbox_engine.TOOLBOX_DISPLAY_NAME,
     }
 
     items = []
@@ -92,7 +93,7 @@ async def list_workshop_bindings(
         is_toolbox = device_id == toolbox_device_id
         bound_cfg_id = bound_config_id_for_agent(user.id, device_id)
         if is_toolbox:
-            tools = workshop_engine.toolbox_capability_names()
+            tools = toolbox_engine.toolbox_capability_names()
             online_state = True  # 工具箱内置常在线（无 socket presence）
         else:
             tools = sorted(online.get(device_id) or [])
@@ -123,9 +124,9 @@ async def update_workshop_binding(
     if not device_id:
         raise HTTPException(status_code=400, detail="device_id is required")
 
-    from workshop import engine as workshop_engine
+    from tools import engine as toolbox_engine
 
-    is_toolbox = device_id == workshop_engine.toolbox_device_id_for_user(user.id)
+    is_toolbox = device_id == toolbox_engine.toolbox_device_id_for_user(user.id)
     # 工具箱多绑、可绑任意 AI；图书馆 1:1。图书馆现含治理工具(admin/device 需辅助管理员)
     # 与知识工具，故数字成员与辅助管理员均可绑定(绑定 + 角色双门槛仍逐项生效)。
     if (
