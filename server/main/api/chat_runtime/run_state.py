@@ -37,6 +37,7 @@ _AUTO_RUNTIME_SECTION_TITLES: tuple[str, ...] = (
     "AI 工作目录",
     "AI 数据库连接",
     "可用MCP工具",
+    "动态 MCP 说明",
     "任务运行时工作目录(绝对路径)",
     "任务运行时MCP调用规则",
     "任务运行时MCP工具白名单",

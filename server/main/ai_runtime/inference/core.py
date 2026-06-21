@@ -50,10 +50,12 @@ from api.services.task_system import (
 from api.chat_runtime.chat_prompt_utils import (
     _append_mcp_state_to_tags,
     _append_prompt_section,
+    _build_dynamic_mcp_explanation,
     _build_mcp_display_result,
     _build_mcp_stream_warning,
     _extract_first_mcp_call,
     _extract_mcp_error,
+    _filter_tools_for_current_bindings,
     _render_mcp_tool_catalog,
     _sanitize_large_media,
     _safe_json,
@@ -1392,6 +1394,13 @@ def _run_worker_impl(
             # Dynamic MCP discovery must remain available even when task runtime
             # narrows the operational tool allowlist.
             effective_tool_allowlist.update(MCP_INTROSPECTION_TOOLS)
+
+            # Apply current binding state (library / toolbox) so unbound governance
+            # tools do not appear in the visible MCP catalog sent to the model.
+            effective_tool_allowlist = _filter_tools_for_current_bindings(
+                effective_tool_allowlist, user_id, ai_config_id
+            )
+
             if merged_system_prompt:
                 system_prompt = merged_system_prompt
             if is_task_runtime:
@@ -1419,6 +1428,11 @@ def _run_worker_impl(
             # description) so the model can locate one directly, then load the
             # precise schema in a single mcp.describe_tool call. Mirrors mature
             # agent runtimes.
+            # Always strip any stale catalog first (prevents accumulation from previous
+            # injections or loaded prompts that had repeated sections).
+            system_prompt = _strip_prompt_section(system_prompt, "动态 MCP 说明")
+            system_prompt = _strip_prompt_section(system_prompt, "可用MCP工具")
+
             mcp_catalog_active = bool(effective_tool_allowlist) and (
                 cfg is None or getattr(cfg, "mcp_enabled", False)
             )
@@ -1433,11 +1447,11 @@ def _run_worker_impl(
                     "直接从这里定位需要的工具。\n"
                     "确定工具后，用一次 mcp.describe_tool 取参数 schema 再调用："
                     "可在 tools 数组里一次传多个工具名，或用 query 关键词搜索相关工具。\n\n"
-                    + _render_mcp_tool_catalog(effective_tool_allowlist, endpoint_catalog_tools, user_id)
+                    + _build_dynamic_mcp_explanation(effective_tool_allowlist, endpoint_catalog_tools, user_id, ai_config_id)
                 )
                 system_prompt = _append_prompt_section(
-                    _strip_prompt_section(system_prompt, "可用MCP工具"),
-                    "可用MCP工具",
+                    _strip_prompt_section(system_prompt, "动态 MCP 说明"),
+                    "动态 MCP 说明",
                     catalog_body,
                 )
 

@@ -383,6 +383,117 @@ def _render_mcp_tool_catalog(allowed_tools: set[str], endpoint_tools: Optional[s
     return "\n".join(lines) if lines else "- （空）"
 
 
+def _filter_tools_for_current_bindings(
+    allowed: set[str], user_id: int, ai_config_id: Optional[int]
+) -> set[str]:
+    """Filter out tools that the AI cannot actually use because of missing bindings.
+
+    - LIBRARY_BOUND_TOOLS require library (workshop) binding.
+    - Always preserve introspection tools (mcp.describe_tool etc.) so the model
+      can still discover tools even before binding.
+    This keeps the catalog honest: only show what can actually be called.
+    """
+    if not ai_config_id:
+        return set(allowed)
+    result = set(allowed)
+    try:
+        from api.workshop_bindings import config_bound_to_library, config_bound_to_toolbox
+        from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
+        from mcp_runtime.mcp.permissions import LIBRARY_BOUND_TOOLS, is_toolbox_gated_tool
+
+        protected = set(MCP_INTROSPECTION_TOOLS or set())
+        if not config_bound_to_library(int(user_id), int(ai_config_id)):
+            result -= (set(LIBRARY_BOUND_TOOLS) - protected)
+
+        if not config_bound_to_toolbox(int(user_id), int(ai_config_id)):
+            # Remove tools that require toolbox binding (non-library, non-exempt)
+            gated = {n for n in result if is_toolbox_gated_tool(n)}
+            result -= gated
+            # but keep protected
+            result |= protected
+    except Exception:
+        # Fail open on any lookup error to avoid breaking catalogs.
+        pass
+    return result
+
+
+def _build_dynamic_mcp_explanation(
+    allowed: set[str],
+    endpoint_allowed: set[str],
+    user_id: int,
+    ai_config_id: Optional[int],
+) -> str:
+    """Build the dynamic MCP 说明 in grouped format (工具箱 MCP / 图书馆 MCP etc.)
+    using the shared group logic. This is the updated structure for the AI prompt.
+    Falls back to flat if anything fails.
+    """
+    try:
+        from api.services.mcp_prompt_groups import build_prompt_tool_groups
+        from mcp_runtime.mcp import registry as mcp_registry
+        from api.device_presence import online_tool_defs
+        from connector_runtime.dispatch.desktop_device_tools import is_endpoint_agent_tool
+
+        prompt_tools: list[dict] = []
+        allowed_set = set(allowed or set())
+
+        # server tools
+        for item in mcp_registry.list_tools():
+            name = str(item.get("name") or "").strip()
+            if name and name in allowed_set:
+                prompt_tools.append({
+                    "name": name,
+                    "description": str(item.get("description") or "").strip(),
+                    "destructive": bool(item.get("destructive")),
+                    "inputSchema": item.get("inputSchema") or {},
+                    "mcpSource": "server",
+                })
+
+        # endpoint / dynamic tools that are in the allow list
+        try:
+            endpoint_defs = online_tool_defs()
+        except Exception:
+            endpoint_defs = {}
+        for name in sorted(allowed_set):
+            if name in (endpoint_allowed or set()) or is_endpoint_agent_tool(name):
+                spec = endpoint_defs.get(name) or {}
+                if not any(p.get("name") == name for p in prompt_tools):
+                    prompt_tools.append({
+                        "name": name,
+                        "description": str(spec.get("description") or "").strip(),
+                        "destructive": True,
+                        "inputSchema": spec.get("input_schema") or {},
+                        "mcpSource": str(spec.get("mcpSource") or "desktop"),
+                    })
+
+        groups = build_prompt_tool_groups(
+            user_id=int(user_id or 0),
+            ai_config_id=ai_config_id,
+            prompt_tools=prompt_tools,
+            allowed_tools=allowed_set,
+        )
+
+        sections: list[str] = []
+        for g in groups or []:
+            label = str(g.get("groupLabel") or g.get("groupKey") or "").strip()
+            tools = g.get("tools") or []
+            if not label:
+                continue
+            if not tools:
+                sections.append(f"{label}\n- （当前无可用工具）")
+                continue
+            # render inner using existing logic on names
+            tool_names = {str(t.get("name") or "") for t in tools if str(t.get("name") or "").strip()}
+            inner = _render_mcp_tool_catalog(tool_names, None, user_id)
+            sections.append(f"{label}\n{inner}")
+
+        if not sections:
+            return "- （空）"
+        return "\n\n".join(sections)
+    except Exception:
+        # fallback to previous flat rendering
+        return _render_mcp_tool_catalog(allowed or set(), endpoint_allowed or set(), user_id)
+
+
 def _inject_mcp_placeholder(template: str, cfg: Optional[AssistantAIConfig]) -> str:
     return _inject_mcp_placeholder_with_hints(template, cfg, DEFAULT_MCP_NAMESPACE_HINTS)
 

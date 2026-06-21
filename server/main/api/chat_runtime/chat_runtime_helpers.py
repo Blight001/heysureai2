@@ -21,7 +21,9 @@ from api.services.task_system import with_workspace_read_by_name_compat
 from .run_state import _RUN_LIVE_STATE, _RUN_STATE_LOCK
 from .chat_prompt_utils import (
     _append_prompt_section,
+    _build_dynamic_mcp_explanation,
     _clear_run_live_text,
+    _filter_tools_for_current_bindings,
     _render_mcp_tool_catalog,
     _strip_prompt_section,
     _strip_runtime_injected_sections,
@@ -141,6 +143,12 @@ def build_effective_system_prompt(
         effective_tool_allowlist.update(TASK_RUNTIME_REQUIRED_TOOLS)
     effective_tool_allowlist.update(MCP_INTROSPECTION_TOOLS)
 
+    # Apply current binding state so that library (and potentially toolbox) tools
+    # do not appear in the catalog if the AI is not actually bound.
+    effective_tool_allowlist = _filter_tools_for_current_bindings(
+        effective_tool_allowlist, user.id, ai_config_id
+    )
+
     if merged_system_prompt:
         system_prompt = merged_system_prompt
     if is_task_runtime:
@@ -150,6 +158,11 @@ def build_effective_system_prompt(
             get_project_root(user.id, ai_config_id),
         )
         system_prompt = _strip_task_runtime_sections(system_prompt)
+
+    # Always strip any stale catalog first (prevents accumulation from previous
+    # injections or loaded prompts that had repeated sections).
+    system_prompt = _strip_prompt_section(system_prompt, "动态 MCP 说明")
+    system_prompt = _strip_prompt_section(system_prompt, "可用MCP工具")
 
     mcp_catalog_active = bool(effective_tool_allowlist) and (
         cfg is None or getattr(cfg, "mcp_enabled", False)
@@ -162,11 +175,11 @@ def build_effective_system_prompt(
             "直接从这里定位需要的工具。\n"
             "确定工具后，用一次 mcp.describe_tool 取参数 schema 再调用："
             "可在 tools 数组里一次传多个工具名，或用 query 关键词搜索相关工具。\n\n"
-            + _render_mcp_tool_catalog(effective_tool_allowlist, endpoint_catalog_tools, user.id)
+            + _build_dynamic_mcp_explanation(effective_tool_allowlist, endpoint_catalog_tools, user.id, ai_config_id)
         )
         system_prompt = _append_prompt_section(
-            _strip_prompt_section(system_prompt, "可用MCP工具"),
-            "可用MCP工具",
+            _strip_prompt_section(system_prompt, "动态 MCP 说明"),
+            "动态 MCP 说明",
             catalog_body,
         )
     return system_prompt

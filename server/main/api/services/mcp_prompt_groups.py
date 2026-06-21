@@ -112,6 +112,16 @@ def build_prompt_tool_groups(
         library_tool_names |= _config_selected_tool_names(ai_config_id, user_id) & LIBRARY_BOUND_TOOLS
     if allowed_tools is not None:
         library_tool_names |= {name for name in allowed_tools if name in LIBRARY_BOUND_TOOLS}
+
+    # Only expose the library group if this specific AI is actually bound to the library.
+    # Otherwise the "图书馆 MCP" group leaks even when not connected.
+    if ai_config_id is not None:
+        try:
+            from api.workshop_bindings import config_bound_to_library
+            if not config_bound_to_library(user_id, ai_config_id):
+                library_tool_names = set()
+        except Exception:
+            pass
     groups: List[Dict[str, Any]] = [{
         "groupKey": "toolbox",
         "groupLabel": "工具箱 MCP",
