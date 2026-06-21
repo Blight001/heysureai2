@@ -21,6 +21,7 @@ KnowledgeHandler = Callable[[int, Dict[str, Any], Optional[int]], Any]
 
 # action → (handler, minimum role). ``None`` role = member floor.
 _KNOWLEDGE_ACTIONS: Dict[str, Tuple[KnowledgeHandler, Optional[str]]] = {
+    "record_experience": (knowledge_handlers.record_experience, None),
     "list_thoughts": (knowledge_handlers.list_inheritance_thoughts, None),
     "get_thought": (knowledge_handlers.get_inheritance_thought, None),
     "create_thought": (knowledge_handlers.create_inheritance_thought, ROLE_MANAGER),
@@ -83,6 +84,7 @@ KNOWLEDGE_MANAGE_SCHEMA: Dict[str, Any] = {
             "enum": sorted(_KNOWLEDGE_ACTIONS),
             "description": (
                 "操作类型（知识库 / 图书馆）：\n"
+                "- record_experience 把一段可复用经验/教训直接沉淀进 topics 程序性记忆（status 直接 active，无需用户审批；写入后即可被 knowledge.search 与派任务前简报命中）；\n"
                 "- list_thoughts 列出传承思想；get_thought 读取某条传承思想正文；\n"
                 "- create_thought 新建传承思想；edit_thought 按行编辑；delete_thought 删除（需管理者+）；\n"
                 "- install_skill_package 安装 Skill 包（需管理者+）；\n"
@@ -95,6 +97,7 @@ KNOWLEDGE_MANAGE_SCHEMA: Dict[str, Any] = {
             "type": "object",
             "description": (
                 "所选 action 的参数（也可直接平铺在顶层）。"
+                "record_experience: title、steps（必填），scenario、gotchas、triggers、scope 可选；"
                 "create_thought: name、content（必填），summary、endpoint_kind 可选；"
                 "get_thought/edit_thought/delete_thought: id；"
                 "edit_thought: mode/line/text 或 edits 数组，可选 endpoint_kind、expected_sha256；"
@@ -104,6 +107,23 @@ KNOWLEDGE_MANAGE_SCHEMA: Dict[str, Any] = {
             ),
         },
         "id": {"type": "string", "description": "get_thought / edit_thought / delete_thought 的目标传承思想 id。"},
+        "scenario": {"type": "string", "description": "record_experience：什么场景/触发条件下用这条经验。"},
+        "steps": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "record_experience：可复用的操作步骤（必填，至少一条）。",
+        },
+        "gotchas": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "record_experience：注意事项 / 已知坑 / 典型错误。",
+        },
+        "triggers": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "record_experience：触发词/关键词，用于检索与派任务前简报命中。",
+        },
+        "scope": {"type": "string", "description": "record_experience：知识作用域，默认 global。"},
         "name": {"type": "string", "description": "create_thought 的技能名/标题（必填）。"},
         "content": {"type": "string", "description": "create_thought 的正文，写入 SKILL.md body（必填）。"},
         "summary": {"type": "string", "description": "create_thought 的可选摘要，写入 frontmatter description。"},

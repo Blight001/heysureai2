@@ -197,4 +197,22 @@ def _plan_finish(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
     }
     if log_error:
         result["log_warning"] = f"日志写入失败（不影响任务收尾）: {log_error}"
+
+    # 计划收尾后：若有 AI 绑定了图书馆且执行者不是它，主动把本计划总结投喂给
+    # 图书馆 AI，由它自行决定是否沉淀进知识库（best-effort，不影响收尾返回）。
+    try:
+        from api.services.knowledge_review_trigger import trigger_plan_knowledge_review
+
+        trigger_plan_knowledge_review(
+            user_id=user_id,
+            executor_ai_config_id=cfg_id,
+            goal=progress.get("goal") or "",
+            outcome=outcome,
+            summary=summary,
+            phases=progress.get("phases") or [],
+            log_path=log_path,
+        )
+    except Exception:
+        pass
+
     return result

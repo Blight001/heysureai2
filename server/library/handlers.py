@@ -8,6 +8,57 @@ from fastapi import HTTPException
 from api.services import librarian_service
 
 
+def _as_str_list(value: Any) -> list:
+    """Coerce a list/换行/逗号分隔字符串为去空的字符串列表。"""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        parts = [p.strip() for chunk in value.splitlines() for p in chunk.split(",")]
+        return [p for p in parts if p]
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value).strip()] if str(value).strip() else []
+
+
+def record_experience(
+    user_id: int,
+    args: Dict[str, Any],
+    ai_config_id: Optional[int] = None,
+) -> Dict[str, Any]:
+    """绑定图书馆的 AI 自主把一段可复用经验/教训直接沉淀进知识库（topics 程序性
+    记忆），**无需用户审批**（status 直接 active）。供"计划完成后自动审核"链路使用，
+    也可由图书馆 AI 平时主动调用。写入后即可被 knowledge.search 与派任务前的简报命中。
+    """
+    title = str(args.get("title") or args.get("name") or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="title is required")
+    scenario = str(args.get("scenario") or args.get("when") or "").strip()
+    steps = _as_str_list(args.get("steps") or args.get("procedure"))
+    if not steps:
+        raise HTTPException(status_code=400, detail="at least one step is required")
+    gotchas = _as_str_list(args.get("gotchas") or args.get("pitfalls"))
+    triggers = _as_str_list(args.get("triggers") or args.get("keywords"))
+    scope = str(args.get("scope") or "global").strip() or "global"
+    scope_target = args.get("scope_target")
+    source = args.get("source") if isinstance(args.get("source"), dict) else {}
+    try:
+        return librarian_service.propose(
+            user_id=int(user_id),
+            ai_config_id=int(ai_config_id) if ai_config_id else None,
+            title=title,
+            scenario=scenario,
+            steps=steps,
+            gotchas=gotchas,
+            triggers=triggers,
+            scope=scope,
+            scope_target=str(scope_target) if scope_target else None,
+            source=dict(source),
+            auto_approve=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def list_inheritance_thoughts(
     user_id: int,
     args: Dict[str, Any],
