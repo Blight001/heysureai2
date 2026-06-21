@@ -97,13 +97,6 @@ const linkedConfigIds = (device: ConnectedDevice): number[] => {
   return single ? [single] : []
 }
 
-const linkedMembersForDevice = (device: ConnectedDevice) => {
-  const ids = linkedConfigIds(device)
-  return ids
-    .map((id) => assignableMembers.value.find((m: any) => Number(m.aiConfigId) === id))
-    .filter(Boolean)
-}
-
 // Current dropdown value: an explicit pick if the operator changed it, else the
 // device's existing binding.
 const selectionFor = (device: ConnectedDevice): string => {
