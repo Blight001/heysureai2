@@ -46,11 +46,11 @@ server/
 | 新增 REST 接口 | `main/gateway/routers/<域>.py`，文件名即域（auth/chat/agents/ai/projects/mcp/...） |
 | 新增 / 改数据模型 | `main/api/models/`，注意迁移 `other/migrations/` |
 | 业务逻辑 | `main/api/services/` |
-| 新增 MCP 工具 | `main/mcp_runtime/mcp/`（注册 + 权限校验） |
+| 新增 MCP 工具 | `server/tools/`（工具箱设备 handlers；注册仍在 mcp_runtime/mcp/registry） |
 | 聊天/推理 | 编排在 `main/api/chat_runtime/`，worker 在 `main/ai_runtime/` |
 | 任务定时/循环 schedule | `main/api/services/task_schedule.py`（解析/校验/续期的唯一权威实现，REST/MCP/调度器共用） |
 | 知识工坊（图书馆）Agent | `workshop/` 服务端内置虚拟 Agent，绑定接口为 `main/gateway/routers/workshop.py` + `main/api/workshop_bindings.py` |
-| 工具箱（内置设备） | `tools/engine.py` 收拢工具箱身份/展示/绑定/门禁；门禁由 `main/mcp_runtime/mcp/core.py` 在 `MCPRegistry.call` 调用，绑定与图书馆共用 `main/api/workshop_bindings.py` 的通用绑定层 |
+| 工具箱（内置设备） | `server/tools/` 完整收拢：engine.py（身份/展示/绑定/门禁/scope） + 所有 server 固定 MCP handlers（原 mcp_runtime/mcp/tools 下的代码已迁入）；所有 toolbox 相关逻辑独立于此，避免散落。门禁仍由 mcp/core 调用。 |
 | 机器人/连接器 | `main/connector_runtime/bots/`、`main/connector_runtime/dispatch/` |
 | 配置项 | `main/api/core/settings.py` |
 

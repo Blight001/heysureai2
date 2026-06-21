@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""内置「工具箱」引擎：默认全绑、按绑定门禁放行的服务端固定工具集。
+"""内置「工具箱」引擎：按绑定门禁放行的服务端固定工具集。
 
 工具箱与图书馆（``workshop.engine``）是两个并列的服务端内置"虚拟端侧"，但二者
 形态不同：
 
 - **图书馆**：1:1 绑定、注册 ``DevicePresence``、自带 handler，工具经工坊分发。
-- **工具箱**：多绑（默认绑定该用户全部 AI、用户不可解绑），**不注册 presence、
-  不经工坊分发**——它只是一个绑定标记 + 展示条目；工具箱工具仍来自常规服务端
-  注册表（``MCPRegistry``），由 ``mcp_runtime`` 在每次调用时按工具箱绑定逐项校验。
+- **工具箱**：多绑（新建 AI 时默认绑定，之后完全由用户在作坊/AI配置中管理绑定与解绑），
+  **不注册 presence、不经工坊分发**——它只是一个绑定标记 + 展示条目；工具箱工具仍来自
+  常规服务端注册表（``MCPRegistry``），由 ``mcp_runtime`` 在每次调用时按工具箱绑定逐项校验。
 
 本模块收拢工具箱设备的全部自有逻辑：身份/展示、能力清单、绑定读写、以及"哪些
 工具属于工具箱（需绑定）"的门禁判定。中央权限层与注册表核心只调用这里，不再内联
@@ -81,7 +81,7 @@ def toolbox_capability_names() -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# 绑定（多绑：默认绑定全部 AI、用户不可解绑）
+# 绑定（多绑：新建 AI 默认绑定，之后完全听从用户操作）
 # ---------------------------------------------------------------------------
 def config_bound_to_toolbox(user_id, ai_config_id) -> bool:
     from api.workshop_bindings import config_bound_to_device
@@ -98,26 +98,15 @@ def bind_config_to_toolbox(user_id, ai_config_id) -> bool:
     )
 
 
-def ensure_all_configs_bound_to_toolbox(user_id) -> int:
-    """自愈：确保该用户全部 AI 都绑定工具箱（仅补缺失的绑定行）。
-
-    工具箱是"默认全绑、用户不可解绑"的内置作坊（无任何解绑入口），因此重复补绑
-    是安全的、幂等的——补回因创建时 best-effort 绑定失败、或经其它创建路径而漏绑
-    的 AI，使其不被工具箱门禁挡在默认工具集之外。返回新增绑定数。
-    """
-    from api.workshop_bindings import bind_all_configs_to_device
-
-    return bind_all_configs_to_device(user_id, toolbox_device_id_for_user(user_id))
-
-
 # ---------------------------------------------------------------------------
 # 展示条目
 # ---------------------------------------------------------------------------
 def toolbox_connected_entry_for_user(user_id) -> Dict[str, Any]:
-    """工具箱作坊的虚拟"已连接设备"条目（始终在线，多绑：默认绑定全部 AI）。
+    """工具箱作坊的虚拟"已连接设备"条目（始终在线，多绑）。
 
     工具箱不注册 presence、不经工坊分发——它只是一个绑定标记 + 展示条目；工具箱
-    工具仍来自常规服务端注册表，由 mcp_runtime 按工具箱绑定逐次校验。"""
+    工具仍来自常规服务端注册表，由 mcp_runtime 按工具箱绑定逐次校验。
+    绑定关系完全由用户通过作坊面板或 AI 配置管理，新建 AI 时会默认调用 bind_config_to_toolbox。"""
     bound_ids: List[int] = []
     try:
         from api.workshop_bindings import bound_config_ids_for_agent
@@ -164,3 +153,96 @@ def enforce_toolbox_binding(tool_name: str, user_id: int, ai_config_id: Optional
             status_code=403,
             detail=f"该 AI 未绑定工具箱，无法调用 {tool_name}（请在 AI 配置或世界中绑定工具箱）",
         )
+
+
+# ---------------------------------------------------------------------------
+# 工具箱 MCP scope 默认与 defs（供 DeviceMcpScopeEditor 和默认行为使用）
+# ---------------------------------------------------------------------------
+def ensure_toolbox_scope_for_user(user_id) -> None:
+    """Ensure default full toolbox scope record exists for the user (idempotent best-effort).
+
+    Called during workshop presence ensure so that after binding a new AI, the
+    toolbox MCP permission editor has a baseline (user can narrow it).
+    """
+    try:
+        uid = int(user_id)
+    except (TypeError, ValueError):
+        return
+    try:
+        from api.device_mcp_permissions import get_scope, set_scope
+    except Exception:
+        return
+    tbid = toolbox_device_id_for_user(uid)
+    if get_scope(uid, tbid) is None:
+        try:
+            caps = set(toolbox_capability_names())
+            set_scope(uid, tbid, caps, ai_config_id=None, device_type="toolbox")
+        except Exception:
+            pass
+
+
+def toolbox_tool_defs_map() -> Dict[str, Any]:
+    """Return tool def map for toolbox capabilities (used by scope editor for schema/desc)."""
+    try:
+        from mcp_runtime.mcp import registry as mcp_registry
+        defs: Dict[str, Any] = {}
+        for t in mcp_registry.list_tools():
+            name = str(t.get("name") or "").strip()
+            if not name:
+                continue
+            defs[name] = {
+                "description": str(t.get("description") or "").strip(),
+                "input_schema": t.get("inputSchema") or t.get("input_schema") or {},
+                "destructive": bool(t.get("destructive")),
+            }
+        return defs
+    except Exception:
+        return {}
+
+
+# ---------------------------------------------------------------------------
+# Toolbox tools for AI config (used by allow-list computation in device dispatch,
+# chat runtime, etc.). Consolidated here so toolbox device owns the logic.
+# ---------------------------------------------------------------------------
+def _parse_int(value: Any) -> Optional[int]:
+    try:
+        iv = int(value)
+        return iv if iv > 0 else None
+    except Exception:
+        return None
+
+
+def toolbox_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
+    """Server (non-library) fixed MCP tools granted to an AI via toolbox binding + the toolbox device's saved MCP scope.
+
+    This replaces per-AI cfg.mcp_tools for server toolbox tools to avoid conflicts.
+    If bound but no scope record, defaults to full current toolbox tool set.
+    """
+    config_id = _parse_int(ai_config_id)
+    uid = _parse_int(user_id)
+    if not config_id or not uid:
+        return set()
+    try:
+        from api.device_mcp_permissions import get_scope
+        from mcp_runtime.mcp import registry as mcp_registry
+        from mcp_runtime.mcp.permissions import LIBRARY_BOUND_TOOLS
+    except Exception:
+        return set()
+
+    if not config_bound_to_toolbox(uid, config_id):
+        return set()
+
+    tbid = toolbox_device_id_for_user(uid)
+    scope = get_scope(uid, tbid)
+
+    try:
+        names = {str(t.get("name") or "").strip() for t in mcp_registry.list_tools() if t.get("name")}
+        tb_all = {n for n in names if n and n not in (LIBRARY_BOUND_TOOLS or set())}
+    except Exception:
+        tb_all = set()
+
+    if scope is None:
+        # No scope saved yet: default to full set after bind (user narrows via 工具箱 MCP 权限)
+        return tb_all
+
+    return tb_all & scope

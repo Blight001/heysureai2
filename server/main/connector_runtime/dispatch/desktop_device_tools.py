@@ -507,3 +507,9 @@ def endpoint_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int
     # 知识与进化工坊走 AI 侧绑定（WorkshopAiBinding），与设备 1:1 绑定并集。
     tools |= workshop_tools_for_config(config_id, user_id)
     return tools
+
+
+def toolbox_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int] = None) -> Set[str]:
+    """Re-export from tools.engine so toolbox device owns the implementation."""
+    from tools.engine import toolbox_tools_for_config as _impl
+    return _impl(ai_config_id, user_id)

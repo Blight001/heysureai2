@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from mcp_runtime.mcp import registry
-from mcp_runtime.mcp.tools.conversation import _edit_conversation
+from tools.conversation import _edit_conversation
 
 
 class ConversationEditDefaultsTests(unittest.TestCase):
@@ -36,10 +36,10 @@ class ConversationEditDefaultsTests(unittest.TestCase):
             "current_message_id": None,
         }
         with (
-            patch("mcp_runtime.mcp.tools.conversation._conversation_scope", return_value=scope),
-            patch("mcp_runtime.mcp.tools.conversation.Session", return_value=session_manager),
-            patch("mcp_runtime.mcp.tools.conversation.delete_message_media"),
-            patch("mcp_runtime.mcp.tools.conversation._rebuild_usage_snapshots"),
+            patch("tools.conversation._conversation_scope", return_value=scope),
+            patch("tools.conversation.Session", return_value=session_manager),
+            patch("tools.conversation.delete_message_media"),
+            patch("tools.conversation._rebuild_usage_snapshots"),
         ):
             result = _edit_conversation(user_id=1, args={}, ai_config_id=34)
 
@@ -64,14 +64,14 @@ class ConversationEditDefaultsTests(unittest.TestCase):
 
         with (
             patch(
-                "mcp_runtime.mcp.tools.conversation.get_run_session_context",
+                "tools.conversation.get_run_session_context",
                 return_value={"session_id": "real-session", "ai_kind": "core", "ai_config_id": 34},
             ),
             patch(
-                "mcp_runtime.mcp.tools.conversation._conversation_scope",
+                "tools.conversation._conversation_scope",
                 return_value=resolved_scope,
             ) as resolve_scope,
-            patch("mcp_runtime.mcp.tools.conversation.Session") as session_type,
+            patch("tools.conversation.Session") as session_type,
         ):
             session_type.return_value.__enter__.return_value.exec.return_value.first.return_value = None
             with self.assertRaisesRegex(Exception, "Session not found"):

@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 from api.database import engine
 from api.models import AssistantAIConfig
 from api.device_presence import online_tool_defs_for_user
-from ..core import MCP_INTROSPECTION_TOOLS
+from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
 
 
 _TOOL_NAME_STOP_CHARS = (":", "：", "!", "！")
@@ -31,7 +31,7 @@ def _allowed_tool_names(user_id: int, ai_config_id: Optional[int]) -> set[str]:
 
     allowed: set[str] = set(MCP_INTROSPECTION_TOOLS)
     if not ai_config_id:
-        from ..registry import registry
+        from mcp_runtime.mcp.registry import registry
 
         return {str(item.get("name") or "").strip() for item in registry.list_tools() if item.get("name")}
 
@@ -58,7 +58,7 @@ def _allowed_tool_names(user_id: int, ai_config_id: Optional[int]) -> set[str]:
 
 
 def _describable_tool_names(endpoint_defs: Dict[str, Any]) -> set[str]:
-    from ..registry import registry
+    from mcp_runtime.mcp.registry import registry
 
     names = {str(item.get("name") or "").strip() for item in registry.list_tools() if item.get("name")}
     names.update(str(name or "").strip() for name in endpoint_defs.keys() if str(name or "").strip())
@@ -145,7 +145,7 @@ def _resolve_tool_alias(name: str, available: set[str]) -> str:
 
 
 def _describe_one_tool(name: str, endpoint_defs: Dict[str, Any], user_id: int = 0) -> Dict[str, Any]:
-    from ..registry import registry
+    from mcp_runtime.mcp.registry import registry
     from connector_runtime.dispatch.desktop_device_tools import is_endpoint_agent_tool
 
     if name in endpoint_defs or is_endpoint_agent_tool(name):

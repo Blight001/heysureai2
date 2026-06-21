@@ -1,6 +1,6 @@
 import asyncio
 
-from mcp_runtime.mcp.tools import web_search
+from tools import web_search
 
 
 class _Response:

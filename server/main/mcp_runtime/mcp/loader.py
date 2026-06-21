@@ -1,19 +1,15 @@
 """Hot-reload entry for the MCP tool registry.
 
-Goal: let a deployer drop new code into ``mcp_runtime/mcp/tools/`` or
-``mcp_runtime/mcp/plugins/`` and pick it up at runtime without restarting the
-process. Reload is admin-level — never expose this to end users.
+Goal: let a deployer drop new code into ``server/tools/`` (toolbox device) and pick it
+up at runtime without restarting the process. Reload is admin-level — never
+expose this to end users.
 
 Flow:
-1. ``importlib.reload`` every module under ``mcp_runtime.mcp.tools`` so handler
+1. ``importlib.reload`` every module under ``tools.*`` so handler
    bodies pick up source changes.
 2. Build a fresh ``MCPRegistry`` and call ``_register_builtin_tools`` on
    it (the function from ``mcp_runtime.mcp.registry``).
-3. Discover ``mcp_runtime/mcp/plugins/*.py`` and call each module's ``register``
-   function, passing the fresh registry. Plugin files are imported (or
-   reloaded if already loaded) for each call so source changes take
-   effect.
-4. On success, swap ``registry._tools`` in place via ``replace_tools``
+3. On success, swap ``registry._tools`` in place via ``replace_tools``
    so existing references (held by ``chat_worker``, routers, etc.)
    see the new tool set without needing to be re-bound.
 
@@ -25,40 +21,26 @@ from __future__ import annotations
 import importlib
 import pkgutil
 import sys
-import traceback
 from typing import Any, Dict, List
 
 from .core import MCPRegistry
 
 
-_PLUGINS_PACKAGE = "mcp_runtime.mcp.plugins"
-_TOOLS_PACKAGE = "mcp_runtime.mcp.tools"
+_TOOLS_PACKAGE = "tools"
 _REGISTRY_MODULE = "mcp_runtime.mcp.registry"
 
 
 def _iter_tool_modules() -> List[str]:
-    """Return fully-qualified names of every module under mcp_runtime.mcp.tools."""
+    """Return fully-qualified names of every module under server/tools/ (toolbox handlers)."""
     try:
         tools_pkg = importlib.import_module(_TOOLS_PACKAGE)
     except Exception:
         return []
     names: List[str] = []
     for info in pkgutil.iter_modules(tools_pkg.__path__):
-        names.append(f"{_TOOLS_PACKAGE}.{info.name}")
-    return names
-
-
-def _iter_plugin_modules() -> List[str]:
-    """Return fully-qualified names of every plugin under mcp_runtime.mcp.plugins."""
-    try:
-        pkg = importlib.import_module(_PLUGINS_PACKAGE)
-    except Exception:
-        return []
-    names: List[str] = []
-    for info in pkgutil.iter_modules(pkg.__path__):
-        if info.ispkg:
+        if info.ispkg or info.name in {"engine", "__init__"}:
             continue
-        names.append(f"{_PLUGINS_PACKAGE}.{info.name}")
+        names.append(f"{_TOOLS_PACKAGE}.{info.name}")
     return names
 
 
@@ -77,7 +59,7 @@ def reload_registry() -> Dict[str, Any]:
             "ok": bool,
             "version": int,                 # new version after reload
             "tools": int,                   # number of tools after reload
-            "plugin_errors": [{...}],       # per-plugin failures (non-fatal)
+            "plugin_errors": [],            # always empty (plugins extension removed)
             "error": Optional[str],         # set when ok=False
         }
     """
@@ -86,7 +68,6 @@ def reload_registry() -> Dict[str, Any]:
     # instead of the module and break attribute access like ``registry.version``.
     registry_module = importlib.import_module(_REGISTRY_MODULE)
 
-    plugin_errors: List[Dict[str, Any]] = []
     try:
         for mod_name in _iter_tool_modules():
             try:
@@ -109,29 +90,13 @@ def reload_registry() -> Dict[str, Any]:
         fresh = MCPRegistry()
         register_fn(fresh)
 
-        for plugin_name in _iter_plugin_modules():
-            try:
-                _reload_module(plugin_name)
-                plugin_mod = sys.modules[plugin_name]
-                register = getattr(plugin_mod, "register", None)
-                if register is None:
-                    continue
-                register(fresh)
-            except Exception as exc:
-                # Plugin errors are isolated: keep the rest of the load going.
-                plugin_errors.append({
-                    "plugin": plugin_name,
-                    "error": str(exc),
-                    "traceback": traceback.format_exc(limit=4),
-                })
-
         registry_module.registry.replace_tools(fresh._tools)
 
         return {
             "ok": True,
             "version": registry_module.registry.version,
             "tools": len(registry_module.registry._tools),
-            "plugin_errors": plugin_errors,
+            "plugin_errors": [],
             "error": None,
         }
     except Exception as exc:
@@ -139,42 +104,21 @@ def reload_registry() -> Dict[str, Any]:
             "ok": False,
             "version": registry_module.registry.version,
             "tools": len(registry_module.registry._tools),
-            "plugin_errors": plugin_errors,
+            "plugin_errors": [],
             "error": f"reload failed: {exc}",
         }
 
 
 def load_plugins_on_startup() -> Dict[str, Any]:
-    """Best-effort plugin discovery on first boot.
+    """No-op kept for backward compatibility.
 
-    Builtin tools are already loaded via ``registry`` import. This adds any
-    plugins under ``mcp_runtime/mcp/plugins/`` to the live registry without bumping
-    the version artificially when there are zero plugins.
+    Builtin tools are registered at ``mcp_runtime.mcp.registry`` import time.
+    The plugins extension point has been removed.
     """
     registry_module = importlib.import_module(_REGISTRY_MODULE)
-
-    plugin_errors: List[Dict[str, Any]] = []
-    loaded = 0
-
-    for plugin_name in _iter_plugin_modules():
-        try:
-            _reload_module(plugin_name)
-            plugin_mod = sys.modules[plugin_name]
-            register = getattr(plugin_mod, "register", None)
-            if register is None:
-                continue
-            register(registry_module.registry)
-            loaded += 1
-        except Exception as exc:
-            plugin_errors.append({
-                "plugin": plugin_name,
-                "error": str(exc),
-                "traceback": traceback.format_exc(limit=4),
-            })
-
     return {
-        "loaded": loaded,
+        "loaded": 0,
         "version": registry_module.registry.version,
         "tools": len(registry_module.registry._tools),
-        "plugin_errors": plugin_errors,
+        "plugin_errors": [],
     }

@@ -33,8 +33,8 @@ from api.services.task_schedule import (
 )
 from api.services.task_system import extract_task_payload
 from api.value_utils import safe_json_obj, to_bool
-from ..core import get_project_root
-from ..permissions import ROLE_MANAGER
+from mcp_runtime.mcp.core import get_project_root
+from mcp_runtime.mcp.permissions import ROLE_MANAGER
 
 _FINISHED_STATUSES = {"completed", "cancelled", "stopped", "error"}
 _ACTIVE_STATUSES = {"queued", "running", "paused"}

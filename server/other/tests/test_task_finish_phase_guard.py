@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from mcp_runtime.mcp.tools import task_plan as task_plan_tools
+from tools import task_plan as task_plan_tools
 
 
 class _FakeSession:

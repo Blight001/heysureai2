@@ -4,7 +4,7 @@ Endpoints (all under ``/internal``, gated by ``INTERNAL_TOKEN`` Bearer):
 - ``GET  /internal/health``
 - ``GET  /internal/mcp/tools``  — raw registry catalog + version
 - ``POST /internal/mcp/call``   — invoke a tool by name (body carries user_id, ai_config_id, arguments)
-- ``POST /internal/mcp/reload`` — hot-reload tool modules + plugins
+- ``POST /internal/mcp/reload`` — hot-reload tool modules
 
 Auth/permission filtering belongs to the api-gateway side. This service
 trusts its callers — they must already be authenticated by their own
@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from api.database import create_db_and_tables
 from mcp_runtime.mcp import registry
-from mcp_runtime.mcp.loader import load_plugins_on_startup, reload_registry
+from mcp_runtime.mcp.loader import reload_registry
 from api.runtime.internal_http import require_internal_token
 
 
@@ -51,11 +51,9 @@ def _tool_catalog() -> Dict[str, Any]:
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     create_db_and_tables()
-    boot = load_plugins_on_startup()
-    if boot.get("plugin_errors"):
-        for entry in boot["plugin_errors"]:
-            logger.error(f"plugin load failed: {entry.get('plugin')} -> {entry.get('error')}")
-    logger.info(f"ready: {boot.get('tools', 0)} tools (version {boot.get('version', 1)})")
+    # Built-in tools are registered when the registry module is imported.
+    from mcp_runtime.mcp import registry as _mcp_registry
+    logger.info(f"ready: {len(_mcp_registry._tools)} tools (version {_mcp_registry.version})")
     yield
 
 

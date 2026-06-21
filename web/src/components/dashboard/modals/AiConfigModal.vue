@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { getMcpToolZhLabel, groupMcpToolsBySource } from '@/utils/mcpTools'
+// getMcpToolZhLabel no longer needed here after removing per-AI server MCP list (tools selected in toolbox scope instead)
 import { fetchWorkshopBindings, setWorkshopBinding, type WorkshopAgentItem } from '@/api/workshop'
 import type { ModelPreset } from '@/types'
 import type { ConnectedDevice } from '@/composables/dashboard/useDashboardData'
@@ -19,7 +19,8 @@ interface Props {
   modelPresets: ModelPreset[]
   onClose: () => void
   onToggleSettingsSection: (section: SettingsSection) => void
-  onToolCheckboxChange: (tool: string, event: Event) => void
+  // onToolCheckboxChange kept in signature for compatibility (Task modal / callers still use the composable)
+  onToolCheckboxChange?: (tool: string, event: Event) => void
   onToggleRun: () => void
   onToggleDeleteConfirm: () => void
   onSave: () => void
@@ -51,8 +52,6 @@ const closePromptDetail = () => {
   promptDetailOpen.value = false
 }
 
-const groupedAvailableMcpTools = computed(() => groupMcpToolsBySource(props.availableMcpTools))
-
 // Connected endpoint agents bound to the AI being edited. Their endpoint MCP
 // tools are governed per-agent (not via mcp_tools), so they get their own
 // permission editor here. Disconnected agents simply don't appear.
@@ -75,17 +74,6 @@ const selectedBotEnabled = computed(() => {
   const channel = props.form?.bot_channel === 'qq' ? 'qq' : 'feishu'
   return !!props.form?.bot_configs?.[channel]?.enabled
 })
-const isToolSelected = (tool: string) => Array.isArray(props.form?.mcp_tools) && props.form.mcp_tools.includes(tool)
-const selectedAvailableMcpToolCount = computed(() => props.availableMcpTools.filter(tool => isToolSelected(tool)).length)
-const toolsAllSelected = (tools: string[]) => tools.length > 0 && tools.every(tool => isToolSelected(tool))
-const emitToolSelection = (tool: string, checked: boolean) => {
-  props.onToolCheckboxChange(tool, { target: { checked } } as unknown as Event)
-}
-const onToolGroupChange = (tools: string[], event: Event) => {
-  const target = event.target as HTMLInputElement | null
-  const checked = !!target?.checked
-  tools.forEach(tool => emitToolSelection(tool, checked))
-}
 
 const onModelPresetChange = () => {
   if (!props.form) return
@@ -262,7 +250,7 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
             >
               <span class="block text-xs font-medium text-zinc-700 dark:text-zinc-200">MCP 工具权限</span>
               <span class="mt-1 block text-[11px] text-zinc-500 dark:text-zinc-400">
-                已选 {{ selectedAvailableMcpToolCount }} / 可用 {{ availableMcpTools.length }}，{{ form.mcp_auto_approve ? '无需确认' : '调用需确认' }}
+                工具箱 + 端侧 Agent 范围，{{ form.mcp_auto_approve ? '无需确认' : '调用需确认' }}
               </span>
             </button>
             <button
@@ -331,7 +319,7 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                   <input type="checkbox" v-model="form.mcp_auto_approve" />
                 </label>
                 <p class="mb-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  仅显示当前角色（{{ form.ai_role_group === 'assistant_admin' ? '辅助管理员' : (form.digital_member_role === 'manager' ? '数字成员·管理者' : '数字成员·普通成员') }}）允许的 MCP 工具，可在“系统设置 → 工作区与 MCP → MCP 角色权限”中调整各角色范围。
+                  服务端工具通过「工具箱」MCP 权限控制（作坊面板编辑）。绑定工具箱后，工具箱中勾选的工具即为该 AI 可用。图书馆工具同理。端侧工具由各设备单独范围控制。
                 </p>
 
                 <!-- Endpoint agents bound to this AI: per-agent MCP permission.
@@ -387,103 +375,8 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                   </label>
                 </div>
 
-                <div class="space-y-3 max-h-[46vh] overflow-y-auto pr-1">
-                  <details
-                    v-for="source in groupedAvailableMcpTools"
-                    :key="`ai-config-mcp-source-${source.source}`"
-                    open
-                    class="rounded-lg border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/60"
-                  >
-                    <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
-                      <span>{{ source.title }}</span>
-                      <span class="flex items-center gap-3">
-                        <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
-                          {{ source.tools.filter(tool => form.mcp_tools.includes(tool)).length }} / {{ source.tools.length }}
-                        </span>
-                        <span class="flex items-center gap-1 text-[10px] font-normal text-zinc-500 dark:text-zinc-400" @click.stop>
-                          <input
-                            type="checkbox"
-                            :checked="toolsAllSelected(source.tools)"
-                            @click.stop
-                            @change.stop="onToolGroupChange(source.tools, $event)"
-                          />
-                          <span>全选</span>
-                        </span>
-                      </span>
-                    </summary>
-                    <div class="px-2 pb-2">
-                      <details
-                        v-for="parent in source.parentGroups"
-                        :key="`ai-config-mcp-${source.source}-parent-${parent.title}`"
-                        class="mb-2 rounded-lg border border-zinc-200 bg-zinc-50/70 last:mb-0 dark:border-zinc-700 dark:bg-zinc-800/40"
-                      >
-                        <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
-                          <span>{{ parent.title }}</span>
-                          <span class="flex items-center gap-3">
-                            <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
-                              {{ parent.tools.filter(tool => form.mcp_tools.includes(tool)).length }} / {{ parent.tools.length }}
-                            </span>
-                            <span class="flex items-center gap-1 text-[10px] font-normal text-zinc-500 dark:text-zinc-400" @click.stop>
-                              <input
-                                type="checkbox"
-                                :checked="toolsAllSelected(parent.tools)"
-                                @click.stop
-                                @change.stop="onToolGroupChange(parent.tools, $event)"
-                              />
-                              <span>全选</span>
-                            </span>
-                          </span>
-                        </summary>
-                        <div class="space-y-2 px-2 pb-2">
-                          <div
-                            v-if="parent.groups.length === 1"
-                            class="grid grid-cols-1 md:grid-cols-2 gap-2"
-                          >
-                            <label v-for="tool in parent.groups[0].tools" :key="tool" class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2 px-2 py-1.5 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-                              <input
-                                type="checkbox"
-                                class="mt-0.5"
-                                :checked="form.mcp_tools.includes(tool)"
-                                @change="onToolCheckboxChange(tool, $event)"
-                              />
-                              <span class="min-w-0">
-                                <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
-                                <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
-                              </span>
-                            </label>
-                          </div>
-                          <details
-                            v-else
-                            v-for="group in parent.groups"
-                            :key="`ai-config-mcp-${source.source}-${parent.title}-${group.tag}`"
-                            class="rounded-lg border border-zinc-200 bg-white/80 dark:border-zinc-700 dark:bg-zinc-900/60"
-                          >
-                            <summary class="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-3">
-                              <span>{{ group.tag }}</span>
-                              <span class="text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
-                                {{ group.tools.filter(tool => form.mcp_tools.includes(tool)).length }} / {{ group.tools.length }}
-                              </span>
-                            </summary>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 px-2 pb-2">
-                              <label v-for="tool in group.tools" :key="tool" class="text-xs text-zinc-600 dark:text-zinc-300 flex items-start gap-2 px-2 py-1.5 rounded border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-                                <input
-                                  type="checkbox"
-                                  class="mt-0.5"
-                                  :checked="form.mcp_tools.includes(tool)"
-                                  @change="onToolCheckboxChange(tool, $event)"
-                                />
-                                <span class="min-w-0">
-                                  <span class="block">{{ getMcpToolZhLabel(tool) }}</span>
-                                  <span class="block font-mono text-[10px] text-zinc-400 dark:text-zinc-500 break-all">{{ tool }}</span>
-                                </span>
-                              </label>
-                            </div>
-                          </details>
-                        </div>
-                      </details>
-                    </div>
-                  </details>
-                  <div v-if="availableMcpTools.length === 0" class="text-xs text-zinc-500 dark:text-zinc-400">该角色暂无可配置的 MCP 工具</div>
+                <div class="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  服务端 MCP 工具选择已迁移到工具箱（作坊面板的“工具箱 MCP 权限”）。此处不再显示服务器工具列表，以避免与工具箱范围冲突。绑定工具箱后，工具箱中选中的工具即生效。
                 </div>
               </div>
 

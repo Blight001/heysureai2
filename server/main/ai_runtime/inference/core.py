@@ -1354,6 +1354,12 @@ def _run_worker_impl(
                 # System-injected AI-to-AI messages must remain answerable even
                 # when a task or config narrows the general MCP tool allowlist.
                 effective_tool_allowlist.add("message.send_to_ai")
+            # Server toolbox tools granted by toolbox scope (primary for these tools)
+            try:
+                from connector_runtime.dispatch.desktop_device_tools import toolbox_tools_for_config
+                effective_tool_allowlist |= toolbox_tools_for_config(ai_config_id, user_id)
+            except Exception:
+                pass
             # Per-bot tool requirements (e.g. Feishu adds context-trim) live
             # on the adapter so adding/removing a bot's required tools no
             # longer touches the chat worker.
@@ -1382,6 +1388,11 @@ def _run_worker_impl(
                         effective_tool_allowlist.update(endpoint_tools_for_config(ai_config_id, user_id))
                         if ai_config_id is not None:
                             effective_tool_allowlist.add("message.send_to_ai")
+                    try:
+                        from connector_runtime.dispatch.desktop_device_tools import toolbox_tools_for_config
+                        effective_tool_allowlist |= toolbox_tools_for_config(ai_config_id, user_id)
+                    except Exception:
+                        pass
                 override_token = task_payload.get("override_token_limit")
                 if isinstance(override_token, dict) and bool(override_token.get("enabled")):
                     try:
@@ -1394,6 +1405,14 @@ def _run_worker_impl(
             # Dynamic MCP discovery must remain available even when task runtime
             # narrows the operational tool allowlist.
             effective_tool_allowlist.update(MCP_INTROSPECTION_TOOLS)
+
+            # Server toolbox MCP tools now come from the toolbox DeviceMcpScope.
+            # 勾选工具箱 MCP 权限后，绑定的 AI 即可使用对应工具。
+            try:
+                from connector_runtime.dispatch.desktop_device_tools import toolbox_tools_for_config
+                effective_tool_allowlist |= toolbox_tools_for_config(ai_config_id, user_id)
+            except Exception:
+                pass
 
             # Apply current binding state (library / toolbox) so unbound governance
             # tools do not appear in the visible MCP catalog sent to the model.

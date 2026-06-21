@@ -908,19 +908,11 @@ def _migrate_user_role_mcp_permissions_rename() -> None:
 def _live_registered_tool_names() -> set:
     """Authoritative set of currently-valid MCP tool names.
 
-    Builtin registry tools (plugins included) plus the self-inspection tools.
+    Builtin registry tools plus the self-inspection tools.
     Returns an empty set if the registry cannot be loaded so callers can refuse
     to prune rather than risk mass-deleting a still-valid config.
     """
     try:
-        # Plugins register into the same live registry singleton; make sure
-        # they are loaded before snapshotting so plugin tools are not pruned.
-        from mcp_runtime.mcp.loader import load_plugins_on_startup
-
-        try:
-            load_plugins_on_startup()
-        except Exception:
-            pass
         from mcp_runtime.mcp.registry import registry as _registry
         from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
 

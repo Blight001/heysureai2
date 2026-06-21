@@ -109,14 +109,15 @@ def ensure_presence_for_user(user_id) -> None:
         # 之后在前端做的收窄。
         if get_scope(uid, device_id) is None:
             set_scope(uid, device_id, caps, ai_config_id=None, device_type="workshop")
-        # 工具箱自愈：确保该用户全部 AI 都绑定工具箱（仅补缺失），并确保其 MCP scope 默认全开。
+        # 工具箱：只在新建 AI 时默认绑定（见 ai_config_routes / ai_service），
+        # 之后完全尊重用户在作坊/AI配置面板的绑定/解绑操作，不再做全量自愈补绑。
+        # 仅确保其 MCP scope 有默认记录（用户可在前台缩小范围）。
         try:
-            from tools.engine import ensure_all_configs_bound_to_toolbox, ensure_toolbox_scope_for_user
+            from tools.engine import ensure_toolbox_scope_for_user
 
-            ensure_all_configs_bound_to_toolbox(uid)
             ensure_toolbox_scope_for_user(uid)
         except Exception:
-            logger.exception("ensure toolbox bindings/scope failed user=%s", user_id)
+            logger.exception("ensure toolbox scope failed user=%s", user_id)
     except Exception:
         _last_ensure_at.pop(uid, None)
         logger.exception("ensure builtin workshop presence failed user=%s", user_id)

@@ -248,10 +248,10 @@ export const useAiConfigManagement = (options: UseAiConfigManagementOptions) => 
         }))
         .filter((item: McpToolDefinition) => !!item.name)
       : []
-    // Endpoint (desktop / browser) tools are no longer part of this picker —
-    // they are governed per-agent via the "已连接 Agent 的 MCP 权限" editor and
-    // derived dynamically from the connected device's reported capabilities.
-    // This picker only manages server-side MCP tools (cfg.mcp_tools).
+    // Server-side MCP tools (the old per-AI checkboxes) have been removed from the
+    // AI config picker. Tools are now configured in the toolbox DeviceMcpScope
+    // ("工具箱 MCP 权限") and granted to bound AIs. This load still populates
+    // role meta and full tool list for other UIs (Task override, global views).
     const map: Record<string, McpToolDefinition> = {}
     for (const row of rows) {
       map[row.name] = row

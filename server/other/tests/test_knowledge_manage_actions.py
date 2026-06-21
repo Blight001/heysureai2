@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from api.runtime.async_bridge import run_async
 from mcp_runtime.mcp.loader import reload_registry
 from mcp_runtime.mcp.registry import registry
-from mcp_runtime.mcp.tools.knowledge import KNOWLEDGE_MANAGE_SCHEMA, _KNOWLEDGE_ACTIONS
+from tools.knowledge import KNOWLEDGE_MANAGE_SCHEMA, _KNOWLEDGE_ACTIONS
 from workshop.handlers import create_inheritance_thought
 
 

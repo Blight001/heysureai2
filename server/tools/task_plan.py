@@ -1,7 +1,7 @@
 """MCP tools for the phased execution flow (the ``plan`` domain).
 
 A plan breaks a long action into ordered phases so quality stays high. It is
-*not* the same thing as a task: a task (see :mod:`mcp_runtime.mcp.tools.tasks`)
+*not* the same thing as a task: a task (see :mod:`tools.tasks`)
 is scheduled, independent work that runs in its own session, whereas a plan can
 appear inside either a normal conversation or a task conversation. ``phase`` is
 a sub-operation of ``plan`` and lives under the ``plan.*`` namespace; closing a
@@ -28,7 +28,7 @@ from api.database import engine
 from api.models import AITaskJob
 from api.services import task_plan as plan_service
 from connector_runtime.dispatch.device_dispatch import get_run_session_context
-from ..core import get_project_root
+from mcp_runtime.mcp.core import get_project_root
 
 
 def _run_context() -> Dict[str, Any]:

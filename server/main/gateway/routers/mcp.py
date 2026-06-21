@@ -94,6 +94,19 @@ async def list_mcp_tools(
         else:
             allowed_tools = set()
 
+    # Server toolbox tools are now primarily granted via the bound toolbox's DeviceMcpScope
+    # (edited in 工具箱 MCP 权限). Augment here so that /tools and catalog reflect the
+    # actual selectable tools after binding. This prevents conflicts with legacy cfg.mcp_tools.
+    if ai_config_id is not None and (cfg is None or getattr(cfg, 'mcp_enabled', True)):
+        try:
+            from connector_runtime.dispatch.desktop_device_tools import toolbox_tools_for_config
+            tb = toolbox_tools_for_config(ai_config_id, user.id)
+            if allowed_tools is None:
+                allowed_tools = set()
+            allowed_tools |= tb
+        except Exception:
+            pass
+
     tools = registry.list_tools()
     for tool in tools:
         name = str(tool.get("name") or "")
@@ -213,6 +226,14 @@ async def call_mcp_tool(
             raise HTTPException(status_code=400, detail="Invalid AI MCP tool config")
         if req.tool not in allowed_tools:
             raise HTTPException(status_code=403, detail=f"Tool not allowed for this AI: {req.tool}")
+
+        # Augment with toolbox scope (server toolbox tools are now sourced from the toolbox DeviceMcpScope)
+        try:
+            from connector_runtime.dispatch.desktop_device_tools import toolbox_tools_for_config
+            allowed_tools |= toolbox_tools_for_config(req.ai_config_id, user.id)
+        except Exception:
+            pass
+
         # Enforce the role ceiling: known registry tools must be within the set
         # permitted for this AI's role tier, regardless of its saved allow-list.
         role_allowed = effective_allowed_for_config(user, cfg)
@@ -290,7 +311,7 @@ async def inheritance_mcp_test(
 
 @router.post("/internal/reload", dependencies=[Depends(require_internal_token)])
 def admin_reload_registry() -> Dict[str, Any]:
-    """Reload MCP tools + plugins on the in-process registry.
+    """Reload MCP tools on the in-process registry.
 
     Admin-only via ``HEYSURE_INTERNAL_TOKEN`` Bearer header. End-user routes
     above remain user-scoped — this endpoint never touches per-user data,

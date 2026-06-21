@@ -129,6 +129,17 @@ async def create_ai_config(
         AssistantAIConfig(ai_role=role, digital_member_role=member_role)
     )
     clamped_mcp_tools = clamp_tools_json(user, tier, raw_mcp_tools)
+    # Strip legacy server toolbox tools from mcp_tools (they are now exclusively controlled
+    # via toolbox DeviceMcpScope). Prevents stale conflicts.
+    try:
+        import json
+        from tools.engine import is_toolbox_gated_tool
+        parsed = json.loads(clamped_mcp_tools or "[]")
+        if isinstance(parsed, list):
+            kept = [str(x) for x in parsed if not is_toolbox_gated_tool(x)]
+            clamped_mcp_tools = json.dumps(kept, ensure_ascii=False)
+    except Exception:
+        pass
     cfg = AssistantAIConfig(
         user_id=user.id,
         name=body.name,
@@ -168,7 +179,7 @@ async def create_ai_config(
     session.refresh(cfg)
     _ensure_ai_workspace_dir(user.id, cfg.id)
     _write_persona_file(user.id, cfg, prompt=body.prompt or "")
-    # 工具箱默认自动绑定：新建 AI 即获得默认工具集（多绑；之后可在作坊里手动解绑）。
+    # 工具箱默认自动绑定：新建 AI 即获得默认工具集（多绑；之后完全由用户在作坊/AI配置中管理绑定与解绑）。
     try:
         from tools.engine import bind_config_to_toolbox
 
@@ -298,6 +309,16 @@ async def update_ai_config(
         setattr(cfg, key, value)
     # Narrow the saved tool set to what this AI's role tier is permitted to use.
     cfg.mcp_tools = clamp_tools_json(user, config_role_tier(cfg), cfg.mcp_tools)
+    # Strip server toolbox-gated tools (now sourced only from toolbox scope).
+    try:
+        import json
+        from tools.engine import is_toolbox_gated_tool
+        parsed = json.loads(cfg.mcp_tools or "[]")
+        if isinstance(parsed, list):
+            kept = [str(x) for x in parsed if not is_toolbox_gated_tool(x)]
+            cfg.mcp_tools = json.dumps(kept, ensure_ascii=False)
+    except Exception:
+        pass
     cfg.updated_at = time.time()
     session.add(cfg)
     session.commit()
@@ -519,6 +540,15 @@ async def clone_ai_config(
     session.commit()
     session.refresh(new_cfg)
     _ensure_ai_workspace_dir(user.id, new_cfg.id)
+    # Strip toolbox server tools from cloned mcp_tools (source of truth moved to toolbox scope)
+    try:
+        import json
+        from tools.engine import is_toolbox_gated_tool
+        p = json.loads(new_cfg.mcp_tools or "[]")
+        if isinstance(p, list):
+            new_cfg.mcp_tools = json.dumps([str(x) for x in p if not is_toolbox_gated_tool(str(x))], ensure_ascii=False)
+    except Exception:
+        pass
     _write_persona_file(user.id, new_cfg, prompt=src_prompt)
     return _cfg_response(new_cfg, user.id)
 

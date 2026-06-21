@@ -1,7 +1,8 @@
-"""服务端内置的「工具箱」设备。
+"""MCP tool handlers grouped by domain.
 
-工具箱与图书馆（``server/workshop``）并列，是另一个服务端内置的"虚拟端侧"：
-它把每个 AI 默认即可用的服务端固定 MCP 工具收拢成一个独立设备，按绑定门禁
-对 AI 放行。识别、展示、绑定与门禁判定都收在本模块内，避免散落在中央
-权限层 / 注册表核心里。
+Each sub-module exposes a set of ``_handler`` callables wired into the
+``mcp_runtime.mcp.registry`` module. Tool modules import shared helpers from
+``mcp_runtime.mcp.core`` (workspace paths, registry primitives) and
+``mcp_runtime.mcp`` intentionally re-exports only the public surface —
+internal handlers stay prefixed with ``_`` and are imported by ``registry.py``.
 """

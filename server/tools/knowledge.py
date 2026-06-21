@@ -11,7 +11,7 @@ from fastapi import HTTPException
 
 from workshop import handlers as knowledge_handlers
 
-from ..permissions import (
+from mcp_runtime.mcp.permissions import (
     ROLE_ASSISTANT_ADMIN,
     ROLE_MANAGER,
     enforce_min_role,

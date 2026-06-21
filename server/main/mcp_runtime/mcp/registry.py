@@ -1,39 +1,39 @@
 from .core import MCPRegistry, MCPTool
-from .tools.introspection import (
+from tools.introspection import (
     _mcp_describe_tool,
 )
-from .tools.workspace import (
+from tools.workspace import (
     _admin_manage,
     _file_manage,
     _run_command,
     FILE_MANAGE_SCHEMA,
 )
-from .tools.tasks import (
+from tools.tasks import (
     _task_complete,
     _task_manage,
     TASK_MANAGE_SCHEMA,
 )
-from .tools.task_plan import (
+from tools.task_plan import (
     _phase_complete,
     _plan_create,
     _task_finish,
 )
-from .tools.prompts import (
+from tools.prompts import (
     _prompt_manage,
     PROMPT_MANAGE_SCHEMA,
 )
-from .tools.communication import (
+from tools.communication import (
     _ai_send_message,
     _user_send_message,
 )
-from .tools.conversation import (
+from tools.conversation import (
     _conversation_manage,
     CONVERSATION_MANAGE_SCHEMA,
 )
-from .tools.knowledge import _knowledge_manage, KNOWLEDGE_MANAGE_SCHEMA
-from .tools.knowledge_search import _knowledge_search, KNOWLEDGE_SEARCH_SCHEMA
-from .tools.web_search import _web_search
-from .tools.device_mcp import _device_mcp_manage, DEVICE_MCP_MANAGE_SCHEMA
+from tools.knowledge import _knowledge_manage, KNOWLEDGE_MANAGE_SCHEMA
+from tools.knowledge_search import _knowledge_search, KNOWLEDGE_SEARCH_SCHEMA
+from tools.web_search import _web_search
+from tools.device_mcp import _device_mcp_manage, DEVICE_MCP_MANAGE_SCHEMA
 
 def _register_builtin_tools(registry: MCPRegistry) -> None:
     """Populate ``registry`` with all builtin tools.

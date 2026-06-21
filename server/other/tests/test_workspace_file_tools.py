@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
-from mcp_runtime.mcp.tools import workspace
+from tools import workspace
 
 
 class WorkspaceFileToolTests(unittest.TestCase):
@@ -13,7 +13,7 @@ class WorkspaceFileToolTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = self.tmp.name
-        self.root_patch = patch("mcp_runtime.mcp.tools.workspace.get_project_root", return_value=self.root)
+        self.root_patch = patch("tools.workspace.get_project_root", return_value=self.root)
         self.root_patch.start()
         self.addCleanup(self.root_patch.stop)
 
@@ -88,7 +88,7 @@ class WorkspaceFileToolTests(unittest.TestCase):
         # so a hard-coded ``encoding`` must NOT be passed to subprocess.run.
         fake_proc = MagicMock(returncode=0, stdout="中文".encode("gbk"), stderr=b"")
         with patch.object(workspace.os, "name", "nt"), \
-             patch("mcp_runtime.mcp.tools.workspace.subprocess.run", return_value=fake_proc) as mock_run:
+             patch("tools.workspace.subprocess.run", return_value=fake_proc) as mock_run:
             result = workspace._run_command(1, {
                 "shell": "cmd",
                 "command": "dir /a",
@@ -109,7 +109,7 @@ class WorkspaceFileToolTests(unittest.TestCase):
         # them as the system code page.
         fake_proc = MagicMock(returncode=0, stdout="中文".encode("utf-8"), stderr=b"")
         with patch.object(workspace.os, "name", "nt"), \
-             patch("mcp_runtime.mcp.tools.workspace.subprocess.run", return_value=fake_proc) as mock_run:
+             patch("tools.workspace.subprocess.run", return_value=fake_proc) as mock_run:
             result = workspace._run_command(1, {
                 "shell": "cmd",
                 "command": "git log -1",

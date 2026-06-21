@@ -1,11 +1,11 @@
 import unittest
 from unittest.mock import patch
 
-from mcp_runtime.mcp.tools.tasks import _task_create
+from tools.tasks import _task_create
 
 
 def _resolved_mode(arguments):
-    with patch("mcp_runtime.mcp.tools.tasks._task_create_impl") as create_impl:
+    with patch("tools.tasks._task_create_impl") as create_impl:
         create_impl.return_value = {"created": True}
         result = _task_create(1, arguments, 29)
 

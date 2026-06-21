@@ -5,8 +5,8 @@ Layout:
                  runtime status emitter.
 - registry     — singleton ``registry`` populated with every built-in tool.
 - permissions  — per-role allow-list policy.
-- tools.*      — concrete handlers, grouped by domain (workspace, tasks,
-                 prompts, communication, and conversation).
+- tools handlers now live under server/tools/ (owned by the toolbox device);
+  registry still pulls them in at mcp_runtime.mcp.registry.
 
 External callers should keep importing from ``mcp_runtime.mcp`` (this package) for
 the small public surface re-exported below; reach into ``mcp_runtime.mcp.core`` /

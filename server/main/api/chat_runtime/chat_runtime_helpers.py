@@ -138,10 +138,24 @@ def build_effective_system_prompt(
                 effective_tool_allowlist.update(endpoint_tools_for_config(ai_config_id, user.id))
                 if ai_config_id is not None:
                     effective_tool_allowlist.add("message.send_to_ai")
+                try:
+                    from connector_runtime.dispatch.desktop_device_tools import toolbox_tools_for_config
+                    effective_tool_allowlist |= toolbox_tools_for_config(ai_config_id, user.id)
+                except Exception:
+                    pass
 
     if is_task_runtime:
         effective_tool_allowlist.update(TASK_RUNTIME_REQUIRED_TOOLS)
     effective_tool_allowlist.update(MCP_INTROSPECTION_TOOLS)
+
+    # Server toolbox MCP tools now come from the toolbox DeviceMcpScope (勾选的实际工具).
+    # Bound AIs get exactly what is allowed in the toolbox scope. This replaces the
+    # server part of cfg.mcp_tools to prevent conflicts.
+    try:
+        from connector_runtime.dispatch.desktop_device_tools import toolbox_tools_for_config
+        effective_tool_allowlist |= toolbox_tools_for_config(ai_config_id, user.id)
+    except Exception:
+        pass
 
     # Apply current binding state so that library (and potentially toolbox) tools
     # do not appear in the catalog if the AI is not actually bound.

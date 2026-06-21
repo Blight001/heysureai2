@@ -24,7 +24,7 @@ from api.core.settings import settings
 from api.sio import sio
 from api.socket_events import register_agent_socket_events, register_user_socket_events
 from api.database import create_db_and_tables
-from mcp_runtime.mcp.loader import load_plugins_on_startup
+
 from api.runtime import heartbeat as heartbeat_module
 from ai_runtime.inference.ai_service import align_token_snapshots_with_history, migrate_legacy_switch_files_to_db
 from api.chat_runtime.chat_scheduler import process_task_scheduler
@@ -56,17 +56,6 @@ async def lifespan(app: FastAPI):
         mark_all_offline()
     except Exception:
         logger.exception("failed to reset endpoint agent presence on startup")
-    try:
-        plugin_boot = load_plugins_on_startup()
-        for entry in plugin_boot.get("plugin_errors") or []:
-            logger.error(f"mcp-plugins: failed to load {entry.get('plugin')}: {entry.get('error')}")
-        if plugin_boot.get("loaded"):
-            logger.info(
-                f"mcp-plugins loaded {plugin_boot['loaded']} module(s); "
-                f"registry version={plugin_boot.get('version')}"
-            )
-    except Exception:
-        logger.exception("mcp-plugins startup discovery failed")
     try:
         result = migrate_legacy_switch_files_to_db()
         if result.get("imported") or result.get("removed"):

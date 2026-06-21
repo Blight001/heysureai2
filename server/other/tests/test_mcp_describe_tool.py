@@ -1,4 +1,4 @@
-from mcp_runtime.mcp.tools.introspection import _mcp_describe_tool
+from tools.introspection import _mcp_describe_tool
 from fastapi import HTTPException
 
 
@@ -59,7 +59,7 @@ def test_describe_tool_accepts_copied_catalog_line():
 
 
 def test_describe_tool_does_not_require_execution_permission(monkeypatch):
-    import mcp_runtime.mcp.tools.introspection as introspection
+    import tools.introspection as introspection
 
     class _Exec:
         def where(self, *_args, **_kwargs):
@@ -93,7 +93,7 @@ def test_describe_tool_does_not_require_execution_permission(monkeypatch):
 
 
 def test_describe_tool_accepts_browser_dot_alias_for_endpoint_tool(monkeypatch):
-    import mcp_runtime.mcp.tools.introspection as introspection
+    import tools.introspection as introspection
 
     monkeypatch.setattr(
         introspection,
@@ -123,7 +123,7 @@ def test_describe_tool_accepts_browser_dot_alias_for_endpoint_tool(monkeypatch):
 
 
 def test_describe_tool_accepts_repeated_browser_namespace(monkeypatch):
-    import mcp_runtime.mcp.tools.introspection as introspection
+    import tools.introspection as introspection
 
     monkeypatch.setattr(
         introspection,
@@ -148,7 +148,7 @@ def test_describe_tool_accepts_repeated_browser_namespace(monkeypatch):
 
 
 def test_describe_tool_includes_knowledge_manage(monkeypatch):
-    import mcp_runtime.mcp.tools.introspection as introspection
+    import tools.introspection as introspection
 
     monkeypatch.setattr(introspection, "online_tool_defs_for_user", lambda _user_id: {})
 

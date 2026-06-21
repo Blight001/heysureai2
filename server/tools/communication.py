@@ -13,7 +13,7 @@ from sqlmodel import Session
 
 from connector_runtime.bots.messaging import MediaPayload, dispatcher
 from api.database import engine
-from ..core import get_project_root, safe_join
+from mcp_runtime.mcp.core import get_project_root, safe_join
 from api.models import User
 from ai_runtime.inference import ai_message_service
 from connector_runtime.dispatch.device_dispatch import get_run_session_context

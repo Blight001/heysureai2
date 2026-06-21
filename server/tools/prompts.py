@@ -7,7 +7,7 @@ from sqlmodel import Session, select
 from api.database import engine
 from api.models import AssistantAIConfig, User
 from api.services.governance import assert_can_manage_or_legacy
-from ..permissions import ROLE_ASSISTANT_ADMIN, ROLE_MANAGER
+from mcp_runtime.mcp.permissions import ROLE_ASSISTANT_ADMIN, ROLE_MANAGER
 
 
 SYSTEM_PROMPT_FIELDS = {
@@ -373,7 +373,7 @@ def _prompt_manage(user_id: int, args: dict, ai_config_id: Optional[int] = None)
     manager+, system-prompt reads are manager+, and system-prompt writes are
     assistant_admin+.
     """
-    from ..permissions import enforce_min_role
+    from mcp_runtime.mcp.permissions import enforce_min_role
 
     raw = str((args or {}).get("action") or "").strip().lower()
     action = _PROMPT_ACTION_ALIASES.get(raw, raw)

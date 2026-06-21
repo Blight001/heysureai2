@@ -207,6 +207,7 @@ def ensure_default_configs(session: Session, user_id: int) -> list[AssistantAICo
         except Exception:
             pass
         # 工具箱默认自动绑定：新建的 AI 一律绑定工具箱（多绑），获得默认工具集。
+        # 之后绑定关系完全由用户操作控制，不再做全量自愈。
         try:
             from tools.engine import bind_config_to_toolbox
 

@@ -11,7 +11,7 @@ from api.database import engine
 from api.device_bindings import get_binding
 from api.models import AIRuntimeStatus, AssistantAIConfig
 from api.sio import agents
-from ..core import generate_file_tree, get_project_root, safe_join
+from mcp_runtime.mcp.core import generate_file_tree, get_project_root, safe_join
 
 
 MAX_COMMAND_LENGTH = 8000
@@ -398,7 +398,7 @@ def _file_manage(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
     ``write``/``edit`` stay manager+ (re-enforced here). Shell execution and web
     search remain separate tools (``workspace.run_command`` / ``workspace.search``).
     """
-    from ..permissions import enforce_min_role
+    from mcp_runtime.mcp.permissions import enforce_min_role
 
     raw = str((args or {}).get("action") or "").strip().lower()
     action = _FILE_ACTION_ALIASES.get(raw, raw)
