@@ -226,7 +226,7 @@ onBeforeUnmount(() => {
   <div v-if="visible && props.header" class="relative">
     <div
       ref="flowScrollRef"
-      class="flex items-center gap-1 text-[10px] text-zinc-500 dark:text-zinc-400 whitespace-nowrap overflow-x-auto max-w-[480px] pb-1"
+      class="flex items-center gap-1 text-[10px] text-zinc-500 dark:text-zinc-400 whitespace-nowrap overflow-x-auto max-w-[220px] sm:max-w-[480px] pb-1"
       @wheel.passive="markUserInteraction"
       @mousedown="markUserInteraction"
     >

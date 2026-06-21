@@ -133,17 +133,17 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 </script>
 
 <template>
-  <div ref="rootRef" class="relative flex items-center gap-2">
+  <div ref="rootRef" class="relative flex items-center gap-2 min-w-0">
     <button
-      class="min-w-[220px] max-w-[320px] px-3 py-2 text-xs rounded-lg border border-zinc-200 bg-white/90 text-zinc-700 dark:bg-zinc-800/80 dark:border-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-2"
+      class="min-w-[140px] sm:min-w-[200px] max-w-[260px] sm:max-w-[320px] px-2 sm:px-3 py-1.5 sm:py-2 text-xs rounded-lg border border-zinc-200 bg-white/90 text-zinc-700 dark:bg-zinc-800/80 dark:border-zinc-700 dark:text-zinc-200 flex items-center justify-between gap-2 overflow-hidden"
       @click="toggleOpen"
     >
-      <span class="truncate text-left">{{ currentSessionName }}</span>
-      <span class="text-zinc-400">▾</span>
+      <span class="truncate text-left min-w-0">{{ currentSessionName }}</span>
+      <span class="shrink-0 text-zinc-400">▾</span>
     </button>
 
-    <div v-if="open" class="absolute left-0 top-[calc(100%+6px)] z-20 w-[420px] max-w-[88vw] rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 shadow-lg p-2">
-      <div class="max-h-72 overflow-y-auto space-y-2">
+    <div v-if="open" class="absolute left-0 top-[calc(100%+6px)] z-20 w-[320px] max-w-[88vw] sm:w-[420px] rounded-xl border border-zinc-200 bg-white dark:bg-zinc-900 dark:border-zinc-700 shadow-lg p-2 overflow-hidden">
+      <div class="max-h-72 overflow-y-auto overflow-x-hidden space-y-2">
         <!-- 普通对话：在此栏目下创建对话 -->
         <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-800/40">
           <button
@@ -163,7 +163,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             <div
               v-for="session in normalSessions"
               :key="session.id"
-              class="flex items-center gap-2 px-2 py-1.5 rounded border"
+              class="flex items-center gap-1 px-2 py-1.5 rounded border min-w-0"
               :class="[
                 session.id === currentSessionId
                   ? 'border-emerald-300/70 bg-emerald-50/45 dark:border-emerald-500/35 dark:bg-emerald-500/10'
@@ -224,7 +224,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
             <div
               v-for="session in taskSessions"
               :key="session.id"
-              class="flex items-center gap-2 px-2 py-1.5 rounded border"
+              class="flex items-center gap-1 px-2 py-1.5 rounded border min-w-0"
               :class="[
                 session.id === currentSessionId
                   ? 'border-indigo-300/70 bg-indigo-50/45 dark:border-indigo-500/35 dark:bg-indigo-500/10'

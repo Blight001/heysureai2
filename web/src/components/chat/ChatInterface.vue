@@ -1611,8 +1611,8 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex flex-col h-full gap-3">
-    <div class="flex items-center justify-between gap-2">
-      <div class="flex items-center gap-2 min-w-0">
+    <div class="flex items-center justify-between gap-1 sm:gap-2">
+      <div class="flex items-center gap-1 sm:gap-2 min-w-0 flex-1">
         <ChatHeader
           :currentSessionId="currentSessionId"
           :sessionList="sessionList"
@@ -1631,7 +1631,7 @@ onBeforeUnmount(() => {
           header
         />
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-1 sm:gap-2 shrink-0">
         <span v-if="runStatusText" class="text-[11px] text-emerald-600 dark:text-emerald-400">{{ runStatusText }}</span>
         <button
           v-if="isRunActive"

@@ -47,6 +47,7 @@ const governanceTools = computed(() => flattenTools(props.catalog?.governance))
 <template>
   <LibraryMcpScopeEditor
     v-if="mode === 'workshop' && workshopDeviceId && catalog"
+    v-bind="$attrs"
     :catalog="catalog"
     :workshop-device-id="workshopDeviceId"
     :bound-ai-config-id="boundAiConfigId"
@@ -57,6 +58,7 @@ const governanceTools = computed(() => flattenTools(props.catalog?.governance))
   />
   <CatalogMcpScopeEditor
     v-else-if="governanceTools.length"
+    v-bind="$attrs"
     title="图书馆 MCP 权限"
     subtitle="完整图书馆 MCP"
     :tools="governanceTools"
