@@ -7,6 +7,7 @@ import { useAiConfigManagement } from '@/composables/dashboard/useAiConfigManage
 import { useDashboardData } from '@/composables/dashboard/useDashboardData'
 import { useDashboardUi } from '@/composables/dashboard/useDashboardUi'
 import { useDashboardSystemSettings } from '@/composables/dashboard/useDashboardSystemSettings'
+import { useBreakpoint } from '@/composables/useBreakpoint'
 import {
   DASHBOARD_REFRESH_FAST_MS,
   DASHBOARD_REFRESH_HIDDEN_MS,
@@ -46,6 +47,16 @@ const emit = defineEmits<{
   (e: 'refreshUser', user: User): void
   (e: 'ready'): void
 }>()
+
+const { isMobile } = useBreakpoint()
+// 移动端单窗格 Tab：console = 左侧控制台面板，arena = 社会显示（游戏画面）
+const mobileTab = ref<'console' | 'arena'>('console')
+// 社会显示 iframe 较重，移动端懒加载：首次切到该 Tab 才挂载，之后用 v-show 保活避免重载
+const arenaActivated = ref(false)
+const activateArenaTab = () => {
+  mobileTab.value = 'arena'
+  arenaActivated.value = true
+}
 
 const selectedFiles = ref<string[]>([])
 const chatModalOpen = ref(false)
@@ -467,17 +478,26 @@ onUnmounted(() => {
     </header>
 
     <!-- 主体内容区域 -->
-    <main class="flex-1 overflow-y-auto lg:overflow-hidden p-6 flex flex-col lg:flex-row" :class="leftCollapsed ? 'gap-4' : 'gap-6'">
+    <main
+      class="flex-1 overflow-hidden flex flex-col lg:flex-row p-3 sm:p-6 max-lg:pb-[calc(4.25rem+env(safe-area-inset-bottom))]"
+      :class="leftCollapsed ? 'lg:gap-4' : 'lg:gap-6'"
+    >
 
-      <!-- 左侧：数字生命、知识库与作坊 -->
-      <section class="flex flex-col gap-6 transition-all duration-300 relative shrink-0" :class="leftCollapsed ? 'lg:w-10 lg:min-w-[40px] w-full' : 'lg:w-[20%] lg:min-w-[280px] w-full'">
+      <!-- 左侧：数字生命、知识库与作坊（移动端为「控制台」Tab） -->
+      <section
+        class="flex flex-col gap-6 transition-all duration-300 relative w-full min-h-0 flex-1 lg:flex-none lg:h-full"
+        :class="[
+          leftCollapsed ? 'lg:w-10 lg:min-w-[40px]' : 'lg:w-[20%] lg:min-w-[280px]',
+          mobileTab !== 'console' ? 'max-lg:hidden' : '',
+        ]"
+      >
         <button class="hidden lg:block absolute -right-3 top-4 w-6 h-6 rounded-full border border-zinc-200 bg-white text-zinc-500 text-xs shadow hover:text-indigo-600 hover:border-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300 z-10 transition-transform hover:scale-110" @click="leftCollapsed = !leftCollapsed">
           {{ leftCollapsed ? '⟩' : '⟨' }}
         </button>
         <div v-if="leftCollapsed" class="hidden lg:flex flex-1 items-center justify-center text-zinc-400 text-xs dark:text-zinc-500">
           数字生命
         </div>
-        <div v-else class="h-auto lg:h-full">
+        <div v-else class="h-full min-h-0 overflow-y-auto lg:overflow-visible">
           <LeftSidebarPanel
             :admin-agents="adminAgents"
             :member-agents="sidebarMemberAgents"
@@ -506,14 +526,36 @@ onUnmounted(() => {
         </div>
       </section>
 
-      <!-- 中间：社会显示（游戏世界实时画面） -->
+      <!-- 中间：社会显示（游戏世界实时画面）。移动端懒挂载：首次切到该 Tab 才加载 iframe -->
       <WorldArenaPanel
-        class="h-auto lg:h-full min-h-[500px] lg:min-h-0 lg:min-w-0 flex-1"
+        v-if="!isMobile || arenaActivated"
+        v-show="!isMobile || mobileTab === 'arena'"
+        class="w-full min-h-0 flex-1 lg:h-full lg:min-h-0 lg:min-w-0"
         :chat-ai-config-id="chatModalOpen ? chatTarget?.aiConfigId : null"
         @open-chat="onWorldOpenChat"
       />
 
     </main>
+
+    <!-- 移动端底部 Tab 栏 -->
+    <nav class="lg:hidden shrink-0 z-20 flex items-stretch border-t border-zinc-200/70 bg-white/85 backdrop-blur-md dark:border-zinc-800/70 dark:bg-zinc-900/85 pb-[env(safe-area-inset-bottom)]">
+      <button
+        class="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 text-[11px] font-medium transition-colors"
+        :class="mobileTab === 'console' ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 dark:text-zinc-400'"
+        @click="mobileTab = 'console'"
+      >
+        <AppIcon name="brain" class="w-5 h-5" />
+        控制台
+      </button>
+      <button
+        class="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 text-[11px] font-medium transition-colors"
+        :class="mobileTab === 'arena' ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-500 dark:text-zinc-400'"
+        @click="activateArenaTab"
+      >
+        <AppIcon name="globe" class="w-5 h-5" />
+        社会显示
+      </button>
+    </nav>
 
     <McpToolsModal
       :show="toolModalOpen"
@@ -555,8 +597,8 @@ onUnmounted(() => {
       :on-batch-delete-task-jobs="() => batchDeleteTaskJobs(taskListTarget)"
     />
     <Transition name="fade">
-      <div v-if="chatTarget && chatModalOpen" class="fixed inset-0 z-[90] bg-black/45 flex items-center justify-center p-4" @click="closeAgentChat">
-        <div class="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700 shadow-xl w-full max-w-[960px] h-[88vh] flex flex-col" @click.stop>
+      <div v-if="chatTarget && chatModalOpen" class="fixed inset-0 z-[90] bg-black/45 flex items-center justify-center p-0 sm:p-4" @click="closeAgentChat">
+        <div class="bg-white dark:bg-zinc-900 rounded-none sm:rounded-2xl border-0 sm:border border-zinc-200 dark:border-zinc-700 shadow-xl w-full h-full max-w-none sm:max-w-[960px] sm:h-[88vh] flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:pt-0 sm:pb-0" @click.stop>
           <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
             <div>
               <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">与 {{ chatTarget.name }} 对话</div>
@@ -656,7 +698,7 @@ onUnmounted(() => {
 
     <Transition name="fade">
       <div v-if="guidanceDialog.visible" class="fixed inset-0 z-40 bg-black/40 flex items-center justify-center backdrop-blur-sm" @click="closeGuidanceDialog">
-        <div class="bg-white rounded-2xl shadow-xl w-[420px] p-5 dark:bg-zinc-900 transform transition-all scale-100" @click.stop>
+        <div class="bg-white rounded-2xl shadow-xl w-[420px] max-w-[calc(100vw-2rem)] p-5 dark:bg-zinc-900 transform transition-all scale-100" @click.stop>
           <h3 class="text-sm font-semibold text-zinc-800 mb-3 dark:text-zinc-100">上帝指引</h3>
           <div class="text-xs text-zinc-500 mb-2 dark:text-zinc-400">{{ guidanceDialog.agent?.name }}</div>
           <textarea

@@ -28,7 +28,12 @@ const inputValue = computed({
   set: (val) => emit('update:modelValue', val)
 })
 
+// 触屏设备（手机/平板）上回车应换行，由发送按钮触发发送，避免软键盘回车误发
+const isCoarsePointer = typeof window !== 'undefined' && !!window.matchMedia
+  && window.matchMedia('(pointer: coarse)').matches
+
 const handleKeydown = (e: KeyboardEvent) => {
+  if (isCoarsePointer) return
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
     emit('send')
