@@ -26,11 +26,12 @@ def connected_agent_rows_for_user(user_id: int):
         if _positive_int(agent.get("userId") or agent.get("user_id")) == uid
     ]
     try:
+        from tools import engine as toolbox_engine
         from workshop import engine as workshop_engine
 
         workshop_engine.ensure_presence_for_user(uid)
         rows.append(workshop_engine.connected_entry_for_user(uid))
-        rows.append(workshop_engine.toolbox_connected_entry_for_user(uid))
+        rows.append(toolbox_engine.toolbox_connected_entry_for_user(uid))
     except Exception:
         logger.exception("failed to add builtin workshop to agent snapshot user=%s", uid)
     return rows

@@ -117,12 +117,6 @@ def config_bound_to_library(user_id, ai_config_id) -> bool:
     return config_bound_to_device(user_id, ai_config_id, device_id_for_user(user_id))
 
 
-def config_bound_to_toolbox(user_id, ai_config_id) -> bool:
-    from workshop.engine import toolbox_device_id_for_user
-
-    return config_bound_to_device(user_id, ai_config_id, toolbox_device_id_for_user(user_id))
-
-
 def bind_all_configs_to_device(user_id, device_id) -> int:
     """把该用户当前全部 AI 多绑到指定设备（已绑定的跳过）。返回新增绑定数。
 
@@ -161,24 +155,3 @@ def bind_all_configs_to_device(user_id, device_id) -> int:
         if added:
             session.commit()
     return added
-
-
-def bind_config_to_toolbox(user_id, ai_config_id) -> bool:
-    """把单个 AI 绑定到工具箱（多绑）。用于 AI 创建时默认绑定。"""
-    from workshop.engine import toolbox_device_id_for_user
-
-    return set_workshop_binding(
-        user_id, toolbox_device_id_for_user(user_id), ai_config_id, bound=True, single=False
-    )
-
-
-def ensure_all_configs_bound_to_toolbox(user_id) -> int:
-    """自愈：确保该用户全部 AI 都绑定工具箱（仅补缺失的绑定行）。
-
-    工具箱是"默认全绑、用户不可解绑"的内置作坊（无任何解绑入口），因此重复补绑
-    是安全的、幂等的——补回因创建时 best-effort 绑定失败、或经其它创建路径而漏绑
-    的 AI，使其不被工具箱门禁挡在默认工具集之外。返回新增绑定数。
-    """
-    from workshop.engine import toolbox_device_id_for_user
-
-    return bind_all_configs_to_device(user_id, toolbox_device_id_for_user(user_id))

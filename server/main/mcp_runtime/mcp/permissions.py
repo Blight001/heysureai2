@@ -102,23 +102,9 @@ def requires_library_binding(tool_name: str) -> bool:
     return str(tool_name or "").strip() in LIBRARY_BOUND_TOOLS
 
 
-# 工具箱门禁豁免：自省工具始终可用，避免未绑定时连工具说明都查不了。
-TOOLBOX_GATE_EXEMPT: Set[str] = {"mcp.describe_tool"}
-
-
-def is_toolbox_gated_tool(tool_name: str) -> bool:
-    """该工具是否属于「工具箱」（需绑定工具箱才能由 AI 调用）。
-
-    仅服务端固定工具会经 ``MCPRegistry.call``；其中非图书馆绑定、非自省的即工具箱
-    工具。端侧/工坊工具走各自分发，不经此判定。"""
-    name = str(tool_name or "").strip()
-    return bool(name) and name not in LIBRARY_BOUND_TOOLS and name not in TOOLBOX_GATE_EXEMPT
-
-
-def toolbox_tool_names(all_tool_names: Iterable[str]) -> Set[str]:
-    """「工具箱」工具：服务端固定工具中除图书馆绑定工具外的其余部分。"""
-    return {str(name).strip() for name in all_tool_names if str(name).strip() not in LIBRARY_BOUND_TOOLS}
-
+# 「工具箱」设备（多绑、按绑定门禁放行的服务端固定工具集）整体迁出到独立模块
+# ``tools.engine``：门禁判定（is_toolbox_gated_tool / toolbox_tool_names /
+# TOOLBOX_GATE_EXEMPT）与绑定逻辑都收在那里，本权限层不再内联工具箱特例。
 
 
 def tool_min_role(tool_name: str) -> str:

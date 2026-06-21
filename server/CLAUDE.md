@@ -16,11 +16,12 @@ server/
     migrations/   ← Alembic 迁移
     scripts/      ← 运维/迁移脚本
     tests/        ← pytest 测试
-  workshop/       ← 知识工坊内置 Agent（仍在 server 根下）
+  workshop/       ← 图书馆内置设备（知识工坊 Agent，server 根下）
+  tools/          ← 工具箱内置设备（默认全绑的服务端固定工具集，server 根下）
   static/ data/ logs/  ← 静态资源与运行时产物
 ```
 
-`PYTHONPATH` 需包含 `server/main` 与 `server` 根目录（`run_*.bat` 与 Dockerfile 已配置），因此 import 路径不变：`api`、`gateway`、`workshop` 等。
+`PYTHONPATH` 需包含 `server/main` 与 `server` 根目录（`run_*.bat` 与 Dockerfile 已配置），因此 import 路径不变：`api`、`gateway`、`workshop`、`tools` 等。
 
 ## 心智模型：1 个共享层 + 4 个进程
 
@@ -48,7 +49,8 @@ server/
 | 新增 MCP 工具 | `main/mcp_runtime/mcp/`（注册 + 权限校验） |
 | 聊天/推理 | 编排在 `main/api/chat_runtime/`，worker 在 `main/ai_runtime/` |
 | 任务定时/循环 schedule | `main/api/services/task_schedule.py`（解析/校验/续期的唯一权威实现，REST/MCP/调度器共用） |
-| 知识工坊 Agent | `workshop/` 服务端内置虚拟 Agent，绑定接口为 `main/gateway/routers/workshop.py` + `main/api/workshop_bindings.py` |
+| 知识工坊（图书馆）Agent | `workshop/` 服务端内置虚拟 Agent，绑定接口为 `main/gateway/routers/workshop.py` + `main/api/workshop_bindings.py` |
+| 工具箱（内置设备） | `tools/engine.py` 收拢工具箱身份/展示/绑定/门禁；门禁由 `main/mcp_runtime/mcp/core.py` 在 `MCPRegistry.call` 调用，绑定与图书馆共用 `main/api/workshop_bindings.py` 的通用绑定层 |
 | 机器人/连接器 | `main/connector_runtime/bots/`、`main/connector_runtime/dispatch/` |
 | 配置项 | `main/api/core/settings.py` |
 

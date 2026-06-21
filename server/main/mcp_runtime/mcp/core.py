@@ -207,7 +207,7 @@ def _enforce_workshop_binding(tool_name: str, user_id: int, ai_config_id: Option
     """
     if not ai_config_id:
         return
-    from .permissions import is_toolbox_gated_tool, requires_library_binding
+    from .permissions import requires_library_binding
 
     if requires_library_binding(tool_name):
         from api.workshop_bindings import config_bound_to_library
@@ -218,14 +218,10 @@ def _enforce_workshop_binding(tool_name: str, user_id: int, ai_config_id: Option
                 detail=f"该 AI 未绑定图书馆，无法调用 {tool_name}（请在 AI 配置或世界中绑定图书馆）",
             )
         return
-    if is_toolbox_gated_tool(tool_name):
-        from api.workshop_bindings import config_bound_to_toolbox
+    # 工具箱门禁判定与绑定逻辑由独立的「工具箱」设备模块负责。
+    from tools.engine import enforce_toolbox_binding
 
-        if not config_bound_to_toolbox(user_id, ai_config_id):
-            raise HTTPException(
-                status_code=403,
-                detail=f"该 AI 未绑定工具箱，无法调用 {tool_name}（请在 AI 配置或世界中绑定工具箱）",
-            )
+    enforce_toolbox_binding(tool_name, user_id, ai_config_id)
 
 
 def _write_runtime_status(user_id: int, ai_config_id: Optional[int], status: str, tool: str) -> None:

@@ -31,12 +31,13 @@ def _find_connected_agent(device_id: str, user_id: int) -> Optional[dict]:
         if str(agent.get("id") or "") == aid and agent.get("userId") == user_id:
             return agent
     try:
+        from tools import engine as toolbox_engine
         from workshop import engine as workshop_engine
 
         if aid == workshop_engine.device_id_for_user(user_id):
             return workshop_engine.connected_entry_for_user(user_id)
-        if aid == workshop_engine.toolbox_device_id_for_user(user_id):
-            return workshop_engine.toolbox_connected_entry_for_user(user_id)
+        if aid == toolbox_engine.toolbox_device_id_for_user(user_id):
+            return toolbox_engine.toolbox_connected_entry_for_user(user_id)
     except Exception:
         pass
     return None

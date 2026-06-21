@@ -208,7 +208,7 @@ def ensure_default_configs(session: Session, user_id: int) -> list[AssistantAICo
             pass
         # 工具箱默认自动绑定：新建的 AI 一律绑定工具箱（多绑），获得默认工具集。
         try:
-            from api.workshop_bindings import bind_config_to_toolbox
+            from tools.engine import bind_config_to_toolbox
 
             for row in created:
                 if row.id:
