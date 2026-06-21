@@ -1685,8 +1685,15 @@ def _run_worker_impl(
                     # If plan mode is already active, narrow the visible tools
                     # to the phase-forward action (plus self-inspection).
                     if is_task_runtime and plan_state is None:
+                        # Allow knowledge tools so the AI can consult the KB
+                        # before committing to a plan structure.
+                        _pre_plan_kb_tools = {
+                            "knowledge.search",
+                            "librarian.consult",
+                            "librarian.list_topics",
+                        }
                         current_exposed_tools = (
-                            {"plan.create"} | set(MCP_INTROSPECTION_TOOLS)
+                            {"plan.create"} | set(MCP_INTROSPECTION_TOOLS) | _pre_plan_kb_tools
                         ) & set(effective_tool_allowlist)
                     elif is_task_runtime and flow_awaiting_finish:
                         current_exposed_tools = (
