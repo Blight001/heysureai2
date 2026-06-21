@@ -6,12 +6,12 @@ import them without dragging in the full SQLModel table definitions.
 
 DEFAULT_START_TASK_PROMPT = """你将收到一个任务，请先理解目标、约束与优先级，然后开始执行。
 
-**知识检索优先规则**：对于实际的多阶段操作任务（步骤较多、需要规划、依赖历史经验或外部知识），在考虑调用 plan.create 制定分阶段计划之前，**必须优先主动调用 knowledge.search**（或 librarian.consult 如果已绑定图书馆）。使用任务标题、要求中的关键词或关键动作构造 query，检索知识库中相关的历史流程、经验、已沉淀的 SKILL 或总结。参考检索结果后再决定执行策略、是否制定计划、以及如何拆分阶段和定义 done_signal。
+**知识检索优先规则（调用 plan.create 前必做）**：对于多阶段或复杂操作任务，在调用 plan.create 制定分阶段计划**之前**，必须先调用 **knowledge.search**（用任务标题或核心动作构造 query）。knowledge.search 语义召回图书馆里沉淀的**主题思想（传承思想）**，包括可复用的操作 SOP、SKILL 包和已总结经验。检索结果是制定计划的主要依据——基于它决定阶段划分、done_signal 和执行策略，避免重复探索已解决的问题。
 
-如果用户说“安装某个 skill”或表达类似意图，默认将其解释为“安装传承思想（librarian install skill package / create inheritance thought）”，不要自行改写为其他安装对象。"""
+如果用户说"安装某个 skill"或表达类似意图，默认将其解释为"安装传承思想（librarian install skill package / create inheritance thought）"，不要自行改写为其他安装对象。"""
 DEFAULT_RESUME_TASK_PROMPT = """请继续执行刚才被暂停的任务，先简要回顾当前进度，再继续推进直到可交付。
 
-**知识检索优先规则**：如果当前任务是复杂多阶段操作任务，在推进或调用 plan.create 之前，请优先使用 knowledge.search 检索相关历史知识与经验。"""
+**知识检索优先规则**：如果当前任务是复杂多阶段操作任务，在推进或调用 plan.create 之前，请先用 knowledge.search 语义召回图书馆里相关的主题思想（传承思想），参考已沉淀的 SOP 与经验再制定计划。"""
 DEFAULT_SUPERVISION_PROMPT = "系统监督提醒：请确认当前任务是否已完成。若已完成可自然结束；若未完成请给出剩余步骤并继续执行。复杂任务请使用 plan.create 拆分阶段。"
 DEFAULT_COMPRESSION_PROMPT = """你正在把一段较长的对话历史压缩成摘要，以便在不超出上下文上限的情况下继续同一段对话。请阅读下面的对话历史，输出一段简洁但信息完整的中文摘要，必须保留：用户的核心目标与约束、已完成的工作与关键产出、尚未完成的事项与已知风险、重要的事实/数据/结论，以及接下来应继续推进的下一步。请省略寒暄与重复内容，只输出摘要正文，不要添加额外说明或前后缀。
 
@@ -19,7 +19,7 @@ DEFAULT_COMPRESSION_PROMPT = """你正在把一段较长的对话历史压缩成
 {history}"""
 DEFAULT_TASK_PLAN_FLOW_PROMPT = """本任务默认直接执行，不强制进入 plan 模式。若任务步骤较多、依赖较多、风险较高或不确定性较强，再自行调用 plan.create 制定分阶段计划。
 
-**重要规则（多阶段任务必做）**：当你判断这是一个**实际的多阶段操作任务**时，在调用 plan.create 进行计划安排**之前，必须先主动调用 knowledge.search**（或 librarian.consult 如果已绑定图书馆）。请基于任务标题、目标或关键指令构造 query，检索知识库中相关的历史流程、已沉淀的经验、类似任务的步骤、SKILL 或总结。参考检索结果后再决定是否制定计划、如何拆分阶段、定义每个阶段的 goal 与 done_signal。这样能复用有效知识、减少重复探索、提高执行质量。
+**重要规则（调用 plan.create 前必做）**：当你判断这是一个**实际的多阶段操作任务**时，在调用 plan.create 之前，必须先调用 **knowledge.search**（或已绑定图书馆时用 librarian.consult）。knowledge.search 语义召回图书馆里沉淀的**主题思想（传承思想）**，包括可复用的操作 SOP、SKILL 包和过往经验总结。以任务标题、目标或关键动作构造 query，参考检索结果再决定是否制定计划、如何拆分阶段、定义每个阶段的 goal 与 done_signal，从而复用有效知识、避免重复探索。
 
 1) 计划用于复杂长任务：把总体目标拆成有序的多个阶段，每个阶段写清目标(goal)与结束标志(done_signal)，并在 actions 里列出该阶段的子行动。
 2) 进入 plan 模式后，系统会主动下发「当前阶段」让你执行，你无需自己查询计划进度。达成该阶段的结束标志后调用 plan.phase_complete 收尾本阶段（无需总结）；系统会自动隐藏上一阶段的深度思考与 MCP 详细结果、只保留调用状态，并自动下发下一个阶段，直到所有阶段完成。

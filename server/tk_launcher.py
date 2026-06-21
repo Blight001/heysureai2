@@ -151,6 +151,62 @@ def classify_line(line: str) -> str:
     return "info"
 
 
+def _find_pids_for_port(port: str) -> list[str]:
+    """Scan netstat (TCP+UDP) and return unique PIDs occupying the given port."""
+    pids: set[str] = set()
+
+    def _run_netstat(proto: str) -> list[str]:
+        try:
+            result = subprocess.run(
+                ["netstat", "-ano", "-p", proto],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+            )
+            return result.stdout.splitlines()
+        except Exception:
+            return []
+
+    # TCP
+    for line in _run_netstat("tcp"):
+        if f":{port} " in line:
+            upper = line.upper()
+            if any(state in upper for state in ("LISTENING", "ESTABLISHED", "TIME_WAIT", "CLOSE_WAIT",
+                                                "SYN_SENT", "SYN_RECEIVED", "FIN_WAIT", "LAST_ACK", "CLOSING")):
+                parts = line.split()
+                if parts:
+                    pid = parts[-1].strip()
+                    if pid.isdigit() and pid != "0":
+                        pids.add(pid)
+
+    # UDP
+    for line in _run_netstat("udp"):
+        if f":{port} " in line:
+            parts = line.split()
+            if parts:
+                pid = parts[-1].strip()
+                if pid.isdigit() and pid != "0":
+                    pids.add(pid)
+
+    return sorted(pids, key=lambda x: int(x))
+
+
+def _force_kill_pids(pids: list[str]) -> None:
+    """Force kill the given list of PIDs (silent, no confirmation). Uses /T to terminate tree."""
+    for pid in pids:
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", pid],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+            )
+        except Exception:
+            pass
+
+
 @dataclass(frozen=True)
 class ServiceSpec:
     key: str
@@ -227,12 +283,20 @@ class ServicePane:
         self.toggle_button.grid(row=0, column=0, padx=(0, 6))
         self.restart_button.grid(row=0, column=1, padx=6)
 
+        col = 2
         if self.spec.open_url:
             self.open_button = ctk.CTkButton(
                 left, text="🌐 打开网页", fg_color="#166534", hover_color="#15803d", **btn_style,
                 command=lambda: self.controller.open_url(self.spec.open_url)
             )
-            self.open_button.grid(row=0, column=2, padx=(12, 0))
+            self.open_button.grid(row=0, column=col, padx=(12, 0))
+            col += 1
+
+        self.release_port_button = ctk.CTkButton(
+            left, text="🔓 解除占用", fg_color="#334155", hover_color="#475569", **btn_style,
+            command=self.release_port
+        )
+        self.release_port_button.grid(row=0, column=col, padx=6)
 
         self._update_toggle_button()
 
@@ -482,6 +546,61 @@ class ServicePane:
         self.stop()
         self.controller.root.after(350, self.start)
 
+    def release_port(self) -> None:
+        """一键解除端口占用（直接强制释放，无需确认、无弹窗）。"""
+        port = self.spec.port
+        if not port:
+            self.append("此服务未配置端口号。", "warning")
+            return
+
+        self.append(f"正在解除端口 {port} 的占用...", "meta")
+
+        pids = _find_pids_for_port(port)
+        if not pids:
+            self.append(f"未找到占用端口 {port} 的进程。", "success")
+            return
+
+        killed = []
+        for pid in pids:
+            name = self._get_proc_name(pid) or "未知进程"
+            self.append(f"发现占用: {name} (PID {pid})", "warning")
+            try:
+                r = subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", pid],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+                )
+                if r.returncode == 0:
+                    killed.append(pid)
+                    self.append(f"  已强制结束 PID {pid}", "success")
+                else:
+                    self.append(f"  结束 PID {pid} 失败（可能需要管理员权限）", "error")
+            except Exception as e:
+                self.append(f"  结束 PID {pid} 出错: {e}", "error")
+
+        if killed:
+            self.append(f"端口 {port} 解除完成，共结束 {len(killed)} 个进程。", "success")
+        else:
+            self.append("未能结束任何进程。", "warning")
+
+    def _get_proc_name(self, pid: str) -> Optional[str]:
+        try:
+            r = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+            )
+            line = r.stdout.strip()
+            if line and "," in line:
+                return line.split(",")[0].strip().strip('"')
+        except Exception:
+            pass
+        return None
+
     def toggle(self) -> None:
         """反转状态：运行中则停止，否则启动"""
         if self.is_running():
@@ -683,6 +802,19 @@ class LauncherApp:
                 )
                 port_label.pack(side="left", padx=(2, 0))
 
+                # 每个 label 旁的小按钮：一键直接解除该端口占用
+                rel_btn = ctk.CTkButton(
+                    item,
+                    text="🔓",
+                    width=22,
+                    height=18,
+                    font=ctk.CTkFont(family="Segoe UI", size=9),
+                    fg_color="#334155",
+                    hover_color="#475569",
+                    command=lambda p=spec.port, k=spec.key: self._release_from_overview(k, p),
+                )
+                rel_btn.pack(side="left", padx=(4, 0))
+
             self.status_dots[spec.key] = dot
             self.status_items[spec.key] = item
 
@@ -853,6 +985,12 @@ class LauncherApp:
             self.panes["web"].restart()
         self._update_toggle_button()
 
+    def _release_from_overview(self, key: str, port: str) -> None:
+        """从顶部概览 label 旁的小按钮调用，一键解除对应服务的端口占用。"""
+        self.switch_to_service(key)
+        if key in self.panes:
+            self.panes[key].release_port()
+
     def stop_all(self) -> None:
         for pane in self.panes.values():
             pane.stop()
@@ -959,7 +1097,12 @@ class LauncherApp:
     def on_close(self) -> None:
         for pane in self.panes.values():
             pane.stop()
-        self.root.after(100, self.root.destroy)
+        # 如果主窗口被关闭，强制释放四个独立的服务器（gateway / mcp / connector / ai）的端口占用
+        for port in ("3000", "3001", "3002", "3003"):
+            pids = _find_pids_for_port(port)
+            if pids:
+                _force_kill_pids(pids)
+        self.root.after(150, self.root.destroy)
 
 
 def main() -> None:

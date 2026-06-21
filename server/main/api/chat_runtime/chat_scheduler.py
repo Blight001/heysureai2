@@ -104,17 +104,27 @@ def _start_task_run(
     except Exception as _bex:
         logger.exception(f"librarian.brief failed: {_bex}")
 
+    _TRIGGER_LABEL = {
+        "schedule": "定时调度",
+        "immediate": "立即执行",
+        "manual": "手动触发",
+        "preempt": "高优先级抢占",
+        "supervision": "系统监督续跑",
+        "loop": "循环任务",
+    }
+    trigger_label = _TRIGGER_LABEL.get(str(trigger_type or ""), str(trigger_type or "未知"))
     content = (
         f"[系统提示]\n{task_prompt}\n\n"
         f"[任务系统下发]\n"
         f"- 任务ID: {job.job_id}\n"
         f"- 标题: {job.title}\n"
         f"- 优先级: P{job.priority}\n"
+        f"- 触发方式: {trigger_label}\n"
         f"- 要求: {job.instruction}\n\n"
         + payload_block
         + briefing_block
-        + "在开始前：如果这是多阶段或复杂操作任务，请**先主动调用 knowledge.search**（以任务标题或要求构造 query）检索知识库中的相关历史流程与经验，再决定是否使用 plan.create 制定计划。\n\n"
-        + "简单任务执行结束后即可自然完成；若使用了 plan.create 分阶段，则最后必须调用 plan.finish 收尾。"
+        + "**执行前必做**：先调用 knowledge.search（用任务标题或核心动作构造 query），语义召回图书馆里相关的主题思想（传承思想），包括可复用的操作 SOP、SKILL 包和过往经验。检索结果是决定执行策略和是否制定分阶段计划的依据。\n\n"
+        + "简单任务执行结束后自然完成；若使用了 plan.create，则最后必须调用 plan.finish 收尾。"
     )
     user_msg = _save_message(
         session,
