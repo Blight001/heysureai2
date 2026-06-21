@@ -2006,16 +2006,9 @@ def propose(
     scope: str = "global",
     scope_target: Optional[str] = None,
     source: Optional[Dict[str, Any]] = None,
-    auto_approve: bool = False,
+    auto_approve: bool = True,
 ) -> Dict[str, Any]:
-    """AI 员工调用：申请沉淀。status=pending。
-
-    实际文件落盘到 KnowledgeBase/topics/<slug>.md，
-    DB 写入 KnowledgeEntry 一行。后续等待用户 approve。
-
-    ``auto_approve=True`` 时直接落 status=active（绑定图书馆的 AI 自主沉淀
-    计划经验，无需用户审批），confidence 拉满，并发"已解决"事件而非"待审"。
-    """
+    """AI 员工调用：沉淀知识。直接写入 status=active，无需用户审批。"""
     title = (title or "").strip()
     if not title:
         raise ValueError("title is required")
@@ -2028,8 +2021,8 @@ def propose(
     scope_norm, scope_target_norm = _normalize_scope(scope, scope_target)
     source = dict(source or {})
 
-    status = "active" if auto_approve else "pending"
-    confidence = 1.0 if auto_approve else 0.6
+    status = "active"
+    confidence = 1.0
 
     memory_id = _new_memory_id()
     slug = f"{_slugify(title)}-{memory_id[-6:]}"
@@ -2083,83 +2076,8 @@ def propose(
         sync_topic_embedding_for_entry(user_id=user_id, row=row, ai_config_id=librarian_id or None, force=True)
     except Exception as exc:
         logger.info(f"knowledge embedding sync after propose failed user={user_id} memory_id={row.memory_id}: {exc}")
-    _emit_proposal_event(
-        user_id,
-        "librarian:proposal_resolved" if auto_approve else "librarian:proposal_new",
-        entry_dict,
-    )
+    _emit_proposal_event(user_id, "librarian:proposal_resolved", entry_dict)
     return entry_dict
-
-
-def approve(
-    *,
-    user_id: int,
-    memory_id: str,
-    edited_content: Optional[str] = None,
-) -> Dict[str, Any]:
-    """用户审批通过。可选地用 edited_content 覆盖整份 markdown。"""
-    with Session(engine) as session:
-        row = session.exec(
-            select(KnowledgeEntry).where(
-                KnowledgeEntry.user_id == user_id,
-                KnowledgeEntry.memory_id == memory_id,
-            )
-        ).first()
-        if not row:
-            raise ValueError("memory not found")
-        if row.status not in {"pending", "active"}:
-            raise ValueError(f"cannot approve from status={row.status}")
-        row.status = "active"
-        row.confidence = max(row.confidence, 1.0)
-        row.updated_at = time.time()
-        session.add(row)
-        session.commit()
-        session.refresh(row)
-        if edited_content is not None:
-            path = _topic_path(user_id, row.file_path)
-            _safe_write(path, edited_content)
-        try:
-            sync_topic_embedding_for_entry(user_id=user_id, row=row, force=True)
-        except Exception as exc:
-            logger.info(f"knowledge embedding sync after approve failed user={user_id} memory_id={row.memory_id}: {exc}")
-        out = _entry_to_dict(row, with_body=False)
-    _rebuild_index(user_id)
-    _emit_proposal_event(user_id, "librarian:proposal_resolved", out)
-    return out
-
-
-def reject(*, user_id: int, memory_id: str, reason: Optional[str] = None) -> Dict[str, Any]:
-    with Session(engine) as session:
-        row = session.exec(
-            select(KnowledgeEntry).where(
-                KnowledgeEntry.user_id == user_id,
-                KnowledgeEntry.memory_id == memory_id,
-            )
-        ).first()
-        if not row:
-            raise ValueError("memory not found")
-        row.status = "rejected"
-        row.updated_at = time.time()
-        session.add(row)
-        session.commit()
-        session.refresh(row)
-        # 文件保留在 topics/ 但 index 不再包含；可后续手动归档
-        if reason:
-            # 在文件尾部追加 reject 原因，便于审计
-            try:
-                path = _topic_path(user_id, row.file_path)
-                with open(path, "a", encoding="utf-8") as f:
-                    f.write(f"\n\n<!-- rejected by user: {reason} at {time.time()} -->\n")
-            except Exception:
-                pass
-        try:
-            sync_topic_embedding_for_entry(user_id=user_id, row=row, force=True)
-        except Exception as exc:
-            logger.info(f"knowledge embedding sync after reject failed user={user_id} memory_id={row.memory_id}: {exc}")
-        out = _entry_to_dict(row, with_body=False)
-    _rebuild_index(user_id)
-    _emit_proposal_event(user_id, "librarian:proposal_resolved", out)
-    return out
 
 
 def archive(*, user_id: int, memory_id: str) -> Dict[str, Any]:
@@ -2362,16 +2280,6 @@ def read(
             raise ValueError("memory not found")
         return _entry_to_dict(row, with_body=True, user_id=user_id)
 
-
-def list_pending_for_review(*, user_id: int) -> List[Dict[str, Any]]:
-    with Session(engine) as session:
-        rows = session.exec(
-            select(KnowledgeEntry).where(
-                KnowledgeEntry.user_id == user_id,
-                KnowledgeEntry.status == "pending",
-            ).order_by(KnowledgeEntry.created_at.desc())
-        ).all()
-        return [_entry_to_dict(r, with_body=True, user_id=user_id) for r in rows]
 
 
 # ---------- 内部工具 ----------

@@ -29,8 +29,6 @@ export interface DrawerActions {
   /** 调参时所见即所得（仅本地，不落库；下次快照刷新自动回到已保存值） */
   previewAppearance(aiConfigId: number, meta: AppearanceDraft): void
   createTask(aiConfigId: number, title: string, instruction: string): Promise<void>
-  approveProposal(memoryId: string): Promise<void>
-  rejectProposal(memoryId: string): Promise<void>
   openChat(aiConfigId: number): void
   focusMember(aiConfigId: number): void
 }

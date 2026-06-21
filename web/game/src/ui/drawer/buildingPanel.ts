@@ -19,7 +19,6 @@ export const openLibraryPanel = (
           const stat = panel.section('概览')
           panel.rows(stat, [
             ['知识', `${snap.knowledgeActive} 条生效`],
-            ['待审批', `${snap.knowledgePending} 条`],
           ])
         },
       },
@@ -44,38 +43,6 @@ export const openLibraryPanel = (
               (triggers ? `<div class="d-dim">${esc(triggers)}</div>` : '') +
               (k.summary ? `<div class="d-dim">${esc(k.summary)}</div>` : '') +
               (body ? `<div class="d-pre">${esc(body)}</div>` : '<div class="d-dim">无正文</div>')
-            cols.appendChild(item)
-          }
-          host.appendChild(cols)
-        },
-      },
-      {
-        name: `待审批${snap.proposals.length ? ` (${snap.proposals.length})` : ''}`,
-        build: host => {
-          if (!snap.proposals.length) {
-            host.innerHTML = `<div class="d-dim">暂无待审批申请</div>`
-            return
-          }
-          const cols = document.createElement('div')
-          cols.className = 'gp-cols'
-          for (const p of snap.proposals) {
-            const item = document.createElement('div')
-            item.className = 'd-item'
-            const fb = document.createElement('div')
-            item.innerHTML = `<div>${esc(p.title)}</div><div class="d-dim">${esc(p.summary || '')}</div>`
-            const ok = document.createElement('button')
-            ok.type = 'button'
-            ok.className = 'd-btn ok'
-            ok.textContent = '通过'
-            ok.onclick = () => void panel.runAction(ok, fb, () => panel.actions.approveProposal(p.memory_id), '已通过')
-            const no = document.createElement('button')
-            no.type = 'button'
-            no.className = 'd-btn warn'
-            no.textContent = '驳回'
-            no.onclick = () => void panel.runAction(no, fb, () => panel.actions.rejectProposal(p.memory_id), '已驳回')
-            item.appendChild(ok)
-            item.appendChild(no)
-            item.appendChild(fb)
             cols.appendChild(item)
           }
           host.appendChild(cols)

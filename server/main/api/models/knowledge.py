@@ -76,7 +76,7 @@ class KnowledgeEntry(SQLModel, table=True):
     scope_target: Optional[str] = Field(default=None)
     file_path: str = Field(default="")  # 相对 KnowledgeBase/ 根目录
     summary: str = Field(default="")  # 检索摘要，1-2 句
-    status: str = Field(default="pending", index=True)  # pending / active / archived / rejected
+    status: str = Field(default="active", index=True)  # active / archived
     confidence: float = Field(default=0.6)
     use_count: int = Field(default=0)
     last_used_at: Optional[float] = Field(default=None)

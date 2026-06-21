@@ -13,7 +13,7 @@ import { get, getAuthToken } from '@/api/http'
 import { me } from '@/api/auth'
 import { listAiCards } from '@/api/ai'
 import { listConnectedDevices } from '@/api/devices'
-import { listEntries, listProposals, readEntry, type KnowledgeEntryItem } from '@/api/librarian'
+import { listEntries, readEntry, type KnowledgeEntryItem } from '@/api/librarian'
 import { listWorldActorMeta, type WorldActorAppearance } from '@/api/world'
 
 /** 服务端直推的世界事件（P2）：演出零延迟触发，权威状态仍以 refresh 为准 */
@@ -78,8 +78,6 @@ export interface WorldSnapshot {
   workshops: WorldWorkshop[]
   knowledgeActive: number
   knowledgeItems: KnowledgeEntryItem[]
-  knowledgePending: number
-  proposals: KnowledgeEntryItem[]
   lastError: string
 }
 
@@ -152,8 +150,6 @@ export class WorldStore {
     workshops: [],
     knowledgeActive: 0,
     knowledgeItems: [],
-    knowledgePending: 0,
-    proposals: [],
     lastError: '',
   }
 
@@ -251,7 +247,6 @@ export class WorldStore {
       }
     })
     const refreshKnowledge = () => void this.refreshKnowledge().then(() => this.emit())
-    socket.on('librarian:proposal_new', refreshKnowledge)
     socket.on('librarian:proposal_resolved', refreshKnowledge)
     socket.on('world:event', (data: Record<string, any>) => {
       if (num(data?.userId, NaN) !== userId) return
@@ -304,10 +299,7 @@ export class WorldStore {
     const token = getAuthToken()
     if (!token) return
     try {
-      const [entries, proposals] = await Promise.all([
-        listEntries(token, { status: 'active' }),
-        listProposals(token),
-      ])
+      const entries = await listEntries(token, { status: 'active' })
       const baseItems = entries.items ?? []
       this.snapshot.knowledgeItems = await Promise.all(
         baseItems.map(async item => {
@@ -319,8 +311,6 @@ export class WorldStore {
         }),
       )
       this.snapshot.knowledgeActive = this.snapshot.knowledgeItems.length
-      this.snapshot.proposals = proposals.items ?? []
-      this.snapshot.knowledgePending = this.snapshot.proposals.length
     } catch {
       // best-effort：知识计数失败不阻塞世界
     }
@@ -405,8 +395,6 @@ export class WorldStore {
     this.rebuildWorkshops()
     this.snapshot.knowledgeItems = Array.isArray(data.knowledge_items) ? data.knowledge_items : []
     this.snapshot.knowledgeActive = this.snapshot.knowledgeItems.length || num(data.knowledge_active)
-    this.snapshot.proposals = Array.isArray(data.proposals) ? data.proposals : []
-    this.snapshot.knowledgePending = this.snapshot.proposals.length
     return true
   }
 

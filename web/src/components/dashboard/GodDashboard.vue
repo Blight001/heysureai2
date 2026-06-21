@@ -32,7 +32,6 @@ const DeviceDynamicToolsModal = defineAsyncComponent(() => import('./modals/Devi
 const TaskManagementModal = defineAsyncComponent(() => import('./modals/TaskManagementModal.vue'))
 const AiConfigModal = defineAsyncComponent(() => import('./modals/AiConfigModal.vue'))
 const AdminModal = defineAsyncComponent(() => import('./modals/AdminModal.vue'))
-const ProposalReviewModal = defineAsyncComponent(() => import('@/components/librarian/ProposalReviewModal.vue'))
 
 const { alert, confirm } = useMessage()
 
@@ -62,7 +61,6 @@ const selectedFiles = ref<string[]>([])
 const chatModalOpen = ref(false)
 const chatTarget = ref<Agent | null>(null)
 const chatInitialSessionId = ref('')
-const proposalReviewOpen = ref(false)
 const adminModalOpen = ref(false)
 const isAdminUser = computed(() => ['owner', 'admin'].includes(props.currentUser?.role || ''))
 let dashboardRefreshTimer: number | null = null
@@ -114,7 +112,6 @@ const {
   agents,
   connectedDevices,
   knowledgeBase,
-  librarianPending,
   globalGeneration,
   allFiles,
   dashboardSocketConnected,
@@ -505,7 +502,6 @@ onUnmounted(() => {
             :connected-devices="connectedDevices"
             :knowledge-items="filteredKnowledgeBase"
             :knowledge-total-count="knowledgeBase.length"
-            :librarian-pending-count="librarianPending.length"
             :knowledge-filter-open="knowledgeFilterOpen"
             :knowledge-filter="knowledgeFilter"
             :brain-view-mode="brainViewMode"
@@ -518,7 +514,6 @@ onUnmounted(() => {
             @create-ai="openCreateAiConfig('worker')"
             @update:knowledge-filter-open="knowledgeFilterOpen = $event"
             @update:knowledge-filter="knowledgeFilter = $event"
-            @open-proposal-review="proposalReviewOpen = true"
             @refresh-user="emit('refreshUser', $event)"
             @view-all-mcp="openAllMcpToolsFromSystemSettings"
             @manage-device-tools="deviceToolsModalOpen = true"
@@ -596,36 +591,38 @@ onUnmounted(() => {
       :on-task-job-select-change="onTaskJobSelectChange"
       :on-batch-delete-task-jobs="() => batchDeleteTaskJobs(taskListTarget)"
     />
-    <Transition name="fade">
-      <div v-if="chatTarget && chatModalOpen" class="fixed inset-0 z-[90] bg-black/45 flex items-center justify-center p-0 sm:p-4" @click="closeAgentChat">
-        <div class="bg-white dark:bg-zinc-900 rounded-none sm:rounded-2xl border-0 sm:border border-zinc-200 dark:border-zinc-700 shadow-xl w-full h-full max-w-none sm:max-w-[960px] sm:h-[88vh] flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:pt-0 sm:pb-0" @click.stop>
-          <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
-            <div>
-              <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">与 {{ chatTarget.name }} 对话</div>
-              <div class="text-xs text-zinc-500 dark:text-zinc-400">模型: {{ chatTarget.model || '未设置' }}</div>
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="chatTarget && chatModalOpen" class="fixed inset-0 z-[300] bg-black/45 flex items-center justify-center p-0 sm:p-4" @click="closeAgentChat">
+          <div class="bg-white dark:bg-zinc-900 rounded-none sm:rounded-2xl border-0 sm:border border-zinc-200 dark:border-zinc-700 shadow-xl w-full h-full max-w-none sm:max-w-[960px] sm:h-[88vh] flex flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:pt-0 sm:pb-0" @click.stop>
+            <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
+              <div>
+                <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">与 {{ chatTarget.name }} 对话</div>
+                <div class="text-xs text-zinc-500 dark:text-zinc-400">模型: {{ chatTarget.model || '未设置' }}</div>
+              </div>
+              <button class="text-xs px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-300" @click="closeAgentChat">关闭</button>
             </div>
-            <button class="text-xs px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-300" @click="closeAgentChat">关闭</button>
-          </div>
-          <div class="flex-1 min-h-0 p-2">
-            <ChatInterface
-              :key="`unified-chat-${chatTarget.aiConfigId}-${chatInitialSessionId || 'default'}`"
-              :adminModel="chatTarget.model || ''"
-              :aiConfigId="chatTarget.aiConfigId"
-              :aiKind="chatTargetAiKind"
-              :initialSessionId="chatInitialSessionId || undefined"
-              :mcpAutoApprove="!!chatTarget.mcpAutoApprove"
-              :mcpDynamicRule="mcpDynamicRule"
-              :selectedFiles="selectedFiles"
-              :allFiles="allFiles"
-              @update:selectedFiles="selectedFiles = $event"
-              @open-settings="chatTarget && openAgentSettings(chatTarget)"
-              @totalChatTokensUpdate="syncChatTokensToAgents"
-              @refreshFiles="loadProjectContext"
-            />
+            <div class="flex-1 min-h-0 p-2">
+              <ChatInterface
+                :key="`unified-chat-${chatTarget.aiConfigId}-${chatInitialSessionId || 'default'}`"
+                :adminModel="chatTarget.model || ''"
+                :aiConfigId="chatTarget.aiConfigId"
+                :aiKind="chatTargetAiKind"
+                :initialSessionId="chatInitialSessionId || undefined"
+                :mcpAutoApprove="!!chatTarget.mcpAutoApprove"
+                :mcpDynamicRule="mcpDynamicRule"
+                :selectedFiles="selectedFiles"
+                :allFiles="allFiles"
+                @update:selectedFiles="selectedFiles = $event"
+                @open-settings="chatTarget && openAgentSettings(chatTarget)"
+                @totalChatTokensUpdate="syncChatTokensToAgents"
+                @refreshFiles="loadProjectContext"
+              />
+            </div>
           </div>
         </div>
-      </div>
-    </Transition>
+      </Transition>
+    </Teleport>
 
     <AiConfigModal
       :show="aiConfigModalOpen"
@@ -683,43 +680,41 @@ onUnmounted(() => {
     />
 
 
-    <Transition name="fade">
-      <div
-        v-if="contextMenu.visible"
-        class="fixed z-50 bg-white border border-zinc-200 rounded-lg shadow-lg text-xs text-zinc-700 w-36 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-200"
-        :style="{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }"
-        @click.stop
-      >
-        <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" @click="openGuidanceDialog">
-          给予指引
-        </button>
-      </div>
-    </Transition>
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="contextMenu.visible"
+          class="fixed z-[350] bg-white border border-zinc-200 rounded-lg shadow-lg text-xs text-zinc-700 w-36 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-200"
+          :style="{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }"
+          @click.stop
+        >
+          <button class="w-full text-left px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800" @click="openGuidanceDialog">
+            给予指引
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
 
-    <Transition name="fade">
-      <div v-if="guidanceDialog.visible" class="fixed inset-0 z-40 bg-black/40 flex items-center justify-center backdrop-blur-sm" @click="closeGuidanceDialog">
-        <div class="bg-white rounded-2xl shadow-xl w-[420px] max-w-[calc(100vw-2rem)] p-5 dark:bg-zinc-900 transform transition-all scale-100" @click.stop>
-          <h3 class="text-sm font-semibold text-zinc-800 mb-3 dark:text-zinc-100">上帝指引</h3>
-          <div class="text-xs text-zinc-500 mb-2 dark:text-zinc-400">{{ guidanceDialog.agent?.name }}</div>
-          <textarea
-            v-model="guidanceDialog.text"
-            rows="4"
-            class="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100"
-            placeholder="输入指引内容，让 AI 执行..."
-          ></textarea>
-          <div class="mt-4 flex justify-end gap-2">
-            <button class="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200" @click="closeGuidanceDialog">取消</button>
-            <button class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400" @click="submitGuidance">确认指引</button>
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="guidanceDialog.visible" class="fixed inset-0 z-[320] bg-black/40 flex items-center justify-center backdrop-blur-sm" @click="closeGuidanceDialog">
+          <div class="bg-white rounded-2xl shadow-xl w-[420px] max-w-[calc(100vw-2rem)] p-5 dark:bg-zinc-900 transform transition-all scale-100" @click.stop>
+            <h3 class="text-sm font-semibold text-zinc-800 mb-3 dark:text-zinc-100">上帝指引</h3>
+            <div class="text-xs text-zinc-500 mb-2 dark:text-zinc-400">{{ guidanceDialog.agent?.name }}</div>
+            <textarea
+              v-model="guidanceDialog.text"
+              rows="4"
+              class="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-100"
+              placeholder="输入指引内容，让 AI 执行..."
+            ></textarea>
+            <div class="mt-4 flex justify-end gap-2">
+              <button class="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200" @click="closeGuidanceDialog">取消</button>
+              <button class="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded hover:bg-indigo-500 dark:bg-indigo-500 dark:hover:bg-indigo-400" @click="submitGuidance">确认指引</button>
+            </div>
           </div>
         </div>
-      </div>
-    </Transition>
-
-    <!-- Librarian proposal review modal -->
-    <ProposalReviewModal
-      :show="proposalReviewOpen"
-      @close="proposalReviewOpen = false"
-    />
+      </Transition>
+    </Teleport>
 
 
     </div>

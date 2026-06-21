@@ -30,7 +30,6 @@ import { clockLabel, nightnessForHour, resolveWorldHour } from '../world/time'
 import { applyMemberDropBinding, type DropTarget } from '../world/bindings'
 import {
   INTERACT_RANGE,
-  LIBRARY_DOOR,
   OFFLINE_KEEP_MS,
   workshopGlowTintForType,
   workshopIsActive,
@@ -52,9 +51,8 @@ export class WorldScene extends Phaser.Scene {
   private snap: WorldSnapshot | null = null
   private draggingActor: MemberActor | null = null
   private pendingMemberClick: { memberId: number; timer: Phaser.Time.TimerEvent } | null = null
-  /** 演出触发用：上一轮快照的代数 / 待审批数 */
+  /** 演出触发用：上一轮快照的代数 */
   private prevGeneration = new Map<number, number>()
-  private prevPending = 0
   private muted = false
   private currentBgm: Phaser.Sound.BaseSound | null = null
   private currentBgmIndex = -1
@@ -645,6 +643,7 @@ export class WorldScene extends Phaser.Scene {
     let lastX = 0
     let lastY = 0
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+      if (this.drawer?.isOpen) return
       dragging = true
       lastX = p.x
       lastY = p.y
@@ -655,6 +654,7 @@ export class WorldScene extends Phaser.Scene {
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
       // 辅助管理员操控模式下相机跟随该角色，拖拽平移让位
       if (!dragging || !p.isDown || this.draggingActor || this.governorMode) return
+      if (this.drawer?.isOpen) return
       cam.scrollX -= (p.x - lastX) / cam.zoom
       cam.scrollY -= (p.y - lastY) / cam.zoom
       lastX = p.x
@@ -817,6 +817,7 @@ export class WorldScene extends Phaser.Scene {
     this.input.on(
       'gameobjectover',
       (pointer: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
+        if (this.drawer?.isOpen) return
         const data = this.tooltipFor(obj)
         if (data) {
           const ev = pointer.event as MouseEvent
@@ -827,6 +828,7 @@ export class WorldScene extends Phaser.Scene {
     this.input.on(
       'gameobjectmove',
       (pointer: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
+        if (this.drawer?.isOpen) return
         const data = this.tooltipFor(obj)
         if (data) {
           const ev = pointer.event as MouseEvent
@@ -844,6 +846,7 @@ export class WorldScene extends Phaser.Scene {
     this.input.on(
       'gameobjectup',
       (pointer: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
+        if (this.drawer?.isOpen) return
         if (this.draggingActor) return
         const dist = Phaser.Math.Distance.Between(pointer.downX, pointer.downY, pointer.upX, pointer.upY)
         if (dist >= 8 || !this.snap) return
@@ -868,6 +871,7 @@ export class WorldScene extends Phaser.Scene {
 
     // 拖拽成员 → 放到作坊上绑定 / 放到出生地解绑
     this.input.on('dragstart', (_p: Phaser.Input.Pointer, obj: Phaser.GameObjects.GameObject) => {
+      if (this.drawer?.isOpen) return
       if (obj instanceof MemberActor && !obj.isDying) {
         this.cancelPendingMemberClick()
         this.draggingActor = obj
@@ -924,13 +928,6 @@ export class WorldScene extends Phaser.Scene {
     this.reconcileWorkshops(snap)
     this.reconcileMembers(snap)
     this.updateBuildingStates(snap)
-    // 知识沉淀演出：新申请到达 → 图书管理员去馆门口"收卷轴"
-    if (snap.knowledgePending > this.prevPending) {
-      const lib = snap.members.find(m => m.role === 'librarian' && m.lifecycle !== 'dead')
-      const actor = lib ? this.actors.get(lib.id) : undefined
-      actor?.walkVia(LIBRARY_DOOR)
-    }
-    this.prevPending = snap.knowledgePending
   }
 
   private reconcileMembers(snap: WorldSnapshot) {
@@ -1097,9 +1094,8 @@ export class WorldScene extends Phaser.Scene {
     if (i >= 0) this.slotOwner[i] = null
   }
 
-  private updateBuildingStates(snap: WorldSnapshot) {
-    // 图书馆：有待审批 → 亮灯帧
-    this.buildings.get('library')?.setFrame(snap.knowledgePending > 0 ? 1 : 0)
+  private updateBuildingStates(_snap: WorldSnapshot) {
+    this.buildings.get('library')?.setFrame(0)
   }
 
   private handleMemberClick(member: WorldMember) {

@@ -43,7 +43,6 @@ interface KnowledgeItem {
 interface Props {
   items: KnowledgeItem[]
   totalCount: number
-  librarianPendingCount: number
   filterOpen: boolean
   filterValue: 'all' | 'personas' | 'skills' | 'tools' | 'inheritance' | 'system' | 'business'
   noGlass?: boolean
@@ -53,7 +52,6 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'update:filterOpen', value: boolean): void
   (e: 'update:filterValue', value: Props['filterValue']): void
-  (e: 'open-proposal-review'): void
   (e: 'refresh-user', user: User): void
   (e: 'view-all-mcp'): void
   (e: 'manage-device-tools'): void
@@ -876,17 +874,6 @@ const closeDetail = () => {
         <span class="text-xs font-semibold text-zinc-500 dark:text-zinc-400">知识库</span>
       </div>
       <div class="flex items-center gap-2 relative">
-        <button
-          class="relative px-2 py-0.5 rounded border border-zinc-200 bg-white text-xs text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 transition-colors dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300"
-          type="button"
-          @click.stop="emit('open-proposal-review')"
-        >
-          沉淀审批
-          <span
-            v-if="librarianPendingCount > 0"
-            class="ml-1 inline-flex min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] leading-4 justify-center"
-          >{{ librarianPendingCount }}</span>
-        </button>
         <span class="text-xs bg-zinc-100 px-2 py-0.5 rounded-full text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300">{{ totalCount }} 条目</span>
         <button class="px-2 py-0.5 rounded border border-zinc-200 bg-white text-xs text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 transition-colors dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 dark:hover:text-indigo-300" @click.stop="toggleFilter">
           筛选

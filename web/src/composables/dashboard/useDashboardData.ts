@@ -9,7 +9,7 @@ import type {
   McpStatusPayload,
   ProjectItem,
 } from '@/types'
-import { listEntries, listProposals, type KnowledgeEntryItem } from '@/api/librarian'
+import { listEntries, type KnowledgeEntryItem } from '@/api/librarian'
 import { formatDate } from '@/utils/datetime'
 import { listAiCards, toggleAiRun } from '@/api/ai'
 import {
@@ -74,7 +74,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
   const allFiles = ref<string[]>([])
   const totalChatTokens = ref(0)
   const dashboardSocketConnected = ref(false)
-  const librarianPending = ref<KnowledgeEntryItem[]>([])
 
   let dashboardRefreshing = false
   let dashboardSocket: Socket | null = null
@@ -496,24 +495,9 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     dashboardSocket.on('device:list', (rows: any) => {
       applyConnectedDevices(rows)
     })
-    dashboardSocket.on('librarian:proposal_new', () => {
-      loadLibrarianPending()
-    })
     dashboardSocket.on('librarian:proposal_resolved', () => {
-      loadLibrarianPending()
       loadKnowledgeEntries()
     })
-  }
-
-  const loadLibrarianPending = async () => {
-    const token = getAuthToken()
-    if (!token) return
-    try {
-      const data = await listProposals(token)
-      librarianPending.value = data.items || []
-    } catch {
-      // best-effort
-    }
   }
 
   const formatKnowledgeTime = (ts: number) => formatDate(ts, '')
@@ -560,7 +544,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
       await Promise.all([
         loadAIAgents(),
         loadConnectedDevices(),
-        loadLibrarianPending(),
         loadKnowledgeEntries(),
         onRefreshOpenTaskPanel(),
       ])
@@ -574,7 +557,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     await Promise.all([
       loadAIAgents(),
       loadConnectedDevices(),
-      loadLibrarianPending(),
       loadKnowledgeEntries(),
     ])
     if (knowledgeBase.value.length === 0) {
@@ -611,8 +593,6 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     loadProjectContext,
     loadProjects,
     loadAIAgents,
-    loadLibrarianPending,
-    librarianPending,
     loadKnowledgeEntries,
     loadConnectedDevices,
     createProject,

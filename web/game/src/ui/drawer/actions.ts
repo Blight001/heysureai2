@@ -1,7 +1,6 @@
 import { toggleAiRun } from '@/api/ai'
 import { assignDeviceAi, getDeviceMcpScope, setDeviceMcpScope } from '@/api/devices'
 import { getAuthToken } from '@/api/http'
-import { approveProposal, rejectProposal } from '@/api/librarian'
 import { triggerTaskForAgent } from '@/api/task'
 import { setWorldActorMeta } from '@/api/world'
 import type { AppearanceDraft, DrawerActions } from './types'
@@ -53,16 +52,6 @@ export const createDrawerActions = (deps: DrawerActionDeps): DrawerActions => ({
   createTask: async (id, title, instruction) => {
     await triggerTaskForAgent(id, defaultTaskPayload(title, instruction), getAuthToken())
     await deps.refresh()
-  },
-  approveProposal: async memoryId => {
-    await approveProposal(getAuthToken(), memoryId)
-    await deps.refresh()
-    deps.reopenLibrary()
-  },
-  rejectProposal: async memoryId => {
-    await rejectProposal(getAuthToken(), memoryId)
-    await deps.refresh()
-    deps.reopenLibrary()
   },
   openChat: deps.openChat,
   focusMember: deps.focusMember,

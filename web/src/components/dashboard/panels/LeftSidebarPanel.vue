@@ -42,7 +42,6 @@ interface Props {
   connectedDevices: ConnectedDevice[]
   knowledgeItems: KnowledgeItem[]
   knowledgeTotalCount: number
-  librarianPendingCount: number
   knowledgeFilterOpen: boolean
   knowledgeFilter: 'all' | 'personas' | 'skills' | 'tools' | 'inheritance' | 'system' | 'business'
   brainViewMode: 'sections' | 'all'
@@ -59,7 +58,6 @@ const emit = defineEmits<{
   (e: 'create-ai'): void
   (e: 'update:knowledge-filter-open', value: boolean): void
   (e: 'update:knowledge-filter', value: Props['knowledgeFilter']): void
-  (e: 'open-proposal-review'): void
   (e: 'refresh-user', user: User): void
   (e: 'view-all-mcp'): void
   (e: 'manage-device-tools'): void
@@ -126,12 +124,10 @@ const activeTab = ref<'brain' | 'knowledge' | 'workshop'>('brain')
           no-glass
           :items="knowledgeItems"
           :total-count="knowledgeTotalCount"
-          :librarian-pending-count="librarianPendingCount"
           :filter-open="knowledgeFilterOpen"
           :filter-value="knowledgeFilter"
           @update:filter-open="emit('update:knowledge-filter-open', $event)"
           @update:filter-value="emit('update:knowledge-filter', $event)"
-          @open-proposal-review="emit('open-proposal-review')"
           @refresh-user="emit('refresh-user', $event)"
           @view-all-mcp="emit('view-all-mcp')"
           @manage-device-tools="emit('manage-device-tools')"

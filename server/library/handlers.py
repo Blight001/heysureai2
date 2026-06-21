@@ -53,7 +53,6 @@ def record_experience(
             scope=scope,
             scope_target=str(scope_target) if scope_target else None,
             source=dict(source),
-            auto_approve=True,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

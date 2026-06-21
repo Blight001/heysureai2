@@ -2,10 +2,10 @@ const STYLE_ID = 'gw-drawer-styles'
 
 const DRAWER_CSS = `
   .gw-panel {
-    position: fixed; left: 0; right: 0; bottom: 0; height: 300px; max-height: 52vh; z-index: 50;
+    position: fixed; left: 0; right: 0; bottom: 0; height: 300px; max-height: 52vh; z-index: 200;
     background: rgba(28, 30, 38, 0.97); border-top: 2px solid #4a4f5e;
     color: #d6dae2; font: 12px/1.7 ui-monospace, "Cascadia Mono", Consolas, monospace;
-    display: none; flex-direction: row;
+    display: none; flex-direction: row; pointer-events: auto;
   }
   .gw-panel.open { display: flex; }
   .gw-panel .gp-portrait {

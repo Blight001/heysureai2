@@ -266,7 +266,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
     </div>
     <div
       v-if="contextMenu.visible"
-      class="fixed z-[80] min-w-[150px] rounded-lg border border-zinc-200 bg-white py-1 text-xs text-zinc-700 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+      class="fixed z-[310] min-w-[150px] rounded-lg border border-zinc-200 bg-white py-1 text-xs text-zinc-700 shadow-lg dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
       :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
       @click.stop
     >

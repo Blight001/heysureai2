@@ -211,29 +211,9 @@ export interface ClawHubInstalledSkillDetail {
   present: boolean
 }
 
-export const listProposals = (token: string) =>
-  get<{ items: KnowledgeEntryItem[]; total: number }>('/api/librarian/proposals', {
-    token,
-    fallbackError: '待审批清单加载失败',
-  })
-
-export const approveProposal = (token: string, memoryId: string, editedContent?: string) =>
-  post<{ approved: boolean; entry: KnowledgeEntryItem }>(
-    `/api/librarian/proposals/${encodeURIComponent(memoryId)}/approve`,
-    editedContent != null ? { edited_content: editedContent } : {},
-    { token, fallbackError: '审批失败' },
-  )
-
-export const rejectProposal = (token: string, memoryId: string, reason?: string) =>
-  post<{ rejected: boolean; entry: KnowledgeEntryItem }>(
-    `/api/librarian/proposals/${encodeURIComponent(memoryId)}/reject`,
-    reason ? { reason } : {},
-    { token, fallbackError: '驳回失败' },
-  )
-
 export const listEntries = (
   token: string,
-  opts: { scope?: string; status?: 'pending' | 'active' | 'archived' | 'rejected' | 'all' } = {},
+  opts: { scope?: string; status?: 'active' | 'archived' | 'all' } = {},
 ) =>
   get<{ items: KnowledgeEntryItem[]; total: number }>('/api/librarian/entries', {
     token,

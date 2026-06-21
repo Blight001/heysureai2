@@ -71,7 +71,6 @@ export const buildingTooltipData = (
   if (snap) {
     if (key === 'library') {
       rows.push({ label: '知识', value: `${snap.knowledgeActive} 条生效` })
-      rows.push({ label: '待审批', value: snap.knowledgePending > 0 ? `${snap.knowledgePending} 条沉淀申请` : '无' })
     } else if (key === 'spawn') {
       const idle = snap.members.filter(
         member => member.lifecycle !== 'dead' && (!member.projectId || member.lifecycle === 'learning'),
@@ -90,9 +89,7 @@ export const hudHtml = (snap: WorldSnapshot, clock: string): string => {
   const running = snap.members.filter(member => member.runtimeStatus === 'running' || member.taskStatus === 'running').length
   return (
     `<div>存活成员 <b>${alive}</b> · 在线作坊 <b>${online}</b> · 干活中 <b>${running}</b></div>` +
-    `<div>知识 <b>${snap.knowledgeActive}</b>` +
-    (snap.knowledgePending > 0 ? ` · <span class="h-err">待审批 ${snap.knowledgePending}</span>` : '') +
-    `</div>` +
+    `<div>知识 <b>${snap.knowledgeActive}</b></div>` +
     `<div class="h-dim">🕐 ${clock}</div>`
   )
 }
