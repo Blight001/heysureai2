@@ -1,36 +1,39 @@
-"""``knowledge.manage`` — unified knowledge-base (knowledge workshop) tool.
+"""``knowledge.manage`` — unified knowledge-base (library) tool.
 
-The knowledge base (传承思想 / 内置技能 / 内置人格 / 系统 prompt) is served by the
-built-in knowledge workshop, whose tools live under the ``librarian.*`` namespace
-and execute through ``workshop.engine.execute_tool`` (which enforces both the
-workshop binding and the per-action minimum role). This facade exposes a single
-registry tool that dispatches an ``action`` to the matching ``librarian.*`` tool,
-so an AI sees one consolidated entry instead of 13 scattered ones while all the
-existing gates stay in force.
+Dispatches ``action`` to built-in knowledge handlers (传承思想 / 内置技能 /
+内置人格 / 系统 prompt). Library binding is enforced at registry call time;
+per-action minimum roles are re-checked here (same pattern as ``prompt.manage``).
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from fastapi import HTTPException
 
+from workshop import handlers as knowledge_handlers
 
-# Unified action → underlying workshop ``librarian.*`` tool name.
-_KNOWLEDGE_ACTIONS = {
-    # 传承思想（inheritance thoughts / skill packages）
-    "list_thoughts": "librarian.list_inheritance_thoughts",
-    "get_thought": "librarian.get_inheritance_thought",
-    "create_thought": "librarian.create_inheritance_thought",
-    "edit_thought": "librarian.edit_inheritance_thought",
-    "delete_thought": "librarian.delete_inheritance_thought",
-    "install_skill_package": "librarian.install_skill_package",
-    # 内置知识类目（read-only / 受限写）
-    "read_inheritance_skills": "librarian.read_inheritance_skills",
-    "read_skills": "librarian.read_intrinsic_skills",
-    "update_skills": "librarian.update_intrinsic_skills",
-    "read_personas": "librarian.read_intrinsic_personas",
-    "update_persona": "librarian.update_intrinsic_persona",
-    "read_system_prompts": "librarian.read_system_prompts",
-    "update_system_prompts": "librarian.update_system_prompts",
+from ..permissions import (
+    ROLE_ASSISTANT_ADMIN,
+    ROLE_MANAGER,
+    enforce_min_role,
+)
+
+KnowledgeHandler = Callable[[int, Dict[str, Any], Optional[int]], Any]
+
+# action → (handler, minimum role). ``None`` role = member floor.
+_KNOWLEDGE_ACTIONS: Dict[str, Tuple[KnowledgeHandler, Optional[str]]] = {
+    "list_thoughts": (knowledge_handlers.list_inheritance_thoughts, None),
+    "get_thought": (knowledge_handlers.get_inheritance_thought, None),
+    "create_thought": (knowledge_handlers.create_inheritance_thought, ROLE_MANAGER),
+    "edit_thought": (knowledge_handlers.edit_inheritance_thought, ROLE_MANAGER),
+    "delete_thought": (knowledge_handlers.delete_inheritance_thought, ROLE_MANAGER),
+    "install_skill_package": (knowledge_handlers.install_skill_package, ROLE_MANAGER),
+    "read_inheritance_skills": (knowledge_handlers.read_inheritance_skills, None),
+    "read_skills": (knowledge_handlers.read_intrinsic_skills, None),
+    "update_skills": (knowledge_handlers.update_intrinsic_skills, ROLE_ASSISTANT_ADMIN),
+    "read_personas": (knowledge_handlers.read_intrinsic_personas, None),
+    "update_persona": (knowledge_handlers.update_intrinsic_persona, ROLE_MANAGER),
+    "read_system_prompts": (knowledge_handlers.read_system_prompts, ROLE_MANAGER),
+    "update_system_prompts": (knowledge_handlers.update_system_prompts, ROLE_ASSISTANT_ADMIN),
 }
 
 _KNOWLEDGE_ACTION_ALIASES = {
@@ -44,24 +47,21 @@ _KNOWLEDGE_ACTION_ALIASES = {
 
 
 def _knowledge_manage(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Any:
-    """Dispatch ``action`` to the matching workshop ``librarian.*`` tool.
-
-    Action-specific parameters may be passed either at the top level or nested
-    under ``params``; both are merged (top-level wins) and forwarded to the
-    workshop handler, which re-checks the workshop binding and minimum role.
-    """
-    from workshop import engine as workshop_engine
-
+    """Dispatch ``action`` to the matching knowledge handler."""
     raw = str((args or {}).get("action") or "").strip().lower()
     action = _KNOWLEDGE_ACTION_ALIASES.get(raw, raw)
     if not action:
         raise HTTPException(status_code=400, detail="action is required for knowledge.manage")
-    tool = _KNOWLEDGE_ACTIONS.get(action)
-    if tool is None:
+    spec = _KNOWLEDGE_ACTIONS.get(action)
+    if spec is None:
         raise HTTPException(
             status_code=400,
             detail=f"unsupported action: {action}. 可用: {', '.join(sorted(_KNOWLEDGE_ACTIONS))}",
         )
+
+    handler, min_role = spec
+    if min_role:
+        enforce_min_role(user_id, ai_config_id, min_role)
 
     sub_args: Dict[str, Any] = {}
     nested = (args or {}).get("params")
@@ -72,7 +72,7 @@ def _knowledge_manage(user_id: int, args: Dict[str, Any], ai_config_id: Optional
             continue
         sub_args[key] = value
 
-    return workshop_engine.execute_tool(int(user_id), ai_config_id, tool, sub_args)
+    return handler(int(user_id), sub_args, ai_config_id)
 
 
 KNOWLEDGE_MANAGE_SCHEMA: Dict[str, Any] = {
@@ -93,11 +93,45 @@ KNOWLEDGE_MANAGE_SCHEMA: Dict[str, Any] = {
         },
         "params": {
             "type": "object",
-            "description": "所选 action 对应知识库工具的参数（也可直接平铺在顶层）。如 get_thought 需 id；edit_thought 需 id 与行编辑字段。",
+            "description": (
+                "所选 action 的参数（也可直接平铺在顶层）。"
+                "create_thought: name、content（必填），summary、endpoint_kind 可选；"
+                "get_thought/edit_thought/delete_thought: id；"
+                "edit_thought: mode/line/text 或 edits 数组，可选 endpoint_kind、expected_sha256；"
+                "install_skill_package: package（必填），timeout、endpoint_kind 可选；"
+                "update_skills: tools 数组；update_persona: ai_config_id、prompt；"
+                "update_system_prompts: prompts 数组。"
+            ),
         },
-        "id": {"type": "string", "description": "get_thought/edit_thought/delete_thought 等的目标条目 id。"},
-        "title": {"type": "string", "description": "create_thought 的标题。"},
-        "text": {"type": "string", "description": "正文/写入文本（按所选 action 含义使用）。"},
+        "id": {"type": "string", "description": "get_thought / edit_thought / delete_thought 的目标传承思想 id。"},
+        "name": {"type": "string", "description": "create_thought 的技能名/标题（必填）。"},
+        "content": {"type": "string", "description": "create_thought 的正文，写入 SKILL.md body（必填）。"},
+        "summary": {"type": "string", "description": "create_thought 的可选摘要，写入 frontmatter description。"},
+        "endpoint_kind": {
+            "type": "string",
+            "description": "create_thought / install_skill_package / edit_thought 的端侧归类（如 desktop、browser）。",
+        },
+        "package": {"type": "string", "description": "install_skill_package 的 npx 包名（必填）。"},
+        "timeout": {"type": "number", "description": "install_skill_package 安装超时秒数。"},
+        "edits": {
+            "type": "array",
+            "description": (
+                "edit_thought 的行编辑列表。每项含 mode（replace_line/insert_before/insert_after/"
+                "delete_line/append/prepend/replace_all）、line 或 start_line、text 或 content。"
+            ),
+        },
+        "mode": {"type": "string", "description": "edit_thought 单行编辑模式（未传 edits 数组时使用）。"},
+        "line": {"type": "integer", "description": "edit_thought 目标行号（1-based）。"},
+        "text": {"type": "string", "description": "edit_thought 写入文本；create_thought 时等同 content（兼容别名）。"},
+        "title": {"type": "string", "description": "create_thought 时等同 name（兼容别名，优先使用 name）。"},
+        "expected_sha256": {
+            "type": "string",
+            "description": "edit_thought 乐观锁：与 get_thought 返回的 content_sha256 一致才允许编辑。",
+        },
+        "tools": {"type": "array", "description": "update_skills 的工具覆盖列表（非空数组，必填）。"},
+        "ai_config_id": {"type": "integer", "description": "update_persona 的目标 AI 配置 id（必填）。"},
+        "prompt": {"type": "string", "description": "update_persona 的内置人格 prompt（必填）。"},
+        "prompts": {"type": "array", "description": "update_system_prompts 的系统 prompt 列表（非空数组，必填）。"},
     },
     "required": ["action"],
 }

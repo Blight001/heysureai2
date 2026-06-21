@@ -43,10 +43,11 @@ def emit_world_event(user_id: int, event_type: str, payload: Optional[Dict[str, 
         loop = asyncio.get_running_loop()
         loop.create_task(_do_emit())
     except RuntimeError:
-        # 同步上下文：fire-and-forget 临时线程，绝不阻塞调用方
+        from api.runtime.async_bridge import run_async
+
         def _runner():
             try:
-                asyncio.run(_do_emit())
+                run_async(_do_emit())
             except Exception:
                 pass
 

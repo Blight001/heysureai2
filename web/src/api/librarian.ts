@@ -4,7 +4,7 @@ import { del, get, post, put } from './http'
 export interface IntrinsicMcpView {
   description: string
   total: number
-  scope?: 'all' | 'toolbox' | 'library'
+  scope?: 'all' | 'toolbox' | 'library' | 'workshop' | 'library_full'
   categories: Array<{
     namespace: string
     count: number
@@ -22,6 +22,13 @@ export interface IntrinsicMcpView {
       source?: 'server' | 'endpoint'
     }>
   }>
+}
+
+export interface LibraryMcpFullView {
+  description: string
+  total: number
+  scope?: 'library_full'
+  governance: IntrinsicMcpView
 }
 
 export interface KnowledgeEntryItem {
@@ -46,8 +53,8 @@ export interface KnowledgeEntryItem {
   intrinsic_properties?: IntrinsicMcpView
   // 工具箱：每个 AI 默认即可用的系统固定 MCP（无需绑定图书馆）。
   toolbox?: IntrinsicMcpView
-  // 图书馆管理工具：需绑定图书馆后才能调用的治理 / 管理类 MCP。
-  library_mcp?: IntrinsicMcpView
+  // 完整图书馆 MCP：治理类注册表工具（含 knowledge.manage）。
+  library_mcp?: LibraryMcpFullView
   intrinsic_personas?: {
     description: string
     total: number

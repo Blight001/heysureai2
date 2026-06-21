@@ -104,9 +104,9 @@ def strip_endpoint_tool_config_names(names: Set[str]) -> Set[str]:
     return {name for name in names if not is_endpoint_tool_config_name(name)}
 
 
-# 知识与进化工坊（agent/workshop/）注册的工具统一走这两个命名空间。前缀是
-# 稳定契约：分类不依赖在线状态，离线时这些名字也不会被误判为桌面工具。
-WORKSHOP_TOOL_PREFIXES = ("librarian.", "evolution.")
+# 进化工坊（agent/workshop/）注册的工具走 evolution. 命名空间。知识库操作已
+# 统一为注册表工具 knowledge.manage，不再经工坊分发。
+WORKSHOP_TOOL_PREFIXES = ("evolution.",)
 
 
 def is_workshop_tool(name: str) -> bool:

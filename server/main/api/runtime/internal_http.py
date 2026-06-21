@@ -12,6 +12,8 @@ Provides:
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from typing import Any, Dict, Optional
 
 from fastapi import Header, HTTPException, Request
@@ -57,32 +59,56 @@ def internal_headers() -> Dict[str, str]:
     return {"Authorization": f"Bearer {INTERNAL_TOKEN}"}
 
 
-# Process-level cache of long-lived httpx.AsyncClient instances, keyed by base
-# URL. Reusing the client keeps the TCP connection pool warm so each MCP call
-# does not pay a fresh connection handshake — the old per-call
-# ``async with httpx.AsyncClient(...)`` rebuilt the pool every time.
-_async_clients: Dict[str, Any] = {}
+# Sync httpx clients are safe across ``asyncio.run()`` / worker-thread bridges.
+# Async clients are not — they bind to the first loop that created them.
+_sync_clients: Dict[str, Any] = {}
+_sync_client_lock = threading.Lock()
+
+
+def _get_internal_sync_client(base_url: str, timeout: float = 120.0):
+    import httpx  # local import keeps httpx optional for the monolith path
+
+    key = f"{base_url.rstrip('/')}|{timeout}"
+    with _sync_client_lock:
+        client = _sync_clients.get(key)
+        if client is None or client.is_closed:
+            client = httpx.Client(
+                base_url=base_url.rstrip("/"),
+                timeout=timeout,
+                headers=internal_headers(),
+            )
+            _sync_clients[key] = client
+        return client
+
+
+async def internal_post(
+    base_url: str,
+    path: str,
+    *,
+    json: Optional[Dict[str, Any]] = None,
+    timeout: float = 120.0,
+) -> Any:
+    """POST to another service's ``/internal/*`` endpoint without loop coupling."""
+    client = _get_internal_sync_client(base_url, timeout)
+    try:
+        response = await asyncio.to_thread(client.post, path, json=json or {})
+    except RuntimeError as exc:
+        if "Event loop is closed" in str(exc):
+            # Heal: recreate client (in case) and let caller retry via bridge heal.
+            # Re-raise so the call site sees the transient; next run_async will use fresh loop.
+            if client.is_closed:
+                key = f"{base_url.rstrip('/')}|{timeout}"
+                with _sync_client_lock:
+                    _sync_clients.pop(key, None)
+            raise
+        raise
+    response.raise_for_status()
+    return response.json()
 
 
 def get_internal_async_client(base_url: str, timeout: float = 120.0):
-    """Return a shared ``httpx.AsyncClient`` for internal calls to ``base_url``.
-
-    The client carries the internal bearer header and is bound to the running
-    event loop on first use (each runtime process has exactly one loop, so the
-    cached client is safe to reuse across requests).
-    """
-    import httpx  # local import keeps httpx optional for the monolith path
-
-    key = base_url.rstrip("/")
-    client = _async_clients.get(key)
-    if client is None or client.is_closed:
-        client = httpx.AsyncClient(
-            base_url=key,
-            timeout=timeout,
-            headers=internal_headers(),
-        )
-        _async_clients[key] = client
-    return client
+    """Deprecated alias kept for older call sites; returns the sync client."""
+    return _get_internal_sync_client(base_url, timeout)
 
 
 class InternalClient:

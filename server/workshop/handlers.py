@@ -61,10 +61,10 @@ def create_inheritance_thought(
     args: Dict[str, Any],
     ai_config_id: Optional[int] = None,
 ) -> Dict[str, Any]:
-    name = str(args.get("name") or "").strip()
+    name = str(args.get("name") or args.get("title") or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="name is required")
-    content = str(args.get("content") or "").strip()
+    content = str(args.get("content") or args.get("text") or "").strip()
     if not content:
         raise HTTPException(status_code=400, detail="content is required")
     endpoint_kind = args.get("endpoint_kind")

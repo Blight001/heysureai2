@@ -19,6 +19,7 @@ import requests
 from sqlmodel import Session, select
 
 from api.database import engine
+from api.runtime.async_bridge import run_async
 from api.http_client import ai_http_post
 from mcp_runtime.mcp import get_project_root, registry
 from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
@@ -336,7 +337,7 @@ async def _call_mcp_via_runtime(
     Lazy-imports httpx so the in-process path keeps zero overhead. Uses the
     INTERNAL_TOKEN Bearer header from ``runtime.internal_http.internal_headers``.
     """
-    from api.runtime.internal_http import get_internal_async_client
+    from api.runtime.internal_http import internal_post
 
     # Carry the current run's session context across the process boundary so
     # tools in mcp-runtime can resolve the active session_id / channel /
@@ -352,12 +353,7 @@ async def _call_mcp_via_runtime(
     if run_ctx:
         body["session_context"] = run_ctx
 
-    # Reuse a process-level client so back-to-back tool calls keep the
-    # connection to mcp-runtime warm instead of re-handshaking each time.
-    client = get_internal_async_client(runtime_url, timeout=120.0)
-    resp = await client.post("/internal/mcp/call", json=body)
-    resp.raise_for_status()
-    return resp.json()
+    return await internal_post(runtime_url, "/internal/mcp/call", json=body, timeout=120.0)
 
 
 async def _dispatch_endpoint_via_runtime(
@@ -2174,7 +2170,7 @@ def _run_worker_impl(
                         else:
                             _set_run_live_phase(run_id, "waiting_mcp", split_tool)
                             try:
-                                item_result = asyncio.run(_call_mcp_or_endpoint_tool(split_tool, user_id, arguments, ai_config_id))
+                                item_result = run_async(_call_mcp_or_endpoint_tool(split_tool, user_id, arguments, ai_config_id))
                                 endpoint_failed, endpoint_error = _tool_result_failed(item_result)
                                 if endpoint_failed:
                                     item_failed = True
@@ -2347,7 +2343,7 @@ def _run_worker_impl(
                 tool_failed = False
                 tool_error = ""
                 try:
-                    tool_result = asyncio.run(_call_mcp_or_endpoint_tool(tool, user_id, arguments, ai_config_id))
+                    tool_result = run_async(_call_mcp_or_endpoint_tool(tool, user_id, arguments, ai_config_id))
                     endpoint_failed, endpoint_error = _tool_result_failed(tool_result)
                     if endpoint_failed:
                         tool_failed = True

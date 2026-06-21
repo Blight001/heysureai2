@@ -122,6 +122,7 @@ const getMcpToolFallbackTag = (name: string) => {
   if (endpointCapabilityTag) return endpointCapabilityTag
   // workspace.manage（文件）、workspace.run_command（终端）、workspace.search（联网搜索）同归「工作区」。
   if (hasMcpPrefix(name, 'workspace')) return '工作区'
+  if (hasMcpPrefix(name, 'librarian')) return '图书馆'
   if (hasMcpPrefix(name, 'knowledge')) return '知识总结'
   if (hasMcpPrefix(name, 'admin')) return '概览'
   if (hasMcpPrefix(name, 'desktop')) return '桌面能力'
@@ -217,6 +218,7 @@ const MCP_NAMESPACE_ZH: Record<string, string> = {
   prompt: 'Prompt',
   file: '文件',
   knowledge: '知识库',
+  librarian: '图书馆',
   browser: '浏览器',
   mouse: '鼠标',
   keyboard: '键盘',
@@ -367,6 +369,7 @@ const TAG_PARENT: Record<string, string> = {
   '会话管理': '基础能力',
   '归档': '知识与进化',
   '知识总结': '知识与进化',
+  '图书馆': '知识与进化',
   '进化': '知识与进化',
   // 桌面端
   '终端': '系统操作',

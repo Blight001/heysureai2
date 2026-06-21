@@ -8,7 +8,7 @@
   放开 per-agent scope。该函数挂在 ``ensure_default_ai_for_user`` 上，
   用户登录/拉取 AI 列表时自动接入，作坊面板与社会显示随之出现工坊。
 - **专用绑定保留**：AI 仍通过 ``WorkshopAiBinding`` 与工坊 1:1 绑定。
-- **传承思想 MCP**：当前提供列表、详情查询和 Skill 包安装导入。
+- **知识库 MCP**：经注册表工具 ``knowledge.manage``（action 分发）提供，不经工坊 scope。
 """
 
 import logging
@@ -27,60 +27,7 @@ WORKSHOP_DISPLAY_NAME = "图书馆（内置）"
 TOOLBOX_DISPLAY_NAME = "工具箱（内置）"
 WORKSHOP_PLATFORM = "Workshop-Server"
 
-_TOOL_HANDLERS = {
-    "librarian.list_inheritance_thoughts": (
-        "workshop.handlers",
-        "list_inheritance_thoughts",
-    ),
-    "librarian.get_inheritance_thought": (
-        "workshop.handlers",
-        "get_inheritance_thought",
-    ),
-    "librarian.install_skill_package": (
-        "workshop.handlers",
-        "install_skill_package",
-    ),
-    "librarian.create_inheritance_thought": (
-        "workshop.handlers",
-        "create_inheritance_thought",
-    ),
-    "librarian.edit_inheritance_thought": (
-        "workshop.handlers",
-        "edit_inheritance_thought",
-    ),
-    "librarian.delete_inheritance_thought": (
-        "workshop.handlers",
-        "delete_inheritance_thought",
-    ),
-    "librarian.read_inheritance_skills": (
-        "workshop.handlers",
-        "read_inheritance_skills",
-    ),
-    "librarian.read_intrinsic_skills": (
-        "workshop.handlers",
-        "read_intrinsic_skills",
-    ),
-    "librarian.update_intrinsic_skills": (
-        "workshop.handlers",
-        "update_intrinsic_skills",
-    ),
-    "librarian.read_intrinsic_personas": (
-        "workshop.handlers",
-        "read_intrinsic_personas",
-    ),
-    "librarian.update_intrinsic_persona": (
-        "workshop.handlers",
-        "update_intrinsic_persona",
-    ),
-    "librarian.read_system_prompts": (
-        "workshop.handlers",
-        "read_system_prompts",
-    ),
-    "librarian.update_system_prompts": (
-        "workshop.handlers",
-        "update_system_prompts",
-    ),
-}
+_TOOL_HANDLERS: Dict[str, tuple] = {}
 
 # 同进程内每用户 ensure 去抖：presence 写盘不必每个请求都做。
 _ENSURE_TTL_SECONDS = 60.0
@@ -124,11 +71,8 @@ def capability_names() -> List[str]:
 
 
 def library_capability_names() -> List[str]:
-    """图书馆的治理类 MCP（注册表中需绑定图书馆的工具：prompt / admin / device /
-    knowledge.manage），与知识库「图书馆管理工具」(builtin.library_mcp) 同源。
-
-    这些是按 AI 配置的注册表工具（开关在各 AI 的 mcp_tools），不经工坊 scope 控制；
-    作坊图书馆把它们与 librarian.* 一并展示，作为「完整图书馆 MCP」。"""
+    """图书馆治理类 MCP（prompt / admin / device / knowledge.manage），与
+    现已并入「传承技能」作为独立设备（library）。"""
     try:
         from mcp_runtime.mcp import registry
         from mcp_runtime.mcp.permissions import LIBRARY_BOUND_TOOLS
@@ -207,6 +151,13 @@ def connected_entry_for_user(user_id) -> Dict[str, Any]:
         bound_cfg_id = bound_config_id_for_agent(user_id, device_id_for_user(user_id))
     except Exception:
         bound_cfg_id = None
+    library_catalog = None
+    try:
+        from api.services.library_mcp_catalog import library_mcp_full_payload
+
+        library_catalog = library_mcp_full_payload(int(user_id))
+    except Exception:
+        library_catalog = None
     return {
         "id": device_id_for_user(user_id),
         "name": WORKSHOP_DISPLAY_NAME,
@@ -215,9 +166,9 @@ def connected_entry_for_user(user_id) -> Dict[str, Any]:
         "aiConfigId": bound_cfg_id,
         "userId": int(user_id),
         "capabilities": capability_names(),
-        # 治理类图书馆 MCP（按 AI 配置开关，不经工坊 scope）；前端作坊把它与
-        # librarian.* 一并展示，构成「完整图书馆 MCP」。
+        # 治理类图书馆 MCP（按 AI 配置 mcp_tools 开关）。
         "libraryGovernanceTools": library_capability_names(),
+        "libraryMcpCatalog": library_catalog,
         "version": "builtin",
         "lifecycle": "registered",
         "connectedAt": None,

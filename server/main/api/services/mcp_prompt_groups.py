@@ -103,36 +103,36 @@ def build_prompt_tool_groups(
         for name in sorted(workspace_names)
         if name in by_name and name not in LIBRARY_BOUND_TOOLS
     ]
-    library_tools = [
-        by_name[name]
-        for name in sorted(workspace_names)
+    library_tool_names: Set[str] = {
+        name for name in sorted(workspace_names)
         if name in by_name and name in LIBRARY_BOUND_TOOLS
-    ]
+    }
+    # 治理类 manage 工具只存于 AI 配置的 mcp_tools；显式并入图书馆分组。
+    if ai_config_id is not None:
+        library_tool_names |= _config_selected_tool_names(ai_config_id, user_id) & LIBRARY_BOUND_TOOLS
+    if allowed_tools is not None:
+        library_tool_names |= {name for name in allowed_tools if name in LIBRARY_BOUND_TOOLS}
     groups: List[Dict[str, Any]] = [{
         "groupKey": "toolbox",
         "groupLabel": "工具箱 MCP",
         "groupKind": "workspace",
         "tools": toolbox_tools,
     }]
-    if library_tools:
-        groups.append({
-            "groupKey": "library",
-            "groupLabel": "图书馆 MCP（需绑定图书馆）",
-            "groupKind": "workspace",
-            "tools": library_tools,
-        })
 
     agents = _agents_for_prompt_groups(user_id, ai_config_id)
     for agent in agents:
         device_id = str(agent.get("id") or "").strip()
         if not device_id:
             continue
+        agent_type = device_type_of(agent)
         names = _tool_names_for_agent(
             agent,
             user_id=user_id,
             ai_config_id=ai_config_id,
             allowed_tools=allowed_tools,
         )
+        if agent_type == "workshop":
+            continue
         device_tools: List[Dict[str, Any]] = []
         for name in sorted(names):
             tool = by_name.get(name)
@@ -144,7 +144,7 @@ def build_prompt_tool_groups(
                 "description": "",
                 "inputSchema": {},
                 "destructive": True,
-                "mcpSource": str(device_type_of(agent) or "desktop"),
+                "mcpSource": str(agent_type or "desktop"),
                 "deviceId": device_id,
                 "allowedForCurrentAi": True,
             })
@@ -153,8 +153,30 @@ def build_prompt_tool_groups(
             "groupLabel": f"{_agent_display_name(agent)} MCP",
             "groupKind": "device",
             "deviceId": device_id,
-            "deviceType": str(device_type_of(agent) or ""),
+            "deviceType": str(agent_type or ""),
             "tools": device_tools,
+        })
+
+    library_tools: List[Dict[str, Any]] = []
+    for name in sorted(library_tool_names):
+        tool = by_name.get(name)
+        if tool:
+            library_tools.append(tool)
+            continue
+        library_tools.append({
+            "name": name,
+            "description": "",
+            "inputSchema": {},
+            "destructive": True,
+            "mcpSource": "workshop",
+            "allowedForCurrentAi": True,
+        })
+    if library_tools:
+        groups.append({
+            "groupKey": "library",
+            "groupLabel": "图书馆 MCP",
+            "groupKind": "workspace",
+            "tools": library_tools,
         })
 
     if not agents:

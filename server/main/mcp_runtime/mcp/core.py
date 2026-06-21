@@ -162,33 +162,27 @@ class MCPRegistry:
         args = arguments or {}
         _enforce_workshop_binding(tool.name, user_id, ai_config_id)
         await _set_runtime_status(user_id, ai_config_id, "running", tool.name)
-        await sio.emit(
-            "mcp:status",
-            {
-                "userId": user_id,
-                "aiConfigId": ai_config_id,
-                "state": "running",
-                "tool": tool.name,
-                "updatedAt": time.time(),
-            },
-            room=f"user_{user_id}",
-        )
+        await _emit_mcp_status(user_id, ai_config_id, "running", tool.name)
         try:
             if inspect.iscoroutinefunction(tool.handler):
                 result = await tool.handler(user_id, args, ai_config_id)
             else:
-                # Sync handlers routinely do blocking I/O (file ops,
-                # workspace.run_command subprocess, embedding calls over the
-                # blocking `requests` client). Running them inline on the event
-                # loop stalls *every* other concurrent MCP call, which is the
-                # main source of intermittent multi-second latency under load.
-                # Offload to a worker thread, copying the current contextvars so
-                # get_run_session_context() still resolves inside the thread.
-                loop = asyncio.get_running_loop()
+                # Sync handlers do blocking I/O. Use ``asyncio.to_thread`` so
+                # short-lived loops (``asyncio.run`` / worker bridges) do not
+                # lose executor callbacks with "Event loop is closed".
                 ctx = contextvars.copy_context()
-                result = await loop.run_in_executor(
-                    None, lambda: ctx.run(tool.handler, user_id, args, ai_config_id)
-                )
+                try:
+                    result = await asyncio.to_thread(
+                        ctx.run, tool.handler, user_id, args, ai_config_id
+                    )
+                except RuntimeError as exc:
+                    if "Event loop is closed" in str(exc):
+                        # Delivery from the threadpool hit a closed caller loop
+                        # (common after mixed asyncio.run + cached clients).
+                        # Re-raise so caller sees a clean failure instead of
+                        # losing the whole execution channel.
+                        raise
+                    raise
             if hasattr(result, "__await__"):
                 result = await result
             payload = {
@@ -196,34 +190,12 @@ class MCPRegistry:
                 "destructive": tool.destructive,
                 "result": result,
             }
-            # Keep the latest tool name on idle so dashboard cards can show
-            # "最近 MCP" even after the call finishes.
             await _set_runtime_status(user_id, ai_config_id, "idle", tool.name)
-            await sio.emit(
-                "mcp:status",
-                {
-                    "userId": user_id,
-                    "aiConfigId": ai_config_id,
-                    "state": "idle",
-                    "tool": tool.name,
-                    "updatedAt": time.time(),
-                },
-                room=f"user_{user_id}",
-            )
+            await _emit_mcp_status(user_id, ai_config_id, "idle", tool.name)
             return payload
         except Exception:
             await _set_runtime_status(user_id, ai_config_id, "error", tool.name)
-            await sio.emit(
-                "mcp:status",
-                {
-                    "userId": user_id,
-                    "aiConfigId": ai_config_id,
-                    "state": "error",
-                    "tool": tool.name,
-                    "updatedAt": time.time(),
-                },
-                room=f"user_{user_id}",
-            )
+            await _emit_mcp_status(user_id, ai_config_id, "error", tool.name)
             raise
 
 def _enforce_workshop_binding(tool_name: str, user_id: int, ai_config_id: Optional[int]) -> None:
@@ -279,10 +251,33 @@ def _write_runtime_status(user_id: int, ai_config_id: Optional[int], status: str
 
 
 async def _set_runtime_status(user_id: int, ai_config_id: Optional[int], status: str, tool: str) -> None:
-    # The status write is a synchronous DB round-trip and fires twice per tool
-    # call (running -> idle). Run it off the event loop so it doesn't serialize
-    # with other concurrent MCP calls in the same process.
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(
-        None, _write_runtime_status, user_id, ai_config_id, status, tool
-    )
+    try:
+        await asyncio.to_thread(
+            _write_runtime_status, user_id, ai_config_id, status, tool
+        )
+    except RuntimeError as exc:
+        if "Event loop is closed" not in str(exc):
+            raise
+
+
+async def _emit_mcp_status(
+    user_id: int,
+    ai_config_id: Optional[int],
+    state: str,
+    tool: str,
+) -> None:
+    try:
+        await sio.emit(
+            "mcp:status",
+            {
+                "userId": user_id,
+                "aiConfigId": ai_config_id,
+                "state": state,
+                "tool": tool,
+                "updatedAt": time.time(),
+            },
+            room=f"user_{user_id}",
+        )
+    except RuntimeError as exc:
+        if "Event loop is closed" not in str(exc):
+            raise

@@ -136,17 +136,11 @@ const intrinsicPersonas = computed(() => currentDetail.value?.intrinsic_personas
 const systemPrompts = computed(() => currentDetail.value?.system_prompts || null)
 const inheritanceSkills = computed(() => currentDetail.value?.inheritance_skills || null)
 const inheritanceServerCategories = computed(() => inheritanceSkills.value?.server_categories || [])
-// 传承技能卡片只展示在线端侧设备工具；服务端固定工具已拆到「工具箱」「图书馆管理工具」。
+// 传承技能中服务端固定工具以独立设备形式展示：toolbox（工具箱）、library（图书管理工具） + 真实在线端设备。
 const inheritanceDevices = computed(() =>
-  (inheritanceSkills.value?.devices || []).filter(
-    device => String(device.device_type || '').toLowerCase() !== 'server',
-  ),
+  (inheritanceSkills.value?.devices || []),
 )
-// 工具箱（默认即用）与 图书馆管理工具（需绑定图书馆）：同一套服务端 MCP 类目编辑 UI。
-const toolboxData = computed(() => currentDetail.value?.toolbox || null)
-const libraryMcpData = computed(() => currentDetail.value?.library_mcp || null)
-const editableMcpView = computed(() => toolboxData.value || libraryMcpData.value || null)
-const editableMcpCategories = computed(() => editableMcpView.value?.categories || [])
+
 const inheritanceThoughts = computed(() => currentDetail.value?.inheritance_tools || null)
 
 const filteredInstalledThoughts = computed(() => {
@@ -189,6 +183,13 @@ type InheritanceSkillTool = InheritanceSkillDevice['tools'][number]
 
 const isServerInheritanceDevice = (device: InheritanceSkillDevice) =>
   String(device.device_type || '').toLowerCase() === 'server'
+
+const deviceDisplayLabel = (device: InheritanceSkillDevice) => {
+  const id = String(device?.device_id || '').toLowerCase().trim()
+  if (id === 'toolbox') return '工具箱（服务端内置）'
+  if (id === 'library') return '图书管理工具（服务端治理）'
+  return deviceTypeLabel(device?.device_type)
+}
 
 const implementationSummary = (tool: InheritanceSkillTool) => {
   const impl = tool.implementation
@@ -520,8 +521,7 @@ const savePropertyCategory = async (category: InheritanceServerCategory) => {
   try {
     const token = getAuthToken()
     await saveIntrinsicProperties(token, propertyDraftTools.value)
-    // 回读当前条目（工具箱 / 图书馆管理工具 / 传承技能），保持停留在当前卡片并刷新数据，
-    // 而非跳到 save 接口固定返回的传承技能视图。
+    // 回读当前条目（传承技能等），保持停留在当前卡片并刷新数据。
     const memoryId = currentDetail.value?.memory_id || selectedItem.value?.id
     if (memoryId) {
       currentDetail.value = await readEntry(token, memoryId)
@@ -998,9 +998,6 @@ const closeDetail = () => {
               <template v-else-if="systemPrompts">
                 {{ currentDetail?.summary || systemPrompts.description }}
               </template>
-              <template v-else-if="editableMcpView">
-                {{ editableMcpView.description }}
-              </template>
               <template v-else-if="inheritanceSkills">
                 {{ inheritanceSkills.description }}
               </template>
@@ -1036,7 +1033,7 @@ const closeDetail = () => {
               </span>
             </div>
 
-            <div v-if="currentDetail.summary && !intrinsicPersonas && !systemPrompts && !inheritanceSkills && !inheritanceThoughts && !toolboxData && !libraryMcpData" class="mb-4">
+            <div v-if="currentDetail.summary && !intrinsicPersonas && !systemPrompts && !inheritanceSkills && !inheritanceThoughts" class="mb-4">
               <div class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1">摘要</div>
               <div class="text-xs leading-relaxed text-zinc-600 dark:text-zinc-300 bg-zinc-50 dark:bg-zinc-800/40 p-3 rounded-lg border border-zinc-100 dark:border-zinc-800">
                 {{ currentDetail.summary }}
@@ -1199,136 +1196,13 @@ const closeDetail = () => {
                 </details>
               </div>
             </template>
-            <template v-else-if="editableMcpView">
-              <div class="space-y-3">
-                <div class="rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 dark:border-indigo-900/60 dark:bg-indigo-950/20">
-                  <div class="text-xs font-semibold text-indigo-700 dark:text-indigo-300">
-                    {{ toolboxData ? '工具箱 · 系统固定 MCP' : '图书馆管理工具' }}
-                  </div>
-                  <div class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-                    {{ toolboxData ? '每个 AI 默认即可用，无需绑定图书馆；编辑后同步 mcp.describe_tool' : '仅绑定图书馆的 AI 可调用（prompt 管理 / 管理员操作 / 设备管理 / 知识库管理）；编辑后同步 mcp.describe_tool' }}
-                  </div>
-                </div>
-                <div v-if="propertyEditNotice" class="text-xs text-emerald-600 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900 rounded-lg px-3 py-2">
-                  {{ propertyEditNotice }}
-                </div>
-                <div v-if="propertyEditError" class="text-xs text-rose-600 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900 rounded-lg px-3 py-2">
-                  {{ propertyEditError }}
-                </div>
-                <div
-                  v-if="!editableMcpCategories.length"
-                  class="rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-4 py-10 text-center text-xs text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/40 dark:text-zinc-500"
-                >
-                  暂无工具。
-                </div>
-                <div class="space-y-2">
-                  <details
-                    v-for="category in editableMcpCategories"
-                    :key="category.namespace"
-                    :open="editingPropertyCategory === category.namespace || undefined"
-                    class="group overflow-hidden rounded-lg border border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/40"
-                  >
-                    <summary class="list-none cursor-pointer border-b border-zinc-100 px-3 py-2 select-none dark:border-zinc-800">
-                      <div class="flex items-center justify-between gap-3">
-                        <div class="flex min-w-0 items-center gap-2">
-                          <span class="text-zinc-400 transition-transform group-open:rotate-90">›</span>
-                          <div class="truncate text-xs font-semibold text-zinc-700 dark:text-zinc-200">工具总栏目：{{ category.namespace }}</div>
-                        </div>
-                        <div class="flex shrink-0 items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-                          <span>{{ category.count }} 个工具</span>
-                          <button
-                            v-if="editingPropertyCategory !== category.namespace"
-                            type="button"
-                            class="rounded border border-indigo-200 bg-white px-2 py-0.5 text-[10px] text-indigo-600 hover:bg-indigo-50 dark:border-indigo-800 dark:bg-zinc-900 dark:text-indigo-300 dark:hover:bg-indigo-950/40"
-                            @click.stop.prevent="startEditPropertyCategory(category)"
-                          >
-                            编辑
-                          </button>
-                        </div>
-                      </div>
-                    </summary>
-                    <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
-                      <div
-                        v-for="tool in category.tools"
-                        :key="tool.name"
-                        class="px-3 py-3"
-                      >
-                        <div class="grid grid-cols-1 gap-2 md:grid-cols-[13rem_1fr]">
-                          <div>
-                            <div class="mb-0.5 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">调用工具</div>
-                            <code class="break-all text-[11px] text-indigo-600 dark:text-indigo-300">{{ tool.name }}</code>
-                          </div>
-                          <div>
-                            <div class="mb-0.5 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">工具描述</div>
-                            <textarea
-                              v-if="editingPropertyCategory === category.namespace"
-                              :value="propertyDraftToolDescription(tool.name)"
-                              rows="3"
-                              class="w-full resize-y rounded border border-zinc-200 bg-white p-2 text-xs leading-relaxed text-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-200 dark:focus:ring-indigo-800"
-                              @input="updateDraftToolDescription(tool.name, ($event.target as HTMLTextAreaElement).value)"
-                            />
-                            <div v-else class="text-xs leading-relaxed text-zinc-700 dark:text-zinc-200">
-                              {{ tool.description || '（无描述）' }}
-                              <span v-if="tool.destructive" class="ml-1 text-amber-600 dark:text-amber-300">可能产生写入/变更</span>
-                            </div>
-                          </div>
-                        </div>
-                        <div class="mt-2">
-                          <div class="mb-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">参数说明</div>
-                          <div v-if="toolParameters(tool).length" class="overflow-hidden rounded border border-zinc-100 dark:border-zinc-700">
-                            <div
-                              v-for="param in toolParameters(tool)"
-                              :key="`${tool.name}-${param.name}`"
-                              class="grid grid-cols-1 gap-2 border-b border-zinc-100 px-2 py-1.5 text-[11px] last:border-b-0 dark:border-zinc-700 md:grid-cols-[11rem_6rem_4rem_1fr]"
-                            >
-                              <code class="break-all text-zinc-700 dark:text-zinc-200">{{ param.name }}</code>
-                              <span class="text-zinc-500 dark:text-zinc-400">{{ param.type || 'any' }}</span>
-                              <span :class="param.required ? 'text-rose-600 dark:text-rose-300' : 'text-zinc-400 dark:text-zinc-500'">
-                                {{ param.required ? '必填' : '可选' }}
-                              </span>
-                              <textarea
-                                v-if="editingPropertyCategory === category.namespace"
-                                :value="propertyDraftParamDescription(tool.name, param.name)"
-                                rows="2"
-                                class="w-full resize-y rounded border border-zinc-200 bg-white px-2 py-1 text-[11px] leading-relaxed text-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-200 dark:focus:ring-indigo-800"
-                                @input="updateDraftParamDescription(tool.name, param.name, ($event.target as HTMLTextAreaElement).value)"
-                              />
-                              <span v-else class="text-zinc-600 dark:text-zinc-300">{{ param.description || '（无描述）' }}</span>
-                            </div>
-                          </div>
-                          <div v-else class="text-[11px] text-zinc-500 dark:text-zinc-400">无参数</div>
-                        </div>
-                      </div>
-                      <div v-if="editingPropertyCategory === category.namespace" class="flex justify-end gap-2 px-3 py-3">
-                        <button
-                          type="button"
-                          class="rounded border border-zinc-200 px-3 py-1.5 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                          :disabled="savingPropertyCategory === category.namespace"
-                          @click="cancelEditPropertyCategory"
-                        >
-                          取消
-                        </button>
-                        <button
-                          type="button"
-                          class="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-                          :disabled="savingPropertyCategory === category.namespace"
-                          @click="savePropertyCategory(category)"
-                        >
-                          {{ savingPropertyCategory === category.namespace ? '保存中…' : '保存' }}
-                        </button>
-                      </div>
-                    </div>
-                  </details>
-                </div>
-              </div>
-            </template>
             <template v-else-if="inheritanceSkills">
               <div class="space-y-3">
                 <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 dark:border-indigo-900/60 dark:bg-indigo-950/20">
                   <div class="min-w-0">
-                    <div class="text-xs font-semibold text-indigo-700 dark:text-indigo-300">传承技能 MCP（在线设备）</div>
+                    <div class="text-xs font-semibold text-indigo-700 dark:text-indigo-300">传承技能 MCP</div>
                     <div class="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-                      在线设备实时上报的 MCP 工具；服务端固定工具见「工具箱」「图书馆管理工具」
+                      工具箱（默认） + 图书管理工具（治理） + 在线设备实时上报的 MCP 工具
                     </div>
                   </div>
                   <div class="flex flex-wrap items-center gap-2">
@@ -1358,7 +1232,7 @@ const closeDetail = () => {
                   v-if="!inheritanceDevices.length"
                   class="rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-4 py-10 text-center text-xs text-zinc-400 dark:border-zinc-700 dark:bg-zinc-800/40 dark:text-zinc-500"
                 >
-                  暂无在线设备上报的 MCP。
+                  暂无 MCP 工具。
                 </div>
                 <details
                   v-for="device in inheritanceDevices"
@@ -1371,11 +1245,12 @@ const closeDetail = () => {
                         <span class="text-zinc-400 transition-transform group-open:rotate-90">›</span>
                         <div class="min-w-0">
                           <div class="truncate text-sm font-semibold text-zinc-800 dark:text-zinc-100">
-                            {{ deviceTypeLabel(device.device_type) }}
+                            {{ deviceDisplayLabel(device) }}
                           </div>
                           <div class="mt-0.5 text-[10px] text-zinc-400 dark:text-zinc-500">
-                            设备号：{{ device.device_id || '未提供' }}
-                            <template v-if="device.updated_at"> · 上报于 {{ formatTime(device.updated_at) }}</template>
+                            <template v-if="device.device_id === 'toolbox' || device.device_id === 'library'">内置服务端固定</template>
+                            <template v-else>设备号：{{ device.device_id || '未提供' }}</template>
+                            <template v-if="device.updated_at"> · {{ formatTime(device.updated_at) }}</template>
                           </div>
                         </div>
                       </div>
@@ -1460,11 +1335,11 @@ const closeDetail = () => {
                       </table>
                     </div>
                     <div
-                      v-if="isServerInheritanceDevice(device) && inheritanceServerCategories.length"
+                      v-if="isServerInheritanceDevice(device) && device.device_id === 'toolbox' && inheritanceServerCategories.length"
                       class="border-t border-zinc-100 px-3 py-3 dark:border-zinc-800"
                     >
                       <div class="mb-2 text-[11px] font-semibold text-zinc-600 dark:text-zinc-300">
-                        编辑服务端工具说明（保存后同步 mcp.list_tools / mcp.describe_tool）
+                        编辑服务端工具说明（保存后同步 mcp.list_tools / mcp.describe_tool）。工具箱与图书管理工具共享此编辑。
                       </div>
                       <div class="space-y-2">
                         <details

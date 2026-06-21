@@ -147,33 +147,19 @@ def test_describe_tool_accepts_repeated_browser_namespace(monkeypatch):
     assert result["requested_name"] == "browser.browser_navigate"
 
 
-def test_describe_tool_includes_builtin_workshop_tools(monkeypatch):
+def test_describe_tool_includes_knowledge_manage(monkeypatch):
     import mcp_runtime.mcp.tools.introspection as introspection
 
     monkeypatch.setattr(introspection, "online_tool_defs_for_user", lambda _user_id: {})
 
     result = _mcp_describe_tool(
         user_id=1,
-        args={
-            "query": "read_intrinsic",
-            "tools": [
-                "librarian.read_intrinsic_skills",
-                "librarian.read_intrinsic_personas",
-                "librarian.read_system_prompts",
-                "librarian.list_inheritance_thoughts",
-            ],
-        },
+        args={"tool": "knowledge.manage"},
         ai_config_id=None,
     )
 
-    names = [tool["name"] for tool in result["tools"]]
-    assert names == [
-        "librarian.read_intrinsic_skills",
-        "librarian.read_intrinsic_personas",
-        "librarian.read_system_prompts",
-        "librarian.list_inheritance_thoughts",
-    ]
-    assert result["errors"] == []
+    assert result["name"] == "knowledge.manage"
+    assert "action" in (result.get("inputSchema") or {}).get("properties", {})
 
 
 def test_describe_tool_unknown_single_tool_is_not_permission_error():

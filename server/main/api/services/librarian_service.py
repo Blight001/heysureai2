@@ -74,7 +74,7 @@ _BUILTIN_ENTRIES = {
     "builtin.inheritance_skills": {
         "title": "传承技能",
         "triggers": ["传承技能", "固定MCP", "在线MCP", "工坊工具", "MCP工具"],
-        "summary": "系统服务端内置 MCP 与在线设备实时上报的工具能力。",
+        "summary": "系统服务端内置 MCP（工具箱 + 图书馆治理）与在线设备实时上报的工具能力。",
     },
     # 纯服务端固定 MCP 视图：与 inheritance_skills 共享同一权威源（注册表 + 文件
     # 覆盖），但只含服务端工具、按 namespace 分组。仅供 read() 解析，不进入
@@ -83,18 +83,6 @@ _BUILTIN_ENTRIES = {
         "title": "固有属性",
         "triggers": ["固有属性", "服务端MCP", "系统MCP", "固定MCP"],
         "summary": "系统固定注册的服务端 MCP 工具定义（按 namespace 分组）。",
-    },
-    # 工具箱：每个 AI 默认即可用、无需绑定的系统固定 MCP（图书馆绑定工具除外）。
-    "builtin.toolbox": {
-        "title": "工具箱",
-        "triggers": ["工具箱", "系统工具", "默认MCP", "固定MCP"],
-        "summary": "每个 AI 默认绑定的系统固定 MCP 工具（无需绑定图书馆即可用）。",
-    },
-    # 图书馆管理工具：需绑定图书馆后才能调用的治理 / 管理类 MCP。
-    "builtin.library_mcp": {
-        "title": "图书馆管理工具",
-        "triggers": ["图书馆", "管理工具", "治理MCP", "绑定工具"],
-        "summary": "需绑定图书馆后调用的管理类 MCP：prompt 管理、管理员操作、设备管理、知识库管理。",
     },
     "builtin.inheritance_tools": {
         "title": "传承思想",
@@ -971,8 +959,6 @@ def _builtin_entries(*, user_id: Optional[int] = None, with_body: bool = False) 
         for memory_id in (
             "builtin.intrinsic_personas",
             "builtin.system_prompts",
-            "builtin.toolbox",
-            "builtin.library_mcp",
             "builtin.inheritance_skills",
             "builtin.inheritance_tools",
         )
@@ -1022,14 +1008,6 @@ def _builtin_entry(memory_id: str, *, user_id: Optional[int] = None, with_body: 
             properties = _intrinsic_properties_payload(int(user_id or 0))
             out["intrinsic_properties"] = properties
             out["body"] = _render_intrinsic_properties_body(properties)
-        elif memory_id == "builtin.toolbox":
-            toolbox = _intrinsic_properties_payload(int(user_id or 0), scope="toolbox")
-            out["toolbox"] = toolbox
-            out["body"] = _render_intrinsic_properties_body(toolbox, title="工具箱")
-        elif memory_id == "builtin.library_mcp":
-            library_mcp = _intrinsic_properties_payload(int(user_id or 0), scope="library")
-            out["library_mcp"] = library_mcp
-            out["body"] = _render_intrinsic_properties_body(library_mcp, title="图书馆管理工具")
         elif memory_id == "builtin.inheritance_skills":
             skills = _inheritance_skills_payload(int(user_id or 0))
             out["inheritance_skills"] = skills
@@ -1239,7 +1217,7 @@ def save_intrinsic_properties_overrides(*, user_id: int, tools: List[Dict[str, A
     # 旧 override JSON 继续保留作为兼容镜像。
     with open(_intrinsic_properties_overrides_path(user_id), "w", encoding="utf-8") as f:
         json.dump({"tools": current, "updated_at": time.time()}, f, ensure_ascii=False, indent=2)
-    return _builtin_entry("builtin.inheritance_skills", user_id=user_id, with_body=True) or {}
+    return _builtin_entry("builtin.intrinsic_properties", user_id=user_id, with_body=True) or {}
 
 
 def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None, *, title: str = "固有属性") -> str:
@@ -1275,37 +1253,93 @@ def _render_intrinsic_properties_body(payload: Optional[Dict[str, Any]] = None, 
     return "\n".join(lines).strip()
 
 
+def _render_library_mcp_full_body(payload: Optional[Dict[str, Any]] = None) -> str:
+    data = payload if isinstance(payload, dict) else {}
+
+    def _append_categories(lines: List[str], section: Dict[str, Any]) -> None:
+        for category in section.get("categories") or []:
+            namespace = str(category.get("namespace") or "")
+            lines.append(f"### {namespace}")
+            lines.append("")
+            for tool in category.get("tools") or []:
+                name = str(tool.get("name") or "").strip()
+                description = str(tool.get("description") or "").strip() or "（无描述）"
+                destructive = "（可能产生写入/变更）" if tool.get("destructive") else ""
+                lines.append(f"- `{name}`{destructive}: {description}")
+
+    lines = [
+        "# 图书馆管理工具",
+        "",
+        str(data.get("description") or ""),
+        "",
+        f"工具总数：{int(data.get('total') or 0)}",
+        "",
+    ]
+    governance = data.get("governance") if isinstance(data.get("governance"), dict) else {}
+    if governance:
+        lines.extend([
+            "## 治理类工具（AI 配置 mcp_tools 开关）",
+            "",
+            str(governance.get("description") or "").strip(),
+            "",
+        ])
+        _append_categories(lines, governance)
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
 def _inheritance_skills_payload(user_id: int = 0) -> Dict[str, Any]:
-    """传承技能 = 服务端内置 MCP + 当前账号在线端侧实时上报的工具。"""
+    """传承技能 = 工具箱（默认可用服务端工具） + 图书管理工具（治理类，需图书馆绑定） + 当前账号在线端侧实时上报的工具。
+
+    工具箱 与 图书管理工具 作为独立的“设备”出现在传承技能中，不再是单独的知识库条目。
+    """
+    toolbox_payload = _intrinsic_properties_payload(int(user_id or 0), scope="toolbox")
+    library_payload = _intrinsic_properties_payload(int(user_id or 0), scope="library")
+    # server_categories 仍用全量（用于服务端工具描述编辑）
     server_payload = _intrinsic_properties_payload(int(user_id or 0))
     server_categories = server_payload.get("categories") if isinstance(server_payload.get("categories"), list) else []
-    server_tools: List[Dict[str, Any]] = []
-    for category in server_categories:
-        if not isinstance(category, dict):
-            continue
-        namespace = str(category.get("namespace") or "").strip()
-        for spec in category.get("tools") or []:
-            if not isinstance(spec, dict):
-                continue
-            name = str(spec.get("name") or "").strip()
-            if not name:
-                continue
-            server_tools.append({
-                **spec,
-                "namespace": namespace,
-                "device_id": "heysure-server",
-                "device_type": "server",
-                "source": "server",
-            })
 
-    enriched_devices: List[Dict[str, Any]] = [{
-        "device_id": "heysure-server",
-        "device_type": "server",
-        "updated_at": _BUILTIN_UPDATED_AT,
-        "tool_count": len(server_tools),
-        "tools": server_tools,
-    }]
-    tools: List[Dict[str, Any]] = list(server_tools)
+    def _flatten_tools(payload: Dict[str, Any], device_id: str) -> List[Dict[str, Any]]:
+        out: List[Dict[str, Any]] = []
+        for category in (payload or {}).get("categories") or []:
+            if not isinstance(category, dict):
+                continue
+            namespace = str(category.get("namespace") or "").strip()
+            for spec in category.get("tools") or []:
+                if not isinstance(spec, dict):
+                    continue
+                name = str(spec.get("name") or "").strip()
+                if not name:
+                    continue
+                out.append({
+                    **spec,
+                    "namespace": namespace,
+                    "device_id": device_id,
+                    "device_type": "server",
+                    "source": "server",
+                })
+        return out
+
+    toolbox_tools = _flatten_tools(toolbox_payload, "toolbox")
+    library_tools = _flatten_tools(library_payload, "library")
+
+    enriched_devices: List[Dict[str, Any]] = [
+        {
+            "device_id": "toolbox",
+            "device_type": "server",
+            "updated_at": _BUILTIN_UPDATED_AT,
+            "tool_count": len(toolbox_tools),
+            "tools": toolbox_tools,
+        },
+        {
+            "device_id": "library",
+            "device_type": "server",
+            "updated_at": _BUILTIN_UPDATED_AT,
+            "tool_count": len(library_tools),
+            "tools": library_tools,
+        },
+    ]
+    tools: List[Dict[str, Any]] = list(toolbox_tools) + list(library_tools)
 
     online_devices: List[Dict[str, Any]] = []
     try:
@@ -1348,16 +1382,16 @@ def _inheritance_skills_payload(user_id: int = 0) -> Dict[str, Any]:
         })
     return {
         "description": (
-            "传承技能包含系统服务端内置 MCP 与当前账号在线设备实时上报的工具；"
-            "服务端工具说明可编辑，保存后同步 mcp.list_tools / mcp.describe_tool。"
+            "传承技能包含工具箱（默认可用）、图书管理工具（治理类需绑定图书馆）"
+            "以及当前账号在线设备实时上报的工具；服务端工具说明可编辑，保存后同步 mcp.list_tools / mcp.describe_tool。"
         ),
         "workshop": "图书馆（内置）",
         "online": bool(online_devices),
-        "server_total": len(server_tools),
+        "server_total": len(toolbox_tools) + len(library_tools),
         "server_categories": server_categories,
         "devices": enriched_devices,
         "device_total": len(enriched_devices),
-        "endpoint_device_total": max(0, len(enriched_devices) - 1),
+        "endpoint_device_total": len(online_devices),
         "total": len(tools),
         "tools": tools,
     }
@@ -2437,11 +2471,14 @@ def _emit_proposal_event(user_id: int, event: str, entry: Dict[str, Any]) -> Non
         loop = asyncio.get_running_loop()
         loop.create_task(_do_emit())
     except RuntimeError:
-        # 不在事件循环中（同步路由）— fire-and-forget
         import threading
-        def _runner():
+
+        from api.runtime.async_bridge import run_async
+
+        def _runner() -> None:
             try:
-                asyncio.run(_do_emit())
+                run_async(_do_emit())
             except Exception as exc:
                 logger.info(f"runner: {exc}")
+
         threading.Thread(target=_runner, daemon=True).start()

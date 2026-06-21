@@ -20,6 +20,7 @@ import {
   type UpsertProjectPayload,
 } from '@/api/projects'
 import { listConnectedDevices } from '@/api/devices'
+import type { LibraryMcpFullView } from '@/api/librarian'
 import { listWorkspaceFiles } from '@/api/workspace'
 import { getAuthToken } from '@/api/http'
 import { TOKEN_LIMIT_DEFAULTS } from '@/constants/dashboard'
@@ -33,8 +34,10 @@ export interface ConnectedDevice {
   isBrowserExtension?: boolean
   isAndroid?: boolean
   capabilities: string[]
-  /** 图书馆治理类 MCP（prompt/admin/device/knowledge.manage）；与 librarian.* 一并构成完整图书馆 MCP。 */
+  /** 图书馆治理类 MCP（prompt/admin/device/knowledge.manage）。 */
   libraryGovernanceTools?: string[]
+  /** 完整图书馆 MCP 目录（治理类），现并入传承技能作为独立设备。 */
+  libraryMcpCatalog?: LibraryMcpFullView | null
   version?: string
   lifecycle?: string
   group?: string
@@ -425,6 +428,9 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     capabilities: Array.isArray(raw?.capabilities) ? raw.capabilities.map((c: any) => String(c)) : [],
     libraryGovernanceTools: Array.isArray(raw?.libraryGovernanceTools)
       ? raw.libraryGovernanceTools.map((c: any) => String(c))
+      : undefined,
+    libraryMcpCatalog: raw?.libraryMcpCatalog && typeof raw.libraryMcpCatalog === 'object'
+      ? raw.libraryMcpCatalog as LibraryMcpFullView
       : undefined,
     version: raw?.version ? String(raw.version) : undefined,
     lifecycle: raw?.lifecycle ? String(raw.lifecycle) : undefined,

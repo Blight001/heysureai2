@@ -66,25 +66,11 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
     # write/system actions are gated inside the handler (write_ai=manager+,
     # read_system=manager+, write_system=assistant_admin+).
     "prompt.manage": ROLE_MEMBER,
-    # Unified knowledge-base tool. Member floor; the underlying workshop handlers
-    # re-check the per-action minimum role, and a workshop binding is required.
+    # Unified knowledge-base tool. Member floor; per-action gates live in the
+    # handler (create/edit/delete/install=manager+, update_skills/system=assistant_admin+).
     "knowledge.manage": ROLE_MEMBER,
     # Read-only semantic recall for the knowledge base.
     "knowledge.search": ROLE_MEMBER,
-    # Knowledge workshop package installation writes user-level global skills.
-    "librarian.install_skill_package": ROLE_MANAGER,
-    "librarian.edit_inheritance_thought": ROLE_MANAGER,
-    "librarian.delete_inheritance_thought": ROLE_MANAGER,
-    "librarian.create_inheritance_thought": ROLE_MANAGER,
-    # Knowledge workshop — read built-in knowledge categories (read-only for everyone).
-    "librarian.read_inheritance_skills": ROLE_MEMBER,
-    "librarian.read_intrinsic_skills": ROLE_MEMBER,
-    "librarian.read_intrinsic_personas": ROLE_MEMBER,
-    "librarian.read_system_prompts": ROLE_MANAGER,
-    # Editing built-in categories changes global/system config — raise to higher tiers.
-    "librarian.update_intrinsic_skills": ROLE_ASSISTANT_ADMIN,
-    "librarian.update_intrinsic_persona": ROLE_MANAGER,
-    "librarian.update_system_prompts": ROLE_ASSISTANT_ADMIN,
     # Send message — outbound to the human user; every tier by default.
     "message.send_to_user": ROLE_MEMBER,
     # Unified conversation tool (list/detail/create/delete/rename/clear/compress/
@@ -102,7 +88,7 @@ MCP_TOOL_MIN_ROLE: Dict[str, str] = {
 # 这些是治理/管理类能力（prompt 管理、管理员操作、设备管理、知识库管理）。其余
 # 服务端固定工具属于「工具箱」，每个 AI 默认即可用、无需绑定。``knowledge.manage``
 # 的门面早已在 workshop 引擎内校验绑定，这里一并登记以表达完整的图书馆工具集，
-# 中央分发处的绑定校验对它是幂等的。
+# 中央分发处的绑定校验对它是幂等的；知识库具体操作经 knowledge.manage action 分发。
 LIBRARY_BOUND_TOOLS: Set[str] = {
     "prompt.manage",
     "admin.manage",
@@ -284,6 +270,14 @@ def clamp_tools_json(user, tier: str, mcp_tools_json: Optional[str]) -> str:
         # Endpoint desktop/browser tools are governed exclusively by
         # AgentMcpPermission, not by AssistantAIConfig.mcp_tools.
         if is_endpoint_tool_config_name(tool):
+            continue
+        # 图书馆治理类工具在作坊 UI 按 AI 显式勾选；保留写入 mcp_tools，运行时仍由
+        # 绑定门槛 + enforce_min_role 约束，避免角色策略白名单把 prompt 目录里的
+        # manage 工具误剥掉。
+        if tool in LIBRARY_BOUND_TOOLS:
+            if tool not in seen:
+                clamped.append(tool)
+                seen.add(tool)
             continue
         # Unknown non-endpoint tools are governed elsewhere; keep them as-is.
         if tool not in names or tool in allowed:
