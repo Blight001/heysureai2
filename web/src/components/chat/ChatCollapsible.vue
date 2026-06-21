@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 
-defineProps<{
+const props = defineProps<{
   detailsClass?: string
   summaryClass?: string
   bodyClass?: string
+  defaultOpen?: boolean
 }>()
 
-const open = ref(false)
+const open = ref(!!props.defaultOpen)
 const innerRef = ref<HTMLElement | null>(null)
 const contentHeight = ref(0)
 
@@ -54,6 +55,13 @@ onMounted(() => {
   if (typeof ResizeObserver === 'undefined' || !innerRef.value) return
   resizeObserver = new ResizeObserver(() => syncOpenHeight())
   resizeObserver.observe(innerRef.value)
+
+  // Initial height for default-open case (otherwise height stays 0 and content is clipped)
+  if (open.value) {
+    requestAnimationFrame(() => {
+      contentHeight.value = measureContentHeight()
+    })
+  }
 })
 
 onUnmounted(() => {
@@ -63,9 +71,9 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div :class="['chat-collapsible', detailsClass, { 'is-open': open }]">
+  <div :class="['chat-collapsible', props.detailsClass, { 'is-open': open }]">
     <div
-      :class="['chat-collapsible-summary', summaryClass]"
+      :class="['chat-collapsible-summary', props.summaryClass]"
       role="button"
       tabindex="0"
       :aria-expanded="open"
@@ -78,7 +86,7 @@ onUnmounted(() => {
       class="chat-collapsible-content"
       :style="{ height: `${contentHeight}px` }"
     >
-      <div ref="innerRef" :class="['chat-collapsible-body', bodyClass]">
+      <div ref="innerRef" :class="['chat-collapsible-body', props.bodyClass]">
         <slot />
       </div>
     </div>

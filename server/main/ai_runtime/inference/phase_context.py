@@ -54,7 +54,7 @@ def build_phase_compaction_text(
     badge = "已完成" if status == "completed" else "未达成(failed)"
     summary = str(phase.get("summary") or "").strip()
     lines = [
-        f"[阶段{seq_human} {badge}] {title}",
+        f"[系统提示 · 阶段{seq_human} {badge}] {title}",
         f"阶段小结：{summary}" if summary else "",
         f"MCP 调用状态：{render_status_lines(statuses)}",
         "（为节省上下文并保持方向清晰，本阶段的深度思考与 MCP 详细结果已隐藏，仅保留以上状态与小结。）",

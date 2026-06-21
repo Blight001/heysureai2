@@ -47,6 +47,7 @@ const summaryText = computed(() => formatActivityGroupSummary(props.thinkCount, 
       details-class="group/activity"
       summary-class="flex items-center gap-1 py-0.5 text-[11px] leading-4 text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300 cursor-pointer select-none transition-colors"
       body-class="activity-group-body"
+      :default-open="true"
     >
       <template #summary>
         <span class="chat-collapsible-arrow text-[10px] leading-none">➣</span>

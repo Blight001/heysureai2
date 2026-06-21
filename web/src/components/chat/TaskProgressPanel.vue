@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { getAuthToken } from '@/api/http'
 import { fetchTaskPlan, type TaskPlanPhase, type TaskPlanResponse } from '@/api/task'
 
 /**
- * Task-mode progress panel. Renders nothing for ordinary conversations; when a
- * conversation is a task session it shows the flow: 安排 → 实施的阶段 N
- * （含子任务进度）→ 结束. The data is driven by the backend plan endpoint, so
- * the panel mirrors the runtime's authoritative plan state.
+ * Task-mode progress panel.
+ * - Default/compact: full vertical sidebar with details.
+ * - header=true: minimal left-to-right flow using *colored titles* only (no badges/"完成" text).
+ *   安排 = blue, phases colored by status (active=blue, completed=green, failed=red), 结束 = green/red.
+ * Renders nothing for ordinary conversations.
  */
 const props = withDefaults(defineProps<{
   configId?: number
@@ -16,11 +17,14 @@ const props = withDefaults(defineProps<{
   refreshSignal?: number
   /** Use tighter spacing when placed as sidebar inside chat dialog. */
   compact?: boolean
+  /** Render as a minimal horizontal flow next to the chat title. */
+  header?: boolean
 }>(), {
   configId: undefined,
   sessionId: '',
   refreshSignal: 0,
   compact: false,
+  header: false,
 })
 
 const emit = defineEmits<{
@@ -51,6 +55,10 @@ const refresh = async () => {
   loading.value = true
   try {
     data.value = await fetchTaskPlan(props.configId, sid, token)
+    // After data update (esp. from polling or signal), try to center active if user idle
+    if (props.header) {
+      nextTick(() => requestAutoCenterIfIdle())
+    }
   } catch {
     data.value = null
   } finally {
@@ -96,11 +104,223 @@ const phaseBadgeClass = (phase: TaskPlanPhase) => {
       return 'text-zinc-500 bg-zinc-100 dark:text-zinc-400 dark:bg-zinc-800'
   }
 }
+
+const phaseTitleClass = (phase: TaskPlanPhase) => {
+  switch (phase.status) {
+    case 'completed':
+      return 'text-emerald-600 dark:text-emerald-400'
+    case 'failed':
+      return 'text-rose-600 dark:text-rose-400'
+    case 'active':
+      return 'text-blue-600 dark:text-blue-400'
+    default:
+      return 'text-zinc-500 dark:text-zinc-400'
+  }
+}
+
+const endTitleClass = computed(() => {
+  if (finished.value) {
+    return outcome.value === 'failure'
+      ? 'text-rose-600 dark:text-rose-400'
+      : 'text-emerald-600 dark:text-emerald-400'
+  }
+  if (stage.value === 'finishing') {
+    return 'text-indigo-600 dark:text-indigo-400'
+  }
+  return 'text-zinc-400 dark:text-zinc-500'
+})
+
+// Hover details state (for header mode tooltips)
+const hovered = ref<null | { kind: 'arrange' | 'phase' | 'finish'; phase?: TaskPlanPhase }>(null)
+const showHover = (kind: 'arrange' | 'phase' | 'finish', phase?: TaskPlanPhase) => {
+  hovered.value = { kind, phase }
+}
+const clearHover = () => {
+  hovered.value = null
+}
+const keepTooltipOpen = () => { /* prevent clearHover when mouse moves into the tooltip */ }
+
+// --- Header mode enhancements: real-time updates, horizontal scroll, auto-center active ---
+const flowScrollRef = ref<HTMLDivElement | null>(null)
+const phaseEls = ref<Record<number, HTMLElement>>({})
+
+const lastUserScroll = ref(0)
+const setPhaseEl = (seq: number, el: any) => {
+  if (el) {
+    phaseEls.value[seq] = el as HTMLElement
+  } else {
+    delete phaseEls.value[seq]
+  }
+}
+
+const markUserInteraction = () => {
+  lastUserScroll.value = Date.now()
+}
+
+const scrollActiveToCenter = () => {
+  const container = flowScrollRef.value
+  if (!container) return
+  const active = phases.value.find(p => p.status === 'active')
+  if (!active) return
+  const el = phaseEls.value[active.seq]
+  if (!el) return
+  const elCenter = el.offsetLeft + el.offsetWidth / 2
+  const target = elCenter - container.clientWidth / 2
+  container.scrollTo({ left: Math.max(0, target), behavior: 'smooth' })
+}
+
+const requestAutoCenterIfIdle = () => {
+  if (Date.now() - lastUserScroll.value > 3000) {
+    nextTick(() => nextTick(scrollActiveToCenter))
+  }
+}
+
+// Polling for real-time plan status when displayed as header (top of chat)
+let headerPollInterval: ReturnType<typeof setInterval> | null = null
+const startPolling = () => {
+  stopPolling()
+  if (!props.header || props.configId == null || !props.sessionId) return
+  headerPollInterval = setInterval(() => {
+    void refresh()
+  }, 2000)
+}
+const stopPolling = () => {
+  if (headerPollInterval != null) {
+    clearInterval(headerPollInterval)
+    headerPollInterval = null
+  }
+}
+
+watch(() => [props.header, props.configId, props.sessionId] as const, () => {
+  if (props.header && props.configId != null && props.sessionId) {
+    startPolling()
+  } else {
+    stopPolling()
+  }
+}, { immediate: true })
+
+// Auto center active phase to middle of scroll view if user has not interacted in 3s
+const activePhaseSeq = computed(() => {
+  const act = phases.value.find(p => p.status === 'active')
+  return act ? act.seq : -1
+})
+
+watch(activePhaseSeq, (seq) => {
+  if (seq < 0) return
+  requestAutoCenterIfIdle()
+})
+
+watch(phases, () => {
+  requestAutoCenterIfIdle()
+}, { deep: true })
+
+onBeforeUnmount(() => {
+  stopPolling()
+})
 </script>
 
 <template>
+  <!-- Header mode: minimal horizontal flow placed next to title at top of dialog.
+       Status is shown purely via title color (no badges or "完成" labels).
+       Hover any item (安排 / 阶段 / 结束) to see details. -->
+  <div v-if="visible && props.header" class="relative">
+    <div
+      ref="flowScrollRef"
+      class="flex items-center gap-1 text-[10px] text-zinc-500 dark:text-zinc-400 whitespace-nowrap overflow-x-auto max-w-[480px] pb-1"
+      @wheel.passive="markUserInteraction"
+      @mousedown="markUserInteraction"
+    >
+      <!-- 安排（蓝色） -->
+      <span
+        class="font-medium text-blue-600 dark:text-blue-400 cursor-help hover:underline decoration-dotted"
+        @mouseenter="showHover('arrange')"
+        @mouseleave="clearHover"
+      >安排</span>
+      <span class="text-zinc-400">→</span>
+
+      <!-- 各阶段（颜色即状态） -->
+      <template v-for="phase in phases" :key="phase.seq">
+        <span
+          class="font-medium cursor-help hover:underline decoration-dotted"
+          :class="phaseTitleClass(phase)"
+          :ref="el => setPhaseEl(phase.seq, el)"
+          @mouseenter="showHover('phase', phase)"
+          @mouseleave="clearHover"
+        >{{ phase.title }}</span>
+        <span class="text-zinc-400">→</span>
+      </template>
+
+      <!-- 结束（成功绿 / 失败红） -->
+      <span
+        class="font-medium cursor-help hover:underline decoration-dotted"
+        :class="endTitleClass"
+        @mouseenter="showHover('finish')"
+        @mouseleave="clearHover"
+      >结束</span>
+    </div>
+
+    <!-- 共享悬停详情卡片（鼠标移到阶段上显示） -->
+    <div
+      v-if="hovered"
+      class="absolute left-0 top-full mt-1 z-[90] rounded-lg border border-zinc-200 bg-white/95 shadow-xl p-2 text-[11px] leading-snug text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-200 min-w-[210px] max-w-[280px]"
+      @mouseenter="keepTooltipOpen"
+      @mouseleave="clearHover"
+    >
+      <!-- 安排详情 -->
+      <template v-if="hovered.kind === 'arrange'">
+        <div class="font-semibold text-blue-700 dark:text-blue-400 mb-1">安排</div>
+        <div v-if="plan?.goal">目标：{{ plan.goal }}</div>
+        <div class="mt-0.5">共 {{ plan?.phase_count ?? phases.length }} 个阶段</div>
+        <div v-if="stage === 'planning'" class="mt-1 text-amber-600 dark:text-amber-400 text-[10px]">
+          正在制定分阶段计划…
+        </div>
+      </template>
+
+      <!-- 单个阶段详情 -->
+      <template v-else-if="hovered.kind === 'phase' && hovered.phase">
+        <div class="font-semibold mb-1">
+          阶段 {{ hovered.phase.seq + 1 }}：{{ hovered.phase.title }}
+        </div>
+        <div v-if="hovered.phase.goal" class="mt-0.5">目标：{{ hovered.phase.goal }}</div>
+        <div v-if="hovered.phase.done_signal" class="mt-0.5 text-zinc-500 dark:text-zinc-400">
+          结束标志：{{ hovered.phase.done_signal }}
+        </div>
+
+        <ul v-if="hovered.phase.actions?.length" class="mt-1 ml-3 list-disc space-y-0.5 text-[10px] text-zinc-600 dark:text-zinc-400">
+          <li v-for="(action, i) in hovered.phase.actions" :key="i">
+            {{ action.goal }}
+            <span v-if="action.done_signal" class="text-[9px] text-zinc-400">（{{ action.done_signal }}）</span>
+          </li>
+        </ul>
+
+        <div v-if="hovered.phase.summary" class="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400 line-clamp-2">
+          {{ hovered.phase.summary }}
+        </div>
+
+        <div class="mt-1 text-[10px]" :class="{
+          'text-blue-600 dark:text-blue-400': hovered.phase.status === 'active',
+          'text-emerald-600 dark:text-emerald-400': hovered.phase.status === 'completed',
+          'text-rose-600 dark:text-rose-400': hovered.phase.status === 'failed'
+        }">
+          状态：{{ phaseStatusLabel[hovered.phase.status] || hovered.phase.status }}
+        </div>
+      </template>
+
+      <!-- 结束详情 -->
+      <template v-else-if="hovered.kind === 'finish'">
+        <div class="font-semibold mb-1">结束</div>
+        <div v-if="finished">
+          {{ outcome === 'failure' ? '任务失败，已写入失败日志' : '任务完成，已写入成功日志' }}
+        </div>
+        <div v-else-if="stage === 'finishing'">所有阶段完成，正在总结收尾…</div>
+        <div v-else>待所有阶段完成后总结</div>
+      </template>
+    </div>
+  </div>
+
+  <!-- Original sidebar / default mode -->
   <div
-    v-if="visible"
+    v-if="visible && !props.header"
     :class="[
       'rounded-lg border border-zinc-200 bg-white/70 dark:border-zinc-700 dark:bg-zinc-900/60',
       props.compact ? 'px-1.5 py-1 text-[10px]' : 'px-2.5 py-2 text-[11px]'

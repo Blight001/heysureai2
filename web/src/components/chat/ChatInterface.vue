@@ -115,10 +115,9 @@ const stickToBottom = ref(true)
 let lastProgrammaticScrollTs = 0
 const PROGRAMMATIC_SCROLL_GRACE_MS = 260
 const currentSessionId = ref<string>('')
-// Bumped to make the task-progress panel refetch (session switch / run finish).
+// Bumped to make the task-progress panel (now header) refetch (session switch / run finish).
 const taskPlanRefreshSignal = ref(0)
 const bumpTaskPlan = () => { taskPlanRefreshSignal.value += 1 }
-const planSidebarVisible = ref(false)
 const sessionList = ref<SessionItem[]>([])
 const appliedEdits = ref<Set<string>>(new Set())
 const appliedSignatures = ref<Set<string>>(new Set())
@@ -1165,7 +1164,7 @@ const pollRunLive = async (epoch: number) => {
       if (incomingPhase !== 'idle') phaseEnterTs.value = Date.now()
     }
     const incomingTool = String(run.current_tool || '')
-    // Refresh the task-progress panel exactly when the flow advances.
+    // Refresh the task header progress exactly when the flow advances.
     if (incomingTool !== currentMcpTool.value
       && ['plan.create', 'plan.phase_complete', 'task.finish'].includes(incomingTool)) {
       bumpTaskPlan()
@@ -1613,16 +1612,25 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex flex-col h-full gap-3">
     <div class="flex items-center justify-between gap-2">
-      <ChatHeader
-        :currentSessionId="currentSessionId"
-        :sessionList="sessionList"
-        @change="loadChatHistory"
-        @create="createSessionFromButton"
-        @delete="deleteSession"
-        @batch-delete="deleteSessions"
-        @rename="renameSession"
-        @toggle-forward="toggleSessionForwardToBot"
-      />
+      <div class="flex items-center gap-2 min-w-0">
+        <ChatHeader
+          :currentSessionId="currentSessionId"
+          :sessionList="sessionList"
+          @change="loadChatHistory"
+          @create="createSessionFromButton"
+          @delete="deleteSession"
+          @batch-delete="deleteSessions"
+          @rename="renameSession"
+          @toggle-forward="toggleSessionForwardToBot"
+        />
+        <!-- 任务流程：显示在标题边上，从左到右只展示阶段标题 + 状态 -->
+        <TaskProgressPanel
+          :configId="props.aiConfigId"
+          :sessionId="currentSessionId"
+          :refreshSignal="taskPlanRefreshSignal"
+          header
+        />
+      </div>
       <div class="flex items-center gap-2">
         <span v-if="runStatusText" class="text-[11px] text-emerald-600 dark:text-emerald-400">{{ runStatusText }}</span>
         <button
@@ -1666,71 +1674,54 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 内部左右布局：左侧显示计划阶段，右侧是对话内容（消息+输入） -->
-    <div class="flex flex-1 min-h-0 gap-2 overflow-hidden">
-      <!-- 左侧：任务阶段 / 计划面板 -->
-      <div
-        v-if="planSidebarVisible"
-        class="w-56 flex-shrink-0 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50/70 p-1.5 text-[11px] dark:border-zinc-700 dark:bg-zinc-950/50"
-      >
-        <TaskProgressPanel
-          :configId="props.aiConfigId"
+    <!-- 聊天内容区：消息 + 输入（任务流程已移到顶部标题边上，水平显示） -->
+    <div class="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden">
+      <div ref="chatScrollRef" class="flex-1 overflow-y-auto">
+        <ChatConversationView
+          :baseMessages="chatMessages"
+          :sessionActive="!!currentSessionId"
+          :frontPromptText="configuredFrontPrompt"
+          :showFrontPrompt="false"
+          :frontPromptPlaceholder="'（当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt）'"
+          :mcpIcon="props.mcpIcon"
+          :mcpDynamicRule="props.mcpDynamicRule"
+          :aiConfigId="props.aiConfigId"
           :sessionId="currentSessionId"
-          :refreshSignal="taskPlanRefreshSignal"
-          :compact="true"
-          @visibility-change="planSidebarVisible = $event"
-        />
-      </div>
-
-      <!-- 右侧：聊天消息 + 输入 -->
-      <div class="flex flex-1 flex-col min-w-0 gap-2">
-        <div ref="chatScrollRef" class="flex-1 overflow-y-auto">
-          <ChatConversationView
-            :baseMessages="chatMessages"
-            :sessionActive="!!currentSessionId"
-            :frontPromptText="configuredFrontPrompt"
-            :showFrontPrompt="false"
-            :frontPromptPlaceholder="'（当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt）'"
-            :mcpIcon="props.mcpIcon"
-            :mcpDynamicRule="props.mcpDynamicRule"
-            :aiConfigId="props.aiConfigId"
-            :sessionId="currentSessionId"
-            :liveText="liveAssistantText"
-            :liveTargetText="liveTargetText"
-            :liveThinking="liveThinkingText"
-            :livePhase="currentRunPhase"
-            :nowTimestamp="isRunActive ? timeTick : undefined"
-            :liveSegmentStartedAt="currentRunPhase !== 'idle' ? phaseEnterTs ?? undefined : undefined"
-            :appliedEdits="appliedEditsArray"
-            :appliedSignatures="appliedSignaturesArray"
-            :actionResults="actionResults"
-            :actionResultsBySignature="actionResultsBySignature"
-            :isTyping="isTyping"
-            :stripMarkdownSymbols="!!props.stripMarkdownSymbols"
-            @delete="onConversationDelete"
-            @recall="onConversationRecall"
-            @apply="onConversationApply"
-            @revert="onConversationRevert"
-          />
-        </div>
-
-        <ChatInput
-          v-model="chatInput"
+          :liveText="liveAssistantText"
+          :liveTargetText="liveTargetText"
+          :liveThinking="liveThinkingText"
+          :livePhase="currentRunPhase"
+          :nowTimestamp="isRunActive ? timeTick : undefined"
+          :liveSegmentStartedAt="currentRunPhase !== 'idle' ? phaseEnterTs ?? undefined : undefined"
+          :appliedEdits="appliedEditsArray"
+          :appliedSignatures="appliedSignaturesArray"
+          :actionResults="actionResults"
+          :actionResultsBySignature="actionResultsBySignature"
           :isTyping="isTyping"
-          :isFileSelectorOpen="isFileSelectorOpen"
-          :allFiles="allFiles"
-          :selectedFiles="selectedFiles"
-          :currentPath="currentPath"
-          @send="sendChat"
-          @toggleFileSelector="handleToggleFileSelector"
-          @closeFileSelector="isFileSelectorOpen = false"
-          @navigateTo="navigateTo"
-          @navigateBack="navigateBack"
-          @toggleFile="toggleFileSelection"
-          @clearFiles="emit('update:selectedFiles', [])"
-          @refreshFiles="handleRefreshFiles"
+          :stripMarkdownSymbols="!!props.stripMarkdownSymbols"
+          @delete="onConversationDelete"
+          @recall="onConversationRecall"
+          @apply="onConversationApply"
+          @revert="onConversationRevert"
         />
       </div>
+
+      <ChatInput
+        v-model="chatInput"
+        :isTyping="isTyping"
+        :isFileSelectorOpen="isFileSelectorOpen"
+        :allFiles="allFiles"
+        :selectedFiles="selectedFiles"
+        :currentPath="currentPath"
+        @send="sendChat"
+        @toggleFileSelector="handleToggleFileSelector"
+        @closeFileSelector="isFileSelectorOpen = false"
+        @navigateTo="navigateTo"
+        @navigateBack="navigateBack"
+        @toggleFile="toggleFileSelection"
+        @clearFiles="emit('update:selectedFiles', [])"
+        @refreshFiles="handleRefreshFiles"
+      />
     </div>
   </div>
 </template>

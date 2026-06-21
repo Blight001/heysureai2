@@ -2538,7 +2538,7 @@ def _run_worker_impl(
                     )
                     # Fold the finished phase out of the live conversation: drop
                     # its deep-thinking + verbose MCP results, keep one status line.
-                    convo[boundary:] = [{"role": "user", "content": compaction_text}]
+                    convo[boundary:] = [{"role": "system", "content": compaction_text}]
                     now_ts = time.time()
                     try:
                         phase_context.mark_phase_messages_compressed(
@@ -2554,7 +2554,7 @@ def _run_worker_impl(
                             bg,
                             user_id,
                             ChatMessageCreate(
-                                role="user",
+                                role="system",
                                 content=compaction_text,
                                 tags="phase_summary",
                                 ai_config_id=ai_config_id,
@@ -2666,7 +2666,7 @@ def _run_worker_impl(
                         bg,
                         user_id,
                         ChatMessageCreate(
-                            role="user",
+                            role="system",
                             content="\n".join(finish_notice_lines),
                             tags="system_notice_task_complete",
                             ai_config_id=ai_config_id,
@@ -2743,7 +2743,7 @@ def _run_worker_impl(
                         bg,
                         user_id,
                         ChatMessageCreate(
-                            role="user",
+                            role="system",
                             content=completion_notice,
                             tags="system_notice_task_complete",
                             ai_config_id=ai_config_id,
