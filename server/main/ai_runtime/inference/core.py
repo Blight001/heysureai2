@@ -336,8 +336,7 @@ async def _call_mcp_via_runtime(
     Lazy-imports httpx so the in-process path keeps zero overhead. Uses the
     INTERNAL_TOKEN Bearer header from ``runtime.internal_http.internal_headers``.
     """
-    import httpx
-    from api.runtime.internal_http import internal_headers
+    from api.runtime.internal_http import get_internal_async_client
 
     # Carry the current run's session context across the process boundary so
     # tools in mcp-runtime can resolve the active session_id / channel /
@@ -353,14 +352,12 @@ async def _call_mcp_via_runtime(
     if run_ctx:
         body["session_context"] = run_ctx
 
-    async with httpx.AsyncClient(base_url=runtime_url.rstrip("/"), timeout=120.0) as client:
-        resp = await client.post(
-            "/internal/mcp/call",
-            headers=internal_headers(),
-            json=body,
-        )
-        resp.raise_for_status()
-        return resp.json()
+    # Reuse a process-level client so back-to-back tool calls keep the
+    # connection to mcp-runtime warm instead of re-handshaking each time.
+    client = get_internal_async_client(runtime_url, timeout=120.0)
+    resp = await client.post("/internal/mcp/call", json=body)
+    resp.raise_for_status()
+    return resp.json()
 
 
 async def _dispatch_endpoint_via_runtime(
@@ -370,7 +367,7 @@ async def _dispatch_endpoint_via_runtime(
     arguments: dict,
     ai_config_id: Optional[int],
     timeout_seconds: int = 120,
-    poll_interval: float = 1.0,
+    poll_interval: float = 0.25,
 ) -> Dict[str, object]:
     """Forward an endpoint-agent tool dispatch to ``connector-runtime`` and
     poll the persisted task row until it finishes.

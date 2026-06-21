@@ -57,6 +57,34 @@ def internal_headers() -> Dict[str, str]:
     return {"Authorization": f"Bearer {INTERNAL_TOKEN}"}
 
 
+# Process-level cache of long-lived httpx.AsyncClient instances, keyed by base
+# URL. Reusing the client keeps the TCP connection pool warm so each MCP call
+# does not pay a fresh connection handshake — the old per-call
+# ``async with httpx.AsyncClient(...)`` rebuilt the pool every time.
+_async_clients: Dict[str, Any] = {}
+
+
+def get_internal_async_client(base_url: str, timeout: float = 120.0):
+    """Return a shared ``httpx.AsyncClient`` for internal calls to ``base_url``.
+
+    The client carries the internal bearer header and is bound to the running
+    event loop on first use (each runtime process has exactly one loop, so the
+    cached client is safe to reuse across requests).
+    """
+    import httpx  # local import keeps httpx optional for the monolith path
+
+    key = base_url.rstrip("/")
+    client = _async_clients.get(key)
+    if client is None or client.is_closed:
+        client = httpx.AsyncClient(
+            base_url=key,
+            timeout=timeout,
+            headers=internal_headers(),
+        )
+        _async_clients[key] = client
+    return client
+
+
 class InternalClient:
     """Thin httpx client wrapper for cross-service calls.
 
