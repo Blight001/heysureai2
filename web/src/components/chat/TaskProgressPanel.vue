@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { getAuthToken } from '@/api/http'
 import { fetchTaskPlan, type TaskPlanPhase, type TaskPlanResponse } from '@/api/task'
 
@@ -140,6 +140,16 @@ const clearHover = () => {
 }
 const keepTooltipOpen = () => { /* prevent clearHover when mouse moves into the tooltip */ }
 
+// 触屏无 hover：点按切换详情卡片（再次点同一项则关闭），点击页面其它位置关闭
+const toggleHover = (kind: 'arrange' | 'phase' | 'finish', phase?: TaskPlanPhase) => {
+  if (hovered.value && hovered.value.kind === kind && hovered.value.phase?.seq === phase?.seq) {
+    clearHover()
+  } else {
+    showHover(kind, phase)
+  }
+}
+const onDocPointerDown = () => clearHover()
+
 // --- Header mode enhancements: real-time updates, horizontal scroll, auto-center active ---
 const flowScrollRef = ref<HTMLDivElement | null>(null)
 const phaseEls = ref<Record<number, HTMLElement>>({})
@@ -214,8 +224,13 @@ watch(phases, () => {
   requestAutoCenterIfIdle()
 }, { deep: true })
 
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocPointerDown)
+})
+
 onBeforeUnmount(() => {
   stopPolling()
+  document.removeEventListener('pointerdown', onDocPointerDown)
 })
 </script>
 
@@ -235,6 +250,8 @@ onBeforeUnmount(() => {
         class="font-medium text-blue-600 dark:text-blue-400 cursor-help hover:underline decoration-dotted"
         @mouseenter="showHover('arrange')"
         @mouseleave="clearHover"
+        @pointerdown.stop
+        @click.stop="toggleHover('arrange')"
       >安排</span>
       <span class="text-zinc-400">→</span>
 
@@ -246,6 +263,8 @@ onBeforeUnmount(() => {
           :ref="el => setPhaseEl(phase.seq, el)"
           @mouseenter="showHover('phase', phase)"
           @mouseleave="clearHover"
+          @pointerdown.stop
+          @click.stop="toggleHover('phase', phase)"
         >{{ phase.title }}</span>
         <span class="text-zinc-400">→</span>
       </template>
@@ -256,15 +275,18 @@ onBeforeUnmount(() => {
         :class="endTitleClass"
         @mouseenter="showHover('finish')"
         @mouseleave="clearHover"
+        @pointerdown.stop
+        @click.stop="toggleHover('finish')"
       >结束</span>
     </div>
 
     <!-- 共享悬停详情卡片（鼠标移到阶段上显示） -->
     <div
       v-if="hovered"
-      class="absolute left-0 top-full mt-1 z-[90] rounded-lg border border-zinc-200 bg-white/95 shadow-xl p-2 text-[11px] leading-snug text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-200 min-w-[210px] max-w-[280px]"
+      class="absolute left-0 top-full mt-1 z-[90] rounded-lg border border-zinc-200 bg-white/95 shadow-xl p-2 text-[11px] leading-snug text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-200 min-w-[210px] max-w-[280px] max-h-[60vh] overflow-y-auto overscroll-contain max-sm:fixed max-sm:inset-x-3 max-sm:bottom-3 max-sm:top-auto max-sm:min-w-0 max-sm:max-w-none max-sm:max-h-[50vh]"
       @mouseenter="keepTooltipOpen"
       @mouseleave="clearHover"
+      @pointerdown.stop
     >
       <!-- 安排详情 -->
       <template v-if="hovered.kind === 'arrange'">
