@@ -202,6 +202,8 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         name="plan.create",
         description=(
             "为复杂的长动作制定一份完整计划，行动前先调用（普通对话和任务对话都可使用）。"
+            "对于实际的多阶段操作任务，**请先调用 knowledge.search（或 librarian.consult，若已绑定）检索知识库中相关历史经验与流程**，"
+            "再基于检索结果拆分阶段。"
             "把整体目标拆成有序的多个阶段，"
             "每个阶段有明确的目标(goal)与结束标志(done_signal)，并可在 actions 里列出该阶段的子行动"
             "（每个子行动也有自己的 goal 与 done_signal）。"

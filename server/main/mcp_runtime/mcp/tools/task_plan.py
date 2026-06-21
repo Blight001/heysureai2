@@ -106,7 +106,7 @@ def _plan_get(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -
     with Session(engine) as session:
         plan = plan_service.get_active_plan(session, user_id, cfg_id, session_id)
         if plan is None:
-            return {"has_plan": False, "note": "当前没有进行中的计划。复杂任务请先用 plan.create 制定计划。"}
+            return {"has_plan": False, "note": "当前没有进行中的计划。复杂任务请先用 knowledge.search（或 librarian.consult）检索相关知识，再用 plan.create 制定计划。"}
         return {"has_plan": True, "plan": plan_service.plan_progress(session, plan)}
 
 

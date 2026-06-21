@@ -1003,7 +1003,7 @@ TASK_MANAGE_SCHEMA: Dict[str, Any] = {
                 "create 创建任务（需管理者+，支持 immediate/scheduled/recurring）；"
                 "update 接管更新任务标题/说明/优先级/状态/调度（需管理者+）；"
                 "delete 彻底删除任务并清理其会话（需管理者+）。"
-                "注意：完成任务用独立的 task.complete；对长动作分阶段执行用 plan 域 plan.create / plan.phase_complete，整个分阶段计划任务收尾用 task.finish。"
+                "注意：完成任务用独立的 task.complete；对长动作分阶段执行用 plan 域 plan.create / plan.phase_complete（多阶段操作任务建议先 knowledge.search 或 librarian.consult 检索经验后再 plan.create），整个分阶段计划任务收尾用 task.finish。"
             ),
         },
         # ---- list ----

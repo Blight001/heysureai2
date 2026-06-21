@@ -4,14 +4,23 @@ These are kept in a dedicated module so migration code and runtime code can
 import them without dragging in the full SQLModel table definitions.
 """
 
-DEFAULT_START_TASK_PROMPT = "你将收到一个任务，请先理解目标、约束与优先级，然后开始执行。"
-DEFAULT_RESUME_TASK_PROMPT = "请继续执行刚才被暂停的任务，先简要回顾当前进度，再继续推进直到可交付。"
+DEFAULT_START_TASK_PROMPT = """你将收到一个任务，请先理解目标、约束与优先级，然后开始执行。
+
+**知识检索优先规则**：对于实际的多阶段操作任务（步骤较多、需要规划、依赖历史经验或外部知识），在考虑调用 plan.create 制定分阶段计划之前，**必须优先主动调用 knowledge.search**（或 librarian.consult 如果已绑定图书馆）。使用任务标题、要求中的关键词或关键动作构造 query，检索知识库中相关的历史流程、经验、已沉淀的 SKILL 或总结。参考检索结果后再决定执行策略、是否制定计划、以及如何拆分阶段和定义 done_signal。
+
+如果用户说“安装某个 skill”或表达类似意图，默认将其解释为“安装传承思想（librarian install skill package / create inheritance thought）”，不要自行改写为其他安装对象。"""
+DEFAULT_RESUME_TASK_PROMPT = """请继续执行刚才被暂停的任务，先简要回顾当前进度，再继续推进直到可交付。
+
+**知识检索优先规则**：如果当前任务是复杂多阶段操作任务，在推进或调用 plan.create 之前，请优先使用 knowledge.search 检索相关历史知识与经验。"""
 DEFAULT_SUPERVISION_PROMPT = "系统监督提醒：请确认当前任务是否已完成。若已完成请调用 task.complete 标记；若未完成请给出剩余步骤并继续执行。"
 DEFAULT_COMPRESSION_PROMPT = """你正在把一段较长的对话历史压缩成摘要，以便在不超出上下文上限的情况下继续同一段对话。请阅读下面的对话历史，输出一段简洁但信息完整的中文摘要，必须保留：用户的核心目标与约束、已完成的工作与关键产出、尚未完成的事项与已知风险、重要的事实/数据/结论，以及接下来应继续推进的下一步。请省略寒暄与重复内容，只输出摘要正文，不要添加额外说明或前后缀。
 
 [待压缩的对话历史]
 {history}"""
-DEFAULT_TASK_PLAN_FLOW_PROMPT = """本任务默认直接执行，不强制进入 plan 模式。若任务步骤较多、依赖较多、风险较高或不确定性较强，再自行调用 plan.create 制定分阶段计划：
+DEFAULT_TASK_PLAN_FLOW_PROMPT = """本任务默认直接执行，不强制进入 plan 模式。若任务步骤较多、依赖较多、风险较高或不确定性较强，再自行调用 plan.create 制定分阶段计划。
+
+**重要规则（多阶段任务必做）**：当你判断这是一个**实际的多阶段操作任务**时，在调用 plan.create 进行计划安排**之前，必须先主动调用 knowledge.search**（或 librarian.consult 如果已绑定图书馆）。请基于任务标题、目标或关键指令构造 query，检索知识库中相关的历史流程、已沉淀的经验、类似任务的步骤、SKILL 或总结。参考检索结果后再决定是否制定计划、如何拆分阶段、定义每个阶段的 goal 与 done_signal。这样能复用有效知识、减少重复探索、提高执行质量。
+
 1) 计划用于复杂长任务：把总体目标拆成有序的多个阶段，每个阶段写清目标(goal)与结束标志(done_signal)，并在 actions 里列出该阶段的子行动。
 2) 进入 plan 模式后，系统会主动下发「当前阶段」让你执行，你无需自己查询计划进度。达成该阶段的结束标志后调用 plan.phase_complete 收尾本阶段（无需总结）；系统会自动隐藏上一阶段的深度思考与 MCP 详细结果、只保留调用状态，并自动下发下一个阶段，直到所有阶段完成。
 3) 所有阶段完成后，系统会要求你调用 task.finish 给出完整复盘总结（outcome=success/failure）；系统会把整个流程写入工作区的成功/失败日志，沉淀为可复用知识。简单、确定的任务直接做完后用 task.complete 收尾即可，不必先 plan。"""
@@ -22,7 +31,7 @@ DEFAULT_UI_BRAIN_VIEW_MODE = "sections"
 
 DEFAULT_MODEL_PRESETS = """[{"id":"deepseek-chat","name":"DeepSeek Chat","api_key":"sk-cb40bc0b0b894934919907913e337927","base_url":"https://api.deepseek.com/chat/completions","model":"deepseek-chat"}]"""
 
-DEFAULT_MCP_NAMESPACE_HINTS = """{"mcp":"MCP 自省入口。可调用工具已在系统提示的[可用MCP工具]目录中列出；用 mcp.describe_tool（支持 tools 批量或 query 搜索）取参数 schema 后即可调用。","task":"任务系统（定时/无人值守、在独立会话中运行的后台工作）。task.manage(action=list/create/update/delete) 管理任务；完成当前任务用 task.complete；分阶段计划任务用 task.finish 收尾。","plan":"计划/分阶段执行（普通对话与任务对话均可用）。简单、确定的任务可直接执行；若步骤较多、依赖较多或不确定性较强，再用 plan.create 制定分阶段计划。进入 plan 后，系统会自动下发当前阶段并统一控制进度；plan.phase_complete 收尾当前阶段（phase 是 plan 的子操作）。","workspace":"工作区。workspace.manage(action=read/tree/write/edit) 读取/列出/写入/编辑工作区内文件；需要运行程序或诊断命令用 workspace.run_command，联网查信息用 workspace.search。","admin":"系统总览（图书馆工具，需绑定图书馆）。用于查看在线智能体、运行状态和系统概况。","prompt":"Prompt 管理（图书馆工具，需绑定图书馆）。prompt.manage(action=list_targets/read_ai/write_ai/read_system/write_system) 读取或按权限修改 prompt。","device_mcp":"设备 MCP 自迭代（图书馆工具，需绑定图书馆）。device_mcp.manage 编排端侧工具的查看/编辑/上线。","conversation":"会话管理。conversation.manage(action=list/detail/create/delete/rename/clear/compress/switch/new) 操作会话。","knowledge":"知识库。knowledge.search 先按语义召回相关主题思想；knowledge.manage(action=...) 负责管理图书馆的传承思想与内置知识类目（图书馆工具，需绑定图书馆）。","ai":"AI 间通信。用于向其他 AI 发送询问、回复、通知或协作消息。","user":"用户通知。用于向用户发送异步消息。","web":"联网搜索。用于查询外部或实时信息。","memory":"长期记忆。用于写入、检索、更新和归档结构化记忆。","project":"项目管理。用于查看或维护项目记录。"}"""
+DEFAULT_MCP_NAMESPACE_HINTS = """{"mcp":"MCP 自省入口。可调用工具已在系统提示的[可用MCP工具]目录中列出；用 mcp.describe_tool（支持 tools 批量或 query 搜索）取参数 schema 后即可调用。","task":"任务系统（定时/无人值守、在独立会话中运行的后台工作）。task.manage(action=list/create/update/delete) 管理任务；完成当前任务用 task.complete；分阶段计划任务用 task.finish 收尾。","plan":"计划/分阶段执行（普通对话与任务对话均可用）。简单、确定的任务可直接执行；若步骤较多、依赖较多或不确定性较强，**先用 knowledge.search 检索知识库相关历史流程与经验**，再用 plan.create 制定分阶段计划。进入 plan 后，系统会自动下发当前阶段并统一控制进度；plan.phase_complete 收尾当前阶段（phase 是 plan 的子操作）。","workspace":"工作区。workspace.manage(action=read/tree/write/edit) 读取/列出/写入/编辑工作区内文件；需要运行程序或诊断命令用 workspace.run_command，联网查信息用 workspace.search。","admin":"系统总览（图书馆工具，需绑定图书馆）。用于查看在线智能体、运行状态和系统概况。","prompt":"Prompt 管理（图书馆工具，需绑定图书馆）。prompt.manage(action=list_targets/read_ai/write_ai/read_system/write_system) 读取或按权限修改 prompt。","device_mcp":"设备 MCP 自迭代（图书馆工具，需绑定图书馆）。device_mcp.manage 编排端侧工具的查看/编辑/上线。","conversation":"会话管理。conversation.manage(action=list/detail/create/delete/rename/clear/compress/switch/new) 操作会话。","knowledge":"知识库。knowledge.search 先按语义召回相关主题思想；knowledge.manage(action=...) 负责管理图书馆的传承思想与内置知识类目（图书馆工具，需绑定图书馆）。","ai":"AI 间通信。用于向其他 AI 发送询问、回复、通知或协作消息。","user":"用户通知。用于向用户发送异步消息。","web":"联网搜索。用于查询外部或实时信息。","memory":"长期记忆。用于写入、检索、更新和归档结构化记忆。","project":"项目管理。用于查看或维护项目记录。"}"""
 
 DEFAULT_MCP_DYNAMIC_RULE = """系统提示的[可用MCP工具]目录会一次性列出全部可调用工具的名称与简介，模型据此直接定位。需要参数时用 mcp.describe_tool（支持 tool 单个、tools 批量或 query 关键词搜索）取 schema；被加载的目标工具会在随后轮次直接可调用。
 

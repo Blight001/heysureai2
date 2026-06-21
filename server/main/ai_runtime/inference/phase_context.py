@@ -69,6 +69,8 @@ def render_plan_required_notice() -> str:
         "当前任务可以直接执行，不必强制进入 plan 模式。若步骤较多、依赖较多、风险较高或不确定性较强，"
         "再自行调用 plan.create 制定分阶段计划：把总体目标拆成有序的多个阶段，每个阶段写清目标(goal)"
         "与结束标志(done_signal)，可在 actions 里列出子行动。\n"
+        "在调用 plan.create 安排计划之前，请**先使用 knowledge.search**（或 librarian.consult，若已绑定图书馆；用任务目标/关键动作构造 query）"
+        "检索知识库中的相关历史流程、经验和已沉淀资料，再基于检索结果制定更准确的阶段计划。\n"
         "进入 plan 模式后，系统会自动下发当前阶段并统一控制进度。"
     )
 
