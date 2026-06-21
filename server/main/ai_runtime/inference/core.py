@@ -744,7 +744,7 @@ def _reset_convo_after_clear(
     result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else tool_result
     follow_up = (
         "[MCP执行确认]\n"
-        "系统已执行工具：conversation.edit（clear）\n"
+        "系统已执行工具：conversation.manage（action=clear）\n"
         "执行状态：成功\n\n"
         "[工具执行结果]\n"
         f"{_safe_json(result_payload)}\n\n"

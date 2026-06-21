@@ -221,7 +221,7 @@ def _prompt_list_targets(user_id: int, args: dict, ai_config_id: Optional[int] =
             for key, label in SYSTEM_PROMPT_FIELDS.items()
         ],
         "note": (
-            "AI 基础人格 prompt 用 prompt.read_ai 读取（来源 KnowledgeBase/personas/*.md）；"
+            "AI 基础人格 prompt 用 prompt.manage(action=read_ai) 读取（来源 KnowledgeBase/personas/*.md）；"
             "system_prompts 多为全局注入模板或旧版兜底字段。"
         ),
     }
@@ -311,7 +311,7 @@ def _prompt_read_system(user_id: int, args: dict, ai_config_id: Optional[int] = 
                 for field, label in SYSTEM_PROMPT_FIELDS.items()
             ],
             "note": (
-                "这些不是 AI 卡片当前运行的基础 prompt（基础 prompt 请用 prompt.read_ai 读取），"
+                "这些不是 AI 卡片当前运行的基础 prompt（基础 prompt 请用 prompt.manage(action=read_ai) 读取），"
                 "多为全局注入模板或旧版兜底字段。"
             ),
         }
