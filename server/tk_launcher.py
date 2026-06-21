@@ -313,7 +313,9 @@ class ServicePane:
             self.text.configure(state="normal")
             self._ensure_log_tags()
             txt = self.text._textbox  # type: ignore[attr-defined]
-            start_idx = txt.index("end")
+            # 注意：Text 控件结尾恒有一个隐式换行符，"end" 指向真正插入点的下一行，
+            # 必须用 "end-1c" 记录插入前的起点，否则 tag_add 得到空区间、颜色失效。
+            start_idx = txt.index("end-1c")
             txt.insert("end", line + "\n")
             end_idx = txt.index("end-1c")
             txt.tag_add(level, start_idx, end_idx)
@@ -365,7 +367,7 @@ class ServicePane:
         txt.delete("1.0", "end")
         for level, line in self.history:
             if self._should_show(level):
-                start_idx = txt.index("end")
+                start_idx = txt.index("end-1c")
                 txt.insert("end", line + "\n")
                 end_idx = txt.index("end-1c")
                 txt.tag_add(level, start_idx, end_idx)
