@@ -146,7 +146,7 @@ const frontPromptBaseText = computed(() => {
     || configuredFrontPrompt.value
     || '运行时 Prompt 预览加载中或暂不可用'
 })
-const frontPromptBodyText = computed(() => stripPromptSection(frontPromptBaseText.value, '可用MCP工具'))
+const frontPromptBodyText = computed(() => stripPromptSection(stripPromptSection(frontPromptBaseText.value, '动态 MCP 说明'), '可用MCP工具'))
 const frontPromptMcpCatalogText = computed(() => {
   if (frontPromptToolMcpEnabled.value === false) {
     return '- （MCP 未启用）'
