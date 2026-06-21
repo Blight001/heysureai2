@@ -83,6 +83,27 @@ const linkedConfigId = (device: ConnectedDevice): number | null => {
   return Number.isFinite(id) && id > 0 ? id : null
 }
 
+// For multi-bind devices (toolbox), return all bound AI config ids (from server boundAiConfigIds or fallback to single)
+const linkedConfigIds = (device: ConnectedDevice): number[] => {
+  if (isToolboxDevice(device)) {
+    const ids = Array.isArray(device.boundAiConfigIds)
+      ? device.boundAiConfigIds.filter((n) => Number.isFinite(n) && n > 0)
+      : []
+    const single = linkedConfigId(device)
+    if (single && !ids.includes(single)) ids.push(single)
+    return Array.from(new Set(ids))
+  }
+  const single = linkedConfigId(device)
+  return single ? [single] : []
+}
+
+const linkedMembersForDevice = (device: ConnectedDevice) => {
+  const ids = linkedConfigIds(device)
+  return ids
+    .map((id) => assignableMembers.value.find((m: any) => Number(m.aiConfigId) === id))
+    .filter(Boolean)
+}
+
 // Current dropdown value: an explicit pick if the operator changed it, else the
 // device's existing binding.
 const selectionFor = (device: ConnectedDevice): string => {
@@ -134,6 +155,25 @@ const unassign = async (device: ConnectedDevice) => {
     }
   } catch (err: any) {
     errors[device.id] = err?.message || '解绑失败'
+  } finally {
+    busy[device.id] = false
+  }
+}
+
+// Specific unbind for multi-bind toolbox: unbind only the given AI id from the toolbox
+const unbindSpecific = async (device: ConnectedDevice, aiConfigId: number) => {
+  if (!isToolboxDevice(device)) return
+  busy[device.id] = true
+  errors[device.id] = ''
+  try {
+    await setWorkshopBinding(aiConfigId, device.id, false)
+    // refresh local override / let socket update
+    // remove from any local override if matches
+    if (bindingOverride[device.id] === aiConfigId) delete bindingOverride[device.id]
+    // force reload devices to see updated bound list
+    // (socket device:list will refresh, or we can call load)
+  } catch (err: any) {
+    errors[device.id] = err?.message || '解除绑定失败'
   } finally {
     busy[device.id] = false
   }
@@ -213,19 +253,28 @@ const linkedMember = (device: ConnectedDevice) => {
 
 const hasLinkedMember = (device: ConnectedDevice) => !!linkedMember(device)
 
-const memberPanelClass = (device: ConnectedDevice) => hasLinkedMember(device)
+// For toolbox treat as "linked" if has any bound
+const hasAnyLinked = (device: ConnectedDevice) => isToolboxDevice(device) ? linkedConfigIds(device).length > 0 : hasLinkedMember(device)
+
+const memberPanelClass = (device: ConnectedDevice) => hasAnyLinked(device)
   ? 'border-emerald-200 bg-emerald-50/80 dark:border-emerald-500/30 dark:bg-emerald-500/10'
   : 'border-amber-200 bg-amber-50/80 dark:border-amber-500/30 dark:bg-amber-500/10'
 
-const deviceCardClass = (device: ConnectedDevice) => hasLinkedMember(device)
+const deviceCardClass = (device: ConnectedDevice) => hasAnyLinked(device)
   ? 'border-emerald-200 bg-emerald-50/60 dark:border-emerald-500/30 dark:bg-emerald-500/10'
   : 'border-amber-200 bg-amber-50/60 dark:border-amber-500/30 dark:bg-amber-500/10'
 
-const memberLabelClass = (device: ConnectedDevice) => hasLinkedMember(device)
+const memberLabelClass = (device: ConnectedDevice) => hasAnyLinked(device)
   ? 'text-emerald-600 dark:text-emerald-300'
   : 'text-amber-600 dark:text-amber-300'
 
-const memberStatusLabel = (device: ConnectedDevice) => hasLinkedMember(device) ? '已链接成员' : '未链接成员'
+const memberStatusLabel = (device: ConnectedDevice) => {
+  if (isToolboxDevice(device)) {
+    const n = linkedConfigIds(device).length
+    return n > 0 ? `${n} 个 AI 已绑定` : '未绑定 AI'
+  }
+  return hasLinkedMember(device) ? '已链接成员' : '未链接成员'
+}
 
 const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(device)
   ? 'border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/15 dark:text-emerald-200'
@@ -261,7 +310,7 @@ const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(devi
 
       <div class="mt-2 rounded-lg border p-2" :class="memberPanelClass(device)">
         <div v-if="isToolboxDevice(device)" class="mb-1 text-[10px] text-indigo-600 dark:text-indigo-300">
-          工具箱支持多绑：分配操作会为该 AI 增加绑定（可多次分配不同成员）。
+          工具箱支持多绑：分配操作会为选中的 AI 增加绑定。可多次分配不同成员。绑定后该 AI 的 prompt 动态 MCP 会包含工具箱工具，MCP 权限范围生效。
         </div>
         <div class="mb-1 flex items-center justify-between gap-2">
           <div class="text-[10px]" :class="memberLabelClass(device)">分配成员</div>
@@ -269,7 +318,23 @@ const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(devi
             {{ memberStatusLabel(device) }}
           </span>
         </div>
-        <div class="flex items-center gap-2 text-[10px] leading-tight">
+
+        <!-- Multi-bind display for toolbox: list all bound AIs with individual unbind -->
+        <div v-if="isToolboxDevice(device) && linkedConfigIds(device).length > 0" class="mb-2">
+          <div class="text-[9px] mb-0.5 text-zinc-500">已绑定 AI（这些 AI 的对话 prompt 中会出现 工具箱 MCP）：</div>
+          <div v-for="mid in linkedConfigIds(device)" :key="mid" class="flex justify-between items-center text-[10px] bg-zinc-50 dark:bg-zinc-800 px-1 py-0.5 rounded mb-0.5">
+            <span>{{ assignableMembers.find((m: any) => Number(m.aiConfigId) === mid)?.name || 'AI-' + mid }} (ID: {{ mid }})</span>
+            <button
+              :disabled="busy[device.id]"
+              class="text-[9px] px-1 py-0 rounded border hover:bg-rose-50"
+              @click="unbindSpecific(device, mid)"
+            >解除</button>
+          </div>
+        </div>
+        <div v-else-if="isToolboxDevice(device)" class="text-[10px] text-amber-600 mb-1">暂无 AI 绑定工具箱。</div>
+
+        <!-- Single display for other devices -->
+        <div v-if="!isToolboxDevice(device)" class="flex items-center gap-2 text-[10px] leading-tight">
           <span
             class="min-w-0 flex-1 truncate font-semibold"
             :class="hasLinkedMember(device)
@@ -286,7 +351,7 @@ const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(devi
           </span>
         </div>
         <div
-          v-if="hasLinkedMember(device)"
+          v-if="!isToolboxDevice(device) && hasLinkedMember(device)"
           class="mt-0.5 truncate text-[10px] leading-tight text-emerald-700/80 dark:text-emerald-200/80"
         >
           {{ linkedMember(device)?.currentTaskTitle || linkedMember(device)?.currentTask || '等待任务' }}
@@ -314,7 +379,7 @@ const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(devi
             {{ busy[device.id] ? '...' : '分配' }}
           </button>
           <button
-            v-if="hasLinkedMember(device)"
+            v-if="!isToolboxDevice(device) && hasLinkedMember(device)"
             type="button"
             :disabled="busy[device.id]"
             class="shrink-0 rounded border border-zinc-200 px-2 py-1 text-[10px] font-medium text-zinc-500 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -344,7 +409,7 @@ const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(devi
         v-else-if="isToolboxDevice(device) || (isEndpointDevice(device) && !isWorkshopDevice(device))"
         class="mt-2"
         :device-id="device.id"
-        :refresh-key="`${device.aiConfigId ?? ''}-${device.lifecycle ?? ''}`"
+        :refresh-key="`${(isToolboxDevice(device) ? (linkedConfigIds(device).join(',') || 'multi') : (device.aiConfigId ?? ''))}-${device.lifecycle ?? ''}`"
       />
       <div v-else-if="device.capabilities.length && !(isWorkshopDevice(device) && device.libraryMcpCatalog)" class="mt-2 flex flex-wrap gap-1">
         <span

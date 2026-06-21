@@ -1380,7 +1380,9 @@ def _run_worker_impl(
                             str(tool).strip() for tool in tools if isinstance(tool, str) and str(tool).strip()
                         }
                         from connector_runtime.dispatch.desktop_device_tools import strip_endpoint_tool_config_names
+                        from api.mcp_tool_aliases import fully_clean_tool_names
 
+                        effective_tool_allowlist = fully_clean_tool_names(effective_tool_allowlist)
                         effective_tool_allowlist = strip_endpoint_tool_config_names(
                             with_workspace_read_by_name_compat(effective_tool_allowlist)
                         )
@@ -1419,6 +1421,10 @@ def _run_worker_impl(
             effective_tool_allowlist = _filter_tools_for_current_bindings(
                 effective_tool_allowlist, user_id, ai_config_id
             )
+
+            # 最后再彻底清理一次老名字，防止任何路径残留
+            from api.mcp_tool_aliases import fully_clean_tool_names
+            effective_tool_allowlist = fully_clean_tool_names(effective_tool_allowlist)
 
             if merged_system_prompt:
                 system_prompt = merged_system_prompt

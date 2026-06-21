@@ -246,3 +246,54 @@ def toolbox_tools_for_config(ai_config_id: Optional[int], user_id: Optional[int]
         return tb_all
 
     return tb_all & scope
+
+
+def sanitize_mcp_tools(raw: Optional[str], *, user_id: Optional[int] = None, ai_config_id: Optional[int] = None) -> str:
+    """彻底清理一份 mcp_tools 字符串：
+    - 归一并删除所有老细粒度名字（admin.get_overview 等）
+    - 如果传了 user_id + ai_config_id，会根据当前绑定状态过滤掉需要工具箱/图书馆的工具
+    - 保留自省工具
+    返回可直接存回 AssistantAIConfig.mcp_tools 的 JSON 字符串。
+    """
+    from api.mcp_tool_aliases import fully_clean_tool_names
+    from api.services.task_system import with_workspace_read_by_name_compat
+    from connector_runtime.dispatch.desktop_device_tools import strip_endpoint_tool_config_names
+    from mcp_runtime.mcp.core import MCP_INTROSPECTION_TOOLS
+    import json
+
+    try:
+        parsed = json.loads(raw or "[]")
+        if not isinstance(parsed, list):
+            parsed = []
+        names = {str(x).strip() for x in parsed if isinstance(x, str) and str(x).strip()}
+
+        # 1. 彻底消灭老名字
+        names = fully_clean_tool_names(names)
+
+        # 2. 基础处理
+        names = strip_endpoint_tool_config_names(with_workspace_read_by_name_compat(names))
+        names.update(MCP_INTROSPECTION_TOOLS)
+
+        # 3. 如果提供了绑定信息，按当前绑定状态进一步清理 gated 工具
+        if user_id and ai_config_id:
+            try:
+                from api.workshop_bindings import config_bound_to_library
+                from mcp_runtime.mcp.permissions import LIBRARY_BOUND_TOOLS
+
+                protected = set(MCP_INTROSPECTION_TOOLS or set())
+
+                if not config_bound_to_library(int(user_id), int(ai_config_id)):
+                    names -= (set(LIBRARY_BOUND_TOOLS) - protected)
+
+                if not config_bound_to_toolbox(int(user_id), int(ai_config_id)):
+                    gated = {n for n in names if is_toolbox_gated_tool(n)}
+                    names -= gated
+                    names |= protected
+            except Exception:
+                pass  # fail soft
+
+        cleaned_list = sorted(n for n in names if n)
+        return json.dumps(cleaned_list, ensure_ascii=False)
+    except Exception:
+        # 最坏情况返回只保留自省工具的干净列表
+        return json.dumps(sorted(MCP_INTROSPECTION_TOOLS), ensure_ascii=False)

@@ -102,8 +102,8 @@ def _parse_allowed_tools_for_cfg(cfg: Optional[AssistantAIConfig]) -> set[str]:
         if not isinstance(parsed, list):
             return set()
         raw_tools = {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
-        from api.mcp_tool_aliases import normalize_legacy_tool_names
-        raw_tools = normalize_legacy_tool_names(raw_tools)
+        from api.mcp_tool_aliases import fully_clean_tool_names
+        raw_tools = fully_clean_tool_names(raw_tools)
         raw_tools = strip_endpoint_tool_config_names(with_workspace_read_by_name_compat(raw_tools))
         raw_tools.update(MCP_INTROSPECTION_TOOLS)
         raw_tools.update(endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
@@ -435,9 +435,10 @@ def _build_dynamic_mcp_explanation(
         from mcp_runtime.mcp import registry as mcp_registry
         from api.device_presence import online_tool_defs
         from connector_runtime.dispatch.desktop_device_tools import is_endpoint_agent_tool
+        from api.mcp_tool_aliases import fully_clean_tool_names
 
         prompt_tools: list[dict] = []
-        allowed_set = set(allowed or set())
+        allowed_set = fully_clean_tool_names(allowed or set())
 
         # server tools
         for item in mcp_registry.list_tools():

@@ -8,6 +8,7 @@ export interface ConnectedDeviceRow {
   platform?: string
   aiConfigId?: number
   ai_config_id?: number
+  boundAiConfigIds?: number[]
   isWindowsDesktop?: boolean
   isBrowserExtension?: boolean
   isAndroid?: boolean

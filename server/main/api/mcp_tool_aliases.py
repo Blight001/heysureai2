@@ -65,3 +65,13 @@ def normalize_legacy_tool_names(names: Iterable[str]) -> Set[str]:
         if key:
             out.add(LEGACY_TOOL_RENAMES.get(key, key))
     return out
+
+
+def fully_clean_tool_names(names: Iterable[str]) -> Set[str]:
+    """彻底清理工具名列表：归一旧名 + 彻底删除任何残留的老细粒度名字 + 去重。
+    确保 prompt 里永远不会再出现 admin.get_overview / prompt.read_ai 这类老名字。
+    """
+    normalized = normalize_legacy_tool_names(names)
+    legacy_old_names = set(LEGACY_TOOL_RENAMES.keys())
+    cleaned = {n for n in normalized if n not in legacy_old_names}
+    return cleaned

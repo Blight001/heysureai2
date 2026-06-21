@@ -163,6 +163,10 @@ def build_effective_system_prompt(
         effective_tool_allowlist, user.id, ai_config_id
     )
 
+    # 最后再彻底清理一次老名字
+    from api.mcp_tool_aliases import fully_clean_tool_names
+    effective_tool_allowlist = fully_clean_tool_names(effective_tool_allowlist)
+
     if merged_system_prompt:
         system_prompt = merged_system_prompt
     if is_task_runtime:
@@ -200,16 +204,15 @@ def build_effective_system_prompt(
 
 def _parse_allowed_tools(raw: Optional[str]) -> set[str]:
     from connector_runtime.dispatch.desktop_device_tools import strip_endpoint_tool_config_names
-    from api.mcp_tool_aliases import normalize_legacy_tool_names
+    from api.mcp_tool_aliases import fully_clean_tool_names
 
     try:
         parsed = json.loads(raw or "[]")
         if not isinstance(parsed, list):
             return set()
         raw_tools = {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
-        # 把已落库的旧细粒度名（conversation.create / admin.get_overview…）就地归一成
-        # 当前的 *.manage，避免它们以「注册表已无、无描述」的死工具出现在动态目录里。
-        raw_tools = normalize_legacy_tool_names(raw_tools)
+        # 彻底清理：归一旧名 + 强制剔除任何残留的老名字，确保 prompt 里干净
+        raw_tools = fully_clean_tool_names(raw_tools)
         return strip_endpoint_tool_config_names(with_workspace_read_by_name_compat(raw_tools))
     except Exception:
         return set()

@@ -142,6 +142,28 @@ async def update_workshop_binding(
     stored = set_workshop_binding(
         user.id, device_id, cfg.id, bound=bool(payload.bound), single=not is_toolbox
     )
+
+    # 解绑工具箱时，顺便把这个 AI 配置里残留的老 MCP 名字和 gated 工具清理干净
+    if is_toolbox and not payload.bound:
+        try:
+            from tools.engine import sanitize_mcp_tools
+            cleaned = sanitize_mcp_tools(cfg.mcp_tools, user_id=user.id, ai_config_id=cfg.id)
+            if cleaned != (cfg.mcp_tools or ""):
+                cfg.mcp_tools = cleaned
+                session.add(cfg)
+                session.commit()
+                session.refresh(cfg)
+        except Exception:
+            pass
+
+    # 绑定/解绑后推送更新 device list，让作坊面板能立即看到 toolbox 的 boundAiConfigIds 变化
+    try:
+        from api.device_live import emit_agent_list_for_user
+        import asyncio
+        asyncio.create_task(emit_agent_list_for_user(user.id))
+    except Exception:
+        pass
+
     return {
         "ai_config_id": cfg.id,
         "device_id": device_id,

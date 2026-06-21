@@ -30,6 +30,8 @@ export interface ConnectedDevice {
   name: string
   platform?: string
   aiConfigId?: number
+  /** 对于多绑设备（如工具箱），这里列出所有已绑定的 AI config id */
+  boundAiConfigIds?: number[]
   isWindowsDesktop?: boolean
   isBrowserExtension?: boolean
   isAndroid?: boolean
@@ -422,6 +424,9 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     name: String(raw?.name ?? raw?.id ?? 'agent'),
     platform: raw?.platform ? String(raw.platform) : undefined,
     aiConfigId: parseConnectedAiConfigId(raw),
+    boundAiConfigIds: Array.isArray(raw?.boundAiConfigIds)
+      ? raw.boundAiConfigIds.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n) && n > 0)
+      : undefined,
     isWindowsDesktop: !!raw?.isWindowsDesktop,
     isBrowserExtension: !!raw?.isBrowserExtension,
     isAndroid: !!raw?.isAndroid,
