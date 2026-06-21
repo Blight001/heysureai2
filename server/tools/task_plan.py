@@ -216,3 +216,14 @@ def _plan_finish(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
         pass
 
     return result
+
+
+def _task_finish_redirect(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "task.finish 不存在。"
+            "简单任务执行完成后自然结束即可，无需调用任何收尾工具；"
+            "若你已使用 plan.create 制定了分阶段计划，请调用 plan.finish（带 outcome + summary）正式收尾。"
+        ),
+    )

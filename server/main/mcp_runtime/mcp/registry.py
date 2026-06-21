@@ -16,6 +16,7 @@ from tools.task_plan import (
     _phase_complete,
     _plan_create,
     _plan_finish,
+    _task_finish_redirect,
 )
 from tools.prompts import (
     _prompt_manage,
@@ -270,6 +271,16 @@ def _register_builtin_tools(registry: MCPRegistry) -> None:
         },
         handler=_plan_finish,
         destructive=True,
+    ))
+    registry.register(MCPTool(
+        name="task.finish",
+        description=(
+            "【此工具不存在】task.finish 已被移除。"
+            "简单任务执行完成后自然结束即可；若已使用 plan.create 制定计划，请调用 plan.finish 收尾。"
+        ),
+        input_schema={"type": "object", "properties": {}},
+        handler=_task_finish_redirect,
+        destructive=False,
     ))
 
     # 与用户通信：把底层机器人投递封装为业务语义上的"给用户发消息"。

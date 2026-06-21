@@ -101,6 +101,10 @@ def normalize_system_auto_control(raw: Optional[str]) -> Dict[str, Any]:
     cfg["enabled"] = True
     cfg["start_task_prompt"] = str(cfg.get("start_task_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["start_task_prompt"]).strip()
     cfg["resume_task_prompt"] = str(cfg.get("resume_task_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["resume_task_prompt"]).strip()
+    # Clear stale supervision prompts that reference the deleted task.complete tool so
+    # they fall back to the current default (which uses natural completion instead).
+    if "task.complete" in str(cfg.get("supervision_prompt") or ""):
+        cfg["supervision_prompt"] = ""
     cfg["supervision_prompt"] = str(cfg.get("supervision_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["supervision_prompt"]).strip()
     cfg["compression_prompt"] = str(cfg.get("compression_prompt") or DEFAULT_SYSTEM_AUTO_CONTROL["compression_prompt"]).strip()
     raw_tasks = cfg.get("tasks")
