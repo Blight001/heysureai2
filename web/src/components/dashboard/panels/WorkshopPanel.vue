@@ -139,7 +139,7 @@ const unassign = async (device: ConnectedDevice) => {
   }
 }
 
-// 内置工具箱作坊：多绑、默认自动绑定全部 AI（按 device_id 前缀识别，无需新增字段）。
+// 内置工具箱作坊：多绑，现在在作坊面板支持分配绑定 + MCP 范围勾选（像其他设备一样）。
 const isToolboxDevice = (device: ConnectedDevice) => String(device.id || '').startsWith('toolbox_builtin_')
 
 const deviceTypeLabel = (device: ConnectedDevice) => {
@@ -259,13 +259,10 @@ const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(devi
         </span>
       </div>
 
-      <div
-        v-if="isToolboxDevice(device)"
-        class="mt-2 rounded-lg border border-indigo-200 bg-indigo-50/60 p-2 text-[10px] leading-relaxed text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200"
-      >
-        工具箱默认绑定全部 AI（多绑），每个 AI 自动获得默认工具集；如需对某个 AI 增减，请在「AI 配置」里管理。
-      </div>
-      <div v-else class="mt-2 rounded-lg border p-2" :class="memberPanelClass(device)">
+      <div class="mt-2 rounded-lg border p-2" :class="memberPanelClass(device)">
+        <div v-if="isToolboxDevice(device)" class="mb-1 text-[10px] text-indigo-600 dark:text-indigo-300">
+          工具箱支持多绑：分配操作会为该 AI 增加绑定（可多次分配不同成员）。
+        </div>
         <div class="mb-1 flex items-center justify-between gap-2">
           <div class="text-[10px]" :class="memberLabelClass(device)">分配成员</div>
           <span class="shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-medium" :class="memberStatusBadgeClass(device)">
@@ -341,9 +338,10 @@ const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(devi
         @governance-saved="tools => onGovernanceSaved(device, tools)"
       />
 
-      <!-- Endpoint agents: edit their per-(AI, type) MCP permission scope. 图书馆 / 工具箱走统一面板。 -->
+      <!-- Endpoint agents: edit their per-(AI, type) MCP permission scope.
+           图书馆走 LibraryMcpUnifiedPanel；工具箱现在像其他 MCP 一样在作坊面板支持绑定 AI + 勾选范围。 -->
       <DeviceMcpScopeEditor
-        v-else-if="isEndpointDevice(device) && !isToolboxDevice(device) && !isWorkshopDevice(device)"
+        v-else-if="isToolboxDevice(device) || (isEndpointDevice(device) && !isWorkshopDevice(device))"
         class="mt-2"
         :device-id="device.id"
         :refresh-key="`${device.aiConfigId ?? ''}-${device.lifecycle ?? ''}`"

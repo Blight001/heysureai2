@@ -360,7 +360,7 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                     >刷新</button>
                   </div>
                   <p class="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-                    工具箱：每个 AI 默认绑定，提供系统固定工具集（多绑，可在此解绑收回）。图书馆：治理类工具，1:1 只绑一个 AI 数字成员。
+                    工具箱：绑定后提供系统固定工具集（支持多绑，可在此或「作坊」面板管理绑定与 MCP 范围）。图书馆：治理类工具，1:1 只绑一个 AI 数字成员。
                   </p>
                   <div v-if="workshopLoading" class="mt-2 text-[11px] text-zinc-400">加载中…</div>
                   <div v-else-if="workshopError" class="mt-2 text-[11px] text-rose-500">{{ workshopError }}</div>

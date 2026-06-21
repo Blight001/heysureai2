@@ -56,7 +56,7 @@ def _presence_device_type(session: Session, user_id: int, device_id: str) -> Opt
         .order_by(DevicePresence.updated_at.desc(), DevicePresence.id.desc())
     ).first()
     device_type = str(row.device_type or "").strip() if row else ""
-    return device_type if device_type in {"desktop", "browser", "android", "workshop"} else None
+    return device_type if device_type in {"desktop", "browser", "android", "workshop", "toolbox"} else None
 
 
 def _device_type_for_binding(session: Session, user_id: int, device_id: str) -> Optional[str]:
@@ -117,6 +117,13 @@ def _scope_view(agent: dict, user_id: int) -> dict:
             from workshop import engine as workshop_engine
 
             tool_defs = workshop_engine.tool_defs_map()
+        except Exception:
+            tool_defs = {}
+    if device_type == "toolbox" and not tool_defs:
+        try:
+            from tools import engine as toolbox_engine
+
+            tool_defs = toolbox_engine.toolbox_tool_defs_map()
         except Exception:
             tool_defs = {}
     return {
@@ -245,7 +252,7 @@ async def get_agent_mcp_scope(
     if not agent:
         raise HTTPException(status_code=404, detail="设备未连接")
     if not device_type_of(agent):
-        raise HTTPException(status_code=400, detail="该设备不是可管理的端点 Agent")
+        raise HTTPException(status_code=400, detail="该设备不是可管理的端点 Agent（不支持 MCP 范围管理）")
     return _scope_view(agent, user.id)
 
 
@@ -269,7 +276,7 @@ async def set_agent_mcp_scope(
         raise HTTPException(status_code=404, detail="设备未连接")
     device_type = device_type_of(agent)
     if not device_type:
-        raise HTTPException(status_code=400, detail="该设备不是端点 Agent")
+        raise HTTPException(status_code=400, detail="该设备不是端点 Agent（不支持 MCP 范围管理）")
 
     ai_config_id = agent.get("aiConfigId") or agent.get("ai_config_id")
     try:

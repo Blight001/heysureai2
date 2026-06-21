@@ -116,7 +116,7 @@ def is_workshop_tool(name: str) -> bool:
 
 def device_type_of(agent: Optional[Dict[str, Any]]) -> Optional[str]:
     """Classify a connected-agent record as ``"desktop"`` / ``"browser"`` /
-    ``"android"`` (手机端) / ``"workshop"`` (知识与进化工坊).
+    ``"android"`` (手机端) / ``"workshop"`` (知识与进化工坊) / ``"toolbox"`` (内置工具箱).
 
     Android phones are a distinct type (so they are never seeded the desktop
     python/shell dynamic tools they cannot run, and get their own label /
@@ -125,6 +125,8 @@ def device_type_of(agent: Optional[Dict[str, Any]]) -> Optional[str]:
     (see ``_reported_endpoint_tools`` / ``get_connected_desktop_agent``)."""
     if not isinstance(agent, dict):
         return None
+    if bool(agent.get("isToolbox")):
+        return "toolbox"
     platform = str(agent.get("platform") or "").lower()
     if bool(agent.get("isWorkshop")) or "workshop" in platform:
         return "workshop"
@@ -144,8 +146,15 @@ def _agent_capabilities(agent: Dict[str, Any], device_type: str) -> Set[str]:
     capabilities cannot be restricted to the historical ``browser_*`` prefix.
     Workshop devices remain namespace-restricted because that channel has a
     separate trust and binding model.
+    Toolbox builtin reports its server-fixed tools directly (no prefix filter).
     """
     names: Set[str] = set()
+    if device_type == "toolbox":
+        for cap in agent.get("capabilities") or []:
+            name = str(cap or "").strip()
+            if name:
+                names.add(name)
+        return names
     for cap in agent.get("capabilities") or []:
         name = str(cap or "").strip()
         if not name:

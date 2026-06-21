@@ -4,8 +4,9 @@
 
 工具箱把"每个 AI 默认即可用的服务端固定 MCP 工具"收拢成一个独立设备：
 
-- **多绑、不可解绑**：新建 AI 自动绑定工具箱（`bind_config_to_toolbox`），存量库由
+- **多绑、可管理**：新建 AI 自动绑定工具箱（`bind_config_to_toolbox`），存量库由
   迁移补绑；`ensure_all_configs_bound_to_toolbox` 做自愈式补缺。
+  现支持网页端「作坊」面板像其他 MCP 一样绑定/解绑 AI、勾选 MCP 工具范围（存 DeviceTypeMcpPermission）。
 - **不注册 presence、不经工坊分发**：工具箱只是一个绑定标记 + 展示条目
   （`toolbox_connected_entry_for_user`）；工具箱工具仍来自常规服务端注册表
   （`MCPRegistry`），由 `mcp_runtime` 在每次调用时按工具箱绑定逐项校验。
