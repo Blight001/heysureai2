@@ -102,6 +102,8 @@ def _parse_allowed_tools_for_cfg(cfg: Optional[AssistantAIConfig]) -> set[str]:
         if not isinstance(parsed, list):
             return set()
         raw_tools = {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
+        from api.mcp_tool_aliases import normalize_legacy_tool_names
+        raw_tools = normalize_legacy_tool_names(raw_tools)
         raw_tools = strip_endpoint_tool_config_names(with_workspace_read_by_name_compat(raw_tools))
         raw_tools.update(MCP_INTROSPECTION_TOOLS)
         raw_tools.update(endpoint_bridge_tools_for_config(getattr(cfg, "id", None), getattr(cfg, "user_id", None)))
