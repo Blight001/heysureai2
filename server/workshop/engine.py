@@ -118,6 +118,22 @@ def toolbox_capability_names() -> List[str]:
         return []
 
 
+def library_capability_names() -> List[str]:
+    """图书馆作坊展示用的工具名：注册表中需绑定图书馆的治理类工具（prompt / admin /
+    device / knowledge.manage），与知识库「图书馆管理工具」(builtin.library_mcp) 同源。
+
+    底层 ``librarian.*`` 是 ``knowledge.manage`` 的内部实现（仍用于工坊分发与
+    ``capability_names()``），不在作坊「图书馆」详情里单独罗列，口径与知识库一致。"""
+    try:
+        from mcp_runtime.mcp import registry
+        from mcp_runtime.mcp.permissions import LIBRARY_BOUND_TOOLS
+
+        names = {str(t.get("name") or "").strip() for t in registry.list_tools() if t.get("name")}
+        return sorted(n for n in names if n in LIBRARY_BOUND_TOOLS)
+    except Exception:
+        return []
+
+
 def capability_names() -> List[str]:
     """工坊上报的工具名（强制限制在工坊命名空间，且必须有 handler）。"""
     return sorted(name for name in tools.TOOL_NAMES if name in _TOOL_HANDLERS)
@@ -198,7 +214,10 @@ def connected_entry_for_user(user_id) -> Dict[str, Any]:
         "isWorkshop": True,
         "aiConfigId": bound_cfg_id,
         "userId": int(user_id),
-        "capabilities": capability_names(),
+        # 作坊「图书馆」详情展示与知识库「图书馆管理工具」同一份治理 MCP；
+        # librarian.* 作为 knowledge.manage 的内部实现不在此外显（仍由
+        # capability_names() 用于工坊分发/presence，互不影响）。
+        "capabilities": library_capability_names(),
         "version": "builtin",
         "lifecycle": "registered",
         "connectedAt": None,
