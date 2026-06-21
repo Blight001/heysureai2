@@ -244,7 +244,7 @@ def ensure_default_ai_for_user(session: Session, user_id: int) -> None:
             changed = True
     if changed:
         session.commit()
-    from workshop import engine as workshop_engine
+    from library import engine as workshop_engine
 
     workshop_engine.ensure_presence_for_user(user_id)
 

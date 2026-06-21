@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Handlers exposed by the built-in knowledge workshop."""
+"""Handlers exposed by the built-in knowledge library (工坊)."""
 
 from typing import Any, Dict, Optional
 

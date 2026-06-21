@@ -1,6 +1,6 @@
 # 内置知识工坊 Agent
 
-`server/workshop` 提供每个账号自动上线的虚拟知识工坊 Agent。
+`server/library` 提供每个账号自动上线的虚拟知识工坊 Agent。
 
 当前状态：
 

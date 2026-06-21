@@ -1,6 +1,6 @@
 """Persistent AI → builtin workshop-agent binding.
 
-The knowledge & evolution workshop (server-builtin, see ``server/workshop/``)
+The knowledge & evolution workshop (server-builtin, see ``server/library/``)
 binds **1:1**：一个工坊同一时间只服务一个 AI 数字成员（绑定新成员替换旧
 绑定，由 ``api.workshop_bindings.set_workshop_binding`` 强制）。与设备绑定
 （``DeviceAiBinding``）的差异仅在绑定方向：工坊绑定从 AI 侧声明。An AI

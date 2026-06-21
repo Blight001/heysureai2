@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Reserved hooks for future workshop MCP tools."""
+"""Reserved hooks for future library (workshop) MCP tools."""
 
 from pathlib import Path
 from typing import Any, Dict

@@ -75,7 +75,7 @@ per-service start/restart/stop, global controls, status overview pills, and quic
 | `other/migrations/` | Alembic database migrations. |
 | `other/scripts/` | Helper scripts such as webhook deployment and data migration. |
 | `other/tests/` | pytest suite. |
-| `workshop/` | Internal workshop / knowledge-engine code. |
+| `library/` | Internal library (知识工坊) code. |
 | `data/` | Local runtime data and workspace storage. |
 | `logs/` | Service logs. |
 | `static/` | Backend static assets. |

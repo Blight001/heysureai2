@@ -111,10 +111,14 @@ let sessionSyncPollEpoch = 0
 let lastRealtimeTokenSyncAt = 0
 let lastExternalRunCheckAt = 0
 const chatScrollRef = ref<HTMLElement | null>(null)
+const stickToBottom = ref(true)
+let lastProgrammaticScrollTs = 0
+const PROGRAMMATIC_SCROLL_GRACE_MS = 260
 const currentSessionId = ref<string>('')
 // Bumped to make the task-progress panel refetch (session switch / run finish).
 const taskPlanRefreshSignal = ref(0)
 const bumpTaskPlan = () => { taskPlanRefreshSignal.value += 1 }
+const planSidebarVisible = ref(false)
 const sessionList = ref<SessionItem[]>([])
 const appliedEdits = ref<Set<string>>(new Set())
 const appliedSignatures = ref<Set<string>>(new Set())
@@ -459,12 +463,23 @@ const handleToggleFileSelector = () => {
   }
 }
 
-const scrollToBottom = async () => {
+const scrollToBottom = async (smooth = false) => {
   await nextTick()
-  if (chatScrollRef.value) {
-    chatScrollRef.value.scrollTop = chatScrollRef.value.scrollHeight
+  const el = chatScrollRef.value
+  if (!el) return
+  lastProgrammaticScrollTs = Date.now()
+  if (smooth) {
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  } else {
+    el.scrollTop = el.scrollHeight
   }
 }
+
+const getDistanceFromBottom = (el: HTMLElement) =>
+  el.scrollHeight - el.scrollTop - el.clientHeight
+
+const isNearBottom = (el: HTMLElement, threshold = 36) =>
+  getDistanceFromBottom(el) <= threshold
 
 const LIVE_MIN_SPEED = 36
 const LIVE_MAX_SPEED = 560
@@ -479,10 +494,10 @@ const applyLiveAssistantText = (text: string) => {
 
 const maybeAutoScrollDuringLive = (ts: number) => {
   const el = chatScrollRef.value
-  if (!el) return
+  if (!el || !stickToBottom.value) return
   if (ts - liveLastScrollTs < LIVE_SCROLL_INTERVAL_MS) return
   liveLastScrollTs = ts
-  const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight)
+  const distanceFromBottom = getDistanceFromBottom(el)
   if (distanceFromBottom <= LIVE_STICKY_GAP_PX) {
     el.scrollTop = el.scrollHeight
   }
@@ -584,6 +599,33 @@ const clearLiveAssistantView = () => {
   stopLiveTypingLoop()
 }
 
+const updateStickFromScroll = () => {
+  const el = chatScrollRef.value
+  if (!el) return
+  const now = Date.now()
+  if (now - lastProgrammaticScrollTs < PROGRAMMATIC_SCROLL_GRACE_MS) return
+
+  if (isNearBottom(el)) {
+    stickToBottom.value = true
+  } else {
+    stickToBottom.value = false
+  }
+}
+
+const handleScroll = () => {
+  updateStickFromScroll()
+}
+
+const handleWheel = () => {
+  const el = chatScrollRef.value
+  if (!el) return
+  if (Date.now() - lastProgrammaticScrollTs < PROGRAMMATIC_SCROLL_GRACE_MS) return
+  // Wheel interaction (esp. to view history) should unlock auto-bottom if away from bottom
+  if (getDistanceFromBottom(el) > 20) {
+    stickToBottom.value = false
+  }
+}
+
 const stopRunPolling = () => {
   runPollEpoch += 1
   if (runLivePollTimer !== null) window.clearTimeout(runLivePollTimer)
@@ -644,7 +686,9 @@ const upsertHistoryMessages = async (incoming: ChatMessage[]) => {
     })
   }
   restoreActionStatesFromHistory(chatMessages.value)
-  await scrollToBottom()
+  if (stickToBottom.value) {
+    await scrollToBottom(true)
+  }
 }
 
 const getLastMessageId = () => {
@@ -675,7 +719,9 @@ const appendLiveAssistantAsLocalMessage = async (text: string) => {
     blocks: parsed.blocks,
     inlineContent: parsed.inlineContent,
   })
-  await scrollToBottom()
+  if (stickToBottom.value) {
+    await scrollToBottom()
+  }
 }
 
 const waitMs = (ms: number) => new Promise<void>(resolve => window.setTimeout(resolve, ms))
@@ -695,7 +741,8 @@ const appendRunErrorNotice = async (runId: string, message: string) => {
     display_text: content,
   }
   const localIndex = chatMessages.value.push(fallbackMsg) - 1
-  await scrollToBottom()
+  stickToBottom.value = true
+  await scrollToBottom(true)
 
   if (!getAuthToken() || !currentSessionId.value) return
   try {
@@ -955,6 +1002,7 @@ const reloadCurrentHistorySnapshot = async () => {
   chatMessages.value = mapHistoryMessages(history)
   restoreActionStatesFromHistory(chatMessages.value)
   await loadTotalTokens()
+  stickToBottom.value = true
   await scrollToBottom()
 }
 
@@ -977,6 +1025,7 @@ const loadChatHistory = async (sid: string) => {
   restoreActionStatesFromHistory(chatMessages.value)
   currentSessionId.value = sid
   await loadTotalTokens()
+  stickToBottom.value = true
   await scrollToBottom()
   await checkActiveRun()
   startSessionSyncPolling()
@@ -1525,8 +1574,27 @@ watch(currentSessionId, async (sid, oldSid) => {
   await loadEffectiveSystemPromptPreview()
 })
 
+
+
+watch(chatScrollRef, (newEl, oldEl) => {
+  if (oldEl) {
+    oldEl.removeEventListener('scroll', handleScroll)
+    oldEl.removeEventListener('wheel', handleWheel)
+  }
+  if (newEl) {
+    newEl.addEventListener('scroll', handleScroll, { passive: true })
+    newEl.addEventListener('wheel', handleWheel, { passive: true })
+  }
+})
+
 onMounted(async () => {
   await initializeSessions()
+  await nextTick()
+  const el = chatScrollRef.value
+  if (el) {
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    el.addEventListener('wheel', handleWheel, { passive: true })
+  }
 })
 
 onBeforeUnmount(() => {
@@ -1534,6 +1602,11 @@ onBeforeUnmount(() => {
   stopSessionSyncPolling()
   stopTimeTicker()
   clearLiveAssistantView()
+  const el = chatScrollRef.value
+  if (el) {
+    el.removeEventListener('scroll', handleScroll)
+    el.removeEventListener('wheel', handleWheel)
+  }
 })
 </script>
 
@@ -1593,57 +1666,71 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <TaskProgressPanel
-      :configId="props.aiConfigId"
-      :sessionId="currentSessionId"
-      :refreshSignal="taskPlanRefreshSignal"
-    />
+    <!-- 内部左右布局：左侧显示计划阶段，右侧是对话内容（消息+输入） -->
+    <div class="flex flex-1 min-h-0 gap-2 overflow-hidden">
+      <!-- 左侧：任务阶段 / 计划面板 -->
+      <div
+        v-if="planSidebarVisible"
+        class="w-56 flex-shrink-0 overflow-y-auto rounded-lg border border-zinc-200 bg-zinc-50/70 p-1.5 text-[11px] dark:border-zinc-700 dark:bg-zinc-950/50"
+      >
+        <TaskProgressPanel
+          :configId="props.aiConfigId"
+          :sessionId="currentSessionId"
+          :refreshSignal="taskPlanRefreshSignal"
+          :compact="true"
+          @visibility-change="planSidebarVisible = $event"
+        />
+      </div>
 
-    <div ref="chatScrollRef" class="flex-1 overflow-y-auto">
-      <ChatConversationView
-        :baseMessages="chatMessages"
-        :sessionActive="!!currentSessionId"
-        :frontPromptText="configuredFrontPrompt"
-        :showFrontPrompt="false"
-        :frontPromptPlaceholder="'（当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt）'"
-        :mcpIcon="props.mcpIcon"
-        :mcpDynamicRule="props.mcpDynamicRule"
-        :aiConfigId="props.aiConfigId"
-        :sessionId="currentSessionId"
-        :liveText="liveAssistantText"
-        :liveTargetText="liveTargetText"
-        :liveThinking="liveThinkingText"
-        :livePhase="currentRunPhase"
-        :nowTimestamp="isRunActive ? timeTick : undefined"
-        :liveSegmentStartedAt="currentRunPhase !== 'idle' ? phaseEnterTs ?? undefined : undefined"
-        :appliedEdits="appliedEditsArray"
-        :appliedSignatures="appliedSignaturesArray"
-        :actionResults="actionResults"
-        :actionResultsBySignature="actionResultsBySignature"
-        :isTyping="isTyping"
-        :stripMarkdownSymbols="!!props.stripMarkdownSymbols"
-        @delete="onConversationDelete"
-        @recall="onConversationRecall"
-        @apply="onConversationApply"
-        @revert="onConversationRevert"
-      />
+      <!-- 右侧：聊天消息 + 输入 -->
+      <div class="flex flex-1 flex-col min-w-0 gap-2">
+        <div ref="chatScrollRef" class="flex-1 overflow-y-auto">
+          <ChatConversationView
+            :baseMessages="chatMessages"
+            :sessionActive="!!currentSessionId"
+            :frontPromptText="configuredFrontPrompt"
+            :showFrontPrompt="false"
+            :frontPromptPlaceholder="'（当前会话尚未记录系统提示词，发送首条消息后显示实际 Prompt）'"
+            :mcpIcon="props.mcpIcon"
+            :mcpDynamicRule="props.mcpDynamicRule"
+            :aiConfigId="props.aiConfigId"
+            :sessionId="currentSessionId"
+            :liveText="liveAssistantText"
+            :liveTargetText="liveTargetText"
+            :liveThinking="liveThinkingText"
+            :livePhase="currentRunPhase"
+            :nowTimestamp="isRunActive ? timeTick : undefined"
+            :liveSegmentStartedAt="currentRunPhase !== 'idle' ? phaseEnterTs ?? undefined : undefined"
+            :appliedEdits="appliedEditsArray"
+            :appliedSignatures="appliedSignaturesArray"
+            :actionResults="actionResults"
+            :actionResultsBySignature="actionResultsBySignature"
+            :isTyping="isTyping"
+            :stripMarkdownSymbols="!!props.stripMarkdownSymbols"
+            @delete="onConversationDelete"
+            @recall="onConversationRecall"
+            @apply="onConversationApply"
+            @revert="onConversationRevert"
+          />
+        </div>
+
+        <ChatInput
+          v-model="chatInput"
+          :isTyping="isTyping"
+          :isFileSelectorOpen="isFileSelectorOpen"
+          :allFiles="allFiles"
+          :selectedFiles="selectedFiles"
+          :currentPath="currentPath"
+          @send="sendChat"
+          @toggleFileSelector="handleToggleFileSelector"
+          @closeFileSelector="isFileSelectorOpen = false"
+          @navigateTo="navigateTo"
+          @navigateBack="navigateBack"
+          @toggleFile="toggleFileSelection"
+          @clearFiles="emit('update:selectedFiles', [])"
+          @refreshFiles="handleRefreshFiles"
+        />
+      </div>
     </div>
-
-    <ChatInput
-      v-model="chatInput"
-      :isTyping="isTyping"
-      :isFileSelectorOpen="isFileSelectorOpen"
-      :allFiles="allFiles"
-      :selectedFiles="selectedFiles"
-      :currentPath="currentPath"
-      @send="sendChat"
-      @toggleFileSelector="handleToggleFileSelector"
-      @closeFileSelector="isFileSelectorOpen = false"
-      @navigateTo="navigateTo"
-      @navigateBack="navigateBack"
-      @toggleFile="toggleFileSelection"
-      @clearFiles="emit('update:selectedFiles', [])"
-      @refreshFiles="handleRefreshFiles"
-    />
   </div>
 </template>

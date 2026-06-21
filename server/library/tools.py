@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Built-in workshop MCP tool catalog.
+"""Built-in library (知识工坊) MCP tool catalog.
 
 Knowledge-base operations are exposed exclusively via the registry tool
 ``knowledge.manage`` (action dispatch). This catalog is intentionally empty
-so the library workshop does not duplicate those capabilities.
+so the library does not duplicate those capabilities.
 """
 
 TOOL_DEFS: list = []

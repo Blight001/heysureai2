@@ -74,7 +74,7 @@ def _workshop_tool_defs() -> Dict[str, Dict[str, Any]]:
     refreshed for this process.
     """
     try:
-        from workshop import engine as workshop_engine
+        from library import engine as workshop_engine
 
         return workshop_engine.tool_defs_map()
     except Exception:

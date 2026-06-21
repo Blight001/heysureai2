@@ -69,7 +69,7 @@
 
 相关位置：
 
-- [`server/workshop/handlers.py`](../server/workshop/handlers.py)
+- [`server/library/handlers.py`](../server/library/handlers.py)
 - [`server/main/mcp_runtime/mcp/tools/knowledge.py`](../server/main/mcp_runtime/mcp/tools/knowledge.py)
 
 ## 为什么会看起来“不一样”

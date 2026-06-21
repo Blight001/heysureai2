@@ -14,16 +14,25 @@ const props = withDefaults(defineProps<{
   sessionId?: string
   /** Bump to force a refetch (e.g. when a run finishes / history reloads). */
   refreshSignal?: number
+  /** Use tighter spacing when placed as sidebar inside chat dialog. */
+  compact?: boolean
 }>(), {
   configId: undefined,
   sessionId: '',
   refreshSignal: 0,
+  compact: false,
 })
+
+const emit = defineEmits<{
+  (e: 'visibility-change', value: boolean): void
+}>()
 
 const data = ref<TaskPlanResponse | null>(null)
 const loading = ref(false)
 
 const visible = computed(() => !!data.value && data.value.stage !== 'none')
+
+watch(visible, (v) => emit('visibility-change', v), { immediate: true })
 const stage = computed(() => data.value?.stage ?? 'none')
 const plan = computed(() => data.value?.plan ?? null)
 const phases = computed<TaskPlanPhase[]>(() => plan.value?.phases ?? [])
@@ -92,9 +101,12 @@ const phaseBadgeClass = (phase: TaskPlanPhase) => {
 <template>
   <div
     v-if="visible"
-    class="rounded-lg border border-zinc-200 bg-white/70 px-3 py-2.5 text-xs dark:border-zinc-700 dark:bg-zinc-900/60"
+    :class="[
+      'rounded-lg border border-zinc-200 bg-white/70 dark:border-zinc-700 dark:bg-zinc-900/60',
+      props.compact ? 'px-1.5 py-1 text-[10px]' : 'px-2.5 py-2 text-[11px]'
+    ]"
   >
-    <div class="mb-2 flex items-center justify-between gap-2">
+    <div :class="props.compact ? 'mb-1 flex items-center justify-between gap-1' : 'mb-2 flex items-center justify-between gap-2'">
       <div class="flex items-center gap-1.5 font-semibold text-zinc-700 dark:text-zinc-200">
         <span>任务流程</span>
         <span
@@ -124,11 +136,11 @@ const phaseBadgeClass = (phase: TaskPlanPhase) => {
       >↻</button>
     </div>
 
-    <p v-if="plan?.goal" class="mb-2 line-clamp-2 text-zinc-600 dark:text-zinc-300">
+    <p v-if="plan?.goal" :class="props.compact ? 'mb-1 line-clamp-2 text-zinc-600 dark:text-zinc-300' : 'mb-2 line-clamp-2 text-zinc-600 dark:text-zinc-300'">
       目标：{{ plan.goal }}
     </p>
 
-    <ol class="space-y-1.5">
+    <ol :class="props.compact ? 'space-y-1' : 'space-y-1.5'">
       <!-- 安排 -->
       <li class="flex items-start gap-2">
         <span

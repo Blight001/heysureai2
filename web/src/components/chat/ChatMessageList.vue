@@ -86,7 +86,7 @@ const emit = defineEmits<{
     </div>
 
     <div class="space-y-4">
-      <template v-for="(item, itemIdx) in renderItems" :key="item.kind === 'message' ? (item.hideThink ? `msg-content-${item.index}` : (messages[item.index]?.id !== undefined ? `msg-${messages[item.index].id}` : `tmp-${item.index}`)) : `activity-${item.members.map((member) => `${member.kind}-${member.index}`).join('-')}-${itemIdx}`">
+      <template v-for="(item, itemIdx) in renderItems" :key="item.kind === 'message' ? (item.hideThink ? `msg-content-${item.index}` : (messages[item.index]?.id !== undefined ? `msg-${messages[item.index].id}` : `tmp-${item.index}`)) : `activity-start-${item.members[0]?.index ?? itemIdx}`">
         <ChatActivityGroup
           v-if="item.kind === 'activity-group'"
           :members="item.members"

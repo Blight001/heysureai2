@@ -7,7 +7,7 @@ from api.runtime.async_bridge import run_async
 from mcp_runtime.mcp.loader import reload_registry
 from mcp_runtime.mcp.registry import registry
 from tools.knowledge import KNOWLEDGE_MANAGE_SCHEMA, _KNOWLEDGE_ACTIONS
-from workshop.handlers import create_inheritance_thought
+from library.handlers import create_inheritance_thought
 
 
 def _call(action: str, **extra):
@@ -79,7 +79,7 @@ def test_create_thought_accepts_title_text_aliases(monkeypatch):
         return {"id": "manual/demo-abc", "displayName": kwargs["name"]}
 
     monkeypatch.setattr(
-        "workshop.handlers.librarian_service.create_inheritance_thought",
+        "library.handlers.librarian_service.create_inheritance_thought",
         _fake_create,
     )
     result = create_inheritance_thought(

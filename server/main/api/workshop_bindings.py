@@ -112,7 +112,7 @@ def config_bound_to_device(user_id, ai_config_id, device_id) -> bool:
 
 
 def config_bound_to_library(user_id, ai_config_id) -> bool:
-    from workshop.engine import device_id_for_user
+    from library.engine import device_id_for_user
 
     return config_bound_to_device(user_id, ai_config_id, device_id_for_user(user_id))
 

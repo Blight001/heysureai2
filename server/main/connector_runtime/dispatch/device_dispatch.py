@@ -704,10 +704,10 @@ async def _execute_workshop_inline(
     args: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """知识与进化工坊是服务端内置的，无 socket 往返：直接进程内执行
-    （policy 钩子 + 服务端复核见 ``workshop.engine.execute_tool``）。"""
+    （policy 钩子 + 服务端复核见 ``library.engine.execute_tool``）。"""
     from fastapi import HTTPException
 
-    from workshop import engine as workshop_engine
+    from library import engine as workshop_engine
 
     device_id = workshop_engine.device_id_for_user(user_id)
     try:
@@ -744,7 +744,7 @@ async def dispatch_endpoint_tool(
         return None
 
     if is_workshop_tool(tool_name):
-        from workshop import engine as workshop_engine
+        from library import engine as workshop_engine
 
         task_id = f"atask_{uuid.uuid4().hex[:12]}"
         run_ctx = get_run_session_context() or {}

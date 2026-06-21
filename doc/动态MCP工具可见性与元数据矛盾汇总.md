@@ -160,7 +160,7 @@ if library_tools:
 #### F. 其他相关
 - `mcp_prompt_groups.py` 中的 “工具箱 MCP” / “图书馆 MCP” 分组用于前端预览和某些提示。
 - `librarian_service.py` 的 `_intrinsic_properties_payload` 虽然按 scope 分 toolbox/library，但最终 prompt catalog 走的是 AI config 的 allowlist。
-- `workshop/engine.py` 把图书馆当作虚拟 device，但运行时 catalog 没严格对齐。
+- `library/engine.py` 把图书馆当作虚拟 device，但运行时 catalog 没严格对齐。
 
 ---
 
@@ -218,7 +218,7 @@ if library_tools:
 - `server/main/api/services/mcp_prompt_groups.py`
   - `build_prompt_tool_groups`
   - “图书馆 MCP” / “工具箱 MCP” group 构造
-- `server/workshop/engine.py`
+- `server/library/engine.py`
   - 虚拟 library / toolbox device
 
 ### 历史痕迹

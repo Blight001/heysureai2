@@ -32,7 +32,7 @@ def _find_connected_agent(device_id: str, user_id: int) -> Optional[dict]:
             return agent
     try:
         from tools import engine as toolbox_engine
-        from workshop import engine as workshop_engine
+        from library import engine as workshop_engine
 
         if aid == workshop_engine.device_id_for_user(user_id):
             return workshop_engine.connected_entry_for_user(user_id)
@@ -114,7 +114,7 @@ def _scope_view(agent: dict, user_id: int) -> dict:
         tool_defs = {}
     if device_type == "workshop" and not tool_defs:
         try:
-            from workshop import engine as workshop_engine
+            from library import engine as workshop_engine
 
             tool_defs = workshop_engine.tool_defs_map()
         except Exception:
@@ -177,7 +177,7 @@ async def bind_agent_ai(
     if not device_id:
         raise HTTPException(status_code=400, detail="deviceId required")
     try:
-        from workshop import engine as workshop_engine
+        from library import engine as workshop_engine
 
         if workshop_engine.is_builtin_workshop_device_id(device_id):
             raise HTTPException(status_code=400, detail="图书馆请通过 /api/workshop/bindings 绑定")

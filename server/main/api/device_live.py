@@ -27,7 +27,7 @@ def connected_agent_rows_for_user(user_id: int):
     ]
     try:
         from tools import engine as toolbox_engine
-        from workshop import engine as workshop_engine
+        from library import engine as workshop_engine
 
         workshop_engine.ensure_presence_for_user(uid)
         rows.append(workshop_engine.connected_entry_for_user(uid))

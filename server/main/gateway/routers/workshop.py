@@ -6,7 +6,7 @@
 绑定新成员会替换旧绑定（存 ``WorkshopAiBinding``）。
 
 工具执行不走 REST：调度层（device_dispatch 的 workshop 分支）直接进程内
-调用 ``workshop.engine.execute_tool``，其中完成白名单/归属/绑定/角色复核。
+调用 ``library.engine.execute_tool``，其中完成白名单/归属/绑定/角色复核。
 """
 
 from typing import Dict, Optional
@@ -74,7 +74,7 @@ async def list_workshop_bindings(
 
     from api.device_presence import online_workshop_agents_for_user
     from tools import engine as toolbox_engine
-    from workshop import engine as workshop_engine
+    from library import engine as workshop_engine
 
     workshop_engine.ensure_presence_for_user(user.id)
     bound_ids = set(workshop_device_ids_for_config(user.id, cfg.id))

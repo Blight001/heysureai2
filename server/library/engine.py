@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""内置工坊引擎：按用户自动上线并提供专用 MCP 能力。
+"""内置图书馆（工坊）引擎：按用户自动上线并提供专用 MCP 能力。
 
 工坊不再是用户手动运行的独立 agent 进程，而是服务端内置的"虚拟端侧"：
 
@@ -75,7 +75,7 @@ def tool_defs_map() -> Dict[str, Dict[str, Any]]:
 
 
 def ensure_presence_for_user(user_id) -> None:
-    """确保该账号的内置工坊在线（presence + 默认放开的 scope）。
+    """确保该账号的内置图书馆（工坊）在线（presence + 默认放开的 scope）。
 
     幂等且 best-effort：失败只记日志，绝不影响调用方主流程。
     """

@@ -556,7 +556,7 @@ onUnmounted(() => {
     />
     <Transition name="fade">
       <div v-if="chatTarget && chatModalOpen" class="fixed inset-0 z-[90] bg-black/45 flex items-center justify-center p-4" @click="closeAgentChat">
-        <div class="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700 shadow-xl w-full max-w-5xl h-[88vh] flex flex-col" @click.stop>
+        <div class="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700 shadow-xl w-full max-w-[960px] h-[88vh] flex flex-col" @click.stop>
           <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
             <div>
               <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">与 {{ chatTarget.name }} 对话</div>
@@ -564,7 +564,7 @@ onUnmounted(() => {
             </div>
             <button class="text-xs px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 text-zinc-500 dark:text-zinc-300" @click="closeAgentChat">关闭</button>
           </div>
-          <div class="flex-1 min-h-0 p-4">
+          <div class="flex-1 min-h-0 p-2">
             <ChatInterface
               :key="`unified-chat-${chatTarget.aiConfigId}-${chatInitialSessionId || 'default'}`"
               :adminModel="chatTarget.model || ''"
@@ -578,10 +578,10 @@ onUnmounted(() => {
               @update:selectedFiles="selectedFiles = $event"
               @open-settings="chatTarget && openAgentSettings(chatTarget)"
               @totalChatTokensUpdate="syncChatTokensToAgents"
-            @refreshFiles="loadProjectContext"
-          />
+              @refreshFiles="loadProjectContext"
+            />
+          </div>
         </div>
-      </div>
       </div>
     </Transition>
 

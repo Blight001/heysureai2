@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from fastapi import HTTPException
 
-from workshop import handlers as knowledge_handlers
+from library import handlers as knowledge_handlers
 
 from mcp_runtime.mcp.permissions import (
     ROLE_ASSISTANT_ADMIN,
