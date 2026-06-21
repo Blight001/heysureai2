@@ -302,10 +302,9 @@ const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(devi
         <div v-if="errors[device.id]" class="mt-1 text-[10px] text-rose-500">{{ errors[device.id] }}</div>
       </div>
 
-      <!-- Endpoint agents: edit their per-(AI, type) MCP permission scope. 内置作坊
-           （图书馆 / 工具箱）无 scope，改为直接展示其 MCP 能力标签。 -->
+      <!-- Endpoint agents: edit their per-(AI, type) MCP permission scope. 工具箱无 scope。 -->
       <DeviceMcpScopeEditor
-        v-if="isEndpointDevice(device) && !isWorkshopDevice(device)"
+        v-if="isEndpointDevice(device) && !isToolboxDevice(device)"
         class="mt-2"
       :device-id="device.id"
         :refresh-key="`${device.aiConfigId ?? ''}-${device.lifecycle ?? ''}`"
