@@ -449,7 +449,10 @@ def _config_selected_tool_names(ai_config_id: Optional[int], user_id: Optional[i
         parsed = json.loads(cfg.mcp_tools or "[]")
         if not isinstance(parsed, list):
             return set()
-        return {str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()}
+        from api.mcp_tool_aliases import normalize_legacy_tool_names
+        return normalize_legacy_tool_names(
+            str(item).strip() for item in parsed if isinstance(item, str) and str(item).strip()
+        )
     except Exception:
         return set()
 

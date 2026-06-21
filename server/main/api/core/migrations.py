@@ -933,41 +933,10 @@ def _live_registered_tool_names() -> set:
 
 # Legacy granular MCP tool name -> unified ``*.manage`` tool. Applied when
 # pruning stored allow-lists so operators keep an equivalent grant after the
-# consolidation refactor instead of silently losing the permission.
-_LEGACY_TOOL_RENAMES: Dict[str, str] = {
-    # 会话
-    "conversation.create": "conversation.manage",
-    "conversation.delete": "conversation.manage",
-    "conversation.list": "conversation.manage",
-    "conversation.detail": "conversation.manage",
-    "conversation.edit": "conversation.manage",
-    "conversation.compress": "conversation.manage",
-    "conversation.switch": "conversation.manage",
-    "conversation.new": "conversation.manage",
-    "conversation.forget_before_current": "conversation.manage",
-    "conversation.find": "conversation.manage",
-    # 任务管理（task.complete 保持独立）
-    "task.create": "task.manage",
-    "task.list": "task.manage",
-    "task.update": "task.manage",
-    "task.delete": "task.manage",
-    # plan 域：phase 收归 plan 子操作（旧名迁移到新名，保留授权）
-    "phase.complete": "plan.phase_complete",
-    # Prompt
-    "prompt.list_targets": "prompt.manage",
-    "prompt.read_ai": "prompt.manage",
-    "prompt.write_ai": "prompt.manage",
-    "prompt.read_system": "prompt.manage",
-    "prompt.write_system": "prompt.manage",
-    # 文件（file.manage 已并入 workspace.manage）
-    "workspace.read_file": "workspace.manage",
-    "workspace.write_file": "workspace.manage",
-    "workspace.edit_file": "workspace.manage",
-    "file.manage": "workspace.manage",
-    # admin 合并入 admin.manage
-    "admin.list_agents": "admin.manage",
-    "admin.get_overview": "admin.manage",
-}
+# consolidation refactor instead of silently losing the permission. The table is
+# the single source shared with runtime allow-list normalization
+# (``api.mcp_tool_aliases``) so migration-time and runtime stay in lock-step.
+from api.mcp_tool_aliases import LEGACY_TOOL_RENAMES as _LEGACY_TOOL_RENAMES  # noqa: E402
 
 
 def _migrate_assistantaiconfig_prune_unknown_mcp_tools() -> None:
