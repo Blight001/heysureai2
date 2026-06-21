@@ -9,7 +9,7 @@ gate their AIs out of the toolbox tool set.
 Idempotent within itself (skips AIs already bound), and runs once via Alembic
 revision tracking — so a user's later manual *unbind* is not re-bound on restart.
 
-Revision ID: d4e5f6a7b8c9
+Revision ID: d5e6f7a8b9c0
 Revises: c1d2e3f4a5b6
 Create Date: 2026-06-21
 
@@ -23,7 +23,7 @@ from sqlalchemy import inspect
 
 
 # revision identifiers, used by Alembic.
-revision: str = "d4e5f6a7b8c9"
+revision: str = "d5e6f7a8b9c0"
 down_revision: Union[str, Sequence[str], None] = "c1d2e3f4a5b6"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
