@@ -123,6 +123,22 @@ def capability_names() -> List[str]:
     return sorted(name for name in tools.TOOL_NAMES if name in _TOOL_HANDLERS)
 
 
+def library_capability_names() -> List[str]:
+    """图书馆的治理类 MCP（注册表中需绑定图书馆的工具：prompt / admin / device /
+    knowledge.manage），与知识库「图书馆管理工具」(builtin.library_mcp) 同源。
+
+    这些是按 AI 配置的注册表工具（开关在各 AI 的 mcp_tools），不经工坊 scope 控制；
+    作坊图书馆把它们与 librarian.* 一并展示，作为「完整图书馆 MCP」。"""
+    try:
+        from mcp_runtime.mcp import registry
+        from mcp_runtime.mcp.permissions import LIBRARY_BOUND_TOOLS
+
+        names = {str(t.get("name") or "").strip() for t in registry.list_tools() if t.get("name")}
+        return sorted(n for n in names if n in LIBRARY_BOUND_TOOLS)
+    except Exception:
+        return []
+
+
 def tool_defs_map() -> Dict[str, Dict[str, Any]]:
     """``{name: {description, input_schema}}``，供在线快照/工具目录展示。"""
     allowed = set(capability_names())
@@ -199,6 +215,9 @@ def connected_entry_for_user(user_id) -> Dict[str, Any]:
         "aiConfigId": bound_cfg_id,
         "userId": int(user_id),
         "capabilities": capability_names(),
+        # 治理类图书馆 MCP（按 AI 配置开关，不经工坊 scope）；前端作坊把它与
+        # librarian.* 一并展示，构成「完整图书馆 MCP」。
+        "libraryGovernanceTools": library_capability_names(),
         "version": "builtin",
         "lifecycle": "registered",
         "connectedAt": None,
