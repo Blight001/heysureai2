@@ -38,6 +38,10 @@ _AUTO_RUNTIME_SECTION_TITLES: tuple[str, ...] = (
     "AI 数据库连接",
     "可用MCP工具",
     "动态 MCP 说明",
+    # 旧版「全局MCP调用方法」曾被持久化进人格/管理 prompt，且含已删工具名
+    # （workspace.read_file 等）。该段当前已不再注入，故在加载时一并剥离，
+    # 让存量已落库的人格 prompt 就地自愈，无需数据迁移。
+    "全局MCP调用方法",
     "任务运行时工作目录(绝对路径)",
     "任务运行时MCP调用规则",
     "任务运行时MCP工具白名单",
