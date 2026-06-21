@@ -33,6 +33,8 @@ export interface ConnectedDevice {
   isBrowserExtension?: boolean
   isAndroid?: boolean
   capabilities: string[]
+  /** 图书馆治理类 MCP（prompt/admin/device/knowledge.manage）；与 librarian.* 一并构成完整图书馆 MCP。 */
+  libraryGovernanceTools?: string[]
   version?: string
   lifecycle?: string
   group?: string
@@ -421,6 +423,9 @@ export const useDashboardData = (options: UseDashboardDataOptions) => {
     isBrowserExtension: !!raw?.isBrowserExtension,
     isAndroid: !!raw?.isAndroid,
     capabilities: Array.isArray(raw?.capabilities) ? raw.capabilities.map((c: any) => String(c)) : [],
+    libraryGovernanceTools: Array.isArray(raw?.libraryGovernanceTools)
+      ? raw.libraryGovernanceTools.map((c: any) => String(c))
+      : undefined,
     version: raw?.version ? String(raw.version) : undefined,
     lifecycle: raw?.lifecycle ? String(raw.lifecycle) : undefined,
     group: raw?.group ? String(raw.group) : undefined,

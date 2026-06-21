@@ -3,6 +3,7 @@ import { computed, reactive } from 'vue'
 import type { ConnectedDevice } from '@/composables/dashboard/useDashboardData'
 import { assignDeviceAi } from '@/api/devices'
 import { setWorkshopBinding } from '@/api/workshop'
+import { getMcpToolZhLabel } from '@/utils/mcpTools'
 import DeviceMcpScopeEditor from '../modals/DeviceMcpScopeEditor.vue'
 
 interface Agent {
@@ -317,6 +318,27 @@ const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(devi
         >
           {{ cap }}
         </span>
+      </div>
+
+      <!-- 图书馆治理类 MCP：与 librarian.* 一并构成完整图书馆 MCP；这些按 AI 配置开关。 -->
+      <div
+        v-if="device.libraryGovernanceTools && device.libraryGovernanceTools.length"
+        class="mt-2 rounded-lg border border-zinc-200 bg-zinc-50/60 p-2 dark:border-zinc-700 dark:bg-zinc-800/40"
+      >
+        <div class="text-[10px] font-semibold text-zinc-600 dark:text-zinc-300">治理工具（完整图书馆 MCP）</div>
+        <div class="mt-0.5 text-[9px] text-zinc-400 dark:text-zinc-500">
+          这些按 AI 配置开关（在 AI 配置弹窗勾选 MCP），不走作坊 scope；需绑定图书馆方可调用。
+        </div>
+        <div class="mt-1.5 flex flex-wrap gap-1">
+          <span
+            v-for="cap in device.libraryGovernanceTools"
+            :key="cap"
+            :title="cap"
+            class="text-[9px] px-1 py-0.5 rounded border border-zinc-200 bg-white text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+          >
+            {{ getMcpToolZhLabel(cap) }}
+          </span>
+        </div>
       </div>
 
       <div v-if="device.lastError" class="mt-2 text-[10px] text-rose-500 truncate" :title="device.lastError">
