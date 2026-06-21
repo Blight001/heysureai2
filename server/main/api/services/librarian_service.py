@@ -2006,11 +2006,15 @@ def propose(
     scope: str = "global",
     scope_target: Optional[str] = None,
     source: Optional[Dict[str, Any]] = None,
+    auto_approve: bool = False,
 ) -> Dict[str, Any]:
     """AI 员工调用：申请沉淀。status=pending。
 
     实际文件落盘到 KnowledgeBase/topics/<slug>.md，
     DB 写入 KnowledgeEntry 一行。后续等待用户 approve。
+
+    ``auto_approve=True`` 时直接落 status=active（绑定图书馆的 AI 自主沉淀
+    计划经验，无需用户审批），confidence 拉满，并发"已解决"事件而非"待审"。
     """
     title = (title or "").strip()
     if not title:
@@ -2023,6 +2027,9 @@ def propose(
     triggers_norm = _normalize_triggers(triggers or [])
     scope_norm, scope_target_norm = _normalize_scope(scope, scope_target)
     source = dict(source or {})
+
+    status = "active" if auto_approve else "pending"
+    confidence = 1.0 if auto_approve else 0.6
 
     memory_id = _new_memory_id()
     slug = f"{_slugify(title)}-{memory_id[-6:]}"
@@ -2037,8 +2044,8 @@ def propose(
         scenario=scenario,
         steps=steps,
         gotchas=gotchas,
-        status="pending",
-        confidence=0.6,
+        status=status,
+        confidence=confidence,
         source=source,
         created_at=now,
         updated_at=now,
@@ -2056,8 +2063,8 @@ def propose(
             scope_target=scope_target_norm,
             file_path=file_rel,
             summary=_short_summary(scenario, steps),
-            status="pending",
-            confidence=0.6,
+            status=status,
+            confidence=confidence,
             source_job_id=str(source.get("job_id") or "") or None,
             source_generation=int(source.get("generation") or 0) or None,
             source_ai_config_id=int(source.get("ai_config_id") or ai_config_id or 0) or None,
@@ -2076,7 +2083,11 @@ def propose(
         sync_topic_embedding_for_entry(user_id=user_id, row=row, ai_config_id=librarian_id or None, force=True)
     except Exception as exc:
         logger.info(f"knowledge embedding sync after propose failed user={user_id} memory_id={row.memory_id}: {exc}")
-    _emit_proposal_event(user_id, "librarian:proposal_new", entry_dict)
+    _emit_proposal_event(
+        user_id,
+        "librarian:proposal_resolved" if auto_approve else "librarian:proposal_new",
+        entry_dict,
+    )
     return entry_dict
 
 
