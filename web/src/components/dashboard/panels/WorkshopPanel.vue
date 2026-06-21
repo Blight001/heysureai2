@@ -112,8 +112,12 @@ const unassign = async (device: ConnectedDevice) => {
   }
 }
 
+// 内置工具箱作坊：多绑、默认自动绑定全部 AI（按 device_id 前缀识别，无需新增字段）。
+const isToolboxDevice = (device: ConnectedDevice) => String(device.id || '').startsWith('toolbox_builtin_')
+
 const deviceTypeLabel = (device: ConnectedDevice) => {
   const platform = String(device.platform || '').toLowerCase()
+  if (isToolboxDevice(device)) return '工具箱'
   if (isWorkshopDevice(device)) return '图书馆'
   if (isAndroidDevice(device)) return '安卓端'
   if (device.isBrowserExtension || platform.includes('browser')) return '浏览器插件'
@@ -228,7 +232,13 @@ const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(devi
         </span>
       </div>
 
-      <div class="mt-2 rounded-lg border p-2" :class="memberPanelClass(device)">
+      <div
+        v-if="isToolboxDevice(device)"
+        class="mt-2 rounded-lg border border-indigo-200 bg-indigo-50/60 p-2 text-[10px] leading-relaxed text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200"
+      >
+        工具箱默认绑定全部 AI（多绑），每个 AI 自动获得默认工具集；如需对某个 AI 增减，请在「AI 配置」里管理。
+      </div>
+      <div v-else class="mt-2 rounded-lg border p-2" :class="memberPanelClass(device)">
         <div class="mb-1 flex items-center justify-between gap-2">
           <div class="text-[10px]" :class="memberLabelClass(device)">分配成员</div>
           <span class="shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-medium" :class="memberStatusBadgeClass(device)">
@@ -292,9 +302,9 @@ const memberStatusBadgeClass = (device: ConnectedDevice) => hasLinkedMember(devi
         <div v-if="errors[device.id]" class="mt-1 text-[10px] text-rose-500">{{ errors[device.id] }}</div>
       </div>
 
-      <!-- Endpoint agents: edit their per-(AI, type) MCP permission scope. -->
+      <!-- Endpoint agents: edit their per-(AI, type) MCP permission scope. 工具箱无 scope。 -->
       <DeviceMcpScopeEditor
-        v-if="isEndpointDevice(device)"
+        v-if="isEndpointDevice(device) && !isToolboxDevice(device)"
         class="mt-2"
       :device-id="device.id"
         :refresh-key="`${device.aiConfigId ?? ''}-${device.lifecycle ?? ''}`"

@@ -160,7 +160,7 @@ class MCPRegistry:
     ) -> Dict[str, Any]:
         tool = self.get(name)
         args = arguments or {}
-        _enforce_library_binding(tool.name, user_id, ai_config_id)
+        _enforce_workshop_binding(tool.name, user_id, ai_config_id)
         await _set_runtime_status(user_id, ai_config_id, "running", tool.name)
         await sio.emit(
             "mcp:status",
@@ -226,26 +226,34 @@ class MCPRegistry:
             )
             raise
 
-def _enforce_library_binding(tool_name: str, user_id: int, ai_config_id: Optional[int]) -> None:
-    """图书馆（绑定制）工具：除注册表存在外，还要求调用 AI 已绑定知识工坊（图书馆）。
+def _enforce_workshop_binding(tool_name: str, user_id: int, ai_config_id: Optional[int]) -> None:
+    """作坊绑定门禁：图书馆工具需绑定图书馆；工具箱工具需绑定工具箱。
 
     没有 ``ai_config_id`` 视为核心 / 管理员直调，放行（与 ``enforce_min_role``
-    约定一致）；带 ``ai_config_id`` 的 AI 调用未绑定图书馆时抛 403。「工具箱」
-    工具不在此集合内，每个 AI 默认即可用。
+    约定一致）。仅服务端固定工具经 ``MCPRegistry.call``，故两类门禁均按确切设备
+    绑定逐次校验；自省工具（mcp.describe_tool）始终放行。
     """
-    from .permissions import requires_library_binding
-
-    if not requires_library_binding(tool_name):
-        return
     if not ai_config_id:
         return
-    from api.workshop_bindings import workshop_device_ids_for_config
+    from .permissions import is_toolbox_gated_tool, requires_library_binding
 
-    if not workshop_device_ids_for_config(user_id, ai_config_id):
-        raise HTTPException(
-            status_code=403,
-            detail=f"该 AI 未绑定图书馆，无法调用 {tool_name}（请在 AI 配置或世界中绑定图书馆）",
-        )
+    if requires_library_binding(tool_name):
+        from api.workshop_bindings import config_bound_to_library
+
+        if not config_bound_to_library(user_id, ai_config_id):
+            raise HTTPException(
+                status_code=403,
+                detail=f"该 AI 未绑定图书馆，无法调用 {tool_name}（请在 AI 配置或世界中绑定图书馆）",
+            )
+        return
+    if is_toolbox_gated_tool(tool_name):
+        from api.workshop_bindings import config_bound_to_toolbox
+
+        if not config_bound_to_toolbox(user_id, ai_config_id):
+            raise HTTPException(
+                status_code=403,
+                detail=f"该 AI 未绑定工具箱，无法调用 {tool_name}（请在 AI 配置或世界中绑定工具箱）",
+            )
 
 
 def _write_runtime_status(user_id: int, ai_config_id: Optional[int], status: str, tool: str) -> None:

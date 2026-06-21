@@ -22,7 +22,9 @@ from . import tools
 logger = logging.getLogger(__name__)
 
 _AGENT_ID_PREFIX = "workshop_builtin_"
+_TOOLBOX_AGENT_ID_PREFIX = "toolbox_builtin_"
 WORKSHOP_DISPLAY_NAME = "图书馆（内置）"
+TOOLBOX_DISPLAY_NAME = "工具箱（内置）"
 WORKSHOP_PLATFORM = "Workshop-Server"
 
 _TOOL_HANDLERS = {
@@ -91,6 +93,29 @@ def device_id_for_user(user_id) -> str:
 
 def is_builtin_workshop_device_id(device_id) -> bool:
     return str(device_id or "").startswith(_AGENT_ID_PREFIX)
+
+
+def toolbox_device_id_for_user(user_id) -> str:
+    return f"{_TOOLBOX_AGENT_ID_PREFIX}{int(user_id)}"
+
+
+def is_builtin_toolbox_device_id(device_id) -> bool:
+    return str(device_id or "").startswith(_TOOLBOX_AGENT_ID_PREFIX)
+
+
+def toolbox_capability_names() -> List[str]:
+    """工具箱展示用的工具名：服务端固定工具中属于工具箱的部分（非图书馆绑定工具、
+    且排除自省工具）。仅供展示，工具箱工具仍由常规服务端注册表提供，不经工坊分发。"""
+    try:
+        from mcp_runtime.mcp import registry
+        from mcp_runtime.mcp.permissions import LIBRARY_BOUND_TOOLS, TOOLBOX_GATE_EXEMPT
+
+        names = {str(t.get("name") or "").strip() for t in registry.list_tools() if t.get("name")}
+        return sorted(
+            n for n in names if n and n not in LIBRARY_BOUND_TOOLS and n not in TOOLBOX_GATE_EXEMPT
+        )
+    except Exception:
+        return []
 
 
 def capability_names() -> List[str]:
@@ -184,6 +209,41 @@ def connected_entry_for_user(user_id) -> Dict[str, Any]:
         "lastError": None,
         "source": "builtin",
         "dispatchable": True,
+    }
+
+
+def toolbox_connected_entry_for_user(user_id) -> Dict[str, Any]:
+    """工具箱作坊的虚拟"已连接设备"条目（始终在线，多绑：默认绑定全部 AI）。
+
+    工具箱不注册 presence、不经工坊分发——它只是一个绑定标记 + 展示条目；工具箱
+    工具仍来自常规服务端注册表，由 core.py 按工具箱绑定逐次校验。"""
+    bound_ids: List[int] = []
+    try:
+        from api.workshop_bindings import bound_config_ids_for_agent
+
+        bound_ids = sorted(bound_config_ids_for_agent(user_id, toolbox_device_id_for_user(user_id)))
+    except Exception:
+        bound_ids = []
+    return {
+        "id": toolbox_device_id_for_user(user_id),
+        "name": TOOLBOX_DISPLAY_NAME,
+        "platform": WORKSHOP_PLATFORM,
+        "isWorkshop": True,
+        "isToolbox": True,
+        "aiConfigId": None,
+        "boundAiConfigIds": bound_ids,
+        "userId": int(user_id),
+        "capabilities": toolbox_capability_names(),
+        "version": "builtin",
+        "lifecycle": "registered",
+        "connectedAt": None,
+        "lastSeenAt": time.time(),
+        "lastTaskId": None,
+        "lastTaskStatus": None,
+        "lastTaskAt": None,
+        "lastError": None,
+        "source": "builtin",
+        "dispatchable": False,
     }
 
 

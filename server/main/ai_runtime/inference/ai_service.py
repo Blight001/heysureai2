@@ -206,6 +206,15 @@ def ensure_default_configs(session: Session, user_id: int) -> list[AssistantAICo
                 kb_store.write_persona(user_id, row, prompt=prompt)
         except Exception:
             pass
+        # 工具箱默认自动绑定：新建的 AI 一律绑定工具箱（多绑），获得默认工具集。
+        try:
+            from api.workshop_bindings import bind_config_to_toolbox
+
+            for row in created:
+                if row.id:
+                    bind_config_to_toolbox(user_id, row.id)
+        except Exception:
+            pass
     return session.exec(
         select(AssistantAIConfig).where(AssistantAIConfig.user_id == user_id)
     ).all()
