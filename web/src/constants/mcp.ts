@@ -10,6 +10,7 @@ export const DEFAULT_MCP_TOOLS = [
   'workspace.run_command',
   'workspace.manage',
   'admin.manage',
+  'device_mcp.manage',
   'task.manage',
   'task.complete',
   'prompt.manage',

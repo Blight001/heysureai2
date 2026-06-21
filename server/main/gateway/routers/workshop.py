@@ -126,9 +126,14 @@ async def update_workshop_binding(
     from workshop import engine as workshop_engine
 
     is_toolbox = device_id == workshop_engine.toolbox_device_id_for_user(user.id)
-    # 工具箱多绑、可绑任意 AI；图书馆 1:1、仅数字成员。
-    if not is_toolbox and bool(payload.bound) and str(cfg.ai_role or "") != "digital_member":
-        raise HTTPException(status_code=400, detail="图书馆只能绑定 AI 数字成员")
+    # 工具箱多绑、可绑任意 AI；图书馆 1:1。图书馆现含治理工具(admin/device 需辅助管理员)
+    # 与知识工具，故数字成员与辅助管理员均可绑定(绑定 + 角色双门槛仍逐项生效)。
+    if (
+        not is_toolbox
+        and bool(payload.bound)
+        and str(cfg.ai_role or "") not in ("digital_member", "assistant_admin")
+    ):
+        raise HTTPException(status_code=400, detail="图书馆只能绑定数字成员或辅助管理员")
     # 1:1（图书馆）：绑定会替换原有绑定，把被替换的成员返回给前端提示；工具箱多绑无替换。
     replaced_id = None if is_toolbox else bound_config_id_for_agent(user.id, device_id)
     if replaced_id == int(cfg.id):

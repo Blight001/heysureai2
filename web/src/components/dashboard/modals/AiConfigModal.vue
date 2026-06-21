@@ -369,7 +369,6 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                   </div>
                   <label
                     v-for="agent in workshopAgents"
-                    v-show="agent.is_toolbox || form.ai_role_group !== 'assistant_admin'"
                     :key="`workshop-${agent.device_id}`"
                     class="mt-2 flex items-center justify-between gap-2 rounded border border-zinc-200 bg-white/70 px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900/50"
                   >
