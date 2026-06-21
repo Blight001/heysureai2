@@ -479,7 +479,7 @@ onUnmounted(() => {
 
     <!-- 主体内容区域 -->
     <main
-      class="flex-1 overflow-hidden flex flex-col lg:flex-row p-3 sm:p-6 max-lg:pb-[calc(4.25rem+env(safe-area-inset-bottom))]"
+      class="flex-1 overflow-hidden flex flex-col lg:flex-row p-3 sm:p-6"
       :class="leftCollapsed ? 'lg:gap-4' : 'lg:gap-6'"
     >
 

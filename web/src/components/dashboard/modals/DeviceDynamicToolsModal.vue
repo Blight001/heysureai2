@@ -454,8 +454,8 @@ const onDesktopKindChange = () => {
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="props.show" class="fixed inset-0 z-[610] bg-black/40 flex items-center justify-center" @click="emit('close')">
-      <div class="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700 w-[680px] max-h-[82vh] p-4 overflow-auto" @click.stop>
+      <div v-if="props.show" class="fixed inset-0 z-[610] bg-black/40 flex items-center justify-center p-4" @click="emit('close')">
+      <div class="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700 w-full max-w-[680px] max-h-[82vh] p-4 overflow-auto" @click.stop>
         <div class="mb-3 flex items-center justify-between gap-2">
           <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">设备动态 MCP 工具（网页管理 · 自动下发）</div>
           <button type="button" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200" @click="emit('close')">✕</button>

@@ -710,8 +710,11 @@ const onCardPointerUp = (event: PointerEvent) => {
       </div>
     </div>
 
-    <!-- 底部操作栏 (上帝干预) -->
-    <div v-if="canControl && agent.status !== 'dead'" class="flex justify-end gap-2 mt-3 pt-2 border-t border-zinc-50 opacity-0 group-hover:opacity-100 transition-opacity dark:border-zinc-800">
+    <!-- 底部操作栏 (上帝干预)。触屏无 hover，移动端常显 -->
+    <div v-if="canControl && agent.status !== 'dead'" class="flex justify-end gap-2 mt-3 pt-2 border-t border-zinc-50 opacity-0 group-hover:opacity-100 max-lg:opacity-100 transition-opacity dark:border-zinc-800">
+      <button class="text-xs text-zinc-500 hover:text-indigo-600 px-2 py-1 hover:bg-zinc-50 rounded transition-colors dark:text-zinc-400 dark:hover:text-indigo-300 dark:hover:bg-zinc-800" @click.stop="emit('context', { agent, x: $event.clientX, y: $event.clientY })">
+        指引
+      </button>
       <button v-if="!isAssistantAdmin" class="text-xs text-zinc-500 hover:text-indigo-600 px-2 py-1 hover:bg-zinc-50 rounded transition-colors dark:text-zinc-400 dark:hover:text-indigo-300 dark:hover:bg-zinc-800" @click.stop="emit('show-tasks', agent)">
         任务列表
       </button>

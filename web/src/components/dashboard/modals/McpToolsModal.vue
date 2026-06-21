@@ -183,8 +183,8 @@ watch(() => props.show, (show) => {
 <template>
   <Teleport to="body">
     <Transition name="fade">
-      <div v-if="props.show" class="fixed inset-0 z-[600] bg-black/40 flex items-center justify-center" @click="emit('close')">
-      <div class="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700 w-[560px] max-h-[75vh] p-4 overflow-auto" @click.stop>
+      <div v-if="props.show" class="fixed inset-0 z-[600] bg-black/40 flex items-center justify-center p-4" @click="emit('close')">
+      <div class="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-700 w-full max-w-[560px] max-h-[75vh] p-4 overflow-auto" @click.stop>
         <div class="mb-3 flex items-center justify-between gap-2">
           <div class="flex items-center gap-1.5 min-w-0">
             <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-100 truncate">{{ props.title }} 的 MCP 工具</div>
