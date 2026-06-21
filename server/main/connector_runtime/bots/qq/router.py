@@ -84,10 +84,10 @@ def _build_qq_runtime_prompt(base_prompt: str, event: Dict[str, str]) -> str:
         "服务端只会把实际回复内容发回来源会话，不需要输出处理状态或工具调用状态。\n"
         "除非用户明确要求额外通知其他机器人会话，否则不要调用 MCP 工具 `message.send_to_user`，避免重复回复。\n"
         "如果用户要求忘掉/清除/重置/忽略此前对话或上下文，请先调用 MCP 工具 "
-        "`conversation.edit`，使用 `action=clear`；默认只删除当前用户消息之前的内容。\n"
+        "`conversation.manage`，使用 `action=clear`；默认只删除当前用户消息之前的内容。\n"
         "当用户想要 列出/读取/切换/新开 对话或会话时，调用 MCP 工具 "
-        "`conversation.list`（列出该 AI 的全部对话）、`conversation.detail`（读取指定对话详情）、`conversation.switch`（切到指定对话）、"
-        "`conversation.new`（新建并切换）；切换在用户的下一条消息生效，本条回复仍发回当前对话。\n"
+        "`conversation.manage`（action=list 列出该 AI 的全部对话、detail 读取指定对话详情、switch 切到指定对话、"
+        "new 新建并切换）；切换在用户的下一条消息生效，本条回复仍发回当前对话。\n"
         f"- 来源接收目标: {target_type}:{target}\n"
         "- 默认回传策略: 优先使用收到事件里的 msg_id 做被动回复。"
     )

@@ -309,41 +309,6 @@ def _short_tool_desc(text: str, limit: int = 90) -> str:
     return raw[:limit].rstrip() + "…"
 
 
-def _parse_action_descriptions(schema: Dict[str, Any]) -> List[Tuple[str, str]]:
-    """Extract ``(action, 中文说明)`` pairs from a ``*.manage`` tool's schema.
-
-    The single source of truth is the tool's own ``action`` property: ``enum``
-    lists the valid sub-actions and ``description`` carries the prose
-    ``"list 列出…；create 新建…"``. We split that prose on ``；/;/。/换行`` and match
-    each enum name (supporting ``a / b / c 中文`` grouping) so the catalog's
-    sub-action labels never drift from the registered schema.
-    """
-    props = (schema or {}).get("properties") if isinstance(schema, dict) else None
-    action = props.get("action") if isinstance(props, dict) else None
-    if not isinstance(action, dict):
-        return []
-    enum = action.get("enum")
-    if not isinstance(enum, list) or not enum:
-        return []
-    enum_names = [str(a).strip() for a in enum if str(a).strip()]
-    enum_set = set(enum_names)
-    desc_map: Dict[str, str] = {}
-    for seg in re.split(r"[；;。\n]+", str(action.get("description") or "")):
-        seg = seg.strip().lstrip("-•·*").strip()
-        if not seg:
-            continue
-        # 去掉形如「操作类型：」的前导中文标签，确保段首就是 action 名（否则首个 action 漏配）。
-        seg = re.sub(r"^[^A-Za-z0-9_]*[：:]\s*", "", seg)
-        m = re.match(r"^([A-Za-z0-9_]+(?:\s*/\s*[A-Za-z0-9_]+)*)\s+(.+)$", seg)
-        if not m:
-            continue
-        names = [n for n in re.split(r"\s*/\s*", m.group(1)) if n in enum_set]
-        text = m.group(2).strip(" ：:").strip()
-        for n in names:
-            desc_map.setdefault(n, text)
-    return [(name, desc_map.get(name, "")) for name in enum_names]
-
-
 def _render_mcp_tool_catalog(allowed_tools: set[str], endpoint_tools: Optional[set[str]] = None, user_id: int = 0) -> str:
     """Flat one-shot catalog of every allowed tool as ``name: short desc``.
 
@@ -377,7 +342,6 @@ def _render_mcp_tool_catalog(allowed_tools: set[str], endpoint_tools: Optional[s
             effective_desc = None
     desc_by_name: Dict[str, str] = {}
     destructive_by_name: Dict[str, bool] = {}
-    schema_by_name: Dict[str, Dict[str, Any]] = {}
     for item in registry.list_tools():
         name = str(item.get("name") or "").strip()
         if name:
@@ -389,7 +353,6 @@ def _render_mcp_tool_catalog(allowed_tools: set[str], endpoint_tools: Optional[s
                     pass
             desc_by_name[name] = raw_desc
             destructive_by_name[name] = bool(item.get("destructive"))
-            schema_by_name[name] = item.get("inputSchema") if isinstance(item.get("inputSchema"), dict) else {}
     endpoint_defs = online_tool_defs()
 
     groups: Dict[str, List[str]] = {}
@@ -411,15 +374,7 @@ def _render_mcp_tool_catalog(allowed_tools: set[str], endpoint_tools: Optional[s
         marker = " !" if destructive else ""
         short = _short_tool_desc(desc)
         line = f"  - {name}{marker}: {short}" if short else f"  - {name}{marker}"
-        ns_lines = groups.setdefault(_tool_namespace(name), [])
-        ns_lines.append(line)
-        # 子动作虚拟条目：把 *.manage 的 action 枚举展开为带中文的子条目，方便模型直接
-        # 定位具体操作（真正可调用的仍是 name(action=...)，故标注 action=）。
-        for sub_action, sub_desc in _parse_action_descriptions(schema_by_name.get(name) or {}):
-            sub_short = _short_tool_desc(sub_desc)
-            ns_lines.append(
-                f"      · action={sub_action}: {sub_short}" if sub_short else f"      · action={sub_action}"
-            )
+        groups.setdefault(_tool_namespace(name), []).append(line)
 
     lines: List[str] = []
     for namespace in sorted(groups):

@@ -48,7 +48,7 @@ DEFAULT_MCP_CALL_METHOD = """When you want to call a tool, output one or more bl
 Rules:
 - Explain your intent in normal text first when helpful, then emit the MCP call block.
 - Do not assume tool arguments. The [动态 MCP 说明] catalog already lists every callable tool; use mcp.describe_tool (tool / tools / query) to load the schema for the ones you need, then call them.
-- Use workspace.read_file / workspace.write_file / workspace.edit_file for file reads, writes, block replacement, deletion, append, and prepend. Use workspace.run_command only for command execution or diagnostics.
+- Use workspace.manage (action=read/tree/write/edit) for file reads, listing, writes, block replacement, deletion, append, and prepend. Use workspace.run_command only for command execution or diagnostics.
 - Use admin.* tools when managing connected agents.
 - Only fall back to legacy File/Create File/Delete File/Run Command formats if MCP is unavailable."""
 
