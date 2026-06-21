@@ -158,7 +158,6 @@ const MCP_TOOL_ZH_LABELS: Record<string, string> = {
   'workspace.manage': '文件管理',
   'admin.manage': '系统总览',
   'task.manage': '任务管理',
-  'task.complete': '完成任务',
   'message.send_to_user': '发给用户',
   'message.send_to_ai': '发给 AI',
   'conversation.manage': '会话管理',
@@ -301,7 +300,6 @@ const getMcpToolZhTag = (name: string) => getMcpToolFallbackTag(name)
 const MEMORY_PREFIX_ORDER = ['memory']
 const TASK_TOOL_ORDER = [
   'task.manage',
-  'task.complete',
 ]
 
 const getTaskToolRank = (name: string) => {

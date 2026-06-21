@@ -9,7 +9,7 @@ Lifecycle::
 
     plan.create         -> one TaskPlan (status=active) + N TaskPhase rows; phase 0 active
     plan.phase_complete -> mark current phase completed/failed, advance current_phase_seq
-    task.finish         -> mark plan completed/failed, write success/failure log file
+    plan.finish         -> mark plan completed/failed, write success/failure log file
 
 The runtime layer is responsible for the *context* side effects (hiding the
 finished phase's deep-thinking + MCP detail from the live conversation); this
@@ -151,7 +151,7 @@ def current_phase(session: Session, plan: TaskPlan) -> Optional[TaskPhase]:
 
 
 def awaiting_finish(session: Session, plan: Optional[TaskPlan]) -> bool:
-    """True when every phase is done and only ``task.finish`` remains.
+    """True when every phase is done and only ``plan.finish`` remains.
 
     After the last phase's ``plan.phase_complete`` the plan's ``current_phase_seq``
     stays on the final phase (no next phase to advance to); that phase being
@@ -172,7 +172,7 @@ def unfinished_phases(session: Session, plan: Optional[TaskPlan]) -> List[Dict[s
 
     A phase is considered closed once ``plan.phase_complete`` records either
     ``completed`` or ``failed``. The final plan outcome can still be success or
-    failure, but ``task.finish`` must not skip unclosed phase boundaries.
+    failure, but ``plan.finish`` must not skip unclosed phase boundaries.
     """
     if plan is None or plan.status not in ACTIVE_PLAN_STATUSES:
         return []

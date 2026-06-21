@@ -1605,7 +1605,7 @@ def _run_worker_impl(
                 if name in MCP_INTROSPECTION_TOOLS:
                     return True
                 if flow_awaiting_finish:
-                    return name == "task.finish"
+                    return name == "plan.finish"
                 return True
 
             for step_index in range(max_steps):
@@ -1690,7 +1690,7 @@ def _run_worker_impl(
                         ) & set(effective_tool_allowlist)
                     elif is_task_runtime and flow_awaiting_finish:
                         current_exposed_tools = (
-                            {"task.finish"} | set(MCP_INTROSPECTION_TOOLS)
+                            {"plan.finish"} | set(MCP_INTROSPECTION_TOOLS)
                         ) & set(effective_tool_allowlist)
                     step_tools, native_tool_name_map = _build_native_tools_payload(current_exposed_tools)
                 else:
@@ -2028,7 +2028,7 @@ def _run_worker_impl(
                     and cfg.ai_role == "digital_member"
                     and not task_is_finished
                     and not compression_failed
-                    and payload_tool not in ("task.complete", "task.finish", "plan.phase_complete")
+                    and payload_tool not in ("plan.phase_complete", "plan.finish")
                 ):
                     threshold = token_threshold_override if token_threshold_override is not None else max(1, int(cfg.token_limit or 1))
                     session_tokens = _session_total_tokens(bg, user_id, ai_kind, session_id, ai_config_id)
@@ -2156,6 +2156,38 @@ def _run_worker_impl(
                             logger.exception("auto AI message reply failed")
                         finally:
                             pending_ai_reply_message_id = ""
+                    # Auto-finalize simple (non-plan) task jobs when the run ends naturally.
+                    # If a plan was created, the AI is required to call plan.finish explicitly
+                    # (enforced by flow_awaiting_finish + _flow_allowed_tool).
+                    if task_job is not None and str(getattr(task_job, "status", "") or "").strip() not in {"completed", "cancelled", "stopped", "error"}:
+                        try:
+                            active_plan = None
+                            if ai_config_id is not None:
+                                active_plan = plan_service.get_active_plan(bg, user_id, int(ai_config_id), session_id)
+                            if active_plan is None:
+                                finished_at = time.time()
+                                task_job.status = "completed"
+                                task_job.finished_at = finished_at
+                                task_job.updated_at = finished_at
+                                bg.add(task_job)
+                                try:
+                                    notify_task_completion(
+                                        user_id=user_id,
+                                        job_id=str(task_job.job_id or ""),
+                                        summary="任务执行完成（简单任务，无计划流程）。",
+                                    )
+                                except Exception:
+                                    logger.exception("auto simple task completion notify failed")
+                                try:
+                                    _create_loop_scheduled_job(bg, task_job, time.time())
+                                except Exception:
+                                    logger.exception("auto simple task loop schedule failed")
+                                try:
+                                    bg.commit()
+                                except Exception:
+                                    pass
+                        except Exception:
+                            logger.exception("auto finalize simple task job failed")
                     _run_set_status(run_id, "completed", finished=True)
                     return
                 if joined_native_tools:
@@ -2484,8 +2516,9 @@ def _run_worker_impl(
                 # Planned task flow (system-driven). ``plan.create`` is followed
                 # by the system handing the AI phase 1; ``plan.phase_complete`` folds
                 # the finished phase out of context and the system hands over the
-                # next phase (or requires task.finish); ``task.finish`` closes the
-                # whole run.
+                # next phase (or requires plan.finish); ``plan.finish`` closes the
+                # whole plan run. Simple (non-plan) tasks complete naturally without
+                # an explicit completion tool call.
                 if (not tool_failed) and tool == "plan.create":
                     # Answer the tool call, then drive straight into phase 1 — the
                     # AI never has to poll plan progress itself.
@@ -2582,7 +2615,7 @@ def _run_worker_impl(
                     phase_started_at = time.time()
                     phase_mcp_statuses = []
                     # System drives the next step: hand over the next phase, or
-                    # require task.finish when every phase is done.
+                    # require plan.finish when every phase is done.
                     if flow_awaiting_finish:
                         convo.append({
                             "role": "user",
@@ -2603,7 +2636,7 @@ def _run_worker_impl(
                     _set_run_live_phase(run_id, "generating")
                     continue
 
-                if (not tool_failed) and tool == "task.finish":
+                if (not tool_failed) and tool == "plan.finish":
                     result_payload = tool_result.get("result", tool_result) if isinstance(tool_result, dict) else {}
                     finish_outcome = str(result_payload.get("outcome") or "").strip() or "success"
                     finish_job_id = str(result_payload.get("job_id") or "").strip()
@@ -2635,7 +2668,7 @@ def _run_worker_impl(
                             until_ts=now_ts,
                         )
                     except Exception:
-                        logger.exception("task.finish compaction tagging failed")
+                        logger.exception("plan.finish compaction tagging failed")
                     if completed_job is not None:
                         completed_job.status = "completed"
                         completed_job.finished_at = now_ts
@@ -2648,11 +2681,11 @@ def _run_worker_impl(
                                 summary=finish_summary,
                             )
                         except Exception:
-                            logger.exception("task.finish completion notify failed")
+                            logger.exception("plan.finish completion notify failed")
                     next_loop_job = _create_loop_scheduled_job(bg, completed_job, time.time())
                     finish_notice_lines = [
                         "[系统提示]",
-                        f"任务已通过 `task.finish` 收尾，结果：{'成功' if finish_outcome == 'success' else '失败'}。",
+                        f"任务已通过 `plan.finish` 收尾，结果：{'成功' if finish_outcome == 'success' else '失败'}。",
                     ]
                     if finish_log_path:
                         finish_notice_lines.append(
@@ -2682,81 +2715,6 @@ def _run_worker_impl(
                     _run_set_status(run_id, "completed", finished=True)
                     return
 
-                if (not tool_failed) and tool == "task.complete":
-                    result_payload = tool_result.get("result", tool_result)
-                    task_id = str(result_payload.get("job_id") or "").strip()
-                    task_title = str(result_payload.get("title") or "").strip()
-                    task_summary = str(result_payload.get("summary") or "").strip()
-                    completed_job = None
-                    if task_id and ai_config_id is not None:
-                        completed_job = bg.exec(
-                            select(AITaskJob).where(
-                                AITaskJob.user_id == user_id,
-                                AITaskJob.ai_config_id == ai_config_id,
-                                AITaskJob.job_id == task_id,
-                            )
-                        ).first()
-                    if completed_job is None and task_job is not None:
-                        completed_job = task_job
-                    if completed_job is not None:
-                        finished_at = time.time()
-                        completed_job.status = "completed"
-                        completed_job.finished_at = finished_at
-                        completed_job.updated_at = finished_at
-                        bg.add(completed_job)
-                        try:
-                            notify_task_completion(
-                                user_id=user_id,
-                                job_id=str(completed_job.job_id or ""),
-                                summary=task_summary,
-                            )
-                        except Exception as _nex:
-                            logger.exception("task completion notify failed")
-                    next_loop_job = _create_loop_scheduled_job(bg, completed_job, time.time())
-                    completion_notice_lines = [
-                        "[系统提示]",
-                        "任务已通过 `task.complete` 标记为完成。",
-                    ]
-                    if task_id:
-                        completion_notice_lines.append(f"- 任务ID: {task_id}")
-                    if task_title:
-                        completion_notice_lines.append(f"- 任务标题: {task_title}")
-                    if task_summary:
-                        completion_notice_lines.append(f"- 完成摘要: {task_summary}")
-                    if next_loop_job is not None:
-                        completion_notice_lines.append(f"- 循环任务已创建: {next_loop_job.job_id}")
-                    elif completed_job is not None:
-                        try:
-                            from api.services.task_schedule import normalize_schedule as _norm_sched
-                            _payload = json.loads(completed_job.task_payload) if completed_job.task_payload else {}
-                            _sched = _norm_sched(_payload.get("schedule") if isinstance(_payload, dict) else {})
-                            if _sched["enabled"] and _sched["loop_enabled"]:
-                                completion_notice_lines.append(
-                                    "- 循环已结束（达到轮数上限或超过截止时间），不再创建下一轮"
-                                )
-                        except Exception:
-                            pass
-                    completion_notice_lines.append("")
-                    completion_notice_lines.append("本任务对话已自动锁定，不再继续后续操作。")
-                    completion_notice = "\n".join(completion_notice_lines)
-                    _save_message(
-                        bg,
-                        user_id,
-                        ChatMessageCreate(
-                            role="system",
-                            content=completion_notice,
-                            tags="system_notice_task_complete",
-                            ai_config_id=ai_config_id,
-                            ai_kind=ai_kind,
-                            session_id=session_id,
-                            session_name=session_name,
-                            model=model,
-                            total_tokens=0,
-                        ),
-                    )
-                    _set_run_live_phase(run_id, "idle")
-                    _run_set_status(run_id, "completed", finished=True)
-                    return
                 else:
                     screenshot_message = _browser_screenshot_image_message(tool, tool_result)
                     attach_screenshot = bool(screenshot_message) and not image_input_disabled

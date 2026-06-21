@@ -32,7 +32,6 @@ TASK_FLOW_PROMPT_KEYS = (
 )
 
 TASK_RUNTIME_REQUIRED_TOOLS = {
-    "task.complete",
     # ``task.list`` was folded into the unified ``task.manage`` tool; the runtime
     # only needs read access (action=list), which task.manage permits for every
     # tier while gating create/update/delete to manager+.
@@ -40,14 +39,16 @@ TASK_RUNTIME_REQUIRED_TOOLS = {
     "message.send_to_ai",
     # Planned task flow: a task runtime can always plan and close out its own
     # plan even when the operational tool allowlist is narrowed.
+    # Small/non-plan tasks no longer require an explicit completion MCP call.
     "plan.create",
     "plan.phase_complete",
-    "task.finish",
+    "plan.finish",
 }
 
 # Injected into the task-runtime system prompt. The flow is enforced by the
 # runtime (see ai_runtime.inference.core): plan first, the system hands over
-# each phase, and the run must close via task.finish. The text is editable as a
+# each phase, and the run must close via plan.finish (only when a plan was created).
+# Simple tasks do not require an explicit completion tool. The text is editable as a
 # 固有思想 system prompt (key ``task_plan_flow_prompt``); this constant is only
 # the built-in fallback.
 TASK_PLAN_FLOW_PROMPT = DEFAULT_TASK_PLAN_FLOW_PROMPT

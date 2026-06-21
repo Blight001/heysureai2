@@ -14,7 +14,6 @@ from api.services.chat_media import delete_message_media
 from connector_runtime.dispatch.device_dispatch import get_run_session_context
 from api.services.governance import assert_can_manage_or_legacy
 from api.services import task_plan as plan_service
-from api.services.task_completion_notify import notify_task_completion
 from api.services.task_schedule import (
     AT_KEYS as _SCHEDULE_AT_KEYS,
     DAILY_TIME_KEYS as _SCHEDULE_DAILY_TIME_KEYS,
@@ -45,29 +44,7 @@ _MAX_ACTIVE_TASKS_PER_AI = 10
 _MAX_ACTIVE_SUBTASKS_PER_MANAGER = 20
 
 
-def _append_task_completion_archive(
-    user_id: int,
-    ai_config_id: int,
-    summary: str,
-    completed_at: float,
-) -> str:
-    workspace_root = get_project_root(user_id, ai_config_id)
-    archive_path = os.path.join(workspace_root, "task.md")
-    summary_line = " ".join(str(summary or "").split())
-    completed_date = datetime.fromtimestamp(completed_at).astimezone().date().isoformat()
-    entry = f"- {completed_date} | {summary_line}\n".encode("utf-8")
 
-    os.makedirs(workspace_root, exist_ok=True)
-    with open(archive_path, "a+b") as archive:
-        archive.seek(0, os.SEEK_END)
-        if archive.tell() > 0:
-            archive.seek(-1, os.SEEK_END)
-            if archive.read(1) not in {b"\n", b"\r"}:
-                archive.write(b"\n")
-        archive.write(entry)
-        archive.flush()
-        os.fsync(archive.fileno())
-    return archive_path
 
 
 def _pick_value(source: Dict[str, Any], keys: tuple[str, ...]) -> Any:
@@ -859,8 +836,8 @@ def _task_manage(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
     """Unified task management tool. Dispatch by ``action``.
 
     Folds ``task.{create,list,update,delete}`` behind one ``action`` parameter.
-    The self-execution operators (``task.complete`` and the ``plan.*`` phased
-    flow) stay separate because the task runtime drives them by name.
+    The plan.* phased flow (plan.create / plan.phase_complete / plan.finish)
+    is separate because the task runtime drives the plan boundary.
     Per-action minimum role is re-enforced here so members keep read-only access
     (``list``) while orchestration (``create``/``update``/``delete``) stays
     manager+.
@@ -881,99 +858,6 @@ def _task_manage(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
     if min_role:
         enforce_min_role(user_id, ai_config_id, min_role)
     return handler(user_id, args or {}, ai_config_id)
-
-
-def _task_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
-    if not ai_config_id:
-        raise HTTPException(status_code=400, detail="ai_config_id is required for task tools")
-    job_id = str(args.get("job_id") or "").strip()
-    summary = str(args.get("summary") or "").strip()
-    if not summary:
-        raise HTTPException(status_code=400, detail="summary is required for task.complete")
-    with Session(engine) as session:
-        row = None
-        if job_id:
-            row = session.exec(
-                select(AITaskJob).where(
-                    AITaskJob.user_id == user_id,
-                    AITaskJob.ai_config_id == ai_config_id,
-                    AITaskJob.job_id == job_id,
-                )
-            ).first()
-        if not row:
-            row = session.exec(
-                select(AITaskJob).where(
-                    AITaskJob.user_id == user_id,
-                    AITaskJob.ai_config_id == ai_config_id,
-                    AITaskJob.status == "running",
-                ).order_by(AITaskJob.priority.desc(), AITaskJob.created_at.asc())
-            ).first()
-        if not row:
-            raise HTTPException(status_code=404, detail="No running task to complete")
-        if str(row.status or "").strip() in _FINISHED_STATUSES:
-            raise HTTPException(status_code=400, detail="Task already finished")
-        run_ctx = get_run_session_context() or {}
-        session_id = str(args.get("session_id") or run_ctx.get("session_id") or row.session_id or "").strip() or None
-        plan = plan_service.get_active_plan_for_job(
-            session,
-            user_id,
-            int(ai_config_id),
-            job_id=str(row.job_id or ""),
-            session_id=session_id,
-        )
-        if plan is not None:
-            unfinished = plan_service.unfinished_phases(session, plan)
-            if unfinished:
-                labels = "；".join(
-                    f"阶段{int(item.get('seq', 0)) + 1}（{item.get('title') or item.get('goal') or '未命名'}，状态={item.get('status') or 'unknown'}）"
-                    for item in unfinished[:5]
-                )
-                more = "；..." if len(unfinished) > 5 else ""
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        "当前任务仍有分阶段计划未完成，已自动阻止 task.complete。"
-                        "请先完成阶段目标并调用 plan.phase_complete；全部阶段收尾后使用 task.finish 结束计划任务。"
-                        f"未收尾阶段：{labels}{more}"
-                    ),
-                )
-            raise HTTPException(
-                status_code=409,
-                detail="当前任务使用分阶段计划流，不能用 task.complete 直接结束；请调用 task.finish 收尾并写入成功/失败日志。",
-            )
-        finished_at = time.time()
-        _append_task_completion_archive(
-            user_id=user_id,
-            ai_config_id=ai_config_id,
-            summary=summary,
-            completed_at=finished_at,
-        )
-        row.status = "completed"
-        row.finished_at = finished_at
-        row.updated_at = finished_at
-        session.add(row)
-        session.commit()
-        try:
-            from api.services.world_events import emit_world_event
-            emit_world_event(user_id, "task_finished", {
-                "ai_config_id": ai_config_id,
-                "job_id": str(row.job_id or ""),
-                "title": str(row.title or ""),
-            })
-        except Exception:
-            pass  # best-effort：演出通知失败不影响任务完成
-        notification = notify_task_completion(
-            user_id=user_id,
-            job_id=str(row.job_id or ""),
-            summary=summary,
-        )
-        return {
-            "completed": True,
-            "job_id": row.job_id,
-            "title": row.title,
-            "notified_user": bool(isinstance(notification, dict) and notification.get("delivered")),
-            "next_step_hint": "任务已完成，可继续处理后续事项。",
-        }
 
 
 # Action → (handler, minimum role). ``None`` role means available to every tier.
@@ -1003,7 +887,7 @@ TASK_MANAGE_SCHEMA: Dict[str, Any] = {
                 "create 创建任务（需管理者+，支持 immediate/scheduled/recurring）；"
                 "update 接管更新任务标题/说明/优先级/状态/调度（需管理者+）；"
                 "delete 彻底删除任务并清理其会话（需管理者+）。"
-                "注意：完成任务用独立的 task.complete；对长动作分阶段执行用 plan 域 plan.create / plan.phase_complete（多阶段操作任务建议先 knowledge.search 或 librarian.consult 检索经验后再 plan.create），整个分阶段计划任务收尾用 task.finish。"
+                "注意：对长动作分阶段执行用 plan 域 plan.create / plan.phase_complete（多阶段操作任务建议先 knowledge.search 或 librarian.consult 检索经验后再 plan.create），整个分阶段计划任务收尾用 plan.finish。"
             ),
         },
         # ---- list ----

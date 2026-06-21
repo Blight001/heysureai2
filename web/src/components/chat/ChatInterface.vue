@@ -1166,7 +1166,7 @@ const pollRunLive = async (epoch: number) => {
     const incomingTool = String(run.current_tool || '')
     // Refresh the task header progress exactly when the flow advances.
     if (incomingTool !== currentMcpTool.value
-      && ['plan.create', 'plan.phase_complete', 'task.finish'].includes(incomingTool)) {
+      && ['plan.create', 'plan.phase_complete', 'plan.finish'].includes(incomingTool)) {
       bumpTaskPlan()
     }
     currentMcpTool.value = incomingTool

@@ -62,7 +62,7 @@ class TaskPlan(SQLModel, table=True):
 
     The plan flow is: trigger -> plan.create (commit a full plan) ->
     execute phase by phase (plan.phase_complete compacts the finished phase out
-    of the live context) -> task.finish (summarize the whole run into a success
+    of the live context) -> plan.finish (summarize the whole run into a success
     or failure log). One active plan per (user, ai_config, session).
     """
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -73,7 +73,7 @@ class TaskPlan(SQLModel, table=True):
     session_id: Optional[str] = Field(default=None, index=True)
     goal: str = Field(default="")
     status: str = Field(default="active", index=True)  # active/completed/failed/abandoned
-    outcome: Optional[str] = None  # success/failure (set on task.finish)
+    outcome: Optional[str] = None  # success/failure (set on plan.finish)
     phase_count: int = Field(default=0)
     current_phase_seq: int = Field(default=0)  # 0-based index of the in-progress phase
     summary: Optional[str] = None  # final whole-run summary

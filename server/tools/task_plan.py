@@ -5,14 +5,14 @@ A plan breaks a long action into ordered phases so quality stays high. It is
 is scheduled, independent work that runs in its own session, whereas a plan can
 appear inside either a normal conversation or a task conversation. ``phase`` is
 a sub-operation of ``plan`` and lives under the ``plan.*`` namespace; closing a
-run uses the task-domain ``task.finish`` (the ``task`` namespace stays separate).
+run uses the plan-domain ``plan.finish`` (the ``plan`` namespace stays separate).
 
 The AI drives a plan through three tools:
 
 - ``plan.create``         commit a full multi-phase plan before acting
 - ``plan.phase_complete`` finish the current phase (runtime then hides its
                           deep-thinking + MCP detail from the live context)
-- ``task.finish``         summarize the whole plan into a success/failure log
+- ``plan.finish``         summarize the whole plan into a success/failure log
 
 Durable plan state lives in :mod:`api.services.task_plan`; the conversation
 context side effects are applied by the inference loop.
@@ -28,7 +28,8 @@ from api.database import engine
 from api.models import AITaskJob
 from api.services import task_plan as plan_service
 from connector_runtime.dispatch.device_dispatch import get_run_session_context
-from mcp_runtime.mcp.core import get_project_root
+# get_project_root is imported inside _plan_finish to avoid circular import
+# (tools.task_plan <-> mcp_runtime.mcp.registry during full MCP bootstrap)
 
 
 def _run_context() -> Dict[str, Any]:
@@ -95,7 +96,7 @@ def _plan_create(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
         "plan": progress,
         "next_step_hint": (
             "计划已登记。现在从第 1 个阶段开始执行；完成一个阶段后调用 plan.phase_complete 收尾该阶段"
-            "（系统会自动精简上一阶段的上下文）；全部阶段完成后调用 task.finish 总结。"
+            "（系统会自动精简上一阶段的上下文）；全部阶段完成后调用 plan.finish 总结。"
         ),
     }
 
@@ -126,7 +127,7 @@ def _phase_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[i
         result = plan_service.complete_current_phase(session, plan, summary=summary, status=status)
         progress = plan_service.plan_progress(session, plan)
     hint = (
-        "已是最后一个阶段：系统将要求你调用 task.finish 总结整个计划。"
+        "已是最后一个阶段：系统将要求你调用 plan.finish 总结整个计划。"
         if result["all_phases_done"]
         else "本阶段已收尾、上下文已精简。系统会下发下一个阶段，按系统调度执行即可。"
     )
@@ -140,7 +141,7 @@ def _phase_complete(user_id: int, args: Dict[str, Any], ai_config_id: Optional[i
     }
 
 
-def _task_finish(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
+def _plan_finish(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]) -> Dict[str, Any]:
     cfg_id = _require_ai_config_id(ai_config_id)
     summary = str((args or {}).get("summary") or "").strip()
     if not summary:
@@ -163,7 +164,7 @@ def _task_finish(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "阶段性目标尚未全部收尾，已自动阻止 task.finish。"
+                    "阶段性目标尚未全部收尾，已自动阻止 plan.finish。"
                     "请先继续执行当前阶段；达成结束标志后调用 plan.phase_complete，"
                     "若该阶段失败也请用 plan.phase_complete(status=failed) 如实收尾。"
                     f"未收尾阶段：{labels}{more}"
@@ -171,6 +172,7 @@ def _task_finish(user_id: int, args: Dict[str, Any], ai_config_id: Optional[int]
             )
         plan_service.finish_plan(session, plan, outcome=outcome, summary=summary)
         phases = plan_service.list_phases(session, plan.plan_id)
+        from mcp_runtime.mcp.core import get_project_root
         workspace_root = get_project_root(user_id, cfg_id)
         try:
             log_path = plan_service.write_outcome_log(workspace_root, plan, phases, summary=summary)

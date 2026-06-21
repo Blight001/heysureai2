@@ -114,7 +114,7 @@ def _start_task_run(
         + payload_block
         + briefing_block
         + "在开始前：如果这是多阶段或复杂操作任务，请**先主动调用 knowledge.search**（以任务标题或要求构造 query）检索知识库中的相关历史流程与经验，再决定是否使用 plan.create 制定计划。\n\n"
-        + f"执行完成后请调用 MCP 工具 `task.complete`（参数包含 `job_id={job.job_id}` 和非空 `summary`）标记任务完成。"
+        + "简单任务执行结束后即可自然完成；若使用了 plan.create 分阶段，则最后必须调用 plan.finish 收尾。"
     )
     user_msg = _save_message(
         session,

@@ -53,8 +53,7 @@ const isSystemNoticeMessage = computed(() => {
 const isTaskCompleteNotice = computed(() => {
   const text = String(props.message.display_text || props.message.content || '').trim()
   return text.startsWith('【任务完成回执】')
-    || text.includes('任务已通过 `task.complete` 标记为完成')
-    || text.includes('任务已通过 task.complete 标记为完成')
+    || text.includes('任务已通过 `plan.finish` 收尾')
     || text.includes('本任务对话已自动锁定')
 })
 

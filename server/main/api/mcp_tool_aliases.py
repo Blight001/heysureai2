@@ -27,7 +27,7 @@ LEGACY_TOOL_RENAMES: Dict[str, str] = {
     "conversation.new": "conversation.manage",
     "conversation.forget_before_current": "conversation.manage",
     "conversation.find": "conversation.manage",
-    # 任务管理（task.complete 保持独立）
+    # 任务管理（完成用 plan.finish 或自然结束，task 域仅管理）
     "task.create": "task.manage",
     "task.list": "task.manage",
     "task.update": "task.manage",
