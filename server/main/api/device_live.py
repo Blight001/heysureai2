@@ -30,6 +30,7 @@ def connected_agent_rows_for_user(user_id: int):
 
         workshop_engine.ensure_presence_for_user(uid)
         rows.append(workshop_engine.connected_entry_for_user(uid))
+        rows.append(workshop_engine.toolbox_connected_entry_for_user(uid))
     except Exception:
         logger.exception("failed to add builtin workshop to agent snapshot user=%s", uid)
     return rows

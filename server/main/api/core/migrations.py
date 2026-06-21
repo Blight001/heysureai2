@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import sqlite3
+import time
 from typing import Dict
 
 from .config import SQLITE_FILE, database_dialect
@@ -44,6 +45,49 @@ def run_data_consolidations(engine) -> None:
     _consolidate_assistantaiconfig_bot_configs(engine)
     _consolidate_prompts_to_files(engine)
     _cleanup_dead_workspace_folders(engine)
+    _backfill_toolbox_bindings(engine)
+
+
+def _backfill_toolbox_bindings(engine) -> None:
+    """给存量 AI 补绑工具箱（``toolbox_builtin_<user>``）。
+
+    工具箱改为绑定制门禁后，未绑定的 AI 会被挡在工具箱工具之外。新 AI 在创建时
+    自动绑定；这里覆盖"旧库首次纳管（stamp 跳过 Alembic 迁移）"的路径。幂等：仅为
+    尚无工具箱绑定的 (user, ai) 新增行，不动用户手动解绑的状态。
+    """
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    tables = set(insp.get_table_names())
+    if "assistantaiconfig" not in tables or "workshopaibinding" not in tables:
+        return
+    now = time.time()
+    with engine.begin() as conn:
+        configs = conn.execute(text("SELECT id, user_id FROM assistantaiconfig")).fetchall()
+        existing = conn.execute(
+            text(
+                "SELECT user_id, ai_config_id FROM workshopaibinding "
+                "WHERE device_id LIKE 'toolbox_builtin_%'"
+            )
+        ).fetchall()
+        already = {(row[0], row[1]) for row in existing}
+        for cfg_id, user_id in configs:
+            if user_id is None or cfg_id is None or (user_id, cfg_id) in already:
+                continue
+            conn.execute(
+                text(
+                    "INSERT INTO workshopaibinding "
+                    "(user_id, device_id, ai_config_id, created_at, updated_at) "
+                    "VALUES (:user_id, :device_id, :ai_config_id, :created_at, :updated_at)"
+                ),
+                {
+                    "user_id": user_id,
+                    "device_id": f"toolbox_builtin_{user_id}",
+                    "ai_config_id": cfg_id,
+                    "created_at": now,
+                    "updated_at": now,
+                },
+            )
 
 
 # 已迁出数据库、真相源改为 KnowledgeBase 文件的文本列。

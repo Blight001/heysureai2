@@ -14,6 +14,9 @@ export interface WorkshopAgentItem {
   /** 当前绑定的成员（1:1，可能是其它 AI），null = 未绑定 */
   bound_ai_config_id: number | null
   bound_ai_name: string
+  /** 工具箱：多绑、默认自动绑定全部 AI（图书馆则为 1:1）。 */
+  is_toolbox?: boolean
+  multi?: boolean
 }
 
 export const fetchWorkshopBindings = (aiConfigId: number) =>

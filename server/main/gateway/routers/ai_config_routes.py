@@ -168,6 +168,13 @@ async def create_ai_config(
     session.refresh(cfg)
     _ensure_ai_workspace_dir(user.id, cfg.id)
     _write_persona_file(user.id, cfg, prompt=body.prompt or "")
+    # 工具箱默认自动绑定：新建 AI 即获得默认工具集（多绑；之后可在作坊里手动解绑）。
+    try:
+        from api.workshop_bindings import bind_config_to_toolbox
+
+        bind_config_to_toolbox(user.id, cfg.id)
+    except Exception:
+        pass
     _refresh_bot_long_connections_if_needed(
         any(bool(item.get("enabled")) for item in _bot_runtime_snapshot(cfg).values() if isinstance(item, dict))
     )

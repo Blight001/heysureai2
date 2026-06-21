@@ -79,21 +79,34 @@ async def list_workshop_bindings(
     bound_ids = set(workshop_device_ids_for_config(user.id, cfg.id))
     online = {device_id: caps for device_id, caps in online_workshop_agents_for_user(user.id)}
 
+    library_device_id = workshop_engine.device_id_for_user(user.id)
+    toolbox_device_id = workshop_engine.toolbox_device_id_for_user(user.id)
     names: Dict[str, str] = {
-        workshop_engine.device_id_for_user(user.id): workshop_engine.WORKSHOP_DISPLAY_NAME,
+        library_device_id: workshop_engine.WORKSHOP_DISPLAY_NAME,
+        toolbox_device_id: workshop_engine.TOOLBOX_DISPLAY_NAME,
     }
 
     items = []
-    for device_id in sorted(set(online) | bound_ids):
+    # 图书馆与工具箱两个内置作坊始终出现在列表里（工具箱无 presence，靠这里补齐）。
+    for device_id in sorted(set(online) | bound_ids | {library_device_id, toolbox_device_id}):
+        is_toolbox = device_id == toolbox_device_id
         bound_cfg_id = bound_config_id_for_agent(user.id, device_id)
+        if is_toolbox:
+            tools = workshop_engine.toolbox_capability_names()
+            online_state = True  # 工具箱内置常在线（无 socket presence）
+        else:
+            tools = sorted(online.get(device_id) or [])
+            online_state = device_id in online
         items.append({
             "device_id": device_id,
             "name": names.get(device_id) or device_id,
-            "online": device_id in online,
-            "tools": sorted(online.get(device_id) or []),
+            "online": online_state,
+            "tools": tools,
             "bound": device_id in bound_ids,
             "bound_ai_config_id": bound_cfg_id,
             "bound_ai_name": _config_name(session, user.id, bound_cfg_id),
+            "is_toolbox": is_toolbox,
+            "multi": is_toolbox,
         })
     return {"ai_config_id": cfg.id, "agents": items}
 
@@ -109,13 +122,20 @@ async def update_workshop_binding(
     device_id = str(payload.device_id or "").strip()
     if not device_id:
         raise HTTPException(status_code=400, detail="device_id is required")
-    if bool(payload.bound) and str(cfg.ai_role or "") != "digital_member":
+
+    from workshop import engine as workshop_engine
+
+    is_toolbox = device_id == workshop_engine.toolbox_device_id_for_user(user.id)
+    # 工具箱多绑、可绑任意 AI；图书馆 1:1、仅数字成员。
+    if not is_toolbox and bool(payload.bound) and str(cfg.ai_role or "") != "digital_member":
         raise HTTPException(status_code=400, detail="图书馆只能绑定 AI 数字成员")
-    # 1:1：绑定会替换该工坊原有的绑定，把被替换的成员返回给前端提示。
-    replaced_id = bound_config_id_for_agent(user.id, device_id)
+    # 1:1（图书馆）：绑定会替换原有绑定，把被替换的成员返回给前端提示；工具箱多绑无替换。
+    replaced_id = None if is_toolbox else bound_config_id_for_agent(user.id, device_id)
     if replaced_id == int(cfg.id):
         replaced_id = None
-    stored = set_workshop_binding(user.id, device_id, cfg.id, bound=bool(payload.bound))
+    stored = set_workshop_binding(
+        user.id, device_id, cfg.id, bound=bool(payload.bound), single=not is_toolbox
+    )
     return {
         "ai_config_id": cfg.id,
         "device_id": device_id,

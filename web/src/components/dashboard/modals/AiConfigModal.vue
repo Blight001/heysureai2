@@ -136,8 +136,8 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
   const next = !!target?.checked
   const cfgId = editingConfigId.value
   if (!cfgId) return
-  // 1:1 绑定：勾选会替换工坊当前绑定的成员，先确认
-  if (next && agent.bound_ai_config_id && agent.bound_ai_config_id !== cfgId) {
+  // 1:1 绑定（图书馆）：勾选会替换工坊当前绑定的成员，先确认。工具箱多绑无需确认。
+  if (!agent.is_toolbox && next && agent.bound_ai_config_id && agent.bound_ai_config_id !== cfgId) {
     const ok = window.confirm(
       `「${agent.name}」当前绑定的是「${agent.bound_ai_name}」。图书馆只能绑定一个 AI 数字成员，继续将替换为本 AI？`,
     )
@@ -347,28 +347,29 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                   />
                 </div>
 
-                <!-- 服务端内置图书馆：保留 1:1 专用绑定。 -->
+                <!-- 服务端内置作坊绑定：图书馆 1:1（仅数字成员）、工具箱多绑（默认全部 AI）。 -->
                 <div
-                  v-if="editingConfigId && form.ai_role_group !== 'assistant_admin'"
+                  v-if="editingConfigId"
                   class="mb-3 rounded-lg border border-indigo-200 bg-indigo-50/40 p-3 dark:border-indigo-500/30 dark:bg-indigo-500/5"
                 >
                   <div class="flex items-center justify-between">
-                    <div class="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">图书馆</div>
+                    <div class="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">内置作坊绑定</div>
                     <button
                       class="text-[10px] px-1.5 py-0.5 rounded border border-indigo-200 text-indigo-600 dark:border-indigo-500/40 dark:text-indigo-300"
                       @click="loadWorkshopAgents"
                     >刷新</button>
                   </div>
                   <p class="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">
-                    工坊由服务端内置并自动上线。当前不携带 MCP 工具；绑定关系继续保留，后续接入新 MCP 后可直接沿用。工坊只能绑定一个 AI 数字成员。
+                    工具箱：每个 AI 默认绑定，提供系统固定工具集（多绑，可在此解绑收回）。图书馆：治理类工具，1:1 只绑一个 AI 数字成员。
                   </p>
                   <div v-if="workshopLoading" class="mt-2 text-[11px] text-zinc-400">加载中…</div>
                   <div v-else-if="workshopError" class="mt-2 text-[11px] text-rose-500">{{ workshopError }}</div>
                   <div v-else-if="workshopAgents.length === 0" class="mt-2 text-[11px] text-zinc-400">
-                    工坊暂不可用，请刷新重试（正常情况下内置工坊会自动上线）。
+                    内置作坊暂不可用，请刷新重试（正常情况下会自动上线）。
                   </div>
                   <label
                     v-for="agent in workshopAgents"
+                    v-show="agent.is_toolbox || form.ai_role_group !== 'assistant_admin'"
                     :key="`workshop-${agent.device_id}`"
                     class="mt-2 flex items-center justify-between gap-2 rounded border border-zinc-200 bg-white/70 px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900/50"
                   >
@@ -379,8 +380,8 @@ const toggleWorkshopBinding = async (agent: WorkshopAgentItem, event: Event) => 
                       ></span>
                       <span class="truncate text-zinc-700 dark:text-zinc-200">{{ agent.name }}</span>
                       <span class="shrink-0 text-[10px] text-zinc-400">
-                        {{ agent.online ? `${agent.tools.length} 个工具` : '离线' }} ·
-                        {{ agent.bound_ai_config_id ? `已绑定：${agent.bound_ai_name}` : '未绑定' }}
+                        {{ agent.is_toolbox ? `${agent.tools.length} 个工具 · 多绑` : (agent.online ? `${agent.tools.length} 个工具` : '离线') }} ·
+                        {{ agent.is_toolbox ? (agent.bound ? '本AI已绑定' : '本AI未绑定') : (agent.bound_ai_config_id ? `已绑定：${agent.bound_ai_name}` : '未绑定') }}
                       </span>
                     </span>
                     <input type="checkbox" :checked="agent.bound" @change="toggleWorkshopBinding(agent, $event)" />
