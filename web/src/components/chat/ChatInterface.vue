@@ -12,6 +12,7 @@ import { listAiConfigs } from '@/api/ai'
 import { callMcpTool, listMcpTools } from '@/api/mcp'
 import { getAuthToken } from '@/api/http'
 import { renderGroupedMcpToolCatalog, stripPromptSection, type McpCatalogToolGroup } from '@/utils/mcpToolCatalog'
+import { formatDurationMs } from '@/utils/datetime'
 
 const { alert, confirm, prompt } = useMessage()
 interface ChatMessage {
@@ -197,12 +198,38 @@ const copyFrontPrompt = async () => {
     console.warn('copy front prompt failed', error)
   }
 }
-const runStatusText = computed(() => {
-  if (!isRunActive.value) return ''
-  if (currentRunPhase.value === 'waiting_mcp') {
-    return currentMcpTool.value ? `等待 MCP: ${currentMcpTool.value}` : '等待 MCP 返回'
+// Live per-phase elapsed counters, updated by timeTick every 200 ms
+const liveMcpMs = computed(() => {
+  const base = mcpElapsedMs.value
+  if (currentRunPhase.value === 'waiting_mcp' && phaseEnterTs.value != null) {
+    return base + (timeTick.value - phaseEnterTs.value)
   }
-  return '后端流式生成中'
+  return base
+})
+const liveThinkMs = computed(() => {
+  const base = thinkElapsedMs.value
+  if (currentRunPhase.value === 'generating' && phaseEnterTs.value != null) {
+    return base + (timeTick.value - phaseEnterTs.value)
+  }
+  return base
+})
+
+const runTimingText = computed(() => {
+  if (isRunActive.value) {
+    if (currentRunPhase.value === 'waiting_mcp') {
+      const label = currentMcpTool.value ? `MCP: ${currentMcpTool.value}` : 'MCP 等待中'
+      return `${label} · ${formatDurationMs(liveMcpMs.value)}`
+    }
+    return `AI 思考中 · ${formatDurationMs(liveThinkMs.value)}`
+  }
+  if (lastRunDurations.value) {
+    const d = lastRunDurations.value
+    const parts = [`总计 ${formatDurationMs(d.total)}`]
+    if (d.think > 100) parts.push(`思考 ${formatDurationMs(d.think)}`)
+    if (d.mcp > 100) parts.push(`MCP ${formatDurationMs(d.mcp)}`)
+    return parts.join(' · ')
+  }
+  return ''
 })
 
 function startTimeTicker() {
@@ -215,6 +242,28 @@ function stopTimeTicker() {
   if (timeTickTimer != null) {
     window.clearInterval(timeTickTimer)
     timeTickTimer = null
+  }
+}
+
+const RUN_STATS_KEY = 'heysure_run_stats'
+const RUN_STATS_MAX = 500
+
+function saveRunStat(durations: { total: number; mcp: number; think: number }) {
+  try {
+    const raw = localStorage.getItem(RUN_STATS_KEY)
+    const arr: unknown[] = raw ? (JSON.parse(raw) as unknown[]) : []
+    arr.push({
+      ts: Math.floor(Date.now() / 1000),
+      aiConfigId: props.aiConfigId ?? null,
+      sessionId: currentSessionId.value || null,
+      total: durations.total,
+      think: durations.think,
+      mcp: durations.mcp,
+    })
+    if (arr.length > RUN_STATS_MAX) arr.splice(0, arr.length - RUN_STATS_MAX)
+    localStorage.setItem(RUN_STATS_KEY, JSON.stringify(arr))
+  } catch {
+    // localStorage unavailable
   }
 }
 
@@ -254,6 +303,7 @@ function finalizeRunTimers() {
       mcp: mcpElapsedMs.value,
       think: thinkElapsedMs.value,
     }
+    saveRunStat(lastRunDurations.value)
   }
   runStartTs.value = null
   phaseEnterTs.value = null
@@ -1632,7 +1682,11 @@ onBeforeUnmount(() => {
         />
       </div>
       <div class="flex items-center gap-1 sm:gap-2 shrink-0">
-        <span v-if="runStatusText" class="text-[11px] text-emerald-600 dark:text-emerald-400">{{ runStatusText }}</span>
+        <span
+          v-if="runTimingText"
+          class="text-[11px] tabular-nums"
+          :class="isRunActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-zinc-500'"
+        >{{ runTimingText }}</span>
         <button
           v-if="isRunActive"
           class="shrink-0 text-xs px-2 py-1 rounded border border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-900/20"

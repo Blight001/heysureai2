@@ -301,6 +301,18 @@ def _resolve_embedding_credentials(
     user_id: int,
     ai_config_id: Optional[int],
 ) -> tuple[str, str, str, int]:
+    model = str(settings.embedding_model or "text-embedding-3-small").strip()
+    dims = int(settings.embedding_dimensions or 1536)
+
+    # Dedicated embedding credentials take priority over chat-model credentials.
+    # This allows using OpenAI (or any embedding provider) for knowledge indexing
+    # while the chat model may be Grok/xAI or another provider that has no
+    # embedding endpoint.
+    dedicated_key = str(settings.embedding_api_key or "").strip()
+    dedicated_url = str(settings.embedding_base_url or "").strip()
+    if dedicated_key and dedicated_url:
+        return dedicated_key, dedicated_url, model, dims
+
     with Session(engine) as session:
         user = session.get(User, int(user_id))
         cfg = None
@@ -312,11 +324,11 @@ def _resolve_embedding_credentials(
                 )
             ).first()
     if user is None:
-        return "", "", str(settings.embedding_model or "text-embedding-3-small"), int(settings.embedding_dimensions or 1536)
+        return "", "", model, dims
 
     api_key, base_url, _chat_model = resolve_model_preset(user, cfg)
-    model = str(settings.embedding_model or _chat_model or "text-embedding-3-small").strip()
-    dims = int(settings.embedding_dimensions or 1536)
+    if not model:
+        model = str(_chat_model or "text-embedding-3-small").strip()
     return api_key, base_url, model, dims
 
 
@@ -353,12 +365,16 @@ def _embed_text(
 
 
 def _read_topic_body(user_id: int, row: KnowledgeEntry) -> str:
-    path = _topic_path(user_id, row.file_path)
-    raw = _read_text(path)
-    if raw is None:
+    try:
+        path = _topic_path(user_id, row.file_path)
+        raw = _read_text(path)
+        if raw is None:
+            return ""
+        _meta, body = _split_frontmatter(raw)
+        return body.strip()
+    except Exception as exc:  # bad file_path, traversal guard, read error etc.
+        logger.info("knowledge_vector read_topic_body failed memory_id=%s: %s", getattr(row, 'memory_id', '?'), exc)
         return ""
-    _meta, body = _split_frontmatter(raw)
-    return body.strip()
 
 
 def ensure_knowledge_embedding(
@@ -402,6 +418,15 @@ def ensure_knowledge_embedding(
         # No embedding endpoint configured: leave the index untouched rather
         # than raising inside a batch backfill.
         return False
+
+    # Only actually call the embedding API when dedicated embedding config is present.
+    # This prevents noisy 404s when the main chat credentials (e.g. xAI/Grok) are used
+    # as fallback but don't support /embeddings.
+    dedicated_key = str(settings.embedding_api_key or "").strip()
+    dedicated_url = str(settings.embedding_base_url or "").strip()
+    if not (dedicated_key and dedicated_url):
+        return False
+
     embedding = _embed_text(
         api_key=api_key,
         base_url=base_url,
@@ -463,7 +488,7 @@ def ensure_knowledge_embeddings(
                 ):
                     changed += 1
             except Exception as exc:
-                logger.info("knowledge_vector index failed user=%s memory_id=%s: %s", user_id, row.memory_id, exc)
+                logger.warning("knowledge_vector index failed user=%s memory_id=%s: %s", user_id, row.memory_id, exc)
         # Single commit for the whole batch (also flushes deferred snapshot
         # refreshes from unchanged rows).
         sess.commit()
@@ -511,7 +536,7 @@ def _backfill_missing_embeddings(
             ):
                 changed += 1
         except Exception as exc:
-            logger.info("knowledge_vector backfill missing failed memory_id=%s: %s", row.memory_id, exc)
+            logger.warning("knowledge_vector backfill missing failed memory_id=%s: %s", row.memory_id, exc)
     if changed:
         session.commit()
     return changed
@@ -703,84 +728,72 @@ def search_knowledge(
     if not query_text:
         return []
 
-    with Session(engine) as session:
-        try:
-            # Hot path: only embed entries that have no index row yet. Existing
-            # entries are kept fresh at write time (sync_topic_embedding_for_entry),
-            # so we avoid re-reading every topic file on each search.
-            _backfill_missing_embeddings(session, user_id=user_id, ai_config_id=ai_config_id)
-        except Exception as exc:
-            logger.info("knowledge_vector backfill skipped for search: %s", exc)
-
-        api_key, base_url, model, dimensions = _resolve_embedding_credentials(user_id, ai_config_id)
-        query_vector: Optional[list[float]] = None
-        if api_key and base_url:
+    try:
+        with Session(engine) as session:
             try:
-                query_vector = _embed_text(
-                    api_key=api_key,
-                    base_url=base_url,
-                    model=model,
-                    dimensions=dimensions,
-                    text=query_text,
-                )
+                # Hot path: only embed entries that have no index row yet. Existing
+                # entries are kept fresh at write time (sync_topic_embedding_for_entry),
+                # so we avoid re-reading every topic file on each search.
+                _backfill_missing_embeddings(session, user_id=user_id, ai_config_id=ai_config_id)
             except Exception as exc:
-                logger.info("knowledge_vector query embedding failed user=%s: %s", user_id, exc)
+                logger.info("knowledge_vector backfill skipped for search: %s", exc)
 
-        candidate_limit = max(20, int(k or 5) * 6)
-        candidates: list[tuple[KnowledgeEntry, float, Optional[float]]] = []
-        seen_ids: set[str] = set()
-        if query_vector:
-            try:
-                for row, distance in _vector_search_candidates(
-                    session,
-                    user_id=user_id,
-                    query_vector=query_vector,
-                    scope=scope,
-                    ai_config_id=ai_config_id,
-                    candidate_limit=candidate_limit,
-                ):
-                    lexical = _score_lexical(row, query_text)
-                    semantic = max(0.0, float(distance or 0.0))
-                    score = semantic + min(lexical, 8.0) * 0.12
-                    candidates.append((row, score, float(distance or 0.0)))
-                    seen_ids.add(row.memory_id)
-            except Exception as exc:
-                logger.info("knowledge_vector native search failed user=%s: %s", user_id, exc)
+            api_key, base_url, model, dimensions = _resolve_embedding_credentials(user_id, ai_config_id)
+            query_vector: Optional[list[float]] = None
+            if api_key and base_url:
+                try:
+                    query_vector = _embed_text(
+                        api_key=api_key,
+                        base_url=base_url,
+                        model=model,
+                        dimensions=dimensions,
+                        text=query_text,
+                    )
+                except Exception as exc:
+                    logger.info("knowledge_vector query embedding failed user=%s: %s", user_id, exc)
 
-        rows = session.exec(
-            select(KnowledgeEntry).where(
-                KnowledgeEntry.user_id == int(user_id),
-                KnowledgeEntry.status == "active",
-            )
-        ).all()
-        for row in rows:
-            if row.memory_id in seen_ids or not _scope_match(row, scope, ai_config_id):
-                continue
-            lexical = _score_lexical(row, query_text)
-            if lexical <= 0:
-                continue
-            candidates.append((row, lexical, None))
+            candidate_limit = max(20, int(k or 5) * 6)
+            candidates: list[tuple[KnowledgeEntry, float, float]] = []
+            if query_vector:
+                try:
+                    for row, distance in _vector_search_candidates(
+                        session,
+                        user_id=user_id,
+                        query_vector=query_vector,
+                        scope=scope,
+                        ai_config_id=ai_config_id,
+                        candidate_limit=candidate_limit,
+                    ):
+                        lexical = _score_lexical(row, query_text)
+                        semantic = max(0.0, float(distance or 0.0))
+                        score = semantic + min(lexical, 8.0) * 0.12
+                        candidates.append((row, score, float(distance or 0.0)))
+                except Exception as exc:
+                    logger.info("knowledge_vector native search failed user=%s: %s", user_id, exc)
 
-        candidates.sort(key=lambda item: (-item[1], -float(item[0].updated_at or 0)))
-        top = candidates[: max(1, int(k or 5))]
+            candidates.sort(key=lambda item: (-item[1], -float(item[0].updated_at or 0)))
+            top = candidates[: max(1, int(k or 5))]
 
-        now = time.time()
-        results: list[Dict[str, Any]] = []
-        for row, score, distance in top:
-            row.use_count += 1
-            row.last_used_at = now
-            session.add(row)
-            results.append(
-                _entry_result(
-                    user_id=user_id,
-                    row=row,
-                    score=score,
-                    distance=distance,
-                    include_body=include_body,
+            now = time.time()
+            results: list[Dict[str, Any]] = []
+            for row, score, distance in top:
+                row.use_count += 1
+                row.last_used_at = now
+                session.add(row)
+                results.append(
+                    _entry_result(
+                        user_id=user_id,
+                        row=row,
+                        score=score,
+                        distance=distance,
+                        include_body=include_body,
+                    )
                 )
-            )
-        session.commit()
-        return results
+            session.commit()
+            return results
+    except Exception as exc:
+        logger.warning("knowledge_vector search_knowledge failed user=%s: %s", user_id, exc)
+        return []
 
 
 def knowledge_search_schema() -> Dict[str, Any]:
@@ -815,14 +828,18 @@ def _knowledge_search_result(
         k = 5
     scope = str((args or {}).get("scope") or "").strip() or None
     include_body = bool((args or {}).get("include_body"))
-    items = search_knowledge(
-            user_id=user_id,
-            query=query,
-            k=k,
-            scope=scope,
-            ai_config_id=ai_config_id,
-            include_body=include_body,
-    )
+    try:
+        items = search_knowledge(
+                user_id=user_id,
+                query=query,
+                k=k,
+                scope=scope,
+                ai_config_id=ai_config_id,
+                include_body=include_body,
+        )
+    except Exception as exc:
+        logger.warning("knowledge.search internal error user=%s: %s", user_id, exc)
+        items = []
     return {
         "query": query,
         "count": len(items),
@@ -844,4 +861,4 @@ def sync_topic_embedding_for_entry(
         try:
             ensure_knowledge_embedding(session, user_id=user_id, row=row, ai_config_id=ai_config_id, force=force)
         except Exception as exc:
-            logger.info("knowledge_vector sync failed user=%s memory_id=%s: %s", user_id, row.memory_id, exc)
+            logger.warning("knowledge_vector sync failed user=%s memory_id=%s: %s", user_id, row.memory_id, exc)

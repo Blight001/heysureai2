@@ -234,6 +234,28 @@ npm install
 npm run build
 ```
 
+### Keeping things tidy (monorepo)
+
+这个仓库同时包含 **web / server / device** 三大块，容易感觉“太杂”。
+
+虽然 `.gitignore` 已排除构建产物，但本地磁盘上 `node_modules`、`dist`、`build`、`__pycache__`、`venv` 仍然会让目录显得很重。
+
+**一键清理：**
+
+```bat
+clean.bat          # Windows 双击
+pwsh clean.ps1     # 或 PowerShell 7
+```
+
+清理后需要重新 `npm install` / 安装 Python 依赖。
+
+想彻底“仓库里套仓库”有两种主流做法（目前仍是单仓库 monorepo）：
+
+- **Git Submodule**：把 web/server/device 独立成仓库，用 submodule 嵌套进来。
+- **独立仓库 + bootstrap**（推荐）：拆成 3 个仓库，根目录放一个 `init-env.ps1` 脚本自动 clone 到 `web/`、`server/`、`device/` 目录，保持所有启动脚本和 docker-compose 不变。
+
+需要的话告诉我，我可以帮你实施任一方案。
+
 ## Docs
 
 - Backend overview: [`server/README.md`](server/README.md)

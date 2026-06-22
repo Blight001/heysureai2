@@ -103,6 +103,10 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 | `AI_RUNTIME_URL` | 可选 | Gateway → AI Runtime（默认 `http://127.0.0.1:3003`） |
 | `MCP_RUNTIME_URL` | 可选 | Gateway → MCP Runtime（默认 `http://127.0.0.1:3001`） |
 | `CONNECTOR_RUNTIME_URL` | 可选 | Gateway → Connector（默认 `http://127.0.0.1:3002`） |
+| `HEYSURE_EMBEDDING_API_KEY` | 可选 | 专用 embedding API Key，覆盖聊天模型凭据（聊天用 Grok/xAI 而 embedding 需 OpenAI 时必须设） |
+| `HEYSURE_EMBEDDING_BASE_URL` | 可选 | 专用 embedding Base URL（与上面配合，如 `https://api.openai.com/v1`） |
+| `HEYSURE_EMBEDDING_MODEL` | 可选 | embedding 模型名（默认 `text-embedding-3-small`） |
+| `HEYSURE_EMBEDDING_DIMENSIONS` | 可选 | embedding 向量维度（默认 1536） |
 | `TAVILY_API_KEY` | 可选 | Web 搜索功能 |
 | `LOG_LEVEL` | 可选 | DEBUG/INFO/WARNING（默认 INFO） |
 | `LOG_JSON` | 可选 | 容器部署时设 `true`，输出 JSON 格式日志 |

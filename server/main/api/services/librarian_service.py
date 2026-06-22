@@ -308,6 +308,17 @@ def _topic_path(user_id: int, file_path: str) -> str:
     return safe_join(root, file_path)
 
 
+def _read_text(path: str) -> Optional[str]:
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.info(f"librarian read {path} failed: {exc}")
+        return None
+
+
 # ---------- 索引文件 ----------
 
 def _rebuild_index(user_id: int) -> None:
@@ -605,6 +616,105 @@ def _ensure_skill_frontmatter(body: str, *, name: str, description: str) -> str:
     return "\n".join(lines) + "\n\n" + text.strip() + "\n"
 
 
+def _extract_skill_triggers(skill_md_text: str, name: str) -> str:
+    """从 SKILL.md 提取触发词。
+    优先读 frontmatter keywords/tags 字段；
+    若没有，以 name 的词作为触发词兜底。
+    """
+    text = str(skill_md_text or "")
+    candidates: List[str] = []
+    if text.lstrip().startswith("---"):
+        try:
+            end = text.find("\n---", 3)
+            if end >= 0:
+                head = text[3:end]
+                try:
+                    meta = yaml.safe_load(head)
+                    if isinstance(meta, dict):
+                        for key in ("keywords", "tags", "triggers", "trigger_words"):
+                            val = meta.get(key)
+                            if val is not None:
+                                candidates.extend(_normalize_triggers(val))
+                                break
+                except Exception:
+                    pass
+        except Exception:
+            pass
+    if not candidates:
+        # fallback to name words (split on spaces/punct as word triggers)
+        norm_name = re.sub(r'[\s,，;；/\\\-_.]+', ',', str(name or ""))
+        candidates = _normalize_triggers(norm_name)
+    return ",".join(candidates)
+
+
+def _sync_skill_to_knowledge_entry(
+    user_id: int,
+    slug: str,
+    name: str,
+    summary: str,
+    skill_md_path: str,     # 相对 KnowledgeBase/ 的路径
+    installed_at: float,
+    *,
+    ai_config_id: Optional[int] = None,
+    status: str = "active",
+) -> None:
+    """将一个 skill 写入 / 更新 KnowledgeEntry（幂等）。"""
+    memory_id = f"skill:{slug}"
+
+    # Sanitize file_path: must be relative path under KnowledgeBase, no leading / or ..
+    safe_path = str(skill_md_path or "").strip().lstrip("/\\")
+    if ".." in safe_path.replace("\\", "/").split("/"):
+        safe_path = ""
+    if safe_path and not safe_path.lower().endswith((".md", "skill.md")):
+        safe_path = safe_path.rstrip("/\\") + "/SKILL.md"
+    skill_md_path = safe_path
+
+    # 读文件提取触发词
+    raw = _read_text(_topic_path(user_id, skill_md_path)) if skill_md_path else None
+    triggers = _extract_skill_triggers(raw or "", name)
+    # upsert KnowledgeEntry
+    with Session(engine) as session:
+        row = session.exec(
+            select(KnowledgeEntry).where(
+                KnowledgeEntry.user_id == user_id,
+                KnowledgeEntry.memory_id == memory_id,
+            )
+        ).first()
+        now = time.time()
+        if row is None:
+            row = KnowledgeEntry(
+                memory_id=memory_id,
+                user_id=user_id,
+                title=name,
+                triggers=triggers,
+                summary=summary,
+                file_path=skill_md_path,
+                scope="global",
+                status=status,
+                confidence=1.0,
+                created_at=installed_at,
+                updated_at=now,
+            )
+        else:
+            row.title = name
+            row.triggers = triggers
+            row.summary = summary
+            row.file_path = skill_md_path
+            row.status = status
+            row.updated_at = now
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+    # 触发向量索引（异步失败不影响主流程）
+    try:
+        sync_topic_embedding_for_entry(
+            user_id=user_id, row=row,
+            ai_config_id=ai_config_id, force=True,
+        )
+    except Exception as exc:
+        logger.warning("skill embedding sync failed slug=%s: %s", slug, exc)
+
+
 def create_inheritance_thought(
     *,
     user_id: int,
@@ -667,6 +777,19 @@ def create_inheritance_thought(
     }
     state["installed"] = installed
     _save_clawhub_state(user_id, state)
+    try:
+        _sync_skill_to_knowledge_entry(
+            user_id=user_id,
+            slug=thought_id,
+            name=meta["name"],
+            summary=meta["description"] or summary_text,
+            skill_md_path=install_rel.rstrip("/\\") + "/SKILL.md",
+            installed_at=installed_at,
+            ai_config_id=ai_config_id,
+            status="active",
+        )
+    except Exception as exc:
+        logger.warning("skill sync to knowledge entry failed slug=%s: %s", thought_id, exc)
     return dict(installed[thought_id], id=thought_id)
 
 
@@ -795,6 +918,7 @@ def _import_global_skill_snapshot(
     skill_name: str,
     source_dir: str,
     endpoint_kind: str = "any",
+    ai_config_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     thought_id = f"npx/{skill_name}"
     _validate_skill_tree_for_import(source_dir)
@@ -846,6 +970,19 @@ def _import_global_skill_snapshot(
     }
     state["installed"] = installed
     _save_clawhub_state(user_id, state)
+    try:
+        _sync_skill_to_knowledge_entry(
+            user_id=user_id,
+            slug=thought_id,
+            name=meta["name"],
+            summary=meta["description"],
+            skill_md_path=install_rel.rstrip("/\\") + "/SKILL.md",
+            installed_at=installed_at,
+            ai_config_id=ai_config_id,
+            status="active",
+        )
+    except Exception as exc:
+        logger.warning("skill sync to knowledge entry failed slug=%s: %s", thought_id, exc)
     return dict(installed[thought_id], id=thought_id)
 
 
@@ -909,6 +1046,7 @@ def install_npx_skill_package(
             skill_name=name,
             source_dir=os.path.join(global_root, name),
             endpoint_kind=resolved_endpoint,
+            ai_config_id=ai_config_id,
         )
         for name in changed
     ]
@@ -1805,6 +1943,21 @@ def install_clawhub_skill(
     }
     state["installed"] = installed
     _save_clawhub_state(user_id, state)
+    skill_entry = installed[slug]
+    p = str(skill_entry.get("path") or "").rstrip("/\\")
+    try:
+        _sync_skill_to_knowledge_entry(
+            user_id=user_id,
+            slug=slug,
+            name=str(skill_entry.get("displayName") or slug),
+            summary=str(skill_entry.get("summary") or ""),
+            skill_md_path=(p + "/SKILL.md") if p else "",
+            installed_at=float(skill_entry.get("installed_at") or time.time()),
+            ai_config_id=ai_config_id,
+            status="active",
+        )
+    except Exception as exc:
+        logger.warning("skill sync to knowledge entry failed slug=%s: %s", slug, exc)
     return {
         "installed": True,
         "skill": installed[slug],
@@ -1855,6 +2008,22 @@ def update_clawhub_installed_skill(*, user_id: int, slug: str, skill_card: str) 
         installed[slug]["edited_at"] = time.time()
         state["installed"] = installed
         _save_clawhub_state(user_id, state)
+    try:
+        meta = _skill_card_metadata(install_dir, slug)
+        rel_path = str(item.get("path") or "").rstrip("/\\")
+        skill_md_path = (rel_path + "/SKILL.md") if rel_path else ""
+        installed_at = float(item.get("installed_at") or time.time())
+        _sync_skill_to_knowledge_entry(
+            user_id=user_id,
+            slug=slug,
+            name=meta["name"],
+            summary=meta["description"] or "",
+            skill_md_path=skill_md_path,
+            installed_at=installed_at,
+            status="active",
+        )
+    except Exception as exc:
+        logger.warning("skill sync to knowledge entry failed slug=%s: %s", slug, exc)
     return {
         "updated": True,
         "detail": clawhub_installed_skill_detail(user_id=user_id, slug=slug),
@@ -1892,6 +2061,19 @@ def delete_clawhub_installed_skill(*, user_id: int, slug: str) -> Dict[str, Any]
     installed.pop(slug, None)
     state["installed"] = installed
     _save_clawhub_state(user_id, state)
+    try:
+        p = str(item.get("path") or "").rstrip("/\\")
+        _sync_skill_to_knowledge_entry(
+            user_id=user_id,
+            slug=slug,
+            name=str(item.get("displayName") or slug),
+            summary=str(item.get("summary") or ""),
+            skill_md_path=(p + "/SKILL.md") if p else "",
+            installed_at=float(item.get("installed_at") or time.time()),
+            status="archived",
+        )
+    except Exception as exc:
+        logger.warning("skill sync to knowledge entry failed slug=%s: %s", slug, exc)
     return {
         "deleted": True,
         "slug": slug,

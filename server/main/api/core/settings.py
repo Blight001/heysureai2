@@ -118,6 +118,24 @@ class Settings(BaseSettings):
         le=8192,
         description="Embedding vector width used by the pgvector index.",
     )
+    embedding_api_key: str = Field(
+        default="",
+        alias="HEYSURE_EMBEDDING_API_KEY",
+        description=(
+            "Dedicated API key for embedding requests. When set, overrides the "
+            "chat-model credentials so embeddings can use a different provider "
+            "(e.g. OpenAI) while chat uses Grok/xAI or another model."
+        ),
+    )
+    embedding_base_url: str = Field(
+        default="",
+        alias="HEYSURE_EMBEDDING_BASE_URL",
+        description=(
+            "Dedicated base URL for embedding requests (e.g. https://api.openai.com/v1). "
+            "When set together with HEYSURE_EMBEDDING_API_KEY, fully overrides the "
+            "chat-model base URL for all knowledge indexing and search operations."
+        ),
+    )
 
     # ---- Chat / AI runtime ---------------------------------------------------
 

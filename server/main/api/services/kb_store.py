@@ -31,7 +31,7 @@ from sqlmodel import Session, select
 
 from ..core.config import _ai_dir_slug, user_shared_knowledge_dir
 from ..database import engine
-from ..models import AssistantAIConfig, EvolutionInput, Memory, User
+from ..models import AssistantAIConfig, EvolutionInput, KnowledgeEntry, Memory, User
 from ..models import defaults as _defaults
 
 logger = logging.getLogger(__name__)
@@ -819,6 +819,271 @@ def _ensure_layout(user_id: int) -> None:
 # 对外编排入口
 # ============================================================
 
+
+def _parse_triggers_field(raw: Any) -> str:
+    """将 frontmatter 中的 triggers 字段规范化为逗号分隔字符串。
+
+    支持三种格式：
+    - 列表对象 ["a", "b"]
+    - YAML 数组字符串 "[a, b]"
+    - 普通逗号字符串 "a, b"
+    """
+    if isinstance(raw, list):
+        return ",".join(str(t).strip() for t in raw if str(t).strip())
+    s = str(raw or "").strip()
+    if s.startswith("[") and s.endswith("]"):
+        inner = s[1:-1]
+        parts = [p.strip().strip("\"'") for p in inner.split(",")]
+        return ",".join(p for p in parts if p)
+    return s
+
+
+def sync_topics_from_files(user_id: int, *, session: Optional[Session] = None) -> int:
+    """扫描 topics/*.md，将文件作为真相源 upsert KnowledgeEntry + 触发向量索引。
+
+    对于手动放入 topics/ 的 md 文件，此函数让它们自动被向量搜索发现。
+    - frontmatter 有 memory_id → 以它为主键；否则用文件名生成 topic:{slug}
+    - 文件 mtime 比 row.updated_at 新时才重新写入并重建向量
+    返回本次 upsert 的条目数。
+    """
+    from .knowledge_vector import sync_topic_embedding_for_entry
+
+    own = session is None
+    sess = session or Session(engine)
+    synced = 0
+    try:
+        for path in _list_md(user_id, TOPICS_DIR):
+            raw = _read_text(path)
+            if raw is None:
+                continue
+            meta, body = _split_frontmatter(raw)
+
+            memory_id = str(meta.get("memory_id") or "").strip()
+            if not memory_id:
+                slug = os.path.splitext(os.path.basename(path))[0]
+                memory_id = f"topic:{slug}"
+
+            title = str(meta.get("title") or os.path.splitext(os.path.basename(path))[0])
+            triggers = _parse_triggers_field(meta.get("triggers") or "")
+            scope = str(meta.get("scope") or "global")
+            status = str(meta.get("status") or "active")
+            confidence = float(meta.get("confidence") or 1.0)
+            summary = str(meta.get("summary") or body[:200]).strip()
+
+            kb_root = _kb_root(user_id)
+            try:
+                rel_path = os.path.relpath(path, kb_root).replace("\\", "/")
+            except ValueError:
+                rel_path = TOPICS_DIR + "/" + os.path.basename(path)
+
+            try:
+                file_mtime = os.path.getmtime(path)
+            except OSError:
+                file_mtime = 0.0
+
+            now = time.time()
+            row = sess.exec(
+                select(KnowledgeEntry).where(
+                    KnowledgeEntry.user_id == int(user_id),
+                    KnowledgeEntry.memory_id == memory_id,
+                )
+            ).first()
+
+            if row is None:
+                row = KnowledgeEntry(
+                    memory_id=memory_id,
+                    user_id=int(user_id),
+                    title=title,
+                    triggers=triggers,
+                    summary=summary,
+                    file_path=rel_path,
+                    scope=scope,
+                    status=status,
+                    confidence=confidence,
+                    created_at=float(meta.get("created_at") or file_mtime or now),
+                    updated_at=now,
+                )
+                sess.add(row)
+                sess.commit()
+                sess.refresh(row)
+                synced += 1
+                try:
+                    sync_topic_embedding_for_entry(user_id=int(user_id), row=row)
+                except Exception as exc:
+                    logger.info("sync_topics_from_files embedding failed memory_id=%s: %s", memory_id, exc)
+            elif file_mtime > (row.updated_at or 0):
+                row.title = title
+                row.triggers = triggers
+                row.summary = summary
+                row.file_path = rel_path
+                row.status = status
+                row.confidence = confidence
+                row.updated_at = now
+                sess.add(row)
+                sess.commit()
+                sess.refresh(row)
+                synced += 1
+                try:
+                    sync_topic_embedding_for_entry(user_id=int(user_id), row=row, force=True)
+                except Exception as exc:
+                    logger.info("sync_topics_from_files embedding update failed memory_id=%s: %s", memory_id, exc)
+    except Exception as exc:
+        try:
+            sess.rollback()
+        except Exception:
+            pass
+        logger.info("sync_topics_from_files user=%s failed: %s", user_id, exc)
+    finally:
+        if own:
+            sess.close()
+    return synced
+
+
+def sync_skills_from_directory(user_id: int) -> int:
+    """扫描 inheritance_thoughts/ 下所有 SKILL.md，补全未索引的技能条目。
+
+    覆盖 backfill_skill_knowledge_entries 未处理的场景：
+    - 手动放置的 SKILL.md（未经 API）
+    - 文件修改后向量过期（mtime 检查）
+    返回本次处理的条目数。
+    """
+    from .librarian_service import (
+        _inheritance_thoughts_root,
+        _load_clawhub_state,
+        _skill_card_metadata,
+        _sync_skill_to_knowledge_entry,
+    )
+
+    thoughts_root = _inheritance_thoughts_root(user_id)
+    kb_root = _kb_root(user_id)
+
+    # 从 clawhub_skills.json 建立 file_path → slug 映射
+    try:
+        state = _load_clawhub_state(user_id)
+        installed: Dict[str, Any] = state.get("installed") or {}
+    except Exception:
+        installed = {}
+    path_to_slug: Dict[str, str] = {}
+    for slug, meta in installed.items():
+        p = str(meta.get("path") or "").strip().rstrip("/\\")
+        if p:
+            path_to_slug[(p + "/SKILL.md").replace("\\", "/")] = slug
+
+    synced = 0
+    for dirpath, _dirs, files in os.walk(thoughts_root):
+        if "SKILL.md" not in files:
+            continue
+        skill_md_abs = os.path.join(dirpath, "SKILL.md")
+        try:
+            rel_path = os.path.relpath(skill_md_abs, kb_root).replace("\\", "/")
+        except ValueError:
+            continue
+
+        slug = path_to_slug.get(rel_path)
+
+        if slug:
+            memory_id = f"skill:{slug}"
+            with Session(engine) as session:
+                existing = session.exec(
+                    select(KnowledgeEntry).where(
+                        KnowledgeEntry.user_id == int(user_id),
+                        KnowledgeEntry.memory_id == memory_id,
+                    )
+                ).first()
+            if existing is not None:
+                try:
+                    file_mtime = os.path.getmtime(skill_md_abs)
+                except OSError:
+                    continue
+                if file_mtime <= (existing.updated_at or 0):
+                    continue
+            meta_entry = installed[slug]
+            try:
+                card = _skill_card_metadata(dirpath, str(meta_entry.get("displayName") or slug))
+            except Exception:
+                card = {"name": str(meta_entry.get("displayName") or slug), "description": str(meta_entry.get("summary") or "")}
+            try:
+                _sync_skill_to_knowledge_entry(
+                    user_id=int(user_id),
+                    slug=slug,
+                    name=card["name"],
+                    summary=card["description"] or str(meta_entry.get("summary") or ""),
+                    skill_md_path=rel_path,
+                    installed_at=float(meta_entry.get("installed_at") or os.path.getmtime(skill_md_abs)),
+                    status="active",
+                )
+                synced += 1
+            except Exception as exc:
+                logger.info("sync_skills_from_directory slug=%s: %s", slug, exc)
+        else:
+            # 不在 clawhub_skills.json 中 — 手动放置的文件，按 file_path 查重
+            with Session(engine) as session:
+                existing = session.exec(
+                    select(KnowledgeEntry).where(
+                        KnowledgeEntry.user_id == int(user_id),
+                        KnowledgeEntry.file_path == rel_path,
+                    )
+                ).first()
+            if existing is not None:
+                continue
+            try:
+                rel_dir = os.path.relpath(dirpath, thoughts_root).replace("\\", "/")
+            except ValueError:
+                rel_dir = os.path.basename(dirpath)
+            auto_slug = f"fs:{rel_dir.replace('/', '-')}"
+            try:
+                card = _skill_card_metadata(dirpath, os.path.basename(dirpath))
+            except Exception:
+                card = {"name": os.path.basename(dirpath), "description": ""}
+            try:
+                _sync_skill_to_knowledge_entry(
+                    user_id=int(user_id),
+                    slug=auto_slug,
+                    name=card["name"],
+                    summary=card["description"],
+                    skill_md_path=rel_path,
+                    installed_at=os.path.getmtime(skill_md_abs),
+                    status="active",
+                )
+                synced += 1
+            except Exception as exc:
+                logger.info("sync_skills_from_directory unregistered rel=%s: %s", rel_path, exc)
+    return synced
+
+
+def backfill_skill_knowledge_entries(user_id: int) -> None:
+    """把 inheritance_thoughts 里的已安装技能批量写入 KnowledgeEntry（缺失时才写）。"""
+    from .librarian_service import (
+        _load_clawhub_state, _sync_skill_to_knowledge_entry,
+    )
+    state = _load_clawhub_state(user_id)
+    installed = state.get("installed") or {}
+    for slug, meta in installed.items():
+        memory_id = f"skill:{slug}"
+        with Session(engine) as session:
+            existing = session.exec(
+                select(KnowledgeEntry).where(
+                    KnowledgeEntry.user_id == user_id,
+                    KnowledgeEntry.memory_id == memory_id,
+                )
+            ).first()
+        if existing:
+            continue
+        try:
+            p = str(meta.get("path") or "").strip()
+            skill_md_path = (p.rstrip("/\\") + "/SKILL.md") if p else ""
+            _sync_skill_to_knowledge_entry(
+                user_id=user_id,
+                slug=slug,
+                name=str(meta.get("displayName") or meta.get("slug") or slug),
+                summary=str(meta.get("summary") or ""),
+                skill_md_path=skill_md_path,
+                installed_at=float(meta.get("installed_at") or time.time()),
+            )
+        except Exception as exc:
+            logger.info("backfill skill entry failed slug=%s: %s", slug, exc)
+
+
 def ensure_user_kb(user_id: int, *, session: Optional[Session] = None) -> None:
     """Ensure the KB root exists and export DB-backed content on demand.
 
@@ -843,13 +1108,143 @@ def ensure_user_kb(user_id: int, *, session: Optional[Session] = None) -> None:
             sync_memories_from_files(user_id, session=sess)
             sync_evolution_from_files(user_id, session=sess)
             try:
-                from .knowledge_vector import ensure_knowledge_embeddings
-
-                ensure_knowledge_embeddings(user_id=user_id, session=sess)
+                sync_topics_from_files(user_id, session=sess)
             except Exception as exc:
-                logger.info(f"kb_store ensure_user_kb knowledge embeddings user={user_id} failed: {exc}")
+                logger.info(f"kb_store ensure_user_kb sync_topics user={user_id} failed: {exc}")
+            try:
+                sync_skills_from_directory(user_id)
+            except Exception as exc:
+                logger.info(f"kb_store ensure_user_kb sync_skills user={user_id} failed: {exc}")
+            # 向量 embedding 确保已移除对 knowledge.search 的依赖；如需后台索引可手动触发。
+            # try:
+            #     from .knowledge_vector import ensure_knowledge_embeddings
+            #     ensure_knowledge_embeddings(user_id=user_id, session=sess)
+            # except Exception as exc:
+            #     logger.info(f"kb_store ensure_user_kb knowledge embeddings user={user_id} failed: {exc}")
+            try:
+                backfill_skill_knowledge_entries(user_id)
+            except Exception as exc:
+                logger.info(f"kb_store ensure_user_kb backfill skills user={user_id} failed: {exc}")
         finally:
             if own:
                 sess.close()
     except Exception as exc:  # pragma: no cover - defensive
         logger.info(f"kb_store ensure_user_kb user={user_id} failed: {exc}")
+
+
+# ============================================================
+# 关键词匹配检索（文件直读，移除对向量数据库的依赖）
+# ============================================================
+
+_KB_SEARCH_WORD = re.compile(r"[一-鿿]|[A-Za-z0-9]+")
+
+
+def _kb_tokenize(text: str) -> list[str]:
+    return [m.lower() for m in _KB_SEARCH_WORD.findall(text or "")]
+
+
+def _list_searchable_md(user_id: int) -> list[str]:
+    """返回相对 KnowledgeBase 根的 .md 候选路径，优先 topics/ 和 inheritance_thoughts 下的技能。"""
+    root = _kb_root(user_id)
+    out: list[str] = []
+    # topics/*.md
+    topics = os.path.join(root, TOPICS_DIR)
+    if os.path.isdir(topics):
+        try:
+            for n in os.listdir(topics):
+                if n.endswith(".md"):
+                    out.append(os.path.join(TOPICS_DIR, n).replace("\\", "/"))
+        except Exception:
+            pass
+    # inheritance_thoughts/**/SKILL.md
+    inh = os.path.join(root, "inheritance_thoughts")
+    if os.path.isdir(inh):
+        try:
+            for dirpath, _dirs, files in os.walk(inh):
+                if "SKILL.md" in files:
+                    full = os.path.join(dirpath, "SKILL.md")
+                    try:
+                        rel = os.path.relpath(full, root).replace("\\", "/")
+                        out.append(rel)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    return out
+
+
+def keyword_search_knowledge(
+    user_id: int, query: str, k: int = 5, include_body: bool = False
+) -> list[dict[str, Any]]:
+    """纯关键词匹配检索 KnowledgeBase 文件夹内容。
+
+    不依赖 KnowledgeEntry / KnowledgeEmbedding / embedding API。
+    直接扫描 topics/ 和 inheritance_thoughts/**/SKILL.md 等文件。
+    """
+    q = str(query or "").strip()
+    if not q:
+        return []
+    q_lower = q.lower()
+    q_tokens = _kb_tokenize(q)
+
+    root = _kb_root(user_id)
+    candidates = _list_searchable_md(user_id)
+    scored: list[tuple[float, dict[str, Any]]] = []
+
+    for rel in candidates:
+        abs_p = os.path.join(root, rel)
+        raw = _read_text(abs_p)
+        if not raw:
+            continue
+        try:
+            meta, body = _split_frontmatter(raw)
+            title = (
+                str(meta.get("title") or meta.get("name") or "").strip()
+                or (re.search(r"^#\s+(.+)", body, re.M).group(1).strip() if re.search(r"^#\s+(.+)", body, re.M) else "")
+                or os.path.splitext(os.path.basename(rel))[0]
+            )
+            trig_raw = meta.get("triggers") or meta.get("keywords") or meta.get("tags") or ""
+            triggers = _parse_triggers_field(trig_raw)
+            if isinstance(triggers, str):
+                triggers = [t.strip() for t in re.split(r"[,，;；\n]+", triggers) if t.strip()]
+            summary = str(meta.get("summary") or meta.get("description") or "").strip()
+            if not summary:
+                summary = (body or "")[:180].replace("\n", " ").strip()
+            full_hay = " ".join([title, " ".join(triggers or []), summary, body or ""]).lower()
+
+            score = 0.0
+            # 精确触发词命中加权
+            for t in (triggers or []):
+                if t and str(t).lower() in q_lower:
+                    score += 3.0
+            # query token 匹配
+            for tk in q_tokens:
+                if tk and tk in full_hay:
+                    score += 1.0
+            # 标题包含 query 额外加分
+            if q_lower in title.lower():
+                score += 2.0
+            if score <= 0:
+                continue
+
+            excerpt = (body or summary or "").replace("\n", " ").strip()
+            if len(excerpt) > 280:
+                excerpt = excerpt[:280] + "…"
+
+            item: dict[str, Any] = {
+                "memory_id": str(meta.get("memory_id") or meta.get("id") or f"file:{rel}"),
+                "title": title,
+                "triggers": triggers or [],
+                "summary": summary,
+                "score": round(float(score), 6),
+                "file_path": rel,
+                "excerpt": excerpt,
+            }
+            if include_body:
+                item["body"] = body.strip()
+            scored.append((score, item))
+        except Exception:
+            continue
+
+    scored.sort(key=lambda x: (-x[0], x[1].get("title", "")))
+    return [it for _, it in scored[: max(1, int(k or 5))]]
