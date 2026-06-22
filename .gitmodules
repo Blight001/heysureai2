@@ -1,0 +1,9 @@
+[submodule "web"]
+	url = https://github.com/Blight001/HeySure-Web.git
+	path = web
+[submodule "server"]
+	url = https://github.com/Blight001/HeySure-Server.git
+	path = server
+[submodule "device"]
+	url = https://github.com/Blight001/HeySure-Device.git
+	path = device

@@ -3,10 +3,14 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 rem Root one-click launcher for Windows.
 rem It delegates to the backend Tk dashboard (server/tk_launcher.py).
-rem
-rem This is a *workspace* repository.
-rem Run "pwsh -File init-env.ps1" first if web/, server/, device/ are missing.
-rem Run "clean.bat" (or pwsh clean.ps1) to remove heavy build artifacts.
+
+rem This is a *workspace* repository using Git submodules.
+rem web/, server/, device/ are linked to HeySure-Web / Server / Device repos.
+rem 
+rem Clone command:
+rem   git clone --recurse-submodules <workspace-url>
+rem Or after normal clone:
+rem   git submodule update --init --recursive
 
 set "ROOT_DIR=%~dp0"
 

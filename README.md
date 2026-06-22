@@ -132,7 +132,7 @@ docker compose up -d --build
 
 ```bat
 # One-time (or when you want to refresh components)
-pwsh -File init-env.ps1
+git submodule update --init --recursive
 
 windows-run.bat
 server\run.bat
@@ -154,7 +154,7 @@ The gateway is healthy when it returns:
 
 ## Environment
 
-Backend scripts read the `.env` file in the **workspace root** (same directory as `docker-compose.yml` and `init-env.ps1`).
+Backend scripts read the `.env` file in the **workspace root** (same directory as `docker-compose.yml`).
 
 Copy `.env.example` → `.env` and fill it in. Common variables:
 
@@ -233,7 +233,7 @@ npm install
 npm run build
 ```
 
-**Tip**: For the full experience (Docker Compose + all launchers), run `init-env.ps1` / `init-env.sh` once from the workspace root.
+**Tip**: After `git submodule update --init --recursive`, Docker Compose and launchers work as before.
 
 ### Repository Structure (multi-repo)
 
@@ -245,25 +245,24 @@ This repository is now a **lightweight workspace** that orchestrates three indep
 | HeySure-Server   | `server/`  | FastAPI gateway + 4 runtimes (shared api layer) |
 | HeySure-Device   | `device/`  | Desktop agents (win/linux/mac) + browser extension + Android |
 
-**First-time setup (recommended):**
+**First-time setup (Git submodules):**
 
 ```bat
-# Windows
-pwsh -File init-env.ps1
+# Recommended: clone with submodules in one go
+git clone --recurse-submodules <this-workspace-repo>
 
-# or cross-platform
-bash init-env.sh
+# Or if you already cloned without them:
+git submodule update --init --recursive
 ```
 
-This will clone the three component repos into `web/`, `server/`, and `device/`.
+This brings in web/, server/, device/ from the three separate repos (HeySure-Web / Server / Device).
 
-See [SPLIT_GUIDE.md](SPLIT_GUIDE.md) if you are performing or reproducing the original split from the monorepo.
+- `docker compose up -d --build` and the run scripts will now work.
+- `clean.bat` / `clean.ps1` can still be used for heavy cleanup (node_modules etc).
 
-After bootstrap:
-- `docker compose up -d --build` and all `run*.bat` scripts work exactly as before.
-- `clean.bat` / `clean.ps1` still works for heavy cleanup.
+Place `.env` (from `.env.example`) in the workspace root.
 
-You must place a `.env` (copy from `.env.example`) in the **workspace root**.
+(The old init-env scripts are deprecated and can be ignored.)
 
 ### Keeping the workspace clean
 

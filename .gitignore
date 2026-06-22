@@ -1,16 +1,11 @@
 # HeySure Workspace (lightweight meta-repo)
-# The three main components live in their own repositories:
+# The three main components are Git *submodules*:
 #   - HeySure-Web     → web/
 #   - HeySure-Server  → server/
 #   - HeySure-Device  → device/
 #
-# These directories are populated by init-env.ps1 / init-env.sh
-# and should NOT be committed into the workspace repo.
-
-# Component directories (populated by bootstrap)
-web/
-server/
-device/
+# They are linked via .gitmodules. Content lives in the separate repos.
+# Use: git clone --recurse-submodules  or  git submodule update --init --recursive
 
 # Environment
 .env

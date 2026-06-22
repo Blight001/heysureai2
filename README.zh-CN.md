@@ -133,7 +133,7 @@ docker compose up -d --build
 
 ```bat
 # 首次（或需要刷新组件时）执行
-pwsh -File init-env.ps1
+git submodule update --init --recursive
 
 windows-run.bat
 server\run.bat
@@ -155,7 +155,7 @@ http://127.0.0.1:3000/
 
 ## 环境变量
 
-后端启动脚本读取**工作区根目录**的 `.env`（与 `docker-compose.yml` 和 `init-env.ps1` 同级）。
+后端启动脚本读取**工作区根目录**的 `.env`（与 `docker-compose.yml` 同级）。
 
 请复制 `.env.example` 为 `.env` 并填写。常用变量如下：
 
@@ -234,7 +234,7 @@ npm install
 npm run build
 ```
 
-**提示**：想完整使用 Docker Compose 和所有启动脚本，请先在工作区根目录运行 `init-env.ps1` 或 `init-env.sh`。
+**提示**：子模块初始化后即可正常使用 Docker Compose 和启动脚本。
 
 ### 仓库结构（多仓库）
 
@@ -246,19 +246,23 @@ npm run build
 | HeySure-Server  | `server/`  | 后端网关 + 4 个 runtime（共享 api 层） |
 | HeySure-Device  | `device/`  | 桌面端（win/linux/mac）+ 浏览器扩展 + Android |
 
-**首次初始化（推荐）：**
+**首次初始化（Git 子模块）：**
 
 ```bat
-# Windows
-pwsh -File init-env.ps1
+# 推荐方式，一次性带子模块克隆
+git clone --recurse-submodules <工作区仓库地址>
 
-# 或跨平台
-bash init-env.sh
+# 如果已经普通 clone 了：
+git submodule update --init --recursive
 ```
 
-执行后会自动把三个组件仓库 clone 到 `web/`、`server/`、`device/`。
+这样 web/ server/ device/ 会从三个独立仓库（HeySure-Web/Server/Device）拉取进来。
 
-完整拆分过程见 [SPLIT_GUIDE.md](SPLIT_GUIDE.md)。
+之后 docker compose 和各种启动脚本即可正常工作。
+
+`.env` 请放在工作区根目录（从 `.env.example` 复制）。
+
+旧的 `init-env.ps1` / `init-env.sh` 已不再需要（仅作参考保留）。
 
 之后 `docker compose` 和所有启动脚本的行为和原来 monorepo 时完全一致。
 

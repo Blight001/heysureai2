@@ -18,13 +18,13 @@ HeySure AI 2.0 是一个**多端 AI agent 协作平台**：Web 控制台 + Pytho
 | HeySure-Device  | `device/`| Electron / Chrome MV3 / Kotlin + TS | 端侧执行器 | [`device/CLAUDE.md`](device/CLAUDE.md) |
 | (workspace)     | `doc/`   | Markdown | 设计文档 | 保留在工作区根目录 |
 
-首次使用请在工作区根目录运行：
-- Windows: `pwsh -File init-env.ps1`
-- 其他: `./init-env.sh`
+首次克隆请使用带子模块的方式：
+- `git clone --recurse-submodules <仓库地址>`
+- 或者普通 clone 后执行：`git submodule update --init --recursive`
 
-这会把三个组件仓库克隆到对应目录，之后所有脚本和 docker-compose 行为与原来一致。
+子模块会自动把 web/ server/ device/ 对接到对应的独立仓库。
 
-拆分历史与操作细节见 `SPLIT_GUIDE.md`。
+拆分历史见 `SPLIT_GUIDE.md`。
 
 ## 架构与端口
 
@@ -50,8 +50,9 @@ API Gateway (3000)  ── 对外唯一入口，挂载 server/main/gateway/route
 
 ```bash
 # 首次初始化（多仓库）
-pwsh -File init-env.ps1     # Windows
-./init-env.sh               # Linux/mac
+git clone --recurse-submodules ...
+# 或之后：
+git submodule update --init --recursive
 
 # Docker（一键全栈）
 docker compose up -d --build      # 或 docker-run.bat
