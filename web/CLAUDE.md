@@ -1,6 +1,8 @@
-# CLAUDE.md — web/ 前端控制台
+# CLAUDE.md — web/ 前端控制台 (HeySure-Web)
 
 Vue 3 + Vite + TypeScript + Tailwind 的单页控制台。端口 **58150**，dev 时通过 vite proxy 把 `/api` `/socket.io` `/avatars` `/tmp-images` 转发到后端 `:3000`。
+
+**注意**：本目录是独立仓库 `HeySure-Web`。完整项目使用时请通过上层 workspace（init-env）拉取其余组件。
 
 **两个 Vite 入口**：`index.html`（主控制台）+ `game/index.html`（Agent 进化与实战区域，dev 访问 `/game/`）。
 

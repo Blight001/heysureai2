@@ -5,7 +5,24 @@ import { fileURLToPath } from 'url'
 import vm from 'vm'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const defsPath = path.resolve(__dirname, '../../../../../device/extension/src/lib/tools/definitions.ts')
+
+// Support both old monorepo and new multi-repo workspace layouts.
+// From server/ after split the device is usually at ../device relative to workspace.
+const candidates = [
+  path.resolve(__dirname, '../../../../../device/extension/src/lib/tools/definitions.ts'), // old monorepo
+  path.resolve(__dirname, '../../../../device/extension/src/lib/tools/definitions.ts'),     // server at workspace root
+  path.resolve(__dirname, '../../../../../device/extension/src/lib/tools/definitions.ts'),    // safety
+  path.resolve(process.cwd(), '../device/extension/src/lib/tools/definitions.ts'),
+  path.resolve(process.cwd(), '../../device/extension/src/lib/tools/definitions.ts'),
+]
+
+let defsPath = null
+for (const c of candidates) {
+  if (fs.existsSync(c)) { defsPath = c; break }
+}
+if (!defsPath) {
+  throw new Error('Could not locate device/extension/src/lib/tools/definitions.ts. Run from workspace root or set correct relative path.')
+}
 let src = fs.readFileSync(defsPath, 'utf8')
 src = src.replace(/^import.*$/gm, '')
 src = src.replace(/export /g, '')

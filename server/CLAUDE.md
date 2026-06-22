@@ -1,6 +1,8 @@
-# CLAUDE.md — server/ 后端
+# CLAUDE.md — server/ 后端 (HeySure-Server)
 
 > 详细中文说明见 [`README.md`](README.md)。本文件是给 Claude 的快速导航与约定补充。
+
+**本目录是独立仓库** `HeySure-Server`。多仓库工作区模式下通过根目录的 `init-env.ps1` / `init-env.sh` 拉取。
 
 ## 目录布局
 

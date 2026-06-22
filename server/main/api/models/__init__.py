@@ -12,7 +12,7 @@ Sub-modules:
 - ai_config    — AssistantAIConfig (per-AI configuration)
 - ai_runtime   — AITaskJob / AIRuntimeStatus / TokenUsageSnapshot
 - project      — EvolutionProject (multi-AI collaboration containers)
-- knowledge    — Memory / KnowledgeEntry / EvolutionInput
+- knowledge    — Memory / KnowledgeEntry
 - communication — AIMessage
 """
 
@@ -69,7 +69,7 @@ from .device_permission_policy import DevicePermissionPolicy
 from .mcp_call_stat import McpToolStat, McpFailureEvent
 from .bot_session_route import BotSessionRoute, BotUserCursor
 from .workshop_binding import WorkshopAiBinding
-from .knowledge import EvolutionInput, KnowledgeEmbedding, KnowledgeEntry, Memory
+from .knowledge import KnowledgeEntry, Memory
 from .project import EvolutionProject, EvolutionProjectCreate, EvolutionProjectUpdate
 from .system import EmailVerificationCode, SystemSetting
 from .user import Token, User, UserCreate, UserLogin, UserRead, UserUpdate
@@ -140,8 +140,6 @@ __all__ = [
     "EvolutionProjectCreate",
     "EvolutionProjectUpdate",
     # knowledge
-    "EvolutionInput",
-    "KnowledgeEmbedding",
     "KnowledgeEntry",
     "Memory",
     "WorldActorMeta",

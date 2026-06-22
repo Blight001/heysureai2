@@ -1,14 +1,13 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-rem One-click web launcher:
-rem - starts the gateway if it is not already running
-rem - then starts the Vite dev server for the web UI
+rem One-click web launcher (HeySure-Web).
+rem Works both inside the workspace (after init-env) and when developing web standalone.
+rem When run from workspace, %~dp0.. points to the workspace root (where server/ may live).
 set "ROOT_DIR=%~dp0.."
 set "SERVER_DIR=%ROOT_DIR%\server"
 
 if not defined SERVER_URL set "SERVER_URL=http://127.0.0.1:3000"
-
 
 cd /d "%~dp0"
 

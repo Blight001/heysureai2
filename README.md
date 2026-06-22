@@ -96,22 +96,16 @@ User / external platform
 
 ## Project Layout
 
-| Path | Role |
+This is a **multi-repository** project. The workspace root only contains orchestration files.
+
+| Path (after init) | Role |
 | --- | --- |
-| `web/` | Vue 3 + Vite web console. |
-| `server/main/gateway/` | FastAPI + Socket.IO gateway exposing REST APIs, realtime events, and static assets. |
-| `server/main/api/` | Shared models, database access, authentication, services, runtime helpers, and business logic. |
-| `server/main/ai_runtime/` | Chat queue consumption, inference calls, message persistence, and runtime status. |
-| `server/main/mcp_runtime/` | MCP tool registration, plugin loading, permission checks, and internal tool calls. |
-| `server/main/connector_runtime/` | QQ and Feishu bots plus external agent dispatch. |
-| `server/other/` | Alembic migrations, helper scripts, and pytest tests. |
-| `device/windows/` | Windows desktop agent. |
-| `device/linux/` | Linux desktop agent. |
-| `device/mac/` | macOS desktop agent. |
-| `device/extension/` | Chrome MV3 browser extension. |
-| `device/android/` | Android endpoint app and optional ADB-based controller. |
-| `device/shared/` | Shared desktop agent source, scripts, and assets. |
-| `doc/` | Architecture notes, prompts, governance ideas, and system design documents. |
+| `web/`                  | HeySure-Web: Vue 3 + Vite web console (standalone repo) |
+| `server/`               | HeySure-Server: all backend code (standalone repo) |
+| `device/`               | HeySure-Device: all client agents + extension + Android (standalone repo) |
+| `doc/`                  | Architecture notes, prompts, and design documents (lives in workspace) |
+
+Inside the component repositories you will find their own `README.md` and `CLAUDE.md`.
 
 ## Quick Start
 
@@ -137,6 +131,9 @@ docker compose up -d --build
 ### Local Windows Development
 
 ```bat
+# One-time (or when you want to refresh components)
+pwsh -File init-env.ps1
+
 windows-run.bat
 server\run.bat
 web\run.bat
@@ -157,7 +154,9 @@ The gateway is healthy when it returns:
 
 ## Environment
 
-Backend scripts read the root `.env` file. Start by copying `.env.example` to `.env` at the repository root. Common variables:
+Backend scripts read the `.env` file in the **workspace root** (same directory as `docker-compose.yml` and `init-env.ps1`).
+
+Copy `.env.example` → `.env` and fill it in. Common variables:
 
 ```env
 DATABASE_URL=postgresql+psycopg://heysure:heysure@127.0.0.1:5432/heysure
@@ -185,7 +184,7 @@ See `server/main/api/core/settings.py` for the full configuration surface.
 
 ## Development
 
-### Web
+### Web (HeySure-Web)
 
 ```bat
 cd web
@@ -194,7 +193,7 @@ npm run dev
 npm run build
 ```
 
-### Server
+### Server (HeySure-Server)
 
 ```bat
 cd server
@@ -202,7 +201,7 @@ install-deps.bat
 python -m gateway.main
 ```
 
-Start split runtimes manually:
+Start split runtimes manually (from server/):
 
 ```bat
 python -m mcp_runtime.main
@@ -210,7 +209,7 @@ python -m connector_runtime.main
 python -m ai_runtime.main
 ```
 
-### Desktop agents
+### Desktop agents (HeySure-Device)
 
 ```bat
 device\run-windows.bat
@@ -234,27 +233,46 @@ npm install
 npm run build
 ```
 
-### Keeping things tidy (monorepo)
+**Tip**: For the full experience (Docker Compose + all launchers), run `init-env.ps1` / `init-env.sh` once from the workspace root.
 
-这个仓库同时包含 **web / server / device** 三大块，容易感觉“太杂”。
+### Repository Structure (multi-repo)
 
-虽然 `.gitignore` 已排除构建产物，但本地磁盘上 `node_modules`、`dist`、`build`、`__pycache__`、`venv` 仍然会让目录显得很重。
+This repository is now a **lightweight workspace** that orchestrates three independent repositories:
 
-**一键清理：**
+| Repository       | Local path | Purpose |
+|------------------|------------|---------|
+| HeySure-Web      | `web/`     | Vue 3 web console |
+| HeySure-Server   | `server/`  | FastAPI gateway + 4 runtimes (shared api layer) |
+| HeySure-Device   | `device/`  | Desktop agents (win/linux/mac) + browser extension + Android |
+
+**First-time setup (recommended):**
 
 ```bat
-clean.bat          # Windows 双击
-pwsh clean.ps1     # 或 PowerShell 7
+# Windows
+pwsh -File init-env.ps1
+
+# or cross-platform
+bash init-env.sh
 ```
 
-清理后需要重新 `npm install` / 安装 Python 依赖。
+This will clone the three component repos into `web/`, `server/`, and `device/`.
 
-想彻底“仓库里套仓库”有两种主流做法（目前仍是单仓库 monorepo）：
+See [SPLIT_GUIDE.md](SPLIT_GUIDE.md) if you are performing or reproducing the original split from the monorepo.
 
-- **Git Submodule**：把 web/server/device 独立成仓库，用 submodule 嵌套进来。
-- **独立仓库 + bootstrap**（推荐）：拆成 3 个仓库，根目录放一个 `init-env.ps1` 脚本自动 clone 到 `web/`、`server/`、`device/` 目录，保持所有启动脚本和 docker-compose 不变。
+After bootstrap:
+- `docker compose up -d --build` and all `run*.bat` scripts work exactly as before.
+- `clean.bat` / `clean.ps1` still works for heavy cleanup.
 
-需要的话告诉我，我可以帮你实施任一方案。
+You must place a `.env` (copy from `.env.example`) in the **workspace root**.
+
+### Keeping the workspace clean
+
+```bat
+clean.bat          # Windows
+pwsh clean.ps1
+```
+
+This removes `node_modules`, `venv`, `dist`, build artifacts, etc. Re-install deps after cleaning.
 
 ## Docs
 

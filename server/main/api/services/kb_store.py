@@ -13,7 +13,8 @@ Markdown 文件，并让文件成为运行时的真相源：
 设计原则（安全优先）：
 
 * **Prompt 文件是真相源**：``personas/`` 和 ``system/`` 运行时直接读文件。
-* **数据库保存结构化数据**：AI 元数据、数值设置、Memory 和 EvolutionInput 仍按需入库。
+* **数据库保存结构化数据**：AI 元数据、数值设置、Memory 仍按需入库。
+* **Embeddings（向量）**：已改为文件形式，存放在账号自己的 KnowledgeBase/embeddings/*.json 下，不再使用数据库表。
 * **Prompt 写入可验证**：上层接口写入文件后应回读确认，不应吞掉 IO 失败。
 """
 
@@ -31,7 +32,7 @@ from sqlmodel import Session, select
 
 from ..core.config import _ai_dir_slug, user_shared_knowledge_dir
 from ..database import engine
-from ..models import AssistantAIConfig, EvolutionInput, KnowledgeEntry, Memory, User
+from ..models import AssistantAIConfig, KnowledgeEntry, Memory, User
 from ..models import defaults as _defaults
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,7 @@ SYSTEM_DIR = "system"
 SKILLS_DIR = "skills"
 TOPICS_DIR = "topics"
 MEMORIES_DIR = "memories"
-EVOLUTION_DIR = "evolution"
+EMBEDDINGS_DIR = "embeddings"
 
 # system/ 下每个文件对应一个文本类系统提示。键集合与
 # librarian_service._SYSTEM_PROMPT_SECTIONS 的文本项对齐。数值设置项
@@ -540,13 +541,13 @@ _README = """# KnowledgeBase
 
 
 # ============================================================
-# 6) 记忆 / 进化建议 —— memories/<id>.md, evolution/<id>.md
+# 6) 记忆 —— memories/<id>.md
 #
-# Memory 与 EvolutionInput 原本是纯数据库表。这里沿用 kb_store 的
+# Memory 原本是纯数据库表。这里沿用 kb_store 的
 # “文件为真相源 + DB 兜底” 模式：每次增删改时双写文件，``ensure_user_kb``
 # 时先把缺失文件从 DB 导出（seed），再把文件回写 DB（sync，文件赢）。
-# 现有的 MCP 读取链路（memory.py 的 search/list）仍走 DB，无需改动即可
-# 读到文件内容。frontmatter 每个值用 JSON 编码，保证 round-trip 稳定。
+# 现有的旧 memory.* 读取路径仍可通过 DB 兼容。
+# frontmatter 每个值用 JSON 编码，保证 round-trip 稳定。
 # ============================================================
 
 
@@ -600,33 +601,6 @@ def write_memory_file(user_id: int, mem: Dict[str, Any]) -> None:
         logger.info(f"kb_store write_memory_file user={user_id} failed: {exc}")
 
 
-def _evolution_path(user_id: int, evo_id: str) -> str:
-    return os.path.join(_kb_root(user_id), EVOLUTION_DIR, f"{_safe_filename(evo_id)}.md")
-
-
-def write_evolution_file(user_id: int, evo: Dict[str, Any]) -> None:
-    """把一条 EvolutionInput（``_evolution_to_dict`` 的输出）落成文件。best-effort。"""
-    try:
-        evo_id = str(evo.get("evolution_input_id") or "").strip()
-        if not evo_id:
-            return
-        meta = {
-            "evolution_input_id": evo_id,
-            "source_ai_config_id": evo.get("source_ai_config_id"),
-            "type": evo.get("type"),
-            "target_scope": evo.get("target_scope") or {},
-            "evidence": evo.get("evidence") or [],
-            "risk": evo.get("risk") or "",
-            "review_status": evo.get("review_status"),
-            "applied_to": evo.get("applied_to"),
-            "created_at": evo.get("created_at"),
-            "updated_at": evo.get("updated_at"),
-        }
-        _write_text(_evolution_path(user_id, evo_id), _row_to_md(meta, str(evo.get("proposal") or "")))
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.info(f"kb_store write_evolution_file user={user_id} failed: {exc}")
-
-
 def _list_md(user_id: int, sub: str) -> List[str]:
     root = os.path.join(_kb_root(user_id), sub)
     try:
@@ -648,21 +622,6 @@ def seed_memories(user_id: int, *, session: Optional[Session] = None) -> None:
                 write_memory_file(user_id, _row_memory_dict(row))
     except Exception as exc:  # pragma: no cover - defensive
         logger.info(f"kb_store seed_memories user={user_id} failed: {exc}")
-    finally:
-        if own:
-            sess.close()
-
-
-def seed_evolution(user_id: int, *, session: Optional[Session] = None) -> None:
-    own = session is None
-    sess = session or Session(engine)
-    try:
-        rows = sess.exec(select(EvolutionInput).where(EvolutionInput.user_id == int(user_id))).all()
-        for row in rows:
-            if _read_text(_evolution_path(user_id, row.evolution_input_id)) is None:
-                write_evolution_file(user_id, _row_evolution_dict(row))
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.info(f"kb_store seed_evolution user={user_id} failed: {exc}")
     finally:
         if own:
             sess.close()
@@ -712,49 +671,6 @@ def sync_memories_from_files(user_id: int, *, session: Optional[Session] = None)
             sess.close()
 
 
-def sync_evolution_from_files(user_id: int, *, session: Optional[Session] = None) -> None:
-    own = session is None
-    sess = session or Session(engine)
-    try:
-        changed = False
-        for path in _list_md(user_id, EVOLUTION_DIR):
-            raw = _read_text(path)
-            if raw is None:
-                continue
-            meta, body = _md_to_row(raw)
-            evo_id = str(meta.get("evolution_input_id") or "").strip()
-            if not evo_id:
-                continue
-            row = sess.exec(
-                select(EvolutionInput).where(
-                    EvolutionInput.user_id == int(user_id),
-                    EvolutionInput.evolution_input_id == evo_id,
-                )
-            ).first() or EvolutionInput(evolution_input_id=evo_id, user_id=int(user_id), proposal="")
-            row.source_ai_config_id = meta.get("source_ai_config_id")
-            row.type = str(meta.get("type") or "lesson")
-            row.target_scope = json.dumps(meta.get("target_scope") or {}, ensure_ascii=False)
-            row.evidence = json.dumps(meta.get("evidence") or [], ensure_ascii=False)
-            row.proposal = body
-            row.risk = str(meta.get("risk") or "")
-            row.review_status = str(meta.get("review_status") or "queued")
-            row.applied_to = meta.get("applied_to")
-            if meta.get("created_at") is not None:
-                row.created_at = float(meta.get("created_at"))
-            if meta.get("updated_at") is not None:
-                row.updated_at = float(meta.get("updated_at"))
-            sess.add(row)
-            changed = True
-        if changed:
-            sess.commit()
-    except Exception as exc:  # pragma: no cover - defensive
-        sess.rollback()
-        logger.info(f"kb_store sync_evolution_from_files user={user_id} failed: {exc}")
-    finally:
-        if own:
-            sess.close()
-
-
 def _row_memory_dict(row: Memory) -> Dict[str, Any]:
     try:
         source = json.loads(row.source or "{}")
@@ -777,28 +693,6 @@ def _row_memory_dict(row: Memory) -> Dict[str, Any]:
     }
 
 
-def _row_evolution_dict(row: EvolutionInput) -> Dict[str, Any]:
-    def _load(raw, fallback):
-        try:
-            return json.loads(raw)
-        except Exception:
-            return fallback
-
-    return {
-        "evolution_input_id": row.evolution_input_id,
-        "source_ai_config_id": row.source_ai_config_id,
-        "type": row.type,
-        "target_scope": _load(row.target_scope, {}),
-        "evidence": _load(row.evidence, []),
-        "proposal": row.proposal,
-        "risk": row.risk,
-        "review_status": row.review_status,
-        "applied_to": row.applied_to,
-        "created_at": row.created_at,
-        "updated_at": row.updated_at,
-    }
-
-
 def _loads_safe(raw, fallback):
     if raw is None or raw == "":
         return fallback
@@ -813,6 +707,8 @@ def _ensure_layout(user_id: int) -> None:
     readme = os.path.join(root, "README.md")
     if _read_text(readme) is None:
         _write_text(readme, _README)
+    # embeddings/ will be created on demand when first vector is written
+    # (under KnowledgeBase/embeddings/ for this account)
 
 
 # ============================================================
@@ -839,14 +735,14 @@ def _parse_triggers_field(raw: Any) -> str:
 
 
 def sync_topics_from_files(user_id: int, *, session: Optional[Session] = None) -> int:
-    """扫描 topics/*.md，将文件作为真相源 upsert KnowledgeEntry + 触发向量索引。
+    """扫描 topics/*.md，将文件作为真相源 upsert KnowledgeEntry。
 
-    对于手动放入 topics/ 的 md 文件，此函数让它们自动被向量搜索发现。
+    对于手动放入 topics/ 的 md 文件，此函数让它们自动进入索引。
     - frontmatter 有 memory_id → 以它为主键；否则用文件名生成 topic:{slug}
-    - 文件 mtime 比 row.updated_at 新时才重新写入并重建向量
+    - 文件 mtime 比 row.updated_at 新时才重新写入
     返回本次 upsert 的条目数。
     """
-    from .knowledge_vector import sync_topic_embedding_for_entry
+    from .knowledge_vector import ensure_file_embedding as _ensure_file_embedding
 
     own = session is None
     sess = session or Session(engine)
@@ -908,9 +804,17 @@ def sync_topics_from_files(user_id: int, *, session: Optional[Session] = None) -
                 sess.refresh(row)
                 synced += 1
                 try:
-                    sync_topic_embedding_for_entry(user_id=int(user_id), row=row)
+                    _ensure_file_embedding(
+                        user_id=int(user_id),
+                        memory_id=memory_id,
+                        title=title,
+                        triggers=triggers,
+                        summary=summary,
+                        body_text=body,
+                        file_path=rel_path,
+                    )
                 except Exception as exc:
-                    logger.info("sync_topics_from_files embedding failed memory_id=%s: %s", memory_id, exc)
+                    logger.info("sync_topics embedding (new) %s: %s", memory_id, exc)
             elif file_mtime > (row.updated_at or 0):
                 row.title = title
                 row.triggers = triggers
@@ -924,9 +828,18 @@ def sync_topics_from_files(user_id: int, *, session: Optional[Session] = None) -
                 sess.refresh(row)
                 synced += 1
                 try:
-                    sync_topic_embedding_for_entry(user_id=int(user_id), row=row, force=True)
+                    _ensure_file_embedding(
+                        user_id=int(user_id),
+                        memory_id=memory_id,
+                        title=title,
+                        triggers=triggers,
+                        summary=summary,
+                        body_text=body,
+                        file_path=rel_path,
+                        force=True,
+                    )
                 except Exception as exc:
-                    logger.info("sync_topics_from_files embedding update failed memory_id=%s: %s", memory_id, exc)
+                    logger.info("sync_topics embedding (update) %s: %s", memory_id, exc)
     except Exception as exc:
         try:
             sess.rollback()
@@ -1102,11 +1015,9 @@ def ensure_user_kb(user_id: int, *, session: Optional[Session] = None) -> None:
                 seed_system_prompts(user_id, user)
             seed_personas(user_id, session=sess)
             cleanup_legacy_agent_thoughts(user_id, session=sess)
-            # Memory / EvolutionInput：先导出缺失文件，再以文件为准回写 DB。
+            # Memory：先导出缺失文件，再以文件为准回写 DB。
             seed_memories(user_id, session=sess)
-            seed_evolution(user_id, session=sess)
             sync_memories_from_files(user_id, session=sess)
-            sync_evolution_from_files(user_id, session=sess)
             try:
                 sync_topics_from_files(user_id, session=sess)
             except Exception as exc:
@@ -1115,12 +1026,6 @@ def ensure_user_kb(user_id: int, *, session: Optional[Session] = None) -> None:
                 sync_skills_from_directory(user_id)
             except Exception as exc:
                 logger.info(f"kb_store ensure_user_kb sync_skills user={user_id} failed: {exc}")
-            # 向量 embedding 确保已移除对 knowledge.search 的依赖；如需后台索引可手动触发。
-            # try:
-            #     from .knowledge_vector import ensure_knowledge_embeddings
-            #     ensure_knowledge_embeddings(user_id=user_id, session=sess)
-            # except Exception as exc:
-            #     logger.info(f"kb_store ensure_user_kb knowledge embeddings user={user_id} failed: {exc}")
             try:
                 backfill_skill_knowledge_entries(user_id)
             except Exception as exc:
@@ -1178,8 +1083,9 @@ def keyword_search_knowledge(
 ) -> list[dict[str, Any]]:
     """纯关键词匹配检索 KnowledgeBase 文件夹内容。
 
-    不依赖 KnowledgeEntry / KnowledgeEmbedding / embedding API。
-    直接扫描 topics/ 和 inheritance_thoughts/**/SKILL.md 等文件。
+    完全基于文件系统（KnowledgeBase/topics/ + skills）。
+    Embedding（如果用户配置了 HEYSURE_EMBEDDING_*）会以文件形式存放在
+    KnowledgeBase/embeddings/*.json 下，由 knowledge_vector 管理。
     """
     q = str(query or "").strip()
     if not q:

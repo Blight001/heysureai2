@@ -97,22 +97,16 @@ Web Console
 
 ## 项目结构
 
-| 路径 | 作用 |
+本项目采用**多仓库**结构。工作区根目录仅保留编排文件。
+
+| 路径（init 后） | 作用 |
 | --- | --- |
-| `web/` | Vue 3 + Vite Web 控制台。 |
-| `server/main/gateway/` | FastAPI + Socket.IO 网关，提供 REST API、实时事件和静态资源。 |
-| `server/main/api/` | 通用模型、数据库访问、认证、服务层、运行时辅助与业务逻辑。 |
-| `server/main/ai_runtime/` | 聊天队列消费、推理调用、消息持久化与运行状态。 |
-| `server/main/mcp_runtime/` | MCP 工具注册、插件加载、权限检查与内部工具调用。 |
-| `server/main/connector_runtime/` | QQ、飞书机器人以及外部 Agent 调度。 |
-| `server/other/` | Alembic 迁移、辅助脚本和 pytest 测试。 |
-| `device/windows/` | Windows 桌面端。 |
-| `device/linux/` | Linux 桌面端。 |
-| `device/mac/` | macOS 桌面端。 |
-| `device/extension/` | Chrome MV3 浏览器扩展。 |
-| `device/android/` | Android 端应用和可选的 ADB 控制器。 |
-| `device/shared/` | 桌面端共享源码、脚本和资源。 |
-| `doc/` | 架构说明、Prompt 设计、治理思路和系统设计文档。 |
+| `web/`     | HeySure-Web：Vue 3 Web 控制台（独立仓库） |
+| `server/`  | HeySure-Server：全部后端代码（独立仓库） |
+| `device/`  | HeySure-Device：全部端侧客户端（独立仓库） |
+| `doc/`     | 架构与设计文档（保留在工作区） |
+
+各组件仓库内部有自己的 `README.md` 和 `CLAUDE.md`。
 
 ## 快速开始
 
@@ -138,6 +132,9 @@ docker compose up -d --build
 ### 本地 Windows 开发
 
 ```bat
+# 首次（或需要刷新组件时）执行
+pwsh -File init-env.ps1
+
 windows-run.bat
 server\run.bat
 web\run.bat
@@ -158,7 +155,9 @@ http://127.0.0.1:3000/
 
 ## 环境变量
 
-后端启动脚本会读取仓库根目录的 `.env`。常用变量如下：
+后端启动脚本读取**工作区根目录**的 `.env`（与 `docker-compose.yml` 和 `init-env.ps1` 同级）。
+
+请复制 `.env.example` 为 `.env` 并填写。常用变量如下：
 
 ```env
 DATABASE_URL=postgresql+psycopg://heysure:heysure@127.0.0.1:5432/heysure
@@ -186,7 +185,7 @@ WORKSPACE_ROOT=C:\path\to\workspace
 
 ## 开发方式
 
-### Web
+### Web (HeySure-Web)
 
 ```bat
 cd web
@@ -195,7 +194,7 @@ npm run dev
 npm run build
 ```
 
-### Server
+### Server (HeySure-Server)
 
 ```bat
 cd server
@@ -203,7 +202,7 @@ install-deps.bat
 python -m gateway.main
 ```
 
-单独启动拆分后的 runtime：
+单独启动拆分后的 runtime（在 server/ 目录下）：
 
 ```bat
 python -m mcp_runtime.main
@@ -211,7 +210,7 @@ python -m connector_runtime.main
 python -m ai_runtime.main
 ```
 
-### 桌面端
+### 桌面端 (HeySure-Device)
 
 ```bat
 device\run-windows.bat
@@ -235,27 +234,42 @@ npm install
 npm run build
 ```
 
-### 保持仓库整洁（monorepo）
+**提示**：想完整使用 Docker Compose 和所有启动脚本，请先在工作区根目录运行 `init-env.ps1` 或 `init-env.sh`。
 
-本仓库同时包含 **web / server / device** 三大块，容易显得“太乱太杂”。
+### 仓库结构（多仓库）
 
-虽然 `.gitignore` 已经排除了构建产物，但本地磁盘上 `node_modules`、`dist`、`build`、`__pycache__`、`venv` 仍然会让目录显得非常重。
+本仓库现在是一个**轻量级工作区（workspace）**，用于编排三个独立仓库：
 
-**一键清理：**
+| 仓库            | 本地路径   | 用途 |
+|-----------------|------------|------|
+| HeySure-Web     | `web/`     | Vue 3 Web 控制台 |
+| HeySure-Server  | `server/`  | 后端网关 + 4 个 runtime（共享 api 层） |
+| HeySure-Device  | `device/`  | 桌面端（win/linux/mac）+ 浏览器扩展 + Android |
+
+**首次初始化（推荐）：**
 
 ```bat
-clean.bat          # Windows 双击
-pwsh clean.ps1     # 或使用 PowerShell 7
+# Windows
+pwsh -File init-env.ps1
+
+# 或跨平台
+bash init-env.sh
 ```
 
-清理后需要重新安装依赖（npm install 等）。
+执行后会自动把三个组件仓库 clone 到 `web/`、`server/`、`device/`。
 
-如果你希望真正实现“仓库里面再加仓库”，常见做法有两种：
+完整拆分过程见 [SPLIT_GUIDE.md](SPLIT_GUIDE.md)。
 
-- 使用 **Git Submodule** 把 web/server/device 独立成仓库并嵌套。
-- **推荐**：拆成三个独立仓库，根仓库只保留启动脚本 + docker-compose + 一个 bootstrap 脚本，clone 时自动还原成现有目录布局。
+之后 `docker compose` 和所有启动脚本的行为和原来 monorepo 时完全一致。
 
-需要我帮你实施任意一种方案，随时说。
+### 清理工作区
+
+```bat
+clean.bat          # Windows
+pwsh clean.ps1
+```
+
+会删除 node_modules、venv、dist 等生成物。清理后需重新安装依赖。
 
 ## 文档入口
 

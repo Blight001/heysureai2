@@ -125,6 +125,7 @@ export const SHEETS: SheetDef[] = [
   },
   strip('effect_smoke.png', '烟雾', 'effect', 16, 16, 4, 5),
   strip('effect_sparkle.png', '火花', 'effect', 16, 16, 4, 8),
+  strip('effect_toolbox_bag.png', '工具箱挎包（绑定工具箱的 AI 成员侧挂饰）', 'effect', 12, 16, 1),
 ]
 
 /** 普通成员可选皮肤（值 = spritesheet 注册 key，即文件名） */

@@ -1,5 +1,7 @@
 # HeySure Server
 
+This is the **HeySure-Server** repository.
+
 `server/` contains the backend for HeySure AI 2.0. The backend is split into
 several runtime processes:
 
@@ -30,7 +32,11 @@ service.
 
 ## Environment
 
-The startup scripts read the root `.env` file. Start by copying `.env.example` to `.env` at the repository root. Common values:
+The startup scripts read `.env` from the **workspace root** (the directory containing docker-compose.yml and init-env.*).
+
+If developing HeySure-Server in isolation, you can also place a `.env` directly inside the server/ directory (it will be picked up).
+
+Common values:
 
 ```env
 DATABASE_URL=postgresql+psycopg://heysure:heysure@127.0.0.1:5432/heysure

@@ -39,7 +39,7 @@ from ..models import AssistantAIConfig, KnowledgeEntry, User
 from ..sio import sio
 from ..core.config import user_shared_knowledge_dir
 from . import kb_store
-from .knowledge_vector import sync_topic_embedding_for_entry
+from .knowledge_vector import sync_topic_embedding_for_entry as _sync_topic_embedding
 from mcp_runtime.mcp.core import safe_join
 import logging
 
@@ -705,14 +705,17 @@ def _sync_skill_to_knowledge_entry(
         session.add(row)
         session.commit()
         session.refresh(row)
-    # 触发向量索引（异步失败不影响主流程）
+
     try:
-        sync_topic_embedding_for_entry(
-            user_id=user_id, row=row,
-            ai_config_id=ai_config_id, force=True,
-        )
+        _sync_topic_embedding(user_id=user_id, row=row, ai_config_id=ai_config_id, force=True)
     except Exception as exc:
-        logger.warning("skill embedding sync failed slug=%s: %s", slug, exc)
+        logger.info("skill file-embedding sync failed slug=%s: %s", slug, exc)
+
+    return {
+        "installed": True,
+        "slug": slug,
+        "entry": _entry_to_dict(row, with_body=False),
+    }
 
 
 def create_inheritance_thought(
@@ -2255,9 +2258,9 @@ def propose(
     _rebuild_index(user_id)
     entry_dict = _entry_to_dict(row, with_body=False)
     try:
-        sync_topic_embedding_for_entry(user_id=user_id, row=row, ai_config_id=librarian_id or None, force=True)
+        _sync_topic_embedding(user_id=user_id, row=row, ai_config_id=librarian_id or None, force=True)
     except Exception as exc:
-        logger.info(f"knowledge embedding sync after propose failed user={user_id} memory_id={row.memory_id}: {exc}")
+        logger.info("file-embedding sync after propose failed %s: %s", row.memory_id, exc)
     _emit_proposal_event(user_id, "librarian:proposal_resolved", entry_dict)
     return entry_dict
 
@@ -2291,9 +2294,9 @@ def archive(*, user_id: int, memory_id: str) -> Dict[str, Any]:
         session.commit()
         session.refresh(row)
         try:
-            sync_topic_embedding_for_entry(user_id=user_id, row=row, force=True)
+            _sync_topic_embedding(user_id=user_id, row=row, force=True)
         except Exception as exc:
-            logger.info(f"knowledge embedding sync after archive failed user={user_id} memory_id={row.memory_id}: {exc}")
+            logger.info("file-embedding sync after archive failed %s: %s", row.memory_id, exc)
         out = _entry_to_dict(row, with_body=False)
     _rebuild_index(user_id)
     return out

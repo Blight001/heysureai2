@@ -1,4 +1,7 @@
 services:
+  # This docker-compose lives in the HeySure *workspace* root.
+  # It expects web/, server/, and device/ to be present (populated by init-env.ps1 / init-env.sh).
+  # Each build context points to one of the three component repositories.
   db:
     image: postgres:16-alpine
     environment:

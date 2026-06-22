@@ -49,6 +49,7 @@ export class MemberActor extends Phaser.GameObjects.Container {
   readonly memberId: number
   member: WorldMember
   private sprite: Phaser.GameObjects.Sprite
+  private bag: Phaser.GameObjects.Image
   private tokenBar: Phaser.GameObjects.Graphics
   private emote: Phaser.GameObjects.Image
   private speechBubble: Phaser.GameObjects.Graphics
@@ -87,7 +88,15 @@ export class MemberActor extends Phaser.GameObjects.Container {
     this.sprite = scene.add.sprite(0, -24, skin, 0)
     this.sprite.setOrigin(0.5, 0.5)
     this.add(this.sprite)
+
+    // 工具箱挎包（悬挂在角色右侧，绑定工具箱时显示）
+    this.bag = scene.add.image(5, -18, 'effect_toolbox_bag.png', 0)
+    this.bag.setOrigin(0, 0.5)
+    this.bag.setVisible(false)
+    this.add(this.bag)
+
     this.applyAppearance(member)
+    this.refreshBag()
 
     this.tokenBar = scene.add.graphics()
     this.add(this.tokenBar)
@@ -212,6 +221,7 @@ export class MemberActor extends Phaser.GameObjects.Container {
       this.sprite.setTexture(skin, 0)
     }
     this.applyAppearance(member)
+    this.refreshBag()
     this.refreshEmote()
     this.refreshTokenBar()
     this.refreshSpeechBubble()
@@ -235,6 +245,8 @@ export class MemberActor extends Phaser.GameObjects.Container {
     const scale = Phaser.Math.Clamp(Number.isFinite(a.scale) && a.scale > 0 ? a.scale : 1, 0.7, 1.4)
     this.sprite.setScale(scale)
     this.sprite.y = -24 * scale // 体型变化时保持脚底贴地
+    this.bag.setScale(scale)
+    this.bag.y = -24 * scale + 8 // 随体型保持腰侧位置
 
     const auraColor = hexToColor(a.aura)
     this.auraOn = auraColor !== null
@@ -263,6 +275,10 @@ export class MemberActor extends Phaser.GameObjects.Container {
     // 锚区变化：走过去（不瞬移，让调度可见）
     this.target = clampToWorld(randomPointIn(zone))
     this.idleUntil = 0
+  }
+
+  private refreshBag() {
+    this.bag.setVisible(!!this.member.hasToolbox && this.member.enabled && !this.dying)
   }
 
   private refreshEmote() {

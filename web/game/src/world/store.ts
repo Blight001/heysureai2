@@ -47,6 +47,8 @@ export interface WorldMember {
   platform: string
   /** 绑定的端侧 agent id（来自 device:list 的 aiConfigId 反查） */
   boundAgentIds: string[]
+  /** 是否有在线工具箱绑定（显示挎包特效） */
+  hasToolbox: boolean
   /** 用户在世界里指定的皮肤（WorldActorMeta），空 = 默认哈希皮肤 */
   skin: string
   /** 外观调色 #RRGGBB（WorldActorMeta），空 = 不调色 */
@@ -294,6 +296,20 @@ export class WorldStore {
     for (const m of this.snapshot.members) {
       m.boundAgentIds = byConfig.get(m.id) || []
     }
+    // 工具箱绑定反查（仅在线工具箱触发挎包特效）
+    // 工具箱用 boundAiConfigIds（数组），而非 aiConfigId（始终 null）
+    const toolboxConfigIds = new Set<number>()
+    for (const raw of this.rawAgents) {
+      if (!raw.isToolbox) continue
+      const ids = Array.isArray(raw.boundAiConfigIds) ? raw.boundAiConfigIds : []
+      for (const id of ids) {
+        const n = num(id, NaN)
+        if (Number.isFinite(n) && n > 0) toolboxConfigIds.add(n)
+      }
+    }
+    for (const m of this.snapshot.members) {
+      m.hasToolbox = toolboxConfigIds.has(m.id)
+    }
   }
 
   private async refreshKnowledge() {
@@ -369,6 +385,7 @@ export class WorldStore {
         projectName: String(row.project_name || ''),
         platform: String(row.platform || 'Server-Core'),
         boundAgentIds: [],
+        hasToolbox: false,
         skin: meta?.skin || '',
         tint: meta?.tint || '',
         scale: meta?.scale ?? 1,

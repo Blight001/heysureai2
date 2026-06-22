@@ -38,7 +38,7 @@ export const ADMIN_CLEANUP_CATEGORIES: Array<{ key: DbCleanupCategory; label: st
   { key: 'conversations', label: '对话记录', desc: '消息 / 会话 / 运行记录' },
   { key: 'tasks', label: '任务记录', desc: '任务作业 / 代理分发' },
   { key: 'ai_messages', label: 'AI 互发消息 + Token 用量', desc: 'aimessage · tokenusagesnapshot' },
-  { key: 'knowledge', label: '知识库与记忆', desc: 'knowledgeentry · memory · evolutioninput' },
+  { key: 'knowledge', label: '知识库与记忆', desc: 'knowledgeentry · memory（旧的 evolutioninput / knowledgeembedding 表会自动被删除）' },
   { key: 'projects', label: '协作项目', desc: 'evolutionproject' },
 ]
 

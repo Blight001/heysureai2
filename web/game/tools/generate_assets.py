@@ -959,6 +959,39 @@ def gen_clouds():
     save_strip(frames, "cloud.png")
 
 
+def gen_toolbox_bag():
+    """工具箱挎包（绑定工具箱的 AI 成员右侧挂饰）。
+    6x8@1x -> 12x16，单帧静态图。"""
+    BAG = (122, 82, 46, 255)          # 皮革主体（暖棕）
+    BAG_D = (88, 54, 24, 255)         # 皮革暗面
+    BAG_L = (160, 116, 68, 255)       # 皮革高光（翻盖）
+    BUCKLE = (208, 168, 64, 255)      # 金属扣
+    STRAP_C = (74, 46, 20, 255)       # 肩带（深棕）
+
+    c = C(6, 8)
+    # 肩带（顶部两像素，暗示延伸到肩）
+    c.px(3, 0, STRAP_C)
+    c.px(3, 1, STRAP_C)
+    # 翻盖（高光色）
+    c.hline(1, 2, 4, BAG_L)
+    c.hline(0, 3, 6, BAG_L)
+    # 金属扣（翻盖底中心）
+    c.px(2, 3, BUCKLE)
+    c.px(3, 3, BUCKLE)
+    # 包体
+    c.rect(0, 4, 6, 4, BAG)
+    # 右侧和底部阴影
+    c.vline(5, 4, 4, BAG_D)
+    c.hline(0, 7, 5, BAG_D)
+    # 前口袋轮廓
+    c.outline(1, 5, 3, 2, BAG_D)
+    # 角落铆钉
+    c.px(0, 4, BUCKLE)
+
+    c.add_silhouette_outline()
+    save_strip([c], "effect_toolbox_bag.png")
+
+
 def gen_effects():
     # 烟雾 4 帧：扩散 + 淡出
     frames = []
@@ -1015,6 +1048,7 @@ def main():
     gen_glow()
     gen_clouds()
     gen_effects()
+    gen_toolbox_bag()
     print("完成。")
 
 

@@ -1,6 +1,8 @@
-# CLAUDE.md — device/ 端侧执行器（壳）
+# CLAUDE.md — device/ 端侧执行器（壳） (HeySure-Device)
 
 六个端侧客户端（**只是运行在不同端的壳，本身不具备 agent 能力**），连接后端、注册为 endpoint。
+
+**本目录是独立仓库** `HeySure-Device`。共享代码位于 `shared/src`。
 **桌面端已退化为受控运行器**：不再内置固定原生 MCP 工具，能力来自服务器下发的 runtime 工具（python/shell），由服务端编排/推理。
 
 ## 六种形态

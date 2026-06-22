@@ -1,28 +1,7 @@
 import time
-from typing import List, Optional
+from typing import Optional
 
-from sqlalchemy import Column, JSON
 from sqlmodel import Field, SQLModel
-
-from ..core.settings import settings
-
-# Embedding storage backend. In production the ``pgvector`` extension provides a
-# native ``vector`` column with ANN indexing; environments without the package
-# (e.g. lightweight CI) transparently fall back to a JSON column so the models
-# still import and run. ``EMBEDDING_BACKEND`` lets the service layer pick the
-# matching retrieval path (SQL ``<=>`` distance vs. in-process scan).
-try:  # pragma: no cover - import guard exercised only by environment
-    from pgvector.sqlalchemy import Vector as _Vector
-
-    EMBEDDING_BACKEND = "pgvector"
-
-    def _embedding_column() -> Column:
-        return Column(_Vector(int(settings.embedding_dimensions or 1536)), nullable=True)
-except Exception:  # pragma: no cover - pgvector missing
-    EMBEDDING_BACKEND = "json"
-
-    def _embedding_column() -> Column:
-        return Column(JSON, nullable=True)
 
 
 class Memory(SQLModel, table=True):
@@ -39,22 +18,6 @@ class Memory(SQLModel, table=True):
     source: str = Field(default="{}")  # JSON: {chat_message_id, file_path,...}
     confidence: float = Field(default=0.6)
     archived: bool = Field(default=False, index=True)
-    created_at: float = Field(default_factory=time.time, index=True)
-    updated_at: float = Field(default_factory=time.time)
-
-
-class EvolutionInput(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    evolution_input_id: str = Field(index=True, unique=True)
-    user_id: int = Field(foreign_key="user.id", index=True)
-    source_ai_config_id: Optional[int] = Field(default=None, index=True)
-    type: str = Field(default="lesson", index=True)  # prompt_rule/tool_rule/workflow_rule/memory/failure_case/success_case
-    target_scope: str = Field(default="{}")  # JSON
-    evidence: str = Field(default="[]")  # JSON array
-    proposal: str = Field(default="")
-    risk: str = Field(default="")
-    review_status: str = Field(default="queued", index=True)  # queued/accepted/rejected/applied
-    applied_to: str = Field(default="")
     created_at: float = Field(default_factory=time.time, index=True)
     updated_at: float = Field(default_factory=time.time)
 
@@ -87,21 +50,3 @@ class KnowledgeEntry(SQLModel, table=True):
     librarian_ai_config_id: Optional[int] = Field(default=None, index=True)  # 由哪个图书管理员负责
     created_at: float = Field(default_factory=time.time, index=True)
     updated_at: float = Field(default_factory=time.time)
-
-
-class KnowledgeEmbedding(SQLModel, table=True):
-    """Semantic index for KnowledgeEntry topics.
-
-    The embedding rows are the vector-search acceleration layer; the markdown
-    files under KnowledgeBase/topics remain the source of truth.
-    """
-
-    id: Optional[int] = Field(default=None, primary_key=True)
-    memory_id: str = Field(index=True, unique=True)
-    user_id: int = Field(foreign_key="user.id", index=True)
-    content_hash: str = Field(default="", index=True)
-    content_text: str = Field(default="")
-    source_snapshot: str = Field(default="{}")
-    embedding: Optional[List[float]] = Field(default=None, sa_column=_embedding_column())
-    created_at: float = Field(default_factory=time.time, index=True)
-    updated_at: float = Field(default_factory=time.time, index=True)
