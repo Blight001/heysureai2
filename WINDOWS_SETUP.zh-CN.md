@@ -14,13 +14,6 @@
 - Node.js：推荐 Node.js 22 LTS 或更新的 LTS 版本  
   下载：https://nodejs.org/en/download
 
-## 自动处理
-
-- 没有 `server\venv` 时，`server\run.bat` 会自动创建虚拟环境并安装后台依赖。
-- 缺少 `customtkinter` 等 Python 依赖时，会自动重新运行 `server\install-deps.bat`。
-- 没有 `web\node_modules` 时，启动 Web 控制台会自动执行 `npm install`。
-- PostgreSQL 或 Node.js 没安装时，启动器会弹窗提示并打开官方下载页。
-
 ## PostgreSQL 初始化
 
 安装 PostgreSQL 后，创建项目默认用户和数据库：
