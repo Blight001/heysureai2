@@ -89,10 +89,10 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 | 需求 | 位置 |
 | --- | --- |
 | 新增 / 改 REST 接口 | `server/main/gateway/routers/<域>.py`（文件名即域） |
-| 业务逻辑 / 数据访问 | `server/main/api/services/` 与 `server/main/api/models/` |
+| 业务逻辑 / 数据访问 | `server/main/api/services/`（按域分子包：`knowledge/` `tasks/` `mcp/` `device_tools/` `chat/` `access/` `storage/`）与 `server/main/api/models/` |
 | 新增 MCP 工具 | `server/tools/`（实现）→ `server/main/mcp_runtime/mcp/registry.py`（注册）→ `web/src/utils/mcpTools.ts`（前端展示） |
 | 聊天 / 推理流程 | `server/main/api/chat_runtime/`（编排）+ `server/main/ai_runtime/`（worker） |
-| 定时 / 循环任务 | `server/main/api/services/task_schedule.py`（唯一权威实现，REST/MCP/调度器共用） |
+| 定时 / 循环任务 | `server/main/api/services/tasks/task_schedule.py`（唯一权威实现，REST/MCP/调度器共用） |
 | QQ / 飞书机器人 | `server/main/connector_runtime/bots/` 与 `dispatch/` |
 | 前端页面 / 组件 | `web/src/components/<域>/`（chat / dashboard / home / librarian / common） |
 | 前端调后端 API 封装 | `web/src/api/<域>.ts`（http.ts 是统一客户端） |
@@ -133,9 +133,9 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 | AI 不回复 / 推理卡住 | AI Runtime (3003) 进程是否运行；查看 3003 日志 | `server/main/ai_runtime/worker.py` |
 | MCP 工具不显示 | 工具是否已注册，设备权限是否开启 | `server/main/mcp_runtime/mcp/registry.py` + `permissions.py` |
 | 端侧设备掉线 | Connector (3002) Socket.IO 是否正常 | `server/main/connector_runtime/app.py` + `api/sio.py` |
-| 聊天消息丢失 | 持久化流程 | `server/main/api/services/chat_persistence.py` |
-| 任务不触发 | 调度器是否随 Gateway 启动 | `server/main/api/services/task_system.py` + `task_schedule.py` |
-| 知识库搜索无结果 | embedding 模型配置、向量维度是否匹配 | `server/main/api/services/kb_store.py` |
+| 聊天消息丢失 | 持久化流程 | `server/main/api/services/chat/chat_persistence.py` |
+| 任务不触发 | 调度器是否随 Gateway 启动 | `server/main/api/services/tasks/task_system.py` + `tasks/task_schedule.py` |
+| 知识库搜索无结果 | embedding 模型配置、向量维度是否匹配 | `server/main/api/services/knowledge/kb_store.py` |
 | 前端样式/组件异常 | Tailwind 类名白名单；组件 props 是否正确传递 | `web/src/components/` + `web/src/styles/main.css` |
 | 桌面端工具调用失败 | Socket.IO 消息链路；runtime 工具执行日志 | `device/shared/src/services/agent-runtime.ts` + `executor/` |
 
@@ -151,7 +151,7 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
   → tools/ 执行工具逻辑
   → 返回结果 → 继续推理（最多 chat_max_steps 步）
   → Socket.IO emit("chat_message")           推送到前端
-  → chat_persistence.py                      保存消息
+  → chat/chat_persistence.py                 保存消息
 ```
 
 ## 关键约定
