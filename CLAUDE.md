@@ -113,10 +113,6 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 | `AI_RUNTIME_URL` | 可选 | Gateway → AI Runtime（默认 `http://127.0.0.1:3003`） |
 | `MCP_RUNTIME_URL` | 可选 | Gateway → MCP Runtime（默认 `http://127.0.0.1:3001`） |
 | `CONNECTOR_RUNTIME_URL` | 可选 | Gateway → Connector（默认 `http://127.0.0.1:3002`） |
-| `HEYSURE_EMBEDDING_API_KEY` | 可选 | 专用 embedding API Key，覆盖聊天模型凭据（聊天用 Grok/xAI 而 embedding 需 OpenAI 时必须设） |
-| `HEYSURE_EMBEDDING_BASE_URL` | 可选 | 专用 embedding Base URL（与上面配合，如 `https://api.openai.com/v1`） |
-| `HEYSURE_EMBEDDING_MODEL` | 可选 | embedding 模型名（默认 `text-embedding-3-small`） |
-| `HEYSURE_EMBEDDING_DIMENSIONS` | 可选 | embedding 向量维度（默认 1536） |
 | `TAVILY_API_KEY` | 可选 | Web 搜索功能 |
 | `LOG_LEVEL` | 可选 | DEBUG/INFO/WARNING（默认 INFO） |
 | `LOG_JSON` | 可选 | 容器部署时设 `true`，输出 JSON 格式日志 |
@@ -135,7 +131,7 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 | 端侧设备掉线 | Connector (3002) Socket.IO 是否正常 | `server/main/connector_runtime/app.py` + `api/sio.py` |
 | 聊天消息丢失 | 持久化流程 | `server/main/api/services/chat/chat_persistence.py` |
 | 任务不触发 | 调度器是否随 Gateway 启动 | `server/main/api/services/tasks/task_system.py` + `tasks/task_schedule.py` |
-| 知识库搜索无结果 | embedding 模型配置、向量维度是否匹配 | `server/main/api/services/knowledge/kb_store.py` |
+| 知识库搜索无结果 | 关键词是否命中；文件是否在 topics/ 或技能目录 | `server/main/api/services/knowledge/kb_store.py`（`keyword_search_knowledge`） |
 | 前端样式/组件异常 | Tailwind 类名白名单；组件 props 是否正确传递 | `web/src/components/` + `web/src/styles/main.css` |
 | 桌面端工具调用失败 | Socket.IO 消息链路；runtime 工具执行日志 | `device/shared/src/services/agent-runtime.ts` + `executor/` |
 
