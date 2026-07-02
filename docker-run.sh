@@ -34,6 +34,10 @@ if [ -f ".env" ] && [ -z "${HEYSURE_INTERNAL_TOKEN:-}" ]; then
     HEYSURE_INTERNAL_TOKEN="$(grep -E '^HEYSURE_INTERNAL_TOKEN=' .env | tail -n 1 | cut -d= -f2- || true)"
     export HEYSURE_INTERNAL_TOKEN
 fi
+if [ -f ".env" ] && [ -z "${HEYSURE_REPO_UPDATER_TOKEN:-}" ]; then
+    HEYSURE_REPO_UPDATER_TOKEN="$(grep -E '^HEYSURE_REPO_UPDATER_TOKEN=' .env | tail -n 1 | cut -d= -f2- || true)"
+    export HEYSURE_REPO_UPDATER_TOKEN
+fi
 
 export HEYSURE_REPO_UPDATER_PORT="${HEYSURE_REPO_UPDATER_PORT:-58151}"
 export HEYSURE_REPO_UPDATER_URL="${HEYSURE_REPO_UPDATER_URL:-http://host.docker.internal:${HEYSURE_REPO_UPDATER_PORT}}"
@@ -41,9 +45,24 @@ export HEYSURE_REPO_UPDATER_TOKEN="${HEYSURE_REPO_UPDATER_TOKEN:-${HEYSURE_INTER
 
 echo "==> [1/5] 启动宿主版本更新服务（容器通过 HTTP 通信触发更新）..."
 mkdir -p server/logs
+if command -v ss >/dev/null 2>&1 \
+    && ss -lntp 2>/dev/null | grep -q "127\.0\.0\.1:${HEYSURE_REPO_UPDATER_PORT}" \
+    && ! ss -lntp 2>/dev/null | grep -q "0\.0\.0\.0:${HEYSURE_REPO_UPDATER_PORT}"; then
+    echo "    检测到更新服务仅监听 127.0.0.1，容器无法访问，正在重启为 0.0.0.0..."
+    pkill -f "server/other/scripts/repo-updater.py" 2>/dev/null || true
+    sleep 1
+fi
 if curl -fsS "http://127.0.0.1:${HEYSURE_REPO_UPDATER_PORT}/health" >/dev/null 2>&1; then
-    echo "    更新服务已在 127.0.0.1:${HEYSURE_REPO_UPDATER_PORT} 运行"
-else
+    if curl -fsS -H "Authorization: Bearer ${HEYSURE_REPO_UPDATER_TOKEN}" "http://127.0.0.1:${HEYSURE_REPO_UPDATER_PORT}/version" >/dev/null 2>&1; then
+        echo "    更新服务已在 127.0.0.1:${HEYSURE_REPO_UPDATER_PORT} 运行，鉴权正常"
+    else
+        echo "    检测到更新服务 token 不匹配，正在重启更新服务..."
+        pkill -f "server/other/scripts/repo-updater.py" 2>/dev/null || true
+        sleep 1
+    fi
+fi
+
+if ! curl -fsS "http://127.0.0.1:${HEYSURE_REPO_UPDATER_PORT}/health" >/dev/null 2>&1; then
     PYTHON_BIN="${PYTHON_BIN:-}"
     if [ -z "$PYTHON_BIN" ]; then
         if command -v python3 >/dev/null 2>&1; then
@@ -60,11 +79,13 @@ else
         "$PYTHON_BIN" server/other/scripts/repo-updater.py \
         > server/logs/repo-updater.log 2>&1 &
     sleep 1
-    if curl -fsS "http://127.0.0.1:${HEYSURE_REPO_UPDATER_PORT}/health" >/dev/null 2>&1; then
+    if curl -fsS -H "Authorization: Bearer ${HEYSURE_REPO_UPDATER_TOKEN}" "http://127.0.0.1:${HEYSURE_REPO_UPDATER_PORT}/version" >/dev/null 2>&1; then
         echo "    更新服务已启动：127.0.0.1:${HEYSURE_REPO_UPDATER_PORT}"
     else
-        echo "    警告：更新服务启动失败，请查看 server/logs/repo-updater.log"
+        echo "    警告：更新服务启动失败或 token 不匹配，请查看 server/logs/repo-updater.log"
     fi
+else
+    :
 fi
 
 echo ""
@@ -73,6 +94,48 @@ if git submodule update --init --recursive; then
     echo "    子模块更新完成"
 else
     echo "    警告：子模块更新失败或当前不是 git 仓库，继续执行..."
+fi
+
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    mkdir -p server/data
+    JSON_PYTHON_BIN="${PYTHON_BIN:-}"
+    if [ -z "$JSON_PYTHON_BIN" ]; then
+        if command -v python3 >/dev/null 2>&1; then
+            JSON_PYTHON_BIN="python3"
+        else
+            JSON_PYTHON_BIN="python"
+        fi
+    fi
+    "$JSON_PYTHON_BIN" - <<'PY'
+import json
+import os
+import subprocess
+
+def git(*args: str) -> str:
+    return subprocess.check_output(["git", *args], text=True, encoding="utf-8", errors="replace").strip()
+
+branch = git("rev-parse", "--abbrev-ref", "HEAD")
+if branch == "HEAD":
+    branch = ""
+payload = {
+    "git_available": False,
+    "branch": branch,
+    "current": {
+        "sha": git("log", "-1", "--format=%H"),
+        "short": git("log", "-1", "--format=%h"),
+        "author": git("log", "-1", "--format=%an"),
+        "committed_at": float(git("log", "-1", "--format=%ct")),
+        "subject": git("log", "-1", "--format=%s"),
+        "body": git("show", "-s", "--format=%B", "HEAD"),
+        "files": [],
+    },
+}
+path = os.path.join("server", "data", "deployed-version.json")
+tmp = path + ".tmp"
+with open(tmp, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, ensure_ascii=False, indent=2)
+os.replace(tmp, path)
+PY
 fi
 
 echo ""

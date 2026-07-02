@@ -47,7 +47,7 @@ services:
       - CONNECTOR_RUNTIME_URL=http://connector-runtime:3002
       - AI_RUNTIME_URL=http://ai-runtime:3003
       - HEYSURE_REPO_UPDATER_URL=${HEYSURE_REPO_UPDATER_URL:-http://host.docker.internal:58151}
-      - HEYSURE_REPO_UPDATER_TOKEN=${HEYSURE_REPO_UPDATER_TOKEN:-}
+      - HEYSURE_REPO_UPDATER_TOKEN=${HEYSURE_REPO_UPDATER_TOKEN:-${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}}
       - AI_DISPATCH_MODE=remote
       - HEYSURE_DB_AUTO_MIGRATE=0
     command: ["uvicorn", "gateway.app:sio_app", "--host", "0.0.0.0", "--port", "3000"]
