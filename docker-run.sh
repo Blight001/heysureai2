@@ -54,7 +54,7 @@ else
     fi
     nohup env \
         HEYSURE_REPO_ROOT="$PWD" \
-        HEYSURE_REPO_UPDATER_HOST="127.0.0.1" \
+        HEYSURE_REPO_UPDATER_HOST="${HEYSURE_REPO_UPDATER_HOST:-0.0.0.0}" \
         HEYSURE_REPO_UPDATER_PORT="$HEYSURE_REPO_UPDATER_PORT" \
         HEYSURE_REPO_UPDATER_TOKEN="$HEYSURE_REPO_UPDATER_TOKEN" \
         "$PYTHON_BIN" server/other/scripts/repo-updater.py \
