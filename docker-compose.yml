@@ -1,3 +1,29 @@
+x-proxy-build-args: &proxy-build-args
+  HTTP_PROXY: ${DOCKER_HTTP_PROXY:-}
+  HTTPS_PROXY: ${DOCKER_HTTPS_PROXY:-}
+  ALL_PROXY: ${DOCKER_ALL_PROXY:-}
+  NO_PROXY: ${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,db,api-gateway,ai-runtime,mcp-runtime,connector-runtime,web,host.docker.internal}
+  http_proxy: ${DOCKER_HTTP_PROXY:-}
+  https_proxy: ${DOCKER_HTTPS_PROXY:-}
+  all_proxy: ${DOCKER_ALL_PROXY:-}
+  no_proxy: ${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,db,api-gateway,ai-runtime,mcp-runtime,connector-runtime,web,host.docker.internal}
+
+x-proxy-environment: &proxy-environment
+  HTTP_PROXY: ${DOCKER_HTTP_PROXY:-}
+  HTTPS_PROXY: ${DOCKER_HTTPS_PROXY:-}
+  ALL_PROXY: ${DOCKER_ALL_PROXY:-}
+  NO_PROXY: ${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,db,api-gateway,ai-runtime,mcp-runtime,connector-runtime,web,host.docker.internal}
+  http_proxy: ${DOCKER_HTTP_PROXY:-}
+  https_proxy: ${DOCKER_HTTPS_PROXY:-}
+  all_proxy: ${DOCKER_ALL_PROXY:-}
+  no_proxy: ${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,db,api-gateway,ai-runtime,mcp-runtime,connector-runtime,web,host.docker.internal}
+
+x-server-build: &server-build
+  context: ./server
+  args: *proxy-build-args
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
 services:
   # This docker-compose lives in the HeySure *workspace* root.
   # web/, server/, device/ are Git submodules (HeySure-Web/Server/Device).
@@ -22,9 +48,10 @@ services:
   # doc/db-migrations.md §Step 4). Runs `alembic upgrade head` once, then exits;
   # the four runtimes wait for it to finish and start with auto-migrate off.
   db-migrate:
-    build: ./server
+    build: *server-build
     environment:
-      - DATABASE_URL=postgresql+psycopg://heysure:heysure@db:5432/heysure
+      <<: *proxy-environment
+      DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
     command: ["python", "-m", "api.db", "migrate"]
     depends_on:
       db:
@@ -32,7 +59,7 @@ services:
     restart: "no"
 
   api-gateway:
-    build: ./server
+    build: *server-build
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -40,16 +67,17 @@ services:
     volumes:
       - ./server/data:/app/data
     environment:
-      - HEYSURE_SERVICE_ROLE=gateway
-      - DATABASE_URL=postgresql+psycopg://heysure:heysure@db:5432/heysure
-      - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
-      - MCP_RUNTIME_URL=http://mcp-runtime:3001
-      - CONNECTOR_RUNTIME_URL=http://connector-runtime:3002
-      - AI_RUNTIME_URL=http://ai-runtime:3003
-      - HEYSURE_REPO_UPDATER_URL=${HEYSURE_REPO_UPDATER_URL:-http://host.docker.internal:58151}
-      - HEYSURE_REPO_UPDATER_TOKEN=${HEYSURE_REPO_UPDATER_TOKEN:-${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}}
-      - AI_DISPATCH_MODE=remote
-      - HEYSURE_DB_AUTO_MIGRATE=0
+      <<: *proxy-environment
+      HEYSURE_SERVICE_ROLE: gateway
+      DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
+      HEYSURE_INTERNAL_TOKEN: ${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
+      MCP_RUNTIME_URL: http://mcp-runtime:3001
+      CONNECTOR_RUNTIME_URL: http://connector-runtime:3002
+      AI_RUNTIME_URL: http://ai-runtime:3003
+      HEYSURE_REPO_UPDATER_URL: ${HEYSURE_REPO_UPDATER_URL:-http://host.docker.internal:58151}
+      HEYSURE_REPO_UPDATER_TOKEN: ${HEYSURE_REPO_UPDATER_TOKEN:-${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}}
+      AI_DISPATCH_MODE: remote
+      HEYSURE_DB_AUTO_MIGRATE: "0"
     command: ["uvicorn", "gateway.app:sio_app", "--host", "0.0.0.0", "--port", "3000"]
     depends_on:
       db:
@@ -59,7 +87,7 @@ services:
     restart: unless-stopped
 
   ai-runtime:
-    build: ./server
+    build: *server-build
     # Internal-only status server (/internal/health + /internal/logs) on 3003,
     # reachable by api-gateway over the compose network for the admin panel.
     expose:
@@ -67,14 +95,15 @@ services:
     volumes:
       - ./server/data:/app/data
     environment:
-      - HEYSURE_SERVICE_ROLE=worker
-      - DATABASE_URL=postgresql+psycopg://heysure:heysure@db:5432/heysure
-      - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
-      - HEYSURE_API_GATEWAY_URL=http://api-gateway:3000
-      - MCP_RUNTIME_URL=http://mcp-runtime:3001
-      - CONNECTOR_RUNTIME_URL=http://connector-runtime:3002
-      - HEYSURE_AI_RUNTIME_PORT=3003
-      - HEYSURE_DB_AUTO_MIGRATE=0
+      <<: *proxy-environment
+      HEYSURE_SERVICE_ROLE: worker
+      DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
+      HEYSURE_INTERNAL_TOKEN: ${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
+      HEYSURE_API_GATEWAY_URL: http://api-gateway:3000
+      MCP_RUNTIME_URL: http://mcp-runtime:3001
+      CONNECTOR_RUNTIME_URL: http://connector-runtime:3002
+      HEYSURE_AI_RUNTIME_PORT: "3003"
+      HEYSURE_DB_AUTO_MIGRATE: "0"
     command: ["python", "-m", "ai_runtime.main"]
     depends_on:
       db:
@@ -88,7 +117,7 @@ services:
     restart: unless-stopped
 
   mcp-runtime:
-    build: ./server
+    build: *server-build
     # Intentionally NOT mapped to the host: only api-gateway / ai-runtime
     # reach it on the compose network.
     expose:
@@ -96,11 +125,12 @@ services:
     volumes:
       - ./server/data:/app/data
     environment:
-      - HEYSURE_SERVICE_ROLE=mcp
-      - DATABASE_URL=postgresql+psycopg://heysure:heysure@db:5432/heysure
-      - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
-      - HEYSURE_API_GATEWAY_URL=http://api-gateway:3000
-      - HEYSURE_DB_AUTO_MIGRATE=0
+      <<: *proxy-environment
+      HEYSURE_SERVICE_ROLE: mcp
+      DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
+      HEYSURE_INTERNAL_TOKEN: ${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
+      HEYSURE_API_GATEWAY_URL: http://api-gateway:3000
+      HEYSURE_DB_AUTO_MIGRATE: "0"
     command: ["python", "-m", "mcp_runtime.main"]
     depends_on:
       db:
@@ -110,7 +140,9 @@ services:
     restart: unless-stopped
 
   connector-runtime:
-    build: ./server
+    build: *server-build
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # Exposed to host because external desktop agents / browser plugins
     # connect here over Socket.IO. The /internal/* HTTP routes share the
     # same port but require INTERNAL_TOKEN.
@@ -119,11 +151,12 @@ services:
     volumes:
       - ./server/data:/app/data
     environment:
-      - HEYSURE_SERVICE_ROLE=connector
-      - DATABASE_URL=postgresql+psycopg://heysure:heysure@db:5432/heysure
-      - HEYSURE_INTERNAL_TOKEN=${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
-      - HEYSURE_API_GATEWAY_URL=http://api-gateway:3000
-      - HEYSURE_DB_AUTO_MIGRATE=0
+      <<: *proxy-environment
+      HEYSURE_SERVICE_ROLE: connector
+      DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
+      HEYSURE_INTERNAL_TOKEN: ${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
+      HEYSURE_API_GATEWAY_URL: http://api-gateway:3000
+      HEYSURE_DB_AUTO_MIGRATE: "0"
     command: ["python", "-m", "connector_runtime.main"]
     depends_on:
       db:
@@ -133,11 +166,18 @@ services:
     restart: unless-stopped
 
   web:
-    build: ./web
+    build:
+      context: ./web
+      args: *proxy-build-args
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "58150:58150"
     environment:
-      - SERVER_URL=http://api-gateway:3000
+      <<: *proxy-environment
+      SERVER_URL: http://api-gateway:3000
     depends_on:
       - api-gateway
     restart: unless-stopped
