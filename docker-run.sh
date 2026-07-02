@@ -139,7 +139,7 @@ fi
 
 echo ""
 echo "==> [3/5] 构建 Docker 镜像（实时显示构建进度）..."
-docker compose build --progress plain
+docker compose --progress plain build
 
 echo ""
 echo "==> [4/5] 启动所有服务（后台 detached 模式）..."
