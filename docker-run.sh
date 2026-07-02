@@ -25,10 +25,45 @@ set -euo pipefail
 # 切换到脚本所在目录（项目根目录）
 cd "$(dirname "$0")"
 
+FORCE_BUILD=0
+SKIP_UPDATE=0
+for arg in "$@"; do
+    case "$arg" in
+        --build)
+            FORCE_BUILD=1
+            ;;
+        --skip-update)
+            SKIP_UPDATE=1
+            ;;
+        -h|--help)
+            echo "用法：./docker-run.sh [--build] [--skip-update]"
+            echo "  --build       无论代码是否变化都重新构建镜像"
+            echo "  --skip-update 跳过 git pull / 子模块远端更新"
+            exit 0
+            ;;
+        *)
+            echo "未知参数：$arg"
+            echo "用法：./docker-run.sh [--build] [--skip-update]"
+            exit 2
+            ;;
+    esac
+done
+
 echo "=============================================="
 echo "  HeySure AI 2.0 - Docker 重建 & 启动脚本"
 echo "=============================================="
 echo ""
+
+git_head() {
+    git rev-parse HEAD 2>/dev/null || true
+}
+
+repo_fingerprint() {
+    {
+        git rev-parse HEAD 2>/dev/null || true
+        git submodule status --recursive 2>/dev/null || true
+    } | sha256sum | awk '{print $1}'
+}
 
 read_env_value() {
     local key="$1"
@@ -130,16 +165,43 @@ else
 fi
 
 echo ""
-echo "==> [2/5] 更新 Git 子模块（web / server / device）..."
-if git submodule update --init --recursive; then
-    echo "    子模块更新完成"
+echo "==> [2/5] 更新 Git 仓库与子模块（web / server / device）..."
+before_update_fingerprint="$(repo_fingerprint)"
+if [ "$SKIP_UPDATE" = "1" ]; then
+    echo "    已按参数跳过代码更新"
+elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    if [ -n "$current_branch" ] && [ "$current_branch" != "HEAD" ]; then
+        echo "    更新主仓库：origin/${current_branch}"
+        git fetch origin "$current_branch"
+        git pull --ff-only origin "$current_branch"
+    else
+        echo "    当前主仓库处于 detached HEAD，跳过主仓库 pull"
+    fi
+
+    git submodule sync --recursive
+    if git submodule update --init --recursive --remote --merge; then
+        echo "    子模块已更新到各自远端分支最新版本"
+    else
+        echo "    警告：子模块远端更新失败，尝试按当前主仓库记录版本同步..."
+        git submodule update --init --recursive
+    fi
 else
-    echo "    警告：子模块更新失败或当前不是 git 仓库，继续执行..."
+    echo "    警告：当前不是 git 仓库，跳过代码更新..."
 fi
+after_update_fingerprint="$(repo_fingerprint)"
 
 echo ""
-echo "==> [3/5] 构建 Docker 镜像（实时显示构建进度）..."
-docker compose --progress plain build
+echo "==> [3/5] 构建 Docker 镜像（按需执行）..."
+if [ "$FORCE_BUILD" = "1" ]; then
+    echo "    已指定 --build，开始重新构建镜像..."
+    docker compose --progress plain build
+elif [ -z "$before_update_fingerprint" ] || [ "$before_update_fingerprint" != "$after_update_fingerprint" ]; then
+    echo "    检测到主仓库或子模块版本变化，开始构建镜像..."
+    docker compose --progress plain build
+else
+    echo "    主仓库版本未变化，跳过镜像构建；如需强制构建请运行：./docker-run.sh --build"
+fi
 
 echo ""
 echo "==> [4/5] 启动所有服务（后台 detached 模式）..."
