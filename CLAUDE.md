@@ -96,7 +96,7 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 | QQ / 飞书机器人 | `server/main/connector_runtime/bots/` 与 `dispatch/` |
 | 前端页面 / 组件 | `web/src/components/<域>/`（chat / dashboard / home / librarian / common） |
 | 前端调后端 API 封装 | `web/src/api/<域>.ts`（http.ts 是统一客户端） |
-| 桌面端本机执行 | `device/shared/src/runtime/`（受控执行底座，三端共享） |
+| 桌面端本机执行 | 各平台独立 `src/runtime/`（受控执行底座） |
 | 浏览器自动化 | `device/extension/src/` |
 | 配置项 / 环境变量 | `server/main/api/core/settings.py`（**配置总入口**） |
 | AI 角色 prompt | `doc/prompt/` |
@@ -133,7 +133,7 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 | 任务不触发 | 调度器是否随 Gateway 启动 | `server/main/api/services/tasks/task_system.py` + `tasks/task_schedule.py` |
 | 知识库搜索无结果 | 关键词是否命中；文件是否在 topics/ 或技能目录 | `server/main/api/services/knowledge/kb_store.py`（`keyword_search_knowledge`） |
 | 前端样式/组件异常 | Tailwind 类名白名单；组件 props 是否正确传递 | `web/src/components/` + `web/src/styles/main.css` |
-| 桌面端工具调用失败 | Socket.IO 消息链路；runtime 工具执行日志 | `device/shared/src/services/agent-runtime.ts` + `executor/` |
+| 桌面端工具调用失败 | Socket.IO 消息链路；runtime 工具执行日志 | 各平台 `src/services/agent-runtime.ts` + `executor/` |
 
 ## 聊天请求链路（问题定位参考）
 
@@ -156,7 +156,7 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 - **内部接口要带 token**：进程间 `/internal/*` 需 `HEYSURE_INTERNAL_TOKEN` bearer。
 - **不要提交构建产物**：`web/dist`、`device/*/dist`、`__pycache__`、`*.db` 已在 `.gitignore`。
 - **桌面端壳无法在 CI/远程验证**：Electron GUI 依赖 X11/原生模块，只能 `tsc` 编译检查。
-- **win/linux/mac 桌面端同源**：通用逻辑只改 `device/shared/src/`，构建时自动同步三端。
+- **win/linux/mac 桌面端独立**：通用逻辑已复制到各平台 `src/`（windows/linux/mac 各自拥有完整副本），可独立修改。
 - **改 `server/main/api/` 影响全部 4 个进程**，注意进程角色差异。
 
 ## Git 约定
