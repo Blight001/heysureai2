@@ -213,9 +213,9 @@ python -m ai_runtime.main
 ### 桌面端 (HeySure-Device)
 
 ```bat
-device\run-windows.bat
-device\run-linux.sh
-device\run-mac.sh
+device\windows\run.bat
+device\linux\run.sh
+device\mac\run.sh
 ```
 
 ### Android
