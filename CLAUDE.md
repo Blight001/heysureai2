@@ -7,6 +7,17 @@
 
 HeySure AI 2.0 是一个**多端 AI agent 协作平台**：Web 控制台 + Python 后端（拆成 4 个进程）+ 跨平台桌面/浏览器/手机端 agent。AI 成员可被创建、治理、调用工具、记录知识。
 
+## 测试环境（供 Claude 联调）
+
+已部署的测试服务器，Claude 可直接 curl 验证行为：
+
+- Web 控制台：`http://49.234.181.190:58150/`
+- API 网关（可直连）：`http://49.234.181.190:3000/`
+- 测试账号：`heysure` / `heysure`（以后所有测试统一用这个账号密码）
+- 登录：`POST /api/auth/login`，body `{"account":"heysure","password":"heysure"}`，返回 `access_token` 与 `agent_socket_url`。
+
+> 注意：经 :58150 登录时 `agent_socket_url` 会返回 `http://...:58150`（web 已正确反代 `/socket.io/` 含 WS 升级，可用）；经 :3000 直连登录返回 `http://...:3000`。
+
 ## 顶层结构（多仓库）
 
 本项目采用**多仓库**布局：
