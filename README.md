@@ -30,13 +30,13 @@
 
 HeySure AI 2.0 is more than a chat app. It is a runnable agent ecosystem built around:
 
-- a web console for configuration and operations
+- a web console for configuration and operations, including a live pixel-art "agent world" view
 - a FastAPI gateway for public APIs and realtime updates
 - an AI runtime for inference and chat dispatch
 - an MCP runtime for tool registration and permission control
-- connector runtimes for external platforms
-- desktop agents for Windows, Linux, and macOS
-- a Chrome extension and an Android endpoint for additional access paths
+- connector runtimes for external platforms and for WebRTC remote control of endpoints
+- desktop agents for Windows (Tauri), Linux, and macOS (Electron)
+- two Chrome extensions and an Android endpoint for additional access paths
 
 The platform is designed so AI members can be created, configured, observed, coordinated, and given controlled access to tools. Over time, conversations, tasks, tool calls, and lifecycle events are recorded into reusable knowledge and audit trails.
 
@@ -61,6 +61,10 @@ The platform is designed so AI members can be created, configured, observed, coo
 | Multi-client access | Use the same backend from the web console, desktop agents, Chrome extension, Android endpoint, QQ connector, and Feishu connector. |
 | Real-time state | Share task progress, agent presence, runtime state, and chat updates through REST APIs and Socket.IO. |
 | Knowledge inheritance | Turn conversations, tasks, outcomes, and lifecycle events into long-term reusable context. |
+| Knowledge workshop | A librarian agent reviews proposed knowledge, archives it into searchable topics, and can install shared skills from ClawHub. |
+| Remote control | WebRTC screen and input control for Windows, Android, and browser endpoints, with server-configurable STUN/TURN relays. |
+| Agent world | A pixel-art view (`web/game/`) rendering AI members, workshops, and knowledge events as a living, real-time world. |
+| Self-service ops | Admins can trigger git-based repo updates and full database backup/restore from the console. |
 
 ## Principles
 
@@ -93,6 +97,8 @@ User / external platform
   -> Connector / Agent
   -> persistence / state broadcast / knowledge capture
 ```
+
+Remote-control sessions are signaled through the Connector Runtime over Socket.IO; once negotiated, screen and input data flow peer-to-peer over WebRTC.
 
 ## Project Layout
 
@@ -130,6 +136,27 @@ docker compose up -d --build
 
 ### Local Windows Development
 
+After a fresh OS install, make sure these prerequisites are in place first:
+
+- Python: 3.11 or 3.12 recommended ([download](https://www.python.org/downloads/windows/); check "Add python.exe to PATH" during install)
+- PostgreSQL: 16 recommended ([download](https://www.postgresql.org/download/windows/))
+- Node.js: 22 LTS or a newer LTS release ([download](https://nodejs.org/en/download))
+
+After installing PostgreSQL, create the project's default user and database:
+
+```sql
+CREATE USER heysure WITH PASSWORD 'heysure';
+CREATE DATABASE heysure OWNER heysure;
+```
+
+If the user already exists, you can just reset the password:
+
+```sql
+ALTER USER heysure WITH PASSWORD 'heysure';
+```
+
+Once the environment is ready, pull the submodules and start everything:
+
 ```bat
 # One-time (or when you want to refresh components)
 git submodule update --init --recursive
@@ -139,6 +166,12 @@ server\run.bat
 web\run.bat
 device\windows\run.bat
 ```
+
+`windows-run.bat` opens the backend dashboard (`server/tk_launcher.py`), which provides three buttons:
+
+- `Install dependencies`: installs backend Python dependencies
+- `Environment check`: checks Python, the backend virtualenv, PostgreSQL, Node.js, npm, and frontend dependencies
+- `Start all`: starts gateway, mcp, connector, ai, and web
 
 Health check:
 
@@ -217,6 +250,8 @@ device\linux\run.sh
 device\mac\run.sh
 ```
 
+Windows ships as a Tauri 2 app (Rust + WebView2) instead of Electron; Linux and macOS remain Electron. Building the Windows shell needs the Rust toolchain and Visual Studio Build Tools — see [`device/windows/README.md`](device/windows/README.md).
+
 ### Android
 
 ```bat
@@ -233,6 +268,8 @@ npm install
 npm run build
 ```
 
+There is a second, build-free extension at [`device/browser_automation/`](device/browser_automation/README.md) focused on automation cards and cookie capture — load it unpacked from Chrome's extensions page.
+
 **Tip**: After `git submodule update --init --recursive`, Docker Compose and launchers work as before.
 
 ### Repository Structure (multi-repo)
@@ -243,7 +280,7 @@ This repository is now a **lightweight workspace** that orchestrates three indep
 |------------------|------------|---------|
 | HeySure-Web      | `web/`     | Vue 3 web console |
 | HeySure-Server   | `server/`  | FastAPI gateway + 4 runtimes (shared api layer) |
-| HeySure-Device   | `device/`  | Desktop agents (win/linux/mac) + browser extension + Android |
+| HeySure-Device   | `device/`  | Desktop agents (win/linux/mac) + two browser extensions + Android |
 
 **First-time setup (Git submodules):**
 
@@ -279,9 +316,10 @@ This removes `node_modules`, `venv`, `dist`, build artifacts, etc. Re-install de
 - Windows desktop agent: [`device/windows/README.md`](device/windows/README.md)
 - Linux desktop agent: [`device/linux/README.md`](device/linux/README.md)
 - macOS desktop agent: [`device/mac/README.md`](device/mac/README.md)
-- Browser extension: [`device/extension/README.md`](device/extension/README.md)
+- Browser extension (full agent): [`device/extension/README.md`](device/extension/README.md)
+- Browser automation plugin: [`device/browser_automation/README.md`](device/browser_automation/README.md)
 - Android endpoint: [`device/android/README.md`](device/android/README.md)
-- Shared desktop source: [`device/shared/README.md`](device/shared/README.md)
+- Agent world (in-console game view): [`web/game/README.md`](web/game/README.md)
 
 ## License
 
