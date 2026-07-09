@@ -268,7 +268,7 @@ npm install
 npm run build
 ```
 
-There is a second, build-free extension at [`device/browser_automation/`](device/browser_automation/README.md) focused on automation cards and cookie capture — load it unpacked from Chrome's extensions page.
+There is a second, build-free extension at [`device/browser_automation/`](device/browser_automation/README.md) focused on automation cards, flowchart branching, and cookie capture — load it unpacked from Chrome's extensions page.
 
 **Tip**: After `git submodule update --init --recursive`, Docker Compose and launchers work as before.
 

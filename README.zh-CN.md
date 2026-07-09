@@ -269,7 +269,7 @@ npm install
 npm run build
 ```
 
-另有一款免构建的扩展 [`device/browser_automation/`](device/browser_automation/README.md)，专注自动化卡片与 Cookie 抓取，在 Chrome 扩展页直接「加载已解压的扩展程序」即可。
+另有一款免构建的扩展 [`device/browser_automation/`](device/browser_automation/README.md)，专注自动化卡片、流程图分支编辑与 Cookie 抓取，在 Chrome 扩展页直接「加载已解压的扩展程序」即可。
 
 **提示**：子模块初始化后即可正常使用 Docker Compose 和启动脚本。
 
