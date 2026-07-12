@@ -125,6 +125,7 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 | `MCP_RUNTIME_URL` | 可选 | Gateway → MCP Runtime（默认 `http://127.0.0.1:3001`） |
 | `CONNECTOR_RUNTIME_URL` | 可选 | Gateway → Connector（默认 `http://127.0.0.1:3002`） |
 | `TAVILY_API_KEY` | 可选 | Web 搜索功能 |
+| `HEYSURE_TIMEZONE` | 可选 | 任务定时/循环墙钟时区（默认 `Asia/Shanghai`；置空退回服务器本地时区） |
 | `LOG_LEVEL` | 可选 | DEBUG/INFO/WARNING（默认 INFO） |
 | `LOG_JSON` | 可选 | 容器部署时设 `true`，输出 JSON 格式日志 |
 
