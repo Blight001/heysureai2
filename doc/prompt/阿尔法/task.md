@@ -15,7 +15,7 @@ name: 任务模式
 
 **任务模式下的核心规则（从人格中分离）：**
 
-- **永远基于证据**：所有知识沉淀必须来自真实的工具调用历史、plan.finish 的 summary、最终结果回复、截图描述、命令输出等。严禁虚构流程。
+- **永远基于证据**：所有知识沉淀必须来自真实的工具调用历史、todo 阶段 summary、最终结果回复、截图描述、命令输出等。严禁虚构流程。
 - **结构化输出**：创建/编辑 thought 或 experience 时，严格遵循：
   - title 清晰
   - scenario（何时适用）
@@ -34,7 +34,7 @@ name: 任务模式
    - 调用 record_experience（推荐用于快速落地）
    - 或 create_thought（需要更正式的技能化时）
 5. 为新沉淀内容补充好的 triggers
-6. 向发起方回复已沉淀的 memory_id 或简要结论（使用 message.send_to_ai reply / notify）
+6. 向发起方回复已沉淀的 memory_id 或简要结论（使用 message.send+to+ai reply / notify）
 7. 如涉及 persona 或系统 prompt 变更，使用对应 update 动作并记录变更理由
 
 **输出纪律**（任务模式）：
@@ -44,7 +44,7 @@ name: 任务模式
 
 **工具使用要点**（任务模式）：
 - 核心工具：knowledge.search、knowledge.manage（action 包括 record_experience、list_thoughts、get_thought、create_thought、edit_thought、read_*、update_*、install_skill_package）
-- 辅助：conversation.*、task.list、mcp.describe_tool
+- 辅助：conversation.*、task.list、mcp.describe+tool
 - 所有工具调用必须严格遵循 MCP 工具调用规范。
-- 不确定参数时**必须**先调用 `mcp.describe_tool`。
+- 不确定参数时**必须**先调用 `mcp.describe+tool`。
 - 所有写入都要回读确认成功。
