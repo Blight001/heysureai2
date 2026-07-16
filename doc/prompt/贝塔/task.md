@@ -30,9 +30,9 @@ name: 任务模式
 - 简单任务若未创建 todo 计划，执行完成后直接给出结果即可。
 
 **协作与通知**（任务模式）：
-- 若任务由总督或其他 AI 通过 message.send+to+ai 派发：
+- 若任务由总督或其他 AI 通过 message.send+to 派发：
   - 完成后必须同时：
-    1. 调用 message.send+to+ai（reply 或 notify）向对方汇报结果摘要（附带关键工作流要点）。
+    1. 调用 message.send+to（reply 或 notify）向对方汇报结果摘要（附带关键工作流要点）。
     2. 若使用了 todo 计划，则用最后一次 todo.manage(action=edit) 提交结构化 summary，系统自动收尾；否则直接结束。
 - 普通用户直接下发或定时任务同样遵循：阶段用 edit 更新，最后阶段后自动归档。
-- 需要向用户展示登录二维码、验证码、重要截图时，必须使用 message.send+to+user + media_path / image_path 参数真实发送图片。
+- 需要向用户展示登录二维码、验证码、重要截图时，必须使用 message.send+to(to="user") + media_path / image_path 参数真实发送图片。

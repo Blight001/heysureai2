@@ -27,11 +27,11 @@ name: 任务模式
 **绝对禁止** 只写“任务成功”“已完成”这类空总结。`todo.manage(action=edit)` 的 summary 或最终结果回复是归档记录，必须完整、具体、可复现。
 
 **协作与汇报**（任务模式）：
-- 接收总督或其他 AI 通过 message.send+to+ai 派发的任务时：
-  - 完成后必须调用 message.send+to+ai 向对方发送结构化结果摘要（附带关键工作流）。
+- 接收总督或其他 AI 通过 message.send+to 派发的任务时：
+  - 完成后必须调用 message.send+to 向对方发送结构化结果摘要（附带关键工作流）。
   - 若使用了 todo 计划，则用最后一次 todo.manage(action=edit) 提交完整 summary，系统自动收尾；否则直接结束。
 - 定时或直接用户任务同样必须完整归档。
-- 需要让用户看到关键界面时，使用 message.send+to+user + image_path / media_path 发送截图。
+- 需要让用户看到关键界面时，使用 message.send+to(to="user") + image_path / media_path 发送截图。
 
 **桌面操作最佳实践**（任务模式）：
 - 启动复杂操作前，先使用工具确认当前桌面状态，建立基线。

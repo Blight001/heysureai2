@@ -34,7 +34,7 @@ name: 任务模式
    - 调用 record_experience（推荐用于快速落地）
    - 或 create_thought（需要更正式的技能化时）
 5. 为新沉淀内容补充好的 triggers
-6. 向发起方回复已沉淀的 memory_id 或简要结论（使用 message.send+to+ai reply / notify）
+6. 向发起方回复已沉淀的 memory_id 或简要结论（使用 message.send+to reply / notify）
 7. 如涉及 persona 或系统 prompt 变更，使用对应 update 动作并记录变更理由
 
 **输出纪律**（任务模式）：
