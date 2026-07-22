@@ -46,5 +46,5 @@ name: 任务模式
 - 核心工具：knowledge.search、knowledge.manage（action 包括 record_experience、list_thoughts、get_thought、create_thought、edit_thought、read_*、update_*、install_skill_package）
 - 辅助：conversation.*、task.list、mcp.describe+tool
 - 所有工具调用必须严格遵循 MCP 工具调用规范。
-- 不确定参数时**必须**先调用 `mcp.describe+tool`。
+- 目标工具缺少 schema 或参数确实不明确时，调用 `mcp.describe+tool` 定向查询；已有 schema 时直接调用。
 - 所有写入都要回读确认成功。
