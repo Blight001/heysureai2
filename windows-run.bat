@@ -2,18 +2,19 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 rem Root one-click launcher for Windows.
-rem It delegates to the backend Tk dashboard (server/tk_launcher.py).
+rem It delegates to the backend Tk dashboard (deploy/server/tk_launcher.py).
 
 rem This is a *workspace* repository using Git submodules.
-rem web/, server/, device/ are linked to HeySure-Web / Server / Device repos.
+rem deploy/web, deploy/server and optional device/ are Git submodules.
 rem 
 rem Clone command:
-rem   git clone --recurse-submodules <workspace-url>
+rem   git clone <workspace-url>
+rem   git submodule update --init --recursive -- deploy/server deploy/web
 rem Or after normal clone:
-rem   git submodule update --init --recursive
+rem   git submodule update --init --recursive -- deploy/server deploy/web
 
 set "ROOT_DIR=%~dp0"
 
 cd /d "%ROOT_DIR%"
 
-call "%ROOT_DIR%server\run.bat"
+call "%ROOT_DIR%deploy\server\run.bat"

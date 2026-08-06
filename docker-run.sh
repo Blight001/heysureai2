@@ -61,7 +61,7 @@ git_head() {
 repo_fingerprint() {
     {
         git rev-parse HEAD 2>/dev/null || true
-        git submodule status --recursive 2>/dev/null || true
+        git submodule status --recursive -- deploy/server deploy/web 2>/dev/null || true
     } | sha256sum | awk '{print $1}'
 }
 
@@ -88,11 +88,17 @@ export HEYSURE_REPO_UPDATER_PORT="${HEYSURE_REPO_UPDATER_PORT:-58151}"
 export HEYSURE_REPO_UPDATER_URL="${HEYSURE_REPO_UPDATER_URL:-http://host.docker.internal:${HEYSURE_REPO_UPDATER_PORT}}"
 export HEYSURE_REPO_UPDATER_TOKEN="${HEYSURE_REPO_UPDATER_TOKEN:-${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}}"
 
+if [ ! -f "deploy/server/other/scripts/repo-updater.py" ]; then
+    echo "==> [bootstrap] 初始化服务器部署子模块（不包含 device）..."
+    git submodule sync -- deploy/server deploy/web
+    git submodule update --init --recursive -- deploy/server deploy/web
+fi
+
 echo "==> [1/5] 启动宿主版本更新服务（容器通过 HTTP 通信触发更新）..."
-mkdir -p server/logs
+mkdir -p deploy/server/logs
 
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    mkdir -p server/data
+    mkdir -p deploy/server/data
     JSON_PYTHON_BIN="${PYTHON_BIN:-}"
     if [ -z "$JSON_PYTHON_BIN" ]; then
         if command -v python3 >/dev/null 2>&1; then
@@ -125,7 +131,7 @@ payload = {
         "files": [],
     },
 }
-path = os.path.join("server", "data", "deployed-version.json")
+path = os.path.join("deploy", "server", "data", "deployed-version.json")
 tmp = path + ".tmp"
 with open(tmp, "w", encoding="utf-8") as handle:
     json.dump(payload, handle, ensure_ascii=False, indent=2)
@@ -134,7 +140,7 @@ PY
 fi
 
 echo "    重启宿主更新服务，确保监听地址和 token 与当前 .env 一致..."
-pkill -f "server/other/scripts/repo-updater.py" 2>/dev/null || true
+pkill -f "deploy/server/other/scripts/repo-updater.py" 2>/dev/null || true
 sleep 1
 
 PYTHON_BIN="${PYTHON_BIN:-}"
@@ -150,22 +156,22 @@ nohup env \
     HEYSURE_REPO_UPDATER_HOST="${HEYSURE_REPO_UPDATER_HOST:-0.0.0.0}" \
     HEYSURE_REPO_UPDATER_PORT="$HEYSURE_REPO_UPDATER_PORT" \
     HEYSURE_REPO_UPDATER_TOKEN="$HEYSURE_REPO_UPDATER_TOKEN" \
-    "$PYTHON_BIN" server/other/scripts/repo-updater.py \
-    > server/logs/repo-updater.log 2>&1 &
+    "$PYTHON_BIN" deploy/server/other/scripts/repo-updater.py \
+    > deploy/server/logs/repo-updater.log 2>&1 &
 sleep 1
 
 if curl -fsS -H "Authorization: Bearer ${HEYSURE_REPO_UPDATER_TOKEN}" "http://127.0.0.1:${HEYSURE_REPO_UPDATER_PORT}/version" >/dev/null 2>&1; then
     echo "    更新服务已启动：0.0.0.0:${HEYSURE_REPO_UPDATER_PORT}"
 else
     if curl -fsS "http://127.0.0.1:${HEYSURE_REPO_UPDATER_PORT}/health" >/dev/null 2>&1; then
-        echo "    警告：更新服务已启动，但版本校验失败，请查看 server/logs/repo-updater.log"
+        echo "    警告：更新服务已启动，但版本校验失败，请查看 deploy/server/logs/repo-updater.log"
     else
-        echo "    警告：更新服务启动失败，请查看 server/logs/repo-updater.log"
+        echo "    警告：更新服务启动失败，请查看 deploy/server/logs/repo-updater.log"
     fi
 fi
 
 echo ""
-echo "==> [2/5] 更新 Git 仓库与子模块（web / server / device）..."
+echo "==> [2/5] 更新 Git 仓库与部署子模块（deploy/web / deploy/server）..."
 before_update_fingerprint="$(repo_fingerprint)"
 if [ "$SKIP_UPDATE" = "1" ]; then
     echo "    已按参数跳过代码更新"
@@ -179,12 +185,12 @@ elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
         echo "    当前主仓库处于 detached HEAD，跳过主仓库 pull"
     fi
 
-    git submodule sync --recursive
-    if git submodule update --init --recursive --remote --merge; then
-        echo "    子模块已更新到各自远端分支最新版本"
+    git submodule sync --recursive -- deploy/server deploy/web
+    if git submodule update --init --recursive --remote --merge -- deploy/server deploy/web; then
+        echo "    部署子模块已更新到各自远端分支最新版本"
     else
         echo "    警告：子模块远端更新失败，尝试按当前主仓库记录版本同步..."
-        git submodule update --init --recursive
+        git submodule update --init --recursive -- deploy/server deploy/web
     fi
 else
     echo "    警告：当前不是 git 仓库，跳过代码更新..."

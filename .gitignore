@@ -1,11 +1,11 @@
 # HeySure Workspace (lightweight meta-repo)
 # The three main components are Git *submodules*:
-#   - HeySure-Web     → web/
-#   - HeySure-Server  → server/
+#   - HeySure-Web     → deploy/web/
+#   - HeySure-Server  → deploy/server/
 #   - HeySure-Device  → device/
 #
 # They are linked via .gitmodules. Content lives in the separate repos.
-# Use: git clone --recurse-submodules  or  git submodule update --init --recursive
+# Server deploy: git submodule update --init --recursive -- deploy/server deploy/web
 
 # Environment
 .env

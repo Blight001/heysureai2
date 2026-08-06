@@ -19,16 +19,16 @@ x-proxy-environment: &proxy-environment
   no_proxy: ${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,db,api-gateway,ai-runtime,mcp-runtime,connector-runtime,web,host.docker.internal}
 
 x-server-build: &server-build
-  context: ./server
+  context: ./deploy/server
   args: *proxy-build-args
   extra_hosts:
     - "host.docker.internal:host-gateway"
 
 services:
   # This docker-compose lives in the HeySure *workspace* root.
-  # web/, server/, device/ are Git submodules (HeySure-Web/Server/Device).
-  # Clone with --recurse-submodules or run: git submodule update --init --recursive
-  # Each build context points to one of the three component repositories.
+  # deploy/server and deploy/web are the server deployment submodules.
+  # Initialize only them with: git submodule update --init --recursive -- deploy/server deploy/web
+  # device/ is optional and is not required by this Compose stack.
   db:
     image: postgres:16-alpine
     environment:
@@ -65,7 +65,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./server/data:/app/data
+      - ./deploy/server/data:/app/data
     environment:
       <<: *proxy-environment
       HEYSURE_SERVICE_ROLE: gateway
@@ -93,7 +93,7 @@ services:
     expose:
       - "3003"
     volumes:
-      - ./server/data:/app/data
+      - ./deploy/server/data:/app/data
     environment:
       <<: *proxy-environment
       HEYSURE_SERVICE_ROLE: worker
@@ -123,7 +123,7 @@ services:
     expose:
       - "3001"
     volumes:
-      - ./server/data:/app/data
+      - ./deploy/server/data:/app/data
     environment:
       <<: *proxy-environment
       HEYSURE_SERVICE_ROLE: mcp
@@ -149,7 +149,7 @@ services:
     ports:
       - "3002:3002"
     volumes:
-      - ./server/data:/app/data
+      - ./deploy/server/data:/app/data
     environment:
       <<: *proxy-environment
       HEYSURE_SERVICE_ROLE: connector
@@ -167,7 +167,7 @@ services:
 
   web:
     build:
-      context: ./web
+      context: ./deploy/web
       args: *proxy-build-args
       extra_hosts:
         - "host.docker.internal:host-gateway"

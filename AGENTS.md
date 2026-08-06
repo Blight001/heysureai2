@@ -25,18 +25,19 @@ HeySure AI 2.0 是一个**多端 AI agent 协作平台**：Web 控制台 + Pytho
 
 | 仓库            | 本地目录 | 技术栈 | 作用 | 详细文档 |
 |-----------------|----------|--------|------|----------|
-| HeySure-Web     | `web/`   | Vue 3 + Vite + TS | 前端控制台 | [`web/AGENTS.md`](web/AGENTS.md) / [`web/CLAUDE.md`](web/CLAUDE.md) |
-| HeySure-Server  | `server/`| Python + FastAPI + Socket.IO | 后端（4 进程） | [`server/AGENTS.md`](server/AGENTS.md) / [`server/CLAUDE.md`](server/CLAUDE.md) |
+| HeySure-Web     | `deploy/web/`   | Vue 3 + Vite + TS | 前端控制台 | [`deploy/web/AGENTS.md`](deploy/web/AGENTS.md) / [`deploy/web/CLAUDE.md`](deploy/web/CLAUDE.md) |
+| HeySure-Server  | `deploy/server/`| Python + FastAPI + Socket.IO | 后端（4 进程） | [`deploy/server/AGENTS.md`](deploy/server/AGENTS.md) / [`deploy/server/CLAUDE.md`](deploy/server/CLAUDE.md) |
 | HeySure-Device  | `device/`| Tauri / Chrome MV3 / Kotlin / Python | 端侧执行器 | [`device/AGENTS.md`](device/AGENTS.md) / [`device/CLAUDE.md`](device/CLAUDE.md) |
 | (workspace)     | `doc/`   | Markdown | 设计文档 / 角色 prompt | 保留在工作区根目录 |
 
-首次克隆：
+服务器部署只初始化 Web 与后端（不会下载设备仓库）：
 
 ```bash
-git clone --recurse-submodules <仓库地址>
-# 或普通 clone 后：
-git submodule update --init --recursive
+git clone <仓库地址>
+git submodule update --init --recursive -- deploy/server deploy/web
 ```
+
+需要端侧开发时再执行 `git submodule update --init --recursive -- device`。
 
 子模块定义见根目录 [`.gitmodules`](.gitmodules)。
 
@@ -46,7 +47,7 @@ git submodule update --init --recursive
 Web 控制台 (58150)
    │ REST + Socket.IO
    ▼
-API Gateway (3000)  ── 对外唯一入口，挂载 server/main/gateway/routers/*
+API Gateway (3000)  ── 对外唯一入口，挂载 deploy/server/main/gateway/routers/*
    │ 内部 HTTP (/internal/*, 需 HEYSURE_INTERNAL_TOKEN)
    ├──► AI Runtime        (3003)  聊天队列消费 / 模型推理
    ├──► MCP Runtime       (3001)  工具注册 / 权限校验 / 工具执行
@@ -56,24 +57,23 @@ API Gateway (3000)  ── 对外唯一入口，挂载 server/main/gateway/route
               Windows Tauri / Linux Agent / 浏览器扩展 / Android
 ```
 
-- 4 进程**共享** `server/main/api/`（模型、DB、认证、服务、配置）；各 `*_runtime/` 只负责把共享层接成一个进程。
+- 4 进程**共享** `deploy/server/main/api/`（模型、DB、认证、服务、配置）；各 `*_runtime/` 只负责把共享层接成一个进程。
 - 进程角色通过 `HEYSURE_SERVICE_ROLE` 区分：`gateway | worker | mcp | connector`。
 - 数据库仅支持 PostgreSQL，`DATABASE_URL` 为必填项。
 
 ## 常用命令
 
 ```bash
-# 首次初始化（多仓库）
-git clone --recurse-submodules ...
-# 或之后：
-git submodule update --init --recursive
+# 服务器初始化（不下载设备仓库）
+git clone ...
+git submodule update --init --recursive -- deploy/server deploy/web
 
 # Docker（一键全栈）
 docker compose up -d --build      # 或 docker-run.bat
 
 # 本地分进程（Windows）
-server\run.bat
-web\run.bat
+deploy\server\run.bat
+deploy\web\run.bat
 device\windows\run.bat
 
 # 手动单进程
@@ -102,20 +102,20 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 
 | 需求 | 位置 |
 | --- | --- |
-| 新增 / 改 REST 接口 | `server/main/gateway/routers/<域>.py`（文件名即域） |
-| 业务逻辑 / 数据访问 | `server/main/api/services/`（按域分子包：`knowledge/` `tasks/` `mcp/` `device_tools/` `chat/` `access/` `storage/`）与 `server/main/api/models/` |
-| 新增 MCP 工具 | `server/tools/`（实现）→ `server/main/mcp_runtime/mcp/registry.py`（注册）→ `web/src/utils/mcpTools.ts`（前端展示） |
-| 聊天 / 推理流程 | `server/main/api/chat_runtime/`（调度/流式/MCP 解析）+ `server/main/ai_runtime/`（worker + litellm） |
-| 定时 / 循环任务 | `server/main/api/services/tasks/task_schedule.py`（唯一权威实现，REST/MCP/调度器共用） |
-| QQ / 飞书机器人 | `server/main/connector_runtime/bots/` 与 `dispatch/` |
-| 前端页面 / 组件 | `web/src/components/<域>/`（chat / dashboard / home / common） |
-| 前端调后端 API 封装 | `web/src/api/<域>.ts`（http.ts 是统一客户端） |
+| 新增 / 改 REST 接口 | `deploy/server/main/gateway/routers/<域>.py`（文件名即域） |
+| 业务逻辑 / 数据访问 | `deploy/server/main/api/services/`（按域分子包：`knowledge/` `tasks/` `mcp/` `device_tools/` `chat/` `access/` `storage/`）与 `deploy/server/main/api/models/` |
+| 新增 MCP 工具 | `deploy/server/tools/`（实现）→ `deploy/server/main/mcp_runtime/mcp/registry.py`（注册）→ `deploy/web/src/utils/mcpTools.ts`（前端展示） |
+| 聊天 / 推理流程 | `deploy/server/main/api/chat_runtime/`（调度/流式/MCP 解析）+ `deploy/server/main/ai_runtime/`（worker + litellm） |
+| 定时 / 循环任务 | `deploy/server/main/api/services/tasks/task_schedule.py`（唯一权威实现，REST/MCP/调度器共用） |
+| QQ / 飞书机器人 | `deploy/server/main/connector_runtime/bots/` 与 `dispatch/` |
+| 前端页面 / 组件 | `deploy/web/src/components/<域>/`（chat / dashboard / home / common） |
+| 前端调后端 API 封装 | `deploy/web/src/api/<域>.ts`（http.ts 是统一客户端） |
 | Windows 桌面本机执行 | `device/windows/src/`（TS）+ `device/windows/src-tauri/`（Rust） |
 | Linux 服务器 Agent | `device/linux/agent/`（Python） |
 | 浏览器自动化 | `device/browser_MCP/`（主扩展源码）/ `device/browser_MCP_win/`（Windows 原生输入构建） |
-| 配置项 / 环境变量 | `server/main/api/core/settings.py`（**配置总入口**） |
+| 配置项 / 环境变量 | `deploy/server/main/api/core/settings.py`（**配置总入口**） |
 | AI 角色 prompt | `doc/prompt/` |
-| 知识工坊 Agent | `server/library/`（服务端内置虚拟 Agent） |
+| 知识工坊 Agent | `deploy/server/library/`（服务端内置虚拟 Agent） |
 
 ## 环境变量速查
 
@@ -133,22 +133,22 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 | `LOG_LEVEL` | 可选 | DEBUG/INFO/WARNING（默认 INFO） |
 | `LOG_JSON` | 可选 | 容器部署时设 `true`，输出 JSON 格式日志 |
 
-完整清单：`server/main/api/core/settings.py`
+完整清单：`deploy/server/main/api/core/settings.py`
 
 ## 常见症状 → 定位路径
 
 | 症状 | 优先检查 | 关键文件 |
 | --- | --- | --- |
-| 启动报 DB 连接错误 | `DATABASE_URL` 格式 / PostgreSQL 是否运行 | `server/main/api/database.py` |
-| `/internal/*` 返回 401 | `HEYSURE_INTERNAL_TOKEN` 四进程是否一致 | `server/main/api/auth.py` |
-| 前端请求 404 | 路由是否存在且已注册到 gateway | `server/main/gateway/routers/` → `gateway/app.py` |
-| AI 不回复 / 推理卡住 | AI Runtime (3003) 进程是否运行；查看 3003 日志 | `server/main/ai_runtime/worker.py` |
-| MCP 工具不显示 | 工具是否已注册，设备权限是否开启 | `server/main/mcp_runtime/mcp/registry.py` + `permissions.py` |
-| 端侧设备掉线 | Connector (3002) Socket.IO 是否正常 | `server/main/connector_runtime/app.py` + `api/sio.py` |
-| 聊天消息丢失 | 持久化流程 | `server/main/api/services/chat/chat_persistence.py` |
-| 任务不触发 | 调度器是否随 Gateway 启动 | `server/main/api/services/tasks/task_system.py` + `tasks/task_schedule.py` + `chat_runtime/chat_scheduler.py` |
-| 知识库搜索无结果 | 关键词是否命中；文件是否在 topics/ 或技能目录 | `server/main/api/services/knowledge/kb_store.py`（`keyword_search_knowledge`） |
-| 前端样式/组件异常 | Tailwind 类名白名单；组件 props 是否正确传递 | `web/src/components/` + `web/src/styles/main.css` |
+| 启动报 DB 连接错误 | `DATABASE_URL` 格式 / PostgreSQL 是否运行 | `deploy/server/main/api/database.py` |
+| `/internal/*` 返回 401 | `HEYSURE_INTERNAL_TOKEN` 四进程是否一致 | `deploy/server/main/api/auth.py` |
+| 前端请求 404 | 路由是否存在且已注册到 gateway | `deploy/server/main/gateway/routers/` → `gateway/app.py` |
+| AI 不回复 / 推理卡住 | AI Runtime (3003) 进程是否运行；查看 3003 日志 | `deploy/server/main/ai_runtime/worker.py` |
+| MCP 工具不显示 | 工具是否已注册，设备权限是否开启 | `deploy/server/main/mcp_runtime/mcp/registry.py` + `permissions.py` |
+| 端侧设备掉线 | Connector (3002) Socket.IO 是否正常 | `deploy/server/main/connector_runtime/app.py` + `api/sio.py` |
+| 聊天消息丢失 | 持久化流程 | `deploy/server/main/api/services/chat/chat_persistence.py` |
+| 任务不触发 | 调度器是否随 Gateway 启动 | `deploy/server/main/api/services/tasks/task_system.py` + `tasks/task_schedule.py` + `chat_runtime/chat_scheduler.py` |
+| 知识库搜索无结果 | 关键词是否命中；文件是否在 topics/ 或技能目录 | `deploy/server/main/api/services/knowledge/kb_store.py`（`keyword_search_knowledge`） |
+| 前端样式/组件异常 | Tailwind 类名白名单；组件 props 是否正确传递 | `deploy/web/src/components/` + `deploy/web/src/styles/main.css` |
 | 桌面端工具调用失败 | Socket.IO 消息链路；runtime 工具执行日志 | Windows：`device/windows/src/agent.ts` + `executor/` + `runtime/` |
 
 ## 聊天请求链路（问题定位参考）
@@ -168,12 +168,12 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 
 ## 关键约定
 
-- **配置看 `settings.py`**：所有环境变量的真实清单在 `server/main/api/core/settings.py`。
+- **配置看 `settings.py`**：所有环境变量的真实清单在 `deploy/server/main/api/core/settings.py`。
 - **内部接口要带 token**：进程间 `/internal/*` 需 `HEYSURE_INTERNAL_TOKEN` bearer。
-- **不要提交构建产物**：`web/dist`、`device/*/dist`、`__pycache__`、`*.db` 已在 `.gitignore`。
+- **不要提交构建产物**：`deploy/web/dist`、`device/*/dist`、`__pycache__`、`*.db` 已在 `.gitignore`。
 - **桌面端壳无法在 CI/远程完整验证**：Windows Tauri 需 Rust/VS Build Tools；Linux Agent 可用 Python 单测/本机进程验证。
 - **端侧代码按平台独立**：`device/windows`（Tauri）、`device/linux`（Python 服务器 Agent）、浏览器与 Android 各自独立，互不共享 `shared/`。
-- **改 `server/main/api/` 影响全部 4 个进程**，注意进程角色差异。
+- **改 `deploy/server/main/api/` 影响全部 4 个进程**，注意进程角色差异。
 
 ## Git 约定
 

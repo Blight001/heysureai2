@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="server/static/extension.png" alt="浏览器扩展" width="160" />
-  <img src="server/static/HeySure.png" alt="HeySure AI" width="160" />
-  <img src="server/static/windows.png" alt="桌面端" width="160" />
+  <img src="deploy/server/static/extension.png" alt="浏览器扩展" width="160" />
+  <img src="deploy/server/static/HeySure.png" alt="HeySure AI" width="160" />
+  <img src="deploy/server/static/windows.png" alt="桌面端" width="160" />
 </p>
 
 <p align="center">
@@ -64,7 +64,7 @@ HeySure AI 2.0 不是单一聊天机器人，而是一套可运行的 Agent 生�
 | 知识继承 | 将对话、任务、结果和生命周期事件沉淀为长期可复用上下文。 |
 | 知识工坊 | 图书管理员 Agent 负责审核提议知识、归档为可检索的主题，并可从 ClawHub 安装共享技能。 |
 | 远程控制 | 基于 WebRTC 的屏幕与键鼠远程控制，覆盖 Windows、Android 与浏览器端，STUN/TURN 中继服务器可在服务端配置。 |
-| Agent 世界 | 像素风视图（`web/game/`），将 AI 成员、作坊与知识事件实时渲染成一个持续运行的世界。 |
+| Agent 世界 | 像素风视图（`deploy/web/game/`），将 AI 成员、作坊与知识事件实时渲染成一个持续运行的世界。 |
 | 自助运维 | 管理员可在控制台内触发基于 Git 的仓库更新，以及数据库的完整备份与恢复。 |
 
 ## 设计原则
@@ -107,8 +107,8 @@ Web Console
 
 | 路径（init 后） | 作用 |
 | --- | --- |
-| `web/`     | HeySure-Web：Vue 3 Web 控制台（独立仓库） |
-| `server/`  | HeySure-Server：全部后端代码（独立仓库） |
+| `deploy/web/`     | HeySure-Web：Vue 3 Web 控制台（独立仓库） |
+| `deploy/server/`  | HeySure-Server：全部后端代码（独立仓库） |
 | `device/`  | HeySure-Device：全部端侧客户端（独立仓库） |
 | `doc/`     | 架构与设计文档（保留在工作区） |
 
@@ -160,15 +160,15 @@ ALTER USER heysure WITH PASSWORD 'heysure';
 
 ```bat
 # 首次（或需要刷新组件时）执行
-git submodule update --init --recursive
+git submodule update --init --recursive -- deploy/server deploy/web
 
 windows-run.bat
-server\run.bat
-web\run.bat
+deploy\server\run.bat
+deploy\web\run.bat
 device\windows\run.bat
 ```
 
-`windows-run.bat` 会打开后台管理面板（`server/tk_launcher.py`），提供三个按钮：
+`windows-run.bat` 会打开后台管理面板（`deploy/server/tk_launcher.py`），提供三个按钮：
 
 - `安装依赖`：安装后台 Python 依赖
 - `环境检查`：检查 Python、后台虚拟环境、PostgreSQL、Node.js、npm、前端依赖
@@ -214,14 +214,14 @@ WORKSPACE_ROOT=C:\path\to\workspace
 | `SERVER_URL` | Web 应用和设备端客户端使用的后端地址。 |
 | `WORKSPACE_ROOT` | 桌面端和 Android 端的工作区目录。 |
 
-完整配置入口见 `server/main/api/core/settings.py`。
+完整配置入口见 `deploy/server/main/api/core/settings.py`。
 
 ## 开发方式
 
 ### Web (HeySure-Web)
 
 ```bat
-cd web
+cd deploy/web
 npm install
 npm run dev
 npm run build
@@ -230,12 +230,12 @@ npm run build
 ### Server (HeySure-Server)
 
 ```bat
-cd server
+cd deploy/server
 install-deps.bat
 python -m gateway.main
 ```
 
-单独启动拆分后的 runtime（在 server/ 目录下）：
+单独启动拆分后的 runtime（在 `deploy/server/` 目录下）：
 
 ```bat
 python -m mcp_runtime.main
@@ -279,21 +279,22 @@ npm run build
 
 | 仓库            | 本地路径   | 用途 |
 |-----------------|------------|------|
-| HeySure-Web     | `web/`     | Vue 3 Web 控制台 |
-| HeySure-Server  | `server/`  | 后端网关 + 4 个 runtime（共享 api 层） |
+| HeySure-Web     | `deploy/web/`     | Vue 3 Web 控制台 |
+| HeySure-Server  | `deploy/server/`  | 后端网关 + 4 个 runtime（共享 api 层） |
 | HeySure-Device  | `device/`  | 桌面端（win/linux/mac）+ 两款浏览器扩展 + Android |
 
 **首次初始化（Git 子模块）：**
 
 ```bat
-# 推荐方式，一次性带子模块克隆
-git clone --recurse-submodules <工作区仓库地址>
+# 服务器推荐方式：只拉取部署所需子模块
+git clone <工作区仓库地址>
+git submodule update --init --recursive -- deploy/server deploy/web
 
 # 如果已经普通 clone 了：
-git submodule update --init --recursive
+git submodule update --init --recursive -- deploy/server deploy/web
 ```
 
-这样 web/ server/ device/ 会从三个独立仓库（HeySure-Web/Server/Device）拉取进来。
+这样只会拉取 `deploy/web/` 和 `deploy/server/`，不会下载 `device/`。需要端侧开发时再执行 `git submodule update --init --recursive -- device`。
 
 之后 docker compose 和各种启动脚本即可正常工作。
 
@@ -314,14 +315,15 @@ pwsh clean.ps1
 
 ## 文档入口
 
-- 后端说明：[`server/README.md`](server/README.md)
+- 服务端部署说明：[`deploy/README.md`](deploy/README.md)
+- 后端说明：[`deploy/server/README.md`](deploy/server/README.md)
 - Windows 桌面端：[`device/windows/README.md`](device/windows/README.md)
 - Linux 桌面端：[`device/linux/README.md`](device/linux/README.md)
 - macOS 桌面端：[`device/mac/README.md`](device/mac/README.md)
 - 浏览器扩展（完整 Agent）：[`device/extension/README.md`](device/extension/README.md)
 - 浏览器自动化插件：[`device/browser_automation/README.md`](device/browser_automation/README.md)
 - Android 端：[`device/android/README.md`](device/android/README.md)
-- Agent 世界（控制台内嵌游戏视图）：[`web/game/README.md`](web/game/README.md)
+- Agent 世界（控制台内嵌游戏视图）：[`deploy/web/game/README.md`](deploy/web/game/README.md)
 
 ## 许可证
 

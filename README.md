@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="server/static/extension.png" alt="Browser extension" width="160" />
-  <img src="server/static/HeySure.png" alt="HeySure AI" width="160" />
-  <img src="server/static/windows.png" alt="Desktop agent" width="160" />
+  <img src="deploy/server/static/extension.png" alt="Browser extension" width="160" />
+  <img src="deploy/server/static/HeySure.png" alt="HeySure AI" width="160" />
+  <img src="deploy/server/static/windows.png" alt="Desktop agent" width="160" />
 </p>
 
 <p align="center">
@@ -63,7 +63,7 @@ The platform is designed so AI members can be created, configured, observed, coo
 | Knowledge inheritance | Turn conversations, tasks, outcomes, and lifecycle events into long-term reusable context. |
 | Knowledge workshop | A librarian agent reviews proposed knowledge, archives it into searchable topics, and can install shared skills from ClawHub. |
 | Remote control | WebRTC screen and input control for Windows, Android, and browser endpoints, with server-configurable STUN/TURN relays. |
-| Agent world | A pixel-art view (`web/game/`) rendering AI members, workshops, and knowledge events as a living, real-time world. |
+| Agent world | A pixel-art view (`deploy/web/game/`) rendering AI members, workshops, and knowledge events as a living, real-time world. |
 | Self-service ops | Admins can trigger git-based repo updates and full database backup/restore from the console. |
 
 ## Principles
@@ -106,8 +106,8 @@ This is a **multi-repository** project. The workspace root only contains orchest
 
 | Path (after init) | Role |
 | --- | --- |
-| `web/`                  | HeySure-Web: Vue 3 + Vite web console (standalone repo) |
-| `server/`               | HeySure-Server: all backend code (standalone repo) |
+| `deploy/web/`           | HeySure-Web: Vue 3 + Vite web console (standalone repo) |
+| `deploy/server/`        | HeySure-Server: all backend code (standalone repo) |
 | `device/`               | HeySure-Device: all client agents + extension + Android (standalone repo) |
 | `doc/`                  | Architecture notes, prompts, and design documents (lives in workspace) |
 
@@ -159,15 +159,15 @@ Once the environment is ready, pull the submodules and start everything:
 
 ```bat
 # One-time (or when you want to refresh components)
-git submodule update --init --recursive
+git submodule update --init --recursive -- deploy/server deploy/web
 
 windows-run.bat
-server\run.bat
-web\run.bat
+deploy\server\run.bat
+deploy\web\run.bat
 device\windows\run.bat
 ```
 
-`windows-run.bat` opens the backend dashboard (`server/tk_launcher.py`), which provides three buttons:
+`windows-run.bat` opens the backend dashboard (`deploy/server/tk_launcher.py`), which provides three buttons:
 
 - `Install dependencies`: installs backend Python dependencies
 - `Environment check`: checks Python, the backend virtualenv, PostgreSQL, Node.js, npm, and frontend dependencies
@@ -213,14 +213,14 @@ WORKSPACE_ROOT=C:\path\to\workspace
 | `SERVER_URL` | Base URL used by the web app and device clients. |
 | `WORKSPACE_ROOT` | Working directory used by desktop and Android endpoint clients. |
 
-See `server/main/api/core/settings.py` for the full configuration surface.
+See `deploy/server/main/api/core/settings.py` for the full configuration surface.
 
 ## Development
 
 ### Web (HeySure-Web)
 
 ```bat
-cd web
+cd deploy/web
 npm install
 npm run dev
 npm run build
@@ -229,12 +229,12 @@ npm run build
 ### Server (HeySure-Server)
 
 ```bat
-cd server
+cd deploy/server
 install-deps.bat
 python -m gateway.main
 ```
 
-Start split runtimes manually (from server/):
+Start split runtimes manually (from `deploy/server/`):
 
 ```bat
 python -m mcp_runtime.main
@@ -270,7 +270,7 @@ npm run build
 
 There is a second, build-free extension at [`device/browser_automation/`](device/browser_automation/README.md) focused on automation cards, flowchart branching, and cookie capture — load it unpacked from Chrome's extensions page.
 
-**Tip**: After `git submodule update --init --recursive`, Docker Compose and launchers work as before.
+**Tip**: `git submodule update --init --recursive -- deploy/server deploy/web` is sufficient for Docker deployment. Initialize `device` separately only for endpoint development.
 
 ### Repository Structure (multi-repo)
 
@@ -278,21 +278,23 @@ This repository is now a **lightweight workspace** that orchestrates three indep
 
 | Repository       | Local path | Purpose |
 |------------------|------------|---------|
-| HeySure-Web      | `web/`     | Vue 3 web console |
-| HeySure-Server   | `server/`  | FastAPI gateway + 4 runtimes (shared api layer) |
+| HeySure-Web      | `deploy/web/`     | Vue 3 web console |
+| HeySure-Server   | `deploy/server/`  | FastAPI gateway + 4 runtimes (shared api layer) |
 | HeySure-Device   | `device/`  | Desktop agents (win/linux/mac) + two browser extensions + Android |
 
 **First-time setup (Git submodules):**
 
 ```bat
-# Recommended: clone with submodules in one go
-git clone --recurse-submodules <this-workspace-repo>
+# Recommended for a server: clone the workspace, then only deployment components
+git clone <this-workspace-repo>
+cd HeySure_AI_2.0
+git submodule update --init --recursive -- deploy/server deploy/web
 
 # Or if you already cloned without them:
-git submodule update --init --recursive
+git submodule update --init --recursive -- deploy/server deploy/web
 ```
 
-This brings in web/, server/, device/ from the three separate repos (HeySure-Web / Server / Device).
+This initializes only `deploy/web/` and `deploy/server/`; `device/` remains optional and is not downloaded.
 
 - `docker compose up -d --build` and the run scripts will now work.
 - `clean.bat` / `clean.ps1` can still be used for heavy cleanup (node_modules etc).
@@ -312,14 +314,15 @@ This removes `node_modules`, `venv`, `dist`, build artifacts, etc. Re-install de
 
 ## Docs
 
-- Backend overview: [`server/README.md`](server/README.md)
+- Server deployment: [`deploy/README.md`](deploy/README.md)
+- Backend overview: [`deploy/server/README.md`](deploy/server/README.md)
 - Windows desktop agent: [`device/windows/README.md`](device/windows/README.md)
 - Linux desktop agent: [`device/linux/README.md`](device/linux/README.md)
 - macOS desktop agent: [`device/mac/README.md`](device/mac/README.md)
 - Browser extension (full agent): [`device/extension/README.md`](device/extension/README.md)
 - Browser automation plugin: [`device/browser_automation/README.md`](device/browser_automation/README.md)
 - Android endpoint: [`device/android/README.md`](device/android/README.md)
-- Agent world (in-console game view): [`web/game/README.md`](web/game/README.md)
+- Agent world (in-console game view): [`deploy/web/game/README.md`](deploy/web/game/README.md)
 
 ## License
 
