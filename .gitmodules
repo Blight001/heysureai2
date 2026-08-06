@@ -1,10 +1,10 @@
 [submodule "web"]
 	url = https://github.com/Blight001/HeySure-Web.git
-	path = web
+	path = deploy/web
 	branch = main
 [submodule "server"]
 	url = https://github.com/Blight001/HeySure-Server.git
-	path = server
+	path = deploy/server
 	branch = main
 [submodule "device"]
 	url = https://github.com/Blight001/HeySure-Device.git
