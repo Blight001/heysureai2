@@ -1,6 +1,6 @@
 # 通用设备 MCP 自动化卡片落地方案
 
-> 状态：设计基线（待分阶段实现）
+> 状态：实施中（阶段 1 后端最小闭环，2026-08-07）
 > 适用项目：HeySure AI 2.0
 > 核心原则：服务器集中编排、设备复用现有 MCP 执行能力、确定性推进、不逐步调用大模型。
 
@@ -797,3 +797,34 @@ Connector 启动后扫描：
 ## 30. 最终结论
 
 HeySure 的通用自动化卡片应采用“服务器集中工作流执行器 + 现有设备 MCP 单步执行”的标准形态。卡片是版本化、受权限控制的声明式工作流；Connector Runtime 每收到一次设备终态后，通过持久化状态机推进下一步。这样任何自定义设备只需遵守现有 MCP 注册与任务回传协议，无需独立实现卡片引擎，同时能实现统一编辑、权限、审计、恢复和低 token 自动化运行。
+
+## 31. 实施记录
+
+### 2026-08-07：阶段 1 后端最小闭环
+
+已落地：
+
+- `workflow_cards` 对应模型、不可变版本、运行、步骤运行与确认预留模型；
+- 单头 Alembic 迁移 `c6d7e8f9a0b1`；
+- Schema v1 编译器、安全变量模板、图可达性/环/规模/超时校验；
+- 第一阶段只允许 `mcp` 与 `end`，其余步骤在发布时明确拒绝；
+- 卡片创建、编辑、校验、发布、版本查询和归档 API；
+- 运行创建、幂等键、状态/步骤历史查询和取消 API；
+- Connector 持久化调度循环，使用步骤 `dispatch_pending` 作为第一期 outbox；
+- 复用现有 `task:dispatch` / `task:result` / `task:error`，并允许工作流预分配稳定 `taskId`；
+- 每步派发前复检设备归属、在线状态、设备工具范围、Schema 摘要和参数 Schema；
+- 设备结果主动推进，并由数据库终态扫描补偿进程崩溃窗口；
+- 结果投影、敏感键脱敏、64 KiB 变量区限制、取消后晚到结果不推进；
+- 功能开关 `HEYSURE_WORKFLOW_CARDS_ENABLED` 与 `HEYSURE_WORKFLOW_SCHEDULER_ENABLED`，默认关闭。
+
+本次明确未包含：
+
+- `condition`、`delay`、`confirm`、自动重试和设备取消协议；
+- Web 作坊编辑器与运行进度界面；
+- MCP Runtime 的 `automation.*` 固定工具；
+- 通用 outbox 表、多实例完整竞争加固和大结果外部引用存储。
+
+启用顺序：先执行数据库迁移，再在 Gateway 设置
+`HEYSURE_WORKFLOW_CARDS_ENABLED=true`，在 Connector Runtime 同时设置
+`HEYSURE_WORKFLOW_SCHEDULER_ENABLED=true`。只启用卡片开关可管理草稿，但启动运行会返回
+`WORKFLOW_SCHEDULER_DISABLED`，避免创建无法推进的实例。
