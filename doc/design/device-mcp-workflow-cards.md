@@ -1,6 +1,6 @@
 # 通用设备 MCP 自动化卡片落地方案
 
-> 状态：实施中（阶段 1 后端最小闭环，2026-08-07）
+> 状态：已完整实施（功能开关默认关闭，2026-08-07）
 > 适用项目：HeySure AI 2.0
 > 核心原则：服务器集中编排、设备复用现有 MCP 执行能力、确定性推进、不逐步调用大模型。
 
@@ -800,31 +800,29 @@ HeySure 的通用自动化卡片应采用“服务器集中工作流执行器 + 
 
 ## 31. 实施记录
 
-### 2026-08-07：阶段 1 后端最小闭环
+### 2026-08-07：完整方案落地
 
 已落地：
 
-- `workflow_cards` 对应模型、不可变版本、运行、步骤运行与确认预留模型；
-- 单头 Alembic 迁移 `c6d7e8f9a0b1`；
-- Schema v1 编译器、安全变量模板、图可达性/环/规模/超时校验；
-- 第一阶段只允许 `mcp` 与 `end`，其余步骤在发布时明确拒绝；
-- 卡片创建、编辑、校验、发布、版本查询和归档 API；
-- 运行创建、幂等键、状态/步骤历史查询和取消 API；
-- Connector 持久化调度循环，使用步骤 `dispatch_pending` 作为第一期 outbox；
-- 复用现有 `task:dispatch` / `task:result` / `task:error`，并允许工作流预分配稳定 `taskId`；
-- 每步派发前复检设备归属、在线状态、设备工具范围、Schema 摘要和参数 Schema；
-- 设备结果主动推进，并由数据库终态扫描补偿进程崩溃窗口；
-- 结果投影、敏感键脱敏、64 KiB 变量区限制、取消后晚到结果不推进；
-- 功能开关 `HEYSURE_WORKFLOW_CARDS_ENABLED` 与 `HEYSURE_WORKFLOW_SCHEDULER_ENABLED`，默认关闭。
+- 卡片、不可变版本、运行、步骤尝试、持久化确认、审计事件和调度器心跳模型；
+- 单头 Alembic 迁移 `c6d7e8f9a0b1`，包含完整外键、唯一约束和调度索引；
+- Schema v1 编译器及 `mcp`、`condition`、`delay`、`confirm`、`end` 五类步骤；
+- 安全模板和表达式、图可达性/环/支配路径数据流、规模、超时、重试和敏感字段校验；
+- 草稿、校验、发布、版本、弃用、归档、复制、导入、导出和结构化 MCP 轨迹转草稿；
+- 运行幂等创建、状态/步骤/确认/审计查询、取消、人工重试和大型结果读取；
+- Connector 持久化 `dispatch_pending` outbox、稳定 `taskId`、多实例 `SKIP LOCKED` claim、崩溃补偿和设备重连主动唤醒；
+- 固定/指数有界重试、单次/步骤总/运行/确认/离线超时，以及破坏性工具强制确认；
+- 每一步重新复核用户、卡片版本、设备归属和在线状态、工具范围、权限策略、提供者、Schema 摘要、参数 Schema 与参数大小；
+- 运行输入 Fernet 加密、参数与结果脱敏、结果投影、超限结果安全引用、保留期清理和访问控制；
+- 重复终态和取消后晚到结果幂等忽略并留审计；
+- MCP Runtime 固定工具 `automation.list/get/run/status/cancel/manage`，默认 AI 工具集不包含管理入口；
+- 作坊 Web 卡片管理、Schema 参数表单、步骤/分支编辑、发布契约设备选择、版本对比、测试运行、确认、取消、重试和历史进度；
+- 运行成功率、耗时、失败、重试、确认拒绝、权限/Schema 拒绝、outbox 积压、停滞运行和调度器心跳指标；
+- 灰度开关、系统级并发/参数/结果配额和 Connector-only 调度启动边界。
 
-本次明确未包含：
+验证记录：工作流编译/表达式/轨迹转换/迁移结构/状态机/重试/幂等/权限测试共 16 项通过；服务端相关模块完整导入通过；迁移以 PostgreSQL 方言成功生成 52 条 DDL；Web `vue-tsc` 与 Vite 生产构建通过。
 
-- `condition`、`delay`、`confirm`、自动重试和设备取消协议；
-- Web 作坊编辑器与运行进度界面；
-- MCP Runtime 的 `automation.*` 固定工具；
-- 通用 outbox 表、多实例完整竞争加固和大结果外部引用存储。
-
-启用顺序：先执行数据库迁移，再在 Gateway 设置
+部署启用顺序：先执行 `alembic upgrade head`，然后在 Gateway 设置
 `HEYSURE_WORKFLOW_CARDS_ENABLED=true`，在 Connector Runtime 同时设置
 `HEYSURE_WORKFLOW_SCHEDULER_ENABLED=true`。只启用卡片开关可管理草稿，但启动运行会返回
-`WORKFLOW_SCHEDULER_DISABLED`，避免创建无法推进的实例。
+`WORKFLOW_SCHEDULER_DISABLED`，避免创建无法推进的实例。回滚时先关闭新运行和调度开关，保留表与只读历史；设备已产生的副作用不会被数据库回滚。
