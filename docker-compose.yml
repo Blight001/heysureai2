@@ -105,6 +105,9 @@ services:
       HEYSURE_AI_RUNTIME_PORT: "3003"
       HEYSURE_DB_AUTO_MIGRATE: "0"
     command: ["python", "-m", "ai_runtime.main"]
+    # Give active conversations time to finish. If this deadline is approached,
+    # ai-runtime requeues unfinished ChatRun rows before Docker sends SIGKILL.
+    stop_grace_period: 5m
     depends_on:
       db:
         condition: service_healthy

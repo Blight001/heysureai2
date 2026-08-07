@@ -1,0 +1,28 @@
+services:
+  db-migrate:
+    volumes:
+      - ./deploy/server:/app
+
+  api-gateway:
+    volumes:
+      - ./deploy/server:/app
+
+  ai-runtime:
+    volumes:
+      - ./deploy/server:/app
+
+  mcp-runtime:
+    volumes:
+      - ./deploy/server:/app
+
+  connector-runtime:
+    volumes:
+      - ./deploy/server:/app
+
+  web:
+    volumes:
+      - ./deploy/web:/app
+      - web_node_modules:/app/node_modules
+
+volumes:
+  web_node_modules:
