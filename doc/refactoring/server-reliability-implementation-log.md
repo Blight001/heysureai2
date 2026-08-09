@@ -6,7 +6,7 @@
 - Git 分支：当前工作分支（未自动创建或切换，避免干扰用户工作区）
 - Python 复杂度债务：从 284 项降至 249 项，并已收紧机器基线
 - 架构依赖债务：从 47 项降至 43 项，并已收紧机器基线
-- pytest：343 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
+- pytest：346 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
 - 本机限制：无 Docker/PostgreSQL 服务，因此真实 PostgreSQL 与四进程演练交由新增 CI 作业执行
 - 既有失败证据：初始无测试环境时 45 个模块因 `DATABASE_URL` 缺失而收集失败；显式测试环境后 207 通过、15 个未隔离数据库的测试失败
 
@@ -50,7 +50,7 @@
 - `socket_events.py` 的 Agent 注册巨型闭包已拆为 registration/tasks/disconnect/remote/assembly handler。
 - `device_dispatch.py` 已提取状态枚举、合法转换、owner/lease 仓储、队列晋升和结果 payload 持久化；有效行数 1106 → 808。
 - `registry.py` 已提取声明式 `builtin_catalog.py`，`_register_builtin_tools` 降为简单循环。
-- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、worker 启动/生命周期、模型网关/错误恢复、模型返回持久化、最终响应收尾状态机、工具批处理/无进展状态机、历史消息构建器、计划自动收尾服务、计划控制转换、上下文压缩流、每轮输入/工具面准备、工具执行/拒绝/元数据处理、截图媒体策略和工具结果持久化服务；有效行数 2933 → 789，`_run_worker_impl` 1626 → 647。
+- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、worker 启动/生命周期、模型网关/错误恢复、模型返回持久化、最终响应收尾状态机、工具批处理/无进展状态机、历史消息构建器、计划自动收尾服务、计划控制转换、上下文压缩流、每轮输入/工具面准备、工具执行/拒绝/元数据处理、截图媒体策略、工具结果持久化服务和 worker 能力装配；有效行数 2933 → 742，`_run_worker_impl` 1626 → 610。
 - `_run_worker_impl` 已改为单一不可变 `WorkerRequest` DTO 入口，工具白名单冻结为快照，启动状态/可观察元数据/预取消处理移出编排函数，消除其 11 参数超限。
 - 历史回放构建器独立处理压缩消息、待注入消息、系统提示回放及原生 MCP tool-call/result 配对，新增 3 个单元测试。
 - 计划流服务独立处理阶段重锚、结果摘要、成功/失败日志、知识审核、循环任务续期及完成通知，移除 119 行嵌套闭包并新增 3 个单元测试。
@@ -67,14 +67,15 @@
 - 无工具最终响应的格式纠错、最后一批用户插入、AI 间自动回复、计划自然停止和简单/循环任务完成已迁入 `final_response_flow.py`，由显式 `NEXT_TURN` / `COMPLETE_RUN` 决策驱动；新增 4 个收尾状态测试。
 - 跨步重复批次的第二次纠偏/第三次终止及单轮精确重复调用合并已迁入 `tool_batch_flow.py`；保留 `core._duplicate_call_flags` 兼容别名，新增 4 个批处理状态测试。
 - 用户/模型/Prompt/任务/历史记录启动装配已迁入 `worker_setup.py` 的不可变快照；heartbeat、QQ 流式会话和孤儿插入恢复已迁入 `worker_lifecycle.py`，新增 4 个启动与清理契约测试。`core.py` 已达到阶段性文件规模 `< 800`。
+- Provider 判定、Preset 协议覆盖、匿名上游会话头、MCP 开关、已描述工具版本恢复和任务必需工具预暴露已统一迁入 `worker_setup.prepare_capabilities`；新增 3 个能力装配测试并保留恢复失败日志。`core.py` 复杂度 79 → 66、直接依赖 24 → 21，机器基线同步收紧。
 - 工作流取消现会在同一事务内把关联 `AgentDispatchTask` 置为 `cancelled`，四进程模式通过 Connector 内部接口发送 `task:cancel`，同时释放 Future waiter、内存上下文和设备串行队列；迟到结果受终态保护不能复活任务。超时/取消/重连/迟到与重复回执矩阵已闭合，新增 2 个集成契约测试。
 - 设备 progress/result/error 已迁入 `dispatch_results.py`，上下文恢复、截图/Cookie 持久化、workflow hook、waiter 释放和用户广播均形成独立步骤；Workshop 内联执行迁入 `workshop_dispatch.py`。`device_dispatch.py` 782 → 486 并退出文件超限表，新增成功/重复/失败 3 个结果状态测试。
 - `admin.py` 已将 Runtime/ChatRun、用户、文件、数据库浏览器和审计五个路由域迁入独立模块；有效行数 1349 → 493，达到文件 < 500 目标并消除直接依赖超限，新增 18 个客户端、路由、沙箱与数据转换契约测试。
 
 ## 2026-08-10 部署环境验收
 
-- 根仓库已自动更新到 `c87ae1f`，Server 子模块对应 `eb4a453`；管理员版本端点与四 Runtime 状态均已核验。
-- 两次发布前分别生成 PostgreSQL custom-format 备份 `backups/heysure-pre-release-20260809-233539.dump`（102751393 bytes）和 `backups/heysure-pre-release-20260809-234241.dump`（102751428 bytes）。
+- 首轮人工同步已将根仓库更新到 `ecd36f7`、Server 子模块更新到 `eb4a453`；管理员版本端点与四 Runtime 状态均已核验。
+- 发布前已生成 PostgreSQL custom-format 备份；最近一次为 `backups/heysure-pre-sync-20260810-020448.dump`（102752064 bytes）。
 - Alembic revision 为 `e8f9a0b1c2d3`；API Gateway、MCP Runtime、Connector Runtime、AI Runtime readiness 均返回 200。
 - Web `:58150`、API `:3000` 均返回 200，测试账号登录契约返回 access token 与 Agent Socket URL。
 - `rolling_release.py` 完成迁移先行、镜像构建和四个 Runtime 的逐服务就绪门禁，未触发回滚。
@@ -84,4 +85,4 @@
 
 - `_run_worker_impl` / `_execute_turn_call` 仍需转换为上下文 DTO + 显式工具状态机，目标尚未达到。
 - `admin.py` 与 `device_dispatch.py` 已达到文件规模目标，但数据库导入/清理函数、dispatch 入口长函数、历史迁移适配层和其它超长模块仍需继续领域拆分。`run_service.py` 已从 947 降至 923。
-- 本机没有 Docker/PostgreSQL；真实迁移、四进程 readiness 和登录链路已在部署环境验收，完整模拟 Agent 往返及连续 20 次重启仍由 CI/后续演练执行，本记录不虚报未运行项目。
+- 本机没有 Docker/PostgreSQL；真实迁移、四进程 readiness、登录链路及模拟端点 Agent 分发已在部署环境验收，连续 20 次重启仍由 CI/后续演练执行，本记录不虚报未运行项目。
