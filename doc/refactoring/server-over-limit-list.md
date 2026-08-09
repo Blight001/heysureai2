@@ -3,14 +3,14 @@
 基线日期：2026-08-09
 执行命令：`python deploy/server/other/scripts/check_guardrails.py`
 
-该清单由 `guardrail_baseline.json` 机器校验。存量可以下降，任何新条目或数值增长都会使 CI 失败。首次扫描得到 284 项超限；当前已降至 269 项并收紧基线。
+该清单由 `guardrail_baseline.json` 机器校验。存量可以下降，任何新条目或数值增长都会使 CI 失败。首次扫描得到 284 项超限；当前已降至 267 项并收紧基线。
 
 | 指标 | 首次基线 | 当前基线 |
 | --- | ---: | ---: |
-| 圈复杂度 | 132 | 129 |
+| 圈复杂度 | 132 | 128 |
 | 模块直接依赖 | 16 | 16 |
 | 文件有效行数 | 18 | 18 |
-| 函数有效行数 | 55 | 50 |
+| 函数有效行数 | 55 | 49 |
 | 嵌套深度 | 34 | 30 |
 | 参数数量 | 29 | 26 |
 
@@ -18,8 +18,8 @@
 
 | 文件/函数 | 首次有效规模 | 目标 |
 | --- | ---: | ---: |
-| `main/ai_runtime/inference/core.py` | 2933 → 2565 行 | 文件 < 800，编排函数 < 80 |
-| `_run_worker_impl` | 1626 → 1597 行 | < 80 |
+| `main/ai_runtime/inference/core.py` | 2933 → 2450 行 | 文件 < 800，编排函数 < 80 |
+| `_run_worker_impl` | 1626 → 1477 行 | < 80 |
 | `_execute_turn_call` | 539 行 | 独立状态机，无函数 > 200 |
 | `main/api/core/migrations.py` | 1589 行 | 只保留显式迁移兼容入口 |
 | `main/gateway/routers/admin.py` | 1349 行 | 路由按服务拆分 |
