@@ -6,7 +6,7 @@
 - Git 分支：当前工作分支（未自动创建或切换，避免干扰用户工作区）
 - Python 复杂度债务：从 284 项降至 269 项，并已收紧机器基线
 - 架构依赖债务：从 47 项降至 43 项，并已收紧机器基线
-- pytest：245 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
+- pytest：248 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
 - 本机限制：无 Docker/PostgreSQL 服务，因此真实 PostgreSQL 与四进程演练交由新增 CI 作业执行
 - 既有失败证据：初始无测试环境时 45 个模块因 `DATABASE_URL` 缺失而收集失败；显式测试环境后 207 通过、15 个未隔离数据库的测试失败
 
@@ -49,10 +49,19 @@
 - `socket_events.py` 的 Agent 注册巨型闭包已拆为 registration/tasks/disconnect/remote/assembly handler。
 - `device_dispatch.py` 已提取状态枚举、合法转换、owner/lease 仓储、队列晋升和结果 payload 持久化；有效行数 1106 → 808。
 - `registry.py` 已提取声明式 `builtin_catalog.py`，`_register_builtin_tools` 降为简单循环。
-- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析和跨 Runtime 客户端；有效行数 2933 → 2595。
+- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端和历史消息构建器；有效行数 2933 → 2565，`_run_worker_impl` 1626 → 1597。
+- 历史回放构建器独立处理压缩消息、待注入消息、系统提示回放及原生 MCP tool-call/result 配对，新增 3 个单元测试。
+
+## 2026-08-09 部署环境验收
+
+- 根仓库已快进到 `56bce84`，Server 子模块已更新到 `0721613`，线上 tracked working tree 保持干净。
+- 发布前生成 PostgreSQL custom-format 备份 `backups/heysure-pre-release-20260809-233539.dump`（102751393 bytes）。
+- Alembic revision 为 `e8f9a0b1c2d3`；API Gateway、MCP Runtime、Connector Runtime、AI Runtime readiness 均返回 200。
+- Web `:58150`、API `:3000` 均返回 200，测试账号登录契约返回 access token 与 Agent Socket URL。
+- `rolling_release.py` 完成迁移先行、镜像构建和四个 Runtime 的逐服务就绪门禁，未触发回滚。
 
 ## 仍在后续批次中的工作
 
 - `_run_worker_impl` / `_execute_turn_call` 仍需转换为上下文 DTO + 显式工具状态机，目标尚未达到。
 - `admin.py`、历史迁移适配层和其它超长模块尚未完成领域拆分。
-- 本机没有 Docker/PostgreSQL，四进程冒烟、真实迁移和连续 20 次重启只能由 CI/部署环境实际执行；脚本与工作流已接入，但本记录不虚报本机结果。
+- 本机没有 Docker/PostgreSQL；真实迁移、四进程 readiness 和登录链路已在部署环境验收，完整模拟 Agent 往返及连续 20 次重启仍由 CI/后续演练执行，本记录不虚报未运行项目。

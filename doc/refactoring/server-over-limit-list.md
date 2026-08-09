@@ -18,8 +18,8 @@
 
 | 文件/函数 | 首次有效规模 | 目标 |
 | --- | ---: | ---: |
-| `main/ai_runtime/inference/core.py` | 2933 → 2595 行 | 文件 < 800，编排函数 < 80 |
-| `_run_worker_impl` | 1626 行 | < 80 |
+| `main/ai_runtime/inference/core.py` | 2933 → 2565 行 | 文件 < 800，编排函数 < 80 |
+| `_run_worker_impl` | 1626 → 1597 行 | < 80 |
 | `_execute_turn_call` | 539 行 | 独立状态机，无函数 > 200 |
 | `main/api/core/migrations.py` | 1589 行 | 只保留显式迁移兼容入口 |
 | `main/gateway/routers/admin.py` | 1349 行 | 路由按服务拆分 |
