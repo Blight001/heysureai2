@@ -3,10 +3,10 @@
 ## 2026-08-09 基线
 
 - 计划来源：`doc/server-reliability-complexity-refactoring-plan.md`
-- Git 分支：当前工作分支（未自动创建或切换，避免干扰用户工作区）
-- Python 复杂度债务：从 284 项降至 246 项，并已收紧机器基线
+- Git 分支：`codex/server-reliability-completion`（根仓库与 Server 子模块）
+- Python 复杂度债务：从 284 项降至 243 项，并已收紧机器基线
 - 架构依赖债务：从 47 项降至 43 项，并已收紧机器基线
-- pytest：370 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
+- pytest：387 个 unit/contract 测试通过，5 个 PostgreSQL integration 用例由 CI 执行
 - 本机限制：无 Docker/PostgreSQL 服务，因此真实 PostgreSQL 与四进程演练交由新增 CI 作业执行
 - 既有失败证据：初始无测试环境时 45 个模块因 `DATABASE_URL` 缺失而收集失败；显式测试环境后 207 通过、15 个未隔离数据库的测试失败
 
@@ -39,10 +39,12 @@
 - `other/tests/unit/test_ai_run_leases.py`：显式 lease 优先于 heartbeat 猜测。
 - `other/tests/contract/`：健康端点、Socket payload、模拟 Agent 成功/错误/静默/重复回执。
 - `.github/workflows/server-quality.yml`：单测、真实 PostgreSQL，以及四 Runtime + 模拟 Agent 往返冒烟。
-- CI 对模型错误恢复、工具批处理、单调用状态机、模型单轮状态流、模型轮次后置流、工具批次编排和设备 dispatch 合法转换表执行分支覆盖硬门禁；本机同命令实测 96.59%，低于 90% 将失败。更大范围新编排模块尚未宣称满足整体 85% 目标。
+- CI 对模型错误恢复、工具批处理、单调用状态机、模型单轮状态流、模型轮次后置流、工具批次编排、worker 外层状态机和设备 dispatch 合法转换表执行分支覆盖硬门禁；本机同命令实测 97.43%，低于 90% 将失败，`WorkerRunMachine` 分支覆盖率为 100%。
 - `other/scripts/rolling_release.py`：迁移先行、逐服务 readiness、失败时恢复旧镜像。
-- `other/scripts/smoke_four_runtime.py`：注册/登录、跨进程设备绑定、Connector 分发、结果终态轮询。
+- `other/scripts/smoke_four_runtime.py`：注册/登录、跨进程设备绑定、Connector 分发、结果终态轮询，以及成功、断线、静默超时、显式过期、重连和恢复成功故障矩阵。
 - `other/scripts/restart_fault_exercise.py`：默认 20 轮逐 Runtime 重启、readiness、模拟 Agent 冒烟和过期任务断言。
+- `other/scripts/reliability_top_n.py`：脱敏输出慢模型轮次、长事务、锁等待、ChatRun 队列和设备 dispatch 队列 Top N，不输出消息正文或原始 SQL。
+- PostgreSQL 集成测试使用两条真实连接竞争 advisory lock，验证连接策略将数据库锁等待限制在 500 ms 左右。
 - 所有 HTTP Runtime 回传 `X-Request-ID`；日志默认携带 `service_role`、`instance_id`，AI/MCP/Connector 链路附加 run/task/tool/stage/elapsed 字段。
 
 ## 复杂度拆分进度
@@ -50,7 +52,8 @@
 - `socket_events.py` 的 Agent 注册巨型闭包已拆为 registration/tasks/disconnect/remote/assembly handler。
 - `device_dispatch.py` 已提取状态枚举、合法转换、owner/lease 仓储、队列晋升和结果 payload 持久化；有效行数 1106 → 808。
 - `registry.py` 已提取声明式 `builtin_catalog.py`，`_register_builtin_tools` 降为简单循环。
-- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、worker 启动/生命周期、模型网关/错误恢复、模型单轮编排与返回持久化、轮次后压缩/计划闸门/最终响应编排、工具批次编排、最终响应收尾状态机、工具批处理/无进展状态机、单调用状态机、历史消息构建器、计划自动收尾服务、计划控制转换、上下文压缩流、每轮输入/工具面准备、工具执行/拒绝/元数据处理、截图媒体策略、工具结果持久化服务和 worker 能力装配；有效行数 2933 → 420，`_run_worker_impl` 1626 → 324，复杂度 45 → 22，嵌套深度 5 → 4，直接依赖维持 19。
+- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、worker 启动/生命周期、模型网关/错误恢复、模型单轮编排与返回持久化、轮次后压缩/计划闸门/最终响应编排、工具批次编排、最终响应收尾状态机、工具批处理/无进展状态机、单调用状态机、历史消息构建器、计划自动收尾服务、计划控制转换、上下文压缩流、每轮输入/工具面准备、工具执行/拒绝/元数据处理、截图媒体策略、工具结果持久化服务、worker 能力装配和外层运行状态机；有效行数 2933 → 60，`_run_worker_impl` 1626 → 8，复杂度 45 → 3，嵌套深度 5 → 2，直接依赖 20 → 8。
+- 外层初始化、运行上下文、计划加载/重锚/收尾、模型轮次、后置流、工具批次、状态回写和最大步数收尾已迁入显式 `WorkerRunMachine` / `WorkerRunState` / `WorkerRunStepAction`；新增 13 个单元测试，模块分支覆盖率 100%。
 - `_run_worker_impl` 已改为单一不可变 `WorkerRequest` DTO 入口，工具白名单冻结为快照，启动状态/可观察元数据/预取消处理移出编排函数，消除其 11 参数超限。
 - 历史回放构建器独立处理压缩消息、待注入消息、系统提示回放及原生 MCP tool-call/result 配对，新增 3 个单元测试。
 - 计划流服务独立处理阶段重锚、结果摘要、成功/失败日志、知识审核、循环任务续期及完成通知，移除 119 行嵌套闭包并新增 3 个单元测试。
@@ -77,8 +80,8 @@
 
 ## 2026-08-10 部署环境验收
 
-- 最新人工同步已将根仓库更新到 `542dde0`、Server 子模块更新到 `890522e`；宿主检出、管理员版本端点与四 Runtime 状态均已核验。
-- 发布前已生成 PostgreSQL custom-format 备份；最近一次为 `backups/heysure-pre-sync-20260810-030412.dump`（102755490 bytes）。
+- 本批实施前已验收基线为根仓库 `bfaf0cc`、Server 子模块 `370ad24`；宿主检出、管理员版本端点与四 Runtime 状态均已核验。
+- 每次发布前均生成 PostgreSQL custom-format 备份；本批实施前最近一次为 `backups/heysure-pre-sync-20260810-031354.dump`（102756493 bytes），最终发布的新备份路径记录在发布验收结果中。
 - Alembic revision 为 `e8f9a0b1c2d3`；API Gateway、MCP Runtime、Connector Runtime、AI Runtime readiness 均返回 200。
 - Web `:58150`、API `:3000` 均返回 200，测试账号登录契约返回 access token 与 Agent Socket URL。
 - `rolling_release.py` 完成迁移先行、镜像构建和四个 Runtime 的逐服务就绪门禁，未触发回滚。
@@ -86,8 +89,16 @@
 - 真实 AI + MCP 链路以临时会话完成模型推理、`mcp.describe` 和工具调用，产生 4 条消息、2 个 MCP 气泡并返回约定成功标识；验收后临时会话已清理。
 - 第二次发布后观察到服务器上的并发自动部署短暂重新创建容器；公开端点恢复后，通过 `/api/admin/services` 确认四个 Runtime 均为 `running`。
 
-## 仍在后续批次中的工作
+## 故障时间线与根因证据
 
-- `_execute_turn_call` 已完成上下文 DTO + 显式状态机迁移，模型单轮、轮次后压缩/计划闸门/最终响应及工具批次编排也已迁出；`_run_worker_impl` 仍需继续拆分外层循环和状态装配，最终 80 行目标尚未达到。
-- `admin.py` 与 `device_dispatch.py` 已达到文件规模目标，但数据库导入/清理函数、dispatch 入口长函数、历史迁移适配层和其它超长模块仍需继续领域拆分。`run_service.py` 已从 947 降至 923。
-- 本机没有 Docker/PostgreSQL；真实迁移、四进程 readiness、登录链路及模拟端点 Agent 分发已在部署环境验收，连续 20 次重启仍由 CI/后续演练执行，本记录不虚报未运行项目。
+- 初始测试收集在未提供 `DATABASE_URL` 时有 45 个模块快速失败，证实共享导入路径错误依赖运行数据库；显式测试环境后又暴露 15 个未隔离数据库的测试，随后由测试环境工厂和依赖边界修复。
+- 首轮线上发布曾与服务器已有自动部署重叠，容器被短暂重新创建；根因是两个发布所有者并发操作同一 Compose 项目。发布手册现要求单一发布所有者、发布锁和逐服务 readiness 门禁。
+- 服务器无法直接访问 GitHub 时没有将网络失败误判为应用失败；发布改用可校验 Git bundle，同步前同时校验旧提交、SHA-256 和 fast-forward 关系。
+- MCP、Connector 和 AI Runtime 未映射宿主端口，早期宿主端口探测因此不成立；后续验收统一在 Compose 网络内检查真实 readiness。
+- 数据库锁等待此前只能从超时症状推断；当前通过真实 PostgreSQL advisory-lock 竞争用例固定重现，并由连接级 `lock_timeout` 给出有界失败。
+
+## 收尾状态与持续治理
+
+- `_execute_turn_call`、模型单轮、轮次后流、工具批次及 `_run_worker_impl` 外层循环均已迁入显式状态机；关键编排入口达到 80 行以内目标。
+- `admin.py` 与 `device_dispatch.py` 已达到文件规模目标；遗留数据库接管只存在于 `_legacy_adopt` 明确适配边界，删除条件与 Alembic 唯一权威规则见 `doc/db-migrations.md`。
+- 复杂度基线保持“只能下降”；余下历史债务属于长期持续治理，不再阻塞本计划完成。慢请求、锁等待和任务超时按 `doc/server-reliability-operations.md` 每月复查 Top N。

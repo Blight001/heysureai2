@@ -54,6 +54,7 @@ jobs:
           other/tests/unit/test_worker_turn_flow.py
           other/tests/unit/test_worker_post_turn_flow.py
           other/tests/unit/test_worker_tool_batch_flow.py
+          other/tests/unit/test_worker_run_flow.py
           other/tests/unit/test_dispatch_state_machine.py
           --cov=ai_runtime.inference.model_error_flow
           --cov=ai_runtime.inference.tool_batch_flow
@@ -61,6 +62,7 @@ jobs:
           --cov=ai_runtime.inference.worker_turn_flow
           --cov=ai_runtime.inference.worker_post_turn_flow
           --cov=ai_runtime.inference.worker_tool_batch_flow
+          --cov=ai_runtime.inference.worker_run_flow
           --cov=connector_runtime.dispatch.models
           --cov-branch
           --cov-report=term
@@ -89,6 +91,7 @@ jobs:
       DATABASE_URL: postgresql+psycopg://heysure:heysure@localhost:5432/heysure_test
       ALEMBIC_DATABASE_URL: postgresql+psycopg://heysure:heysure@localhost:5432/heysure_test
       HEYSURE_DB_AUTO_MIGRATE: "0"
+      HEYSURE_DB_LOCK_TIMEOUT_MS: "500"
       HEYSURE_INTERNAL_TOKEN: test-internal-token
     steps:
       - uses: actions/checkout@v4
@@ -106,6 +109,8 @@ jobs:
           alembic check
       - name: PostgreSQL integration and deployment contracts
         run: pytest -q -m "integration or e2e or deployment"
+      - name: Reliability Top-N query contract
+        run: python other/scripts/reliability_top_n.py --limit 10
 
   four-runtime-smoke:
     runs-on: ubuntu-latest
@@ -127,6 +132,7 @@ jobs:
           --gateway http://api-gateway:3000
           --connector http://connector-runtime:3002
           --internal-token "$HEYSURE_INTERNAL_TOKEN"
+          --fault-matrix
       - name: Runtime restart fault exercise
         run: |
           ITERATIONS=2
