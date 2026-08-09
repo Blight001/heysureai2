@@ -4,9 +4,9 @@
 
 - 计划来源：`doc/server-reliability-complexity-refactoring-plan.md`
 - Git 分支：当前工作分支（未自动创建或切换，避免干扰用户工作区）
-- Python 复杂度债务：从 284 项降至 249 项，并已收紧机器基线
+- Python 复杂度债务：从 284 项降至 248 项，并已收紧机器基线
 - 架构依赖债务：从 47 项降至 43 项，并已收紧机器基线
-- pytest：346 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
+- pytest：353 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
 - 本机限制：无 Docker/PostgreSQL 服务，因此真实 PostgreSQL 与四进程演练交由新增 CI 作业执行
 - 既有失败证据：初始无测试环境时 45 个模块因 `DATABASE_URL` 缺失而收集失败；显式测试环境后 207 通过、15 个未隔离数据库的测试失败
 
@@ -39,7 +39,7 @@
 - `other/tests/unit/test_ai_run_leases.py`：显式 lease 优先于 heartbeat 猜测。
 - `other/tests/contract/`：健康端点、Socket payload、模拟 Agent 成功/错误/静默/重复回执。
 - `.github/workflows/server-quality.yml`：单测、真实 PostgreSQL，以及四 Runtime + 模拟 Agent 往返冒烟。
-- CI 对模型错误恢复、工具批处理和设备 dispatch 合法转换表执行分支覆盖硬门禁；本机同命令实测 92.27%，低于 90% 将失败。更大范围新编排模块当前合计 73%，尚未宣称满足整体 85% 目标。
+- CI 对模型错误恢复、工具批处理、单调用状态机和设备 dispatch 合法转换表执行分支覆盖硬门禁；本机同命令实测 94.54%，低于 90% 将失败。更大范围新编排模块尚未宣称满足整体 85% 目标。
 - `other/scripts/rolling_release.py`：迁移先行、逐服务 readiness、失败时恢复旧镜像。
 - `other/scripts/smoke_four_runtime.py`：注册/登录、跨进程设备绑定、Connector 分发、结果终态轮询。
 - `other/scripts/restart_fault_exercise.py`：默认 20 轮逐 Runtime 重启、readiness、模拟 Agent 冒烟和过期任务断言。
@@ -50,11 +50,11 @@
 - `socket_events.py` 的 Agent 注册巨型闭包已拆为 registration/tasks/disconnect/remote/assembly handler。
 - `device_dispatch.py` 已提取状态枚举、合法转换、owner/lease 仓储、队列晋升和结果 payload 持久化；有效行数 1106 → 808。
 - `registry.py` 已提取声明式 `builtin_catalog.py`，`_register_builtin_tools` 降为简单循环。
-- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、worker 启动/生命周期、模型网关/错误恢复、模型返回持久化、最终响应收尾状态机、工具批处理/无进展状态机、历史消息构建器、计划自动收尾服务、计划控制转换、上下文压缩流、每轮输入/工具面准备、工具执行/拒绝/元数据处理、截图媒体策略、工具结果持久化服务和 worker 能力装配；有效行数 2933 → 742，`_run_worker_impl` 1626 → 610。
+- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、worker 启动/生命周期、模型网关/错误恢复、模型返回持久化、最终响应收尾状态机、工具批处理/无进展状态机、单调用状态机、历史消息构建器、计划自动收尾服务、计划控制转换、上下文压缩流、每轮输入/工具面准备、工具执行/拒绝/元数据处理、截图媒体策略、工具结果持久化服务和 worker 能力装配；有效行数 2933 → 585，`_run_worker_impl` 1626 → 471。
 - `_run_worker_impl` 已改为单一不可变 `WorkerRequest` DTO 入口，工具白名单冻结为快照，启动状态/可观察元数据/预取消处理移出编排函数，消除其 11 参数超限。
 - 历史回放构建器独立处理压缩消息、待注入消息、系统提示回放及原生 MCP tool-call/result 配对，新增 3 个单元测试。
 - 计划流服务独立处理阶段重锚、结果摘要、成功/失败日志、知识审核、循环任务续期及完成通知，移除 119 行嵌套闭包并新增 3 个单元测试。
-- 工具批次控制流使用 `TurnCallAction` 显式枚举；未执行调用闭合、截图延迟刷新和重复拒绝计数已移出 `_execute_turn_call`。普通调用与拼接兼容调用共用不可变 `ToolExecutionResult`；拼接兼容批次、普通原生/文本结果、MCP 禁用/越权拒绝、会话重命名与 describe 元数据均已移出闭包。函数 539 → 198 行，复杂度 98 → 15（已退出复杂度超限表），相关状态、路由与执行契约新增 26 个测试。
+- 工具批次控制流使用 `TurnCallAction` 显式枚举；未执行调用闭合、截图延迟刷新和重复拒绝计数已移出主函数。普通调用与拼接兼容调用共用不可变 `ToolExecutionResult`；拼接兼容批次、普通原生/文本结果、MCP 禁用/越权拒绝、会话重命名与 describe 元数据均由独立服务处理。原 198 行 `_execute_turn_call` 闭包已由 `TurnCallMachine`、`TurnCallContext` 和不可变 `TurnCallState` 取代，状态不再依赖 `nonlocal` 隐式回写；新增 7 个停止、拒绝、拼接、持久化与控制转换测试，单模块分支覆盖 98%。
 - 截图 payload 解析、图片输入降级、历史截图裁剪、模型可见结果和服务器文件 data URL 编码已迁入 `tool_media.py`；递归查找不再成为新复杂度豁免，并新增服务器路径截图回归测试，修复原路径分支缺少 `os` 导入的隐患。
 - 工具调用统计、端侧设备身份归属、聊天气泡、截图媒体落库和机器人投递已迁入 `tool_persistence.py`；调用方改用 `ToolCallRecord` / `ToolBubbleRequest` DTO，消除 15 参数入口，并以完成回执中的精确设备 ID 为唯一归属依据。
 - 会重写上下文的 `conversation.manage(clear)` 与 `todo.manage(create/edit/delete)` 已迁入 `plan_transitions.py`；`PlanTransitionContext`、`PlanFlowSnapshot` 和 `ControlToolCall` 明确承载输入/状态，转换返回显式 action 与新快照，新增 4 个清空、创建、删除和末阶段自动收尾测试。
@@ -83,6 +83,6 @@
 
 ## 仍在后续批次中的工作
 
-- `_run_worker_impl` / `_execute_turn_call` 仍需转换为上下文 DTO + 显式工具状态机，目标尚未达到。
+- `_execute_turn_call` 已完成上下文 DTO + 显式状态机迁移；`_run_worker_impl` 仍需继续拆分模型轮次与循环编排，最终 80 行目标尚未达到。
 - `admin.py` 与 `device_dispatch.py` 已达到文件规模目标，但数据库导入/清理函数、dispatch 入口长函数、历史迁移适配层和其它超长模块仍需继续领域拆分。`run_service.py` 已从 947 降至 923。
 - 本机没有 Docker/PostgreSQL；真实迁移、四进程 readiness、登录链路及模拟端点 Agent 分发已在部署环境验收，连续 20 次重启仍由 CI/后续演练执行，本记录不虚报未运行项目。
