@@ -6,7 +6,7 @@
 - Git 分支：当前工作分支（未自动创建或切换，避免干扰用户工作区）
 - Python 复杂度债务：从 284 项降至 267 项，并已收紧机器基线
 - 架构依赖债务：从 47 项降至 43 项，并已收紧机器基线
-- pytest：251 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
+- pytest：256 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
 - 本机限制：无 Docker/PostgreSQL 服务，因此真实 PostgreSQL 与四进程演练交由新增 CI 作业执行
 - 既有失败证据：初始无测试环境时 45 个模块因 `DATABASE_URL` 缺失而收集失败；显式测试环境后 207 通过、15 个未隔离数据库的测试失败
 
@@ -49,13 +49,14 @@
 - `socket_events.py` 的 Agent 注册巨型闭包已拆为 registration/tasks/disconnect/remote/assembly handler。
 - `device_dispatch.py` 已提取状态枚举、合法转换、owner/lease 仓储、队列晋升和结果 payload 持久化；有效行数 1106 → 808。
 - `registry.py` 已提取声明式 `builtin_catalog.py`，`_register_builtin_tools` 降为简单循环。
-- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、历史消息构建器和计划自动收尾服务；有效行数 2933 → 2450，`_run_worker_impl` 1626 → 1477。
+- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、历史消息构建器和计划自动收尾服务；有效行数 2933 → 2413，`_run_worker_impl` 1626 → 1436。
 - 历史回放构建器独立处理压缩消息、待注入消息、系统提示回放及原生 MCP tool-call/result 配对，新增 3 个单元测试。
 - 计划流服务独立处理阶段重锚、结果摘要、成功/失败日志、知识审核、循环任务续期及完成通知，移除 119 行嵌套闭包并新增 3 个单元测试。
+- 工具批次控制流使用 `TurnCallAction` 显式枚举；未执行调用闭合、截图延迟刷新和重复拒绝计数已移出 `_execute_turn_call`，该函数 539 → 535 行并新增 5 个状态测试。
 
 ## 2026-08-09 部署环境验收
 
-- 根仓库已快进到 `5126439`，Server 子模块已更新到 `2092bc7`，线上 tracked working tree 保持干净。
+- 根仓库已自动更新到 `02806fa`，Server 子模块对应 `9bab13e`；管理员版本端点与四 Runtime 状态均已核验。
 - 两次发布前分别生成 PostgreSQL custom-format 备份 `backups/heysure-pre-release-20260809-233539.dump`（102751393 bytes）和 `backups/heysure-pre-release-20260809-234241.dump`（102751428 bytes）。
 - Alembic revision 为 `e8f9a0b1c2d3`；API Gateway、MCP Runtime、Connector Runtime、AI Runtime readiness 均返回 200。
 - Web `:58150`、API `:3000` 均返回 200，测试账号登录契约返回 access token 与 Agent Socket URL。
