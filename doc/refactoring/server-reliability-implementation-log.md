@@ -6,7 +6,7 @@
 - Git 分支：`codex/server-reliability-completion`（根仓库与 Server 子模块）
 - Python 复杂度债务：从 284 项降至 243 项，并已收紧机器基线
 - 架构依赖债务：从 47 项降至 43 项，并已收紧机器基线
-- pytest：387 个 unit/contract 测试通过，5 个 PostgreSQL integration 用例由 CI 执行
+- pytest：389 个 unit/contract 测试通过，5 个 PostgreSQL integration 用例由 CI 执行
 - 本机限制：无 Docker/PostgreSQL 服务，因此真实 PostgreSQL 与四进程演练交由新增 CI 作业执行
 - 既有失败证据：初始无测试环境时 45 个模块因 `DATABASE_URL` 缺失而收集失败；显式测试环境后 207 通过、15 个未隔离数据库的测试失败
 
@@ -43,6 +43,7 @@
 - `other/scripts/rolling_release.py`：迁移先行、逐服务 readiness、失败时恢复旧镜像。
 - `other/scripts/smoke_four_runtime.py`：注册/登录、跨进程设备绑定、Connector 分发、结果终态轮询，以及成功、断线、静默超时、显式过期、重连和恢复成功故障矩阵。
 - `other/scripts/restart_fault_exercise.py`：默认 20 轮逐 Runtime 重启、readiness、模拟 Agent 冒烟和过期任务断言。
+- 重启演练显式接受已存在的测试账号，适配生产环境关闭注册的策略；失败路径会替换底层命令异常，避免内部 bearer token 被回显。
 - `other/scripts/reliability_top_n.py`：脱敏输出慢模型轮次、长事务、锁等待、ChatRun 队列和设备 dispatch 队列 Top N，不输出消息正文或原始 SQL。
 - PostgreSQL 集成测试使用两条真实连接竞争 advisory lock，验证连接策略将数据库锁等待限制在 500 ms 左右。
 - 所有 HTTP Runtime 回传 `X-Request-ID`；日志默认携带 `service_role`、`instance_id`，AI/MCP/Connector 链路附加 run/task/tool/stage/elapsed 字段。
