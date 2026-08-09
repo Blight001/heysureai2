@@ -1,6 +1,6 @@
 # HeySure Server 全面可靠性与复杂度整改方案
 
-> 状态：待执行  
+> 状态：实施中（2026-08-09 已完成可靠性底座与首批拆分；详见 `doc/refactoring/server-reliability-implementation-log.md`）
 > 范围：`deploy/server/`，以及与服务器部署直接相关的根目录 Docker Compose  
 > 目标：在不停止业务演进的前提下，逐步降低代码复杂度，消除多进程生命周期隐患，并建立可持续的测试、部署与质量门禁。
 
@@ -466,36 +466,36 @@ Connector Runtime 额外返回：
 - [ ] 建立整改分支和问题清单。
 - [ ] 记录复杂度、测试、覆盖率和运行指标基线。
 - [ ] 保存本次故障时间线、日志证据和根因。
-- [ ] 建立 `check_guardrails.py` 与 baseline。
-- [ ] CI 接入“不得新增超限”门禁。
+- [x] 建立 `check_guardrails.py` 与 baseline。
+- [x] CI 接入“不得新增超限”门禁。
 
 验收：不改变生产行为，但任何新复杂度回退会被阻止。
 
 ### 阶段 1：先修可靠性底座（3–5 天）
 
-- [ ] 删除 Runtime 启动 DDL，补真实 PostgreSQL 锁回归测试。
-- [ ] 补齐 Connector `dispatch/expire` 合同及测试。
-- [ ] 修复 Connector 重启后的孤儿任务识别。
-- [ ] 修复 AI Runtime draining、强制退出和任务重新入队。
-- [ ] 增加 `live/ready/detail` 健康端点。
-- [ ] 发布脚本改为逐服务 readiness 验证。
+- [x] 删除 Runtime 启动 DDL，补真实 PostgreSQL 锁回归测试。
+- [x] 补齐 Connector `dispatch/expire` 合同及测试。
+- [x] 修复 Connector 重启后的孤儿任务识别。
+- [x] 修复 AI Runtime draining、强制退出和任务重新入队。
+- [x] 增加 `live/ready/detail` 健康端点。
+- [x] 发布脚本改为逐服务 readiness 验证。
 
 验收：重复执行 20 次滚动重启，不出现登录卡死、永久运行任务或永久 pending 任务。
 
 ### 阶段 2：设备调度状态机（1–2 周）
 
-- [ ] 拆分 `device_dispatch.py`。
-- [ ] 引入明确状态枚举与合法转换表。
-- [ ] 增加 worker/connector `instance_id` 和任务 lease。
-- [ ] 引入模拟 Agent 合同测试。
-- [ ] 完成超时、取消、重连、迟到回执测试矩阵。
+- [ ] 拆分 `device_dispatch.py`（首批：状态、仓储、队列已完成；结果处理继续拆分）。
+- [x] 引入明确状态枚举与合法转换表。
+- [x] 增加 worker/connector `instance_id` 和任务 lease。
+- [x] 引入模拟 Agent 合同测试。
+- [ ] 完成超时、取消、重连、迟到回执测试矩阵（已覆盖超时、重连和迟到/重复回执；继续补取消集成路径）。
 
 验收：所有设备调度状态转换均有单测和至少一条集成测试。
 
 ### 阶段 3：AI 推理核心拆分（2–4 周）
 
 - [ ] 冻结 `_run_worker_impl` 新功能入口。
-- [ ] 先提取纯函数和 DTO，再提取外部调用适配器。
+- [x] 先提取纯函数和 DTO，再提取外部调用适配器（已提取首批策略、Prompt DTO、工具解析与 Runtime client）。
 - [ ] 将工具循环改为显式状态机。
 - [ ] 分离模型请求、MCP 调用、设备调度和持久化。
 - [ ] 每次拆分保持行为等价并执行回归测试。
@@ -504,21 +504,21 @@ Connector Runtime 额外返回：
 
 ### 阶段 4：Socket、路由和共享层拆分（2–3 周）
 
-- [ ] 拆分 `socket_events.py`。
+- [x] 拆分 `socket_events.py`。
 - [ ] 拆分 `admin.py` 和其它超长路由。
-- [ ] 清理 `main/api/` 导入副作用。
-- [ ] 建立架构依赖检查。
+- [x] 清理 `main/api/` 导入副作用（首批 package/app factory 与 Agent Socket 所有权已清理）。
+- [x] 建立架构依赖检查。
 - [ ] 将兼容逻辑移入 Alembic 或明确适配层。
 
 验收：进程职责依赖图通过自动检查；共享层不启动后台任务、不修改 schema。
 
 ### 阶段 5：完整 CI 与故障演练（1–2 周）
 
-- [ ] CI 启动真实 PostgreSQL 和四个 Runtime。
+- [x] CI 启动真实 PostgreSQL 和四个 Runtime。
 - [ ] 执行登录、AI、MCP、模拟设备 E2E。
 - [ ] 注入进程终止、网络超时、数据库锁和设备断线。
 - [ ] 建立发布前自动冒烟与发布后观测窗口。
-- [ ] 建立自动回滚脚本。
+- [x] 建立自动回滚脚本。
 
 验收：关键故障可以在 CI 中稳定复现，恢复时间和数据一致性满足目标。
 

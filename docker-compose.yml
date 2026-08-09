@@ -81,6 +81,12 @@ services:
       AI_DISPATCH_MODE: remote
       HEYSURE_DB_AUTO_MIGRATE: "0"
     command: ["uvicorn", "gateway.app:sio_app", "--host", "0.0.0.0", "--port", "3000"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -H 'Authorization: Bearer '$${HEYSURE_INTERNAL_TOKEN} http://127.0.0.1:3000/internal/health/ready >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
     depends_on:
       db:
         condition: service_healthy
@@ -105,20 +111,29 @@ services:
       MCP_RUNTIME_URL: http://mcp-runtime:3001
       CONNECTOR_RUNTIME_URL: http://connector-runtime:3002
       HEYSURE_AI_RUNTIME_PORT: "3003"
+      HEYSURE_AI_DRAIN_TIMEOUT_SECONDS: "240"
       HEYSURE_DB_AUTO_MIGRATE: "0"
     command: ["python", "-m", "ai_runtime.main"]
     # Give active conversations time to finish. If this deadline is approached,
     # ai-runtime requeues unfinished ChatRun rows before Docker sends SIGKILL.
     stop_grace_period: 5m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -H 'Authorization: Bearer '$${HEYSURE_INTERNAL_TOKEN} http://127.0.0.1:3003/internal/health/ready >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
     depends_on:
       db:
         condition: service_healthy
       db-migrate:
         condition: service_completed_successfully
       api-gateway:
-        condition: service_started
+        condition: service_healthy
       mcp-runtime:
-        condition: service_started
+        condition: service_healthy
+      connector-runtime:
+        condition: service_healthy
     restart: unless-stopped
 
   mcp-runtime:
@@ -141,6 +156,12 @@ services:
       HEYSURE_API_GATEWAY_URL: http://api-gateway:3000
       HEYSURE_DB_AUTO_MIGRATE: "0"
     command: ["python", "-m", "mcp_runtime.main"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -H 'Authorization: Bearer '$${HEYSURE_INTERNAL_TOKEN} http://127.0.0.1:3001/internal/health/ready >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
     depends_on:
       db:
         condition: service_healthy
@@ -169,6 +190,12 @@ services:
       HEYSURE_API_GATEWAY_URL: http://api-gateway:3000
       HEYSURE_DB_AUTO_MIGRATE: "0"
     command: ["python", "-m", "connector_runtime.main"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -H 'Authorization: Bearer '$${HEYSURE_INTERNAL_TOKEN} http://127.0.0.1:3002/internal/health/ready >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 10s
     depends_on:
       db:
         condition: service_healthy
@@ -190,7 +217,8 @@ services:
       <<: *proxy-environment
       SERVER_URL: http://api-gateway:3000
     depends_on:
-      - api-gateway
+      api-gateway:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
