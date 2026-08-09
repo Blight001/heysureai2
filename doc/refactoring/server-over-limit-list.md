@@ -3,12 +3,12 @@
 基线日期：2026-08-09
 执行命令：`python deploy/server/other/scripts/check_guardrails.py`
 
-该清单由 `guardrail_baseline.json` 机器校验。存量可以下降，任何新条目或数值增长都会使 CI 失败。首次扫描得到 284 项超限；当前已降至 267 项并收紧基线。
+该清单由 `guardrail_baseline.json` 机器校验。存量可以下降，任何新条目或数值增长都会使 CI 失败。首次扫描得到 284 项超限；当前已降至 266 项并收紧基线。
 
 | 指标 | 首次基线 | 当前基线 |
 | --- | ---: | ---: |
 | 圈复杂度 | 132 | 128 |
-| 模块直接依赖 | 16 | 16 |
+| 模块直接依赖 | 16 | 15 |
 | 文件有效行数 | 18 | 18 |
 | 函数有效行数 | 55 | 49 |
 | 嵌套深度 | 34 | 30 |
@@ -22,7 +22,7 @@
 | `_run_worker_impl` | 1626 → 1436 行 | < 80 |
 | `_execute_turn_call` | 539 → 535 行 | 独立状态机，无函数 > 200 |
 | `main/api/core/migrations.py` | 1589 行 | 只保留显式迁移兼容入口 |
-| `main/gateway/routers/admin.py` | 1349 → 982 行 | 路由按服务拆分 |
+| `main/gateway/routers/admin.py` | 1349 → 738 行 | 路由按服务拆分 |
 | `main/connector_runtime/dispatch/device_dispatch.py` | 1106 → 808 行 | 状态、仓储、队列、结果分层 |
 | `register_agent_socket_events` | 284 → 25 行 | 已完成：只装配 handler |
 | `_register_builtin_tools` | 293 → 3 行 | 已完成：声明式模块表 |
