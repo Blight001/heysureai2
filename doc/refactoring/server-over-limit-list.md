@@ -3,14 +3,14 @@
 基线日期：2026-08-09
 执行命令：`python deploy/server/other/scripts/check_guardrails.py`
 
-该清单由 `guardrail_baseline.json` 机器校验。存量可以下降，任何新条目或数值增长都会使 CI 失败。首次扫描得到 284 项超限；当前已降至 254 项并收紧基线。
+该清单由 `guardrail_baseline.json` 机器校验。存量可以下降，任何新条目或数值增长都会使 CI 失败。首次扫描得到 284 项超限；当前已降至 249 项并收紧基线。
 
 | 指标 | 首次基线 | 当前基线 |
 | --- | ---: | ---: |
-| 圈复杂度 | 132 | 122 |
-| 模块直接依赖 | 16 | 15 |
-| 文件有效行数 | 18 | 17 |
-| 函数有效行数 | 55 | 49 |
+| 圈复杂度 | 132 | 120 |
+| 模块直接依赖 | 16 | 14 |
+| 文件有效行数 | 18 | 16 |
+| 函数有效行数 | 55 | 48 |
 | 嵌套深度 | 34 | 28 |
 | 参数数量 | 29 | 23 |
 
@@ -23,7 +23,7 @@
 | `_execute_turn_call` | 539 → 198 行 | 已完成当前里程碑：独立转换服务，无函数 > 200，复杂度 ≤ 15 |
 | `main/api/core/migrations.py` | 1589 行 | 只保留显式迁移兼容入口 |
 | `main/gateway/routers/admin.py` | 1349 → 493 行 | 已完成：路由按领域拆分，文件 < 500 |
-| `main/connector_runtime/dispatch/device_dispatch.py` | 1106 → 782 行 | 状态、仓储、队列、结果分层 |
+| `main/connector_runtime/dispatch/device_dispatch.py` | 1106 → 486 行 | 已完成文件拆分；继续压缩 dispatch 入口函数 |
 | `register_agent_socket_events` | 284 → 25 行 | 已完成：只装配 handler |
 | `_register_builtin_tools` | 293 → 3 行 | 已完成：声明式模块表 |
 

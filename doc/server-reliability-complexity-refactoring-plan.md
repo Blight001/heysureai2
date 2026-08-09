@@ -484,7 +484,7 @@ Connector Runtime 额外返回：
 
 ### 阶段 2：设备调度状态机（1–2 周）
 
-- [ ] 拆分 `device_dispatch.py`（首批：状态、仓储、队列已完成；结果处理继续拆分）。
+- [x] 拆分 `device_dispatch.py`（状态、仓储、队列、取消、结果处理和 Workshop 内联执行均已分层，主文件降至 500 行以内）。
 - [x] 引入明确状态枚举与合法转换表。
 - [x] 增加 worker/connector `instance_id` 和任务 lease。
 - [x] 引入模拟 Agent 合同测试。
