@@ -22,7 +22,7 @@
 | `_run_worker_impl` | 1626 → 1436 行 | < 80 |
 | `_execute_turn_call` | 539 → 535 行 | 独立状态机，无函数 > 200 |
 | `main/api/core/migrations.py` | 1589 行 | 只保留显式迁移兼容入口 |
-| `main/gateway/routers/admin.py` | 1349 → 1161 行 | 路由按服务拆分 |
+| `main/gateway/routers/admin.py` | 1349 → 982 行 | 路由按服务拆分 |
 | `main/connector_runtime/dispatch/device_dispatch.py` | 1106 → 808 行 | 状态、仓储、队列、结果分层 |
 | `register_agent_socket_events` | 284 → 25 行 | 已完成：只装配 handler |
 | `_register_builtin_tools` | 293 → 3 行 | 已完成：声明式模块表 |
