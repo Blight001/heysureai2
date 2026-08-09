@@ -45,6 +45,18 @@ jobs:
         run: pip install -r requirements.txt pytest pytest-cov
       - name: Unit and contract tests
         run: pytest -q -m "not integration and not e2e and not deployment"
+      - name: State-machine branch coverage
+        run: >-
+          pytest -q
+          other/tests/unit/test_model_error_flow.py
+          other/tests/unit/test_tool_batch_flow.py
+          other/tests/unit/test_dispatch_state_machine.py
+          --cov=ai_runtime.inference.model_error_flow
+          --cov=ai_runtime.inference.tool_batch_flow
+          --cov=connector_runtime.dispatch.models
+          --cov-branch
+          --cov-report=term
+          --cov-fail-under=90
 
   postgres-integration:
     runs-on: ubuntu-latest

@@ -39,6 +39,7 @@
 - `other/tests/unit/test_ai_run_leases.py`：显式 lease 优先于 heartbeat 猜测。
 - `other/tests/contract/`：健康端点、Socket payload、模拟 Agent 成功/错误/静默/重复回执。
 - `.github/workflows/server-quality.yml`：单测、真实 PostgreSQL，以及四 Runtime + 模拟 Agent 往返冒烟。
+- CI 对模型错误恢复、工具批处理和设备 dispatch 合法转换表执行分支覆盖硬门禁；本机同命令实测 92.27%，低于 90% 将失败。更大范围新编排模块当前合计 73%，尚未宣称满足整体 85% 目标。
 - `other/scripts/rolling_release.py`：迁移先行、逐服务 readiness、失败时恢复旧镜像。
 - `other/scripts/smoke_four_runtime.py`：注册/登录、跨进程设备绑定、Connector 分发、结果终态轮询。
 - `other/scripts/restart_fault_exercise.py`：默认 20 轮逐 Runtime 重启、readiness、模拟 Agent 冒烟和过期任务断言。
