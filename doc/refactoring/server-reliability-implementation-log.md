@@ -4,9 +4,9 @@
 
 - 计划来源：`doc/server-reliability-complexity-refactoring-plan.md`
 - Git 分支：当前工作分支（未自动创建或切换，避免干扰用户工作区）
-- Python 复杂度债务：从 284 项降至 259 项，并已收紧机器基线
+- Python 复杂度债务：从 284 项降至 257 项，并已收紧机器基线
 - 架构依赖债务：从 47 项降至 43 项，并已收紧机器基线
-- pytest：294 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
+- pytest：305 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
 - 本机限制：无 Docker/PostgreSQL 服务，因此真实 PostgreSQL 与四进程演练交由新增 CI 作业执行
 - 既有失败证据：初始无测试环境时 45 个模块因 `DATABASE_URL` 缺失而收集失败；显式测试环境后 207 通过、15 个未隔离数据库的测试失败
 
@@ -49,19 +49,20 @@
 - `socket_events.py` 的 Agent 注册巨型闭包已拆为 registration/tasks/disconnect/remote/assembly handler。
 - `device_dispatch.py` 已提取状态枚举、合法转换、owner/lease 仓储、队列晋升和结果 payload 持久化；有效行数 1106 → 808。
 - `registry.py` 已提取声明式 `builtin_catalog.py`，`_register_builtin_tools` 降为简单循环。
-- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、历史消息构建器、计划自动收尾服务、计划控制转换、工具执行器、截图媒体策略和工具结果持久化服务；有效行数 2933 → 1654，`_run_worker_impl` 1626 → 1225。
+- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、历史消息构建器、计划自动收尾服务、计划控制转换、工具执行/拒绝/元数据处理、截图媒体策略和工具结果持久化服务；有效行数 2933 → 1448，`_run_worker_impl` 1626 → 1075。
 - `_run_worker_impl` 已改为单一不可变 `WorkerRequest` DTO 入口，工具白名单冻结为快照，启动状态/可观察元数据/预取消处理移出编排函数，消除其 11 参数超限。
 - 历史回放构建器独立处理压缩消息、待注入消息、系统提示回放及原生 MCP tool-call/result 配对，新增 3 个单元测试。
 - 计划流服务独立处理阶段重锚、结果摘要、成功/失败日志、知识审核、循环任务续期及完成通知，移除 119 行嵌套闭包并新增 3 个单元测试。
-- 工具批次控制流使用 `TurnCallAction` 显式枚举；未执行调用闭合、截图延迟刷新和重复拒绝计数已移出 `_execute_turn_call`。普通调用与拼接兼容调用共用不可变 `ToolExecutionResult`；拼接兼容批次改为 `JoinedToolEvent` 迭代器，停止、跳过与完成结果均为显式事件并保持逐项持久化顺序；todo 旧参数推断、describe 结果解析和控制工具回传也已提取。函数 539 → 348 行、复杂度 98 → 49，相关状态、路由与执行契约新增 15 个测试。
+- 工具批次控制流使用 `TurnCallAction` 显式枚举；未执行调用闭合、截图延迟刷新和重复拒绝计数已移出 `_execute_turn_call`。普通调用与拼接兼容调用共用不可变 `ToolExecutionResult`；拼接兼容批次、普通原生/文本结果、MCP 禁用/越权拒绝、会话重命名与 describe 元数据均已移出闭包。函数 539 → 198 行，复杂度 98 → 15（已退出复杂度超限表），相关状态、路由与执行契约新增 26 个测试。
 - 截图 payload 解析、图片输入降级、历史截图裁剪、模型可见结果和服务器文件 data URL 编码已迁入 `tool_media.py`；递归查找不再成为新复杂度豁免，并新增服务器路径截图回归测试，修复原路径分支缺少 `os` 导入的隐患。
 - 工具调用统计、端侧设备身份归属、聊天气泡、截图媒体落库和机器人投递已迁入 `tool_persistence.py`；调用方改用 `ToolCallRecord` / `ToolBubbleRequest` DTO，消除 15 参数入口，并以完成回执中的精确设备 ID 为唯一归属依据。
 - 会重写上下文的 `conversation.manage(clear)` 与 `todo.manage(create/edit/delete)` 已迁入 `plan_transitions.py`；`PlanTransitionContext`、`PlanFlowSnapshot` 和 `ControlToolCall` 明确承载输入/状态，转换返回显式 action 与新快照，新增 4 个清空、创建、删除和末阶段自动收尾测试。
+- MCP 禁用/越权路径迁入 `tool_rejections.py`，使用 `RejectionOutcome` 返回签名、连续次数与 action；普通/拼接工具回传分别由 `tool_resolution.py` 与 `tool_persistence.py` 处理，会话重命名和 describe 记忆由 `tool_metadata.py` 处理。
 - `admin.py` 已将 Runtime/ChatRun、用户、文件、数据库浏览器和审计五个路由域迁入独立模块；有效行数 1349 → 493，达到文件 < 500 目标并消除直接依赖超限，新增 18 个客户端、路由、沙箱与数据转换契约测试。
 
 ## 2026-08-09 部署环境验收
 
-- 根仓库已自动更新到 `4022bd2`，Server 子模块对应 `5e316d8`；管理员版本端点与四 Runtime 状态均已核验。
+- 根仓库已自动更新到 `f9fdd5c`，Server 子模块对应 `8187beb`；管理员版本端点与四 Runtime 状态均已核验。
 - 两次发布前分别生成 PostgreSQL custom-format 备份 `backups/heysure-pre-release-20260809-233539.dump`（102751393 bytes）和 `backups/heysure-pre-release-20260809-234241.dump`（102751428 bytes）。
 - Alembic revision 为 `e8f9a0b1c2d3`；API Gateway、MCP Runtime、Connector Runtime、AI Runtime readiness 均返回 200。
 - Web `:58150`、API `:3000` 均返回 200，测试账号登录契约返回 access token 与 Agent Socket URL。
