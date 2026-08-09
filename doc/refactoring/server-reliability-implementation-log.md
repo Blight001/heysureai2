@@ -6,7 +6,7 @@
 - Git 分支：当前工作分支（未自动创建或切换，避免干扰用户工作区）
 - Python 复杂度债务：从 284 项降至 254 项，并已收紧机器基线
 - 架构依赖债务：从 47 项降至 43 项，并已收紧机器基线
-- pytest：334 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
+- pytest：338 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
 - 本机限制：无 Docker/PostgreSQL 服务，因此真实 PostgreSQL 与四进程演练交由新增 CI 作业执行
 - 既有失败证据：初始无测试环境时 45 个模块因 `DATABASE_URL` 缺失而收集失败；显式测试环境后 207 通过、15 个未隔离数据库的测试失败
 
@@ -49,7 +49,7 @@
 - `socket_events.py` 的 Agent 注册巨型闭包已拆为 registration/tasks/disconnect/remote/assembly handler。
 - `device_dispatch.py` 已提取状态枚举、合法转换、owner/lease 仓储、队列晋升和结果 payload 持久化；有效行数 1106 → 808。
 - `registry.py` 已提取声明式 `builtin_catalog.py`，`_register_builtin_tools` 降为简单循环。
-- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、模型网关/错误恢复、模型返回持久化、最终响应收尾状态机、工具批处理/无进展状态机、历史消息构建器、计划自动收尾服务、计划控制转换、上下文压缩流、每轮输入/工具面准备、工具执行/拒绝/元数据处理、截图媒体策略和工具结果持久化服务；有效行数 2933 → 935，`_run_worker_impl` 1626 → 682。
+- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、worker 启动/生命周期、模型网关/错误恢复、模型返回持久化、最终响应收尾状态机、工具批处理/无进展状态机、历史消息构建器、计划自动收尾服务、计划控制转换、上下文压缩流、每轮输入/工具面准备、工具执行/拒绝/元数据处理、截图媒体策略和工具结果持久化服务；有效行数 2933 → 789，`_run_worker_impl` 1626 → 647。
 - `_run_worker_impl` 已改为单一不可变 `WorkerRequest` DTO 入口，工具白名单冻结为快照，启动状态/可观察元数据/预取消处理移出编排函数，消除其 11 参数超限。
 - 历史回放构建器独立处理压缩消息、待注入消息、系统提示回放及原生 MCP tool-call/result 配对，新增 3 个单元测试。
 - 计划流服务独立处理阶段重锚、结果摘要、成功/失败日志、知识审核、循环任务续期及完成通知，移除 119 行嵌套闭包并新增 3 个单元测试。
@@ -65,6 +65,7 @@
 - 工具调用名归一化、assistant 消息 token/延迟持久化及原生 `tool_calls` 对话项构造已迁入 `turn_result.py`；兼容保留 `core._resolve_mcp_tool_name`，新增原生与文本协议 2 个契约测试。
 - 无工具最终响应的格式纠错、最后一批用户插入、AI 间自动回复、计划自然停止和简单/循环任务完成已迁入 `final_response_flow.py`，由显式 `NEXT_TURN` / `COMPLETE_RUN` 决策驱动；新增 4 个收尾状态测试。
 - 跨步重复批次的第二次纠偏/第三次终止及单轮精确重复调用合并已迁入 `tool_batch_flow.py`；保留 `core._duplicate_call_flags` 兼容别名，新增 4 个批处理状态测试。
+- 用户/模型/Prompt/任务/历史记录启动装配已迁入 `worker_setup.py` 的不可变快照；heartbeat、QQ 流式会话和孤儿插入恢复已迁入 `worker_lifecycle.py`，新增 4 个启动与清理契约测试。`core.py` 已达到阶段性文件规模 `< 800`。
 - `admin.py` 已将 Runtime/ChatRun、用户、文件、数据库浏览器和审计五个路由域迁入独立模块；有效行数 1349 → 493，达到文件 < 500 目标并消除直接依赖超限，新增 18 个客户端、路由、沙箱与数据转换契约测试。
 
 ## 2026-08-09 部署环境验收
