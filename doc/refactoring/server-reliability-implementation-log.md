@@ -4,9 +4,9 @@
 
 - 计划来源：`doc/server-reliability-complexity-refactoring-plan.md`
 - Git 分支：当前工作分支（未自动创建或切换，避免干扰用户工作区）
-- Python 复杂度债务：从 284 项降至 265 项，并已收紧机器基线
+- Python 复杂度债务：从 284 项降至 264 项，并已收紧机器基线
 - 架构依赖债务：从 47 项降至 43 项，并已收紧机器基线
-- pytest：268 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
+- pytest：276 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
 - 本机限制：无 Docker/PostgreSQL 服务，因此真实 PostgreSQL 与四进程演练交由新增 CI 作业执行
 - 既有失败证据：初始无测试环境时 45 个模块因 `DATABASE_URL` 缺失而收集失败；显式测试环境后 207 通过、15 个未隔离数据库的测试失败
 
@@ -54,11 +54,11 @@
 - 历史回放构建器独立处理压缩消息、待注入消息、系统提示回放及原生 MCP tool-call/result 配对，新增 3 个单元测试。
 - 计划流服务独立处理阶段重锚、结果摘要、成功/失败日志、知识审核、循环任务续期及完成通知，移除 119 行嵌套闭包并新增 3 个单元测试。
 - 工具批次控制流使用 `TurnCallAction` 显式枚举；未执行调用闭合、截图延迟刷新和重复拒绝计数已移出 `_execute_turn_call`，该函数 539 → 535 行并新增 5 个状态测试。
-- `admin.py` 已提取 Runtime 服务客户端，并将服务/ChatRun、用户管理、文件管理三个路由域分别迁入独立模块；有效行数 1349 → 738、直接依赖已降回门槛内，新增 10 个客户端、路由、沙箱契约测试。
+- `admin.py` 已将 Runtime/ChatRun、用户、文件、数据库浏览器和审计五个路由域迁入独立模块；有效行数 1349 → 493，达到文件 < 500 目标并消除直接依赖超限，新增 18 个客户端、路由、沙箱与数据转换契约测试。
 
 ## 2026-08-09 部署环境验收
 
-- 根仓库已自动更新到 `1f80a30`，Server 子模块对应 `83ac908`；管理员版本端点与四 Runtime 状态均已核验。
+- 根仓库已自动更新到 `155d5a7`，Server 子模块对应 `602df8d`；管理员版本端点与四 Runtime 状态均已核验。
 - 两次发布前分别生成 PostgreSQL custom-format 备份 `backups/heysure-pre-release-20260809-233539.dump`（102751393 bytes）和 `backups/heysure-pre-release-20260809-234241.dump`（102751428 bytes）。
 - Alembic revision 为 `e8f9a0b1c2d3`；API Gateway、MCP Runtime、Connector Runtime、AI Runtime readiness 均返回 200。
 - Web `:58150`、API `:3000` 均返回 200，测试账号登录契约返回 access token 与 Agent Socket URL。
