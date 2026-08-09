@@ -6,7 +6,7 @@
 - Git 分支：当前工作分支（未自动创建或切换，避免干扰用户工作区）
 - Python 复杂度债务：从 284 项降至 254 项，并已收紧机器基线
 - 架构依赖债务：从 47 项降至 43 项，并已收紧机器基线
-- pytest：324 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
+- pytest：326 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
 - 本机限制：无 Docker/PostgreSQL 服务，因此真实 PostgreSQL 与四进程演练交由新增 CI 作业执行
 - 既有失败证据：初始无测试环境时 45 个模块因 `DATABASE_URL` 缺失而收集失败；显式测试环境后 207 通过、15 个未隔离数据库的测试失败
 
@@ -49,7 +49,7 @@
 - `socket_events.py` 的 Agent 注册巨型闭包已拆为 registration/tasks/disconnect/remote/assembly handler。
 - `device_dispatch.py` 已提取状态枚举、合法转换、owner/lease 仓储、队列晋升和结果 payload 持久化；有效行数 1106 → 808。
 - `registry.py` 已提取声明式 `builtin_catalog.py`，`_register_builtin_tools` 降为简单循环。
-- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、模型网关/错误恢复、历史消息构建器、计划自动收尾服务、计划控制转换、上下文压缩流、每轮输入/工具面准备、工具执行/拒绝/元数据处理、截图媒体策略和工具结果持久化服务；有效行数 2933 → 1119，`_run_worker_impl` 1626 → 842。
+- `core.py` 已提取通信 Prompt、调试支持、推理预算策略、工具名解析、跨 Runtime 客户端、模型网关/错误恢复、模型返回持久化、历史消息构建器、计划自动收尾服务、计划控制转换、上下文压缩流、每轮输入/工具面准备、工具执行/拒绝/元数据处理、截图媒体策略和工具结果持久化服务；有效行数 2933 → 1076，`_run_worker_impl` 1626 → 799。
 - `_run_worker_impl` 已改为单一不可变 `WorkerRequest` DTO 入口，工具白名单冻结为快照，启动状态/可观察元数据/预取消处理移出编排函数，消除其 11 参数超限。
 - 历史回放构建器独立处理压缩消息、待注入消息、系统提示回放及原生 MCP tool-call/result 配对，新增 3 个单元测试。
 - 计划流服务独立处理阶段重锚、结果摘要、成功/失败日志、知识审核、循环任务续期及完成通知，移除 119 行嵌套闭包并新增 3 个单元测试。
@@ -62,6 +62,7 @@
 - AI 间收件箱、用户中途插入和渐进式工具暴露已迁入 `step_preparation.py`；文本协议、任务计划前知识工具面、待回复 ID 保留及收件箱异常均有独立测试，旧测试不再通过 `core.py` 私有别名验证通信 Prompt。
 - Anthropic/OpenAI 请求构造、OpenAI `parallel_tool_calls` 兼容回退和结构化上游 HTTP 错误已迁入 `model_gateway.py`；异常重试与 run 终态仍由编排层负责，新增 4 个网关契约测试。
 - 缺失 tool 响应修复、图片输入不兼容降级、上游错误通知与连续三次错误终止已迁入 `model_error_flow.py`；修复函数拆分后退出复杂度超限表，新增 4 个错误决策测试。
+- 工具调用名归一化、assistant 消息 token/延迟持久化及原生 `tool_calls` 对话项构造已迁入 `turn_result.py`；兼容保留 `core._resolve_mcp_tool_name`，新增原生与文本协议 2 个契约测试。
 - `admin.py` 已将 Runtime/ChatRun、用户、文件、数据库浏览器和审计五个路由域迁入独立模块；有效行数 1349 → 493，达到文件 < 500 目标并消除直接依赖超限，新增 18 个客户端、路由、沙箱与数据转换契约测试。
 
 ## 2026-08-09 部署环境验收
