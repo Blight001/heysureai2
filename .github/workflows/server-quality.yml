@@ -51,10 +51,12 @@ jobs:
           other/tests/unit/test_model_error_flow.py
           other/tests/unit/test_tool_batch_flow.py
           other/tests/unit/test_turn_call_flow.py
+          other/tests/unit/test_worker_turn_flow.py
           other/tests/unit/test_dispatch_state_machine.py
           --cov=ai_runtime.inference.model_error_flow
           --cov=ai_runtime.inference.tool_batch_flow
           --cov=ai_runtime.inference.turn_call_flow
+          --cov=ai_runtime.inference.worker_turn_flow
           --cov=connector_runtime.dispatch.models
           --cov-branch
           --cov-report=term

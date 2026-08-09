@@ -498,7 +498,7 @@ Connector Runtime 额外返回：
 - [x] 先提取纯函数和 DTO，再提取外部调用适配器（已提取首批策略、Prompt DTO、工具解析与 Runtime client）。
 - [x] 将工具循环改为显式状态机（`TurnCallMachine` + 不可变 `TurnCallState`，批次/单调用转换均返回稳定枚举）。
 - [x] 分离模型请求、MCP 调用、设备调度和持久化。
-- [x] 每次拆分保持行为等价并执行回归测试（当前 353 个 unit/contract 测试通过）。
+- [x] 每次拆分保持行为等价并执行回归测试（当前 358 个 unit/contract 测试通过）。
 
 验收：`core.py` 小于 800 行，编排函数小于 80 行，不存在超过 200 行的业务函数。
 
