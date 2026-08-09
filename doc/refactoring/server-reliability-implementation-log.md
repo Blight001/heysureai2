@@ -6,7 +6,7 @@
 - Git 分支：当前工作分支（未自动创建或切换，避免干扰用户工作区）
 - Python 复杂度债务：从 284 项降至 254 项，并已收紧机器基线
 - 架构依赖债务：从 47 项降至 43 项，并已收紧机器基线
-- pytest：338 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
+- pytest：340 个 unit/contract 测试通过，4 个 PostgreSQL integration 用例由 CI 执行
 - 本机限制：无 Docker/PostgreSQL 服务，因此真实 PostgreSQL 与四进程演练交由新增 CI 作业执行
 - 既有失败证据：初始无测试环境时 45 个模块因 `DATABASE_URL` 缺失而收集失败；显式测试环境后 207 通过、15 个未隔离数据库的测试失败
 
@@ -66,6 +66,7 @@
 - 无工具最终响应的格式纠错、最后一批用户插入、AI 间自动回复、计划自然停止和简单/循环任务完成已迁入 `final_response_flow.py`，由显式 `NEXT_TURN` / `COMPLETE_RUN` 决策驱动；新增 4 个收尾状态测试。
 - 跨步重复批次的第二次纠偏/第三次终止及单轮精确重复调用合并已迁入 `tool_batch_flow.py`；保留 `core._duplicate_call_flags` 兼容别名，新增 4 个批处理状态测试。
 - 用户/模型/Prompt/任务/历史记录启动装配已迁入 `worker_setup.py` 的不可变快照；heartbeat、QQ 流式会话和孤儿插入恢复已迁入 `worker_lifecycle.py`，新增 4 个启动与清理契约测试。`core.py` 已达到阶段性文件规模 `< 800`。
+- 工作流取消现会在同一事务内把关联 `AgentDispatchTask` 置为 `cancelled`，四进程模式通过 Connector 内部接口发送 `task:cancel`，同时释放 Future waiter、内存上下文和设备串行队列；迟到结果受终态保护不能复活任务。超时/取消/重连/迟到与重复回执矩阵已闭合，新增 2 个集成契约测试。
 - `admin.py` 已将 Runtime/ChatRun、用户、文件、数据库浏览器和审计五个路由域迁入独立模块；有效行数 1349 → 493，达到文件 < 500 目标并消除直接依赖超限，新增 18 个客户端、路由、沙箱与数据转换契约测试。
 
 ## 2026-08-09 部署环境验收
@@ -80,5 +81,5 @@
 ## 仍在后续批次中的工作
 
 - `_run_worker_impl` / `_execute_turn_call` 仍需转换为上下文 DTO + 显式工具状态机，目标尚未达到。
-- `admin.py` 已达到文件规模目标，但其中数据库导入/清理函数仍需继续服务化；历史迁移适配层和其它超长模块尚未完成领域拆分。
+- `admin.py` 已达到文件规模目标，但其中数据库导入/清理函数仍需继续服务化；历史迁移适配层和其它超长模块尚未完成领域拆分。取消逻辑迁出后 `run_service.py` 947 → 923、`device_dispatch.py` 808 → 782。
 - 本机没有 Docker/PostgreSQL；真实迁移、四进程 readiness 和登录链路已在部署环境验收，完整模拟 Agent 往返及连续 20 次重启仍由 CI/后续演练执行，本记录不虚报未运行项目。

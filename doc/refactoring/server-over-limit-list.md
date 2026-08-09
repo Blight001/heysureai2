@@ -23,7 +23,7 @@
 | `_execute_turn_call` | 539 → 198 行 | 已完成当前里程碑：独立转换服务，无函数 > 200，复杂度 ≤ 15 |
 | `main/api/core/migrations.py` | 1589 行 | 只保留显式迁移兼容入口 |
 | `main/gateway/routers/admin.py` | 1349 → 493 行 | 已完成：路由按领域拆分，文件 < 500 |
-| `main/connector_runtime/dispatch/device_dispatch.py` | 1106 → 808 行 | 状态、仓储、队列、结果分层 |
+| `main/connector_runtime/dispatch/device_dispatch.py` | 1106 → 782 行 | 状态、仓储、队列、结果分层 |
 | `register_agent_socket_events` | 284 → 25 行 | 已完成：只装配 handler |
 | `_register_builtin_tools` | 293 → 3 行 | 已完成：声明式模块表 |
 
