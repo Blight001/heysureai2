@@ -24,8 +24,10 @@ HeySure AI 2.0 是一个**多端 AI agent 协作平台**：Web 控制台 + Pytho
 当前 Codex 环境已配置宝塔 MCP 服务器，工具命名空间为 `mcp__baota__*`，可直接用于测试服务器的只读检查、项目文件操作和经确认的运维操作。
 
 - 服务器：`49.234.181.190`（与上方测试环境为同一台服务器）。
-- HeySure 线上工作区：`/www/wwwroot/heysureai2`。
-- 已确认的顶层内容包括：`deploy/`、`device/`、`doc/`、`docker-compose.yml`、`docker-compose.source.yml`、`AGENTS.md`。
+- **唯一 Compose 发布入口**：`/www/server/panel/data/compose/heysureai2`。所有 `docker compose`、构建、重建、迁移和滚动发布都必须从这里执行；容器标签 `com.docker.compose.project.working_dir` 必须等于该路径。
+- **唯一持久化数据根目录**：`/www/wwwroot/heysureai2/deploy/server/data`。四个 Runtime 的 `/app/data` 必须绝对挂载到其 `app/` 子目录；PostgreSQL 挂载数据根目录，但只使用保留子目录 `postgres/`（`PGDATA=/var/lib/postgresql/data/postgres`）。Runtime 不得挂载或访问 `postgres/`。
+- `/www/wwwroot/heysureai2` 不再作为 Compose 发布入口。不得从该目录执行 Compose，不得把 Runtime 数据挂载恢复为 `./deploy/server/data` 等相对路径。
+- 重建容器前必须同时核对 Compose 工作目录标签和所有持久化 Mount Source；任一项偏离上述路径时停止发布。
 - 该项目当前未登记在宝塔“网站”列表中，应按 **Docker Compose 项目**处理；不要因为 `SiteList` 搜不到 `heysure` 就判断项目不存在。
 - 定位文件优先使用宝塔 MCP 的 `LS`、`Glob`、`Grep`、`Read`；查看站点、服务和系统状态时优先使用对应的宝塔专用工具，必要时才使用 `Bash`。
 - 默认先进行只读侦察，核对实际目录、Git 提交、容器和服务状态，再提出或执行变更；不得用本地工作区状态推测服务器当前状态。

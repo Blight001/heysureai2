@@ -76,6 +76,7 @@ services:
       MCP_RUNTIME_URL: http://mcp-runtime:3001
       CONNECTOR_RUNTIME_URL: http://connector-runtime:3002
       AI_RUNTIME_URL: http://ai-runtime:3003
+      HEYSURE_WEB_RUNTIME_URL: http://web:58150
       HEYSURE_REPO_UPDATER_URL: ${HEYSURE_REPO_UPDATER_URL:-http://host.docker.internal:58151}
       HEYSURE_REPO_UPDATER_TOKEN: ${HEYSURE_REPO_UPDATER_TOKEN:-${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}}
       AI_DISPATCH_MODE: remote

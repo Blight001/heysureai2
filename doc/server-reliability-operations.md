@@ -1,5 +1,13 @@
 # HeySure Server 可靠性运维手册
 
+## 唯一 Compose 入口与持久化路径
+
+测试服务器只允许从 `/www/server/panel/data/compose/heysureai2` 执行 Compose 发布、构建、重建、迁移和滚动替换。`/www/wwwroot/heysureai2` 只承载持久化数据，不得再作为 Compose 工作目录。发布前必须检查运行中容器的 `com.docker.compose.project.working_dir`，不等于唯一入口时立即停止。
+
+持久化挂载必须使用绝对路径，禁止生产 Compose 使用 `./deploy/server/data` 等相对路径。数据根目录固定为 `/www/wwwroot/heysureai2/deploy/server/data`：四个 Runtime 的 `/app/data` 只映射其 `app/` 子目录；PostgreSQL 的 `/var/lib/postgresql/data` 映射数据根目录，并通过 `PGDATA=/var/lib/postgresql/data/postgres` 将数据库集群限制在 `postgres/` 子目录。Runtime 不得挂载或访问 `postgres/`；`postgres/`、`postgres.failed-*` 和数据库备份不得由网页文件管理、应用清理任务或普通发布脚本移动、覆盖或删除。
+
+重建前后都要验证 Compose 工作目录、配置文件路径、Mount Source、PostgreSQL revision 和四 Runtime readiness。仅显示容器 `running` 不算通过。变更持久化路径前必须制作 PostgreSQL custom-format 备份及原目录文件备份；旧目录或旧卷只在明确验收并再次获得删除确认后清理。
+
 ## 发布与回滚
 
 发布前必须确认两级 Git 提交、生成 PostgreSQL custom-format 备份，并验证备份
