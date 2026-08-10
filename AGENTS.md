@@ -175,6 +175,49 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 - **端侧代码按平台独立**：`device/windows`（Tauri）、`device/linux`（Python 服务器 Agent）、浏览器与 Android 各自独立，互不共享 `shared/`。
 - **改 `deploy/server/main/api/` 影响全部 4 个进程**，注意进程角色差异。
 
+## 服务端可靠性与复杂度强制规则
+
+后续修改 `deploy/server/`、根目录 Compose/CI 或服务端运维脚本时，必须先阅读并遵循：
+
+- [`doc/server-reliability-complexity-refactoring-plan.md`](doc/server-reliability-complexity-refactoring-plan.md)：架构不变量、阶段目标与完成定义。
+- [`doc/server-reliability-operations.md`](doc/server-reliability-operations.md)：发布、回滚、故障演练与月度 Top-N 检查。
+- [`doc/db-migrations.md`](doc/db-migrations.md)：Alembic 唯一迁移权威和遗留库接管边界。
+- [`doc/refactoring/server-reliability-implementation-log.md`](doc/refactoring/server-reliability-implementation-log.md)：已完成拆分、测试和线上验收证据，避免重复造轮子或把已删除兼容层加回来。
+
+### 代码结构
+
+- 复杂度 baseline 是历史债务上限，只能下降，禁止通过扩大 baseline、增加豁免或移动代码来规避门禁。
+- 新增生产文件不得超过 500 有效行；新增或改写的业务函数目标不超过 80 有效行、圈复杂度不超过 15。接近上限时先拆 DTO、纯函数、状态机或领域服务。
+- `main/ai_runtime/inference/core.py` 是稳定入口和少量已记录兼容导出；禁止把新业务重新塞入 `_run_worker_impl`。外层运行编排放在 `worker_run_flow.py`，模型轮次、轮次后处理和工具批次分别使用现有 flow 模块。
+- 跨步骤流程必须使用显式状态、动作枚举和不可变 DTO；不得用大型闭包、`nonlocal` 或散落布尔值隐式驱动状态。任务必须定义合法转换、不可复活终态、owner/lease/deadline 和恢复策略。
+- 删除兼容入口前先用 `rg` 证明无调用并检查路由、测试和外部合同；确需保留时必须写明调用方、边界和删除条件，禁止无行为的永久 no-op。
+
+### 数据库与四进程边界
+
+- Schema 只能由 Alembic/`db-migrate` 修改。Gateway、AI、MCP、Connector Runtime 启动时只能执行只读 schema guard，禁止 `create_all`、隐式 DDL 或自动补表。
+- 遗留未版本化数据库只能通过 `main/api/db.py` 的显式 `_legacy_adopt` 边界接管；不得把兼容 DDL 放回普通 Runtime 启动路径。
+- `main/api/` 是四进程共享层：导入时不得创建 App、注册 Socket handler、启动线程/调度器、连接外部服务或修改数据库。进程装配归各自 `gateway/`、`ai_runtime/`、`mcp_runtime/`、`connector_runtime/`。
+- 内部 HTTP 必须携带统一 `HEYSURE_INTERNAL_TOKEN`；日志、异常、测试输出和运维脚本不得回显 token、密码、Cookie、消息正文或原始 SQL。
+- MCP/Connector/AI 的 readiness 应在 Compose 网络内按各自真实端口验证；不要因宿主未映射 3001–3003 就误判服务不可用。
+
+### 测试与验收
+
+- Server 改动提交前至少运行 `deploy/server/other/scripts/verify_server.py`；该入口统一执行复杂度、架构、语法和 unit/contract 测试。不得在门禁失败时直接改宽 baseline。
+- 数据库、锁、迁移或事务改动必须增加真实 PostgreSQL integration 测试；不要用 SQLite 结果代替 PostgreSQL 行为。
+- 状态机关键分支覆盖率不低于 90%，本次新增/修改关键模块增量覆盖率不低于 85%；成功路径之外还要覆盖失败、超时、取消、断线、重连、迟到和重复回执。
+- 四进程或部署链路改动必须验证登录、真实 AI、MCP 和模拟 Agent；设备故障矩阵使用 `smoke_four_runtime.py --fault-matrix`，重启/lease 语义改动使用 `restart_fault_exercise.py`。
+- 运行线上重启演练时显式传入已存在的测试账号；生产通常关闭注册，不能依赖 smoke 自动创建账号。项目统一验收账号仍为本文开头的 `heysure`。
+
+### 发布与运维
+
+- 发布前确认唯一发布所有者，避免面板自动部署与人工部署并发操作同一 Compose 项目；先只读核对目标提交、工作区、磁盘、内存和当前容器状态。
+- 每次数据库相关或服务端发布前必须创建可恢复的 PostgreSQL custom-format 备份，并记录路径与大小。
+- 只允许可验证的 fast-forward 同步；网络受限时使用带 SHA-256 校验的 Git bundle，不能复制未校验工作树覆盖服务器。
+- 使用 `rolling_release.py` 执行迁移先行和逐 Runtime readiness 门禁；任一服务未就绪立即停止并按脚本恢复旧镜像，不得继续发布后续服务。
+- 发布后必须核对 Git 提交、Alembic revision、四 Runtime readiness、Web/API、过期 `ChatRun`/`AgentDispatchTask` 数量；可靠性整改还须运行故障矩阵和规定轮数的重启演练。
+- `reliability_top_n.py` 的慢模型轮次、长事务、锁等待、ChatRun 队列和 dispatch 队列按月复查；输出必须保持脱敏。
+
 ## Git 约定
 
 - 提交信息清晰、描述性；除非明确要求，不要创建 PR。
+- 根仓库与 `deploy/server`、`deploy/web`、`device` 是独立仓库。先在子模块提交，再提交根仓库的子模块指针；只暂存任务相关文件，保留用户已有改动。
