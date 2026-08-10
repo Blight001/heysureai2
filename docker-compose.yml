@@ -35,8 +35,9 @@ services:
       - POSTGRES_USER=heysure
       - POSTGRES_PASSWORD=heysure
       - POSTGRES_DB=heysure
+      - PGDATA=/var/lib/postgresql/data/postgres
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - /www/wwwroot/heysureai2/deploy/server/data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U heysure"]
       interval: 5s
@@ -65,7 +66,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./deploy/server/data:/app/data
+      - /www/wwwroot/heysureai2/deploy/server/data/app:/app/data
     environment:
       <<: *proxy-environment
       HEYSURE_SERVICE_ROLE: gateway
@@ -102,7 +103,7 @@ services:
     expose:
       - "3003"
     volumes:
-      - ./deploy/server/data:/app/data
+      - /www/wwwroot/heysureai2/deploy/server/data/app:/app/data
     environment:
       <<: *proxy-environment
       HEYSURE_SERVICE_ROLE: worker
@@ -144,7 +145,7 @@ services:
     expose:
       - "3001"
     volumes:
-      - ./deploy/server/data:/app/data
+      - /www/wwwroot/heysureai2/deploy/server/data/app:/app/data
     environment:
       <<: *proxy-environment
       HEYSURE_SERVICE_ROLE: mcp
@@ -180,7 +181,7 @@ services:
     ports:
       - "3002:3002"
     volumes:
-      - ./deploy/server/data:/app/data
+      - /www/wwwroot/heysureai2/deploy/server/data/app:/app/data
     environment:
       <<: *proxy-environment
       HEYSURE_SERVICE_ROLE: connector
@@ -221,6 +222,3 @@ services:
       api-gateway:
         condition: service_healthy
     restart: unless-stopped
-
-volumes:
-  pgdata:
