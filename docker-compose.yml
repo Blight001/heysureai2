@@ -158,6 +158,8 @@ services:
       DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
       HEYSURE_INTERNAL_TOKEN: ${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
       HEYSURE_API_GATEWAY_URL: http://api-gateway:3000
+      HEYSURE_HUAWEI_PUSH_CLIENT_ID: ${HEYSURE_HUAWEI_PUSH_CLIENT_ID:-}
+      HEYSURE_HUAWEI_PUSH_CLIENT_SECRET: ${HEYSURE_HUAWEI_PUSH_CLIENT_SECRET:-}
       HEYSURE_DB_AUTO_MIGRATE: "0"
     command: ["python", "-m", "mcp_runtime.main"]
     healthcheck:
