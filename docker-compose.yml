@@ -71,6 +71,8 @@ services:
       <<: *proxy-environment
       HEYSURE_SERVICE_ROLE: gateway
       HEYSURE_WORKFLOW_CARDS_ENABLED: ${HEYSURE_WORKFLOW_CARDS_ENABLED:-true}
+      # Gateway owns the Web run API and must share the global scheduler switch.
+      HEYSURE_WORKFLOW_SCHEDULER_ENABLED: ${HEYSURE_WORKFLOW_SCHEDULER_ENABLED:-true}
       HEYSURE_AGENT_SOCKET_URL: ${HEYSURE_AGENT_SOCKET_URL:-}
       DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
       HEYSURE_INTERNAL_TOKEN: ${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
