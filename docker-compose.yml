@@ -73,6 +73,7 @@ services:
       HEYSURE_WORKFLOW_CARDS_ENABLED: ${HEYSURE_WORKFLOW_CARDS_ENABLED:-true}
       # Gateway owns the Web run API and must share the global scheduler switch.
       HEYSURE_WORKFLOW_SCHEDULER_ENABLED: ${HEYSURE_WORKFLOW_SCHEDULER_ENABLED:-true}
+      HEYSURE_PUBLIC_BASE_URL: ${HEYSURE_PUBLIC_BASE_URL:-${PUBLIC_BASE_URL:-}}
       HEYSURE_AGENT_SOCKET_URL: ${HEYSURE_AGENT_SOCKET_URL:-}
       DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
       HEYSURE_INTERNAL_TOKEN: ${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
@@ -155,6 +156,9 @@ services:
       # automation.run executes in MCP Runtime; it must see the global scheduler switch.
       # The advancement loop itself still runs only in Connector Runtime.
       HEYSURE_WORKFLOW_SCHEDULER_ENABLED: ${HEYSURE_WORKFLOW_SCHEDULER_ENABLED:-true}
+      # workspace_file create_temporary_link executes in MCP Runtime, so it
+      # needs the public Gateway base that serves /api/tmp-files/*.
+      HEYSURE_PUBLIC_BASE_URL: ${HEYSURE_PUBLIC_BASE_URL:-${PUBLIC_BASE_URL:-}}
       DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
       HEYSURE_INTERNAL_TOKEN: ${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}
       HEYSURE_API_GATEWAY_URL: http://api-gateway:3000
