@@ -45,6 +45,20 @@
 }
 ```
 
+查看已经位于当前成员工作区的图片（支持 PNG/JPEG/WebP/GIF，最大 10 MB）：
+
+```json
+{
+  "tool": "workspace.file+manage",
+  "arguments": {
+    "action": "view_image",
+    "file_ref": "file_..."
+  }
+}
+```
+
+也可传 `workspace_path`；系统会先注册文件并返回 `file_ref`。图片字节不会作为控制台文本输出，而是由 AI Runtime 安全附加到下一轮多模态模型输入。
+
 发送一个或多个文件：
 
 ```json
@@ -61,6 +75,8 @@
 ```
 
 AI-FREE 的 `aifree.browser+screenshot` 默认保存到当前成员的 `Screenshots/` 并返回 `file_ref`，同时按当前机器人绑定发送给用户。传 `send_to_user=false` 只关闭发送，仍会保存；传 `save_to_workspace=false` 才关闭持久化。
+
+AI-FREE 的 `aifree.browser+file` 在 HeySure 远程调用 `download`/`download_element` 成功后，默认将 AI-Workspace 本地文件上传到当前成员的 `Uploads/` 并返回 `file_ref`；传 `save_to_server=false` 可只保留设备本地文件。图片可继续用上面的 `view_image` 查看，所有文件都可用 `message.send+to` 发送。
 
 ## 安全与失败语义
 
