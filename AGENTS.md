@@ -35,7 +35,62 @@ HeySure AI 2.0 是一个**多端 AI agent 协作平台**：Web 控制台 + Pytho
 - 修改服务器文件前必须创建可恢复备份并记录位置，修改后执行语法、配置或服务有效性验证；发布、重启、删除、覆盖、迁移等高风险操作须先获得用户明确确认，并遵循本文“发布与运维”规则。
 - 不得修改宝塔面板、宝塔核心服务或 `bt_agent_mcp` 插件及其数据目录。
 
-> 以上路径和部署形态已于 2026-08-10 通过宝塔 MCP 只读确认；后续操作仍须先重新检查服务器现状。
+> 以上路径和部署形态已于 2026-08-13 通过宝塔 MCP 发布前后复核；后续操作仍须先重新检查服务器现状。
+
+### 宝塔快速发布清单（2026-08-13 已实测）
+
+本节是标准发布顺序。即使用户说“直接部署”，仍须先完成只读门禁；发布、迁移、容器替换必须已有当次明确授权。
+
+1. **本地提交与推送**：按 `deploy/server` → `deploy/web` →（有改动时）`device` → 根仓库的顺序提交、推送。根仓库最后提交子模块指针。四个仓库都要先确认与各自 `origin/main` 无分叉；不得只推根仓库指针而遗漏子仓库提交。
+2. **服务器只读门禁**：进入唯一 Compose 目录，检查根提交、Server/Web 子模块提交、`git status --porcelain`、`docker compose ps`、磁盘/内存；逐容器核对 Compose 工作目录标签和 Mount Source。`device` 不属于服务器 Compose 发布内容。
+3. **配置与密钥**：只检查 `.env` 中变量“存在/缺失”，禁止输出值。生产必须存在三枚互不相同的强随机值：`JWT_SECRET`、`HEYSURE_INTERNAL_TOKEN`、`HEYSURE_BOT_ENCRYPTION_SECRET`。首次补齐或经明确授权轮换前，先把 `.env` 备份到持久化备份目录，修改后设为 `0600`，仅验证长度、互异性和存在性。
+4. **同步代码**：只允许 `git fetch` + 指定提交的 `git merge --ff-only`，随后执行 `git submodule sync -- deploy/server deploy/web` 与 `git submodule update --init --recursive -- deploy/server deploy/web`，再逐项比对预期 SHA，并运行 `docker compose config --quiet`。
+5. **数据库备份**：在 `/www/wwwroot/heysureai2/deploy/server/data/backups` 创建 PostgreSQL custom-format 备份，确认文件非空、记录文件名与字节数，并设为 `0600`。数据库相关或 Server 发布没有可恢复备份时不得继续。
+6. **迁移和 Runtime 发布**：从唯一 Compose 目录运行 `python3 deploy/server/other/scripts/rolling_release.py --timeout 180`。该脚本构建镜像、执行 Alembic、按 Gateway → MCP → Connector → AI 顺序替换，并逐步检查 readiness；不要再手工并行重建四个 Runtime。
+7. **Web 发布**：Runtime 全部通过后再构建和替换 Web。正常路径是 `docker compose build web`，成功后执行 `docker compose up -d --no-deps web`。构建失败时旧 Web 容器不会自动被替换，先确认线上仍可用再排障。
+8. **发布验收**：至少验证 `docker compose ps`、API/Web HTTP 200、四个 Runtime 容器内 `/internal/health/ready`、Alembic revision 等于代码 head、测试账号登录、管理员 `/api/diagnostics/selftest` 全通过、陈旧 `ChatRun`/`AgentDispatchTask` 为零、Git 工作树干净，并再次核对 Compose 标签和挂载。
+9. **四进程 smoke**：宿主 Python 可能没有 `python-socketio`，不要为此污染宿主环境；优先在依赖完整的 Gateway 容器内运行：
+
+```bash
+docker compose exec -T api-gateway sh -lc \
+  'python other/scripts/smoke_four_runtime.py \
+  --gateway http://api-gateway:3000 \
+  --connector http://connector-runtime:3002 \
+  --internal-token "$HEYSURE_INTERNAL_TOKEN" \
+  --account heysure --password heysure --timeout 180'
+```
+
+密钥轮换影响必须在发布前说明：更换 `JWT_SECRET` 会立即使旧登录 Token 失效；更换 `HEYSURE_INTERNAL_TOKEN` 必须让四个 Runtime 使用同一个新值并一起滚动替换；更换已有数据使用中的 `HEYSURE_BOT_ENCRYPTION_SECRET` 会导致已加密机器人凭据不可解密，通常需要机器人重新登录，因此已有生产值时不得把“生成新值”当作普通发布步骤。
+
+### Clash / Docker Web 构建注意事项
+
+当前服务器 Mihomo（Clash 内核）的 HTTP 代理监听在 `127.0.0.1:7890`。宿主机经该地址可用，但普通 Docker build 中的 `127.0.0.1` 是构建容器自身；Compose `.env` 若把 `DOCKER_HTTP_PROXY` 等设为 `http://172.17.0.1:7890`，而 Mihomo 仍只监听回环地址，构建会报：
+
+```text
+connect ECONNREFUSED 172.17.0.1:7890
+```
+
+这代表“代理参数已传入但 Docker 网桥无法访问”，不是 npm 镜像源故障。仅在宿主 shell 使用 `env -u HTTP_PROXY ... docker compose build web` 也不一定有效，因为 Compose 会继续从 `.env` 的 `DOCKER_*_PROXY` 生成 build args。
+
+优先使用以下安全方案，不要为了构建把 Clash 开放到 `0.0.0.0` 或开启公网/LAN 访问：
+
+```bash
+docker build --network host \
+  -t heysureai2-web \
+  -f deploy/web/Dockerfile \
+  --build-arg HTTP_PROXY=http://127.0.0.1:7890 \
+  --build-arg HTTPS_PROXY=http://127.0.0.1:7890 \
+  --build-arg ALL_PROXY=http://127.0.0.1:7890 \
+  --build-arg http_proxy=http://127.0.0.1:7890 \
+  --build-arg https_proxy=http://127.0.0.1:7890 \
+  --build-arg all_proxy=http://127.0.0.1:7890 \
+  deploy/web
+docker compose up -d --no-deps --force-recreate web
+```
+
+构建前可分别验证：宿主 `curl --proxy http://127.0.0.1:7890 ...` 是否成功、`ss -lntp` 是否仅监听回环、Docker 访问 `host.docker.internal:7890` 是否被拒绝。需要切换节点时通过 Mihomo 本地控制 API 或既有 Clash 管理方式切换，并在切换后重新执行代理 curl；不得读取、回显订阅 URL、控制密钥或节点凭据。选择新节点失败时应恢复原节点。Web Dockerfile 当前使用 `cnpm` 且未复制 lockfile，因此网络不稳时优先复用上述宿主网络构建方式；不要反复重试普通 Compose build 浪费时间。
+
+代理边界必须保持清晰：`DOCKER_HTTP_PROXY`、`DOCKER_HTTPS_PROXY`、`DOCKER_ALL_PROXY` 和 `DOCKER_NO_PROXY` 只作为 Docker **镜像构建参数**使用，不注入 Gateway、AI、MCP、Connector、Web 或 `db-migrate` 的运行时环境。宿主侧 repo-updater 可继承宿主代理完成 Git 拉取；Compose 内所有机器人连接（微信 iLink、QQ、飞书）必须直连，避免本机回环代理端口导致 502。`DOCKER_NO_PROXY` 至少包含 `ilinkai.weixin.qq.com`、`novac2c.cdn.weixin.qq.com`、`.weixin.qq.com` 和 `.qq.com`。修改代理配置后应检查容器环境中不存在非空的 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`，并实际调用微信二维码接口验证不再出现 `ProxyError`。
 
 ## 顶层结构（多仓库）
 

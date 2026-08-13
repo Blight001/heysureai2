@@ -2,21 +2,11 @@ x-proxy-build-args: &proxy-build-args
   HTTP_PROXY: ${DOCKER_HTTP_PROXY:-}
   HTTPS_PROXY: ${DOCKER_HTTPS_PROXY:-}
   ALL_PROXY: ${DOCKER_ALL_PROXY:-}
-  NO_PROXY: ${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,db,api-gateway,ai-runtime,mcp-runtime,connector-runtime,web,host.docker.internal}
+  NO_PROXY: ${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,db,api-gateway,ai-runtime,mcp-runtime,connector-runtime,web,host.docker.internal,ilinkai.weixin.qq.com,novac2c.cdn.weixin.qq.com,.weixin.qq.com,.qq.com}
   http_proxy: ${DOCKER_HTTP_PROXY:-}
   https_proxy: ${DOCKER_HTTPS_PROXY:-}
   all_proxy: ${DOCKER_ALL_PROXY:-}
-  no_proxy: ${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,db,api-gateway,ai-runtime,mcp-runtime,connector-runtime,web,host.docker.internal}
-
-x-proxy-environment: &proxy-environment
-  HTTP_PROXY: ${DOCKER_HTTP_PROXY:-}
-  HTTPS_PROXY: ${DOCKER_HTTPS_PROXY:-}
-  ALL_PROXY: ${DOCKER_ALL_PROXY:-}
-  NO_PROXY: ${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,db,api-gateway,ai-runtime,mcp-runtime,connector-runtime,web,host.docker.internal}
-  http_proxy: ${DOCKER_HTTP_PROXY:-}
-  https_proxy: ${DOCKER_HTTPS_PROXY:-}
-  all_proxy: ${DOCKER_ALL_PROXY:-}
-  no_proxy: ${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,db,api-gateway,ai-runtime,mcp-runtime,connector-runtime,web,host.docker.internal}
+  no_proxy: ${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,db,api-gateway,ai-runtime,mcp-runtime,connector-runtime,web,host.docker.internal,ilinkai.weixin.qq.com,novac2c.cdn.weixin.qq.com,.weixin.qq.com,.qq.com}
 
 x-server-build: &server-build
   context: ./deploy/server
@@ -51,7 +41,6 @@ services:
   db-migrate:
     build: *server-build
     environment:
-      <<: *proxy-environment
       DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
       JWT_SECRET: ${JWT_SECRET:?required}
     command: ["python", "-m", "api.db", "migrate"]
@@ -69,7 +58,6 @@ services:
     volumes:
       - /www/wwwroot/heysureai2/deploy/server/data/app:/app/data
     environment:
-      <<: *proxy-environment
       HEYSURE_SERVICE_ROLE: gateway
       HEYSURE_WORKFLOW_CARDS_ENABLED: ${HEYSURE_WORKFLOW_CARDS_ENABLED:-true}
       # Gateway owns the Web run API and must share the global scheduler switch.
@@ -110,7 +98,6 @@ services:
     volumes:
       - /www/wwwroot/heysureai2/deploy/server/data/app:/app/data
     environment:
-      <<: *proxy-environment
       HEYSURE_SERVICE_ROLE: worker
       DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
       HEYSURE_INTERNAL_TOKEN: ${HEYSURE_INTERNAL_TOKEN:?required}
@@ -153,7 +140,6 @@ services:
     volumes:
       - /www/wwwroot/heysureai2/deploy/server/data/app:/app/data
     environment:
-      <<: *proxy-environment
       HEYSURE_SERVICE_ROLE: mcp
       HEYSURE_WORKFLOW_CARDS_ENABLED: ${HEYSURE_WORKFLOW_CARDS_ENABLED:-true}
       # automation.run executes in MCP Runtime; it must see the global scheduler switch.
@@ -195,7 +181,6 @@ services:
     volumes:
       - /www/wwwroot/heysureai2/deploy/server/data/app:/app/data
     environment:
-      <<: *proxy-environment
       HEYSURE_SERVICE_ROLE: connector
       HEYSURE_WORKFLOW_CARDS_ENABLED: ${HEYSURE_WORKFLOW_CARDS_ENABLED:-true}
       HEYSURE_WORKFLOW_SCHEDULER_ENABLED: ${HEYSURE_WORKFLOW_SCHEDULER_ENABLED:-true}
@@ -230,7 +215,6 @@ services:
     ports:
       - "58150:58150"
     environment:
-      <<: *proxy-environment
       SERVER_URL: http://api-gateway:3000
     depends_on:
       api-gateway:
