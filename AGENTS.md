@@ -92,6 +92,21 @@ docker compose up -d --no-deps --force-recreate web
 
 代理边界必须保持清晰：`DOCKER_HTTP_PROXY`、`DOCKER_HTTPS_PROXY`、`DOCKER_ALL_PROXY` 和 `DOCKER_NO_PROXY` 只作为 Docker **镜像构建参数**使用，不注入 Gateway、AI、MCP、Connector、Web 或 `db-migrate` 的运行时环境。宿主侧 repo-updater 可继承宿主代理完成 Git 拉取；Compose 内所有机器人连接（微信 iLink、QQ、飞书）必须直连，避免本机回环代理端口导致 502。`DOCKER_NO_PROXY` 至少包含 `ilinkai.weixin.qq.com`、`novac2c.cdn.weixin.qq.com`、`.weixin.qq.com` 和 `.qq.com`。修改代理配置后应检查容器环境中不存在非空的 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`，并实际调用微信二维码接口验证不再出现 `ProxyError`。
 
+### 滚动发布脚本的 Compose 目录陷阱
+
+`deploy/server/other/scripts/rolling_release.py` 不会使用调用者当前目录作为 Compose 目录；它默认根据脚本位置推导工作区根目录。仅先 `cd /www/server/panel/data/compose/heysureai2` 再运行脚本仍可能误用 `/www/wwwroot/heysureai2/docker-compose.yml`，违反唯一发布入口约束。
+
+服务器执行滚动发布时必须显式设置：
+
+```bash
+HEYSURE_COMPOSE_DIR=/www/server/panel/data/compose/heysureai2 \
+python3 /www/wwwroot/heysureai2/deploy/server/other/scripts/rolling_release.py --timeout 180
+```
+
+2026-08-13 的典型误导症状：唯一发布目录的 Compose 已给 `db-migrate` 映射 `JWT_SECRET`，但脚本仍报 Pydantic `JWT_SECRET Field required`。这不代表应重新生成或回显 `.env` 密钥，而是脚本选错了 Compose 文件。处理顺序必须是：检查唯一目录中的 Compose 片段 → 确认 `.env` 变量只检查“存在且非空” → 显式设置 `HEYSURE_COMPOSE_DIR` → 再发布。发布后再次核对所有容器的 `com.docker.compose.project.working_dir` 和持久化 Mount Source。
+
+服务器 GitHub 直连超时时，先验证宿主 `127.0.0.1:7890` 代理能访问 GitHub，再只给单次 `git fetch` 注入 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`；不要全局导出，更不能注入 Runtime。Mihomo 控制 API 若要求鉴权，不得为切换节点读取或回显控制密钥。一次 Git 同步失败后先确认仓库没有部分合并，再进行下一次同步。
+
 ## 顶层结构（多仓库）
 
 本项目采用**多仓库 + git submodule**布局：
