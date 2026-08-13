@@ -5,8 +5,12 @@ rem After clone: git submodule update --init --recursive -- deploy/server deploy
 
 if "%HEYSURE_REPO_UPDATER_PORT%"=="" set "HEYSURE_REPO_UPDATER_PORT=58151"
 if "%HEYSURE_REPO_UPDATER_URL%"=="" set "HEYSURE_REPO_UPDATER_URL=http://host.docker.internal:%HEYSURE_REPO_UPDATER_PORT%"
+if "%HEYSURE_INTERNAL_TOKEN%"=="" if exist .env for /f "tokens=1,* delims==" %%A in ('findstr /B /C:"HEYSURE_INTERNAL_TOKEN=" .env') do set "HEYSURE_INTERNAL_TOKEN=%%B"
 if "%HEYSURE_REPO_UPDATER_TOKEN%"=="" set "HEYSURE_REPO_UPDATER_TOKEN=%HEYSURE_INTERNAL_TOKEN%"
-if "%HEYSURE_REPO_UPDATER_TOKEN%"=="" set "HEYSURE_REPO_UPDATER_TOKEN=heysure-dev-internal-token-change-me"
+if "%HEYSURE_REPO_UPDATER_TOKEN%"=="" (
+  echo [ERROR] HEYSURE_INTERNAL_TOKEN or HEYSURE_REPO_UPDATER_TOKEN is required.
+  exit /b 1
+)
 
 if not exist deploy\server\other\scripts\repo-updater.py (
   echo [bootstrap] Initializing server deployment submodules...

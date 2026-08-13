@@ -86,7 +86,11 @@ fi
 
 export HEYSURE_REPO_UPDATER_PORT="${HEYSURE_REPO_UPDATER_PORT:-58151}"
 export HEYSURE_REPO_UPDATER_URL="${HEYSURE_REPO_UPDATER_URL:-http://host.docker.internal:${HEYSURE_REPO_UPDATER_PORT}}"
-export HEYSURE_REPO_UPDATER_TOKEN="${HEYSURE_REPO_UPDATER_TOKEN:-${HEYSURE_INTERNAL_TOKEN:-heysure-dev-internal-token-change-me}}"
+export HEYSURE_REPO_UPDATER_TOKEN="${HEYSURE_REPO_UPDATER_TOKEN:-${HEYSURE_INTERNAL_TOKEN:-}}"
+if [ -z "$HEYSURE_REPO_UPDATER_TOKEN" ]; then
+    echo "错误：必须在环境变量或 .env 中设置 HEYSURE_INTERNAL_TOKEN / HEYSURE_REPO_UPDATER_TOKEN"
+    exit 1
+fi
 
 if [ ! -f "deploy/server/other/scripts/repo-updater.py" ]; then
     echo "==> [bootstrap] 初始化服务器部署子模块（不包含 device）..."

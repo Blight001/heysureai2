@@ -194,7 +194,8 @@ http://127.0.0.1:3000/
 
 ```env
 DATABASE_URL=postgresql+psycopg://heysure:heysure@127.0.0.1:5432/heysure
-HEYSURE_INTERNAL_TOKEN=heysure-dev-internal-token-change-me
+JWT_SECRET=
+HEYSURE_INTERNAL_TOKEN=
 MCP_RUNTIME_URL=http://127.0.0.1:3001
 CONNECTOR_RUNTIME_URL=http://127.0.0.1:3002
 AI_RUNTIME_URL=http://127.0.0.1:3003
@@ -206,7 +207,8 @@ WORKSPACE_ROOT=C:\path\to\workspace
 | 变量 | 说明 |
 | --- | --- |
 | `DATABASE_URL` | 必填的 PostgreSQL 连接串。如果缺失，或指向其它数据库，启动会失败。 |
-| `HEYSURE_INTERNAL_TOKEN` | Gateway 调用内部 runtime `/internal/*` 接口时使用的 token。 |
+| `JWT_SECRET` | 必填的 JWT 签名密钥，至少 32 字符，禁止使用仓库公开示例值。 |
+| `HEYSURE_INTERNAL_TOKEN` | 必填的 32 字符以上 Token，供 Gateway 调用内部 runtime `/internal/*`。 |
 | `MCP_RUNTIME_URL` | MCP Runtime 地址。 |
 | `CONNECTOR_RUNTIME_URL` | Connector Runtime 地址。 |
 | `AI_RUNTIME_URL` | AI Runtime 状态服务地址。 |
@@ -215,6 +217,7 @@ WORKSPACE_ROOT=C:\path\to\workspace
 | `WORKSPACE_ROOT` | 桌面端和 Android 端的工作区目录。 |
 
 完整配置入口见 `deploy/server/main/api/core/settings.py`。
+两个密钥须分别通过 `python -c "import secrets; print(secrets.token_urlsafe(48))"` 生成。
 
 ## 开发方式
 

@@ -193,7 +193,8 @@ Copy `.env.example` → `.env` and fill it in. Common variables:
 
 ```env
 DATABASE_URL=postgresql+psycopg://heysure:heysure@127.0.0.1:5432/heysure
-HEYSURE_INTERNAL_TOKEN=heysure-dev-internal-token-change-me
+JWT_SECRET=
+HEYSURE_INTERNAL_TOKEN=
 MCP_RUNTIME_URL=http://127.0.0.1:3001
 CONNECTOR_RUNTIME_URL=http://127.0.0.1:3002
 AI_RUNTIME_URL=http://127.0.0.1:3003
@@ -205,13 +206,16 @@ WORKSPACE_ROOT=C:\path\to\workspace
 | Variable | Description |
 | --- | --- |
 | `DATABASE_URL` | Required PostgreSQL connection string. Startup fails if it is missing or points to another database. |
-| `HEYSURE_INTERNAL_TOKEN` | Token used by the gateway when calling internal runtime `/internal/*` endpoints. |
+| `JWT_SECRET` | Required JWT signing secret (32+ characters). Never use a repository example value. |
+| `HEYSURE_INTERNAL_TOKEN` | Required 32+ character token used for internal runtime `/internal/*` endpoints. |
 | `MCP_RUNTIME_URL` | MCP runtime URL. |
 | `CONNECTOR_RUNTIME_URL` | Connector runtime URL. |
 | `AI_RUNTIME_URL` | AI runtime status service URL. |
 | `AI_DISPATCH_MODE` | Use `remote` to send chat tasks to the queue consumed by `ai_runtime`. |
 | `SERVER_URL` | Base URL used by the web app and device clients. |
 | `WORKSPACE_ROOT` | Working directory used by desktop and Android endpoint clients. |
+
+Generate each secret independently with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
 
 See `deploy/server/main/api/core/settings.py` for the full configuration surface.
 

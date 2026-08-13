@@ -124,7 +124,7 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 | `DATABASE_URL` | **必填** | `postgresql+psycopg://user:pass@host/db` |
 | `HEYSURE_INTERNAL_TOKEN` | **必填** | 进程间 `/internal/*` Bearer Token，四进程必须一致 |
 | `HEYSURE_SERVICE_ROLE` | 可选 | 进程身份（gateway/worker/mcp/connector），各 run.bat 已设 |
-| `JWT_SECRET` | 可选 | 用户登录 token 签名（未设时随机生成） |
+| `JWT_SECRET` | **必填** | 用户登录 token 签名，至少 32 字符；禁止使用公开默认值 |
 | `AI_RUNTIME_URL` | 可选 | Gateway → AI Runtime（默认 `http://127.0.0.1:3003`） |
 | `MCP_RUNTIME_URL` | 可选 | Gateway → MCP Runtime（默认 `http://127.0.0.1:3001`） |
 | `CONNECTOR_RUNTIME_URL` | 可选 | Gateway → Connector（默认 `http://127.0.0.1:3002`） |
