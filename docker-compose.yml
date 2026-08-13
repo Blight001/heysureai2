@@ -67,6 +67,7 @@ services:
       DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
       HEYSURE_INTERNAL_TOKEN: ${HEYSURE_INTERNAL_TOKEN:?required}
       JWT_SECRET: ${JWT_SECRET:?required}
+      HEYSURE_BOT_ENCRYPTION_SECRET: ${HEYSURE_BOT_ENCRYPTION_SECRET:?required}
       MCP_RUNTIME_URL: http://mcp-runtime:3001
       CONNECTOR_RUNTIME_URL: http://connector-runtime:3002
       AI_RUNTIME_URL: http://ai-runtime:3003
@@ -102,6 +103,7 @@ services:
       DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
       HEYSURE_INTERNAL_TOKEN: ${HEYSURE_INTERNAL_TOKEN:?required}
       JWT_SECRET: ${JWT_SECRET:?required}
+      HEYSURE_BOT_ENCRYPTION_SECRET: ${HEYSURE_BOT_ENCRYPTION_SECRET:?required}
       HEYSURE_API_GATEWAY_URL: http://api-gateway:3000
       MCP_RUNTIME_URL: http://mcp-runtime:3001
       CONNECTOR_RUNTIME_URL: http://connector-runtime:3002
@@ -151,6 +153,7 @@ services:
       DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
       HEYSURE_INTERNAL_TOKEN: ${HEYSURE_INTERNAL_TOKEN:?required}
       JWT_SECRET: ${JWT_SECRET:?required}
+      HEYSURE_BOT_ENCRYPTION_SECRET: ${HEYSURE_BOT_ENCRYPTION_SECRET:?required}
       HEYSURE_API_GATEWAY_URL: http://api-gateway:3000
       HEYSURE_HUAWEI_PUSH_CLIENT_ID: ${HEYSURE_HUAWEI_PUSH_CLIENT_ID:-}
       HEYSURE_HUAWEI_PUSH_CLIENT_SECRET: ${HEYSURE_HUAWEI_PUSH_CLIENT_SECRET:-}
@@ -187,7 +190,7 @@ services:
       DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
       HEYSURE_INTERNAL_TOKEN: ${HEYSURE_INTERNAL_TOKEN:?required}
       JWT_SECRET: ${JWT_SECRET:?required}
-      HEYSURE_BOT_ENCRYPTION_SECRET: ${HEYSURE_BOT_ENCRYPTION_SECRET:-}
+      HEYSURE_BOT_ENCRYPTION_SECRET: ${HEYSURE_BOT_ENCRYPTION_SECRET:?required}
       HEYSURE_API_GATEWAY_URL: http://api-gateway:3000
       HEYSURE_DB_AUTO_MIGRATE: "0"
     command: ["python", "-m", "connector_runtime.main"]
