@@ -125,15 +125,33 @@ AI 修改已有卡片应先 `get` 读取最新版本，再调用：
 - 补丁应用后必须重新编译完整定义、重新冻结契约并创建不可变新版本；
 - AI 不应使用 `edit.definition` 一次覆盖整张已有卡片。
 
+卡片名称、说明、风险级别、标签和访问范围属于元数据，使用 `action=edit` 修改，不放入 definition 补丁。
+
+当修改涉及大量步骤重命名、插入、删除或重新连线时，不要堆叠大量 patch。先以 `get`/`get_version` 取得并审核完整定义，再执行安全整定义替换：
+
+```json
+{
+  "action": "replace_definition",
+  "card_id": "wcard_...",
+  "base_version_id": "wver_...",
+  "definition": {},
+  "dry_run": true
+}
+```
+
+`dry_run=true` 会执行完整编译和设备契约校验，并返回路径级 diff，但不会修改卡片或创建版本。确认 diff 后，以同一份定义和最新 `base_version_id` 设置 `dry_run=false`，创建不可变新版本。该动作只替换 definition，不修改卡片元数据。
+
 ## 5. 实战录制
 
 1. `record_start`：开启当前用户、当前 AI 成员的唯一活动录制，可传 `device_ids` 和 `default_device_id`。
-2. 正常调用端侧 MCP；服务端在每次调用完成后记录工具名、完整设备号、脱敏参数、截断后的结果、成功状态和错误。
+2. 正常调用端侧 MCP；服务端在每次调用完成后记录工具名、完整设备号、脱敏参数、截断后的结果、传输状态、业务结果和错误。
 3. `record_status`：检查当前轨迹。
-4. `record_stop`：停止并返回结构化调用；传 `create_card=true` 时，仅把成功调用编译成卡片并执行保存期验证。
+4. `record_stop`：停止并返回结构化调用；传 `create_card=true` 时，仅把传输成功且业务结果成功的调用编译成卡片并执行保存期验证。`success=false`、`ok=false`、明确失败状态或错误码（例如 `BROWSER_TAKEOVER_REQUIRED`）只保留用于诊断，不进入卡片。
 5. `record_cancel`：停止并标记取消，不创建卡片。
 
 `automation.manage` 自己不会被录进轨迹。密码、Token、Cookie、Secret 等字段会被替换为 `[REDACTED]`，创建的输入模板必须由调用者重新提供敏感值。
+
+录制生成的步骤 ID 使用工具名和 `action` 生成语义标识；重复步骤自动增加数字后缀。`startStepId`、步骤跳转、`saveAs`、初始化环境引用和最终输出会使用同一命名映射。
 
 ## 6. 断点与逐步调试
 
