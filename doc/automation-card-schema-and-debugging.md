@@ -6,22 +6,26 @@
 - 只有完成端侧派发后，由服务端写入的 `设备`、`设备号` 元数据可以证明执行来源。
 - 工具业务结果中的 `device_id` 只表示该业务对象关联的设备，前端不得据此把服务器工具显示为设备工具。
 
-## 2. 设备绑定语义
+## 2. 通用跨设备语义
+
+`automation.manage` 是服务器工具箱 MCP，不需要绑定某一台设备才能管理、创建或运行卡片。卡片没有 `mcp` 节点时完全不需要设备。
 
 卡片版本同时保存：
 
-- `contractDeviceIds`：允许这张卡片使用的完整设备号列表；
-- `defaultDeviceId`：不指定运行设备时使用的默认设备号；
+- `contractDeviceIds`：服务端从所有 MCP 节点自动汇总的完整设备号列表，不需要调用方重复填写；
+- `defaultDeviceId`：可选的兼容默认设备；
 - `steps.<stepId>.toolRef.deviceId`：该节点发布时冻结契约所使用的设备号。
+
+不同 MCP 节点可以分别调用当前 AI 有权使用的桌面端、Linux、浏览器、Android 或自建设备工具，不限定网站或浏览器步骤类型。
 
 启动时：
 
-- 不传 `device_id`：使用 `defaultDeviceId`；
+- 不传 `device_id`：各 MCP 节点使用自己的 `toolRef.deviceId`；
 - 传 `device_id`：必须属于 `contractDeviceIds`；默认设备上的节点改派到指定设备；
 - 显式绑定到其他设备的节点保持原绑定，因此一张卡片可以同时操作多个端；
 - 创建运行前逐节点检查设备归属、在线状态、工具存在性、provider、Schema 摘要和权限。
 
-前端所有设备复选项和下拉项必须同时显示设备名称与完整设备号，不能只显示名称。
+前端节点设备下拉项必须同时显示设备名称与完整设备号，不能只显示名称。
 
 ## 3. 卡片定义 Schema
 
@@ -30,35 +34,33 @@
   "schemaVersion": 1,
   "name": "示例",
   "description": "用途与成功判据",
-  "defaultDeviceId": "device-full-id",
-  "contractDeviceIds": ["device-full-id", "device-test-id"],
   "inputSchema": {
     "type": "object",
     "properties": {
-      "title": { "type": "string" }
+      "path": { "type": "string" }
     },
-    "required": ["title"],
+    "required": ["path"],
     "additionalProperties": false
   },
-  "startStepId": "open",
+  "startStepId": "read",
   "limits": {
     "timeoutSeconds": 600,
     "maxTransitions": 30,
     "maxResultBytes": 10485760
   },
   "steps": {
-    "open": {
+    "read": {
       "type": "mcp",
-      "title": "打开发布页",
+      "title": "读取配置",
       "toolRef": {
         "namespace": "device",
-        "name": "browser.navigate",
-        "deviceId": "device-full-id",
-        "provider": "browser",
+        "name": "fs.read",
+        "deviceId": "desktop-full-id",
+        "provider": "desktop",
         "schemaDigest": "sha256:..."
       },
-      "arguments": { "url": "https://example.invalid/publish" },
-      "saveAs": "open_result",
+      "arguments": { "path": "${input.path}" },
+      "saveAs": "config",
       "timeoutSeconds": 60,
       "retryPolicy": {
         "maxAttempts": 3,
@@ -79,7 +81,22 @@
 }
 ```
 
-支持的步骤类型为 `mcp`、`condition`、`delay`、`confirm`、AI 介入节点和 `end`。编译器会验证入口、跳转目标、不可达节点、循环、模板依赖、输入 Schema、超时、最大推进次数、敏感字面量和可达结束节点。
+支持的步骤类型为 `mcp`、`condition`、`delay`、`ai` 和 `end`。`confirm` 真人确认节点及其弹窗已经删除。编译器会验证入口、跳转目标、不可达节点、循环、模板依赖、输入 Schema、超时、最大推进次数、敏感字面量和可达结束节点。
+
+`ai` 是一等工作流节点，不是 MCP 工具。定义格式为：
+
+```json
+{
+  "type": "ai",
+  "prompt": "检查此前结果并补充发布参数",
+  "saveAs": "review",
+  "timeoutSeconds": 300,
+  "next": "publish",
+  "onError": "failed"
+}
+```
+
+运行到该节点时，卡片进入 `waiting_ai` 并停止继续推进。系统把节点的 `prompt`、运行摘要和此前所有步骤的完整轨迹返回给负责本次运行的 AI。AI 完成节点要求的工作后调用 `automation.manage` 的 `respond` 动作，通过 `parameters` 提交结果；这些参数保存到 `${steps.<saveAs>.result}`，随后从 `next` 继续。AI 拒绝、处理失败或超时则进入 `onError`；未配置 `onError` 时终止运行。
 
 ## 4. AI 局部修改
 
@@ -126,7 +143,7 @@ AI 修改已有卡片应先 `get` 读取最新版本，再调用：
 - `debug_continue`：关闭单步断点并继续运行。
 - `debug_restart`：基于已有运行的卡片版本、输入和设备，从任意步骤创建新的暂停调试运行。
 
-调试运行仍执行所有生产校验；不能借调试绕过设备归属、权限、确认、Schema 或超时。端侧步骤已派发后不能强行暂停，必须等待回执或取消。
+调试运行仍执行所有生产校验；不能借调试绕过设备归属、权限、Schema、AI 审核或超时。端侧步骤已派发后不能强行暂停，必须等待回执或取消。
 
 ## 7. 稳定创建流程
 
