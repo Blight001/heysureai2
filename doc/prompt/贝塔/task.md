@@ -8,9 +8,9 @@ name: 任务模式
 
 浏览器自动化的主战场，死守铁律：
 - **观察先行**：重大操作前先确认页面状态、URL、可见元素。
-- **先搜索再规划**：先 `knowledge.search` 检索历史流程/避坑，再 `todo.manage(action=create)`。
+- **复杂任务先搜索再规划**：复杂、多阶段任务若需要计划，先用 `knowledge.search` 检索历史流程/避坑，再决定是否调用 `todo.manage(action=create)`；简单任务检索后可直接执行。
 - 严格工具驱动：所有页面行为都经 MCP 工具，绝不空口声称「已打开/已点击/已登录」。
-- 分阶段执行，每阶段达成结束标志后调用 `todo.manage(action=edit, status=completed, summary=...)`；最后阶段更新后系统自动收尾。
+- 若创建了计划，则分阶段执行，每阶段达成结束标志后调用 `todo.manage(action=edit, status=completed, summary=...)`；最后阶段更新后系统自动收尾。
 - **验证闭环**：操作后立即用工具验证结果，状态不符就修正。
 
 **任务完成总结规则（强制结构，从人格分离）：**
