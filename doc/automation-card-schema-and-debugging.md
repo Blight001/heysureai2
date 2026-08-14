@@ -98,15 +98,75 @@
 
 运行到该节点时，卡片进入 `waiting_ai` 并停止继续推进。系统把节点的 `prompt`、运行摘要和此前所有步骤的完整轨迹返回给负责本次运行的 AI。AI 完成节点要求的工作后调用 `automation.manage` 的 `respond` 动作，通过 `parameters` 提交结果；这些参数保存到 `${steps.<saveAs>.result}`，随后从 `next` 继续。AI 拒绝、处理失败或超时则进入 `onError`；未配置 `onError` 时终止运行。
 
+最小可运行示例：
+
+```json
+{
+  "review": {
+    "type": "ai",
+    "prompt": "审核草稿；通过时返回 title 和 body",
+    "saveAs": "review",
+    "next": "publish",
+    "onError": "rejected"
+  },
+  "publish": {
+    "type": "mcp",
+    "arguments": {
+      "title": "${steps.review.result.title}",
+      "body": "${steps.review.result.body}"
+    },
+    "next": "finish"
+  },
+  "rejected": { "type": "end", "output": { "status": "rejected" } },
+  "finish": { "type": "end", "output": { "status": "published" } }
+}
+```
+
+审核 AI 通过时调用：
+
+```json
+{
+  "action": "respond",
+  "run_id": "wrun_...",
+  "approved": true,
+  "parameters": { "title": "最终标题", "body": "最终正文" },
+  "message": "内容和合规检查通过"
+}
+```
+
+`approved=true` 把整个 `parameters` 对象保存为 `steps.review.result` 并进入 `next`；`approved=false` 不保存参数，进入 `onError` 指向的步骤。`onError` 缺失或为 `fail` 时，拒绝会终止运行。`parameters` 的字段名必须与下游 `${steps.review.result.<字段>}` 引用一致。
+
+浏览器工作流还必须声明 `compatibility.initialEnvironment` 的三个字段：非空 `description`；指向 `browser+tab` 的 `reload`/`replace` 节点的 `resetStepId`（`replace` 还必须有 URL）；以及指向 `browser+wait`/`browser+observe` 节点的 `readyStepId`。入口链必须先到 reset，再由 reset 到 ready，随后才能进入正常业务动作。编译失败时会一次返回这份完整规则和所有具体不匹配项。
+
+MCP 节点的 `schemaDigest` 在绑定契约设备在线时由服务端按设备实时报送的 input schema 自动回填并校验，调用方不需要手工计算。设备离线或未连接时服务端无法证明当前契约，会直接提示先让绑定设备上线，不会静默保存未经验证的摘要。
+
 ## 4. AI 局部修改
 
 AI 修改已有卡片应先 `get` 读取最新版本，再调用：
+
+定义较长时，不必一次拉取整张卡片。以下读取方式可按需组合字段过滤与一种步骤选择模式：
+
+```json
+{
+  "action": "get",
+  "card_id": "wcard_...",
+  "fields": {
+    "card": ["id", "latest_version_id", "definition"],
+    "definition": ["startStepId", "steps", "compatibility", "output"]
+  },
+  "step_offset": 20,
+  "step_limit": 10
+}
+```
+
+步骤选择还可使用 `step_ids` 精确读取，或用 `tail` 读取末尾 N 步；三种模式互斥。响应的 `selection` 和 `pagination` 会给出总步骤数、实际返回的步骤 ID、缺失 ID、`has_more` 与 `next_offset`。完全不传选择参数时保持原有完整返回合同。
 
 ```json
 {
   "action": "patch",
   "card_id": "wcard_...",
   "base_version_id": "wver_...",
+  "dry_run": true,
   "operations": [
     {
       "op": "replace",
@@ -123,6 +183,7 @@ AI 修改已有卡片应先 `get` 读取最新版本，再调用：
 - 只能修改流程定义白名单路径，不能通过补丁改设备契约字段；
 - `base_version_id` 必须仍是最新版本，否则拒绝并要求重新读取；
 - 补丁应用后必须重新编译完整定义、重新冻结契约并创建不可变新版本；
+- `dry_run=true` 只试算，不提交、不创建版本；响应中的 `applied`、`committed`、`version_created` 会明确说明状态；
 - AI 不应使用 `edit.definition` 一次覆盖整张已有卡片。
 
 卡片名称、说明、风险级别、标签和访问范围属于元数据，使用 `action=edit` 修改，不放入 definition 补丁。
@@ -139,7 +200,7 @@ AI 修改已有卡片应先 `get` 读取最新版本，再调用：
 }
 ```
 
-`dry_run=true` 会执行完整编译和设备契约校验，并返回路径级 diff，但不会修改卡片或创建版本。确认 diff 后，以同一份定义和最新 `base_version_id` 设置 `dry_run=false`，创建不可变新版本。该动作只替换 definition，不修改卡片元数据。
+`dry_run=true` 会执行完整编译和设备契约校验，并返回路径级 diff 以及步骤级摘要（新增/删除/修改步骤、`next` 和 `arguments.*` 等变化），但不会修改卡片或创建版本。摘要不会回显参数值。确认 diff 后，以同一份定义和最新 `base_version_id` 设置 `dry_run=false`，创建不可变新版本。该动作只替换 definition，不修改卡片元数据。
 
 ## 5. 实战录制
 
@@ -152,6 +213,13 @@ AI 修改已有卡片应先 `get` 读取最新版本，再调用：
 `automation.manage` 自己不会被录进轨迹。密码、Token、Cookie、Secret 等字段会被替换为 `[REDACTED]`，创建的输入模板必须由调用者重新提供敏感值。
 
 录制生成的步骤 ID 使用工具名和 `action` 生成语义标识；重复步骤自动增加数字后缀。`startStepId`、步骤跳转、`saveAs`、初始化环境引用和最终输出会使用同一命名映射。
+
+浏览器轨迹还会执行保守稳定化：
+
+- 每台设备首个浏览器写操作前自动补 `browser+control acquire`；已有 acquire 不重复，release 后再次写入会重新 acquire；
+- 只有最近一次 observe 中的 `ref` 能被语义字段唯一定位时，才移除临时 ref 并生成 `targetResolver`；歧义或缺少证据时保留原 ref，并记录 `UNSTABLE_BROWSER_REF`，避免编造选择器；
+- observe 的结果 envelope 深度会保留到 resolver 模板路径中；
+- 显式空 observe 若承担初始化 ready 或最终输出会保留并警告；其余没有作用的空 observe 会安全丢弃，并在 `recordingWarnings` 中记录来源序号。
 
 ## 6. 断点与逐步调试
 
