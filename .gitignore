@@ -33,3 +33,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Local HeySure -> Codex conversation state (may contain chat content)
+.heysure-codex-sessions/
+.heysure-codex-agent/
