@@ -7,7 +7,7 @@
 - `internal_model`：沿用 HeySure 内置模型推理和聊天流程。
 - `external_mcp`：由 Codex 等远程 MCP 客户端控制，不调用 HeySure 内置模型。
 
-外部控制成员的网页对话输入关闭，只显示经过脱敏持久化的 MCP 调用结果。控制器能读取该成员当前人格 Prompt、绑定设备和 MCP 范围，但不能读取模型密钥、用户 Token、Cookie 或服务器环境变量。
+外部控制成员的网页与机器人消息进入可靠的外部控制队列，不启动 HeySure 内置模型。控制器领取消息后可读取该会话历史、调用成员已有 MCP，并把回复写回原会话。控制器能读取该成员当前人格 Prompt、绑定设备和 MCP 范围，但不能读取模型密钥、用户 Token、Cookie 或服务器环境变量。
 
 ## 接入流程
 
@@ -31,6 +31,11 @@
 | `heysure.start_run` | `run:write` | 建立带 owner、lease 和 deadline 的工作运行 |
 | `heysure.finish_run` | `run:write` | 将运行写入不可复活的终态 |
 | `heysure.list_events` | `audit:read` | 读取近期脱敏控制日志 |
+| `heysure.list_messages` | `context:read` | 列出等待或处理中的用户消息 |
+| `heysure.claim_message` | `run:write` | 原子领取消息并获得会话历史和租约 |
+| `heysure.renew_message` | `run:write` | 长任务续租，避免被另一个控制器重复领取 |
+| `heysure.reply_message` | `run:write` | 恰好一次持久化回复并完成消息 |
+| `heysure.fail_message` | `run:write` | 记录失败并进入不可复活终态 |
 
 `heysure.call_mcp` 不直接调用 Registry。它复用现有网关调用入口，因此继续受以下规则约束：成员 MCP 开关、成员工具白名单、角色上限、工具箱/图书馆绑定、端侧设备在线状态和设备权限。
 
@@ -46,14 +51,17 @@ queued -> leased -> running -> succeeded | failed | cancelled | expired
 
 终态不可复活。运行记录包含 credential owner、lease owner、lease deadline、开始/结束时间与摘要。MCP 日志不保存调用参数，只保存脱敏和截断后的结果，避免把密码、Token、Cookie、Secret 等写入审计表。
 
+对话 turn 使用 `queued -> running -> succeeded | failed | cancelled`。`running` 租约到期时最多重新排队三次，之后失败终止；成功与失败终态均不可复活。消息正文只保存在原有 `chatmessage` 对话表，不复制进控制审计事件。
+
 ## 数据与迁移
 
-Alembic revision `fa1b2c3d4e5f` 增加：
+Alembic revision `fa1b2c3d4e5f` 增加控制器基础表；revision `1b8c9d0e2f3a` 增加可靠对话队列：
 
 - `assistantaiconfig.execution_mode`
 - `externalcontrollercredential`
 - `externalcontrollerrun`
 - `externalcontrollerevent`
+- `externalcontrollerturn`
 
 外部控制记录通过数据库外键级联跟随用户或 AI 配置删除；Runtime 启动不执行任何 DDL。
 
