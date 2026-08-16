@@ -275,7 +275,7 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 ### 代码结构
 
 - 复杂度 baseline 是历史债务上限，只能下降，禁止通过扩大 baseline、增加豁免或移动代码来规避门禁。
-- 新增生产文件不得超过 500 有效行；新增或改写的业务函数目标不超过 80 有效行、圈复杂度不超过 15。接近上限时先拆 DTO、纯函数、状态机或领域服务。
+- 新增生产文件不得超过 500 有效行；新增或改写的业务函数目标不超过 80 有效行、圈复杂度不超过 15。接近上限时先拆 DTO、纯函数、状态机、领域服务，或前端的 types / utils / composable / 子组件。Server 与 Web 使用同一组阈值。
 - `main/ai_runtime/inference/core.py` 是稳定入口和少量已记录兼容导出；禁止把新业务重新塞入 `_run_worker_impl`。外层运行编排放在 `worker_run_flow.py`，模型轮次、轮次后处理和工具批次分别使用现有 flow 模块。
 - 跨步骤流程必须使用显式状态、动作枚举和不可变 DTO；不得用大型闭包、`nonlocal` 或散落布尔值隐式驱动状态。任务必须定义合法转换、不可复活终态、owner/lease/deadline 和恢复策略。
 - 删除兼容入口前先用 `rg` 证明无调用并检查路由、测试和外部合同；确需保留时必须写明调用方、边界和删除条件，禁止无行为的永久 no-op。
@@ -291,6 +291,7 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 ### 测试与验收
 
 - Server 改动提交前至少运行 `deploy/server/other/scripts/verify_server.py`；该入口统一执行复杂度、架构、语法和 unit/contract 测试。不得在门禁失败时直接改宽 baseline。
+- Web 改动提交前至少运行 `deploy/web` 下的 `npm run verify`；该入口统一执行与 Server 相同阈值的复杂度门禁和 `vue-tsc`。不得在门禁失败时直接改宽 `scripts/guardrail_baseline.json`。
 - 数据库、锁、迁移或事务改动必须增加真实 PostgreSQL integration 测试；不要用 SQLite 结果代替 PostgreSQL 行为。
 - 状态机关键分支覆盖率不低于 90%，本次新增/修改关键模块增量覆盖率不低于 85%；成功路径之外还要覆盖失败、超时、取消、断线、重连、迟到和重复回执。
 - 四进程或部署链路改动必须验证登录、真实 AI、MCP 和模拟 Agent；设备故障矩阵使用 `smoke_four_runtime.py --fault-matrix`，重启/lease 语义改动使用 `restart_fault_exercise.py`。
