@@ -3,6 +3,9 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 rem Root one-click launcher for Windows.
 rem It delegates to the backend Tk dashboard (deploy/server/tk_launcher.py).
+rem The dashboard exposes all current port columns:
+rem 3000 Gateway, 3001 MCP, 3002 Connector, 3003 AI, 58150 Web,
+rem 58151 host updater, and 58152 independent host rescue.
 
 rem This is a *workspace* repository using Git submodules.
 rem deploy/web, deploy/server and optional device/ are Git submodules.
