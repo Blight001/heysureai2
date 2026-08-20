@@ -27,6 +27,10 @@ Web 容器默认把同源 `/host-rescue/*` 反代到宿主 `58152`，因此 Gate
 允许；跨域名部署需设置 `HEYSURE_RESCUE_ALLOWED_ORIGINS`，也可在 Web 构建时设置
 `VITE_HEYSURE_RESCUE_URL` 指向单独的 HTTPS 恢复域名。
 
+公开 `/health` 只额外返回 `all_runtimes_unavailable` 布尔值：首页连续两次确认四个
+Runtime 均不可用后才显示管理员恢复入口。该接口不返回容器名称、状态详情、配置或
+凭据；Compose 状态无法确认时按 `false` 处理，避免正常首页误显示恢复入口。
+
 宿主防火墙应只允许 Docker 网桥或管理来源访问 `58152`。即使端口不直接对公网开放，
 也必须保留 Bearer 密钥认证。
 
