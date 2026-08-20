@@ -24,6 +24,13 @@
 5. 登录、模拟 Agent 往返和真实 AI+MCP 临时会话通过；
 6. 临时会话完成后清理，不保留冒烟消息。
 
+## Gateway 完全不可用时的独立恢复面
+
+宿主 systemd 服务 `heysure-host-rescue.service` 在 Compose 项目之外监听 58152，
+使用独立 `HEYSURE_RESCUE_TOKEN` 认证。它只允许查看 Runtime 状态、重建 Gateway
+或按既定顺序重建四个 Runtime；不执行数据库操作、迁移、镜像构建或任意命令。
+详细安装、安全边界和验收步骤见 `doc/host-rescue.md`。
+
 ## 故障演练矩阵
 
 CI 的四 Runtime 作业执行以下可重复演练：

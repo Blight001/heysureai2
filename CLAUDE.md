@@ -113,6 +113,7 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 | Windows 桌面本机执行 | `device/windows/src/`（TS）+ `device/windows/src-tauri/`（Rust） |
 | Linux 服务器 Agent | `device/linux/agent/`（Python） |
 | USB 烧录 / 串口监视 | `device/usb_flasher/`（Python 自定义设备） |
+| OpenCut 视频编辑器 | `device/AI-FREE-app/`（本地端口 `127.0.0.1:5173`，`opencut.*` MCP） |
 | 浏览器自动化 | `device/browser_MCP/`（主扩展源码）/ `device/browser_MCP_win/`（Windows 原生输入构建） |
 | 配置项 / 环境变量 | `deploy/server/main/api/core/settings.py`（**配置总入口**） |
 | AI 角色 prompt | `doc/prompt/` |

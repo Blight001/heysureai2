@@ -220,7 +220,8 @@ services:
       - "58150:58150"
     environment:
       SERVER_URL: http://api-gateway:3000
-    depends_on:
-      api-gateway:
-        condition: service_healthy
+      HEYSURE_RESCUE_URL: http://host.docker.internal:58152
+    # Keep the static unauthenticated homepage available even when Gateway
+    # cannot boot, so operators can reach the independent host rescue plane.
+    # API requests will naturally fail until Gateway has recovered.
     restart: unless-stopped
