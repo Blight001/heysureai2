@@ -68,6 +68,18 @@ Socket.IO device:register → 网页作坊出现设备
 | `GET /api/device-hall/download/{product}/{target}` | 公开 | 下载目录中已登记且实际存在的文件 |
 | `GET /api/device-hall/updates/{product}/{target}?current_version=x` | 公开 | 官方设备检查当前服务器的更新通道 |
 
+管理员发布接口统一受 `owner/admin` 权限保护：
+
+| 接口 | 用途 |
+| --- | --- |
+| `GET /api/device-hall/admin/catalog` | 查看安装包、SHA-256、大小、发布时间和历史版本 |
+| `POST /api/device-hall/admin/releases` | multipart 分块上传并原子发布新版本 |
+| `DELETE /api/device-hall/admin/releases/{product}/{target}` | 撤回当前或指定版本，必要时回退上一有效版本 |
+
+发布成功后 Gateway 在单体模式直接广播，并在四进程模式调用 Connector 的受保护内部
+接口广播 `device:update-available`。在线设备收到事件后重新查询 update API；离线设备在
+下次注册成功后查询。广播失败只影响即时提醒，不能回滚已经原子发布的目录。
+
 服务端绝不接受请求传入文件路径。下载路由只接收受限 ID，再从目录映射到路径；解析后的
 文件必须位于 `artifacts/` 下。API 响应会移除内部 `artifact` 路径。
 
@@ -98,6 +110,21 @@ Socket.IO device:register → 网页作坊出现设备
 
 ## 5. 首次连接与配置
 
+聚合仓库以 `device/device.config.json` 作为官方设备默认地址的唯一工作区配置：
+
+```json
+{
+  "schema_version": 1,
+  "default_server_url": "http://49.234.181.190:58150",
+  "local_test_server_url": "http://127.0.0.1:3000"
+}
+```
+
+Windows、浏览器扩展、Android 等构建会把该默认值嵌入产物；Linux 和其它脚本设备在
+源码布局中直接读取。独立检出子仓库而找不到父配置时，也必须回退生产服务器，不能
+回退 localhost。只有显式设置 `HEYSURE_LOCAL_TEST=true`（前端构建也接受对应 Vite/
+Gradle 开关）才采用本地测试地址。用户已经保存或通过环境变量明确提供的地址始终优先。
+
 发行包不能写死公网域名。设备应按以下优先级确定服务器：
 
 1. 安装/启动参数或深链带入的服务器地址；
@@ -113,7 +140,7 @@ Socket.IO device:register → 网页作坊出现设备
 
 设备大厅同时从首页和登录后控制台进入，采用“产品列表 + 发行详情”结构：
 
-- 产品卡：Windows、Linux Server、Chrome/Edge、Android；
+- 产品卡：Windows、Linux Server、Chrome/Edge、Android、AI-FREE；
 - 详情：用途、能力标签、平台/架构、通道、版本、大小、发行说明；
 - 主动作：可用时下载，不可用时明确显示等待发布；
 - 安装步骤：最多四到六步，强调“同账号登录”和“回网页绑定 AI”；
