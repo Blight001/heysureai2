@@ -77,7 +77,7 @@ deploy\web\run.bat
 device\windows\run.bat
 
 # 手动单进程
-cd server
+cd deploy/server
 python -m gateway.main
 ...
 
@@ -93,7 +93,8 @@ PostgreSQL → Gateway (3000) → MCP Runtime (3001)
                             → AI Runtime (3003)
 ```
 
-Gateway 的 `lifespan` 会加载 MCP 插件、重置设备 presence、启动调度器，**必须最先起**。
+各进程在自己的 `lifespan` 装配职责：Gateway 提供 API 与其调度器，MCP Runtime 加载 MCP，
+Connector Runtime 管理端侧 Socket/presence，AI Runtime 负责推理。Gateway 仍按上面的依赖顺序先起；
 Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 
 ## "改 X 去哪里"速查
@@ -112,9 +113,9 @@ Docker Compose 已通过 `depends_on` + `healthcheck` 自动处理顺序。
 | 前端调后端 API 封装 | `deploy/web/src/api/<域>.ts`（http.ts 是统一客户端） |
 | Windows 桌面本机执行 | `device/windows/src/`（TS）+ `device/windows/src-tauri/`（Rust） |
 | Linux 服务器 Agent | `device/linux/agent/`（Python） |
-| USB 烧录 / 串口监视 | `device/usb_flasher/`（Python 自定义设备） |
 | OpenCut 视频编辑器 | `device/AI-FREE-app/`（本地端口 `127.0.0.1:5173`，`opencut.*` MCP） |
-| 浏览器自动化 | `device/browser_MCP/`（主扩展源码）/ `device/browser_MCP_win/`（Windows 原生输入构建） |
+| 浏览器自动化 | `device/browser/browser_MCP/`（主扩展源码）/ `device/browser/browser_MCP_win/`（Windows 原生输入构建） |
+| 设备固定/动态 MCP、任务与远控协议 | `device/read.md`（统一标准） |
 | 配置项 / 环境变量 | `deploy/server/main/api/core/settings.py`（**配置总入口**） |
 | AI 角色 prompt | `doc/prompt/` |
 | 知识工坊 Agent | `deploy/server/library/`（服务端内置虚拟 Agent） |

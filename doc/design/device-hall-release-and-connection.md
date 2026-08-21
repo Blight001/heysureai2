@@ -1,7 +1,7 @@
 # HeySure 设备大厅、发行与连接体系设计
 
 > 状态：V1 可实施基线  
-> 更新：2026-08-20  
+> 更新：2026-08-21
 > 范围：Web 设备大厅、Gateway 发行目录、官方设备登录、更新发现、设备协议边界
 
 ## 1. 重新定义“设备”
@@ -122,15 +122,22 @@ Socket.IO device:register → 网页作坊出现设备
 
 Windows、浏览器扩展、Android 等构建会把该默认值嵌入产物；Linux 和其它脚本设备在
 源码布局中直接读取。独立检出子仓库而找不到父配置时，也必须回退生产服务器，不能
-回退 localhost。只有显式设置 `HEYSURE_LOCAL_TEST=true`（前端构建也接受对应 Vite/
-Gradle 开关）才采用本地测试地址。用户已经保存或通过环境变量明确提供的地址始终优先。
+回退 localhost。显式服务器变量统一为 `HEYSURE_SERVER`；旧端的其它变量只作为迁移别名。
 
-发行包不能写死公网域名。设备应按以下优先级确定服务器：
+不得在各子项目散落写死另一个公网/本地默认值；正式发行包只嵌入上述统一配置。设备按以下
+优先级确定服务器：
 
-1. 安装/启动参数或深链带入的服务器地址；
-2. 本地已保存的最后一次成功服务器；
-3. 发行包的可选构建默认值；
-4. 开发环境才回退 `http://127.0.0.1:3000`。
+1. 明确的启动器 / CLI 模式（开发用 `default` 或 `local`）；
+2. 显式 `HEYSURE_SERVER`；
+3. 本地已保存的最后一次成功服务器；
+4. `device.config.json.default_server_url`；
+5. 独立检出找不到父配置时的生产 fallback。
+
+Windows 用户入口统一为 `run.bat`（默认服务器）与 `run-local.bat`（本地 Gateway）；构建入口
+统一为 `build.bat`（正式包）与 `build-local.bat`（仅联调，产物不得上传设备大厅）。Browser、
+Android 等只有构建入口的产品沿用 `build` / `build-local` 命名。普通 `run` / `build` 必须显式
+抵消调用者环境中遗留的 local flag，避免把 localhost 烘进正式包。启动器切换服务器时必须清除
+旧服务器签发的 JWT 与 `agent_socket_url`。
 
 设备输入服务器地址后调用 `/api/auth/login`。必须使用响应中的 `agent_socket_url`，不要
 自行把 API 端口当成 Socket.IO 端口。Token 失效时，有“记住登录”且用户明确保存凭据的
@@ -185,6 +192,6 @@ Gradle 开关）才采用本地测试地址。用户已经保存或通过环境�
 ## 9. 与现有文档的关系
 
 - 本文：设备产品、发行、下载、登录和更新的总设计；
-- `device/read.md`：第三方设备/服务的 Socket.IO 与 MCP 接入协议；
+- `device/read.md`：官方设备与第三方端点共同遵守的 Socket.IO、MCP 目录、任务和远控统一协议；
 - `device/windows/README.md`、`device/linux/README.md`：各端具体构建和运行；
 - `doc/device-capability-registry-refactoring-plan.md`：工具目录 generation/hash 与治理模型。
