@@ -10,6 +10,7 @@ x-proxy-build-args: &proxy-build-args
 
 x-server-build: &server-build
   context: ./deploy/server
+  network: ${DOCKER_BUILD_NETWORK:-default}
   args: *proxy-build-args
   extra_hosts:
     - "host.docker.internal:host-gateway"
@@ -211,6 +212,7 @@ services:
   web:
     build:
       context: ./deploy/web
+      network: ${DOCKER_BUILD_NETWORK:-default}
       args: *proxy-build-args
       extra_hosts:
         - "host.docker.internal:host-gateway"
