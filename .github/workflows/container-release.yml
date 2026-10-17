@@ -26,7 +26,7 @@ jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
@@ -145,3 +145,20 @@ jobs:
           name: release-manifest-${{ github.sha }}
           path: release-manifest.json
           if-no-files-found: error
+
+      - name: Publish readable release manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin release-manifest || true
+          git checkout --orphan release-manifest
+          git rm -rf . >/dev/null 2>&1 || true
+          cp release-manifest.json /tmp/release-manifest.json
+          cp /tmp/release-manifest.json release-manifest.json
+          git add release-manifest.json
+          git commit -m "ci: publish release manifest for ${{ github.sha }}"
+          git push origin HEAD:release-manifest --force
