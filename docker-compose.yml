@@ -1,20 +1,5 @@
-x-proxy-build-args: &proxy-build-args
-  HTTP_PROXY: ${DOCKER_HTTP_PROXY:-}
-  HTTPS_PROXY: ${DOCKER_HTTPS_PROXY:-}
-  ALL_PROXY: ${DOCKER_ALL_PROXY:-}
-  NO_PROXY: ${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,db,api-gateway,ai-runtime,mcp-runtime,connector-runtime,web,host.docker.internal,ilinkai.weixin.qq.com,novac2c.cdn.weixin.qq.com,.weixin.qq.com,.qq.com}
-  http_proxy: ${DOCKER_HTTP_PROXY:-}
-  https_proxy: ${DOCKER_HTTPS_PROXY:-}
-  all_proxy: ${DOCKER_ALL_PROXY:-}
-  no_proxy: ${DOCKER_NO_PROXY:-localhost,127.0.0.1,::1,db,api-gateway,ai-runtime,mcp-runtime,connector-runtime,web,host.docker.internal,ilinkai.weixin.qq.com,novac2c.cdn.weixin.qq.com,.weixin.qq.com,.qq.com}
-
-x-server-build: &server-build
-  context: ./deploy/server
-  network: ${DOCKER_BUILD_NETWORK:-default}
-  args: *proxy-build-args
-  extra_hosts:
-    - "host.docker.internal:host-gateway"
-
+# Production deployments consume immutable images produced by CI.  Local
+# source builds remain available through docker-compose.source.yml.
 services:
   # This docker-compose lives in the HeySure *workspace* root.
   # deploy/server and deploy/web are the server deployment submodules.
@@ -40,7 +25,7 @@ services:
   # doc/db-migrations.md §Step 4). Runs `alembic upgrade head` once, then exits;
   # the four runtimes wait for it to finish and start with auto-migrate off.
   db-migrate:
-    build: *server-build
+    image: ${HEYSURE_SERVER_IMAGE:-heysure-server:local}
     environment:
       DATABASE_URL: postgresql+psycopg://heysure:heysure@db:5432/heysure
       JWT_SECRET: ${JWT_SECRET:?required}
@@ -51,7 +36,7 @@ services:
     restart: "no"
 
   api-gateway:
-    build: *server-build
+    image: ${HEYSURE_SERVER_IMAGE:-heysure-server:local}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
@@ -92,7 +77,7 @@ services:
     restart: unless-stopped
 
   ai-runtime:
-    build: *server-build
+    image: ${HEYSURE_SERVER_IMAGE:-heysure-server:local}
     # Internal-only status server (/internal/health + /internal/logs) on 3003,
     # reachable by api-gateway over the compose network for the admin panel.
     expose:
@@ -135,7 +120,7 @@ services:
     restart: unless-stopped
 
   mcp-runtime:
-    build: *server-build
+    image: ${HEYSURE_SERVER_IMAGE:-heysure-server:local}
     # Intentionally NOT mapped to the host: only api-gateway / ai-runtime
     # reach it on the compose network.
     expose:
@@ -175,7 +160,7 @@ services:
     restart: unless-stopped
 
   connector-runtime:
-    build: *server-build
+    image: ${HEYSURE_SERVER_IMAGE:-heysure-server:local}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Exposed to host because external desktop agents / browser plugins
@@ -210,12 +195,7 @@ services:
     restart: unless-stopped
 
   web:
-    build:
-      context: ./deploy/web
-      network: ${DOCKER_BUILD_NETWORK:-default}
-      args: *proxy-build-args
-      extra_hosts:
-        - "host.docker.internal:host-gateway"
+    image: ${HEYSURE_WEB_IMAGE:-heysure-web:local}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
