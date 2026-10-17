@@ -1,0 +1,147 @@
+name: Build and publish containers
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "deploy/server"
+      - "deploy/server/**"
+      - "deploy/web"
+      - "deploy/web/**"
+      - "docker-compose.yml"
+      - ".github/workflows/container-release.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: container-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  SERVER_IMAGE: ghcr.io/blight001/heysure-server
+  WEB_IMAGE: ghcr.io/blight001/heysure-web
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout root repository without unrelated submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          fetch-depth: 0
+
+      - name: Initialize deployment submodules only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git submodule sync -- deploy/server deploy/web
+          git submodule update --init --recursive -- deploy/server deploy/web
+          test ! -e device/.git || {
+            echo "device must not be initialized by the container workflow"
+            exit 1
+          }
+
+      - name: Check deployment revisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "root=$(git rev-parse HEAD)"
+          echo "server=$(git -C deploy/server rev-parse HEAD)"
+          echo "web=$(git -C deploy/web rev-parse HEAD)"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Server image
+        id: server-image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./deploy/server
+          file: ./deploy/server/Dockerfile
+          push: true
+          tags: |
+            ${{ env.SERVER_IMAGE }}:${{ github.sha }}
+            ${{ env.SERVER_IMAGE }}:main
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=heysure-server
+          cache-to: type=gha,mode=max,scope=heysure-server
+
+      - name: Build and push Web image
+        id: web-image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./deploy/web
+          file: ./deploy/web/Dockerfile
+          push: true
+          tags: |
+            ${{ env.WEB_IMAGE }}:${{ github.sha }}
+            ${{ env.WEB_IMAGE }}:main
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=heysure-web
+          cache-to: type=gha,mode=max,scope=heysure-web
+
+      - name: Generate release manifest
+        shell: bash
+        env:
+          SERVER_DIGEST: ${{ steps.server-image.outputs.digest }}
+          WEB_DIGEST: ${{ steps.web-image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          export SERVER_COMMIT="$(git -C deploy/server rev-parse HEAD)"
+          export WEB_COMMIT="$(git -C deploy/web rev-parse HEAD)"
+          export GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          test -n "${SERVER_DIGEST}"
+          test -n "${WEB_DIGEST}"
+
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = {
+              "release_id": os.environ["GITHUB_SHA"],
+              "generated_at": os.environ["GENERATED_AT"],
+              "root_commit": os.environ["GITHUB_SHA"],
+              "server_commit": os.environ["SERVER_COMMIT"],
+              "web_commit": os.environ["WEB_COMMIT"],
+              "images": {
+                  "server": {
+                      "reference": f"{os.environ['SERVER_IMAGE']}@{os.environ['SERVER_DIGEST']}",
+                      "digest": os.environ["SERVER_DIGEST"],
+                  },
+                  "web": {
+                      "reference": f"{os.environ['WEB_IMAGE']}@{os.environ['WEB_DIGEST']}",
+                      "digest": os.environ["WEB_DIGEST"],
+                  },
+              },
+          }
+          Path("release-manifest.json").write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload release manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest-${{ github.sha }}
+          path: release-manifest.json
+          if-no-files-found: error
