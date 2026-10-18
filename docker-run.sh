@@ -101,47 +101,12 @@ fi
 echo "==> [1/5] 启动宿主版本更新服务（容器通过 HTTP 通信触发更新）..."
 mkdir -p deploy/server/logs
 
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    mkdir -p deploy/server/data
-    JSON_PYTHON_BIN="${PYTHON_BIN:-}"
-    if [ -z "$JSON_PYTHON_BIN" ]; then
-        if command -v python3 >/dev/null 2>&1; then
-            JSON_PYTHON_BIN="python3"
-        else
-            JSON_PYTHON_BIN="python"
-        fi
-    fi
-    "$JSON_PYTHON_BIN" - <<'PY'
-import json
-import os
-import subprocess
-
-def git(*args: str) -> str:
-    return subprocess.check_output(["git", *args], text=True, encoding="utf-8", errors="replace").strip()
-
-branch = git("rev-parse", "--abbrev-ref", "HEAD")
-if branch == "HEAD":
-    branch = ""
-payload = {
-    "git_available": False,
-    "branch": branch,
-    "current": {
-        "sha": git("log", "-1", "--format=%H"),
-        "short": git("log", "-1", "--format=%h"),
-        "author": git("log", "-1", "--format=%an"),
-        "committed_at": float(git("log", "-1", "--format=%ct")),
-        "subject": git("log", "-1", "--format=%s"),
-        "body": git("show", "-s", "--format=%B", "HEAD"),
-        "files": [],
-    },
-}
-path = os.path.join("deploy", "server", "data", "deployed-version.json")
-tmp = path + ".tmp"
-with open(tmp, "w", encoding="utf-8") as handle:
-    json.dump(payload, handle, ensure_ascii=False, indent=2)
-os.replace(tmp, path)
-PY
-fi
+# Do not seed deployed-version.json before pulling the repositories below.
+# The marker is an assertion about the version that actually passed the
+# readiness-gated release, not about the checkout that is about to be started.
+# The host updater creates/refreshes it after a successful release.  Writing a
+# marker here used the legacy, non-mounted path and happened before `git pull`,
+# so it could never be a reliable statement about the running deployment.
 
 echo "    重启宿主更新服务，确保监听地址和 token 与当前 .env 一致..."
 pkill -f "deploy/server/other/scripts/repo-updater.py" 2>/dev/null || true
