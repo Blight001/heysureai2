@@ -13,6 +13,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   sync:
@@ -48,3 +49,4 @@ jobs:
           git add deploy/server deploy/web
           git commit -m "chore(deploy): sync deployment submodule pointers"
           git push origin HEAD:main
+          gh workflow run container-release.yml --ref main
