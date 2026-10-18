@@ -1,0 +1,50 @@
+name: Sync deployment submodule pointers
+
+on:
+  schedule:
+    # GitHub may delay scheduled jobs; this keeps the normal lag bounded
+    # without requiring credentials in the child repositories.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-deployment-submodules
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout root repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Advance deployment submodule pointers
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git submodule sync -- deploy/server deploy/web
+          git submodule update --init --recursive -- deploy/server deploy/web
+
+          for path in deploy/server deploy/web; do
+            git -C "$path" fetch --no-tags origin main
+            git -C "$path" checkout --detach --force origin/main
+          done
+
+          if git diff --quiet -- deploy/server deploy/web; then
+            echo "Deployment submodule pointers are already current."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/server deploy/web
+          git commit -m "chore(deploy): sync deployment submodule pointers"
+          git push origin HEAD:main
