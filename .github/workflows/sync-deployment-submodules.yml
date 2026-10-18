@@ -27,6 +27,8 @@ jobs:
           submodules: false
 
       - name: Advance deployment submodule pointers
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
