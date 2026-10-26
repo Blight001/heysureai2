@@ -1,0 +1,17 @@
+{
+  "release_id": "9d4b9f4792d0623af42fbcaa5d3edbdb1c558b3e",
+  "generated_at": "2026-10-26T04:08:32Z",
+  "root_commit": "9d4b9f4792d0623af42fbcaa5d3edbdb1c558b3e",
+  "server_commit": "3156a709c23e58a475a0877ded721a1b6a82fcc6",
+  "web_commit": "89cd024d579c4bbd86700dff22e803ba44dff525",
+  "images": {
+    "server": {
+      "reference": "ghcr.io/blight001/heysure-server@sha256:f316b19bfdca480463ad9e8912d7f72a13a80fa80dd8842bde32aab5f357999b",
+      "digest": "sha256:f316b19bfdca480463ad9e8912d7f72a13a80fa80dd8842bde32aab5f357999b"
+    },
+    "web": {
+      "reference": "ghcr.io/blight001/heysure-web@sha256:47ecec9d6ffbaa793fc28a6543700821e87278c6206aa3f6bae7cfe315a49f53",
+      "digest": "sha256:47ecec9d6ffbaa793fc28a6543700821e87278c6206aa3f6bae7cfe315a49f53"
+    }
+  }
+}
