@@ -188,4 +188,5 @@ Persistence, Socket, HTTP, Filesystem
 - 阶段 0：已完成基线盘点、工作区/MCP/自动更新行为测试和本方案文档。
 - 阶段 1：本次提取 Gateway 周期任务协调器，并增加远端更新终态同步隔离。
 - 阶段 2：本次统一 `WorkspaceScope` 根目录/路径安全入口和 AI 工作区文件列表缓存；后续继续收敛设备工具的路径服务。
-- 阶段 3～6：保留为后续独立提交，不与本次行为修复混合。
+- 阶段 3：先落地 ChatRun 状态机的最小切片：集中定义 `queued/running/completed/error/stopped`、显式允许边和终态幂等保护；worker、watchdog、停止入口和 stale-run 回收已接入，剩余任务调度/监督续跑拆分继续保持独立提交。
+- 阶段 4～6：保留为后续独立提交，不与本次行为修复混合。
